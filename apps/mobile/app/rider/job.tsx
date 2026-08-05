@@ -38,8 +38,11 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
+import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
+import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
@@ -192,10 +195,24 @@ export default function RiderJob(): React.ReactElement {
   // Load the last-known job summary (persisted below) so an OFFLINE COLD START shows it instead of a
   // bare "couldn't load your job" — only ever rendered in the fetch-error branch, never over live data.
   const [lastKnownJob, setLastKnownJob] = useState<LastActive | null>(null);
+  // `offline_resume` (kit r-rider.jsx RR.offline_resume): the SAME slot, read once on mount, also tells
+  // us whether an EARLIER app process saw this job live — i.e. the app was killed mid-delivery. Derived
+  // here (not in a second effect) so it's measured against the store before this process's own persist
+  // effect below can overwrite it. See src/ui/rider/job-resume.ts.
+  const [restoredJobId, setRestoredJobId] = useState<string | null>(null);
+  const [restoreDismissed, setRestoreDismissed] = useState(false);
+  // Gates the persist effect below: this read has to see the PREVIOUS process's `savedAt` before this
+  // process is allowed to overwrite it. Both fire on the same mount (the query cache is persisted, so
+  // `jobQ.data` can be there on the first commit), and without the gate the write could win the race
+  // and silently erase the only evidence the app was ever killed.
+  const [resumeChecked, setResumeChecked] = useState(false);
   useEffect(() => {
     let alive = true;
     void loadLastActiveJob().then((la) => {
-      if (alive) setLastKnownJob(la);
+      if (!alive) return;
+      setLastKnownJob(la);
+      if (la) setRestoredJobId(wasJobRestored(la, la.id) ? la.id : null);
+      setResumeChecked(true);
     });
     return () => {
       alive = false;
@@ -207,6 +224,7 @@ export default function RiderJob(): React.ReactElement {
   // finished job never resurfaces offline; a fetch error leaves undefined data and the slot untouched.
   const persistedJobStatus = useRef<string | null>(null);
   useEffect(() => {
+    if (!resumeChecked) return; // let the offline_resume read above see the stored value first
     const d = jobQ.data;
     if (d === undefined) return; // loading or errored — keep whatever's stored
     if (d === null) {
@@ -218,7 +236,7 @@ export default function RiderJob(): React.ReactElement {
     persistedJobStatus.current = d.status;
     if (ACTIVE.includes(d.status)) void saveLastActiveJob(d);
     else void clearLastActiveJob(); // terminal (delivered / cancelled / undelivered / completed)
-  }, [jobQ.data]);
+  }, [jobQ.data, resumeChecked]);
 
   // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
   // (don't blocklist a single terminal state, or a cancelled job keeps broadcasting the rider's GPS).
@@ -812,12 +830,17 @@ export default function RiderJob(): React.ReactElement {
         </Screen>
       );
     }
+    // `generic_error` (kit rider-screens.jsx `GenericError`). Nothing cached, nothing to show — but the
+    // rider may well be carrying a parcel, and a failed READ changed nothing server-side. The kit's copy
+    // says so ("your active job is safe") instead of leaving that to be inferred from a bare retry.
     return (
       <Screen>
-        <EmptyState icon="wifi-off" title="Couldn't load your job" message="Check your connection and try again.">
-          <Button label="Retry" onPress={() => void jobQ.refetch()} loading={jobQ.isFetching} />
-        </EmptyState>
-        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
+        <RiderErrorState
+          onRetry={() => void jobQ.refetch()}
+          retrying={jobQ.isFetching}
+          onBack={() => router.replace("/rider")}
+          backLabel="Back"
+        />
       </Screen>
     );
   }
@@ -864,6 +887,12 @@ export default function RiderJob(): React.ReactElement {
           <View style={{ flex: 1 }} />
           <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : orderStatusTone(order.status)} />
         </View>
+
+        {/* `offline_resume`: the app was killed mid-job and relaunched straight back onto it. Distinct
+            from the reconnecting banner above — that's a dropped socket, this is a dead process. */}
+        {restoredJobId === order.id && !restoreDismissed && isActive ? (
+          <JobRestoredBanner onDismiss={() => setRestoreDismissed(true)} />
+        ) : null}
 
         {/* Plan §5 B4 / RIDER-ONE-APP-PLAN.md decision 6: cash-held split, live for the one job a
             rider can carry at a time — the first real (non-zero) figure this component renders

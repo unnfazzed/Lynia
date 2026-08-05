@@ -11,6 +11,7 @@ import { downscaleForUpload, type UploadImageSource } from "../../src/logic/imag
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
 import { Button, Card, ErrorText, Field, Heading, Icon, isTestBuild, Label, Screen, Sub } from "../../src/ui";
+import { PhotoCaptureGuide, PhotoReviewCard } from "../../src/ui/rider/PhotoReviewCard";
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
@@ -37,6 +38,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
   // to recover is a real onboarding dead end. Mirrors the location-permission gate's "Open settings"
   // affordance elsewhere in the app.
   const [permissionBlocked, setPermissionBlocked] = useState<"camera" | "library" | null>(null);
+  // The kit's `photo_preview` review step (rider-screens-safety.jsx): a just-captured asset is HELD here
+  // for the rider to check before it's committed, instead of going straight up the upload chain. Carries
+  // the source it came from so "Retake" re-opens the same picker rather than guessing camera. Purely
+  // in-memory and deliberately NOT persisted: an unreviewed photo isn't a promise to anyone, and the
+  // C-O8 resume marker below is only written once the rider has actually chosen this photo.
+  const [reviewAsset, setReviewAsset] = useState<{ asset: UploadImageSource; source: "camera" | "library" } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
@@ -175,7 +182,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
     const asset = result.assets[0];
     if (!asset) return;
     const contentType: ImageContentType = asset.mimeType === "image/png" ? "image/png" : "image/jpeg";
-    await doUpload({ uri: asset.uri, width: asset.width, height: asset.height, contentType });
+    // Kit `photo_preview`: review before commit. The OS picker's own confirm asks "is this the photo you
+    // meant?"; this asks the question KYC actually fails on — "can a verifier read the ID number?".
+    setReviewAsset({ asset: { uri: asset.uri, width: asset.width, height: asset.height, contentType }, source });
   };
 
   // R6/07-11: retry the SAME failed upload instead of forcing the rider to re-pose for a fresh capture
@@ -253,6 +262,24 @@ export default function BecomeRiderScreen(): React.ReactElement {
           <Card accent>
             <Text style={{ color: tokens.color.accentText, fontWeight: "700", fontSize: 16 }}>{pending}</Text>
           </Card>
+        ) : reviewAsset ? (
+          /* Kit `photo_preview` is a step of its own, not an inline slot — the whole screen is the
+             question "can you read everything?". Either answer returns to the form below with every
+             field exactly as it was (nothing here touches the draft). */
+          <PhotoReviewCard
+            uri={reviewAsset.asset.uri}
+            hasExistingPhoto={photoKey != null}
+            onUse={() => {
+              const { asset } = reviewAsset;
+              setReviewAsset(null);
+              void doUpload(asset);
+            }}
+            onRetake={() => {
+              const { source } = reviewAsset;
+              setReviewAsset(null);
+              void pickFrom(source);
+            }}
+          />
         ) : (
           <>
             <Card>
@@ -270,7 +297,11 @@ export default function BecomeRiderScreen(): React.ReactElement {
                   source={{ uri: photoUri }}
                   style={{ width: "100%", height: 180, borderRadius: tokens.radius.input, marginBottom: tokens.space.sm }}
                 />
-              ) : null}
+              ) : (
+                /* The actionable half of the kit's camera-frame overlay — see PhotoReviewCard's own
+                   note on why the live in-app frame isn't built. */
+                <PhotoCaptureGuide />
+              )}
               <Button
                 label={uploading ? (uploadSlow ? "Still uploading — hang on" : "Uploading…") : photoKey ? "Retake photo" : "Take photo"}
                 variant="ghost"

@@ -113,7 +113,9 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
     await flush(); // let the mount-time draft-load effect settle (nothing to restore yet)
 
     press(findByText(tree1, "Take photo"));
-    await flush(); // capture resolves, doUpload fires and persists pendingPhoto, then stalls on uploadImage
+    await flush(); // capture resolves and lands on the `photo_preview` review step
+    press(findByText(tree1, "Use this photo"));
+    await flush(); // doUpload fires and persists pendingPhoto, then stalls on uploadImage
 
     // The upload never resolved — pre-fix, this app-kill-mid-request left zero trace of the attempt.
     expect(resolveUpload).not.toBeNull();
@@ -156,6 +158,8 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
     await flush();
 
     press(findByText(tree, "Take photo"));
+    await flush(); // `photo_preview` review step
+    press(findByText(tree, "Use this photo"));
     await flush();
     expect(storedDraft().pendingPhoto).toBeTruthy();
 

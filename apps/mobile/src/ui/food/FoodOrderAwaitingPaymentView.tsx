@@ -1,9 +1,11 @@
 import { tokens, type MerchantOrderResponse } from "@lynia/shared";
-import React from "react";
+import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { formatMoney } from "../../logic/money";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
+import { Button, Card, EmptyState, ErrorText, Field, Icon, isTestBuild, OfflineBanner, Screen, Stepper } from "../index";
+import { FoodPayFailedView } from "./FoodPayFailedView";
+import { FoodPayWaitView } from "./FoodPayWaitView";
 import { ManualPayRail } from "./ManualPayRail";
 import { OrderHeader, Row } from "./FoodOrderHelpers";
 
@@ -53,6 +55,45 @@ export function FoodOrderAwaitingPaymentView({
   cancelFooter: React.ReactNode;
 }): React.ReactElement {
   const amount = order.total ?? order.merchantGoodsTotal ?? 0;
+
+  // R5·4/R5·b2 — the rail prompt wait and its decline, WHICH THIS BACKEND CANNOT DO.
+  //
+  // There is no prompt-send endpoint and no decline callback anywhere in this codebase: the shipped
+  // payment path is the manual rail below (dial USSD → submit your reference → the merchant matches it
+  // against their own statement). Those two designed screens still have to be walkable for internal
+  // testing, so the transition into them is SIMULATED — and simulation is confined to the QA APK by
+  // `isTestBuild()` (false in every real release, so `simulateRail` is permanently null there and the
+  // entry button never renders).
+  //
+  // Non-negotiable: there is NO simulated success. `payPhase` can only reach "wait" and "failed" —
+  // both of which state that no money moved — and the sole route to a paid order stays the real
+  // reference submission. A screen that claimed money moved when nothing was sent is the exact defect
+  // this programme exists to fix.
+  const [payPhase, setPayPhase] = useState<"form" | "wait" | "failed">("form");
+  const simulateRail = isTestBuild();
+  if (simulateRail && payPhase === "wait") {
+    return (
+      <FoodPayWaitView
+        restaurantName={restaurantName}
+        amount={amount}
+        merchantPaymentPhone={order.merchantPaymentPhone}
+        reachable={reachable}
+        onEnterReference={() => setPayPhase("form")}
+        onSimulateDecline={() => setPayPhase("failed")}
+      />
+    );
+  }
+  if (simulateRail && payPhase === "failed") {
+    return (
+      <FoodPayFailedView
+        restaurantName={restaurantName}
+        amount={amount}
+        reachable={reachable}
+        onTryAgain={() => setPayPhase("wait")}
+        onPayManually={() => setPayPhase("form")}
+      />
+    );
+  }
 
   // R5·6: paid, waiting for the restaurant's own confirm.
   if (order.merchantPaymentReference && !order.merchantPaymentConfirmedAt) {
@@ -148,6 +189,11 @@ export function FoodOrderAwaitingPaymentView({
         />
         <ErrorText message={error} />
         <Button label="Submit my reference" onPress={onSubmitReference} disabled={busy || !referenceInput.trim()} loading={busy} />
+        {/* QA APK only (see the payPhase comment above): the door into R5·4/R5·b2. Labelled for what it
+            is — no rail prompt is sent, because no such endpoint exists. Never rendered in a release. */}
+        {simulateRail ? (
+          <Button label="SIMULATE: send payment prompt (test build)" variant="ghost" onPress={() => setPayPhase("wait")} />
+        ) : null}
         {cancelFooter}
       </ScrollView>
     </Screen>

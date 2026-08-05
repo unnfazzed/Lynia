@@ -92,6 +92,15 @@ describe("BecomeRiderScreen — KYC photo preview uses the downscaled asset", ()
       await Promise.resolve();
     });
 
+    // The capture now lands on the kit's `photo_preview` review step first ("Can you read everything?")
+    // — the upload only fires once the rider commits, so drive that here.
+    await act(async () => {
+      press(findByText(tree, "Use this photo"));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
     const image = tree.root.findAll(
       (n) => typeof n.props.source === "object" && n.props.source !== null && "uri" in n.props.source,
     )[0];

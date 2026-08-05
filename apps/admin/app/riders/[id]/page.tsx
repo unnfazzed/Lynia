@@ -6,7 +6,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
-import { WalletCreditButton } from "./WalletActions";
+import { WalletCreditButton, WalletFreezeActions } from "./WalletActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
@@ -87,6 +87,11 @@ export default async function RiderProfilePage({
   const wallet = await adminFetch<WalletView>(
     `/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`,
   );
+
+  // `commission_freeze` state (design OV-4A). `undefined` today for EVERY rider — no admin read surface
+  // reports `Rider.heldReason`, so this is "unknown", never "not frozen" (see `WalletView.frozen`).
+  // The frozen branches below are the kit's specified states, ready for the day the API serves the field.
+  const walletFrozen = wallet?.frozen;
 
   const ledgerCols: Column<WalletLedgerEntry>[] = [
     { key: "at", header: "When", className: "mut", cell: (l) => new Date(l.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) },
@@ -266,18 +271,57 @@ export default async function RiderProfilePage({
             <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>
               {wallet ? fmtBalance(wallet.balance) : "—"}
             </b>
+            {walletFrozen ? (
+              <>
+                {" · "}
+                <Pill kind="bad">commission_freeze</Pill>
+              </>
+            ) : null}
           </span>
         </div>
         {!wallet && <SubsectionUnavailable noun="wallet view" />}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
-          {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
-              ops act without seeing the current balance. */}
-          <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
-          {wallet && (
-            <span style={{ fontSize: 12, color: tokens.color.muted }}>
-              Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
+
+        {/* Kit riders.html:70 — the frozen-wallet warnbar. */}
+        {walletFrozen ? (
+          <div className="warnbar">
+            <IconAlert />
+            <span className="t">
+              <b>Wallet frozen.</b> A <span className="mono">commission_freeze</span> hold is in place —
+              admin-clear only, never self-cleared. Top-ups stay disabled until an admin clears it.
             </span>
-          )}
+          </div>
+        ) : null}
+
+        {/* Kit riders.html:256-257 — while frozen, the credit form is replaced by a disabled empty state
+            rather than left clickable. */}
+        {walletFrozen ? (
+          <div style={{ marginBottom: tokens.space.md }}>
+            <EmptyState
+              icon={<IconAlert />}
+              title="Credits are disabled"
+              line="Clear the commission_freeze hold before crediting this wallet."
+            />
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
+            {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
+                ops act without seeing the current balance. */}
+            <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
+            {wallet && (
+              <span style={{ fontSize: 12, color: tokens.color.muted }}>
+                Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Kit riders.html:226-228 — the commission_freeze hold actions. Both unwired today; the
+            component states that inline and keeps its triggers disabled. */}
+        <div style={{ marginBottom: tokens.space.md }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted, marginBottom: 8 }}>
+            Wallet freeze
+          </div>
+          <WalletFreezeActions id={r.id} name={r.name} frozen={walletFrozen} />
         </div>
         <DataTable
           columns={ledgerCols}

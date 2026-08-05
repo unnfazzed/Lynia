@@ -9,7 +9,8 @@ import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
-import { MAX_ITEM_QTY } from "../../src/logic/food-cart";
+import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
+import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
 import { NoteField } from "../../src/ui/food/NoteField";
 
 interface Reconciled {
@@ -57,6 +58,19 @@ export default function FoodCartScreen(): React.ReactElement {
 
   const [dismissedNotice, setDismissedNotice] = useState(false);
   const reconciled = useMemo(() => reconcile(cart.cart.lines, latestByDish), [cart.cart.lines, latestByDish]);
+
+  // R3·2 (cart_note): which line's note the bottom sheet is currently editing (null = sheet closed).
+  // A line is identified by (dishId, note) — the same composite key the cart itself uses — because two
+  // lines of the same dish with different notes are deliberately separate rows.
+  const [noteTarget, setNoteTarget] = useState<{ dishId: string; note: string; name: string } | null>(null);
+
+  /** Re-key a cart line onto a new note. `addLine` merges it into an existing identical (dish, note)
+   *  row rather than leaving a duplicate — the same upsert the menu's "add" already goes through. */
+  const saveLineNote = (target: { dishId: string; note: string }, nextNote: string): void => {
+    const line = cart.cart.lines.find((l) => l.dishId === target.dishId && l.note === target.note);
+    if (!line || line.note === nextNote) return;
+    cart.replaceLines(addLine(removeLine(cart.cart.lines, line.dishId, line.note), { ...line, note: nextNote }));
+  };
 
   // Apply the reconciliation once per menu fetch (not every render) — an OOS/price-change banner
   // that keeps re-triggering after the user dismisses it would be a worse experience than one honest
@@ -123,12 +137,21 @@ export default function FoodCartScreen(): React.ReactElement {
                 <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
                   {line.name}
                 </Text>
-                {line.note ? (
-                  <Text style={{ fontSize: 12, color: tokens.color.accentText, marginTop: 2 }} numberOfLines={2}>
-                    {line.note}
-                  </Text>
-                ) : null}
                 <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>{formatMoney(line.priceUsd)} each</Text>
+                {/* R3·2 (cart_note): the note is EDITABLE from the cart, not only at the moment the dish
+                    was added — "leg not breast" is exactly the thing you remember once the basket is in
+                    front of you. Opens the note sheet on this line. */}
+                <Pressable
+                  onPress={() => setNoteTarget({ dishId: line.dishId, note: line.note, name: line.name })}
+                  accessibilityRole="button"
+                  accessibilityLabel={line.note ? `Edit the note for ${line.name}: ${line.note}` : `Add a note for ${line.name}`}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 5, minHeight: tokens.touchTargetMin, paddingRight: 4 }}
+                >
+                  <Icon name="pencil" size={13} color={tokens.color.accentText} />
+                  <Text style={{ flex: 1, fontSize: 12, fontWeight: line.note ? "400" : "700", color: tokens.color.accentText }} numberOfLines={2}>
+                    {line.note || "Note for the kitchen"}
+                  </Text>
+                </Pressable>
               </View>
               <QtyStepper value={line.quantity} onChange={(n) => cart.setQuantity(line.dishId, line.note, n)} max={MAX_ITEM_QTY} />
               <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink, minWidth: 52, textAlign: "right" }}>
@@ -201,6 +224,22 @@ export default function FoodCartScreen(): React.ReactElement {
       </ScrollView>
 
       <Button label={`Go to checkout · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
+
+      {/* R3·2 — the note sheet. Pure UI over cart state that already exists: nothing leaves the device
+          until checkout places the order. */}
+      {noteTarget ? (
+        <CartNoteSheet
+          dishName={noteTarget.name}
+          dishNote={noteTarget.note}
+          orderNote={cart.cart.orderNote}
+          onClose={() => setNoteTarget(null)}
+          onSave={({ dishNote, orderNote }) => {
+            saveLineNote(noteTarget, dishNote);
+            if (orderNote !== cart.cart.orderNote) cart.setOrderNote(orderNote);
+            setNoteTarget(null);
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }

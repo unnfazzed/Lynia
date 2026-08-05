@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { PREP_CHIPS_MIN } from "@lynia/shared";
+import { useHandoverWatch } from "../../lib/handover-watch";
 import { groupQueue, isNoRiderHold, isRiderSecured, shouldUseBoard } from "../../lib/order-groups";
 import {
   acceptOrder,
@@ -24,6 +25,7 @@ import { Icon } from "../icons";
 import { NewOrderTakeover } from "./NewOrderTakeover";
 import { NoRiderHoldTakeover } from "./NoRiderHoldTakeover";
 import { OrderCard, type OrderCardBucket } from "./OrderCard";
+import { PickupDoneTakeover } from "./PickupDoneTakeover";
 import { ReturnsSection } from "./ReturnsSection";
 import { RiderSecuredTakeover } from "./RiderSecuredTakeover";
 
@@ -126,6 +128,10 @@ export function QueueBoard({
 
   const [active, ...queued] = groups.awaitingAccept;
 
+  // M3·3: a rider-secured order leaving the queue, re-read and confirmed as actually handed over.
+  // Suppressed while a NEW ORDER is unanswered — that alarm outranks every other screen (D-05).
+  const { handedOver, dismiss: dismissHandover } = useHandoverWatch(orders, !active);
+
   const securedToShow = groups.ready.find((o) => isRiderSecured(o) && !isNoRiderHold(o) && !ackSecuredIds.has(o.id)) ?? null;
   const holdCandidates = groups.ready.filter(isNoRiderHold);
   const holdToShow = openHoldId ? (holdCandidates.find((o) => o.id === openHoldId) ?? null) : (holdCandidates.find((o) => !ackHoldIds.has(o.id)) ?? null);
@@ -198,6 +204,12 @@ export function QueueBoard({
 
   if (active) {
     return <NewOrderTakeover key={active.id} active={active} queued={queued} disabled={disabled} onAccept={handleAccept} onReject={handleReject} refetch={refetch} />;
+  }
+
+  // M3·3: five seconds of "that one's gone", then straight back to the board — it self-dismisses, so
+  // it sits above the secured/hold takeovers rather than being starved by them.
+  if (handedOver) {
+    return <PickupDoneTakeover key={handedOver.id} order={handedOver} onDismiss={dismissHandover} />;
   }
 
   if (securedToShow) {

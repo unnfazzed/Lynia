@@ -20,7 +20,17 @@ export type IconName =
   | "banknote"
   | "wallet"
   | "triangle-alert"
-  | "check";
+  | "check"
+  | "circle-check"
+  | "circle-alert"
+  | "chevron-up"
+  | "chevron-down"
+  | "plus"
+  | "minus"
+  | "pencil"
+  | "trash-2"
+  | "navigation"
+  | "phone";
 
 const PATHS: Record<IconName, string[]> = {
   inbox: [
@@ -58,6 +68,19 @@ const PATHS: Record<IconName, string[]> = {
     "M2 8.82a15 15 0 0 1 4.18-2.64",
     "M22 8.82a15 15 0 0 0-11.29-3.76",
     "m2 2 20 20",
+  ],
+  // M0·2 / M3·3 / M4·2 / M4·6 / M5·2 glyphs (r-merchant.jsx:103-128, 722-735, 998-1040, 1277-1298).
+  "circle-check": ["M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0", "m9 12 2 2 4-4"],
+  "circle-alert": ["M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0", "M12 8v4", "M12 16h.01"],
+  "chevron-up": ["m18 15-6-6-6 6"],
+  "chevron-down": ["m6 9 6 6 6-6"],
+  plus: ["M5 12h14", "M12 5v14"],
+  minus: ["M5 12h14"],
+  pencil: ["M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.36-1.33a2 2 0 0 0 .83-.5z", "m15 5 4 4"],
+  "trash-2": ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", "M10 11v6", "M14 11v6"],
+  navigation: ["m3 11 19-9-9 19-2-8-8-2z"],
+  phone: [
+    "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.24 14 14 0 0 0 6.39 6.38",
   ],
 };
 

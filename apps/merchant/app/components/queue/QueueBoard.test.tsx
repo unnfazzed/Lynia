@@ -11,6 +11,10 @@ vi.mock("../../lib/orders-api", () => ({
   rejectOrder: vi.fn().mockResolvedValue({}),
   markReady: vi.fn().mockResolvedValue({}),
   revealPickupCode: vi.fn().mockResolvedValue({ pickupCode: "1234" }),
+  // M3·3: `useHandoverWatch` re-reads an order that vanished from the queue to check whether it was
+  // really handed over. `{}` has no `status`, so the default never matches a post-pickup status and no
+  // confirmation is shown — a test that wants M3·3 opts in by resolving a real status here.
+  getOrder: vi.fn().mockResolvedValue({}),
   dispatchResume: vi.fn().mockResolvedValue({}),
   dispatchCancel: vi.fn().mockResolvedValue({}),
   logCall: vi.fn().mockResolvedValue({}),

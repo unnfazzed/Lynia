@@ -68,6 +68,23 @@ export const REASONS = {
   // cash.html — settlement method (not a "reason" but the same required-radio pattern)
   cashSettle: ["Cash at agent", "EcoCash transfer", "Netted against refund owed to their customer"],
 
+  // cash.html — bulk seed-credit (flip-day tooling). Verbatim from the kit's `seedConfirm()` reasons.
+  walletSeedCampaign: [
+    "Pre-flip grace credit",
+    "Rehearsal / test campaign",
+    "Corridor top-up before rate change",
+  ],
+
+  // riders.html — the `commission_freeze` wallet hold (design OV-4A). Verbatim from the kit's
+  // `freezeWallet()` / `clearFreeze()` reasons.
+  walletFreeze: [
+    "Suspected top-up fraud",
+    "Disputed EcoCash reference",
+    "Under investigation",
+    "Chargeback / reversed deposit",
+  ],
+  walletClearFreeze: ["Investigation closed — no issue", "Dispute resolved", "Deposit reference confirmed"],
+
   // X1 — merchant vertical admin alignment
   handshakeResolve: [
     "Called both parties — the amount matches, rider was just slow to confirm",

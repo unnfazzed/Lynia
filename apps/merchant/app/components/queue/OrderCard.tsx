@@ -8,6 +8,7 @@ import { isNoRiderHold, isRiderSecured, isSearchingForRider } from "../../lib/or
 import { useNow } from "../../lib/use-now";
 import { PaymentConfirmSheet, RefundSheet } from "./PaymentConfirmSheet";
 import { PayTag } from "./PayTag";
+import { isRiderLate, RiderNoShowSheet } from "./RiderNoShowSheet";
 import { cardStyle, dangerGhostButtonStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "./styles";
 
 function orderLabel(o: MerchantOrderResponse): string {
@@ -246,8 +247,12 @@ function OrderCardImpl({
   // (which can sit mounted for minutes) has no reason to tick once/sec.
   const needsClock = bucket === "waiting" || bucket === "preparing";
   const now = useNow(1000, needsClock);
+  // M3·b2 only needs to know whether the wait has crossed a 12-minute line — a separate, much slower
+  // tick keeps the ready card off the once/sec clock B-O16 deliberately took it off.
+  const readyNow = useNow(30_000, bucket === "ready");
   const items = order.items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
   const canRefund = order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
+  const [showNoShow, setShowNoShow] = useState(false);
 
   // LC-D03: mark-ready and pickup-code reveal each own per-order busy+error state instead of
   // firing as a bare `void` promise that swallows a network failure silently.
@@ -327,6 +332,40 @@ function OrderCardImpl({
           {isRiderSecured(order) && !isNoRiderHold(order) && (
             <>
               <div style={{ fontSize: 12.5, color: "var(--accent-text)", fontWeight: 700 }}>Rider on the way</div>
+              {/* M3·b2's way in. Always available (a rider can be late in ways the board can't see),
+               *  but only shouts once the wait has actually gone long. */}
+              <button
+                type="button"
+                onClick={() => setShowNoShow(true)}
+                style={
+                  isRiderLate(order, readyNow)
+                    ? {
+                        fontSize: 12.5,
+                        fontWeight: 800,
+                        color: "var(--highlight-ink)",
+                        background: "var(--highlight-wash)",
+                        border: "1px solid var(--highlight-border)",
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }
+                    : {
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--muted)",
+                        background: "none",
+                        border: "none",
+                        padding: "2px 0",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        textDecoration: "underline",
+                      }
+                }
+              >
+                {isRiderLate(order, readyNow) ? "The rider hasn't arrived — what now?" : "Rider hasn't arrived?"}
+              </button>
+              {showNoShow && <RiderNoShowSheet order={order} onClose={() => setShowNoShow(false)} />}
               {pickupCode ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--accent-wash)", borderRadius: 10, padding: "8px 10px" }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-text)" }}>PICKUP CODE</span>

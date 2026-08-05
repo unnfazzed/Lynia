@@ -40,6 +40,8 @@ import { FoodOrderItemApprovalView } from "../../../src/ui/food/FoodOrderItemApp
 import { FoodOrderLiveTrackerView } from "../../../src/ui/food/FoodOrderLiveTrackerView";
 import { FoodOrderPreparingView } from "../../../src/ui/food/FoodOrderPreparingView";
 import { FoodOrderReadyForPickupView } from "../../../src/ui/food/FoodOrderReadyForPickupView";
+import { FoodOrderRefundPendingView } from "../../../src/ui/food/FoodOrderRefundPendingView";
+import { FoodOrderRiderDroppedView } from "../../../src/ui/food/FoodOrderRiderDroppedView";
 import { FoodOrderUndeliveredView } from "../../../src/ui/food/FoodOrderUndeliveredView";
 
 // D3 (track): once dispatched a food order rides the SAME assigned→…→en_route_dropoff edges as a
@@ -173,6 +175,30 @@ export default function FoodOrderScreen(): React.ReactElement {
       void saveDeliveryCodeRotatedAt(orderId, decision.codeRotatedAt);
     }
   }, [trackQ.data, deliveryCode, codeAttemptsSeen, codeRotatedAtSeen, orderId]);
+
+  // R6·b6 (rider dropped): `food-dispatch.service.ts:dropDispatch` (D-33) puts a SECURED food order
+  // straight back to `requested` / `merchantPhase: "ready_for_pickup"` with `riderId` cleared — byte
+  // for byte the same shape as an order that has never had a rider at all. What tells them apart is
+  // that we SAW one, so latch it. Session-scoped on purpose: a cold start after the drop falls back to
+  // the ordinary "finding a rider" screen — less specific, never wrong (the snapshot store this screen
+  // persists carries status/merchantPhase only, and it isn't this lane's to change).
+  const [sawRider, setSawRider] = useState(false);
+  useEffect(() => {
+    if (order?.riderId != null) setSawRider(true);
+  }, [order?.riderId]);
+  const riderDropped = sawRider && order != null && order.riderId == null && order.merchantPhase === "ready_for_pickup";
+
+  // The drop also clears `otpHash` and resets `deliveryOtpAttempts` server-side, so a delivery code
+  // this device is still holding is dead. Forget it the moment the drop is seen — otherwise the
+  // customer confidently reads a dead code to the NEXT rider and burns that rider's attempts toward a
+  // lockout. A fresh one is fetched by the effect below once the new trip reaches en_route_dropoff.
+  useEffect(() => {
+    if (!riderDropped || !deliveryCode) return;
+    setDeliveryCode(null);
+    setCodeAttemptsSeen(null);
+    setCodeRotatedAtSeen(null);
+    void clearDeliveryCode(orderId);
+  }, [riderDropped, deliveryCode, orderId]);
 
   // R-09: unlike a parcel (issued its code at `select`), a food order has no client-side "choose a
   // rider" moment to fetch one from — nobody has asked the server for a code yet by the time the trip
@@ -398,6 +424,28 @@ export default function FoodOrderScreen(): React.ReactElement {
     <Button variant="ghost" label="Cancel the order — free" onPress={() => void cancelUnpaid()} disabled={busy} />
   ) : null;
 
+  // ── Terminal: cancelled AFTER the money had already gone out, with no refund recorded (R6·b3) ────
+  // Ahead of FoodOrderCancelledView deliberately. Two shipped paths land here: the customer submits a
+  // reference and the merchant releases the order instead of confirming it, or the merchant confirms
+  // payment and the order then dies on the NO_RIDER cap (which writes `rejectionReason: "no_rider"`
+  // and never touches the refund fields — `refundOrder` is the only writer of `refundedAt`, and it's
+  // scoped to the merchant's own pre-dispatch cancel). The second case is why this must come first:
+  // the cancelled view's no_rider copy promises "nothing was charged", which is a lie on an order that
+  // had already paid. CASH is excluded — nothing is pre-paid on that rail, so there's nothing to
+  // refund (the doorstep handshake is its own path).
+  const paidOut = order.paymentMethod !== "cash" && (order.merchantPaymentConfirmedAt != null || order.merchantPaymentReference != null);
+  if (order.status === "cancelled" && paidOut && order.refundedAt == null) {
+    return (
+      <FoodOrderRefundPendingView
+        order={order}
+        restaurantName={restaurantName}
+        reachable={reachable}
+        onGetHelp={() => router.push("/help")}
+        onBrowse={() => router.replace("/food")}
+      />
+    );
+  }
+
   // ── Terminal: cancelled/rejected — extracted to FoodOrderCancelledView (RF-18) ──────────────────
   if (order.status === "cancelled") {
     return (
@@ -464,6 +512,13 @@ export default function FoodOrderScreen(): React.ReactElement {
   // ── preparing: extracted to FoodOrderPreparingView (RF-18) ──────────────────────────────────────
   if (order.merchantPhase === "preparing") {
     return <FoodOrderPreparingView order={order} restaurantName={restaurantName} reachable={reachable} now={now} />;
+  }
+
+  // ── ready_for_pickup, but a rider had ALREADY been secured and dropped it (R6·b6) ───────────────
+  // Same server state as a first-time search, so it branches on the session latch above. Named
+  // explicitly rather than letting the tracker silently rewind a step with no explanation.
+  if (riderDropped) {
+    return <FoodOrderRiderDroppedView order={order} restaurantName={restaurantName} reachable={reachable} error={error} />;
   }
 
   // ── ready_for_pickup: extracted to FoodOrderReadyForPickupView (RF-18) ──────────────────────────

@@ -420,4 +420,40 @@ export interface WalletView {
   ledger: WalletLedgerEntry[];
   /** LC-D07: last entry id of this page, for `?cursor=` — present only when older entries exist. */
   nextCursor: string | null;
+  /**
+   * The `commission_freeze` wallet hold (design OV-4A: a freeze is a `Rider.heldReason =
+   * "commission_freeze"` hold — there is deliberately no `CommissionAccount.status` column).
+   *
+   * **NOT SERVED BY THE API TODAY — always `undefined` at the time of writing.** `GET
+   * /admin/riders/:id/wallet` (`AdminRidersService.walletView`) selects only `balance` + ledger rows,
+   * and `GET /admin/riders/:id` (`getRiderDetail`) selects `onHold` but never `heldReason`, so no admin
+   * read surface reports WHY a rider is held. `@lynia/shared`'s `HeldReason` union is still
+   * `reliability | velocity` — nothing anywhere writes `"commission_freeze"`.
+   *
+   * Three-state on purpose, and the UI must respect it:
+   *   `true`      — a freeze is in place (top-ups blocked, admin-clear-only),
+   *   `false`     — the API affirmatively reports no freeze,
+   *   `undefined` — the API does not report freeze state at all. The console must say so rather than
+   *                 render "not frozen", which would be a guess about a money-gating flag.
+   * Optional so the wallet card lights up automatically the day the API starts returning it.
+   */
+  frozen?: boolean;
+}
+
+/* ── Rider roster row (GET /admin/riders) ──────────────────── */
+/**
+ * One row of the rider directory. Mirrors `AdminRidersService.listRiders`, which hard-caps at
+ * `take: 100` ordered by `updatedAt desc` — any consumer counting rows off this endpoint is reading a
+ * capped sample, not a fleet total, and must disclose that (see the bulk seed-credit preview).
+ */
+export interface RiderRosterRow {
+  profileId: string;
+  name: string;
+  kycStatus: "pending" | "verified" | "failed" | "expired";
+  isOnline: boolean;
+  accountStatus: "active" | "suspended" | "banned";
+  /** Separate reliability-hold flag (accountStatus has no on_hold member). */
+  onHold: boolean;
+  tripsCount: number;
+  cooldownUntil: string | null;
 }

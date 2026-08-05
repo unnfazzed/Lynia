@@ -140,6 +140,7 @@ export default function ShopPage() {
                       aspect={3}
                       maxBytes={MAX_BANNER_PHOTO_BYTES}
                       currentUrl={state.profile.coverPhotoUrl}
+                      shopName={name}
                       disabled={disabled}
                       onUploaded={setCoverKey}
                     />
@@ -151,6 +152,7 @@ export default function ShopPage() {
                       aspect={1}
                       maxBytes={MAX_BANNER_PHOTO_BYTES}
                       currentUrl={state.profile.logoUrl}
+                      shopName={name}
                       disabled={disabled}
                       onUploaded={setLogoKey}
                     />

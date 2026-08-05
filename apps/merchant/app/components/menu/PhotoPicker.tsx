@@ -1,30 +1,35 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { compressImage } from "../../lib/image-compress";
+import { compressImage, type CropRect } from "../../lib/image-compress";
 import { mintBannerPhotoUpload, mintDishPhotoUpload, uploadPhotoBlob } from "../../lib/menu-api";
 import { ghostButtonStyle } from "../queue/styles";
+import { PhotoCropSheet } from "./PhotoCropSheet";
 
-type Status = { kind: "idle" } | { kind: "compressing" } | { kind: "uploading" } | { kind: "error"; message: string; retryFile: File };
+type Status = { kind: "idle" } | { kind: "compressing" } | { kind: "uploading" } | { kind: "error"; message: string; retryFile: File; retryCrop?: CropRect };
 
 /**
  * D-32 "we compress on the merchant's behalf and say so" + D-31's REQUIRED dish photo. Uploads
- * immediately on file choice (not deferred to the form's own Save) — `onUploaded` hands the parent the
- * raw storage key to persist via updateDish/updateProfile, decoupling the photo round trip from the
- * rest of the form.
+ * immediately once the merchant has framed the photo (not deferred to the form's own Save) —
+ * `onUploaded` hands the parent the raw storage key to persist via updateDish/updateProfile,
+ * decoupling the photo round trip from the rest of the form.
  *
- * Scope cut, flagged: no drag-to-reposition crop UI (see image-compress.ts's own doc comment) — the
- * source is auto center-cropped to `aspect`. Also no reboot-surviving offline upload queue: a failed
- * upload (network drop mid-PUT) surfaces a Retry button and keeps the chosen file in memory for this
- * session, but a full page reload/app-restart loses an in-flight retry — D-32's "offline upload is
- * queued on the tablet and retried rather than lost" is only honored within one tablet session, not
- * across a restart. A persistent (IndexedDB-backed) queue is a real follow-up, not built here.
+ * M4·6/M5·2: choosing a file now opens the reposition frame (`PhotoCropSheet`) before anything is
+ * compressed or uploaded — cancelling there uploads nothing at all. The crop it returns is a real
+ * source-pixel rectangle handed to `compressImage`, replacing the automatic centre crop.
+ *
+ * Still flagged: no reboot-surviving offline upload queue. A failed upload (network drop mid-PUT)
+ * surfaces a Retry button and keeps the chosen file AND its framing in memory for this session, but a
+ * full page reload/app-restart loses an in-flight retry — D-32's "offline upload is queued on the
+ * tablet and retried rather than lost" is only honored within one tablet session, not across a
+ * restart. A persistent (IndexedDB-backed) queue is a real follow-up, not built here.
  */
 export function PhotoPicker({
   kind,
   aspect,
   maxBytes,
   currentUrl,
+  shopName,
   required,
   disabled,
   onUploaded,
@@ -33,21 +38,24 @@ export function PhotoPicker({
   aspect: number;
   maxBytes: number;
   currentUrl: string | null;
+  /** Labels the banner/logo customer preview inside the crop frame. */
+  shopName?: string;
   required?: boolean;
   disabled?: boolean;
   onUploaded: (key: string) => void;
 }) {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function runUpload(file: File) {
+  async function runUpload(file: File, crop?: CropRect) {
     setStatus({ kind: "compressing" });
     let blob: Blob;
     try {
-      blob = await compressImage(file, { maxBytes, aspect, maxDimension: 1600 });
+      blob = await compressImage(file, { maxBytes, aspect, maxDimension: 1600, crop });
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Couldn't prepare that photo.", retryFile: file });
+      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Couldn't prepare that photo.", retryFile: file, retryCrop: crop });
       return;
     }
     setPreviewUrl(URL.createObjectURL(blob));
@@ -60,7 +68,7 @@ export function PhotoPicker({
       setStatus({ kind: "idle" });
       onUploaded(target.key);
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Upload failed.", retryFile: file });
+      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Upload failed.", retryFile: file, retryCrop: crop });
     }
   }
 
@@ -115,7 +123,8 @@ export function PhotoPicker({
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
-          if (file) void runUpload(file);
+          // M4·6/M5·2: frame it first — nothing is compressed or uploaded until the crop is confirmed.
+          if (file) setCropping(file);
         }}
       />
 
@@ -135,12 +144,27 @@ export function PhotoPicker({
           {status.message}{" "}
           <button
             type="button"
-            onClick={() => void runUpload(status.retryFile)}
+            onClick={() => void runUpload(status.retryFile, status.retryCrop)}
             style={{ fontWeight: 700, color: "var(--danger-ink)", background: "none", border: "none", textDecoration: "underline", cursor: "pointer", padding: 0 }}
           >
             Retry
           </button>
         </div>
+      )}
+
+      {cropping && (
+        <PhotoCropSheet
+          kind={kind}
+          aspect={aspect}
+          file={cropping}
+          shopName={shopName}
+          onCancel={() => setCropping(null)}
+          onConfirm={(crop) => {
+            const file = cropping;
+            setCropping(null);
+            void runUpload(file, crop);
+          }}
+        />
       )}
     </div>
   );

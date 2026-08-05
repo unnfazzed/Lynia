@@ -5,6 +5,7 @@ import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
+import { SetupBanner } from "../../components/SetupBanner";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 import { ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
@@ -139,6 +140,8 @@ export default function QueuePage() {
                 <div style={{ fontSize: 12.5, color: "var(--danger-ink)" }}>{queueError.message}</div>
               )}
             </div>
+            {/* M0·2's way in — renders nothing once the checklist is done (SetupBanner). */}
+            <SetupBanner />
             <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
               <QueueBoard orders={orders} disabled={actionsDisabled} refetch={refetch} />
             </div>
