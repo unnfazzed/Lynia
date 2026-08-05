@@ -29,10 +29,16 @@ stack:
 
 The app-wide review (§5) extends this to every journey flow. Headline: **foundations are in full
 parity** (colour, spacing, radius, targets, type — token for token), and the food, rider, merchant and
-admin surfaces track the kit closely. The gaps are flow-level, not a restyle — and three of them share
-one shape: **shipped UI advertising a capability the build doesn't have** (§5.6).
+admin surfaces track the kit closely. The gaps are flow-level, not a restyle.
 
-§6 records what has been adopted in this PR and what remains.
+§6 records what has been adopted and what remains.
+
+> **Two findings in the first revision of this document were wrong, and are corrected in place**: the
+> rider board (§5.4) and the customer-side Maps hand-off (§3.1 / §4 item 9). Both were false negatives
+> from the same cause — the app-wide sweep matched the kit's *copy strings* against the shipped source,
+> so a feature that ships under different wording reads as missing. Both corrections make the shipped
+> app look **better** than first reported, not worse. Any remaining "❌ absent" verdict in this document
+> that has not been confirmed by reading the implementing file should be treated as provisional.
 
 ---
 
@@ -138,7 +144,7 @@ compact search field floats over the map at `send.tsx:675-679`.
 | Footer "what's still missing" hint: one line — *"Add pickup & drop-off pins, an item, a price and both phones to broadcast."* | ⚠ — expanded to a four-line wall that names a collapsed section inline: *"…a pickup contact phone, a recipient phone, pickup & drop-off landmarks (under "Landmarks & details"), a price to send."* | kit `screens.jsx:171` vs `send.tsx:694-706` |
 | Primary CTA copy: **"Broadcast request"** | **"Send to riders"** | kit `screens.jsx:173` vs `send.tsx:733` |
 | Top bar: brand pill + **one** round action (account) | brand pill + **two** (notifications, account) — an addition, not a regression; notifications is a real screen in the kit | kit `screens.jsx:152-160` vs `MapHome.tsx:32-35` |
-| Customer live-tracking **"Follow route in Google Maps"** row | ✗ on customer; ✅ on rider only | kit `app.js` `GMapsRow`; `HANDOFF.md:157`; shipped only at `src/ui/rider/JobDetailsCard.tsx:115` |
+| Customer live-tracking **"Follow route in Google Maps"** row | ⚠ **corrected** — a Maps hand-off *does* ship on the customer side; it opens `mapsPlaceUrl(dropoff)`, a lone pin on the destination labelled "Open drop-off in Maps". The kit specifies the *route*: "Follow route in Google Maps · Same live route your rider is navigating". Semantics and copy differ; the capability is not missing | kit `app.js` `GMapsRow`; `HANDOFF.md:157`; shipped at `src/ui/order/LiveTrackingCard.tsx` |
 
 ### 3.2 The specific mismatch reported
 
@@ -162,7 +168,7 @@ one, independent of the key.
 | 6 | Build the kit's `addr_map_confirm` screen (drag-to-adjust + confirm + in-context landmark). This is the largest remaining fidelity gap and it's where the kit captures the landmark the contract requires | M |
 | 7 | Add the "Powered by Google" attribution footer under autocomplete results (ToS compliance) | XS |
 | 8 | Extend "Use my current location" to the drop-off slot, and surface it inside the search list as the kit specifies | S |
-| 9 | Add the customer-side "Follow route in Google Maps" row on live tracking | S |
+| 9 | Switch the customer-side Maps row from a destination pin to the kit's route hand-off while the run is live | S |
 | 10 | Restore the composer hint to name **both** inputs: "Search an address, or tap the map to drop a pin." | XS |
 | 11 | Restore the tooltip's dark high-contrast treatment — with search gone, it is the only instruction on screen and it currently renders as muted grey on white | XS |
 | 12 | Cut the footer "what's missing" hint back toward the kit's single line; a four-line list that cites a collapsed section by name is harder to act on than the short form | XS |
@@ -206,7 +212,7 @@ Gaps:
 |---|---|---|
 | `addr_search` | ⚠ flattened into an inline field (§3) | §4 items 1–5, 8 — **done this PR** |
 | `addr_map_confirm` | ❌ not built | §4 item 6 — **remaining** |
-| Customer `GMapsRow` on live tracking | ❌ rider-only | §4 item 9 — **remaining** |
+| Customer `GMapsRow` on live tracking | ⚠ ships as a destination pin, not the kit's route | §4 item 9 — **done in the follow-up PR** |
 
 ### 5.3 Customer · food (kit `RC`, 46 states)
 
@@ -229,11 +235,21 @@ KYC (intro → form → photo capture/preview/upload → pending → verified/fa
 (out-of-area, cooldown, banned, KYC-locked), offers, active job, delivery OTP with lockout, bail,
 undelivered, the merged Money tab and top-up gate, and rider-side safety are all shipped.
 
-Gap — and it's the biggest one after addressing:
+Gap:
 
 | Kit screen | Status | Fix |
 |---|---|---|
-| `RJM board` — **"one board", parcels and food in a single tagged list** | ⚠ **the copy ships, the behaviour doesn't.** `app/rider/(tabs)/index.tsx:730` tells the rider *"You're online — parcels and food orders arrive live, one queue"*, but food jobs are gated behind `merchantDispatchAutoEnabled`, which is dormant; today only a `food_offer` notification is pushed (`index.tsx:86-89`) | Either land the rider-facing food feed, or make the copy honest until it lands. **Same class of defect as the address rows: shipped UI promising a capability the build doesn't have.** |
+| `RJM board` — **"one board", parcels and food in a single tagged list** | ⚠ parcels only today. Food jobs are gated behind `merchantDispatchAutoEnabled` (default `false`); the merchant service currently pushes a `food_offer` notification rather than a board feed (`index.tsx:86-89`) | Land the rider-facing food feed. No UI change needed in the meantime — see the correction below |
+
+> **Correction (this finding was wrong in the first revision of this document).** An earlier draft
+> claimed the board *promises* "parcels and food orders arrive live, one queue" while food jobs are
+> dormant, and rated it the largest gap after addressing. That is **not** what the code does. The
+> string is already gated: `index.tsx:729-731` renders it only when `merchantDispatchAutoEnabled` is
+> true, and the else-branch reads *"You're online — new orders arrive live."* The flag defaults to
+> `false` (`src/net/use-feature-flags.ts:21`), so shipped riders see the honest copy. The file even
+> carries a comment about not lying to a rider with a confident "new orders arrive live" when they're
+> excluded from broadcasts. **There is no UI defect here** — only an unshipped capability behind a
+> correctly-dormant flag, which is normal. Nothing to fix on the client.
 
 ### 5.5 Merchant & admin
 
@@ -243,17 +259,21 @@ Gap — and it's the biggest one after addressing:
 
 ### 5.6 The pattern worth naming
 
-Three defects share one shape: **shipped UI advertises a capability the build doesn't actually have.**
-The address rows' search magnifier with no search (§3.2), the rider board's "parcels and food, one
-queue" with no food jobs (§5.4), and — the root of the first — a key-gated feature that degrades to
-*invisible* rather than to *explained* (§2.1). Fix #4 in §4 is the general remedy: when a capability is
-gated off, say so on screen. A silent `null` is how all three shipped unnoticed.
+**Shipped UI must not advertise a capability the build doesn't actually have.** The address flow broke
+this twice over: rows rendering a search magnifier with no search behind it (§3.2), because the
+key-gated search degraded to *invisible* rather than to *explained* (§2.1).
+
+The instructive part is the contrast with the rider board (§5.4), which faces the same situation —
+a capability behind a dormant flag — and handles it correctly, by branching the copy on the flag so a
+rider is never promised jobs that won't arrive. That is the pattern to copy, and it is why fix #4 in
+§4 is the general remedy: when a capability is gated off, say so on screen. A silent `null` is how the
+address regression shipped unnoticed; a branched string is how the board avoided the same fate.
 
 ---
 
 ## 6. Adoption status
 
-**Landed in this PR** — the search-first flow now behaves like the kit within the one-screen composer:
+### Tranche 1 (PR #604, merged) — the search-first flow behaves like the kit
 
 - `AddressSearch` no longer returns `null` when unkeyed. It renders a visible disabled field —
   *"Address search is unavailable — tap the map to set this pin."* A mis-provisioned build is now
@@ -272,19 +292,52 @@ gated off, say so on screen. A silent `null` is how all three shipped unnoticed.
   restriction on the Places **web-service** key returns `REQUEST_DENIED` on every call.
 - Regression test (`src/ui/__tests__/address-search.test.tsx`) pinning both halves of the key gate.
 
+### Tranche 2 — `addr_map_confirm` and the tracking hand-off
+
+- **`AddressConfirmSheet`** — the kit's drag-to-adjust confirm step, built. A resolved search result now
+  opens a full-bleed map with a draggable pin, the "Drag the pin to adjust" pill, the resolved address,
+  the kit's "Exact point set" reassurance, and the **landmark field in context**, gated behind a
+  Confirm CTA. Fires on the **search path only**, mirroring the kit's own flow — a pin tapped directly
+  on the compose map is already its own confirmation and stays unchanged.
+  - Rendered as a modal over the composer rather than a route: same full-screen result, and it keeps
+    the composer's draft state alive underneath instead of threading a return value back through
+    expo-router. The kit's back arrow becomes a close control, which is the truthful affordance for a
+    modal (and the icon set carries no left-pointing glyph).
+  - The `placeId` is **dropped once the pin is dragged** — it describes Google's resolved point, and
+    carrying it past a correction would deep-link the rider's turn-by-turn to the rooftop the customer
+    just moved away from. Pinned by a test; it's invisible in the UI and only bites on the rider's phone.
+- **Customer live tracking now offers the kit's route hand-off** while the run is live — "Follow route
+  in Google Maps · Same route your rider is navigating", the same leg the rider's own hand-off opens.
+  It previously opened a lone destination pin. Reverts to the pin once the trip is over, where that is
+  the right shape.
+- **The footer "what's missing" hint is back to one scannable line.** It no longer names each phone
+  separately or gives walking directions to a collapsed section — because the **"Landmarks & details"
+  section now opens itself** when what's left to fill is inside it (gated on being the *last* blocker,
+  so it can't pop open mid-typing). Landmarks are contract-required and normally auto-fill from the
+  reverse geocode; this covers the offline / keyless / geocode-miss case that left a customer staring
+  at a disabled Broadcast button.
+- Tests: `address-confirm-sheet.test.tsx` (placeId retention vs. invalidation, empty render, drag
+  affordance).
+
 **Still required — the one thing code cannot do:** provision `EXPO_PUBLIC_GOOGLE_PLACES_KEY` in the EAS
 `production` and `preview` environments. Until that is set, the app now *says* search is unavailable
-rather than pretending it never existed — but there is still no search.
+rather than pretending it never existed — but there is still no search, and the confirm step above is
+unreachable, since it only opens from a search result.
 
 **Next tranche, in priority order:**
 
-1. Rider board: land the food feed or make the "one queue" copy honest (§5.4) — same defect class, and
-   it's currently misleading riders about their earnings.
-2. `addr_map_confirm` — the routed drag-to-adjust confirm screen, with landmark capture in context
-   (§4 item 6). Largest remaining fidelity gap in the parcel flow.
-3. Food "remind me when they open" (§5.3).
-4. Customer-side "Follow route in Google Maps" on live tracking (§4 item 9).
-5. Footer "what's missing" hint back toward the kit's single line (§4 item 12).
+1. **Food "remind me when they open"** (§5.3) — the only confirmed gap left, and the only one that is
+   not client-only: it needs a subscription record plus a reopen trigger on the API side. Verified
+   absent on both sides (no client affordance, no API route).
+2. The kit's in-search **"Use my current location"** and **"Set the pin on the map"** rows (§3.1). The
+   capabilities both exist as map controls; what's missing is surfacing them inside the search list.
+3. `addr_search` as a dedicated routed screen with an autofocused field (§3.1). The one-screen composer
+   now covers the behaviour — row tap focuses the search — so this is presentation, not capability.
+
+Items 1–3 of the earlier list are done (see Tranche 2). The rider board was also listed here in the
+first revision; see the correction in §5.4 — there is no client-side defect to fix.
+
+
 
 ---
 

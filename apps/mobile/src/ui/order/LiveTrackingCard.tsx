@@ -4,7 +4,7 @@ import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { getOrder, type OrderEvent } from "../../api/orders";
 import { etaHeadline, liveEta } from "../../logic/eta";
-import { mapsPlaceUrl } from "../../logic/maps";
+import { mapsDirectionsUrl, mapsPlaceUrl } from "../../logic/maps";
 import { formatMoney } from "../../logic/money";
 import { isRiderTrackingStale } from "../../logic/order-labels";
 import { selectRiderTelemetry } from "../../logic/order-tracking";
@@ -144,16 +144,28 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
       {telemetry?.hasRider ? (
         <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
       ) : null}
-      {/* Maps-sync (§3·2): open the drop-off location in Google Maps so the customer can follow
-          along. No Places key needed — a universal Maps URL built from the stored drop-off point. */}
+      {/* Maps-sync (§3·2). The kit's customer row is route-sync, not a place pin: "Follow route in
+          Google Maps · Same live route your rider is navigating" (ui_kits/mobile/app.js GMapsRow).
+          This shipped as `mapsPlaceUrl(dropoff)` — a lone pin on the destination — which answers
+          "where is it going" but not the question a waiting customer actually has, which is "what
+          route is my rider on". Same leg the rider's own hand-off opens, so both sides see one route.
+          No Places key needed — a universal Maps URL. A place pin is still the right shape once the
+          trip is over, so the swap is gated on the run being live. */}
       <Pressable
-        onPress={() => void Linking.openURL(mapsPlaceUrl(props.dropoff))}
+        onPress={() => void Linking.openURL(isActive ? mapsDirectionsUrl(props.pickup, props.dropoff) : mapsPlaceUrl(props.dropoff))}
         accessibilityRole="button"
-        accessibilityLabel="Open the drop-off in Google Maps"
+        accessibilityLabel={isActive ? "Follow the route in Google Maps" : "Open the drop-off in Google Maps"}
         style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
       >
         <Icon name="navigation" size={16} color={tokens.color.accentText} />
-        <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Open drop-off in Maps</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>
+            {isActive ? "Follow route in Google Maps" : "Open drop-off in Maps"}
+          </Text>
+          {isActive ? (
+            <Text style={{ fontSize: 11.5, color: tokens.color.muted }}>Same route your rider is navigating</Text>
+          ) : null}
+        </View>
       </Pressable>
       {props.counterpartyPhone ? (
         <>
