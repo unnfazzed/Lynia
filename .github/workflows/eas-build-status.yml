@@ -1,0 +1,77 @@
+name: EAS Build Status
+
+# Read-only visibility bridge (added 2026-08-05, the day of the joint-launch flip). EAS builds run
+# on Expo's servers behind the Expo account, so their status/errors are invisible to anything that
+# only holds GitHub access — including the Claude sessions that dispatch mobile-release.yml. This
+# lane prints the recent builds (and the newest failure's error message) into the job log, which IS
+# readable via the GitHub API. The EXPO_TOKEN secret never leaves the runner; the job mutates
+# nothing on EAS.
+#
+# Deliberately NOT environment-gated (unlike mobile-release/mobile-ota): a read-only status check
+# must not cost a production-mobile approval click per look, and it triggers nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many recent builds to list"
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    name: eas build:list
+    runs-on: ubuntu-latest
+    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' }}
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # app.config.ts evaluation (eas-cli resolves the project through it) imports workspace deps,
+      # so the install + shared build mirror mobile-ota.yml's setup.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: List recent builds
+        working-directory: apps/mobile
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          eas build:list --platform android --limit "${LIMIT:-5}" --json --non-interactive > /tmp/builds.json
+
+          # One line per build in the log + step summary; full error message for anything failed.
+          jq -r '.[] | "\(.createdAt)  \(.status)  profile=\(.buildProfile // "?")  channel=\(.channel // "?")  runtime=\(.runtimeVersion // "?")  \(.id)"' /tmp/builds.json
+          {
+            echo "### Recent EAS builds"
+            echo ""
+            jq -r '.[] | "- `\(.createdAt)` **\(.status)** · profile `\(.buildProfile // "?")` · channel `\(.channel // "?")` · runtime `\(.runtimeVersion // "?")` · \(.id)"' /tmp/builds.json
+            echo ""
+            echo "### Errors on failed builds"
+            echo ""
+            jq -r '.[] | select(.status == "ERRORED") | "- \(.id): **\(.error.errorCode // "unknown")** — \(.error.message // "no message")"' /tmp/builds.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::group::Failed-build errors (full)"
+          jq -r '.[] | select(.status == "ERRORED") | "\(.id)\n  code: \(.error.errorCode // "unknown")\n  message: \(.error.message // "no message")\n"' /tmp/builds.json
+          echo "::endgroup::"
