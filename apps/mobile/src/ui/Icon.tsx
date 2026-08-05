@@ -39,6 +39,7 @@ import RefreshCw from "lucide-react-native/dist/cjs/icons/refresh-cw";
 import Search from "lucide-react-native/dist/cjs/icons/search";
 import Shield from "lucide-react-native/dist/cjs/icons/shield";
 import ShieldAlert from "lucide-react-native/dist/cjs/icons/shield-alert";
+import ShoppingBag from "lucide-react-native/dist/cjs/icons/shopping-bag";
 import Star from "lucide-react-native/dist/cjs/icons/star";
 import Store from "lucide-react-native/dist/cjs/icons/store";
 import Trash from "lucide-react-native/dist/cjs/icons/trash-2";
@@ -86,6 +87,7 @@ const ICONS = {
   flag: Flag, // report a problem
   "shield-alert": ShieldAlert, // SOS / emergency
   shield: Shield, // privacy notice (settings)
+  "shopping-bag": ShoppingBag, // role select — "Use LyniaGo" (order food, send parcels)
   trash: Trash, // delete account (settings)
   bell: Bell, // BrandHeader notifications
   store: Store, // root tab bar — Home

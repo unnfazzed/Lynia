@@ -526,6 +526,19 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[0]!.location).toBeNull();
   });
 
+  it("listRestaurants signs cover/logo keys into read URLs (plan §10 blocker: the media bucket blocks public reads, so a raw GCS key never renders on a customer's phone)", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async () => [
+          { id: "m1", name: "Nandos", coverPhotoUrl: "merchant/m1/cover.jpg", logoUrl: "merchant/m1/logo.jpg", cuisineTags: [], priceLevel: 2, hours: null, location: null },
+        ],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.coverPhotoUrl).toBe("https://signed.example/merchant/m1/cover.jpg");
+    expect(res.restaurants[0]!.logoUrl).toBe("https://signed.example/merchant/m1/logo.jpg");
+  });
+
   /** Bare merchant row shape `toListItem` needs — real rows carry more Prisma columns, but the
    *  service only ever reads these off what `findMany` hands back. */
   function merchantRow(id: string) {
@@ -623,6 +636,8 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.categories[0]!.dishes).toHaveLength(1);
     expect(res.categories[0]!.dishes[0]!.outOfStock).toBe(false);
     expect(res.categories[0]!.dishes[0]!.priceUsd).toBe(8);
+    // Same signing contract as listRestaurants: customers get a readable URL, never the raw key.
+    expect(res.categories[0]!.dishes[0]!.photoUrl).toBe("https://signed.example/dish/x.jpg");
   });
 });
 

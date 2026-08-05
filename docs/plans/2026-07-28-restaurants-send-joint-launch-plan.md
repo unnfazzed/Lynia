@@ -1314,7 +1314,7 @@ ship unless the founder overrides; each PR that implements a mocked default name
   /merchant/orders/dispatch/offer` + the `food:offer`/`food:offer-closed` WS events (see §5 Lane C
   C5 for the shipped shape). B4/D can now build against a real surface instead of push-only.
 
-- [2026-07-31] [E, cross-lane A/C] **OPEN.** The customer-facing restaurant read API
+- [2026-07-31] [E, cross-lane A/C] **RESOLVED 2026-08-05.** The customer-facing restaurant read API
   (`RestaurantsController` → `MerchantService.toListItem`/`toCustomerDish`, shipped by C1/A2) returns
   `coverPhotoUrl`/`logoUrl`/dish `photoUrl` as the raw GCS object key, not a usable URL — the media
   bucket enforces `public_access_prevention = "enforced"` (infra/terraform/storage.tf, no public
@@ -1326,4 +1326,17 @@ ship unless the founder overrides; each PR that implements a mocked default name
   photos silently never load for a customer (falls back to the tinted-initial placeholder, not a
   crash — but never the real photo). Needs the same signed-URL treatment applied to
   `toListItem`/`toCustomerDish` — a Lane C/A follow-up, not force-fixed here since it's outside E4's
-  own box.
+  own box. *Closed 2026-08-05: `toListItem`/`toCustomerDish` now mint V4 signed read URLs via the
+  same `signPhoto` helper the merchant-facing responses use (spec: two new signed-URL assertions in
+  `merchant.service.spec.ts`). Wire shape unchanged (`string | null`).*
+
+- [2026-08-05] [cross-lane A, pre-auth] **RESOLVED same day.** The July design update's pre-auth
+  screens were never in any §5 lane queue, so the first-install carousel (`app/onboarding.tsx`) and
+  the post-OTP role fork (`app/role.tsx`) still carried pre-joint-launch parcels-only copy — the
+  last user-visible surfaces contradicting the "both tiles from first run" launch IA (the drift the
+  founder spotted against the design gallery's `role_select` / `ONBOARD` mockups). Closed: both
+  screens now render the joint-launch copy ("Use LyniaGo — order food, send parcels" / Food → Send →
+  one-app promise slides, `shopping-bag` added to the icon subset) **gated on `restaurantsEnabled`**,
+  so the §1 escape hatch still degrades them to the parcels-only wording with zero food leak
+  (fail-safe-off, same contract as the home Food tile). Regression tests pin both flag positions
+  (`app/__tests__/role.test.tsx`, `app/__tests__/onboarding.test.tsx`).
