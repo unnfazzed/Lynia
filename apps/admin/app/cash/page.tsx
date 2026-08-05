@@ -1,10 +1,15 @@
 import { tokens } from "@lynia/shared";
-import { adminFetchResult } from "../lib/api";
-import type { CommissionRiderRow, CommissionOverview } from "../lib/adminTypes";
+import { adminFetch, adminFetchResult } from "../lib/api";
+import type { CommissionRiderRow, CommissionOverview, RiderRosterRow } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
 import { KpiCard } from "../components/KpiCard";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconBanknote } from "../components/icons";
+import { SeedCreditCard } from "./SeedCreditCard";
+
+/** `GET /admin/riders` hard-caps at this many rows (`AdminRidersService.listRiders` — `take: 100`).
+ *  A full page means the roster is truncated, so anything counted off it is a floor. */
+const ROSTER_PAGE_SIZE = 100;
 
 /**
  * Commission (prepaid per-ride). The revenue model: riders pre-fund a commission account and each
@@ -23,6 +28,14 @@ export default async function CashPage() {
   const view = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = view !== null;
+
+  // Flip-day seed sizing. Best-effort and read-only: the seed card degrades to "roster unavailable"
+  // rather than inventing a rider count for a card that quotes a dollar total.
+  const roster = await adminFetch<RiderRosterRow[]>("/admin/riders");
+  const eligibleCount = roster
+    ? roster.filter((r) => r.accountStatus === "active" && !r.onHold && r.kycStatus === "verified").length
+    : null;
+  const rosterCapped = (roster?.length ?? 0) >= ROSTER_PAGE_SIZE;
   // UX20-02: three pieces of copy below used to hardcode the launch-era "still 0%" narrative regardless
   // of the live rate — once ops flips COMMISSION_RATE_PCT, they'd contradict the correctly-updating
   // headline/KPI on this same page. Gate on the live rate like those already do.
@@ -136,6 +149,10 @@ export default async function CashPage() {
             : "Each completed ride deducts its commission from the rider's pre-funded account; a low balance blocks going online until they top up."}
         </div>
       </section>
+
+      {/* Kit cash.html:35-51 — flip-day bulk seed-credit. The apply action is unwired (no bulk endpoint
+          exists); the card states that inline and keeps its trigger disabled. */}
+      <SeedCreditCard eligibleCount={eligibleCount} rosterCapped={rosterCapped} />
     </main>
   );
 }

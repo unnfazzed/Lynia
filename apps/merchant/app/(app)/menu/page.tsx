@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -180,6 +181,11 @@ export default function MenuPage() {
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Menu</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{menuSummary(state.categories, state.dishes)}</div>
               </div>
+              {/* M4·2's own screen (r-merchant.jsx:998) — reorder, show/hide, delete-when-empty and
+               *  the customer-tab preview all live there rather than crowding this list. */}
+              <Link href="/menu/categories" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+                Manage categories
+              </Link>
               <button
                 type="button"
                 disabled={actionsDisabled}
@@ -314,10 +320,15 @@ export default function MenuPage() {
               </div>
             ))}
 
-            {/* M4·1's closing line (r-merchant.jsx:990) — the half that's true here: the app has no
-             *  drag-to-reorder, so only the "customers see these groups" promise is carried over. */}
+            {/* M4·1's closing line (r-merchant.jsx:990). Still no drag-to-move for DISHES between
+             *  categories (a dish's category changes in its own editor); category order itself is now
+             *  real and lives on M4·2. */}
             <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "0 4px" }}>
-              Customers see these groups, in this order, as the tabs on your menu.
+              Customers see these groups, in this order, as the tabs on your menu —{" "}
+              <Link href="/menu/categories" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
+                change the order
+              </Link>
+              .
             </div>
           </>
         )}

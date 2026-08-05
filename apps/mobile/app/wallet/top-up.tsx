@@ -2,8 +2,10 @@ import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
+import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
 import { SupportCallRow } from "../../src/ui/safety";
-import { Button, Card, Heading, Icon, Screen, Sub } from "../../src/ui";
+import { Button, Card, Heading, Icon, isTestBuild, Screen, Sub } from "../../src/ui";
+import { TopUpSimulator } from "../../src/ui/rider/TopUpSimulator";
 
 /**
  * DOC-16-02 (docs/KNOWN_BUGS.md): self-serve top-up on all three rails (EcoCash/InnBucks/O'mari)
@@ -20,9 +22,35 @@ import { Button, Card, Heading, Icon, Screen, Sub } from "../../src/ui";
  * here until a real rail integration lands and calls `creditFromTopup` — an honest instruction screen
  * pointing at the ALREADY-WORKING admin manual-credit path (`POST /admin/riders/:id/wallet-credit` →
  * `WalletService.creditManual`), instead of a self-serve form that could never succeed.
+ *
+ * ─── TEST BUILD ONLY: the kit's top-up flow, as a labelled walkthrough ────────────────────────────
+ * None of the above changes. The rail still doesn't exist, and a real release build renders exactly the
+ * "call support" screen below — that is still the product's behaviour. What `isTestBuild()` adds is a
+ * walkable mock-up of the four screens the kit specifies (`rider-screens-wallet.jsx`: amount → wait →
+ * approved/declined) so internal testers can review the flow before the rail lands. It makes no network
+ * call, moves no money, and stamps a SIMULATED strip on every step including the terminals — see
+ * `src/ui/rider/TopUpSimulator.tsx` for the full reasoning. `isTestBuild()` is false in any EAS release
+ * (app.config.ts only sets `extra.testBuild` from the android-test-apk workflow's env), so the
+ * simulator cannot ship to a rider.
  */
 export default function TopUpScreen(): React.ReactElement {
   const router = useRouter();
+  const { config } = useWalletConfig();
+  const { wallet } = useWallet();
+
+  if (isTestBuild()) {
+    return (
+      <Screen>
+        <Heading>Top up</Heading>
+        <TopUpSimulator
+          balance={wallet?.balance ?? 0}
+          minTopUp={config?.minTopUp ?? 5}
+          maxTopUp={config?.maxTopUp ?? 50}
+          onExit={() => router.back()}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>

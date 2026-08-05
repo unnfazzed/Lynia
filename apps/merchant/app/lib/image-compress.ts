@@ -5,12 +5,19 @@
  * src/logic/image-downscale.ts, which can't be reused directly (React Native `Image`/`expo-image-
  * manipulator` vs. this app's plain DOM `Image`/`<canvas>`).
  *
- * Scope cut, flagged rather than silently decided: the gallery mock (r-merchant.jsx RM.shop_crop /
- * RM.dish_photo) shows an interactive drag-and-zoom crop frame before the compress step. This ships
- * the compress+preview half of D-32 without that interaction — the source image is center-cropped to
- * the target aspect ratio automatically, with no reposition/zoom control. A real drag-to-reposition
- * crop UI is a follow-up, not built here.
+ * M4·6 / M5·2 (r-merchant.jsx:1450-1479, 1378-1402) add the drag-and-zoom crop frame in front of this
+ * step. The interaction lives in components/menu/PhotoCropSheet.tsx; the only thing it needs from here
+ * is the ability to hand `compressImage` an explicit source rectangle instead of the automatic centre
+ * crop — see {@link CompressOptions.crop} and {@link cropRectFromView}. No new dependency: the frame is
+ * pointer events over the same `<canvas>` draw this file already does.
  */
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface CompressOptions {
   maxBytes: number;
@@ -19,6 +26,9 @@ export interface CompressOptions {
   /** Long-edge cap in device pixels — keeps the canvas (and therefore the first-pass JPEG) small
    *  before quality reduction even starts, so a 4000px camera photo doesn't do 10 wasted encode passes. */
   maxDimension: number;
+  /** M4·6/M5·2: the merchant's own reposition, in SOURCE pixels. Omitted = the automatic centre crop
+   *  {@link centerCropRect} still used by any caller that doesn't offer the frame. */
+  crop?: CropRect;
 }
 
 /** Starts high and steps down by a fixed ratio each pass — few enough steps that a slow tablet GPU
@@ -31,8 +41,9 @@ export function nextQuality(current: number): number {
 }
 
 /** The source-crop rectangle (in source pixels) that centers the target aspect ratio inside the
- *  source image — the "automatic center-crop" half of the D-32 scope cut above. Pure and unit-tested;
- *  the canvas draw itself just consumes this rectangle. */
+ *  source image — the default when the caller offers no reposition frame, and the `zoom: 1, centred`
+ *  starting point {@link cropRectFromView} pans and zooms away from. Pure and unit-tested; the canvas
+ *  draw itself just consumes this rectangle. */
 export function centerCropRect(sourceWidth: number, sourceHeight: number, aspect: number): { x: number; y: number; width: number; height: number } {
   const sourceAspect = sourceWidth / sourceHeight;
   if (sourceAspect > aspect) {
@@ -43,6 +54,37 @@ export function centerCropRect(sourceWidth: number, sourceHeight: number, aspect
   // Source is taller than (or equal to) the target — crop top/bottom.
   const height = sourceWidth / aspect;
   return { x: 0, y: (sourceHeight - height) / 2, width: sourceWidth, height };
+}
+
+/** M4·6/M5·2's frame state: `zoom` 1 = the whole {@link centerCropRect} fills the dashed frame,
+ *  2 = twice as close. `panX`/`panY` are normalised in [-1, 1] — how far off-centre the visible
+ *  rectangle sits inside the slack the current zoom leaves, so the same pair stays meaningful when the
+ *  zoom changes. Clamped here rather than at the pointer handler, so the crop can never escape the
+ *  source image no matter what a drag does. */
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 3;
+
+export function cropRectFromView(
+  sourceWidth: number,
+  sourceHeight: number,
+  aspect: number,
+  view: { zoom: number; panX: number; panY: number },
+): CropRect {
+  const base = centerCropRect(sourceWidth, sourceHeight, aspect);
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom));
+  const width = base.width / zoom;
+  const height = base.height / zoom;
+  // Slack is measured against the WHOLE source, not just the base rect: zooming in on a 3:1 banner
+  // frees vertical room the un-zoomed centre crop never had, and the merchant should be able to use it.
+  const slackX = (sourceWidth - width) / 2;
+  const slackY = (sourceHeight - height) / 2;
+  const clamp = (v: number) => Math.min(1, Math.max(-1, v));
+  return {
+    x: slackX + clamp(view.panX) * slackX,
+    y: slackY + clamp(view.panY) * slackY,
+    width,
+    height,
+  };
 }
 
 /** Output canvas dimensions: the crop rect's own aspect, capped at `maxDimension` on the long edge. */
@@ -61,7 +103,7 @@ const MAX_QUALITY_PASSES = 8;
 export async function compressImage(file: File, opts: CompressOptions): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   try {
-    const crop = centerCropRect(bitmap.width, bitmap.height, opts.aspect);
+    const crop = opts.crop ?? centerCropRect(bitmap.width, bitmap.height, opts.aspect);
     const { width, height } = outputDimensions(crop.width, crop.height, opts.maxDimension);
 
     const canvas = document.createElement("canvas");

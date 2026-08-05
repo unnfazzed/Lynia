@@ -17,9 +17,44 @@ export function groupDishesByCategory(categories: MerchantCategoryResponse[], di
     if (list) list.push(dish);
     else byCategory.set(dish.categoryId, [dish]);
   }
-  return [...categories]
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((category) => ({ category, dishes: byCategory.get(category.id) ?? [] }));
+  return sortedCategories(categories).map((category) => ({ category, dishes: byCategory.get(category.id) ?? [] }));
+}
+
+/** Categories in the order customers see them as menu tabs. Ties on `sortOrder` are broken by name so
+ *  the list is stable across refetches — `POST /merchant/categories` never assigns a sortOrder, so a
+ *  shop that has never reordered has every category sitting on the schema default of 0 and Postgres is
+ *  free to return them in any order it likes. */
+export function sortedCategories(categories: MerchantCategoryResponse[]): MerchantCategoryResponse[] {
+  return [...categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+
+/**
+ * M4·2 reorder (r-merchant.jsx:1005-1010). Moves one category by `delta` places and returns both the
+ * new order and the minimum set of `PATCH /merchant/categories/:id { sortOrder }` writes that makes it
+ * stick.
+ *
+ * Every position whose index no longer matches its stored `sortOrder` is rewritten, not just the two
+ * that swapped: `createCategory` leaves every category on the default `sortOrder: 0`, so on a shop that
+ * has never reordered, patching only the swapped pair would leave 0,1,0,0 — an order the server can't
+ * reproduce. Normalising to 0..n-1 is the one write pattern that makes the list deterministic using
+ * only the endpoint that already exists.
+ */
+export function planCategoryMove(
+  categories: MerchantCategoryResponse[],
+  categoryId: string,
+  delta: number,
+): { next: MerchantCategoryResponse[]; patches: { id: string; sortOrder: number }[] } {
+  const ordered = sortedCategories(categories);
+  const from = ordered.findIndex((c) => c.id === categoryId);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= ordered.length) return { next: ordered, patches: [] };
+
+  const next = [...ordered];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+
+  const patches = next.flatMap((c, i) => (c.sortOrder === i ? [] : [{ id: c.id, sortOrder: i }]));
+  return { next, patches };
 }
 
 /** D-29 "four one-tap starting points" for a merchant with zero categories — the first-run screen
