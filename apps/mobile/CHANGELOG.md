@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/unnfazzed/Lynia/compare/v0.18.0...v0.18.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **mobile:** unbreak EAS builds (REL-03) + EAS phase-log visibility ([#601](https://github.com/unnfazzed/Lynia/issues/601)) ([2fb0e4b](https://github.com/unnfazzed/Lynia/commit/2fb0e4baf26199360c63b2e4c3ca93fcc7aa6002))
+
 ## [0.18.0](https://github.com/unnfazzed/Lynia/compare/v0.17.13...v0.18.0) (2026-08-05)
 
 
