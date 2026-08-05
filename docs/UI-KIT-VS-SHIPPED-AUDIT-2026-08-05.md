@@ -1,5 +1,20 @@
 # UI kit vs shipped app — full journey audit (2026-08-05)
 
+> **⚠️ SUPERSEDED — the ✅/⚠/❌ verdicts in this document are unreliable. See
+> [`UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`](./UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md).**
+>
+> This audit derived its verdicts from **route/component existence and copy-string grep** — a method it
+> notes about itself in §5.4. That can establish whether a screen exists to do a job; it cannot see
+> layout, fill, spacing, icon or type. Every ✅ here means the former and was read as the latter.
+>
+> A full element-by-element re-derivation found **1 of 244 screens actually matches its design**.
+> Specific contradictions: "Foundations — ✅ full parity" (4 of 26 primitives match); food's money
+> handshake "shipped verbatim" including `pay_wait` and `pay_failed` (neither screen exists); "Admin —
+> ✅ complete" (0 of 7 pages match, 2 ops tools never built); "Merchant — ✅" (0 of 44 tiles match).
+>
+> §2 (the Places-key provisioning diagnosis) and §6 (the adoption log) remain accurate and useful —
+> those were derived from reading implementation code, not from string matching. Do not rely on §5.
+
 **Trigger:** the installed Android build still asks the customer to drop **pins** for pickup and
 drop-off, even though the address rows render a **search** magnifier and the shared UI kit specifies a
 search-first flow. §1–4 diagnose that flow; §5 extends the review to every journey flow; §6 records the
