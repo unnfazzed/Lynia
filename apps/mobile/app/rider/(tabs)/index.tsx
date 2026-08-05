@@ -730,7 +730,10 @@ export default function RiderHome(): React.ReactElement {
               ? "You're online — parcels and food orders arrive live, one queue."
               : "You're online — new orders arrive live."
             : "You're online — reconnecting to the live board…"
-          : "Go online to see and bid on nearby orders."}
+          : merchantDispatchAutoEnabled
+            ? // RJM `offline`: one switch for everything — say so, so nobody hunts for a per-service toggle.
+              "Go online to receive parcels and food orders. One queue — there's no separate switch per service."
+            : "Go online to see and bid on nearby orders."}
       </Text>
       {locHint ? (
         <Text style={{ fontSize: 12, color: tokens.color.danger, marginTop: 4 }}>{locHint}</Text>
@@ -761,6 +764,23 @@ export default function RiderHome(): React.ReactElement {
           ))}
       </View>
     ) : null;
+
+  // RJM `board_empty`: ONE empty state for both services. "Jobs that get taken simply leave the list"
+  // states the board's own no-countdown rule out loud, so a card vanishing never reads as a glitch.
+  // The food half of the promise stays behind the dispatch flag, exactly like the toggle copy above.
+  const boardEmptyState = (
+    <EmptyState
+      icon="inbox"
+      title="Nothing in range yet"
+      message={
+        merchantDispatchAutoEnabled
+          ? "You'll see parcels and food orders here the moment they're posted near you. Jobs that get taken simply leave the list."
+          : "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list."
+      }
+    >
+      <Button label="Refresh" variant="ghost" onPress={() => void openQ.refetch()} loading={openQ.isFetching} />
+    </EmptyState>
+  );
 
   const selectedCard = selected ? (
     <Card accent>
@@ -947,11 +967,7 @@ export default function RiderHome(): React.ReactElement {
                 // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
                 <SkeletonList />
               ) : (
-                <EmptyState
-                  icon="inbox"
-                  title="No open orders near you right now"
-                  message="You're online and first in line — stay put, requests come through fast. Busiest 7–9am & 5–7pm."
-                />
+                boardEmptyState
               )
             }
             ListFooterComponent={
@@ -1204,11 +1220,7 @@ export default function RiderHome(): React.ReactElement {
               // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
               <SkeletonList />
             ) : ranked.length === 0 ? (
-              <EmptyState
-                icon="inbox"
-                title="No open orders near you right now"
-                message="You're online and first in line — stay put, requests come through fast. Busiest 7–9am & 5–7pm."
-              />
+              boardEmptyState
             ) : null}
           </View>
         ) : null}

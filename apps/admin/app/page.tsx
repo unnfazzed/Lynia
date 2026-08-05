@@ -1,9 +1,9 @@
 import { STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
 import { adminFetchResult } from "./lib/api";
-import { Conn, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
+import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
 import { KpiCard } from "./components/KpiCard";
 import { StatusPill } from "./components/StatusPill";
-import { IconAlert, IconIdCard, IconBanknote } from "./components/icons";
+import { IconAlert, IconIdCard, IconBanknote, IconCheck, IconInbox } from "./components/icons";
 
 /**
  * Monitor/support console overview (CONCEPT §4, kit `ui_kits/admin/index.html`). Reads /admin/overview.
@@ -66,7 +66,7 @@ export default async function OverviewPage() {
 
       {/* Secondary pilot-funnel strip. */}
       <section className="card substrip" style={{ marginBottom: tokens.space.lg }}>
-        <span className="m"><b>{data ? data.metrics.offersPerBroadcast : "—"}</b>offers / broadcast</span>
+        <span className="m"><b>{data ? data.metrics.offersPerBroadcast : "—"}</b>offers per broadcast</span>
         <span className="m"><b>{data ? `${data.metrics.expiryRatePct}%` : "—"}</b>expiry rate</span>
         <span className="m"><b>{data ? (data.ordersByStatus.cancelled ?? 0) : "—"}</b>cancelled</span>
         <span className="m"><b>{data ? data.attention.kycPending : "—"}</b>KYC pending</span>
@@ -107,9 +107,11 @@ export default async function OverviewPage() {
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: tokens.color.muted, padding: "4px 0" }}>
-              All clear — no stuck orders, open disputes, or KYC backlog right now.
-            </div>
+            <EmptyState
+              icon={<IconCheck />}
+              title="Nothing needs you right now"
+              line="Stuck orders, disputes and KYC applications will surface here."
+            />
           )}
         </section>
       ) : null}
@@ -153,10 +155,18 @@ export default async function OverviewPage() {
               ))}
             </tbody>
           </table>
+        ) : data ? (
+          <EmptyState
+            icon={<IconInbox />}
+            title="No orders yet today"
+            line="New broadcasts appear here as customers send them."
+          />
         ) : (
-          <div style={{ fontSize: 14, color: tokens.color.muted }}>
-            {data ? "No orders yet." : `${reasonTitle(reason ?? "unconfigured", "Recent orders")} — ${reasonLine(reason ?? "unconfigured", "recent orders")}`}
-          </div>
+          <EmptyState
+            icon={<IconInbox />}
+            title={reasonTitle(reason ?? "unconfigured", "Recent orders")}
+            line={reasonLine(reason ?? "unconfigured", "recent orders")}
+          />
         )}
       </section>
     </main>

@@ -3,14 +3,14 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
-import { Image, Linking, ScrollView, Text } from "react-native";
+import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
-import { Button, Card, ErrorText, Field, Heading, isTestBuild, Label, Screen, Sub } from "../../src/ui";
+import { Button, Card, ErrorText, Field, Heading, Icon, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
@@ -291,11 +291,20 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 <Text style={{ fontSize: 12, color: tokens.color.accentText, fontWeight: "600", marginTop: 4 }}>Photo added ✓</Text>
               ) : null}
             </Card>
-            <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 18, marginBottom: tokens.space.sm }}>
-              {isTestBuild()
-                ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
-                : "By submitting, your national ID is verified — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online."}
-            </Text>
+            {/* The kit's KycForm sets this note as a surface card with an id-card mark, not loose grey
+                type — it's the reassurance that carries the ID number, so it has to read as a block.
+                The "we store it, we don't share it" line is the kit's; the rest stays honest to the
+                build (a test build has no browser step). */}
+            <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
+              <View style={{ flexDirection: "row", gap: tokens.space.sm }}>
+                <Icon name="id-card" size={18} color={tokens.color.accentText} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, fontSize: 13, color: tokens.color.muted, lineHeight: 20 }}>
+                  {isTestBuild()
+                    ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
+                    : "By submitting, your national ID is verified — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers."}
+                </Text>
+              </View>
+            </Card>
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
         )}

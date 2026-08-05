@@ -7,6 +7,7 @@ import { formatMoney } from "../../lib/money-input";
 import { isNoRiderHold, isRiderSecured, isSearchingForRider } from "../../lib/order-groups";
 import { useNow } from "../../lib/use-now";
 import { PaymentConfirmSheet, RefundSheet } from "./PaymentConfirmSheet";
+import { PayTag } from "./PayTag";
 import { cardStyle, dangerGhostButtonStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "./styles";
 
 function orderLabel(o: MerchantOrderResponse): string {
@@ -264,11 +265,12 @@ function OrderCardImpl({
 
   return (
     <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 14.5, fontWeight: 800 }}>{orderLabel(order)}</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>{order.paymentMethod === "wallet" ? "WALLET" : "CASH"}</div>
+      {/* Kit's BoardCard heads every card with the id and the PayTag pill (r-merchant.jsx:63-68). */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{orderLabel(order)}</div>
+        <PayTag pay={order.paymentMethod} />
       </div>
-      <div style={{ fontSize: 13, color: "var(--muted)" }}>{items || "—"}</div>
+      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>{items || "—"}</div>
 
       {bucket === "waiting" && (
         <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", background: "var(--highlight-wash)", borderRadius: 10, padding: "8px 10px" }}>

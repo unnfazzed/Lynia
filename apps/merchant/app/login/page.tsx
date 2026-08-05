@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
+import { Icon } from "../components/icons";
 import { ApiError, requestOtp, verifyOtp } from "../lib/api-client";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
 
@@ -65,6 +66,13 @@ export default function LoginPage() {
   return (
     <div style={{ height: "100dvh", display: "grid", placeItems: "center", background: "var(--surface)" }}>
       <div style={{ width: 420, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: 28 }}>
+        {/* M0·1 opens with the dove + wordmark lockup above the title (r-merchant.jsx:84).
+         *  eslint-disable: a static brand SVG from /public, not a content image. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/lyniago-mark.svg" alt="" width={32} height={32} />
+          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em" }}>LyniaGo</span>
+        </div>
         <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Kitchen sign-in</div>
 
         {step.kind === "phone" && (
@@ -105,6 +113,7 @@ export default function LoginPage() {
               placeholder="000000"
               style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center", fontSize: 26 }}
             />
+            {/* r-merchant.jsx:92-95 — the alarm notice carries the volume glyph. */}
             <div
               style={{
                 display: "flex",
@@ -118,7 +127,8 @@ export default function LoginPage() {
                 lineHeight: 1.45,
               }}
             >
-              Signing in turns the order alarm on for this tablet. Keep this tab open and the volume up.
+              <Icon name="volume-2" size={17} color="var(--accent-text)" style={{ marginTop: 1 }} />
+              <span>Signing in turns the order alarm on for this tablet. Keep this tab open and the volume up.</span>
             </div>
             {error && <div style={errorStyle}>{error}</div>}
             <button type="submit" disabled={busy || code.length !== 6} style={buttonStyle}>
@@ -142,15 +152,16 @@ const inputStyle: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
+// Same shape language as every other primary in the app (16/600 on a --radius-button pill).
 const buttonStyle: React.CSSProperties = {
   width: "100%",
   height: 52,
   fontSize: 16,
-  fontWeight: 700,
+  fontWeight: 600,
   color: "#fff",
   background: "var(--cta-fill)",
   border: "none",
-  borderRadius: 999,
+  borderRadius: "var(--radius-button)",
   cursor: "pointer",
 };
 

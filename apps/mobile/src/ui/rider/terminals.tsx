@@ -85,13 +85,27 @@ export function UndeliveredDone({ reason, onBack }: { reason: UndeliveredReason;
           <StatusPill status="undelivered" tone="offline" dot />
         </View>
         <Card>
-          <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.sm }}>
-            Marked as not delivered
-          </Text>
+          {/* The kit's terminal grammar (`rider-screens.jsx` Undelivered): an icon in a danger-wash
+              circle carries the bad news, so the headline never has to shout it in red alone. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+              <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+            </View>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+              Couldn&apos;t deliver
+            </Text>
+          </View>
           <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
             Recorded as &ldquo;{UNDELIVERED_LABEL[reason]}&rdquo;. The customer has been told. You&apos;re free for the next job.
           </Text>
         </Card>
+        {/* The parcel doesn't vanish with the job — the kit says where it stands before the exit. */}
+        <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.md }}>
+          <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
+          <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+            The parcel is still with you — arrange its return directly with the customer. Settled off-platform.
+          </Text>
+        </View>
         <Button label="Back to board" onPress={onBack} />
       </ScrollView>
     </Screen>

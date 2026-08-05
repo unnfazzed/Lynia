@@ -73,7 +73,11 @@ export default function FoodCartScreen(): React.ReactElement {
     return (
       <Screen>
         <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Your cart</Text>
-        <EmptyState icon="receipt" title="Your cart is empty" message="Add something from a kitchen near you.">
+        <EmptyState
+          icon="shopping-bag"
+          title="Your cart is empty"
+          message="Add something from a kitchen near you — we'll show the delivery fee before you order."
+        >
           <Button label="Browse restaurants" onPress={() => router.replace("/food")} />
         </EmptyState>
       </Screen>
@@ -132,6 +136,26 @@ export default function FoodCartScreen(): React.ReactElement {
               </Text>
             </View>
           ))}
+          {/* Kit R3·1 (r-customer-a.jsx:323-327): the cart's own way back into the menu, so adding a
+              forgotten drink doesn't mean hunting for the back button. */}
+          <Pressable
+            onPress={() => router.push(`/food/${cart.cart.restaurantId}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Add more items"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              minHeight: tokens.touchTargetMin,
+              marginTop: 8,
+              paddingTop: 8,
+              borderTopWidth: 1,
+              borderTopColor: tokens.color.line,
+            }}
+          >
+            <Icon name="plus" size={15} color={tokens.color.accentText} />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Add more items</Text>
+          </Pressable>
         </Card>
 
         <NoteField
@@ -150,15 +174,25 @@ export default function FoodCartScreen(): React.ReactElement {
 
         {belowMin ? (
           <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Minimum order is {formatMoney(RESTAURANTS_PRICING.minOrderSubtotal)}</Text>
-            <Text style={{ fontSize: 12.5, color: tokens.color.highlightInk, marginTop: 3, lineHeight: 17 }}>
-              A rider crosses town either way, so smaller orders carry a {formatMoney(RESTAURANTS_PRICING.smallOrderFee)} small-order fee.
-            </Text>
+            {/* Kit R3·b4 (r-customer-a.jsx:544-550): the warning leads with the circle-alert glyph. */}
+            <View style={{ flexDirection: "row", gap: 9 }}>
+              <Icon name="circle-alert" size={17} color={tokens.color.highlightInk} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>
+                  Minimum order is {formatMoney(RESTAURANTS_PRICING.minOrderSubtotal)}
+                </Text>
+                <Text style={{ fontSize: 12.5, color: tokens.color.highlightInk, marginTop: 3, lineHeight: 17 }}>
+                  A rider crosses town either way, so smaller orders carry a {formatMoney(RESTAURANTS_PRICING.smallOrderFee)} small-order fee. Add{" "}
+                  {formatMoney(Math.max(0, RESTAURANTS_PRICING.minOrderSubtotal - cart.subtotal))} of food and it disappears.
+                </Text>
+              </View>
+            </View>
           </Card>
         ) : null}
 
         <Card>
-          <Row label="Subtotal" value={formatMoney(cart.subtotal)} />
+          {/* Kit r-parts.jsx PriceMath labels the goods line "Food", not "Subtotal". */}
+          <Row label="Food" value={formatMoney(cart.subtotal)} />
           {cart.smallOrderFee > 0 ? <Row label="Small-order fee" value={formatMoney(cart.smallOrderFee)} /> : null}
           <Row label="Total" value={formatMoney(cart.total)} bold />
           <Text style={{ fontSize: 11.5, color: tokens.color.muted, marginTop: 6 }}>Delivery fee is added at checkout, once we know where you are.</Text>
@@ -166,7 +200,7 @@ export default function FoodCartScreen(): React.ReactElement {
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
 
-      <Button label={`Continue · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
+      <Button label={`Go to checkout · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
     </Screen>
   );
 }

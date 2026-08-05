@@ -9,7 +9,7 @@ import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
-import { Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, Sub } from "../../src/ui";
+import { Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, Screen, SkeletonList } from "../../src/ui";
 import { CountdownRing, formatCountdown } from "../../src/ui/food/CountdownRing";
 import { LiveMap } from "../../src/ui/LiveMap";
 
@@ -80,9 +80,9 @@ export default function FoodOffer(): React.ReactElement {
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
           <Icon name="utensils" size={20} color={tokens.color.accentText} />
-          <Heading> New food pickup</Heading>
+          <Heading>New food pickup</Heading>
         </View>
 
         <Card>
@@ -96,12 +96,14 @@ export default function FoodOffer(): React.ReactElement {
               <Text style={{ fontSize: 26, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
                 {formatMoney(offer.deliveryFee ?? 0)}
               </Text>
-              <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent", marginTop: tokens.space.sm }}>
-                <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>
-                  COLLECT AT THE DOOR {formatMoney(total)}
-                </Text>
-                <Text style={{ fontSize: 12, color: tokens.color.accentText, marginTop: 2 }}>
-                  Ride it back to the kitchen — you keep the {formatMoney(offer.deliveryFee ?? 0)} delivery fee.
+              {/* `r-rider.jsx` offer_cash: a label, then the amount at full size, then what happens to
+                  it. The kitchen's money reads in the highlight wash — green would say "this is yours". */}
+              <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent", marginTop: tokens.space.sm }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", letterSpacing: 0.4, color: tokens.color.highlightInk }}>COLLECT AT THE DOOR</Text>
+                <Text style={{ fontSize: 32, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(total)}</Text>
+                <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18, marginTop: 2 }}>
+                  Nothing from your pocket. Hand over the food, take the cash, then ride {formatMoney(offer.merchantGoodsTotal ?? 0)} back to the
+                  kitchen — the {formatMoney(offer.deliveryFee ?? 0)} is yours.
                 </Text>
               </Card>
             </>
@@ -111,12 +113,15 @@ export default function FoodOffer(): React.ReactElement {
               <Text style={{ fontSize: 26, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
                 {formatMoney(offer.deliveryFee ?? 0)}
               </Text>
+              {/* Same label → amount → consequence anatomy as the collect card above (kit offer_upfront).
+                  Kept in the danger wash rather than the kit's highlight: this is the one offer where
+                  the rider's OWN cash is at risk. */}
               <Card style={{ backgroundColor: tokens.color.dangerWash, borderColor: "transparent", marginTop: tokens.space.sm }}>
-                <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.dangerInk }}>
-                  THIS KITCHEN ASKS YOU TO PAY FIRST {formatMoney(total)}
-                </Text>
-                <Text style={{ fontSize: 12, color: tokens.color.dangerInk, marginTop: 2 }}>
-                  Nobody checks a balance — only accept if you&apos;re carrying {formatMoney(total)}. You&apos;re paid back at the door.
+                <Text style={{ fontSize: 12, fontWeight: "700", letterSpacing: 0.4, color: tokens.color.dangerInk }}>THIS KITCHEN ASKS YOU TO PAY FIRST</Text>
+                <Text style={{ fontSize: 32, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(total)}</Text>
+                <Text style={{ fontSize: 12, color: tokens.color.dangerInk, lineHeight: 18, marginTop: 2 }}>
+                  Only accept if you&apos;re carrying {formatMoney(total)} — nobody checks a balance, but arriving short strands you at the
+                  counter. You&apos;re paid back at the door.
                 </Text>
               </Card>
             </>
@@ -126,7 +131,19 @@ export default function FoodOffer(): React.ReactElement {
               <Text style={{ fontSize: 26, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
                 {formatMoney(offer.deliveryFee ?? 0)}
               </Text>
-              <Sub>Already paid — nothing to collect. Just pick up and deliver.</Sub>
+              {/* `r-rider.jsx` offer_wallet: no float at risk changes the decision, so it gets a card
+                  and a tick, not a footnote. */}
+              <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent", marginTop: tokens.space.sm }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                  <Icon name="circle-check" size={20} color={tokens.color.accentText} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>No money from your pocket</Text>
+                    <Text style={{ fontSize: 12, color: tokens.color.accentText, lineHeight: 18 }}>
+                      The customer already paid the restaurant. Just collect and deliver.
+                    </Text>
+                  </View>
+                </View>
+              </Card>
             </>
           ) : (
             <Text style={{ fontSize: 14, color: tokens.color.muted }}>{offer.itemDesc}</Text>
@@ -140,7 +157,20 @@ export default function FoodOffer(): React.ReactElement {
           </Text>
         </Card>
 
-        <Button label="Accept" onPress={() => acceptM.mutate(offer.orderId)} loading={pendingOrQueued(acceptM)} disabled={pending} />
+        {/* Kit accept labels (`r-rider.jsx` offer_cash / offer_upfront / offer_wallet): the button
+            repeats the money commitment being accepted, so the tap is never a blind "Accept". */}
+        <Button
+          label={
+            variant === "cash_collect" && total != null
+              ? "Accept · collect at the door"
+              : variant === "cash_upfront" && total != null
+                ? `Accept · front ${formatMoney(total)}`
+                : "Accept"
+          }
+          onPress={() => acceptM.mutate(offer.orderId)}
+          loading={pendingOrQueued(acceptM)}
+          disabled={pending}
+        />
         <Button label="Pass" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={pendingOrQueued(declineM)} disabled={pending} />
         <ErrorText
           message={

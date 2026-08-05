@@ -5,6 +5,7 @@ import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse }
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
+import { PayTag } from "../../components/queue/PayTag";
 import { cardStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { formatMoney } from "../../lib/money-input";
@@ -14,6 +15,24 @@ type LoadState =
   | { status: "loading" }
   | { status: "ready"; today: MerchantEndOfDaySummaryResponse; statement: MerchantWeeklyStatementResponse }
   | { status: "error"; message: string };
+
+/** M4·9/M4·10 both hang a dated sub-line off the screen title ("Mon 21 – Sun 27 July", "Sunday 27
+ *  July · closed at 21:00" — r-merchant.jsx:1211/1247). Renders the dates the payload already carries;
+ *  an unparseable one is simply omitted rather than printed as "Invalid Date". */
+function formatDay(value: string, opts: Intl.DateTimeFormatOptions): string | null {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function SectionHeading({ title, sub }: { title: string; sub?: string | null }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{title}</div>
+      {sub && <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -62,7 +81,10 @@ export default function StatementPage() {
         {state.status === "ready" && (
           <>
             <section>
-              <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 12 }}>Today&apos;s summary</div>
+              <SectionHeading
+                title="Today's summary"
+                sub={formatDay(state.today.date, { weekday: "long", day: "numeric", month: "long" })}
+              />
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                 <Stat label="Delivered" value={String(state.today.delivered)} />
                 <Stat label="Cash returned to you" value={`$${formatMoney(state.today.cashTaken)}`} sub="confirmed on your count screen" />
@@ -73,7 +95,14 @@ export default function StatementPage() {
             </section>
 
             <section>
-              <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 12 }}>Weekly statement</div>
+              <SectionHeading
+                title="Weekly statement"
+                sub={(() => {
+                  const from = formatDay(state.statement.rangeStart, { weekday: "short", day: "numeric" });
+                  const to = formatDay(state.statement.rangeEnd, { weekday: "short", day: "numeric", month: "long" });
+                  return from && to ? `${from} – ${to}` : null;
+                })()}
+              />
               <div style={{ display: "flex", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
                 <Stat label="Orders delivered" value={String(state.statement.ordersDelivered)} />
                 <Stat label="Food sales" value={`$${formatMoney(state.statement.foodSalesTotal)}`} sub="paid to you directly" />
@@ -109,7 +138,10 @@ export default function StatementPage() {
                   >
                     <span style={{ fontWeight: 700, minWidth: 90 }}>#{li.orderId.slice(0, 8).toUpperCase()}</span>
                     <span style={{ color: "var(--muted)", minWidth: 140 }}>{new Date(li.deliveredAt).toLocaleString()}</span>
-                    <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>{li.paymentMethod === "wallet" ? "WALLET" : "CASH"}</span>
+                    {/* The statement's own rows carry the PayTag too (r-merchant.jsx:1229). */}
+                    <span style={{ flex: 1 }}>
+                      <PayTag pay={li.paymentMethod} />
+                    </span>
                     <span style={{ fontWeight: 700 }}>${formatMoney(li.amount)}</span>
                     <span style={{ color: "var(--muted)", minWidth: 70, textAlign: "right" }}>−${formatMoney(li.commission)}</span>
                   </div>

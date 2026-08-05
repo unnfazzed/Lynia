@@ -48,13 +48,17 @@ export function SendPriceQuote({
         keyboardType="decimal-pad"
         // Below the band is not an error (there's no hard floor) — a gentle hint that a low ask may
         // draw no riders. Far above the band nudges the "did you add a digit?" case. Both read as
-        // guidance under the field, not a red validation failure.
+        // guidance under the field, not a red validation failure. With no pins yet there's no quote to
+        // show, so the kit's promise-of-a-suggestion line stands in (screens.jsx:189) rather than an
+        // empty slot that reads as "name a number, good luck".
         hint={
           belowBand
             ? "That's below what riders usually take — they may pass. Nudge it up for a faster match."
             : farAboveBand
               ? "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake."
-              : undefined
+              : quote == null
+                ? "We'll suggest a fair price once your pins are set."
+                : undefined
         }
       />
     </>

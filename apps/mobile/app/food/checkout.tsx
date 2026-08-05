@@ -78,7 +78,11 @@ export default function FoodCheckoutScreen(): React.ReactElement {
     return (
       <Screen>
         <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Checkout</Text>
-        <EmptyState icon="receipt" title="Your cart is empty" message="Add something from a kitchen near you.">
+        <EmptyState
+          icon="shopping-bag"
+          title="Your cart is empty"
+          message="Add something from a kitchen near you — we'll show the delivery fee before you order."
+        >
           <Button label="Browse restaurants" onPress={() => router.replace("/food")} />
         </EmptyState>
       </Screen>
@@ -190,7 +194,8 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             error={phoneError}
           />
 
-          <Text style={{ fontSize: 11.5, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4, marginTop: 4, marginBottom: 8 }}>HOW YOU&apos;LL PAY</Text>
+          {/* Kit R4·1 (r-customer-a.jsx:439): section label is 13px, not the 11.5px micro-label. */}
+          <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.muted, marginTop: 6, marginBottom: 7 }}>HOW YOU&apos;LL PAY</Text>
           <PaymentMethodRow
             icon="banknote"
             title="Cash at the door"
@@ -213,7 +218,8 @@ export default function FoodCheckoutScreen(): React.ReactElement {
 
           <PriceMath
             rows={[
-              { label: "Subtotal", value: cart.subtotal },
+              // Kit r-parts.jsx PriceMath labels the goods line "Food", not "Subtotal".
+              { label: "Food", value: cart.subtotal },
               ...(cart.smallOrderFee > 0 ? [{ label: "Small-order fee", value: cart.smallOrderFee }] : []),
               { label: "Delivery fee (estimate)", value: estimatedDeliveryFee ?? 0 },
             ]}
@@ -249,7 +255,14 @@ export default function FoodCheckoutScreen(): React.ReactElement {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Button label={`Place order · ${formatMoney(total)}`} onPress={() => void submit()} disabled={!canSubmit} loading={busy} />
+      {/* Kit R4·1/R4·2 (r-customer-a.jsx:424, 469): the CTA names how the money moves, not just the
+          figure — "pay $X cash" for CASH, "pay after they accept" for mobile money. */}
+      <Button
+        label={paymentMethod === "cash" ? `Place order · pay ${formatMoney(total)} cash` : "Place order · pay after they accept"}
+        onPress={() => void submit()}
+        disabled={!canSubmit}
+        loading={busy}
+      />
     </Screen>
   );
 }

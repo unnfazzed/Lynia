@@ -100,7 +100,8 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
               I understand and accept these terms
             </Text>
           </Pressable>
-          <Button label="Agree & send" onPress={onAgree} disabled={!checked} />
+          {/* Kit copy (screens.jsx:504) — "Agree & broadcast", matching the composer's own CTA. */}
+          <Button label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
           <Button label="Back" variant="ghost" onPress={onBack} />
         </View>
       </View>

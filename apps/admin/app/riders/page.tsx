@@ -42,6 +42,23 @@ function kycPill(s: Rider["kycStatus"]) {
   return <Pill kind="mut">pending</Pill>;
 }
 
+/** Kit's `ratingTxt` (riders.html) — "★ 4.8 · 118", or "★ new" before the first rating. Matches the
+ *  rider profile page, which already renders the rating this way. */
+function ratingTxt(r: Rider) {
+  return r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)} · ${r.ratingCount}` : "★ new";
+}
+
+/** Strikes cell — the kit colours the count danger from 2 strikes (3 = auto-cooldown), so a rider one
+ *  strike away from a cooldown reads as such at a glance. */
+function strikesCell(r: Rider) {
+  if (r.cancelStrikes === 0) return "—";
+  return (
+    <span style={r.cancelStrikes >= 2 ? { color: "var(--danger)" } : undefined}>
+      {r.cancelStrikes} strike{r.cancelStrikes === 1 ? "" : "s"}
+    </span>
+  );
+}
+
 function riderName(r: Rider) {
   return (
     <a href={`/riders/${r.profileId}`} style={{ color: "var(--accent-text)", textDecoration: "none", fontWeight: 500 }}>
@@ -65,27 +82,25 @@ export default async function RidersPage({
   const reason = "data" in res ? undefined : res.reason;
   const connected = riders !== null;
 
+  // Column set + ORDER follow the kit's directory table (riders.html `<thead>`): Rider · Phone · Bike ·
+  // KYC · Trips / rating · Strikes · Status — standing is the row's verdict, so it reads last.
   const directoryColumns: Column<Rider>[] = [
     { key: "name", header: "Rider", cell: riderName },
     { key: "phone", header: "Phone", className: "mono", cell: (r) => r.phone },
-    { key: "bike", header: "Bike", cell: (r) => r.bikeReg },
-    { key: "standing", header: "Standing", cell: standingPill },
+    { key: "bike", header: "Bike", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
-    { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} / ${r.ratingCount > 0 ? r.ratingAvg.toFixed(1) : "—"}` },
-    {
-      key: "strikes",
-      header: "Strikes",
-      className: "num",
-      cell: (r) => (r.cancelStrikes > 0 ? `${r.cancelStrikes} strike${r.cancelStrikes === 1 ? "" : "s"}` : "—"),
-    },
+    { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} · ${ratingTxt(r)}` },
+    { key: "strikes", header: "Strikes", className: "num", cell: strikesCell },
+    { key: "standing", header: "Status", cell: standingPill },
   ];
 
   const kycColumns: Column<Rider>[] = [
     { key: "name", header: "Rider", cell: riderName },
     { key: "phone", header: "Phone", className: "mono", cell: (r) => r.phone },
-    { key: "bike", header: "Bike", cell: (r) => r.bikeReg },
+    // Kit's KYC queue names this column "Bike reg" (kyc.html), matching the review screen's KeyValue.
+    { key: "bike", header: "Bike reg", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
-    { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} / ${r.ratingCount > 0 ? r.ratingAvg.toFixed(1) : "—"}` },
+    { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} · ${ratingTxt(r)}` },
     { key: "action", header: "Action", cell: (r) => <KycAction r={r} /> },
   ];
 

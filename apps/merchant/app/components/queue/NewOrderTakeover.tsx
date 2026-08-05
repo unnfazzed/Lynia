@@ -5,6 +5,8 @@ import { PREP_CHIPS_MIN, type MerchantOrderResponse, type MerchantRejectionReaso
 import { computeAcceptPreview } from "../../lib/accept-preview";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { useNow } from "../../lib/use-now";
+import { Icon } from "../icons";
+import { PayTag } from "./PayTag";
 import { RejectSheet } from "./RejectSheet";
 import { disabledStyle, primaryButtonStyle } from "./styles";
 
@@ -86,7 +88,11 @@ export function NewOrderTakeover({
     }
   }
 
-  const acceptLabel = preview.hasUnavailable ? `Accept ${active.items.length - unavailable.size} of ${active.items.length} · ${prepMinutes}m` : `Accept · ${prepMinutes}m`;
+  // Kit's accept CTA spells the unit out — "Accept · 20 min" (r-merchant.jsx:252/391) — while the
+  // prep chips themselves stay "20m" (r-merchant.jsx:248).
+  const acceptLabel = preview.hasUnavailable
+    ? `Accept ${active.items.length - unavailable.size} of ${active.items.length} · ${prepMinutes} min`
+    : `Accept · ${prepMinutes} min`;
 
   return (
     <div
@@ -101,12 +107,15 @@ export function NewOrderTakeover({
         overflow: "auto",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px" }}>
-        <div style={{ fontSize: 17, fontWeight: 900, letterSpacing: ".02em" }}>
+      {/* M1·3's alarm header (r-merchant.jsx:213-218): a darker band across the top of the takeover,
+       *  volume glyph first, 15/800 label, and the countdown at 14/700 on the right. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 22px", background: "rgba(0,0,0,.12)" }}>
+        <Icon name="volume-2" size={20} color="#fff" />
+        <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: queued.length > 0 ? undefined : ".04em" }}>
           {queued.length > 0 ? `${queued.length + 1} NEW ORDERS — answer them one at a time` : "NEW ORDER — ALARM RINGING"}
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 20, fontWeight: 900 }}>{formatCountdown(remainingMs)} left to accept</div>
+        <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 14, fontWeight: 700 }}>{formatCountdown(remainingMs)} left to accept</div>
       </div>
 
       {queued.length > 0 && (
@@ -128,9 +137,15 @@ export function NewOrderTakeover({
 
       <div style={{ flex: 1, display: "flex", gap: 20, padding: "8px 24px 24px", minHeight: 0 }}>
         <div style={{ flex: 1, background: "#fff", color: "var(--ink)", borderRadius: 18, padding: 22, display: "flex", flexDirection: "column", overflow: "auto" }}>
-          <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 2 }}>{orderLabel(active)}</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
-            {active.paymentMethod === "wallet" ? "WALLET — pay-on-confirm" : "CASH — collected at the door"}
+          {/* M1·3 leads the card with the order id and the PayTag at `lg` (r-merchant.jsx:221-227). */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{orderLabel(active)}</div>
+              <div style={{ fontSize: 14, color: "var(--muted)" }}>
+                {active.paymentMethod === "wallet" ? "Pay-on-confirm" : "Collected at the door"}
+              </div>
+            </div>
+            <PayTag pay={active.paymentMethod} size="lg" />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
             {active.items.map((item, idx) => {
@@ -169,7 +184,8 @@ export function NewOrderTakeover({
                         cursor: "pointer",
                       }}
                     >
-                      {isOut ? "Marked unavailable" : "Don't have it"}
+                      {/* M2·1's own two states for this chip (r-merchant.jsx:352). */}
+                      {isOut ? "Not available" : "Don't have it"}
                     </button>
                   )}
                 </div>
@@ -200,8 +216,9 @@ export function NewOrderTakeover({
               <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".04em", marginBottom: 8, opacity: 0.85 }}>NEXT IN LINE</div>
               <div style={{ fontSize: 14, fontWeight: 800 }}>{orderLabel(queued[0])}</div>
               <div style={{ fontSize: 12.5, opacity: 0.85 }}>{queued[0].items.map((i) => `${i.quantity}x ${i.name}`).join(" · ")}</div>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, fontStyle: "italic" }}>
-                Its own 3-minute clock starts when you finish with this one. We never show two decisions at once.
+              {/* M1·b1 names the order you're on (r-merchant.jsx:290). */}
+              <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 8, lineHeight: 1.45 }}>
+                Its own 3-minute clock starts when you finish with {orderLabel(active)}. We never show two decisions at once.
               </div>
             </div>
           )}
@@ -261,7 +278,8 @@ export function NewOrderTakeover({
           >
             Can&apos;t take it
           </button>
-          <div style={{ fontSize: 12, fontStyle: "italic", opacity: 0.8, textAlign: "center" }}>
+          {/* r-merchant.jsx:254 — plain, not italic, at 12.5 on a 92%-white. */}
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.92)", lineHeight: 1.45 }}>
             The alarm stops the moment you tap either button — nothing else silences it.
           </div>
         </div>

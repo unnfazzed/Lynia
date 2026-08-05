@@ -29,7 +29,18 @@ export function SendPhoneFields({
     <>
       {/* Contract-required (both waypoints, min 6) — they live on the required path, not in the
           "optional" collapse, so Broadcast never enables only to fail Zod on submit. */}
-      <Field label="Pickup contact phone" value={pickupPhone} onChangeText={onChangePickupPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={pickupPhoneError} />
+      {/* Kit copy (screens.jsx:190): the label says whose number this is, and the hint answers the
+          "who sees my number?" question the field otherwise leaves hanging. */}
+      <Field
+        label="Your phone (sender)"
+        value={pickupPhone}
+        onChangeText={onChangePickupPhone}
+        placeholder="+263..."
+        keyboardType="phone-pad"
+        maxLength={20}
+        error={pickupPhoneError}
+        hint="Shared with your rider only during the delivery."
+      />
       {/* Recent-recipient quick-fill: one tap drops a past drop-off number into the field instead of
           re-typing. Only shown before the customer starts typing one, so it never fights their input. */}
       {recipients.length > 0 && dropPhone.trim().length === 0 ? (
@@ -57,7 +68,17 @@ export function SendPhoneFields({
           ))}
         </View>
       ) : null}
-      <Field label="Recipient phone" value={dropPhone} onChangeText={onChangeDropPhone} placeholder="+263..." keyboardType="phone-pad" maxLength={20} error={dropPhoneError} />
+      {/* Kit hint (screens.jsx:191) — says why a second number is asked for at all. */}
+      <Field
+        label="Recipient phone"
+        value={dropPhone}
+        onChangeText={onChangeDropPhone}
+        placeholder="+263..."
+        keyboardType="phone-pad"
+        maxLength={20}
+        error={dropPhoneError}
+        hint="So the rider can reach them at drop-off."
+      />
     </>
   );
 }

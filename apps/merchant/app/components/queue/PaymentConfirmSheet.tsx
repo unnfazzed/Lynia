@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatMoney, parseAmountInput } from "../../lib/money-input";
+import { Icon } from "../icons";
 import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "./styles";
 
 /** M3·2/M3·b1 — R-11/D-06: the merchant matches the customer's rail reference against their OWN
@@ -34,9 +35,16 @@ export function PaymentConfirmSheet({
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
+        {/* M3·2 (r-merchant.jsx:650-656): the sub-line names the claim being checked, and the number
+         *  the merchant is looking for is set large above the fields — the kit's money-confirm grammar. */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Confirm the payment landed</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-          Expected ${formatMoney(expectedAmount)} for {orderLabel}
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14, lineHeight: 1.45 }}>
+          {orderLabel} · says they&apos;ve paid · confirm before you cook
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", letterSpacing: ".04em" }}>EXPECTED</div>
+        <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-.02em", lineHeight: 1.1, marginBottom: 14, fontVariantNumeric: "tabular-nums" }}>
+          ${formatMoney(expectedAmount)}
         </div>
 
         <label style={labelStyle}>
@@ -60,26 +68,32 @@ export function PaymentConfirmSheet({
           />
         </label>
 
+        {/* r-merchant.jsx:663-668, minus the rail name (this app's merchants take EcoCash, InnBucks
+         *  or O'mari, so "your own statement" is the honest generalisation of "your own EcoCash"). */}
         <div style={{ display: "flex", gap: 10, padding: "12px 14px", background: "var(--danger-wash)", borderRadius: 12, marginTop: 4, marginBottom: 16 }}>
+          <Icon name="triangle-alert" size={20} color="var(--danger-ink)" style={{ marginTop: 1 }} />
           <div style={{ fontSize: 13, color: "var(--danger-ink)", lineHeight: 1.45 }}>
-            <b>Check your own statement.</b> Never accept a payment screen shown on someone else&apos;s phone — if it
-            isn&apos;t in your statement, the money isn&apos;t yours.
+            <b>Check your own statement.</b> Never accept a payment screen shown to you on someone else&apos;s phone —
+            those are easy to fake. If it isn&apos;t in your statement, the money isn&apos;t yours.
           </div>
         </div>
 
         {error && <div style={{ fontSize: 13, color: "var(--danger-ink)", marginBottom: 12, fontWeight: 700 }}>{error}</div>}
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button type="button" onClick={onCancel} disabled={submitting} style={{ ...ghostButtonStyle, flex: 1 }}>
-            Cancel
-          </button>
+        {/* The kit's merchant money screens stack their actions full-width, affirmative first
+         *  (r-merchant.jsx:669, 589-590) — which is also what keeps this sentence-length CTA on one
+         *  or two lines instead of three in a half-width button. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button
             type="button"
             disabled={!canConfirm}
             onClick={() => amount != null && onConfirm({ reference: reference.trim(), amount })}
-            style={{ ...primaryButtonStyle, flex: 1, opacity: canConfirm ? 1 : 0.5 }}
+            style={{ ...primaryButtonStyle, opacity: canConfirm ? 1 : 0.5 }}
           >
-            {submitting ? "Confirming…" : `Confirm $${amountText || "0.00"} · start cooking`}
+            {submitting ? "Confirming…" : `Confirm $${amountText || "0.00"} received · start cooking`}
+          </button>
+          <button type="button" onClick={onCancel} disabled={submitting} style={ghostButtonStyle}>
+            Cancel
           </button>
         </div>
       </div>
@@ -188,8 +202,14 @@ export function ReturnCashSheet({
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
+        {/* M3·4 (r-merchant.jsx:781-790): label, the number set large, then count-and-acknowledge. */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Count the returned cash</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>{orderLabel} · owed ${formatMoney(expectedAmount)}</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>{orderLabel} · owed ${formatMoney(expectedAmount)}</div>
+
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", letterSpacing: ".04em" }}>COUNT WHAT THE RIDER HANDS YOU</div>
+        <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-.02em", lineHeight: 1.1, marginBottom: 14, fontVariantNumeric: "tabular-nums" }}>
+          ${formatMoney(expectedAmount)}
+        </div>
 
         <label style={labelStyle}>
           Amount received
@@ -218,23 +238,40 @@ export function ReturnCashSheet({
             marginBottom: 16,
             width: "100%",
           }}
+          aria-pressed={acknowledged}
         >
-          <span style={{ fontSize: 14.5, fontWeight: 700 }}>I counted ${amountText || "0.00"} in my hand</span>
+          {/* The kit draws the acknowledgement as a real ticked box (r-merchant.jsx:787). */}
+          <span
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 7,
+              border: `2px solid ${acknowledged ? "var(--accent)" : "var(--line)"}`,
+              background: acknowledged ? "var(--accent)" : "#fff",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            {acknowledged && <Icon name="check" size={16} color="#fff" />}
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>I counted ${amountText || "0.00"} in my hand</span>
         </button>
 
         {error && <div style={{ fontSize: 13, color: "var(--danger-ink)", marginBottom: 12, fontWeight: 700 }}>{error}</div>}
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button type="button" onClick={onCancel} disabled={submitting} style={{ ...ghostButtonStyle, flex: 1 }}>
-            Not yet
-          </button>
+        {/* Same stacked-actions shape as the payment confirm above (r-merchant.jsx:790). */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button
             type="button"
             disabled={!canConfirm}
             onClick={() => amount != null && onConfirm(amount)}
-            style={{ ...primaryButtonStyle, flex: 1, opacity: canConfirm ? 1 : 0.5 }}
+            style={{ ...primaryButtonStyle, opacity: canConfirm ? 1 : 0.5 }}
           >
-            {submitting ? "Confirming…" : `Confirm $${amountText || "0.00"} returned`}
+            {submitting ? "Confirming…" : `Confirm $${amountText || "0.00"} returned · close ${orderLabel}`}
+          </button>
+          <button type="button" onClick={onCancel} disabled={submitting} style={ghostButtonStyle}>
+            Not yet
           </button>
         </div>
       </div>

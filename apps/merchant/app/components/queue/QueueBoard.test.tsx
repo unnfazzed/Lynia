@@ -179,7 +179,7 @@ describe("QueueBoard NEW ORDER takeover refetches on a failed accept/reject too 
     render(<QueueBoard orders={orders} disabled={false} refetch={refetch} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Can't take it" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Too busy right now" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Kitchen is too busy right now" }));
     fireEvent.click(screen.getByRole("button", { name: /^Reject #FIRST/ }));
 
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));

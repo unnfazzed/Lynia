@@ -41,6 +41,9 @@ export function ItemSheet({
       >
         <Pressable onPress={(e) => e.stopPropagation()}>
           <BottomSheet
+            // Kit R2·3 (r-customer-a.jsx:246): the item sheet's top corners are 20px, a step softer
+            // than the shared 16px card radius.
+            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
             footer={
               disabledReason ? (
                 <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center" }}>{disabledReason}</Text>

@@ -29,7 +29,20 @@ export function SendItemsList({
           qty stepper so a row still works at 320px. */}
       <Label>What are you sending?</Label>
       {items.map((it, i) => (
-        <View key={i}>
+        // Kit (screens.jsx:177): description + qty sit inside one bordered box, so a multi-item order
+        // reads as discrete parcels rather than a run of loose fields.
+        <View
+          key={i}
+          style={{
+            borderWidth: 1,
+            borderColor: tokens.color.line,
+            borderRadius: tokens.radius.input,
+            paddingHorizontal: 10,
+            paddingTop: 10,
+            paddingBottom: tokens.space.xs,
+            marginBottom: tokens.space.sm,
+          }}
+        >
           <Field
             value={it.description}
             onChangeText={(t) => updateItem(i, { description: t })}
@@ -37,7 +50,8 @@ export function SendItemsList({
             maxLength={140}
           />
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: -tokens.space.sm, marginBottom: tokens.space.sm }}>
-            <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Quantity</Text>
+            {/* Kit label is "Qty" (screens.jsx:180). */}
+            <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginRight: tokens.space.sm }}>Qty</Text>
             <QtyStepper value={it.quantity} onChange={(q) => updateItem(i, { quantity: q })} />
             <View style={{ flex: 1 }} />
             {items.length > 1 ? (

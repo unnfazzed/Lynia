@@ -104,7 +104,7 @@ export default function HoursPage() {
         {state.status === "ready" && (
           <>
             <div>
-              <div style={{ fontSize: 21, fontWeight: 800 }}>Opening hours</div>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Opening hours</div>
               <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Customers can browse when you&apos;re closed, but can&apos;t order.</div>
             </div>
 
