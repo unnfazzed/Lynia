@@ -873,6 +873,20 @@ export const RestaurantMenuResponse = z
   .strict();
 export type RestaurantMenuResponse = z.infer<typeof RestaurantMenuResponse>;
 
+/**
+ * D1 `menu_closed` / `list_empty` — "Remind me when they open". `set` is whether the customer is
+ * currently waiting on this kitchen. `alreadyOpen` only comes back from the POST: the kitchen was open
+ * when they asked, so no reminder was banked and the honest answer is "go ahead and order" rather
+ * than silently arming something that would next fire tomorrow morning.
+ */
+export const RestaurantReopenReminderResponse = z
+  .object({
+    set: z.boolean(),
+    alreadyOpen: z.boolean().optional(),
+  })
+  .strict();
+export type RestaurantReopenReminderResponse = z.infer<typeof RestaurantReopenReminderResponse>;
+
 // ---------------------------------------------------------------------------
 // Restaurants vertical — food order lifecycle (C2,
 // docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind

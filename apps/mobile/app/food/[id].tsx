@@ -11,6 +11,7 @@ import { Button, Card, EmptyState, Icon, Screen, SkeletonList, useToast } from "
 import { FoodThumb } from "../../src/ui/food/FoodThumb";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
 import { MenuRow } from "../../src/ui/food/MenuRow";
+import { RemindWhenOpen } from "../../src/ui/food/RemindWhenOpen";
 
 /** R2·1/R2·2 menu — category tabs mirror D-29's merchant-owned category order; the kitchen's own
  *  closed/open state is derived from `hours` (D1 does not yet know the customer's own address, so no
@@ -103,6 +104,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
                 {restaurant.name} is closed. {nextOpenDescription(restaurant.hours, now) ?? "You can look, but you can't order yet."}
               </Text>
             </View>
+            {/* The kit's `menu_closed` gives the closed state a way forward instead of a dead end. */}
+            <RemindWhenOpen restaurantId={restaurant.id} restaurantName={restaurant.name} />
           </Card>
         ) : null}
 
