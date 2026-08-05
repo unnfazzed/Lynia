@@ -8,6 +8,10 @@ import { PhotoCropSheet } from "./PhotoCropSheet";
 
 type Status = { kind: "idle" } | { kind: "compressing" } | { kind: "uploading" } | { kind: "error"; message: string; retryFile: File; retryCrop?: CropRect };
 
+/** The only two formats the compress/upload path handles. Mirrors the input's `accept`, which is
+ *  advisory only — every OS file dialog offers an "All files" escape — so this is the real check. */
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+
 /**
  * D-32 "we compress on the merchant's behalf and say so" + D-31's REQUIRED dish photo. Uploads
  * immediately once the merchant has framed the photo (not deferred to the form's own Save) —
@@ -47,6 +51,8 @@ export function PhotoPicker({
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cropping, setCropping] = useState<File | null>(null);
+  // A rejected file type never reaches `status`, which is keyed to the compress/upload lifecycle.
+  const [typeError, setTypeError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function runUpload(file: File, crop?: CropRect) {
@@ -123,8 +129,18 @@ export function PhotoPicker({
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
+          if (!file) return;
+          // `accept` is advisory only — every OS file dialog lets you switch to "All files" — so the
+          // picked type is checked here rather than trusted. Anything that isn't one of the two formats
+          // the upload path actually supports is refused with a reason, instead of being object-URL'd
+          // into the crop frame where it would silently fail to decode and show an empty box.
+          if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+            setTypeError("That file isn't a JPEG or PNG — pick one of those and we'll frame it.");
+            return;
+          }
+          setTypeError(null);
           // M4·6/M5·2: frame it first — nothing is compressed or uploaded until the crop is confirmed.
-          if (file) setCropping(file);
+          setCropping(file);
         }}
       />
 
@@ -138,6 +154,10 @@ export function PhotoPicker({
           {busy ? (status.kind === "compressing" ? "Shrinking…" : "Uploading…") : showUrl ? "Replace" : "Choose a file"}
         </button>
       </div>
+
+      {typeError && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger-ink)", lineHeight: 1.4 }}>{typeError}</div>
+      )}
 
       {status.kind === "error" && (
         <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger-ink)", lineHeight: 1.4 }}>
