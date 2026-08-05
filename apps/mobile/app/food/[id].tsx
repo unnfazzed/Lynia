@@ -6,8 +6,8 @@ import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import { formatMoney } from "../../src/logic/money";
-import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { Button, Card, EmptyState, Icon, Screen, SkeletonList, useToast } from "../../src/ui";
+import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
+import { Button, Card, EmptyState, haptic, Icon, Screen, SkeletonList, useToast } from "../../src/ui";
 import { FoodThumb } from "../../src/ui/food/FoodThumb";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
 import { MenuRow } from "../../src/ui/food/MenuRow";
@@ -25,6 +25,22 @@ export default function RestaurantMenuScreen(): React.ReactElement {
 
   const [categoryIdx, setCategoryIdx] = useState(0);
   const [openItem, setOpenItem] = useState<RestaurantMenuDish | null>(null);
+
+  // D1 `menu_closed`: "remind me when they open". The toast lives here rather than in the control,
+  // which stays presentational — and `alreadyOpen` gets its own line: the kitchen opened between this
+  // screen rendering and the tap, so nothing was banked and "we'll remind you" would be a small lie.
+  const reminder = useReopenReminder(
+    id,
+    (res) => {
+      if (res.alreadyOpen) {
+        toast.show(`${menu?.restaurant.name ?? "They"} are open now — pull to refresh the menu.`, "info");
+        return;
+      }
+      haptic("tap");
+      toast.show(res.set ? `We'll tell you when ${menu?.restaurant.name ?? "they"} open.` : "Reminder off.", "success");
+    },
+    () => toast.show("Couldn't save that just now — try again.", "info"),
+  );
 
   // R2·b1: recompute open/closed as time passes (hours are static data, no live push needed) so a
   // kitchen that closes mid-browse interrupts once instead of silently going stale.
@@ -105,7 +121,13 @@ export default function RestaurantMenuScreen(): React.ReactElement {
               </Text>
             </View>
             {/* The kit's `menu_closed` gives the closed state a way forward instead of a dead end. */}
-            <RemindWhenOpen restaurantId={restaurant.id} restaurantName={restaurant.name} />
+            <RemindWhenOpen
+              restaurantName={restaurant.name}
+              isSet={reminder.isSet}
+              isPending={reminder.isPending}
+              disabled={reminder.isLoading}
+              onToggle={reminder.toggle}
+            />
           </Card>
         ) : null}
 
