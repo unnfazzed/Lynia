@@ -32,6 +32,24 @@ well (§5). This is a localized regression in one flow, not general staleness.
 
 ## 2. Why the shipped app shows pins and no search
 
+### 2.0 Confirmed on device — Maps is keyed, Places is not
+
+A side-by-side of the kit's `home_empty` ("Send composer · no address") against a photo of the
+installed Android build settles the root cause:
+
+| Observation on the device | What it proves |
+|---|---|
+| **Google map tiles for Harare render**, with the Google logo attribution baked into the tile surface | The **Maps** key (`GOOGLE_MAPS_API_KEY`) *is* provisioned — `react-native-maps` is working |
+| **No search field appears anywhere** between the address rows and the sheet | The **Places** key (`EXPO_PUBLIC_GOOGLE_PLACES_KEY`) is *not* provisioned. `AddressSearch` returned `null` |
+| The kit's hint line **"Search an address, or tap the map to drop a pin."** is **absent** | The one piece of copy that told the customer search exists never shipped |
+| Both address rows still show the **search magnifier** | The UI keeps promising search with nothing behind it |
+
+The two keys are separate variables, and only one of them is in `.env.example` (line 86,
+`GOOGLE_MAPS_API_KEY`). That asymmetry is visible on the device: a fully working map, and a
+search path that renders nothing. This is §2.1 caught in the act.
+
+---
+
 Three findings, in the order they bite.
 
 ### 2.1 The search UI is key-gated and the key is never provisioned for EAS builds — **P0**
@@ -110,6 +128,10 @@ compact search field floats over the map at `send.tsx:675-679`.
 | Composer hint: **"Search an address, or tap the map to drop a pin."** | ✗ — replaced by **"Tap the map to drop your pickup pin."** | kit `screens.jsx:88` vs `ComposeMap.tsx:240` |
 | Address rows live **inside the sheet**, above "What are you sending?" | ✗ — rows float **over the map**, above the sheet | kit `screens.jsx:174` vs `send.tsx:671` |
 | Row trailing icon: `pencil` when filled / `search` when empty | ⚠ — `map-pin` when filled / `search` when empty | kit `screens.jsx:76` vs `MapHome.tsx:120` |
+| Pin-discoverability tooltip: **dark high-contrast pill**, white text, centred over the map | ⚠ — low-contrast **light pill** with muted grey text, so the one remaining instruction is the faintest thing on screen | kit `screens.jsx:167` (`background: var(--ink)`, `color: #fff`) vs `ComposeMap.tsx:233-241` (`tokens.color.bg` + `tokens.color.muted`) |
+| Footer "what's still missing" hint: one line — *"Add pickup & drop-off pins, an item, a price and both phones to broadcast."* | ⚠ — expanded to a four-line wall that names a collapsed section inline: *"…a pickup contact phone, a recipient phone, pickup & drop-off landmarks (under "Landmarks & details"), a price to send."* | kit `screens.jsx:171` vs `send.tsx:694-706` |
+| Primary CTA copy: **"Broadcast request"** | **"Send to riders"** | kit `screens.jsx:173` vs `send.tsx:733` |
+| Top bar: brand pill + **one** round action (account) | brand pill + **two** (notifications, account) — an addition, not a regression; notifications is a real screen in the kit | kit `screens.jsx:152-160` vs `MapHome.tsx:32-35` |
 | Customer live-tracking **"Follow route in Google Maps"** row | ✗ on customer; ✅ on rider only | kit `app.js` `GMapsRow`; `HANDOFF.md:157`; shipped only at `src/ui/rider/JobDetailsCard.tsx:115` |
 
 ### 3.2 The specific mismatch reported
@@ -136,6 +158,8 @@ one, independent of the key.
 | 8 | Extend "Use my current location" to the drop-off slot, and surface it inside the search list as the kit specifies | S |
 | 9 | Add the customer-side "Follow route in Google Maps" row on live tracking | S |
 | 10 | Restore the composer hint to name **both** inputs: "Search an address, or tap the map to drop a pin." | XS |
+| 11 | Restore the tooltip's dark high-contrast treatment — with search gone, it is the only instruction on screen and it currently renders as muted grey on white | XS |
+| 12 | Cut the footer "what's missing" hint back toward the kit's single line; a four-line list that cites a collapsed section by name is harder to act on than the short form | XS |
 
 ---
 
