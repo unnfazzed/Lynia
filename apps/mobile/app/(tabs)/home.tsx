@@ -30,6 +30,7 @@ import {
   ServiceTiles,
   SkeletonRows,
   statusPillLabel,
+  useActiveOrderCheckGate,
 } from "../../src/ui";
 
 const RESTAURANT_RAIL_LIMIT = 10;
@@ -139,6 +140,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
+  // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
+  // be in flight — see useActiveOrderCheckGate's rationale.
+  const activeOrderCheckFailed = useActiveOrderCheckGate(activeOrderQ);
   // Only seed orderKey(id) while THIS screen is the visible route. When home is blurred beneath
   // /order/[id] (the customer is looking at the live tracking screen), use-order-socket.ts owns that
   // same cache entry and merges live position/status pushes into it with an anti-rollback guard
@@ -198,9 +202,10 @@ export default function LauncherHomeScreen(): React.ReactElement {
               onPress={() => router.push(`/order/${activeOrder.id}`)}
             />
           </View>
-        ) : activeOrderQ.isError ? (
+        ) : activeOrderCheckFailed ? (
           // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
-          // hits an error on this exact check must see a way back to it, not a silently-empty rail.
+          // hits an error on this exact check must see a way back to it, not a silently-empty rail —
+          // evidence-gated (UX-2026-08-05) so an inconsequential flaky-link failure stays quiet.
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
             <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           </View>

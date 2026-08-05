@@ -7,7 +7,7 @@ import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { PROFILE_DRAFT_KEY } from "../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
-import { JOB_KEY } from "../net/last-active-store";
+import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
@@ -524,6 +524,9 @@ export async function clearDeviceState(): Promise<void> {
       // The rider's last-active job snapshot (route landmarks, fare, last GPS) — the next rider's cold
       // start reads this single-slot key via loadLastActiveJob() and would paint the previous rider's job.
       SecureStore.deleteItemAsync(JOB_KEY),
+      // The customer's "an order may be in flight" hint — must not gate the next user's error banner
+      // on the previous user's order.
+      SecureStore.deleteItemAsync(ORDER_HINT_KEY),
       // The rider's in-progress bid draft (selected order + typed price/ETA) must not rehydrate for the next user.
       SecureStore.deleteItemAsync(RIDER_BID_DRAFT_KEY),
       // BH-23: the rider's list of already-sent bid offers this session (BH-21) must not rehydrate for the

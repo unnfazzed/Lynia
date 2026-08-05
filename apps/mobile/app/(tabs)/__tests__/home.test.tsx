@@ -17,6 +17,19 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 const mockGetActiveCustomerOrder = jest.fn();
 const mockUseHistoryFeed = jest.fn();
 
+// In-memory SecureStore (jest-expo has no built-in behavior for it) — the failed-check banner's
+// evidence gate (useActiveOrderCheckGate) reads the persisted order hint through it.
+let mockSecureStore: Record<string, string> = {};
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => mockSecureStore[key] ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    mockSecureStore[key] = value;
+  },
+  deleteItemAsync: async (key: string) => {
+    delete mockSecureStore[key];
+  },
+}));
+
 // Controllable focus/blur, for LC-B05: real expo-router calls the cleanup on blur (not just unmount),
 // which is what flips `homeFocused` back to false while the screen stays mounted beneath /order/[id].
 let blurHome: (() => void) | null = null;
@@ -100,6 +113,7 @@ afterEach(() => {
   activeTree = null;
   blurHome = null;
   refocusHome = null;
+  mockSecureStore = {};
   jest.clearAllMocks();
 });
 
@@ -129,12 +143,34 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
-  it("error: the active-order check failing surfaces UX20-01's banner instead of silently showing the reorder rail", async () => {
+  it("error + persisted order hint: the active-order check failing surfaces UX20-01's banner instead of silently showing the reorder rail", async () => {
+    mockSecureStore["lynia.activeOrderHint"] = "order-1";
     mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
     mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(true);
+  });
+
+  // UX-2026-08-05: without local evidence an order may be in flight, a failed background check must
+  // NOT camp a danger banner over the home — the query self-heals via its own poll/reconnect refetch.
+  it("error with no order hint: stays quiet instead of camping the banner over the home", async () => {
+    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
+    activeTree = renderHome();
+    await settle();
+    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
+  });
+
+  // A check that authoritatively answers "no active order" invalidates any stale hint — the next
+  // flaky-link error must not resurrect the banner for an order that provably finished.
+  it("success with null clears a stale persisted order hint", async () => {
+    mockSecureStore["lynia.activeOrderHint"] = "order-done";
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
+    activeTree = renderHome();
+    await settle();
+    expect(mockSecureStore["lynia.activeOrderHint"]).toBeUndefined();
   });
 });
 
