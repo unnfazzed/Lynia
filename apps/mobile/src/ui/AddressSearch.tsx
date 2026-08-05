@@ -11,9 +11,13 @@ import { Icon, type IconName, Label } from "./index";
  * flow the MapPicker produces. Pin-on-map stays the primary path below this — the search is the fast
  * path when a key is present.
  *
- * KEY-GATED: with no Places key configured this renders nothing (placesEnabled() === false), so the
- * screen shows only the MapPicker and the app runs fully unkeyed. Every network failure degrades to
- * a muted "set it on the map below" hint — it never blocks or crashes the pin path.
+ * KEY-GATED, but never SILENT: with no Places key configured this used to render `null`, which shipped
+ * a build whose address rows advertise a search magnifier and then offer only the pin picker — the exact
+ * "the UI says search, the app gives pins" mismatch reported from the store build (see
+ * docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2). An unkeyed build now renders a visible, honest
+ * disabled field naming the pin path instead, so a mis-provisioned build is obvious on screen rather
+ * than invisible. Every network failure still degrades to a muted "set it on the map below" hint — it
+ * never blocks or crashes the pin path.
  */
 
 const DEBOUNCE_MS = 300;
@@ -37,6 +41,41 @@ function splitLandmark(landmark: string): { primary: string; secondary: string }
   const i = landmark.indexOf(", ");
   if (i < 0) return { primary: landmark, secondary: "" };
   return { primary: landmark.slice(0, i), secondary: landmark.slice(i + 2) };
+}
+
+/**
+ * "Powered by Google" attribution (kit `addr_search`, `ui_kits/mobile/app.js`). Google's Places terms
+ * require this wherever autocomplete results are displayed outside a Google map — our suggestion list
+ * floats over the map chrome, not inside it, so it must be shown. Rendered only alongside live results.
+ * The wordmark's per-letter colours are Google's, not ours; they are deliberately hard-coded rather
+ * than tokenised so a palette change can never restyle someone else's brand mark.
+ */
+const GOOGLE_LETTERS: ReadonlyArray<readonly [string, string]> = [
+  ["G", "#4285F4"],
+  ["o", "#EA4335"],
+  ["o", "#FBBC05"],
+  ["g", "#4285F4"],
+  ["l", "#34A853"],
+  ["e", "#EA4335"],
+];
+
+function PoweredByGoogle(): React.ReactElement {
+  return (
+    <View
+      accessibilityRole="text"
+      accessibilityLabel="Powered by Google"
+      style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingTop: 6, paddingHorizontal: tokens.space.sm }}
+    >
+      <Text style={{ fontSize: 11, color: tokens.color.muted }}>Powered by</Text>
+      <View style={{ flexDirection: "row" }} importantForAccessibility="no-hide-descendants">
+        {GOOGLE_LETTERS.map(([ch, col], i) => (
+          <Text key={i} style={{ fontSize: 11, fontWeight: tokens.font.weight.bold, color: col }}>
+            {ch}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 /** A small bold, letter-spaced, muted section label ("SAVED" / "RECENTS") — matches the mockup. */
@@ -98,22 +137,61 @@ function PlaceRow(props: {
   );
 }
 
-export function AddressSearch(props: {
+export type AddressSearchProps = {
   label: string;
   placeholder?: string;
   /** Called with the resolved place when the customer taps a suggestion. Feeds the picked-point flow. */
   onResolved: (place: ResolvedPlace) => void;
-}): React.ReactElement | null {
-  // The single gate: no key → no search UI, only the pin-on-map picker renders.
-  if (!placesEnabled()) return null;
+  /**
+   * Bump this to pull focus into the field — the address rows above are the customer's mental "edit
+   * this address" control, and the kit routes that tap into a search screen. On this one-screen
+   * composer the equivalent is: tapping a row focuses its search, so the magnifier on the row is a
+   * real affordance rather than a decoration. Any change of value focuses; the initial value does not.
+   */
+  focusSignal?: number;
+};
+
+export function AddressSearch(props: AddressSearchProps): React.ReactElement {
+  // The gate: no key → no live search. Render the disabled explainer instead of nothing, so the pin
+  // path is named on screen and a build missing the key can't hide (see the file header).
+  if (!placesEnabled()) return <AddressSearchUnavailable label={props.label} />;
   return <AddressSearchInner {...props} />;
 }
 
-function AddressSearchInner(props: {
-  label: string;
-  placeholder?: string;
-  onResolved: (place: ResolvedPlace) => void;
-}): React.ReactElement {
+/**
+ * Keyless state: a non-interactive field that looks like the search it replaces and says plainly where
+ * the address goes instead. Deliberately NOT a silent `null` — see the file header.
+ */
+function AddressSearchUnavailable({ label }: { label: string }): React.ReactElement {
+  return (
+    <View style={{ marginBottom: tokens.space.sm }}>
+      <Label>{label}</Label>
+      <View
+        accessibilityRole="text"
+        accessibilityLabel={`${label} search is unavailable — set this address on the map instead`}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: tokens.space.sm,
+          borderWidth: 1,
+          borderColor: tokens.color.line,
+          borderRadius: tokens.radius.input,
+          paddingHorizontal: tokens.space.md,
+          paddingVertical: tokens.space.md,
+          minHeight: tokens.touchTargetMin,
+          backgroundColor: tokens.color.surface,
+        }}
+      >
+        <Icon name="map-pin" size={16} color={tokens.color.muted} />
+        <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.muted }}>
+          Address search is unavailable — tap the map to set this pin.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,8 +208,19 @@ function AddressSearchInner(props: {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Monotonic request id so a slow autocomplete response can't overwrite a newer query's results.
   const reqSeq = useRef(0);
+  const input = useRef<TextInput>(null);
 
   useEffect(() => () => { if (debounce.current) clearTimeout(debounce.current); }, []);
+
+  // Focus on demand (see `focusSignal`). A falsy signal means "nobody has asked yet", so the compose
+  // screen never opens with the keyboard covering the map. This must also fire on MOUNT, not just on
+  // change: switching slots swaps the component's key, so a tap on the other address row arrives as a
+  // fresh mount carrying an already-raised signal.
+  const { focusSignal } = props;
+  useEffect(() => {
+    if (!focusSignal) return;
+    input.current?.focus();
+  }, [focusSignal]);
 
   // Hydrate saved/recents once on mount (best-effort; both resolve to empty on any failure).
   useEffect(() => {
@@ -256,6 +345,7 @@ function AddressSearchInner(props: {
       >
         <Icon name="search" size={16} color={tokens.color.muted} />
         <TextInput
+          ref={input}
           value={query}
           onChangeText={onChangeText}
           placeholder={props.placeholder ?? "Search an address or place"}
@@ -330,6 +420,8 @@ function AddressSearchInner(props: {
           ))}
         </View>
       ) : null}
+
+      {suggestions.length > 0 ? <PoweredByGoogle /> : null}
 
       {/* Idle state (customer-journey §1·2): while the field is empty/below the search threshold, offer
           the customer's saved slots + recent picks in place of the (empty) suggestion list. */}

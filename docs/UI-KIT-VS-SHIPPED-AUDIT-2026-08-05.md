@@ -1,11 +1,13 @@
-# UI kit vs shipped app — address/compose audit (2026-08-05)
+# UI kit vs shipped app — full journey audit (2026-08-05)
 
 **Trigger:** the installed Android build still asks the customer to drop **pins** for pickup and
 drop-off, even though the address rows render a **search** magnifier and the shared UI kit specifies a
-search-first flow.
+search-first flow. §1–4 diagnose that flow; §5 extends the review to every journey flow; §6 records the
+adoption work.
 
 **Scope of comparison:** `packages/design/` (the in-repo copy of the kit — same file path as the shared
-link, `explorations/journey/All Screens Gallery.html`) against `apps/mobile/`.
+link, `explorations/journey/All Screens Gallery.html`) against `apps/mobile/`, `apps/merchant/` and
+`apps/admin/`.
 
 > **Caveat on the source of truth.** This audit reads the kit **vendored in this repo**. The hosted
 > claude.ai Design project could not be opened from this session (`DesignSync` requires an interactive
@@ -25,8 +27,12 @@ stack:
 2. **A design-fidelity gap** — the kit's dedicated `addr_search` and `addr_map_confirm` screens were
    never built; their content was compressed into a floating field on the composer (§3).
 
-The rest of the app (food, one-app rider board, money/gate, trust & safety, auction) tracks the kit
-well (§5). This is a localized regression in one flow, not general staleness.
+The app-wide review (§5) extends this to every journey flow. Headline: **foundations are in full
+parity** (colour, spacing, radius, targets, type — token for token), and the food, rider, merchant and
+admin surfaces track the kit closely. The gaps are flow-level, not a restyle — and three of them share
+one shape: **shipped UI advertising a capability the build doesn't have** (§5.6).
+
+§6 records what has been adopted in this PR and what remains.
 
 ---
 
@@ -163,7 +169,126 @@ one, independent of the key.
 
 ---
 
-## 5. What already matches the kit
+## 5. App-wide review — all journey flows
+
+Extended from the address flow to every surface. Method: the kit's own screen registries
+(`window.LJ` / `RC` / `RJ` / `RJM` / `RR` in `explorations/`, plus the admin list in `gallery.jsx`)
+enumerated and checked against shipped routes, components and states.
+
+### 5.1 Foundations — ✅ full parity
+
+Checked token-for-token; no drift found. This is why the app *reads* like the kit even where flows
+diverge, and it means adoption work is flow-level, not a restyle.
+
+| Foundation | Kit | Shipped | |
+|---|---|---|---|
+| Colour palette | `tokens/colors.css` | `packages/shared/src/design-tokens.ts` | ✅ identical hexes, incl. the `--cta-fill` / `accent` split |
+| Primary CTA fill | `--action-primary` = `#00812F`, never raw accent | `Button` uses `tokens.color.cta` / `ctaPressed` | ✅ sunlight-contrast decision honoured |
+| Spacing (8pt) + screen edge 16px | `tokens/spacing.css` | `space` | ✅ |
+| Radius (input 12 / card 16 / pill) | `tokens/spacing.css` | `radius` | ✅ |
+| Touch targets 44 / 52 | `--target-min` / `--target-primary` | `touchTargetMin` / `touchTargetPrimary` | ✅ |
+| Typeface (Inter + Fredoka wordmark) | `tokens/fonts.css` | `font` | ✅ |
+
+Raw `accent` still appears as a *fill* in seven places (brand header, splash, force-update, live dots,
+celebrate). All are non-text graphics, which is exactly what the token comment reserves it for. ✅
+
+### 5.2 Customer · parcel (kit `LJ`, 57 states)
+
+Near-complete. Auction (finding / live / race / counter / expired / no-riders), tracking (code /
+active / paused / dark), terminals (rider-cancelled, undelivered, cancel-with-reason, cancelled,
+rate, completed), OTP edge states, on-hold, force-update, and the full trust & safety set (SOS idle /
+confirm / contacts / offline-log-failed, report + block, trip help) are all shipped. The post-pickup
+cancel even carries the kit's hand-back warning (`order/[id].tsx:1131`).
+
+Gaps:
+
+| Kit screen | Status | Fix |
+|---|---|---|
+| `addr_search` | ⚠ flattened into an inline field (§3) | §4 items 1–5, 8 — **done this PR** |
+| `addr_map_confirm` | ❌ not built | §4 item 6 — **remaining** |
+| Customer `GMapsRow` on live tracking | ❌ rider-only | §4 item 9 — **remaining** |
+
+### 5.3 Customer · food (kit `RC`, 46 states)
+
+The strongest-adopted area. The whole kitchen-confirm money handshake is shipped verbatim —
+`await_accept`, `confirm_call`, `pay_push`, `pay_now`, `pay_wait`, `pay_manual` (the D-24 manual rail),
+`pay_confirmed`, `pay_open` (still-unpaid reminder), `pay_failed` — plus cart edge states (sold out,
+price changed, empty, under-minimum, small-order fee), offline-mid-checkout, prep countdown, and the
+doorstep cash handshake.
+
+Gaps:
+
+| Kit screen | Status | Fix |
+|---|---|---|
+| `menu_closed` / `list_empty` — **"Remind/Notify me when they open"** | ❌ the closed and empty states ship without any notify-me affordance | Add a remind-me action; needs a small backend hook (subscribe to a restaurant's reopen) |
+| `closed_interrupt` — "Keep my cart for tomorrow" | ⚠ shipped as "See other restaurants" / "Keep browsing"; the cart *is* preserved and the copy says so, but the kit's explicit save-for-later action isn't offered | Copy + one action — cheap |
+
+### 5.4 Rider (kit `RJ` 69 + `RJM` 12 + `RR` 19)
+
+KYC (intro → form → photo capture/preview/upload → pending → verified/failed/expired), the gate set
+(out-of-area, cooldown, banned, KYC-locked), offers, active job, delivery OTP with lockout, bail,
+undelivered, the merged Money tab and top-up gate, and rider-side safety are all shipped.
+
+Gap — and it's the biggest one after addressing:
+
+| Kit screen | Status | Fix |
+|---|---|---|
+| `RJM board` — **"one board", parcels and food in a single tagged list** | ⚠ **the copy ships, the behaviour doesn't.** `app/rider/(tabs)/index.tsx:730` tells the rider *"You're online — parcels and food orders arrive live, one queue"*, but food jobs are gated behind `merchantDispatchAutoEnabled`, which is dormant; today only a `food_offer` notification is pushed (`index.tsx:86-89`) | Either land the rider-facing food feed, or make the copy honest until it lands. **Same class of defect as the address rows: shipped UI promising a capability the build doesn't have.** |
+
+### 5.5 Merchant & admin
+
+- **Admin** — ✅ complete and ahead of the kit. All seven kit pages (overview, orders, riders,
+  customers, cash, KYC, issues) plus `sos/` and a `merchants/` section the kit doesn't cover.
+- **Merchant** — ✅ queue, menu, hours, shop, statement, login. Maps onto the kit's kitchen-tablet set.
+
+### 5.6 The pattern worth naming
+
+Three defects share one shape: **shipped UI advertises a capability the build doesn't actually have.**
+The address rows' search magnifier with no search (§3.2), the rider board's "parcels and food, one
+queue" with no food jobs (§5.4), and — the root of the first — a key-gated feature that degrades to
+*invisible* rather than to *explained* (§2.1). Fix #4 in §4 is the general remedy: when a capability is
+gated off, say so on screen. A silent `null` is how all three shipped unnoticed.
+
+---
+
+## 6. Adoption status
+
+**Landed in this PR** — the search-first flow now behaves like the kit within the one-screen composer:
+
+- `AddressSearch` no longer returns `null` when unkeyed. It renders a visible disabled field —
+  *"Address search is unavailable — tap the map to set this pin."* A mis-provisioned build is now
+  obvious on screen instead of silently degrading to pins.
+- **Tapping an address row focuses that slot's search** (`focusSignal`). The magnifier on the row is a
+  real affordance for the first time; the kit routes it to a search screen, this is the one-screen
+  equivalent.
+- The kit's caption is restored under the rows — *"Search an address, or tap the map to drop a pin."*
+  (`AddressHint`), naming only the inputs that are actually live.
+- The pin tooltip is back to the kit's **dark high-contrast pill** (ink fill, white label) and names
+  both inputs when search is available.
+- **"Use my location" now works for drop-off too**, not just pickup — the kit offers it for both roles.
+- **"Powered by Google"** attribution renders with autocomplete results (Places ToS).
+- `.env.example` documents `EXPO_PUBLIC_GOOGLE_PLACES_KEY` and its EAS-environment requirement.
+- `docs/SECURITY-OPS.md` §B rewritten: the two keys take different restrictions, and an Android-app
+  restriction on the Places **web-service** key returns `REQUEST_DENIED` on every call.
+- Regression test (`src/ui/__tests__/address-search.test.tsx`) pinning both halves of the key gate.
+
+**Still required — the one thing code cannot do:** provision `EXPO_PUBLIC_GOOGLE_PLACES_KEY` in the EAS
+`production` and `preview` environments. Until that is set, the app now *says* search is unavailable
+rather than pretending it never existed — but there is still no search.
+
+**Next tranche, in priority order:**
+
+1. Rider board: land the food feed or make the "one queue" copy honest (§5.4) — same defect class, and
+   it's currently misleading riders about their earnings.
+2. `addr_map_confirm` — the routed drag-to-adjust confirm screen, with landmark capture in context
+   (§4 item 6). Largest remaining fidelity gap in the parcel flow.
+3. Food "remind me when they open" (§5.3).
+4. Customer-side "Follow route in Google Maps" on live tracking (§4 item 9).
+5. Footer "what's missing" hint back toward the kit's single line (§4 item 12).
+
+---
+
+## 7. What already matches the kit
 
 Checked and consistent — no action needed:
 
