@@ -19,7 +19,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, Celebrate, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -86,6 +86,9 @@ export default function OrderScreen(): React.ReactElement {
   const [declinedCounterIds, setDeclinedCounterIds] = useState<Set<string>>(() => new Set());
   // Post-pickup cancel confirmation gate (the hand-back warning).
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  // The kit's cancel step captures an optional reason; the server (CancelRequest) and the cancelled
+  // terminal (which already renders order.cancelReason) both supported it, but the client never sent one.
+  const [cancelReason, setCancelReason] = useState("");
   // Fix 2: bumped when the server pushes a rider-presence-stale WS event. LiveTrackingCard computes
   // staleness from a render-time `Date.now()` snapshot and otherwise only re-renders on a new GPS tick —
   // so once ticks STOP (the exact trigger), nothing re-evaluates it. Threading this counter in forces
@@ -505,8 +508,11 @@ export default function OrderScreen(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- qc is stable; orderQ.data read fresh each run.
   }, [orderQ.data, pendingRating]);
   const cancelM = useMutation({
-    mutationFn: () => cancelOrder(orderId),
+    // Pass the customer's reason through when the confirm card collected one; an empty field sends
+    // nothing (a blank string is not a reason).
+    mutationFn: (reason: string | undefined) => cancelOrder(orderId, reason && reason.trim() ? { reason: reason.trim() } : {}),
     onSuccess: () => {
+      setCancelReason("");
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] }); // the Trips list must reflect the cancel, not the stale live status
     },
@@ -1141,7 +1147,14 @@ export default function OrderScreen(): React.ReactElement {
                   </Text>
                 </>
               )}
-              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(); }} loading={pendingOrQueued(cancelM)} />
+              <Field
+                label="Reason (optional)"
+                value={cancelReason}
+                onChangeText={setCancelReason}
+                placeholder="e.g. sending it another way"
+                maxLength={280}
+              />
+              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(cancelReason); }} loading={pendingOrQueued(cancelM)} />
               <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
             </Card>
           ) : (
@@ -1150,7 +1163,8 @@ export default function OrderScreen(): React.ReactElement {
               variant="ghost"
               onPress={() => {
                 if (MATCHED_CANCEL.has(order.status)) setCancelConfirm(true);
-                else cancelM.mutate();
+                // The one-tap auction cancel (no rider to strand) has no reason form.
+                else cancelM.mutate(undefined);
               }}
               loading={pendingOrQueued(cancelM)}
             />

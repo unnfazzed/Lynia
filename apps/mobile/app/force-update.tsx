@@ -9,6 +9,11 @@ import { DoveMark } from "../src/ui/Brand";
  * The hard version gate (customer/rider S·3). Brand-green SystemState with the brand mark, mounted by
  * the root layout in place of the whole Stack when isUpdateRequired(current) is true — so there is no
  * route past it. Mirrors the journey mockup `ForceUpdate` (SystemState tone="green" brand).
+ *
+ * Copy is role-NEUTRAL ("keep using LyniaGo"), not the kit's role-specific line ("keep sending" /
+ * "keep riding"): this gate fires from the root layout before the role is resolved (see _layout.tsx —
+ * role isn't known at root), so a role-specific line would show the wrong verb to half the users. The
+ * kit should carry a neutral variant for this screen for the same reason.
  */
 export default function ForceUpdateScreen(): React.ReactElement {
   const openStore = (): void => {
@@ -25,7 +30,7 @@ export default function ForceUpdateScreen(): React.ReactElement {
           Time to update
         </Text>
         <Text style={{ fontSize: tokens.font.size.body, color: "rgba(255,255,255,0.9)", textAlign: "center", lineHeight: 22, marginTop: 6, maxWidth: 260 }}>
-          A new version of LyniaGo is ready with the latest fixes. Update to keep sending.
+          A new version of LyniaGo is ready with the latest fixes. Update to keep using LyniaGo.
         </Text>
         {/* Inverted primary: white pill on green, with the legible text-green label. Hides when no store
             URL is configured rather than opening a dead link. */}
