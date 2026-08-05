@@ -145,16 +145,27 @@ jobs:
             exit 0
           fi
 
+          echo "logFiles returned: ${#LOG_URLS[@]}"
           for url in "${LOG_URLS[@]}"; do
+            # Diagnostics first: an empty body is ambiguous (403? redirect? gzip?), and the status
+            # code disambiguates it in one run instead of several. Print the URL's shape only —
+            # never the signed query string — since this repo's workflow logs are public.
+            echo "url-shape: $(printf '%s' "$url" | sed -E 's/\?.*$/?<redacted>/')"
+            code_anon="$(curl -sSL -o /tmp/anon.bin -w '%{http_code}' "$url" || echo "curl-failed")"
+            code_auth="$(curl -sSL -o /tmp/auth.bin -w '%{http_code}' -H "Authorization: Bearer $EXPO_TOKEN" "$url" || echo "curl-failed")"
+            echo "http anon=$code_anon ($(stat -c%s /tmp/anon.bin 2>/dev/null || echo 0) bytes) auth=$code_auth ($(stat -c%s /tmp/auth.bin 2>/dev/null || echo 0) bytes)"
+            # Keep whichever response actually has a body.
+            if [ -s /tmp/auth.bin ]; then cp /tmp/auth.bin /tmp/raw.bin; else cp /tmp/anon.bin /tmp/raw.bin || true; fi
+
             echo "::group::phase log"
             # Format varies (gzipped or plain; JSON-lines or raw text), so normalise: decompress if
             # compressed, pull .msg/.message when the line IS json, otherwise keep the raw line, then
             # strip ANSI colour so the greps match.
-            curl -sSL "$url" 2>/dev/null | { gunzip -c 2>/dev/null || cat; } \
+            { gunzip -c /tmp/raw.bin 2>/dev/null || cat /tmp/raw.bin; } \
               | jq -r 'if type == "object" then (.msg // .message // (.|tostring)) else tostring end' 2>/dev/null \
               > /tmp/phase.txt || true
             if [ ! -s /tmp/phase.txt ]; then
-              curl -sSL "$url" 2>/dev/null | { gunzip -c 2>/dev/null || cat; } > /tmp/phase.txt || true
+              { gunzip -c /tmp/raw.bin 2>/dev/null || cat /tmp/raw.bin; } > /tmp/phase.txt || true
             fi
             sed -e 's/\x1b\[[0-9;]*[mGKHF]//g' -i /tmp/phase.txt || true
 
