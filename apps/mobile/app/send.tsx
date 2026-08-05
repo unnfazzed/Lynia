@@ -33,7 +33,8 @@ import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
 import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
-import { AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
+import { AddressHint, AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
+import { placesEnabled } from "../src/config";
 import type { PickedPoint } from "../src/ui/MapPicker";
 import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
 import { SendItemsList } from "../src/ui/send/SendItemsList";
@@ -70,6 +71,17 @@ export default function HomeScreen(): React.ReactElement {
   // Map-anchored home (1·1): a single map hero edits whichever address the customer is placing. The
   // two address rows switch it; the search + map + "use my location" all bind to the active slot.
   const [activePin, setActivePin] = useState<AddressSlot>("pickup");
+  // Tapping an address row must actually reach the search. The rows render a magnifier when empty, but
+  // used to do nothing except flip `activePin` — so on a build with no Places key the icon promised a
+  // search that did not exist, and even on a keyed build the customer had to find the separate field
+  // themselves. The kit routes that tap to a full search screen; this one-screen composer's equivalent
+  // is to focus the active slot's search. Bumping a nonce (rather than a boolean) re-fires focus on
+  // every tap, including a second tap on the already-active row.
+  const [searchFocus, setSearchFocus] = useState(0);
+  const pickSlot = useCallback((slot: AddressSlot): void => {
+    setActivePin(slot);
+    setSearchFocus((n) => n + 1);
+  }, []);
   const [items, setItems] = useState<ItemRow[]>([emptyItem()]);
   const [note, setNote] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
@@ -668,14 +680,28 @@ export default function HomeScreen(): React.ReactElement {
 
           {/* Search-first address rows: tapping one chooses which pin the map edits (pickup = green
               dot, drop-off = red square). The CTA is gated on both points being set. */}
-          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={setActivePin} />
+          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={pickSlot} />
+          <AddressHint searchEnabled={placesEnabled()} />
 
-          {/* The active slot's search (key-gated; renders nothing without a Places key), floating over
-              the map so a resolved place drops the active pin. */}
+          {/* The active slot's search, floating over the map so a resolved place drops the active pin.
+              On an unkeyed build this renders the disabled explainer rather than nothing — see
+              AddressSearch's header. */}
           {activePin === "pickup" ? (
-            <AddressSearch key="pickup-search" label="Pickup" placeholder="Search pickup address" onResolved={onPickupResolved} />
+            <AddressSearch
+              key="pickup-search"
+              label="Pickup"
+              placeholder="Search pickup address"
+              onResolved={onPickupResolved}
+              focusSignal={searchFocus}
+            />
           ) : (
-            <AddressSearch key="drop-search" label="Drop-off" placeholder="Search drop-off address" onResolved={onDropResolved} />
+            <AddressSearch
+              key="drop-search"
+              label="Drop-off"
+              placeholder="Search drop-off address"
+              onResolved={onDropResolved}
+              focusSignal={searchFocus}
+            />
           )}
         </View>
       </View>

@@ -38,15 +38,30 @@ directly reachable, mirroring the API.
 
 ## B. Restrict the client-side Google Maps / Places key (P3-3)
 
-The mobile app ships a Google Maps/Places key in its bundle (`EXPO_PUBLIC_GOOGLE_PLACES_KEY`) — inherent
-to client-side Google APIs. Contain it in the GCP console:
-1. **APIs & Services → Credentials →** the key → **Application restrictions**: restrict to the Android
-   app's package name + SHA-1 signing cert (and iOS bundle id if applicable).
-2. **API restrictions**: allow *only* Maps SDK + Places API — nothing else.
-3. Set a **quota cap** so a leaked key can't run up an unbounded bill.
+The mobile app ships client-side Google keys in its bundle — inherent to client-side Google APIs. There
+are **two distinct keys**, and they take **different restrictions**:
+
+| Key | Used by | Application restriction |
+|---|---|---|
+| `GOOGLE_MAPS_API_KEY` | Maps **SDK** for Android (`react-native-maps`) | ✅ Android package name + SHA-1 |
+| `EXPO_PUBLIC_GOOGLE_PLACES_KEY` | Places **web service** REST (`src/api/places.ts`) | ❌ **Android restrictions do not work** — use *None* or IP, and lean on API restriction + quota |
+
+The Places key calls `maps.googleapis.com/maps/api/place/{autocomplete,details}/json` directly over
+`fetch`. Those are **web-service** endpoints: they honour *IP* and *None* application restrictions only.
+An Android-app-restricted key returns `REQUEST_DENIED` for every call — and the client swallows the
+error into an empty result list, so the symptom is a search box that silently never returns anything.
+(If you want app restrictions on this key, that's a migration to the Places **SDK**, not a config change.)
+
+Contain them in the GCP console:
+1. **APIs & Services → Credentials →** the Maps SDK key → **Application restrictions**: Android package
+   name + SHA-1 signing cert (and iOS bundle id if applicable).
+2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
+   Compensate with a tight **API restriction** (Places API *only*) and a hard **quota cap**.
+3. Set a **quota cap** on both so a leaked key can't run up an unbounded bill.
 4. Keep a separate, server-restricted key for any server-side Google calls.
 
-*Verify:* the key rejected when called from an unlisted package / for a non-allowed API.
+*Verify:* the Maps key is rejected from an unlisted package; the Places key returns real predictions
+from the shipped build (not `REQUEST_DENIED`) and is refused for any non-Places API.
 
 ---
 

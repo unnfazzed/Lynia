@@ -192,13 +192,15 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
         ) : null}
       </MapView>
 
-      {/* Floating "use my location" — only meaningful for the pickup (the recipient isn't standing at
-          the drop-off). Bottom-right, clear of the address chrome up top. */}
-      {active === "pickup" ? (
+      {/* Floating "use my location". The kit offers this for BOTH roles (`AddrSearch`'s
+          onUseLocation handles pickup and drop-off alike): a customer standing at the drop-off
+          arranging a collection, or sending to where they already are, was previously left with no
+          shortcut at all on that slot. Bottom-right, clear of the address chrome up top. */}
+      {(
         <Pressable
           onPress={() => void useMyLocation()}
           accessibilityRole="button"
-          accessibilityLabel="Use my current location for pickup"
+          accessibilityLabel={active === "pickup" ? "Use my current location for pickup" : "Use my current location for drop-off"}
           style={({ pressed }) => ({
             position: "absolute",
             right: tokens.space.md,
@@ -217,7 +219,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
           <Icon name="navigation" size={16} color={tokens.color.accentText} />
           <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>{locating ? "Locating…" : "Use my location"}</Text>
         </Pressable>
-      ) : null}
+      )}
 
       {locateMsg ? (
         <View
@@ -230,14 +232,20 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       ) : null}
 
       {/* Pin-discoverability hint: the full-bleed map dropped MapPicker's "tap to drop a pin" caption, so
-          a first-time user has no cue the map itself is the input. Show it until the active slot has a pin. */}
+          a first-time user has no cue the map itself is the input. Show it until the active slot has a pin.
+          Styled as the kit's DARK pill (`screens.jsx` Home: ink fill, white label), not the muted-grey-on-
+          white it had drifted to — with search absent on an unkeyed build this is the ONLY instruction on
+          the screen, and it was rendering as the faintest thing on it. Copy names BOTH inputs when search
+          is live, matching the kit's "Search an address, or tap the map to drop a pin." */}
       {mapReady && !activePoint ? (
         <View
           pointerEvents="none"
-          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, alignSelf: "center", ...tokens.shadow.card }}
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, alignSelf: "center", ...tokens.shadow.card }}
         >
-          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center" }}>
-            Tap the map to drop your {active === "pickup" ? "pickup" : "drop-off"} pin.
+          <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, textAlign: "center" }}>
+            {placesEnabled()
+              ? `Search an address, or tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin.`
+              : `Tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin.`}
           </Text>
         </View>
       ) : null}

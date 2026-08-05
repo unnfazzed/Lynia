@@ -86,6 +86,23 @@ export function AddressRows(props: {
   );
 }
 
+/**
+ * The kit's one-line caption under the address rows (`screens.jsx` AddressFields: "Search an address,
+ * or tap the map to drop a pin."). It never shipped, which left the rows' search magnifier as the only
+ * hint that addressing is anything other than a pin drop. Names whichever inputs are actually live, so
+ * it can't promise a search an unkeyed build doesn't have.
+ */
+export function AddressHint({ searchEnabled }: { searchEnabled: boolean }): React.ReactElement {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: tokens.space.sm, paddingHorizontal: 2 }}>
+      <Icon name="map-pin" size={13} color={tokens.color.muted} />
+      <Text style={{ flex: 1, fontSize: 11.5, color: tokens.color.muted }}>
+        {searchEnabled ? "Search an address, or tap the map to drop a pin." : "Tap the map to drop a pin for each address."}
+      </Text>
+    </View>
+  );
+}
+
 function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; onPress: () => void }): React.ReactElement {
   const isPickup = props.slot === "pickup";
   const color = isPickup ? tokens.color.accent : tokens.color.danger;
