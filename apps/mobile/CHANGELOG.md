@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/unnfazzed/Lynia/compare/v0.20.1...v0.20.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **design:** align foundations + shared primitives to the kit ([0b71c8c](https://github.com/unnfazzed/Lynia/commit/0b71c8ca4152143416ddb06fcaa276178ea37f17))
+
 ## [0.20.1](https://github.com/unnfazzed/Lynia/compare/v0.20.0...v0.20.1) (2026-08-05)
 
 
