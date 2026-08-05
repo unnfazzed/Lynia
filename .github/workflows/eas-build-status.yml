@@ -14,9 +14,15 @@ on:
   workflow_dispatch:
     inputs:
       limit:
+        # `string`, not `number`: a number-typed input rejects an API dispatch that passes it as a
+        # JSON number ("Invalid value for input 'limit'"), which is how a tool-driven dispatch sends it.
         description: "How many recent builds to list"
-        type: number
-        default: 5
+        type: string
+        default: "5"
+      build_id:
+        description: "Build to fetch phase logs for (default: the newest failed build)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -89,5 +95,62 @@ jobs:
             # `eas env:list` takes no --non-interactive flag (it is non-interactive already); passing
             # one exits "Nonexistent flag" without listing anything.
             eas env:list --environment "$envname" 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
+            echo "::endgroup::"
+          done
+
+      # The actual reason a build failed lives in its per-phase logs on Expo's CDN, which
+      # `build:list`/`build:view` do not include — only a generic "see logs of the <phase> phase"
+      # message. Fetch them through the Expo GraphQL API with the same token and print ONLY
+      # error-ish lines, capped.
+      #
+      # NOTE (this repo is public, so workflow logs are world-readable): print no artifact URLs and
+      # no whole log dumps. EAS masks secret env values in build logs, and the grep below keeps the
+      # output to failure lines, but keep that constraint in mind before widening this filter.
+      - name: Fetch failed build phase logs
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          REQUESTED_BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          set -euo pipefail
+          BUILD_ID="${REQUESTED_BUILD_ID:-}"
+          if [ -z "$BUILD_ID" ]; then
+            BUILD_ID="$(jq -r '[.[] | select(.status == "ERRORED")][0].id // empty' /tmp/builds.json)"
+          fi
+          if [ -z "$BUILD_ID" ]; then
+            echo "No failed build in the listed window — nothing to fetch."
+            exit 0
+          fi
+          echo "Fetching phase logs for build $BUILD_ID"
+
+          # `logFiles` is a list of CDN URLs of the build's phase logs. If the schema ever renames it,
+          # the API returns a field-does-not-exist error naming the valid fields — printed as-is, which
+          # is the diagnostic either way.
+          curl -sS https://api.expo.dev/graphql \
+            -H "Authorization: Bearer $EXPO_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"query\":\"query(\$id:ID!){builds{byId(buildId:\$id){id status logFiles}}}\",\"variables\":{\"id\":\"$BUILD_ID\"}}" \
+            > /tmp/gql.json || true
+
+          if jq -e '.errors' /tmp/gql.json >/dev/null 2>&1; then
+            echo "::group::GraphQL response (errors)"
+            jq -r '.errors[]?.message' /tmp/gql.json
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          mapfile -t LOG_URLS < <(jq -r '.data.builds.byId.logFiles[]? // empty' /tmp/gql.json)
+          if [ "${#LOG_URLS[@]}" -eq 0 ]; then
+            echo "No logFiles returned for this build (it may have failed before any phase produced logs)."
+            exit 0
+          fi
+
+          for url in "${LOG_URLS[@]}"; do
+            echo "::group::phase log"
+            # Phase logs are gzipped JSON-lines; fall back to plain text if not compressed.
+            curl -sSL "$url" 2>/dev/null | { gunzip -c 2>/dev/null || cat; } \
+              | jq -r '.msg? // .message? // empty' 2>/dev/null \
+              | grep -iE "error|fail|exception|cannot|unable|not found|undefined|missing" \
+              | head -60 || true
             echo "::endgroup::"
           done
