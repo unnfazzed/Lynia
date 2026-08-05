@@ -86,6 +86,8 @@ jobs:
           set -euo pipefail
           for envname in preview production; do
             echo "::group::eas env:list — ${envname}"
-            eas env:list --environment "$envname" --non-interactive 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
+            # `eas env:list` takes no --non-interactive flag (it is non-interactive already); passing
+            # one exits "Nonexistent flag" without listing anything.
+            eas env:list --environment "$envname" 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
             echo "::endgroup::"
           done
