@@ -29,6 +29,7 @@ import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { saveActiveOrderHint } from "../src/net/last-active-store";
 import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, TestBuildBanner, useActiveOrderCheckGate } from "../src/ui";
+import { AddressConfirmSheet } from "../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
@@ -339,25 +340,40 @@ export default function HomeScreen(): React.ReactElement {
     [dropLandmarkTouched],
   );
 
-  // Search-first addressing (§1·2): a resolved place sets the point (with its place_id) AND fills the
-  // landmark from the chosen address — the same picked-point the MapPicker feeds, just via search. The
-  // map recenters on the new value; a later pin tap/drag re-emits without the placeId, invalidating it.
+  // Search-first addressing (§1·2). A resolved place does NOT commit straight to the composer any
+  // more: it opens the kit's `addr_map_confirm` step, where the customer nudges the rooftop pin to the
+  // actual gate and names the landmark in context. See AddressConfirmSheet's header for why that step
+  // earns its place — chiefly that the landmark is contract-required but otherwise lives in a
+  // collapsed section the Broadcast hint has to give directions to.
+  const [confirming, setConfirming] = useState<{ place: ResolvedPlace; slot: AddressSlot } | null>(null);
   const onPickupResolved = useCallback((place: ResolvedPlace): void => {
-    setPickupPoint({ lat: place.lat, lng: place.lng, placeId: place.placeId });
-    if (place.landmark) {
-      setPickupLandmark(place.landmark);
-      setPickupLandmarkFromMap(true);
-      setPickupLandmarkTouched(false);
-    }
+    setConfirming({ place, slot: "pickup" });
   }, []);
   const onDropResolved = useCallback((place: ResolvedPlace): void => {
-    setDropPoint({ lat: place.lat, lng: place.lng, placeId: place.placeId });
-    if (place.landmark) {
-      setDropLandmark(place.landmark);
-      setDropLandmarkFromMap(true);
-      setDropLandmarkTouched(false);
-    }
+    setConfirming({ place, slot: "drop" });
   }, []);
+
+  // Committed from the confirm sheet: the (possibly dragged) point plus the landmark the customer
+  // actually typed. A landmark confirmed here is user-owned — it must not be overwritten by the
+  // reverse geocode that fires when the map recenters on the new pin, so it's marked touched.
+  const onConfirmAddress = useCallback(
+    (point: PickedPoint, landmark: string): void => {
+      const slot = confirming?.slot;
+      setConfirming(null);
+      if (slot === "pickup") {
+        setPickupPoint(point);
+        setPickupLandmark(landmark);
+        setPickupLandmarkTouched(true);
+        setPickupLandmarkFromMap(false);
+      } else if (slot === "drop") {
+        setDropPoint(point);
+        setDropLandmark(landmark);
+        setDropLandmarkTouched(true);
+        setDropLandmarkFromMap(false);
+      }
+    },
+    [confirming?.slot],
+  );
 
   const clearForm = useCallback((): void => {
     setPickupPoint(null);
@@ -410,6 +426,20 @@ export default function HomeScreen(): React.ReactElement {
   const declaredValueNum = parseNum(declaredValue);
   const declaredValueOk = declaredValueNum === null || (declaredValueNum >= 0 && declaredValueNum <= 150);
   const canSubmit = coordsOk && fare !== null && fare > 0 && itemsOk && pickupPhoneOk && dropPhoneOk && landmarksOk && declaredValueOk;
+
+  // Reveal the collapsed "Landmarks & details" section when what's left to fill is INSIDE it.
+  // Landmarks are contract-required and normally auto-fill from the reverse geocode, so when they
+  // don't (offline, keyless, a geocode miss) the customer was left with a disabled Broadcast and a
+  // hint that had to give walking directions to a toggle. Gated on being the LAST blocker, so it
+  // can't pop open mid-typing while other fields are still empty. Never auto-CLOSES — once it's open
+  // it belongs to the customer.
+  const onlyDetailsLeft =
+    (!landmarksOk || !declaredValueOk) && coordsOk && itemsOk && pickupPhoneOk && dropPhoneOk && fare !== null && fare > 0;
+  useEffect(() => {
+    if (!onlyDetailsLeft) return;
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setDetailsOpen(true);
+  }, [onlyDetailsLeft, reduceMotion]);
 
   // Idempotency key (BUG-HUNT): derived deterministically from the persisted nonce + the trip's
   // content, so it's stable across a timeout+retry, a double-tap on Send, AND an app kill-and-relaunch
@@ -721,10 +751,15 @@ export default function HomeScreen(): React.ReactElement {
                   {`Add ${[
                     !coordsOk ? "pickup & drop-off pins" : null,
                     !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
-                    !pickupPhoneOk ? "a pickup contact phone" : null,
-                    !dropPhoneOk ? "a recipient phone" : null,
-                    !landmarksOk ? "pickup & drop-off landmarks (under \u201cLandmarks & details\u201d)" : null,
-                    !declaredValueOk ? "a declared value between 0 and 150 (under \u201cLandmarks & details\u201d)" : null,
+                    // One noun per requirement, matching the kit's single-line hint ("\u2026an item, a price
+                    // and both phones to broadcast."). Naming each phone separately, then spelling out
+                    // which collapsed section two other fields hide in, turned this into a four-line
+                    // wall \u2014 and a list you have to parse is worse than a list you can scan. The
+                    // details section now opens itself when it's the blocker, so the hint no longer has
+                    // to give directions to it.
+                    !pickupPhoneOk || !dropPhoneOk ? "both phones" : null,
+                    !landmarksOk ? "both landmarks" : null,
+                    !declaredValueOk ? "a declared value between 0 and 150" : null,
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
@@ -825,6 +860,13 @@ export default function HomeScreen(): React.ReactElement {
           )}
         </BottomSheet>
       </KeyboardAvoidingView>
+      <AddressConfirmSheet
+        place={confirming?.place ?? null}
+        slot={confirming?.slot ?? "pickup"}
+        initialLandmark={confirming?.slot === "pickup" ? pickupLandmark : dropLandmark}
+        onConfirm={onConfirmAddress}
+        onCancel={() => setConfirming(null)}
+      />
       <DisclaimerSheet visible={showDisclaimer} onAgree={onAgreeAndBroadcast} onBack={() => setShowDisclaimer(false)} />
     </View>
   );
