@@ -78,9 +78,46 @@ lockstep, since here they already agree.
 
 ---
 
+## 3. Designed screens that should NOT be built as specified — OPEN
+
+Found while working the audit's "❌ designed, not shipped" list. Both are counted as unbuilt screens,
+but building them **as drawn** would remove working capability or silently change a business process.
+They need a decision before anyone implements them.
+
+### 3a. Merchant `M2·3 waiting_rider` — the "Don't start cooking yet" gate
+
+The kit sequences the kitchen as **accept → wait for a rider → then cook** (*"We're finding a rider for
+this order. The screen turns green the second one is secured — that's your signal to cook"*,
+`r-merchant.jsx:437-439`).
+
+The shipped flow cooks **first**: accept moves straight to `preparing` on the cash rail, or to
+`awaiting_payment` → `preparing` on the wallet rail (`food-order.service.ts:244-249, 376, 438`), and
+dispatch only starts hunting once the phase reaches `ready_for_pickup`.
+
+These are **different business processes, not a missing screen.** Adopting the kit's gate would hold
+every kitchen's prep until dispatch succeeds — a real operational and cost decision (kitchen throughput,
+food timing, what happens when no rider is found *after* the food is already cooked vs. before). It is
+not a UI fix and must not be applied unilaterally. **Decide the process first; the screen follows.**
+
+### 3b. Customer `no_gps` — the blocking location gate
+
+The kit's `no_gps` is a **blocking** `SystemState` whose copy is rider-framed ("You can't go online
+without it"). Going online is a *rider* concept — for a customer, GPS-off is genuinely not blocking:
+the shipped composer shows an inline hint with a **working fallback** — *"Location is off — tap the map
+to drop your pin, or turn it on in Settings."* (`ComposeMap.tsx:133,144`) — and the customer can also
+search an address.
+
+Building the kit's gate would replace a working path with a wall. **The kit needs a non-blocking
+customer variant**; the shipped behaviour is the more correct one.
+
+---
+
 ## Summary
 
-- **1 clean fix**, made accessible-correct in the kit source this change (Stepper done node); bundle
-  regeneration + the hosted-project update are the remaining, interactive-session steps.
+- **1 clean fix**, made accessible-correct in the kit source (Stepper done node); bundle regeneration +
+  the hosted-project update are the remaining, interactive-session steps.
 - **1 open decision** (white-on-`--accent` brand fills) — shared by kit and app, so not an app-vs-kit
   divergence; needs a per-surface call, then applied to both together.
+- **2 designed screens that should not be built as drawn** (§3) — one is a business-process change in
+  disguise, one would delete a working fallback. Both reduce the audit's "unbuilt screens" backlog from
+  30 to 28 real items, and both need a product decision rather than an implementation.

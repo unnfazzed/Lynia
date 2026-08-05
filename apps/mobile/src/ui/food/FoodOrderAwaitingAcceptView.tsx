@@ -1,11 +1,11 @@
 import { RESTAURANTS_TIMING, tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { ErrorText, OfflineBanner, Screen } from "../index";
+import { ErrorText, OfflineBanner, Screen, Stepper } from "../index";
 import { CountdownRing, formatCountdown } from "./CountdownRing";
 import { OrderHeader } from "./FoodOrderHelpers";
 
-type AwaitingAcceptOrder = Pick<MerchantOrderResponse, "acceptDeadlineAt">;
+type AwaitingAcceptOrder = Pick<MerchantOrderResponse, "acceptDeadlineAt" | "status" | "merchantPhase">;
 
 /** RF-18: the `merchantPhase === "awaiting_accept"` branch of app/food/order/[orderId].tsx,
  *  extracted verbatim — N-03's 3:00 kitchen-accept window, no state of its own. */
@@ -41,6 +41,9 @@ export function FoodOrderAwaitingAcceptView({
           They have 3 minutes to accept. You&apos;ll pay only after they do — nothing has left your wallet.
         </Text>
       </View>
+      {/* The kit puts the tracker on every tracking screen, including this one (RTracker step=0) —
+          it was absent here, so the first thing that happens to an order showed no timeline at all. */}
+      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
       <ErrorText message={error} />
       {cancelFooter}
     </Screen>

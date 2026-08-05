@@ -3,13 +3,21 @@ import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { formatMoney } from "../../logic/money";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen } from "../index";
+import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
 import { ManualPayRail } from "./ManualPayRail";
 import { OrderHeader, Row } from "./FoodOrderHelpers";
 
 type AwaitingPaymentOrder = Pick<
   MerchantOrderResponse,
-  "id" | "total" | "merchantGoodsTotal" | "merchantPaymentReference" | "merchantPaymentConfirmedAt" | "paymentRequestedAt" | "merchantPaymentPhone"
+  | "id"
+  | "total"
+  | "merchantGoodsTotal"
+  | "merchantPaymentReference"
+  | "merchantPaymentConfirmedAt"
+  | "paymentRequestedAt"
+  | "merchantPaymentPhone"
+  | "status"
+  | "merchantPhase"
 >;
 
 /** RF-18: the `merchantPhase === "awaiting_payment"` branch of app/food/order/[orderId].tsx, extracted
@@ -65,6 +73,7 @@ export function FoodOrderAwaitingPaymentView({
           <Row label="Amount sent" value={formatMoney(amount)} />
           <Row label="Your reference" value={order.merchantPaymentReference} />
         </Card>
+        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
         <ErrorText message={error} />
         {cancelFooter}
       </Screen>
@@ -101,6 +110,7 @@ export function FoodOrderAwaitingPaymentView({
             They confirm every order by phone before asking for payment — answer, agree the total, and the request arrives right after.
           </Text>
         </View>
+        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
         <ErrorText message={error} />
         {cancelFooter}
       </Screen>

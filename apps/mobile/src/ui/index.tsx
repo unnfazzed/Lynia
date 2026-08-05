@@ -433,6 +433,44 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
   },
 };
 
+/**
+ * The customer's FOOD timeline — the kit's `RESTAURANT_STEPS`. It opens with two steps the parcel
+ * lifecycle has no `OrderStatus` for: the entire kitchen half (accept → pay → cook) runs while the
+ * order is still `requested`, which isn't in STEP_ORDER at all. Rendering the parcel model here left
+ * `currentIdx` at -1 for that whole phase, so all seven nodes drew grey with none active — the
+ * customer's most anxious stretch ("did the kitchen take it? did my payment land?") showed no
+ * progress whatsoever. The kitchen half is carried by `merchantPhase` (the sub-state OrderStatus has
+ * no room for — contracts.ts `MerchantPhase`), so the two leading steps resolve from it and the rest
+ * from the shared dispatch edges.
+ */
+const FOOD_CUSTOMER_STEPS = [
+  { key: "placed", label: "Order placed" },
+  { key: "accepted", label: "Restaurant accepted" },
+  { key: "assigned", label: "Rider secured" },
+  { key: "confirmed", label: "Rider at the restaurant" },
+  { key: "picked_up", label: "Picked up" },
+  { key: "en_route_dropoff", label: "On the way" },
+  { key: "delivered", label: "Delivered" },
+] as const;
+
+/**
+ * Current index into `FOOD_CUSTOMER_STEPS` from the two-part food state (dispatch `status` +
+ * kitchen `merchantPhase`). Exported so the food screens and tests can assert the mapping directly.
+ */
+export function foodCustomerStepIndex(status: string, merchantPhase?: string | null): number {
+  if (status === "delivered" || status === "completed") return 6;
+  if (status === "en_route_dropoff") return 5;
+  if (status === "picked_up") return 4;
+  // The kit collapses "heading to the restaurant" and "at the restaurant" into one step.
+  if (status === "confirmed" || status === "en_route_pickup") return 3;
+  if (status === "assigned") return 2;
+  // Still with the kitchen. `preparing`/`ready_for_pickup` mean they accepted — and, on the wallet
+  // rail, that the money landed. Anything earlier (awaiting_accept / item approval / payment) is
+  // still just "placed".
+  if (merchantPhase === "preparing" || merchantPhase === "ready_for_pickup") return 1;
+  return 0;
+}
+
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -444,18 +482,27 @@ export function Stepper(props: {
   currentStatus: string;
   view: "customer" | "rider";
   jobType?: JobType;
+  /** Food only: the kitchen sub-state that drives the two pre-dispatch steps (see FOOD_CUSTOMER_STEPS). */
+  merchantPhase?: string | null;
 }): React.ReactElement {
+  // The customer's food tracker walks the kit's seven RESTAURANT_STEPS; every other view keeps the
+  // shared dispatch-status model exactly as before.
+  const foodCustomer = props.view === "customer" && props.jobType === "food";
   const labels = STEP_LABELS[props.view][props.jobType ?? "parcel"] ?? STEP_LABELS[props.view].parcel!;
-  const currentIdx = STEP_ORDER.indexOf(props.currentStatus as (typeof STEP_ORDER)[number]);
+  const stepKeys: readonly string[] = foodCustomer ? FOOD_CUSTOMER_STEPS.map((s) => s.key) : STEP_ORDER;
+  const labelAt = (key: string, i: number): string => (foodCustomer ? FOOD_CUSTOMER_STEPS[i]!.label : (labels[key] ?? key));
+  const currentIdx = foodCustomer
+    ? foodCustomerStepIndex(props.currentStatus, props.merchantPhase)
+    : STEP_ORDER.indexOf(props.currentStatus as (typeof STEP_ORDER)[number]);
   // First timestamp seen per status (events are append-only, ascending).
   const times: Record<string, string> = {};
   for (const e of props.events) if (!(e.status in times)) times[e.status] = e.createdAt;
 
   return (
     <View>
-      {STEP_ORDER.map((s, i) => {
+      {stepKeys.map((s, i) => {
         const state = currentIdx < 0 ? "todo" : i < currentIdx ? "done" : i === currentIdx ? "now" : "todo";
-        const last = i === STEP_ORDER.length - 1;
+        const last = i === stepKeys.length - 1;
         const onTrack = state !== "todo";
         const ts = times[s];
         return (
@@ -497,7 +544,7 @@ export function Stepper(props: {
                   color: state === "now" ? tokens.color.accentText : state === "todo" ? tokens.color.muted : tokens.color.ink,
                 }}
               >
-                {labels[s]}
+                {labelAt(s, i)}
               </Text>
               {ts && onTrack ? (
                 <Text style={{ fontSize: 11, color: tokens.color.muted, marginTop: 1 }}>
