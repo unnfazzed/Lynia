@@ -10,7 +10,7 @@ export { Icon, type IconName } from "./Icon";
 export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
-export { ActiveOrderCheckFailedBanner } from "./ActiveOrderCheckFailedBanner";
+export { ActiveOrderCheckFailedBanner, useActiveOrderCheckGate } from "./ActiveOrderCheckFailedBanner";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
 export { getServiceTiles, ServiceTiles, SERVICES, type ServiceTile } from "./shell/ServiceTiles";

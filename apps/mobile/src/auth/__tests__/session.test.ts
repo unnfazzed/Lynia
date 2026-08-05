@@ -19,7 +19,7 @@ import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../../logic/saved-recipient
 import { KYC_DRAFT_KEY } from "../../logic/kyc-draft";
 import { PROFILE_DRAFT_KEY } from "../../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../../logic/rider-identity";
-import { JOB_KEY } from "../../net/last-active-store";
+import { JOB_KEY, ORDER_HINT_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../../logic/pickup-photo-draft";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
@@ -95,6 +95,7 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
         HISTORY_SNAPSHOT_KEY,
         RIDER_IDENTITY_KEY,
         JOB_KEY,
+        ORDER_HINT_KEY,
         RIDER_BID_DRAFT_KEY,
         RIDER_SENT_OFFERS_KEY,
         PICKUP_CHECKLIST_DRAFT_KEY,

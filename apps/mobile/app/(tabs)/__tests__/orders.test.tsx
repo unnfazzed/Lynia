@@ -16,6 +16,19 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 const mockGetActiveCustomerOrder = jest.fn();
 const mockUseHistoryFeed = jest.fn();
 
+// In-memory SecureStore (jest-expo has no built-in behavior for it) — the failed-check banner's
+// evidence gate (useActiveOrderCheckGate) reads the persisted order hint through it.
+let mockSecureStore: Record<string, string> = {};
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => mockSecureStore[key] ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    mockSecureStore[key] = value;
+  },
+  deleteItemAsync: async (key: string) => {
+    delete mockSecureStore[key];
+  },
+}));
+
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
   useFocusEffect: (cb: () => void | (() => void)) => {
@@ -74,6 +87,7 @@ let activeTree: renderer.ReactTestRenderer | null = null;
 afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
+  mockSecureStore = {};
   jest.clearAllMocks();
 });
 
@@ -94,12 +108,23 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     expect(has(activeTree, /Couldn.t load your orders/)).toBe(true);
   });
 
-  it("error (active-order check): the pinned-order query failing surfaces UX20-01's banner rather than silently falling through to the list", async () => {
+  it("error (active-order check) + persisted order hint: surfaces UX20-01's banner rather than silently falling through to the list", async () => {
+    mockSecureStore["lynia.activeOrderHint"] = "order-1";
     mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(true);
+  });
+
+  // UX-2026-08-05: without local evidence an order may be in flight, a failed background check must
+  // NOT camp a danger banner over the tab — the query self-heals via its own poll/reconnect refetch.
+  it("error (active-order check) with no order hint: stays quiet instead of camping the banner", async () => {
+    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    activeTree = renderOrders();
+    await settle();
+    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
   it("default: an active order pins the LiveOrderCard above the earlier list", async () => {

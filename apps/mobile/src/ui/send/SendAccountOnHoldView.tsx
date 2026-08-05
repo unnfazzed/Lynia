@@ -56,14 +56,16 @@ export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.Re
  */
 export function SendAccountOnHoldView({
   activeOrder,
-  activeOrderIsError,
+  activeOrderCheckFailed,
   activeOrderIsFetching,
   onRetryActiveOrder,
   meIsFetching,
   onRefreshStatus,
 }: {
   activeOrder: OrderSnapshot | null;
-  activeOrderIsError: boolean;
+  /** The already-gated decision from send.tsx's useActiveOrderCheckGate — NOT the raw query
+   *  `isError` (hooks can't run below send.tsx's early return, and the gate must not drift). */
+  activeOrderCheckFailed: boolean;
   activeOrderIsFetching: boolean;
   onRetryActiveOrder: () => void;
   meIsFetching: boolean;
@@ -77,7 +79,7 @@ export function SendAccountOnHoldView({
           headerless screen — rather than being locked out of it entirely by the wall below. */}
       {activeOrder ? (
         <ActiveOrderBanner order={activeOrder} />
-      ) : activeOrderIsError ? (
+      ) : activeOrderCheckFailed ? (
         <ActiveOrderCheckFailedBanner onRetry={onRetryActiveOrder} retrying={activeOrderIsFetching} />
       ) : null}
       <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>

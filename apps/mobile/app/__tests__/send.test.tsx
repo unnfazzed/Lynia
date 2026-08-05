@@ -224,7 +224,8 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
   });
 
-  it("shows the active-order check failure banner (with retry) when held and the active-order query errors", async () => {
+  it("shows the active-order check failure banner (with retry) when held, the query errors, and a persisted hint says an order may be in flight", async () => {
+    secureStore["lynia.activeOrderHint"] = "order-1";
     mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
     mockGetMe.mockResolvedValue({ onHold: true });
 
@@ -238,6 +239,18 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     pressByText(tree, "Retry");
     await settle();
     expect(mockGetActiveCustomerOrder).toHaveBeenCalled();
+  });
+
+  // UX-2026-08-05: with no local evidence of an order in flight, the failed background check stays
+  // quiet — no permanent danger banner over the on-hold wall (or the compose home, same gate).
+  it("does NOT show the check failure banner when the query errors but no order hint is persisted", async () => {
+    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+
+    expect(activeTree!.root.findAll((n) => n.props.children === "Couldn't check for an active order").length).toBe(0);
   });
 });
 

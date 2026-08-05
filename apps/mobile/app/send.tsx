@@ -27,7 +27,8 @@ import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, TestBuildBanner } from "../src/ui";
+import { saveActiveOrderHint } from "../src/net/last-active-store";
+import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, TestBuildBanner, useActiveOrderCheckGate } from "../src/ui";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { ComposeMap } from "../src/ui/ComposeMap";
@@ -120,6 +121,10 @@ export default function HomeScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
+  // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
+  // be in flight — see useActiveOrderCheckGate's rationale. Called before the on-hold early return
+  // (hooks must run unconditionally), which is why the on-hold view takes the decision as a prop.
+  const activeOrderCheckFailed = useActiveOrderCheckGate(activeOrderQ);
   // Only seed orderKey(id) while THIS screen is the visible route — mirrors home.tsx's identical
   // guard. When send.tsx is blurred beneath /order/[id], use-order-socket.ts owns that cache entry and
   // merges live position/status pushes with an anti-rollback guard; an unrelated foreground/focus
@@ -477,6 +482,10 @@ export default function HomeScreen(): React.ReactElement {
       const order = await createOrder(payload);
       // A light confirming tick the instant the request goes live — the broadcast is away.
       haptic("tap");
+      // The earliest durable evidence an order is in flight (useActiveOrderCheckGate reads this) —
+      // written here, not just in the tracker's effect, so a kill before /order/[id] mounts still
+      // arms the failed-check banner on the next cold start.
+      void saveActiveOrderHint(order.id);
       // Remember this recipient for a one-tap re-send next time (best-effort, on-device only).
       void rememberRecipient({ name: "", phone: dropPhone.trim() });
       // Remember the sender's own pickup number so the next order prefills it instead of re-typing.
@@ -556,7 +565,7 @@ export default function HomeScreen(): React.ReactElement {
     return (
       <SendAccountOnHoldView
         activeOrder={activeOrder}
-        activeOrderIsError={activeOrderQ.isError}
+        activeOrderCheckFailed={activeOrderCheckFailed}
         activeOrderIsFetching={activeOrderQ.isFetching}
         onRetryActiveOrder={() => void activeOrderQ.refetch()}
         meIsFetching={meQ.isFetching}
@@ -620,7 +629,7 @@ export default function HomeScreen(): React.ReactElement {
           {activeOrder ? (
             // UX review #1: a live order the customer can be killed away from — always offer the way back.
             <ActiveOrderBanner order={activeOrder} />
-          ) : activeOrderQ.isError ? (
+          ) : activeOrderCheckFailed ? (
             <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           ) : null}
 
