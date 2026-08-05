@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/unnfazzed/Lynia/compare/v0.20.0...v0.20.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **mobile:** keep the remind-me control behind the ui/api boundary ([3e40106](https://github.com/unnfazzed/Lynia/commit/3e40106ad9dc18a889f556d847cd268e2750e501))
+
 ## [0.20.0](https://github.com/unnfazzed/Lynia/compare/v0.19.0...v0.20.0) (2026-08-05)
 
 
