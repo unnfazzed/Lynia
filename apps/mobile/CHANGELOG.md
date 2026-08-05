@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.4](https://github.com/unnfazzed/Lynia/compare/v0.20.3...v0.20.4) (2026-08-05)
+
+
+### Bug Fixes
+
+* **mobile:** make the customer food tracker work, and wire the resume warm-paint ([2228e1f](https://github.com/unnfazzed/Lynia/commit/2228e1f11c9cd83f3f0b8f6ace2b35345dd9f1cd))
+
 ## [0.20.3](https://github.com/unnfazzed/Lynia/compare/v0.20.2...v0.20.3) (2026-08-05)
 
 
