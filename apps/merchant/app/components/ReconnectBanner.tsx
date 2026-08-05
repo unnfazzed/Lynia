@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getReachabilityStore } from "../lib/reachability";
 import { API_BASE_URL } from "../lib/config";
 import { useKitchenConnection } from "./KitchenConnectionProvider";
+import { Icon } from "./icons";
 
 function formatClock(ms: number): string {
   const d = new Date(ms);
@@ -38,26 +39,43 @@ export function ReconnectBanner({ backfillCount }: { backfillCount?: number } = 
   }, []);
 
   if (!reachability.reachable) {
+    // M1·b2 (r-merchant.jsx:301-316): wifi-off glyph on the red bar, and the reassurance strip
+    // underneath that names what still works while the tablet is dark.
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          padding: "16px 22px",
-          background: "var(--danger)",
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>
-            Connection lost — you are not receiving orders
-          </div>
-          <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.9)" }}>
-            Since {reachability.unreachableSinceMs ? formatClock(reachability.unreachableSinceMs) : "just now"} ·
-            reconnecting automatically (attempt {reachability.attempt})
+      <>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "16px 22px",
+            background: "var(--danger)",
+          }}
+        >
+          <Icon name="wifi-off" size={24} color="#fff" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>
+              Connection lost — you are not receiving orders
+            </div>
+            <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.9)" }}>
+              Since {reachability.unreachableSinceMs ? formatClock(reachability.unreachableSinceMs) : "just now"} ·
+              reconnecting automatically (attempt {reachability.attempt})
+            </div>
           </div>
         </div>
-      </div>
+        <div
+          style={{
+            padding: "12px 22px",
+            background: "var(--surface)",
+            borderBottom: "1px solid var(--line)",
+            fontSize: 13,
+            color: "var(--muted)",
+          }}
+        >
+          Keep cooking what&apos;s already accepted — those orders are safe. New orders will arrive as soon as the tablet
+          is back online.
+        </div>
+      </>
     );
   }
 

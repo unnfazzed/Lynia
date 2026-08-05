@@ -20,6 +20,7 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../lib/orders-api";
+import { Icon } from "../icons";
 import { NewOrderTakeover } from "./NewOrderTakeover";
 import { NoRiderHoldTakeover } from "./NoRiderHoldTakeover";
 import { OrderCard, type OrderCardBucket } from "./OrderCard";
@@ -76,10 +77,12 @@ function Column({
 }) {
   return (
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Column head sizes follow the gallery's BoardCol (r-merchant.jsx:48-52): 14.5/800 title,
+       *  13/700 muted tabular count beside it. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 10, height: 10, borderRadius: 3, background: tint }} />
-        <span style={{ fontSize: 13, fontWeight: 800 }}>{title}</span>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>{items.length}</span>
+        <span style={{ fontSize: 14.5, fontWeight: 800 }}>{title}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, overflow: "auto" }}>
         {items.length === 0 && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Nothing here</div>}
@@ -239,7 +242,22 @@ export function QueueBoard({
 
   if (orders.length === 0) {
     return (
-      <div style={{ background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "16px 20px 26px", textAlign: "center", maxWidth: 420 }}>
+      // M1·1's resting screen (r-merchant.jsx:149-153): the empty state carries the `inbox` glyph
+      // above the title, in a card with the kit's own 16/20/26 padding and 30px top offset.
+      <div style={{ background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "16px 20px 26px", marginTop: 30, textAlign: "center", maxWidth: 420 }}>
+        <span
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "var(--surface)",
+            display: "grid",
+            placeItems: "center",
+            margin: "8px auto 12px",
+          }}
+        >
+          <Icon name="inbox" size={24} color="var(--muted)" />
+        </span>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>No orders right now</div>
         <div style={{ fontSize: 13.5, color: "var(--muted)" }}>The alarm is armed — you&apos;ll hear it before you see it.</div>
       </div>

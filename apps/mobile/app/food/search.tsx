@@ -84,6 +84,12 @@ export default function RestaurantSearchScreen(): React.ReactElement {
         <FlatList
           data={results}
           keyExtractor={(r) => r.id}
+          // Kit R1·5 (r-customer-a.jsx:163): results are labelled — "PLACES" heads the restaurant
+          // matches. (The kit's second "DISHES" section needs a cross-restaurant dish index the
+          // customer read API doesn't expose — see the file-level note above.)
+          ListHeaderComponent={
+            <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.muted, marginBottom: 8 }}>PLACES</Text>
+          }
           renderItem={({ item }: { item: RestaurantListItem }) => (
             <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
           )}

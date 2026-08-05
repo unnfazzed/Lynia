@@ -40,6 +40,13 @@ function timeAgo(iso: string): string {
 }
 const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))];
 
+/** Kit's Note column (orders.html) — the one-line "why" beside a row. The only note the list response
+ *  carries is the cancellation, rendered in the kit's own shape: "cancelled (customer): change of plans". */
+function noteFor(o: Order): string {
+  if (!o.cancelReason) return "—";
+  return o.cancelledByRole ? `cancelled (${o.cancelledByRole}): ${o.cancelReason}` : `cancelled: ${o.cancelReason}`;
+}
+
 export default async function OrdersPage({
   searchParams,
 }: {
@@ -74,13 +81,17 @@ export default async function OrdersPage({
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
     { key: "rider", header: "Rider", className: "mut", cell: (o) => o.rider ?? "—" },
     { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
+    // Distance + Note are kit columns (orders.html `<thead>`: Order · Route · Status · Rider · Fare ·
+    // Distance · Note · Created). Both read fields the list response already carries — no extra query.
+    { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm.toFixed(1)} km` : "—") },
+    { key: "note", header: "Note", className: "mut", cell: noteFor },
     { key: "created", header: "Created", className: "mut num", cell: (o) => timeAgo(o.createdAt) },
   ];
 
   return (
     <main className="content">
       <header className="page">
-        <h1>Orders monitor</h1>
+        <h1>Orders</h1>
         <span className="sub">Live order status across the pilot</span>
         <Conn connected={connected} reason={reason} />
       </header>
@@ -99,7 +110,11 @@ export default async function OrdersPage({
           rowLabel={(o) => `Open order ${o.id.slice(0, 8)}`}
           empty={
             connected ? (
-              <EmptyState icon={<IconPackage />} title="No orders in this view" line="Try a different status filter." />
+              <EmptyState
+                icon={<IconPackage />}
+                title="No orders in this view"
+                line="Try another status filter, or wait — new broadcasts appear here live."
+              />
             ) : (
               <EmptyState
                 icon={<IconPackage />}

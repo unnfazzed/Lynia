@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -726,7 +726,11 @@ export default function OrderScreen(): React.ReactElement {
             {showRebroadcast ? (
               <Card style={{ borderColor: tokens.color.line }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
-                  <Icon name="bike" size={18} color={tokens.color.muted} />
+                  {/* Kit RiderCancelled header (screens.jsx:558): the glyph sits in a 34px surface
+                      circle, so the card leads with a mark rather than a loose icon. */}
+                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
+                    <Icon name="bike" size={18} color={tokens.color.muted} />
+                  </View>
                   <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Your rider had to cancel</Text>
                 </View>
                 <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19 }}>
@@ -994,13 +998,15 @@ export default function OrderScreen(): React.ReactElement {
                     </EmptyState>
                   );
                 default:
+                  // Kit `auction_expired` (screens.jsx:246-247): the window's length is part of the
+                  // explanation, and the CTA names what it actually does — nudge the price and re-broadcast.
                   return (
                     <EmptyState
                       icon="bike"
                       title="No riders took this price yet"
-                      message="Your window closed with no offers. Nudging the price up usually gets a rider fast."
+                      message={`Your ${OFFER_WINDOW_MS / 1000}-second window closed with no offer. Nudging the price up usually gets a rider fast.`}
                     >
-                      <Button label="Send another request" onPress={() => void rebroadcast()} />
+                      <Button label="Nudge price & re-broadcast" onPress={() => void rebroadcast()} />
                     </EmptyState>
                   );
               }
@@ -1008,7 +1014,11 @@ export default function OrderScreen(): React.ReactElement {
           : null}
         {order.status === "cancelled" ? (
           <Card>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+            {/* Kit cancelled terminal (screens.jsx:345-348): a danger `circle-alert` glyph leads the
+                headline row, and the reason line is labelled rather than left a bare orphan. */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
+              <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+              <Text style={{ flex: 1, fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
               {/* Fix 1: the blame line is written from the viewer's perspective. For the customer view a
                   rider cancel is "your rider"; for a rider viewing their own trip a customer cancel is
                   "your customer", and either side's own cancel reads as "you". Neither party is
@@ -1027,9 +1037,10 @@ export default function OrderScreen(): React.ReactElement {
                   : order.cancelledBy === "customer"
                     ? "You cancelled this order."
                     : "LyniaGo cancelled this delivery."}
-            </Text>
+              </Text>
+            </View>
             {order.cancelReason ? (
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>{order.cancelReason}</Text>
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>Reason: {order.cancelReason}</Text>
             ) : null}
             {/* F-01: the rider bailed but the job was auto re-sent to other riders at the same price.
                 Point the customer forward to the fresh auction instead of dead-ending on the cancel.

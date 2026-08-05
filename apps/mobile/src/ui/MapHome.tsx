@@ -80,7 +80,8 @@ export function AddressRows(props: {
       }}
     >
       <AddressRow slot="pickup" value={props.pickup} active={props.active === "pickup"} onPress={() => props.onPick("pickup")} />
-      <View style={{ height: 1, backgroundColor: tokens.color.line, marginLeft: 40 }} />
+      {/* Kit inset (screens.jsx:83): the divider starts past the dot, not past the whole gutter. */}
+      <View style={{ height: 1, backgroundColor: tokens.color.line, marginLeft: 35 }} />
       <AddressRow slot="drop" value={props.drop} active={props.active === "drop"} onPress={() => props.onPick("drop")} />
     </View>
   );
@@ -119,8 +120,11 @@ function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; 
         flexDirection: "row",
         alignItems: "center",
         gap: 11,
-        minHeight: 52,
+        // Kit row box (screens.jsx:69): 48px min height, 6×12 padding — still clear of the 44px
+        // touch-target floor.
+        minHeight: 48,
         paddingHorizontal: 12,
+        paddingVertical: 6,
         // Active slot gets a mint wash so it's clear which pin the map below is editing.
         backgroundColor: props.active ? tokens.color.accentWash : tokens.color.bg,
       }}

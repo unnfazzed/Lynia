@@ -32,7 +32,9 @@ export function menuSummary(categories: MerchantCategoryResponse[], dishes: Merc
   const oosCount = dishes.filter((d) => d.outOfStock).length;
   const draftCount = dishes.filter((d) => d.isDraft).length;
   const parts = [`${categories.length} ${catWord}`, `${dishes.length} ${dishWord}`];
-  if (oosCount > 0) parts.push(`${oosCount} out of stock`);
+  // "1 out of stock today" — M4·1's own sub-line wording (r-merchant.jsx:955); out-of-stock is a
+  // same-day flag here (it clears at the start of the next open day), so "today" is literal.
+  if (oosCount > 0) parts.push(`${oosCount} out of stock today`);
   if (draftCount > 0) parts.push(`${draftCount} draft${draftCount === 1 ? "" : "s"} waiting for a photo`);
   return parts.join(" · ");
 }

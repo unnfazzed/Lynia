@@ -157,15 +157,22 @@ export default function RestaurantMenuScreen(): React.ReactElement {
 
         {category ? (
           category.dishes.length > 0 ? (
-            category.dishes.map((dish) => (
-              <MenuRow
-                key={dish.id}
-                dish={dish}
-                qtyInCart={qtyInCartFor(dish.id)}
-                disabledReason={closedReason}
-                onPress={() => setOpenItem(dish)}
-              />
-            ))
+            <>
+              {/* Kit R2·1 (r-customer-a.jsx:218): the selected category is restated as a section
+                  header over the dish list, so a long scroll never loses its heading. */}
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.5, marginTop: 8, marginBottom: 2 }}>
+                {category.name.toUpperCase()}
+              </Text>
+              {category.dishes.map((dish) => (
+                <MenuRow
+                  key={dish.id}
+                  dish={dish}
+                  qtyInCart={qtyInCartFor(dish.id)}
+                  disabledReason={closedReason}
+                  onPress={() => setOpenItem(dish)}
+                />
+              ))}
+            </>
           ) : (
             <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", marginTop: 20 }}>Nothing in this category yet.</Text>
           )
@@ -199,16 +206,28 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           onPress={() => setJustClosed(false)}
           style={{ position: "absolute", inset: 0, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "center", padding: 18 }}
         >
+          {/* Kit R2·b1 `closed_interrupt` (r-customer-a.jsx:280-288): a highlight icon tile above the
+              headline, and two named ways forward rather than a generic dismiss. */}
           <Card>
-            <View style={{ flexDirection: "row", gap: 9, marginBottom: 6 }}>
-              <Icon name="clock" size={18} color={tokens.color.muted} />
-              <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>{restaurant.name} just closed</Text>
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                backgroundColor: tokens.color.highlightWash,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 10,
+              }}
+            >
+              <Icon name="clock" size={21} color={tokens.color.highlightInk} />
             </View>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18, marginBottom: 4 }}>
+            <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>{restaurant.name} just closed</Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19, marginTop: 5 }}>
               They stopped taking orders. Your cart is saved — nothing was ordered.
             </Text>
-            <Button label="See other restaurants" onPress={() => router.push("/food")} />
-            <Button label="Keep browsing" variant="ghost" onPress={() => setJustClosed(false)} />
+            <Button label="See places still open" onPress={() => router.push("/food")} />
+            <Button label="Keep my cart for tomorrow" variant="ghost" onPress={() => setJustClosed(false)} />
           </Card>
         </Pressable>
       ) : null}

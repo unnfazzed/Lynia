@@ -134,8 +134,10 @@ export default function RestaurantListScreen(): React.ReactElement {
       ) : feed.hasLiveData ? (
         <EmptyState icon="utensils" title="No restaurants deliver here yet" message="We're onboarding kitchens in your area — check back soon." />
       ) : (
-        <EmptyState icon="wifi-off" title="Couldn't load restaurants" message="Check your connection and try again.">
-          <Button label="Retry" onPress={feed.refetch} loading={feed.isFetching} />
+        // Kit R1·4 `list_error` (r-customer-a.jsx:146-148): same shape as the empty state, an honest
+        // reason, and one retry.
+        <EmptyState icon="wifi-off" title="We can't reach the kitchens" message="Your connection dropped. Nothing was ordered and nothing was charged.">
+          <Button label="Try again" onPress={feed.refetch} loading={feed.isFetching} />
         </EmptyState>
       )}
     </Screen>

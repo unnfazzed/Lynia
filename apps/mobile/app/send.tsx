@@ -763,7 +763,7 @@ export default function HomeScreen(): React.ReactElement {
                     !(fare !== null && fare > 0) ? "a price" : null,
                   ]
                     .filter(Boolean)
-                    .join(", ")} to send.`}
+                    .join(", ")} to broadcast.`}
                 </Text>
               ) : null}
               {outOfArea ? (
@@ -791,7 +791,8 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              <Button label="Send to riders" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
+              {/* Kit copy (screens.jsx:172) — "Broadcast request", not "Send to riders". */}
+              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
               <ErrorText message={error} />
             </>
           }
@@ -819,7 +820,7 @@ export default function HomeScreen(): React.ReactElement {
             label="Note for the rider (optional)"
             value={note}
             onChangeText={setNote}
-            placeholder="Ask for Rita at reception; keep it upright."
+            placeholder="Ask for Rita at the pharmacy counter; keep it upright."
             maxLength={280}
           />
           <SendPhoneFields

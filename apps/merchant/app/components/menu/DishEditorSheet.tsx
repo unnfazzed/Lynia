@@ -153,6 +153,9 @@ export function DishEditorSheet({
           </div>
 
           <div style={{ width: 260 }}>
+            {/* M4·5 labels the slot, with REQUIRED beside it (r-merchant.jsx:1134-1136 — the pill
+             *  itself lives in PhotoPicker). */}
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>DISH PHOTO</div>
             <PhotoPicker
               kind="dish"
               aspect={1}

@@ -30,7 +30,8 @@ export function FoodOrderPreparingView({
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel="Cooking" pillTone="success" />
       <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
-        <CountdownRing elapsedMs={elapsedMs} totalMs={totalMs} label={String(remainingMin)} sub="min left" />
+        {/* Kit R6·1 (r-customer-b.jsx:236) labels the prep ring "min prep". */}
+        <CountdownRing elapsedMs={elapsedMs} totalMs={totalMs} label={String(remainingMin)} sub="min prep" />
         <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, marginTop: tokens.space.md, textAlign: "center" }}>
           {restaurantName} is cooking your order
         </Text>

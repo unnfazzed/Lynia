@@ -7,6 +7,7 @@ import { useKitchenConnection } from "../../components/KitchenConnectionProvider
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { useQueuePoll } from "../../lib/use-queue-poll";
+import { ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 
 type LoadState =
   | { status: "loading" }
@@ -117,7 +118,7 @@ export default function QueuePage() {
               This phone signs in fine, but it isn't linked to a kitchen. Contact LyniaGo support to get your
               restaurant set up before using this tablet.
             </div>
-            <button type="button" onClick={signOut} style={signOutButtonStyle}>
+            <button type="button" onClick={signOut} style={primaryButtonStyle}>
               Sign out
             </button>
           </div>
@@ -127,8 +128,13 @@ export default function QueuePage() {
 
         {state.status === "ready" && (
           <>
+            {/* M1·1's heading grammar: the screen is "Orders", the kitchen's own name is the sub-line
+             *  (r-merchant.jsx:148 `<H sub="Sunday 27 July · open since 09:00">Orders</H>`). */}
             <div style={{ marginBottom: 14, display: "flex", alignItems: "baseline", gap: 12 }}>
-              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{state.merchant.name}</div>
+              <div>
+                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Orders</div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{state.merchant.name}</div>
+              </div>
               {queueError && queueError.status !== 401 && (
                 <div style={{ fontSize: 12.5, color: "var(--danger-ink)" }}>{queueError.message}</div>
               )}
@@ -150,25 +156,3 @@ export default function QueuePage() {
     </Kitchen>
   );
 }
-
-const ghostButtonStyle: React.CSSProperties = {
-  fontSize: 13.5,
-  fontWeight: 700,
-  color: "var(--accent-text)",
-  background: "var(--bg)",
-  border: "1px solid var(--line)",
-  borderRadius: 999,
-  padding: "10px 18px",
-  cursor: "pointer",
-};
-
-const signOutButtonStyle: React.CSSProperties = {
-  fontSize: 13.5,
-  fontWeight: 700,
-  color: "#fff",
-  background: "var(--cta-fill)",
-  border: "none",
-  borderRadius: 999,
-  padding: "10px 18px",
-  cursor: "pointer",
-};

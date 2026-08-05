@@ -1,6 +1,7 @@
 "use client";
 
 import { useKitchenConnection } from "./KitchenConnectionProvider";
+import { Icon } from "./icons";
 
 /**
  * Top bar shown on every authenticated screen (mirrors the gallery's `KitchenBar`,
@@ -26,7 +27,14 @@ export function KitchenBar() {
         flexShrink: 0,
       }}
     >
-      <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-.01em" }}>LyniaGo — Merchant</span>
+      {/* Dove + wordmark lockup, then the muted second line — the gallery's own KitchenBar
+       *  (r-parts.jsx:596). eslint-disable: a static brand SVG from /public, not a content image. */}
+      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/lyniago-mark.svg" alt="" width={24} height={24} />
+        <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-.01em" }}>LyniaGo</span>
+      </span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>Merchant</span>
       <span style={{ flex: 1 }} />
       {reachability.reachable ? (
         <span
@@ -71,7 +79,8 @@ export function KitchenBar() {
           gap: 7,
           fontSize: 12.5,
           fontWeight: 700,
-          color: alarm.muted ? "var(--danger-ink)" : "var(--accent-text)",
+          // Kit (r-parts.jsx:607): the label stays ink, only the glyph carries the alarm state's colour.
+          color: "var(--ink)",
           border: "1px solid var(--line)",
           background: "var(--bg)",
           borderRadius: 999,
@@ -80,6 +89,7 @@ export function KitchenBar() {
         }}
         aria-pressed={alarm.muted}
       >
+        <Icon name={alarm.muted ? "ban" : "volume-2"} size={14} color={alarm.muted ? "var(--danger-ink)" : "var(--accent-text)"} />
         {alarm.muted ? "Alarm muted" : "Alarm on"}
       </button>
     </div>

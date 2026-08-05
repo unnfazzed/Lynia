@@ -371,8 +371,10 @@ export default function RiderFoodJob(): React.ReactElement {
           ) : null}
           {cashCollect && stillOwed ? (
             <Card style={{ borderColor: tokens.color.danger }}>
+              {/* `r-rider.jsx` return_cash: this banner is about money in your pocket, so it reads
+                  with the banknote mark, not the generic alert triangle. */}
               <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
-                <Icon name="triangle-alert" size={18} color={tokens.color.danger} />
+                <Icon name="banknote" size={18} color={tokens.color.danger} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>Ride the food money back</Text>
                   <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18, marginTop: 4 }}>
@@ -450,9 +452,16 @@ export default function RiderFoodJob(): React.ReactElement {
             <StatusPill status="undelivered" tone="offline" dot />
           </View>
           <Card>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.sm }}>
-              {undeliveredFoodReason === "refused" ? "Marked as customer refused" : "Marked as no-show"}
-            </Text>
+            {/* Terminal grammar (kit `rider-screens.jsx` Undelivered / terminals.tsx): the bad news
+                rides in a danger-wash circle, not in a bare red line of type. */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+              </View>
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+                {undeliveredFoodReason === "refused" ? "Marked as customer refused" : "Marked as no-show"}
+              </Text>
+            </View>
             <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
               {undeliveredFoodReason === "refused"
                 ? "The customer's cash access is now on hold for food orders — mobile money only from here on. You're free for the next job."
@@ -480,9 +489,15 @@ export default function RiderFoodJob(): React.ReactElement {
             <StatusPill status="cancelled" tone="offline" dot />
           </View>
           <Card>
-            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger, marginBottom: tokens.space.sm }}>
-              This order was cancelled
-            </Text>
+            {/* Same icon-in-a-circle terminal header the parcel hand-back uses (ui/rider/terminals.tsx). */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
+                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
+              </View>
+              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
+                This order was cancelled
+              </Text>
+            </View>
             <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
               {collected
                 ? "You may still be holding the food (and, if collected, cash) for this order. Contact support to sort out the hand-back — this doesn't affect your reliability score."
@@ -562,9 +577,9 @@ export default function RiderFoodJob(): React.ReactElement {
   return (
     <Screen>
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
           <Icon name="utensils" size={18} color={tokens.color.accentText} />
-          <Heading> Your job</Heading>
+          <Heading>Your job</Heading>
           <View style={{ flex: 1 }} />
           <StatusPill status={order.status} tone={orderStatusTone(order.status)} />
         </View>

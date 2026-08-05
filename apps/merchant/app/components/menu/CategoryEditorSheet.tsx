@@ -49,9 +49,22 @@ export function CategoryEditorSheet({
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
+        {/* M4·3/M4·4 carry different sub-lines for the create and the edit variants
+         *  (r-merchant.jsx:1052-1053). */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>{category ? "Edit category" : "New category"}</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-          Customers see this name as a tab on your menu. Keep it short — &ldquo;Breakfast&rdquo;, &ldquo;Combos&rdquo;, &ldquo;Kids&rdquo;.
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.45 }}>
+          {category ? (
+            <>
+              Renaming changes the tab customers see straight away.
+              {category.dishCount === 1
+                ? " The 1 dish inside it stays where it is."
+                : category.dishCount > 1
+                  ? ` The ${category.dishCount} dishes inside it stay where they are.`
+                  : ""}
+            </>
+          ) : (
+            <>Customers see this name as a tab on your menu. Keep it short — &ldquo;Breakfast&rdquo;, &ldquo;Combos&rdquo;, &ldquo;Kids&rdquo;.</>
+          )}
         </div>
 
         <label style={labelStyle}>

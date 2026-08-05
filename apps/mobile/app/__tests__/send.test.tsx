@@ -3,7 +3,7 @@
  * (debounced 500ms after the last field edit) whose `idempotencyNonce`, combined with the live field
  * values, derives the create-order idempotency key the server dedupes on. Before this fix, `submit()`
  * fired the request straight off in-memory state WITHOUT flushing that debounced write first — so an
- * edit made just before tapping "Send to riders" could still be sitting in the pending debounce timer
+ * edit made just before tapping "Broadcast request" could still be sitting in the pending debounce timer
  * when the request went out. If the app was then killed before the timer fired (well within the 15s
  * request timeout), the on-disk draft reflected the PRE-edit content. A manual resubmit after relaunch
  * would recompute a DIFFERENT idempotencyKey than the one actually sent (same nonce, different content
@@ -427,14 +427,14 @@ describe("send.tsx — Recipient-phone block (RF-21 characterization, pre-extrac
     await settle();
     const tree = activeTree!;
 
-    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "abcdef");
+    setFieldByAccessibilityLabel(tree, "Your phone (sender)", "abcdef");
     setFieldByAccessibilityLabel(tree, "Recipient phone", "abcdef");
     // react-test-renderer's tree walk visits both the composite Text instance and its underlying host
     // node for the same error caption, so a raw count double-counts (see SendItemsList's equivalent
     // note) — presence is what matters here, not an exact count.
     expect(tree.root.findAll((n) => n.props.children === "That doesn't look like a phone number").length).toBeGreaterThan(0);
 
-    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Your phone (sender)", "0771234567");
     setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
     expect(tree.root.findAll((n) => n.props.children === "That doesn't look like a phone number").length).toBe(0);
   });
@@ -526,7 +526,7 @@ describe("send.tsx — draft flush before submit (LC-C06)", () => {
 
     pressTestId(tree, "test-set-pickup");
     pressTestId(tree, "test-set-drop");
-    setFieldByAccessibilityLabel(tree, "Pickup contact phone", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Your phone (sender)", "0771234567");
     setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
     setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
     // The price edit that lands INSIDE the 500ms debounce window — the draft on disk at this point
@@ -537,7 +537,7 @@ describe("send.tsx — draft flush before submit (LC-C06)", () => {
     // its 500ms timer) at the moment we're about to tap Send — this is what makes the window real.
     expect(secureStore["lynia.orderDraft"]).toBeUndefined();
 
-    pressByText(tree, "Send to riders");
+    pressByText(tree, "Broadcast request");
     await settle();
 
     // createOrder was actually called (canSubmit gated it correctly) …

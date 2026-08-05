@@ -16,16 +16,21 @@ const MAX_BANNER_PHOTO_BYTES = 250 * 1024;
 
 type LoadState = { status: "loading" } | { status: "ready"; profile: MerchantProfileResponse } | { status: "error"; message: string };
 
-const CASH_RULES: { value: MerchantCashRule; title: string; body: string }[] = [
+// M5·4 "How riders pay you" (packages/design/explorations/restaurants/r-merchant.jsx:816-838): each
+// rule states the deal in one line, then the trade-off it carries, in the kit's own words.
+const CASH_RULES: { value: MerchantCashRule; title: string; recommended?: boolean; body: string; note: string }[] = [
   {
     value: "collect_and_return",
-    title: "Collect and return (recommended)",
-    body: "The rider fronts nothing — they collect the full amount at the door and ride the goods value straight back to you. You wait a little longer for cash, but no rider carries your money upfront.",
+    title: "Collect and return",
+    recommended: true,
+    body: "The rider takes the food, collects at the door, and rides your food money back — usually within 30 minutes. Every rider can take your orders, so food leaves faster.",
+    note: "The risk is yours for that window: if the cash never returns, the loss is yours and the rider is suspended and named.",
   },
   {
     value: "pay_upfront",
     title: "Pay me upfront",
-    body: "You get paid the moment the rider takes the food. The rider is now carrying that cash risk until the customer pays them back at the door.",
+    body: "The rider hands you the food money before anything leaves the counter. No risk window at all.",
+    note: "Only riders carrying enough cash can take the job — pickups can be slower, and big orders sometimes find no rider.",
   },
 ];
 
@@ -121,7 +126,7 @@ export default function ShopPage() {
         {state.status === "ready" && (
           <>
             <div>
-              <div style={{ fontSize: 21, fontWeight: 800 }}>Shop profile</div>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Shop profile</div>
               <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>This is your shop front. Changes go live straight away.</div>
             </div>
 
@@ -282,31 +287,70 @@ export default function ShopPage() {
             </div>
 
             <div style={cardStyle}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>How riders pay you</div>
-              <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
-                Riders see this rule on the offer before they accept.
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>How riders pay you</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, marginBottom: 14 }}>
+                Applies to every cash order · mobile-money orders are unaffected
               </div>
               <div style={{ display: "flex", gap: 12 }}>
-                {CASH_RULES.map((rule) => (
-                  <button
-                    key={rule.value}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChooseCashRule(rule.value)}
-                    style={{
-                      flex: 1,
-                      textAlign: "left",
-                      padding: 16,
-                      borderRadius: 12,
-                      border: `2px solid ${state.profile.cashRule === rule.value ? "var(--accent)" : "var(--line)"}`,
-                      background: state.profile.cashRule === rule.value ? "var(--accent-wash)" : "#fff",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>{rule.title}</div>
-                    <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>{rule.body}</div>
-                  </button>
-                ))}
+                {CASH_RULES.map((rule) => {
+                  const on = state.profile.cashRule === rule.value;
+                  return (
+                    <button
+                      key={rule.value}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onChooseCashRule(rule.value)}
+                      aria-pressed={on}
+                      style={{
+                        flex: 1,
+                        textAlign: "left",
+                        padding: "16px 18px",
+                        borderRadius: 14,
+                        border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                        background: on ? "var(--accent-wash)" : "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: "50%",
+                            border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                            background: on ? "var(--accent)" : "#fff",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={{ fontSize: 17, fontWeight: 800 }}>{rule.title}</span>
+                        {rule.recommended && (
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 800,
+                              letterSpacing: ".04em",
+                              color: "var(--accent-text)",
+                              // Kit sits this pill on the selected card's accent wash; invert it when
+                              // the card itself is white so the pill never disappears into it.
+                              background: on ? "var(--bg)" : "var(--accent-wash)",
+                              borderRadius: 999,
+                              padding: "3px 10px",
+                            }}
+                          >
+                            RECOMMENDED
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13.5, color: "var(--ink)", marginTop: 8, lineHeight: 1.55 }}>{rule.body}</div>
+                      <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{rule.note}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 12, padding: "12px 14px", background: "var(--surface)", borderRadius: 12 }}>
+                <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                  Changes apply from your next order. Riders see your rule on the offer before they accept.
+                </div>
               </div>
             </div>
           </>

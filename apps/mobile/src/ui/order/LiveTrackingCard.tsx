@@ -151,21 +151,38 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           route is my rider on". Same leg the rider's own hand-off opens, so both sides see one route.
           No Places key needed — a universal Maps URL. A place pin is still the right shape once the
           trip is over, so the swap is gated on the run being live. */}
+      {/* Kit GMapsRow (screens.jsx:95-107): a bordered row, not a bare link — an accent-wash icon
+          circle, an ink title over a muted sub, and a trailing arrow that says it leaves the app. */}
       <Pressable
         onPress={() => void Linking.openURL(isActive ? mapsDirectionsUrl(props.pickup, props.dropoff) : mapsPlaceUrl(props.dropoff))}
         accessibilityRole="button"
         accessibilityLabel={isActive ? "Follow the route in Google Maps" : "Open the drop-off in Google Maps"}
-        style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
+        style={({ pressed }) => ({
+          minHeight: tokens.touchTargetMin,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: tokens.space.sm,
+          marginTop: tokens.space.sm,
+          paddingHorizontal: tokens.space.md,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: tokens.color.line,
+          borderRadius: tokens.radius.input,
+          backgroundColor: pressed ? tokens.color.accentWash : tokens.color.bg,
+        })}
       >
-        <Icon name="navigation" size={16} color={tokens.color.accentText} />
+        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accentWash }}>
+          <Icon name="navigation" size={16} color={tokens.color.accentText} />
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>
+          <Text style={{ fontSize: 13.5, fontWeight: "600", color: tokens.color.ink }}>
             {isActive ? "Follow route in Google Maps" : "Open drop-off in Maps"}
           </Text>
           {isActive ? (
-            <Text style={{ fontSize: 11.5, color: tokens.color.muted }}>Same route your rider is navigating</Text>
+            <Text style={{ fontSize: 11.5, color: tokens.color.muted }}>Same live route your rider is navigating</Text>
           ) : null}
         </View>
+        <Icon name="arrow-right" size={16} color={tokens.color.muted} />
       </Pressable>
       {props.counterpartyPhone ? (
         <>

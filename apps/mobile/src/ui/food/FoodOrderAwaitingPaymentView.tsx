@@ -123,8 +123,10 @@ export function FoodOrderAwaitingPaymentView({
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel="Payment requested" pillTone="neutral" />
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Card>
-          <Text style={{ fontSize: 11.5, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>PAY EXACTLY</Text>
+        {/* Kit R5·3 (r-customer-b.jsx:87-88): the amount-to-pay card is the accent-bordered emphasis
+            card, and its eyebrow is accent-text — not another muted micro-label. */}
+        <Card accent>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText, letterSpacing: 0.4 }}>PAY EXACTLY</Text>
           <Text style={{ fontSize: 30, fontWeight: "700", color: tokens.color.ink, marginTop: 4 }}>{formatMoney(amount)}</Text>
           <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6 }}>No deadline — the kitchen starts the moment the money lands.</Text>
         </Card>

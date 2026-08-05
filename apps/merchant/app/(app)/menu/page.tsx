@@ -155,6 +155,8 @@ export default function MenuPage() {
               Dishes live inside categories — Mains, Sides, Drinks, whatever fits your kitchen. Create one and you can
               add dishes straight into it.
             </div>
+            {/* M4·b1 labels the starter chips before offering them (r-merchant.jsx:1097). */}
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>Common starting points:</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
               {STARTER_CATEGORY_NAMES.map((name) => (
                 <button
@@ -175,7 +177,7 @@ export default function MenuPage() {
           <>
             <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 21, fontWeight: 800 }}>Menu</div>
+                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Menu</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{menuSummary(state.categories, state.dishes)}</div>
               </div>
               <button
@@ -237,33 +239,35 @@ export default function MenuPage() {
                         <img src={dish.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       )}
                     </div>
-                    <div style={{ flex: 1, opacity: dish.outOfStock ? 0.55 : 1 }}>
-                      <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                    <div style={{ flex: 1, minWidth: 0, opacity: dish.outOfStock ? 0.55 : 1 }}>
+                      <div style={{ fontSize: 15.5, fontWeight: 700 }}>
                         {dish.name}
+                        {/* M4·b2's draft treatment (r-merchant.jsx:1497-1499): a bare DRAFT pill, with
+                         *  the reason spelled out on its own line underneath. */}
                         {dish.isDraft && (
                           <span
                             style={{
-                              fontSize: 11,
+                              fontSize: 11.5,
                               fontWeight: 800,
                               color: "var(--highlight-ink)",
                               background: "var(--highlight-wash)",
                               borderRadius: 999,
-                              padding: "2px 8px",
+                              padding: "2px 9px",
                               marginLeft: 8,
                             }}
                           >
-                            DRAFT — NEEDS PHOTO
+                            DRAFT
                           </span>
                         )}
                         {dish.outOfStock && (
                           <span
                             style={{
-                              fontSize: 11,
+                              fontSize: 11.5,
                               fontWeight: 800,
                               color: "var(--muted)",
                               background: "var(--surface)",
                               borderRadius: 999,
-                              padding: "2px 8px",
+                              padding: "2px 9px",
                               marginLeft: 8,
                             }}
                           >
@@ -271,8 +275,15 @@ export default function MenuPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: 12.5, color: "var(--muted)" }}>${formatMoney(dish.priceUsd)}</div>
+                      {dish.description && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{dish.description}</div>}
+                      {dish.isDraft && (
+                        <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", marginTop: 2, lineHeight: 1.45 }}>
+                          Saved, but customers can&apos;t see it yet — every dish needs one photo before it goes live.
+                        </div>
+                      )}
                     </div>
+                    {/* Kit's ItemRow puts the price on the right at 16/700, tabular (r-merchant.jsx:937). */}
+                    <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>${formatMoney(dish.priceUsd)}</div>
                     <button
                       type="button"
                       disabled={actionsDisabled || submitting}
@@ -302,6 +313,12 @@ export default function MenuPage() {
                 </button>
               </div>
             ))}
+
+            {/* M4·1's closing line (r-merchant.jsx:990) — the half that's true here: the app has no
+             *  drag-to-reorder, so only the "customers see these groups" promise is carried over. */}
+            <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "0 4px" }}>
+              Customers see these groups, in this order, as the tabs on your menu.
+            </div>
           </>
         )}
       </div>

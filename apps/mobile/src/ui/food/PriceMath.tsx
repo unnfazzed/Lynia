@@ -24,16 +24,18 @@ export function PriceMath({
   return (
     <Card>
       {rows.map((r) => (
-        <View key={r.label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
-          <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.color.muted }}>{r.label}</Text>
-          <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(r.value)}</Text>
+        <View key={r.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 8, paddingVertical: 5 }}>
+          <Text style={{ flex: 1, fontSize: 13.5, color: tokens.color.muted }}>{r.label}</Text>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(r.value)}</Text>
         </View>
       ))}
-      <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+      {/* Kit r-parts.jsx PriceMath: a hairline separates the itemised rows from the total. */}
+      <View style={{ height: 1, backgroundColor: tokens.color.line, marginVertical: 6 }} />
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>Total</Text>
-        <Text style={{ fontSize: 15.5, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(total)}</Text>
+        <Text style={{ fontSize: 19, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(total)}</Text>
       </View>
-      {footnote ? <Text style={{ fontSize: 11.5, color: tokens.color.muted, marginTop: 6, lineHeight: 16 }}>{footnote}</Text> : null}
+      {footnote ? <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 7, lineHeight: 18 }}>{footnote}</Text> : null}
     </Card>
   );
 }

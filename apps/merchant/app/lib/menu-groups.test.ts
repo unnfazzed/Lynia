@@ -52,7 +52,7 @@ describe("menuSummary", () => {
   });
 
   it("adds an out-of-stock callout", () => {
-    expect(menuSummary([category()], [dish({ outOfStock: true })])).toBe("1 category · 1 dish · 1 out of stock");
+    expect(menuSummary([category()], [dish({ outOfStock: true })])).toBe("1 category · 1 dish · 1 out of stock today");
   });
 
   it("adds a draft callout, pluralized", () => {

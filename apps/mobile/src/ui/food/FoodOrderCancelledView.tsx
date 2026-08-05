@@ -1,6 +1,7 @@
 import { rejectionCopy, tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
+import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
 import { Button, Card, EmptyState, Icon, OfflineBanner, Screen } from "../index";
 import { Row } from "./FoodOrderHelpers";
@@ -32,7 +33,7 @@ export function FoodOrderCancelledView({
       <Screen>
         <OfflineBanner state={reachable ? "online" : "offline"} />
         <EmptyState icon="bike" title="We couldn't find a rider" message={rejectionCopy("no_rider")}>
-          <Button label="Try again" onPress={onRetry} />
+          <Button label="Try again now" onPress={onRetry} />
           <Button label="See other restaurants nearby" variant="ghost" onPress={onBrowse} />
         </EmptyState>
       </Screen>
@@ -53,7 +54,10 @@ export function FoodOrderCancelledView({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink }}>Refunded in full</Text>
-              <Text style={{ fontSize: 12, color: tokens.color.muted }}>{restaurantName} sent it back</Text>
+              {/* Kit R6·b4 (r-customer-b.jsx:367) times the refund — `refundedAt` is already on the order. */}
+              <Text style={{ fontSize: 12, color: tokens.color.muted }}>
+                {restaurantName} sent it back{order.refundedAt ? ` at ${fmtClock(order.refundedAt)}` : ""}
+              </Text>
             </View>
           </View>
           <Row label="Amount" value={formatMoney(order.refundAmount ?? 0)} />

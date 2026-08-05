@@ -25,6 +25,14 @@ export const ghostButtonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
+// The kit's one filled-danger button: M2·2's reject confirm is the primary shape with the danger fill
+// swapped in (`<Button label="Reject LG-4471" style={{ background: "var(--danger)" }} />`,
+// packages/design/explorations/restaurants/r-merchant.jsx:420). White on --danger is ~5.4:1.
+export const dangerButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: "var(--danger)",
+};
+
 export const dangerGhostButtonStyle: CSSProperties = {
   ...ghostButtonStyle,
   color: "var(--danger-ink)",
