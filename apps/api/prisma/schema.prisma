@@ -7,7 +7,7 @@ generator client {
   previewFeatures = ["postgresqlExtensions"]
   // node:*-slim is Debian bookworm (OpenSSL 3). Pin the engine so it's never the
   // 1.1.x default (which needs libssl.so.1.1, absent on bookworm → boot crash).
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 // The connection URL lives in prisma.config.ts (CLI/Migrate) and the pg driver adapter in
@@ -64,8 +64,10 @@ enum MerchantPhase {
   ready_for_pickup
 }
 
-/** The customer's chosen settlement rail for a food order (R-01/R-11) — orthogonal to the merchant's
- *  own `cashRule` (how a CASH order is fronted), which stays a C3/C4 concern. */
+/**
+ * The customer's chosen settlement rail for a food order (R-01/R-11) — orthogonal to the merchant's
+ * own `cashRule` (how a CASH order is fronted), which stays a C3/C4 concern.
+ */
 enum MerchantPaymentMethod {
   cash
   wallet
@@ -223,12 +225,13 @@ model Profile {
 
   rider           Rider?
   merchant        Merchant?
-  customerOrders  Order[]       @relation("customerOrders")
-  cancelledOrders Order[]       @relation("cancelledByOrders")
+  customerOrders  Order[]                    @relation("customerOrders")
+  cancelledOrders Order[]                    @relation("cancelledByOrders")
   sessions        Session[]
   addresses       Address[]
-  ratingsGiven    Rating[]      @relation("ratingBy")
+  ratingsGiven    Rating[]                   @relation("ratingBy")
   deviceTokens    DeviceToken[]
+  reopenReminders RestaurantReopenReminder[]
 
   @@index([idNumberHash])
   @@map("profiles")
@@ -250,55 +253,55 @@ model DeviceToken {
 }
 
 model Rider {
-  profileId       String    @id @map("profile_id") @db.Uuid
-  profile         Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  vehicleInfo     String?   @map("vehicle_info")
-  bikeReg         String    @map("bike_reg")
-  photoUrl        String    @map("photo_url")
-  idVerified      Boolean   @default(false) @map("id_verified")
-  kycStatus       KycStatus @default(pending) @map("kyc_status")
+  profileId         String                                 @id @map("profile_id") @db.Uuid
+  profile           Profile                                @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  vehicleInfo       String?                                @map("vehicle_info")
+  bikeReg           String                                 @map("bike_reg")
+  photoUrl          String                                 @map("photo_url")
+  idVerified        Boolean                                @default(false) @map("id_verified")
+  kycStatus         KycStatus                              @default(pending) @map("kyc_status")
   // Unique so a Didit Approved/Declined webhook (keyed by session_id == kycRef) resolves exactly one
   // rider. kycResolvedAt is the last applied webhook's event time — a monotonic guard so a replayed
   // or out-of-order delivery can't overwrite a newer decision (see RiderService.applyKycResult).
-  kycRef          String?   @unique @map("kyc_ref")
-  kycResolvedAt   DateTime? @map("kyc_resolved_at")
+  kycRef            String?                                @unique @map("kyc_ref")
+  kycResolvedAt     DateTime?                              @map("kyc_resolved_at")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different
   // number but must SHOW the same physical document. pii.hashId normalizes before hashing, so this is
   // directly comparable to Profile.idNumberHash. Retained on erasure like idNumberHash (DS15-02b).
   // Partial index managed via raw SQL (migration 0038).
-  verifiedIdHash  String?   @map("verified_id_hash")
-  isOnline        Boolean   @default(false) @map("is_online")
-  lastHeartbeatAt DateTime? @map("last_heartbeat_at")
-  currentLat      Float?    @map("current_lat")
-  currentLng      Float?    @map("current_lng")
+  verifiedIdHash    String?                                @map("verified_id_hash")
+  isOnline          Boolean                                @default(false) @map("is_online")
+  lastHeartbeatAt   DateTime?                              @map("last_heartbeat_at")
+  currentLat        Float?                                 @map("current_lat")
+  currentLng        Float?                                 @map("current_lng")
   // Dedicated timestamp of the last POSITION write (lat/lng/geog only), distinct from `updatedAt`
   // (@updatedAt bumps on ANY rider-row write). getSnapshot's no-Redis fallback uses this so a stale
   // position can't render as "live" off a timestamp freshened by an unrelated write. Managed via raw SQL.
-  positionUpdatedAt DateTime? @map("position_updated_at")
+  positionUpdatedAt DateTime?                              @map("position_updated_at")
   // Indexed source of truth for nearby-rider queries (ST_DWithin + GiST). Managed via raw SQL.
-  geog            Unsupported("geography(Point, 4326)")?
-  tripsCount      Int       @default(0) @map("trips_count")
-  ratingAvg       Float     @default(0) @map("rating_avg")
-  ratingCount     Int       @default(0) @map("rating_count")
-  cancelStrikes   Int       @default(0) @map("cancel_strikes")
+  geog              Unsupported("geography(Point, 4326)")?
+  tripsCount        Int                                    @default(0) @map("trips_count")
+  ratingAvg         Float                                  @default(0) @map("rating_avg")
+  ratingCount       Int                                    @default(0) @map("rating_count")
+  cancelStrikes     Int                                    @default(0) @map("cancel_strikes")
   // FRAUD P2-4: dispute-confirmed strikes (issues.resolve `rider_strike`), a SEPARATE axis from
   // cancelStrikes. Previously both shared cancel_strikes, so a rider's 3rd cancel (which resets that
   // counter to 0) wiped dispute strikes, and RIDER_STRIKE_LIMIT was never enforced on the dispute path.
   // Now its own counter with its own limit consequence (cooldown + offline). See issues.service.resolve.
-  disputeStrikes  Int       @default(0) @map("dispute_strikes")
-  cooldownUntil   DateTime? @map("cooldown_until")
+  disputeStrikes    Int                                    @default(0) @map("dispute_strikes")
+  cooldownUntil     DateTime?                              @map("cooldown_until")
   // KYC resubmission counter (admin A-02). Decline increments; attempt 2 locks → support. The admin
   // decision write-back sets kycStatus + this counter; the rider app reads it for the lock state.
-  kycAttempts     Int       @default(0) @map("kyc_attempts")
+  kycAttempts       Int                                    @default(0) @map("kyc_attempts")
   // The reason code from the most recent admin decline (admin A-02). Surfaced to the rider app so they
   // know what to fix on a resubmit, and recorded alongside the audit-log row. Cleared on approve.
-  kycDeclineReason String?  @map("kyc_decline_reason")
+  kycDeclineReason  String?                                @map("kyc_decline_reason")
   // Account standing (A-04) — only `active` may go online. suspended/banned are admin actions or a
   // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
-  accountStatus   RiderAccountStatus @default(active) @map("account_status")
-  suspendReason   String?   @map("suspend_reason")
+  accountStatus     RiderAccountStatus                     @default(active) @map("account_status")
+  suspendReason     String?                                @map("suspend_reason")
   // Duplicate-account guard (A-04; hardened 2026-07-26 to one-ID-one-account). A national ID on
   // another LIVE profile is now hard-REFUSED (409 id_in_use) at every ID-writing path
   // (completeProfile / auth.updateProfile, advisory-lock serialized) and at becomeRider — so this flag
@@ -306,29 +309,29 @@ model Rider {
   // rows, and collisions with ERASED tombstones (DS15-02b keeps their idNumberHash; a restricted
   // account can't self-erase, so a tombstone match is a legit returning user — allowed through, but
   // still reviewed: applyKycResult holds a flagged auto-verify, admin.getKycReview recomputes live).
-  duplicateIdFlag Boolean   @default(false) @map("duplicate_id_flag")
+  duplicateIdFlag   Boolean                                @default(false) @map("duplicate_id_flag")
   // Reliability (Q2). Starts at 100; cancels/no-shows/low-ratings decrement, clean deliveries recover.
   // onHold is the derived auto-gate (score < threshold) — a separate axis from accountStatus; a rider
   // can be active-but-on-hold. Both the online-gate reads. See packages/shared/src/policy.ts RELIABILITY.
-  reliabilityScore Int      @default(100) @map("reliability_score")
-  onHold          Boolean   @default(false) @map("on_hold")
+  reliabilityScore  Int                                    @default(100) @map("reliability_score")
+  onHold            Boolean                                @default(false) @map("on_hold")
   // RH-01 (DEEP-SWEEP-2026-07-13): WHY the rider is held, so applyReliabilityDelta's score hysteresis
   // can tell a self-clearing score hold ("reliability") apart from the FRAUD P0-3 velocity/fraud hold
   // ("velocity", #198) that must survive a score recovery and only be released by an admin clear-hold.
   // null = not held (or a legacy on_hold row from before this column → score-clearable, as before). See
   // packages/shared/src/policy.ts HeldReason. Kept in lockstep with that shared union.
-  heldReason      String?   @map("held_reason")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  heldReason        String?                                @map("held_reason")
+  updatedAt         DateTime                               @updatedAt @map("updated_at")
 
-  orders      Order[]      @relation("riderOrders")
-  dispatchOffers Order[]   @relation("orderDispatchOffer")
+  orders               Order[]               @relation("riderOrders")
+  dispatchOffers       Order[]               @relation("orderDispatchOffer")
   foodDispatchAttempts FoodDispatchAttempt[]
-  offers      Offer[]
-  settlements Settlement[]
+  offers               Offer[]
+  settlements          Settlement[]
 
-  commissionAccount CommissionAccount?
-  commissionLedger  CommissionLedger[]
-  topUps            TopUp[]
+  commissionAccount  CommissionAccount?
+  commissionLedger   CommissionLedger[]
+  topUps             TopUp[]
   merchantDebtLedger MerchantDebtLedger[]
 
   @@map("riders")
@@ -397,22 +400,22 @@ model CommissionLedger {
 // confirmation can neither re-transition nor double-credit. `providerRef` is the rail's transaction id
 // or an admin idempotency key (unique).
 model TopUp {
-  id          String       @id @default(uuid()) @db.Uuid
-  riderId     String       @map("rider_id") @db.Uuid
-  rider       Rider        @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
-  rail        TopUpRail
-  amount      Decimal      @db.Decimal(10, 2)
-  phone       String?
-  providerRef String?      @unique @map("provider_ref")
-  status      TopUpStatus  @default(pending)
-  initiatedAt DateTime     @default(now()) @map("initiated_at")
-  expiresAt   DateTime     @map("expires_at")
-  resolvedAt  DateTime?    @map("resolved_at")
+  id             String      @id @default(uuid()) @db.Uuid
+  riderId        String      @map("rider_id") @db.Uuid
+  rider          Rider       @relation(fields: [riderId], references: [profileId], onDelete: Cascade)
+  rail           TopUpRail
+  amount         Decimal     @db.Decimal(10, 2)
+  phone          String?
+  providerRef    String?     @unique @map("provider_ref")
+  status         TopUpStatus @default(pending)
+  initiatedAt    DateTime    @default(now()) @map("initiated_at")
+  expiresAt      DateTime    @map("expires_at")
+  resolvedAt     DateTime?   @map("resolved_at")
   // BH-09: client-generated create-request dedup key (one per top-up attempt), mirroring
   // Order.idempotencyKey. A timeout+retry on `POST /wallet/topups` hits the same row (P2002 on the
   // partial unique index below) instead of opening a second pending intent for the same attempt.
   // Nullable — an old client that doesn't send one just never dedupes.
-  idempotencyKey String? @map("idempotency_key")
+  idempotencyKey String?     @map("idempotency_key")
 
   ledgerEntry CommissionLedger?
 
@@ -453,161 +456,161 @@ model Settlement {
 }
 
 model Order {
-  id              String      @id @default(uuid()) @db.Uuid
-  orderType       OrderType   @default(parcel) @map("order_type")
-  customerId      String      @map("customer_id") @db.Uuid
-  customer        Profile     @relation("customerOrders", fields: [customerId], references: [id])
-  riderId         String?     @map("rider_id") @db.Uuid
-  rider           Rider?      @relation("riderOrders", fields: [riderId], references: [profileId])
-  merchantId      String?     @map("merchant_id") @db.Uuid
-  merchant        Merchant?   @relation(fields: [merchantId], references: [id])
-  pickup          Json
+  id                    String                                 @id @default(uuid()) @db.Uuid
+  orderType             OrderType                              @default(parcel) @map("order_type")
+  customerId            String                                 @map("customer_id") @db.Uuid
+  customer              Profile                                @relation("customerOrders", fields: [customerId], references: [id])
+  riderId               String?                                @map("rider_id") @db.Uuid
+  rider                 Rider?                                 @relation("riderOrders", fields: [riderId], references: [profileId])
+  merchantId            String?                                @map("merchant_id") @db.Uuid
+  merchant              Merchant?                              @relation(fields: [merchantId], references: [id])
+  pickup                Json
   // Generated (STORED) geography point derived from pickup.point (managed via raw SQL migration
   // 0006). Indexed with GiST for the nearby-order board (ST_DWithin). Read-through only — Prisma
   // never writes an Unsupported column, so the generated-column contract is safe.
-  pickupGeog      Unsupported("geography(Point, 4326)")? @map("pickup_geog")
-  dropoff         Json
-  itemDesc        String      @map("item_desc")
+  pickupGeog            Unsupported("geography(Point, 4326)")? @map("pickup_geog")
+  dropoff               Json
+  itemDesc              String                                 @map("item_desc")
   // Line-items [{description, quantity}] — the §5b seam made real (item-model decision, packages/design/HANDOFF.md). Nullable:
   // rows created before migration 0008 (old clients via old API) stay null; itemDesc is always the
   // derived compact summary, so every itemDesc consumer keeps working unchanged.
-  items           Json?
-  note            String?
-  itemPhotoUrl    String?     @map("item_photo_url")
-  declaredValue   Decimal     @default(0) @map("declared_value") @db.Decimal(10, 2)
-  size            String?
-  distanceKm      Float?      @map("distance_km")
-  suggestedFare   Decimal     @map("suggested_fare") @db.Decimal(10, 2)
-  proposedFare    Decimal     @map("proposed_fare") @db.Decimal(10, 2)
-  agreedFare      Decimal?    @map("agreed_fare") @db.Decimal(10, 2)
-  currency        String      @default("USD")
+  items                 Json?
+  note                  String?
+  itemPhotoUrl          String?                                @map("item_photo_url")
+  declaredValue         Decimal                                @default(0) @map("declared_value") @db.Decimal(10, 2)
+  size                  String?
+  distanceKm            Float?                                 @map("distance_km")
+  suggestedFare         Decimal                                @map("suggested_fare") @db.Decimal(10, 2)
+  proposedFare          Decimal                                @map("proposed_fare") @db.Decimal(10, 2)
+  agreedFare            Decimal?                               @map("agreed_fare") @db.Decimal(10, 2)
+  currency              String                                 @default("USD")
   // Hashed delivery OTP — never store plaintext (ET7).
-  otpHash             String?     @map("otp_hash")
-  deliveryOtpAttempts Int         @default(0) @map("delivery_otp_attempts")
+  otpHash               String?                                @map("otp_hash")
+  deliveryOtpAttempts   Int                                    @default(0) @map("delivery_otp_attempts")
   // KB-DELIVERY-CODE-ROTATION-SIGNAL: when the delivery code was last (re)issued — stamped at
   // assignment (matching.selectOffer) and on every rotateDeliveryCode. Lets the rider app robustly
   // detect a code rotation (customer re-issued after a lockout) across an app-kill, more robustly than
   // the DS14-09 attempts-counter high-water mark. Nullable: null on pre-0026 rows / orders never
   // assigned a code. Additive, no default, no backfill.
-  deliveryCodeRotatedAt DateTime? @map("delivery_code_rotated_at")
-  status              OrderStatus @default(requested)
-  confirmedAt         DateTime?   @map("confirmed_at")
-  pickupStartedAt     DateTime?   @map("pickup_started_at")
-  collectedAt         DateTime?   @map("collected_at")
+  deliveryCodeRotatedAt DateTime?                              @map("delivery_code_rotated_at")
+  status                OrderStatus                            @default(requested)
+  confirmedAt           DateTime?                              @map("confirmed_at")
+  pickupStartedAt       DateTime?                              @map("pickup_started_at")
+  collectedAt           DateTime?                              @map("collected_at")
   // Per-item pickup confirmation (rider "pickup item verification"): which indexes of `items` the
   // rider physically collected. Nullable — legacy orders + orders never through the checklist.
-  itemsCollected      Json?       @map("items_collected")
+  itemsCollected        Json?                                  @map("items_collected")
   // Proof-of-pickup photo (§5c "parcel is with your rider — photo attached"): the object KEY of the
   // rider's optional parcel photo, taken at collection. Key, not URL — read URLs are minted on
   // demand in getSnapshot, mirroring riders.photo_url. Nullable: the photo is optional and must
   // never gate the collect, so most rows (and every pre-migration-0022 row) stay null.
-  pickupPhotoKey      String?     @map("pickup_photo_key")
-  deliveredAt         DateTime?   @map("delivered_at")
-  completedAt         DateTime?   @map("completed_at")
-  cancelledAt         DateTime?   @map("cancelled_at")
-  cancelledBy         String?     @map("cancelled_by") @db.Uuid
+  pickupPhotoKey        String?                                @map("pickup_photo_key")
+  deliveredAt           DateTime?                              @map("delivered_at")
+  completedAt           DateTime?                              @map("completed_at")
+  cancelledAt           DateTime?                              @map("cancelled_at")
+  cancelledBy           String?                                @map("cancelled_by") @db.Uuid
   // FK → profiles(id). Nullable pointer to whoever cancelled; ON DELETE SET NULL so deleting a
   // profile doesn't block on this reference. See migration 0015.
-  cancelledByProfile  Profile?    @relation("cancelledByOrders", fields: [cancelledBy], references: [id], onDelete: SetNull)
-  cancelReason        String?     @map("cancel_reason")
+  cancelledByProfile    Profile?                               @relation("cancelledByOrders", fields: [cancelledBy], references: [id], onDelete: SetNull)
+  cancelReason          String?                                @map("cancel_reason")
   // Failed hand-off terminal (INTERFACE-AUDIT C6). Reason enum kept as text (shared UndeliveredReason);
   // deliveryAttempts is the recipient-contact attempt count shown to the customer.
-  undeliveredReason   String?     @map("undelivered_reason")
-  undeliveredAt       DateTime?   @map("undelivered_at")
-  deliveryAttempts    Int         @default(0) @map("delivery_attempts")
+  undeliveredReason     String?                                @map("undelivered_reason")
+  undeliveredAt         DateTime?                              @map("undelivered_at")
+  deliveryAttempts      Int                                    @default(0) @map("delivery_attempts")
   // KB-POD-DISPUTE Phase A — proof-of-drop evidence a rider can attach when a hand-off goes sideways
   // (recipient took the goods but withheld the delivery code). Optional, never gates any status; the
   // admin order-detail surfaces it (photo read-URL + GPS + time) so ops can adjudicate a Phase-B
   // "delivered — code bypass" decision. Photo is a GCS object key under `delivery-proof/<riderId>/`
   // (a read URL is minted on demand, like pickupPhotoKey); GPS proves the rider was at the drop.
-  deliveryProofKey    String?     @map("delivery_proof_key")
-  deliveryProofLat    Float?      @map("delivery_proof_lat")
-  deliveryProofLng    Float?      @map("delivery_proof_lng")
-  deliveryProofAt     DateTime?   @map("delivery_proof_at")
+  deliveryProofKey      String?                                @map("delivery_proof_key")
+  deliveryProofLat      Float?                                 @map("delivery_proof_lat")
+  deliveryProofLng      Float?                                 @map("delivery_proof_lng")
+  deliveryProofAt       DateTime?                              @map("delivery_proof_at")
   // Pre-broadcast liability disclaimer consent (A1-8): {policy version, timestamp} on the order.
-  disclaimerVersion    String?    @map("disclaimer_version")
-  disclaimerAcceptedAt DateTime?  @map("disclaimer_accepted_at")
+  disclaimerVersion     String?                                @map("disclaimer_version")
+  disclaimerAcceptedAt  DateTime?                              @map("disclaimer_accepted_at")
   // Rider-cancel auto re-broadcast (F-01): a new order cloned at the same price back-links here to
   // the order it replaced. Plain column (no relation) — a lineage pointer, not a hot-path join.
-  rebroadcastOfId     String?     @map("rebroadcast_of_id") @db.Uuid
+  rebroadcastOfId       String?                                @map("rebroadcast_of_id") @db.Uuid
   // No-supply expiry (UX-2026-07-12 #11): true when the offer window closed with ZERO bids AND zero
   // riders online near the pickup, stamped best-effort post-commit in expireOrder. Drives the honest
   // "nobody was online" copy (feed + snapshot) over the default "raise your price" nudge. Nullable:
   // pre-migration rows and normal expiries stay null (= default copy).
-  expiryNoSupply      Boolean?    @map("expiry_no_supply")
+  expiryNoSupply        Boolean?                               @map("expiry_no_supply")
   // Client-generated create-request dedup key (one per compose attempt). A unique index scoped to the
   // customer lets a timeout+retry or a double-tap on "Broadcast" hit the same row (P2002) instead of
   // opening a second live auction for the same trip. Nullable — old clients that don't send one just
   // never dedupe (partial index, so NULLs don't collide).
-  idempotencyKey      String?     @map("idempotency_key")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  updatedAt           DateTime    @updatedAt @map("updated_at")
+  idempotencyKey        String?                                @map("idempotency_key")
+  createdAt             DateTime                               @default(now()) @map("created_at")
+  updatedAt             DateTime                               @updatedAt @map("updated_at")
 
   // ── C2: food order lifecycle (orderType=merchant only; null for every parcel order) ──────────────
   // Kitchen-side sub-state OrderStatus has no room for (plan §0b.1) — null while status is anything
   // other than the merchant's pre-dispatch `requested` phase.
-  merchantPhase MerchantPhase? @map("merchant_phase")
+  merchantPhase              MerchantPhase?         @map("merchant_phase")
   // N-03: 3:00 accept window from order placement — the reconciler auto-cancels an order still
   // `awaiting_accept` past this stamp.
-  acceptDeadlineAt DateTime? @map("accept_deadline_at")
+  acceptDeadlineAt           DateTime?              @map("accept_deadline_at")
   // D-23/N-18: 60s the customer has to approve a shortened (item-level accept) order.
-  itemApprovalDeadlineAt DateTime? @map("item_approval_deadline_at")
+  itemApprovalDeadlineAt     DateTime?              @map("item_approval_deadline_at")
   // D-11: the reason a merchant declined or released the order — this string IS the customer copy
   // (MERCHANT_REJECTION_REASONS in packages/shared), never a raw enum leaked to the client.
-  rejectionReason String? @map("rejection_reason")
+  rejectionReason            String?                @map("rejection_reason")
   // R-01/R-11: the customer's chosen settlement rail. Null for parcel orders.
-  merchantPaymentMethod MerchantPaymentMethod? @map("merchant_payment_method")
+  merchantPaymentMethod      MerchantPaymentMethod? @map("merchant_payment_method")
   // R-16: "call before requesting payment" — the request-payment action is blocked until this is set
   // (or the regulars/in-person override is used).
-  paymentCallLoggedAt DateTime? @map("payment_call_logged_at")
-  paymentRequestedAt  DateTime? @map("payment_requested_at")
+  paymentCallLoggedAt        DateTime?              @map("payment_call_logged_at")
+  paymentRequestedAt         DateTime?              @map("payment_requested_at")
   // N-22: set the first (and only) time the reminder sweep pushes for this order — the idempotency
   // guard so a merchant's still-unpaid order gets nudged once, never a repeating nag.
-  paymentReminderSentAt DateTime? @map("payment_reminder_sent_at")
+  paymentReminderSentAt      DateTime?              @map("payment_reminder_sent_at")
   // D-24 manual rail: the reference the customer (or merchant, matching their own statement) entered.
-  merchantPaymentReference String? @map("merchant_payment_reference")
+  merchantPaymentReference   String?                @map("merchant_payment_reference")
   // R-11: the merchant's own-statement match — this is what starts the prep clock, not acceptance.
-  merchantPaymentConfirmedAt DateTime? @map("merchant_payment_confirmed_at")
+  merchantPaymentConfirmedAt DateTime?              @map("merchant_payment_confirmed_at")
   // N-04 chip minutes (10/15/20/30/45), + N-17's +10 busy-mode bump already folded in at accept time.
-  prepMinutes    Int?      @map("prep_minutes")
-  prepStartedAt  DateTime? @map("prep_started_at")
-  readyAt        DateTime? @map("ready_at")
+  prepMinutes                Int?                   @map("prep_minutes")
+  prepStartedAt              DateTime?              @map("prep_started_at")
+  readyAt                    DateTime?              @map("ready_at")
   // N-16: 4-digit pickup code, hashed like otpHash — proves the rider at the counter is the one
   // assigned. Minted by C3's dispatch at assignment; verified here (mirrors confirmDelivery's shape).
-  pickupCodeHash     String? @map("pickup_code_hash")
-  pickupCodeAttempts Int     @default(0) @map("pickup_code_attempts")
+  pickupCodeHash             String?                @map("pickup_code_hash")
+  pickupCodeAttempts         Int                    @default(0) @map("pickup_code_attempts")
   // D-08: money and delivery money are never merged into one figure for the merchant — this is what's
   // OWED TO THE MERCHANT (dish subtotal + N-15 small-order fee); deliveryFee is what the rider keeps.
   // agreedFare (existing column, reused) carries the grand total the customer pays (goods + delivery).
-  merchantGoodsTotal Decimal? @map("merchant_goods_total") @db.Decimal(10, 2)
+  merchantGoodsTotal         Decimal?               @map("merchant_goods_total") @db.Decimal(10, 2)
   // N-01: computed via packages/shared/restaurants-pricing (config, not a constant), never re-derived
   // client-side.
-  deliveryFee Decimal? @map("delivery_fee") @db.Decimal(10, 2)
+  deliveryFee                Decimal?               @map("delivery_fee") @db.Decimal(10, 2)
 
   // ── C3: food dispatch (orderType=merchant only) ─────────────────────────────────────────────────
   // Candidate rider currently holding a live single-rider auto-offer (N-08, 60s); null once
   // accepted/declined/expired. Distinct from `riderId` — this rider hasn't been assigned yet, just
   // asked, so it never touches the one_active_ride index.
-  dispatchOfferedRiderId String?   @map("dispatch_offered_rider_id") @db.Uuid
-  dispatchOfferedRider   Rider?    @relation("orderDispatchOffer", fields: [dispatchOfferedRiderId], references: [profileId])
-  dispatchOfferExpiresAt DateTime? @map("dispatch_offer_expires_at")
+  dispatchOfferedRiderId   String?   @map("dispatch_offered_rider_id") @db.Uuid
+  dispatchOfferedRider     Rider?    @relation("orderDispatchOffer", fields: [dispatchOfferedRiderId], references: [profileId])
+  dispatchOfferExpiresAt   DateTime? @map("dispatch_offer_expires_at")
   // Ticks used this dispatch lifetime (search-or-offer rounds), capped at
   // RESTAURANTS_DISPATCH.maxAttempts (N-07 ~6:00 NO_RIDER cap) — reset to 0 on an explicit merchant
   // "keep searching" (D-34) or a D-33 rider drop (a fresh re-dispatch budget).
-  dispatchAttempt   Int       @default(0) @map("dispatch_attempt")
-  dispatchStartedAt DateTime? @map("dispatch_started_at")
+  dispatchAttempt          Int       @default(0) @map("dispatch_attempt")
+  dispatchStartedAt        DateTime? @map("dispatch_started_at")
   // When the reconciler should next act on this order — a live offer's expiry, or "poll again" after
   // a tick found no candidate at all. Unifies both cases into the one sweep WHERE clause
   // (food-dispatch.service.ts); null only pre-first-attempt (dispatchAttempt=0 covers that case).
-  dispatchNextCheckAt DateTime? @map("dispatch_next_check_at")
+  dispatchNextCheckAt      DateTime? @map("dispatch_next_check_at")
   // Riders already offered (declined/expired) this dispatch lifetime — never re-offered the same
   // rider twice in one cycle. Plain text[] (not uuid[] — Prisma's array modifier doesn't compose with
   // @db.Uuid), values are still valid rider profile-id strings.
-  dispatchExcludedRiderIds String[] @default([]) @map("dispatch_excluded_rider_ids")
+  dispatchExcludedRiderIds String[]  @default([]) @map("dispatch_excluded_rider_ids")
   // D-34: set when the NO_RIDER cap is exhausted — the merchant's "no rider found" hold, needing an
   // explicit keep-searching / cancel decision. Cleared on resume; the food itself is not re-cooked
   // (prep already completed before dispatch ever starts — see food-dispatch.service.ts docstring).
-  noRiderHoldAt DateTime? @map("no_rider_hold_at")
+  noRiderHoldAt            DateTime? @map("no_rider_hold_at")
 
   dispatchAttempts FoodDispatchAttempt[]
 
@@ -615,48 +618,48 @@ model Order {
   // R-03 snapshot: the merchant's cash rule AT PLACEMENT, so a mid-order shop-setting change never
   // retroactively changes an in-flight order's obligations. Null for WALLET orders (the rule never
   // applies) and for every parcel order.
-  merchantCashRule MerchantCashRule? @map("merchant_cash_rule")
+  merchantCashRule        MerchantCashRule?   @map("merchant_cash_rule")
   // R-04 doorstep dual-confirm handshake (CASH food orders only, both cashRules — money changes
   // hands at the door either way, independent of who fronted the goods). "Food first" ordering:
   // customer confirms, THEN the rider confirms; only then does the delivery code unlock (R-09).
-  cashHandshakeAmount     Decimal?  @map("cash_handshake_amount") @db.Decimal(10, 2)
-  customerCashConfirmedAt DateTime? @map("customer_cash_confirmed_at")
-  riderCashConfirmedAt    DateTime? @map("rider_cash_confirmed_at")
+  cashHandshakeAmount     Decimal?            @map("cash_handshake_amount") @db.Decimal(10, 2)
+  customerCashConfirmedAt DateTime?           @map("customer_cash_confirmed_at")
+  riderCashConfirmedAt    DateTime?           @map("rider_cash_confirmed_at")
   // N-19: 2:00 from the customer's confirm. R-05: unresolved past this (or an explicit rider
   // dispute) freezes the trip — cashHandshakeFrozenAt stamps that, the rider takes no new jobs
   // until support (X1) resolves it.
-  cashHandshakeDeadlineAt DateTime? @map("cash_handshake_deadline_at")
-  cashHandshakeFrozenAt   DateTime? @map("cash_handshake_frozen_at")
+  cashHandshakeDeadlineAt DateTime?           @map("cash_handshake_deadline_at")
+  cashHandshakeFrozenAt   DateTime?           @map("cash_handshake_frozen_at")
   // R-01/R-06/N-20/N-21: the collect-and-return merchant-debt ledger's derived state — opened at
   // pickup (goods leave the counter unpaid), settled by the merchant's returned-cash count-confirm,
   // a goods-only return (refusal/no-show, no cash ever collected), or written off on non-return
   // (R-07, pairs with the rider's accountStatus=suspended). debtAmount is the merchantGoodsTotal
   // snapshot at the moment the debt opened (R-06: the GOODS value only, delivery fee excluded — the
   // rider keeps that).
-  debtStatus    MerchantDebtStatus? @map("debt_status")
-  debtAmount    Decimal?            @map("debt_amount") @db.Decimal(10, 2)
-  debtOpenedAt  DateTime?           @map("debt_opened_at")
-  debtSettledAt DateTime?           @map("debt_settled_at")
+  debtStatus              MerchantDebtStatus? @map("debt_status")
+  debtAmount              Decimal?            @map("debt_amount") @db.Decimal(10, 2)
+  debtOpenedAt            DateTime?           @map("debt_opened_at")
+  debtSettledAt           DateTime?           @map("debt_settled_at")
   // N-10 customer no-show at the door: call log (mirrors paymentCallLoggedAt's shape) a rider builds
   // up before `reportNoShow` is allowed (>= RESTAURANTS_DEBT.noShowMinCalls entries, the earliest at
   // least RESTAURANTS_DEBT.noShowWindowMs ago).
-  noShowCallTimestamps DateTime[] @default([]) @map("no_show_call_timestamps")
+  noShowCallTimestamps    DateTime[]          @default([]) @map("no_show_call_timestamps")
   // D-12: a merchant can't reject/cancel an already-WALLET-paid order without entering their own
   // refund reference first — the customer's order keeps it forever as their evidence (never a
   // screenshot). N-12's 2h SLA escalation sweep is an open item, see the PR notes / plan §9 Q6.
-  refundReference String?   @map("refund_reference")
-  refundAmount    Decimal?  @map("refund_amount") @db.Decimal(10, 2)
-  refundedAt      DateTime? @map("refunded_at")
+  refundReference         String?             @map("refund_reference")
+  refundAmount            Decimal?            @map("refund_amount") @db.Decimal(10, 2)
+  refundedAt              DateTime?           @map("refunded_at")
 
   merchantDebtLedger MerchantDebtLedger[]
 
-  offers Offer[]
-  events OrderEvent[]
-  merchantItems MerchantOrderItem[]
+  offers           Offer[]
+  events           OrderEvent[]
+  merchantItems    MerchantOrderItem[]
   // Two-way rating (BUG-HUNT P3): an order can now carry one rating per rater (customer + rider),
   // so this is a list — the single-row unique on ratings.order_id was widened to (order_id,
   // by_profile_id) in migration 0015. The rider's "rate the sender" (4·7) is the rider-direction row.
-  rating Rating[]
+  rating           Rating[]
   // Commission debits reference the ride they came from (at most one ride_commission row per order).
   commissionLedger CommissionLedger[]
 
@@ -744,7 +747,7 @@ model Issue {
   // retry on `POST /orders/:id/issues` hits the same row (P2002 on the partial unique index below)
   // instead of opening a second dispute for the same complaint. Nullable — an old client that doesn't
   // send one just never dedupes.
-  idempotencyKey String? @map("idempotency_key")
+  idempotencyKey    String?          @map("idempotency_key")
 
   @@index([status, createdAt])
   @@index([orderId])
@@ -905,11 +908,41 @@ model Merchant {
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
-  orders     Order[]
-  categories MerchantCategory[]
-  debtLedger MerchantDebtLedger[]
+  orders          Order[]
+  categories      MerchantCategory[]
+  debtLedger      MerchantDebtLedger[]
+  reopenReminders RestaurantReopenReminder[]
 
   @@map("merchants")
+}
+
+/**
+ * D1 `menu_closed` / `list_empty` — "Remind me when they open". A customer who finds a kitchen shut
+ * can ask to be told when it opens again, instead of the closed state being a dead end.
+ * There is no stored open/closed flag to hook: open-ness is DERIVED from the merchant's weekly
+ * `hours` JSON (packages/shared `isMerchantOpenNow`). So this is a pending-intent row that a sweep
+ * resolves — see RestaurantReopenService — rather than a subscription to an event that fires.
+ * One row per (customer, merchant): asking twice is the same ask, so the unique constraint makes the
+ * write an upsert and the "already asked" case free. `notifiedAt` retires a row rather than deleting
+ * it, so a fired reminder can't re-fire on the next sweep, and so the same customer asking again
+ * later is a deliberate new ask (the row is reset, not duplicated).
+ */
+model RestaurantReopenReminder {
+  id         String    @id @default(uuid()) @db.Uuid
+  profileId  String    @map("profile_id") @db.Uuid
+  profile    Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  merchantId String    @map("merchant_id") @db.Uuid
+  merchant   Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /**
+   * Set when the reopen push went out. Null = still pending, and the only rows a sweep considers.
+   */
+  notifiedAt DateTime? @map("notified_at")
+
+  @@unique([profileId, merchantId])
+  // The sweep scans pending rows and groups by merchant, so it reads on (notified_at, merchant_id).
+  @@index([notifiedAt, merchantId])
+  @@map("restaurant_reopen_reminders")
 }
 
 enum MerchantCashRule {
@@ -951,7 +984,7 @@ model MerchantDish {
   merchantId      String           @map("merchant_id") @db.Uuid
   name            String
   description     String?
-  priceUsd        Decimal          @db.Decimal(10, 2) @map("price_usd")
+  priceUsd        Decimal          @map("price_usd") @db.Decimal(10, 2)
   photoUrl        String?          @map("photo_url")
   isDraft         Boolean          @default(true) @map("is_draft")
   outOfStockUntil DateTime?        @map("out_of_stock_until")

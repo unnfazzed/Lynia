@@ -226,7 +226,7 @@ Gaps:
 
 | Kit screen | Status | Fix |
 |---|---|---|
-| `menu_closed` / `list_empty` — **"Remind/Notify me when they open"** | ❌ the closed and empty states ship without any notify-me affordance | Add a remind-me action; needs a small backend hook (subscribe to a restaurant's reopen) |
+| `menu_closed` / `list_empty` — **"Remind/Notify me when they open"** | ✅ **shipped in Tranche 3** — closed menus now carry a remind-me toggle backed by a real reopen sweep | see §6 Tranche 3 |
 | `closed_interrupt` — "Keep my cart for tomorrow" | ⚠ shipped as "See other restaurants" / "Keep browsing"; the cart *is* preserved and the copy says so, but the kit's explicit save-for-later action isn't offered | Copy + one action — cheap |
 
 ### 5.4 Rider (kit `RJ` 69 + `RJM` 12 + `RR` 19)
@@ -319,6 +319,32 @@ address regression shipped unnoticed; a branched string is how the board avoided
 - Tests: `address-confirm-sheet.test.tsx` (placeId retention vs. invalidation, empty render, drag
   affordance).
 
+### Tranche 3 — "Remind me when they open" (full stack)
+
+The kit's `menu_closed` gives a shut kitchen an exit that isn't "give up". Shipped end to end:
+
+- **Schema + migration** (`0046_restaurant_reopen_reminders`) — one new table, additive, and its
+  indexes are exempt from the CONCURRENTLY rule because the table is created in the same migration.
+  Passes the online-safe guard (`migration-safety.spec.ts`).
+- **`RestaurantReopenService`** — a one-minute sweep, not an event subscription. Nothing in the system
+  emits "merchant opened": open-ness is *derived* from the weekly `hours` JSON on every read
+  (`isMerchantOpenNow`), so there is no transition to hook, only a schedule to observe. Scheduling a
+  job per merchant's next opening would buy precision this doesn't need and break the moment a
+  merchant edits their hours.
+- **Delivery is at-most-once, deliberately.** `notifiedAt` is stamped *before* the push goes out, so a
+  crash mid-push loses a nudge rather than repeating it every minute for the whole opening window. For
+  a courtesy reminder a duplicate at 07:00 is worse than a miss, and the customer can ask again.
+- **Routes** — `GET/POST/DELETE /restaurants/:id/reopen-reminder`, behind the same
+  `RestaurantsEnabledGuard` + pilot-allowlist visibility as browse: a kitchen a customer can't see is a
+  kitchen they can't subscribe to. POST is idempotent and re-arms a previously-fired row.
+- **`alreadyOpen`** — asking about a kitchen that is open *right now* banks nothing and says so, rather
+  than silently arming something that would next fire tomorrow morning.
+- **Client** — `RemindWhenOpen`, a toggle (not fire-and-forget: the second most likely thing after
+  asking is changing your mind, and a control that can't be undone teaches people not to press it).
+  Server state is the source of truth, so it survives the screen, the session and a reinstall.
+- Tests: 10 covering the sweep (group-per-kitchen fan-out, still-closed, de-allowlisted, retire-before-
+  push ordering, empty), `alreadyOpen`, the pilot 404, and idempotent clear.
+
 **Still required — the one thing code cannot do:** provision `EXPO_PUBLIC_GOOGLE_PLACES_KEY` in the EAS
 `production` and `preview` environments. Until that is set, the app now *says* search is unavailable
 rather than pretending it never existed — but there is still no search, and the confirm step above is
@@ -326,16 +352,17 @@ unreachable, since it only opens from a search result.
 
 **Next tranche, in priority order:**
 
-1. **Food "remind me when they open"** (§5.3) — the only confirmed gap left, and the only one that is
-   not client-only: it needs a subscription record plus a reopen trigger on the API side. Verified
-   absent on both sides (no client affordance, no API route).
-2. The kit's in-search **"Use my current location"** and **"Set the pin on the map"** rows (§3.1). The
-   capabilities both exist as map controls; what's missing is surfacing them inside the search list.
-3. `addr_search` as a dedicated routed screen with an autofocused field (§3.1). The one-screen composer
-   now covers the behaviour — row tap focuses the search — so this is presentation, not capability.
+Every **capability** gap the audit found is now closed. What remains is presentation:
 
-Items 1–3 of the earlier list are done (see Tranche 2). The rider board was also listed here in the
-first revision; see the correction in §5.4 — there is no client-side defect to fix.
+1. The kit's in-search **"Use my current location"** and **"Set the pin on the map"** rows (§3.1). Both
+   capabilities exist as map controls; what's missing is surfacing them inside the search list.
+2. `addr_search` as a dedicated routed screen with an autofocused field (§3.1). The one-screen composer
+   covers the behaviour — a row tap focuses the search — so this is presentation, not capability.
+3. `list_empty` ("nothing open right now") could carry the same remind-me control the closed menu now
+   has, once there is a sensible answer to *which* kitchen the customer is waiting on.
+
+The rider board was listed here in the first revision; see the correction in §5.4 — there is no
+client-side defect to fix.
 
 
 

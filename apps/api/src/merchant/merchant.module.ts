@@ -10,6 +10,7 @@ import { MerchantController } from "./merchant.controller";
 import { MerchantGuard } from "./merchant.guard";
 import { MerchantOrderController } from "./merchant-order.controller";
 import { MerchantService } from "./merchant.service";
+import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
@@ -46,6 +47,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
     FoodOrderService,
     FoodDispatchService,
     FoodDebtService,
+    RestaurantReopenService,
     { provide: DISPATCH_STRATEGY, useClass: NearestRiderDispatchStrategy },
   ],
   // Exported so UploadsModule can gate the merchant dish/banner photo mints (D-32) behind the same
