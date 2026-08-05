@@ -72,7 +72,10 @@ scope for this phase.
 | **Customer cancelled** terminal — rider-side mirror of cancel-anytime (pre/post-pickup) — S5 | ✅ design |
 | **Auction expired · no pick** — distinct from not-chosen; live window countdown on offer-sent — S1 | ✅ design |
 | Rate the sender (optional, at delivered) — S10 | ✅ design |
-| Earnings — lean total + trip list; new-rider empty state | ✅ |
+| Money tab — prepaid, per-delivery commission wallet: balance, ledger, top-up (replaces Earnings) | ✅ |
+| Top-up — amount entry, payment-prompt wait, success, declined | ✅ |
+| Balance low (`wallet_low`) — warning before it blocks going online | ✅ |
+| Go-online gate — top up to keep riding (`gate_topup`), alongside out-of-area / cooldown / banned / verification-locked | ✅ |
 | Account — profile, bike & documents, trip history, settings, help | ✅ design |
 | System/edge — offline, on-hold, force-update, no-GPS, generic error | ✅ |
 
@@ -90,7 +93,7 @@ scope for this phase.
 | Customers directory + profile (masked phone, spend, reports) | ✅ |
 | Edge — cancel-pattern flag / clear / ban | ✅ |
 | Issues queue + investigation (OTP evidence, statements, resolve) | ✅ |
-| Cash & settlements (weekly commission, overdue, record payment) | ✅ |
+| Commission — prepaid per-ride overview (rate, rides, fares, shadow accrual) + rider wallet balances | ✅ |
 | States on every page — live / empty / loading / offline | ✅ |
 
 ## Support / onboarding / edge (`ui_kits/support/`)
@@ -146,7 +149,7 @@ scope for this phase.
 | Area | Note |
 |---|---|
 | Payment handling / reconciliation / refunds | **Off-platform by decision** — cash is settled directly between customer & rider; Lynia is not a party to payment or money disputes (surfaced via the pre-broadcast disclaimer). |
-| Financial / superapp: wallet, credit offer, repayment, bike leasing | Roadmap phase — not designed. EcoCash / mobile money noted as a strategic rec in the audit. |
+| Financial / superapp: credit offer, repayment, bike leasing | Roadmap phase — not designed. (The rider prepaid commission wallet itself is designed & shipped — see Rider app above.) EcoCash / mobile money noted as a strategic rec in the audit. |
 | Localisation (Shona / Ndebele) | Copy is English-only |
 | Marketing website | Not started |
 | In-app chat / live-agent support | Help routes to WhatsApp for now |
