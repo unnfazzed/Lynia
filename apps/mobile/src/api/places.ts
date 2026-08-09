@@ -18,6 +18,63 @@ import { FAST_TIMEOUT_MS } from "../net/network-policy";
 const AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json";
 const DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
 
+/**
+ * Small bounded, TTL'd, LRU-evicted memo cache (LC-A09 / A-O16). Address entry has heavy call overlap
+ * that a plain debounce doesn't remove: a backspace-then-retype correction re-sends the exact same query
+ * text, the same address is often searched twice in one order (pickup, then dropoff), and a suggestion
+ * can be re-resolved (back-then-reselect) without its coordinates having changed. Keying by the exact
+ * (normalized) request — query text for autocomplete, `place_id` for details — serves those repeats from
+ * memory instead of paying for another Google round trip, with zero change to what's shown for any
+ * request that wasn't already answered inside the TTL window.
+ */
+class TtlLruCache<T> {
+  private readonly entries = new Map<string, { value: T; expiresAt: number }>();
+  constructor(private readonly maxEntries: number, private readonly ttlMs: number) {}
+
+  get(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    this.entries.delete(key);
+    this.entries.set(key, entry); // bump recency
+    return entry.value;
+  }
+
+  set(key: string, value: T): void {
+    this.entries.delete(key);
+    this.entries.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+    if (this.entries.size > this.maxEntries) {
+      const oldestKey = this.entries.keys().next().value;
+      if (oldestKey !== undefined) this.entries.delete(oldestKey);
+    }
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
+
+// 2 min for autocomplete — long enough to absorb a typing correction or a second address in the same
+// order composition, short enough that a stale local answer can't linger across an app session.
+const AUTOCOMPLETE_CACHE_MAX = 50;
+const AUTOCOMPLETE_CACHE_TTL_MS = 2 * 60 * 1000;
+// 10 min for details — a resolved place's coordinates don't move mid-order, and re-selecting the same
+// suggestion (back-then-reselect) is common enough to be worth a longer window than autocomplete text.
+const DETAILS_CACHE_MAX = 50;
+const DETAILS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const autocompleteCache = new TtlLruCache<PlaceSuggestion[]>(AUTOCOMPLETE_CACHE_MAX, AUTOCOMPLETE_CACHE_TTL_MS);
+const detailsCache = new TtlLruCache<ResolvedPlace | null>(DETAILS_CACHE_MAX, DETAILS_CACHE_TTL_MS);
+
+/** Test-only: reset both caches so cases don't leak state into each other. */
+export function __resetPlacesCacheForTests(): void {
+  autocompleteCache.clear();
+  detailsCache.clear();
+}
+
 /** Build a `?a=b&c=d` query string, encoding each value. (URLSearchParams isn't reliably polyfilled in
  *  the RN/Hermes runtime, so we assemble the query by hand.) Empty/undefined values are skipped. */
 function queryString(params: Record<string, string | undefined>): string {
@@ -61,6 +118,9 @@ async function getJson(url: string): Promise<unknown | null> {
 export async function autocompletePlaces(input: string, sessionToken?: string): Promise<PlaceSuggestion[]> {
   const q = input.trim();
   if (!placesEnabled() || q.length < 3) return [];
+  const cacheKey = q.toLowerCase();
+  const cached = autocompleteCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const query = queryString({
     input: q,
     key: GOOGLE_PLACES_KEY as string,
@@ -70,7 +130,12 @@ export async function autocompletePlaces(input: string, sessionToken?: string): 
     sessiontoken: sessionToken,
   });
   const body = await getJson(`${AUTOCOMPLETE_URL}?${query}`);
-  return mapPredictions(body);
+  const rows = mapPredictions(body);
+  // Only memoize a real answer — `body === null` means the request itself failed (timeout/offline/non-OK),
+  // and caching that as "no results" would keep hiding suggestions for the TTL window even once the
+  // network recovers.
+  if (body !== null) autocompleteCache.set(cacheKey, rows);
+  return rows;
 }
 
 /**
@@ -80,6 +145,8 @@ export async function autocompletePlaces(input: string, sessionToken?: string): 
  */
 export async function placeDetails(placeId: string, sessionToken?: string): Promise<ResolvedPlace | null> {
   if (!placesEnabled() || placeId.length === 0) return null;
+  const cached = detailsCache.get(placeId);
+  if (cached !== undefined) return cached;
   const query = queryString({
     place_id: placeId,
     key: GOOGLE_PLACES_KEY as string,
@@ -87,7 +154,10 @@ export async function placeDetails(placeId: string, sessionToken?: string): Prom
     sessiontoken: sessionToken,
   });
   const body = await getJson(`${DETAILS_URL}?${query}`);
-  return mapPlaceDetails(body, placeId);
+  const place = mapPlaceDetails(body, placeId);
+  // Same failure-vs-empty distinction as autocomplete: don't memoize a timeout/offline miss.
+  if (body !== null) detailsCache.set(placeId, place);
+  return place;
 }
 
 export { placesEnabled } from "../config";

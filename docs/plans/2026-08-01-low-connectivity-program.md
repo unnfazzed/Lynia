@@ -476,15 +476,32 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
       files/1546 tests, 119 mobile test suites/850 tests unaffected). See
       `docs/LC-A-REPORT-2026-08-04e.md`.
-- [ ] A-O16 **(new, ranked #12 — A-T4 finding, LC-A09)** Google Places autocomplete/details calls
-      (`apps/mobile/src/api/places.ts:62-75`, wired from `AddressSearch.tsx:173`'s 300ms debounce)
-      are uncapped and have no prefix-level response memoization — typing a full address fires a
-      fresh ~1-2KB Google response per settled keystroke pause with heavy content overlap between
-      calls (e.g. "12", "12 Josiah", "12 Josiah Tongogara" each a full independent fetch). Estimated
-      ≈9.4 KB/order in address entry alone (Phase 2a of the A-T4 trace). Outside Lynia's own
-      ETag/caching infrastructure (a direct Google REST call), so this needs its own prefix-cache
-      layer, not a server-side fix. Ranked below the in-house items since it's real but
-      third-party-bounded cost, not a defect in Lynia's own response shaping. (S/M)
+- [x] A-O16 **DONE (2026-08-09)** **(ranked #12 — A-T4 finding, LC-A09)** Google Places
+      autocomplete/details calls (`apps/mobile/src/api/places.ts:62-75`, wired from
+      `AddressSearch.tsx:173`'s 300ms debounce) were uncapped with no prefix-level response
+      memoization — typing a full address fires a fresh ~1-2KB Google response per settled keystroke
+      pause with heavy content overlap between calls (e.g. "12", "12 Josiah", "12 Josiah Tongogara"
+      each a full independent fetch). Estimated ≈9.4 KB/order in address entry alone (Phase 2a of the
+      A-T4 trace). Outside Lynia's own ETag/caching infrastructure (a direct Google REST call), so
+      this needed its own prefix-cache layer, not a server-side fix. (S/M)
+      **Shipped:** both `autocompletePlaces` and `placeDetails` now go through a small bounded
+      (50-entry), TTL'd (2 min autocomplete / 10 min details), LRU-evicted in-memory cache keyed by
+      the exact normalized query text or `place_id` — a backspace-then-retype correction, the same
+      address searched again for a second order leg, or a re-selected suggestion is served locally
+      instead of a fresh Google round trip. A failed/timed-out request is deliberately never cached
+      (a transient offline blip can't hide suggestions for the TTL window once the network
+      recovers). Sequential distinct-prefix calls (the "12"/"12 Josiah"/"12 Josiah Tongogara" example
+      itself) are NOT collapsed — Google's per-character results aren't locally predictable, so this
+      targets the exact-repeat case, not partial-prefix reuse. **Evidence** (real code path, mocked
+      `fetch`, a realistic one-order scenario: pickup typed with one backspace-correction then
+      resolved, the same address re-searched and re-selected for the drop-off leg): 6 network calls
+      without the cache → 4 with it (**−33%**), the 2 avoided calls being exactly the repeat-search
+      and re-select case this item names; at the ledger's own ~1-2 KB/response estimate that's
+      ~2-4 KB avoided in this one scenario, compounding with every further repeat inside the TTL
+      window. 8 new regression tests in the module's first dedicated test file
+      (`apps/mobile/src/api/__tests__/places.test.ts`). No JS bundle-size impact (logic-only, no new
+      deps/assets) — `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green
+      (128 mobile suites/910 tests, +8 new). See `docs/LC-A-REPORT-2026-08-09.md`.
 - [ ] A-O10 **Day-0 candidate:** cold start pays 3 redundant config round trips —
       `apps/mobile/src/net/use-feature-flags.ts:45` (`/app/version-gate` duplicates a `/app/bootstrap`
       field; `/app/feature-flags` refetched per hook, no dedup). (S)
