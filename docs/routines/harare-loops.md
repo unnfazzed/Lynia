@@ -249,23 +249,22 @@ your own trigger ("LC loop D — journey & soundness sweep") via list_triggers +
 enabled:false, record it, reconcile docs/routines/harare-loops.md.
 ```
 
-**Status (2026-08-04): Lane D checklist COMPLETE.** Every Day-0 defect (D-D0a–f), audit territory
-(D-T1–D-T5), and optimization item (D-O1–O3) in the program doc §5 Lane D section is checked — see
-`docs/LC-D-REPORT-2026-08-04.md`. Per SELF-DISABLE this trigger should now be disabled, but the
-firing session that closed out D-O3 had no `list_triggers`/`update_trigger`/`create_trigger` tool
-in its toolset (only session-local `CronCreate`/`CronList`/`CronDelete`, a different in-memory job
-store that can't reach this account-level Routine) and could not disable it directly. **The
-2026-08-04 LC steer session confirmed the same gap** (`ToolSearch` for `list_triggers`/
-`update_trigger`/`create_trigger`/`trigger` returned no matching tool) — this is now the case in
-every LC steer session run so far (08-02, 08-02b, 08-03, 08-03b, 08-04, 08-04b) plus the D-O3
-firing itself. **Needs either a session with `update_trigger` available, or the founder disabling
-"LC loop D — journey & soundness sweep" directly in the claude.ai Routines UI** — this can no
-longer be resolved automatically from inside this account's current session tool surface. Until
-disabled, any further firing is a safe no-op per the program doc (nothing left unchecked to audit
-or optimize) — wasted tokens, not a correctness risk. The sprint-cadence revert
-(2026-08-04 23:00 UTC) had not yet fired as of the 08-04b steer (17:30 UTC) — still expected
-tonight, dropping Lane D from 8×/day back to a daily 07:00 UTC no-op until someone can flip the
-switch.
+**Status (2026-08-04, RESOLVED): Lane D checklist COMPLETE, trigger DISABLED.** Every Day-0 defect
+(D-D0a–f), audit territory (D-T1–D-T5), and optimization item (D-O1–O4) in the program doc §5
+Lane D section is checked — see `docs/LC-D-REPORT-2026-08-04d.md`. The trigger-disable tooling gap
+flagged by six consecutive LC steer/lane sessions (08-02 → 08-04b — every one of them a *scheduled*
+session, `ToolSearch` finding no `list_triggers`/`update_trigger`/`create_trigger`) was resolved
+2026-08-04 by a **different kind of session**: an *interactive* Claude Code session (PR #594,
+`docs/routines/routine-chain.md` §"Applying / reverting") that DID carry trigger-management tools,
+used while moving the whole grid to the weekly Sunday cadence per the user's "run these once a week
+on Sunday" instruction. `LC loop D — journey & soundness sweep` (`trig_01QTyPeoNaV4kk8rFMWBXTNR`) is
+now `disabled` per that PR's applied-triggers table — matching the top-of-file summary table's
+"lane complete, trigger disabled" note, which this paragraph had fallen behind. **Lesson for future
+escalations of this shape:** the tooling gap is specific to scheduled/routine session contexts, not
+universal to the account — an interactive session is the actual resolution path, not a dead end.
+**Re-confirmed 2026-08-09 (LC steer):** `ToolSearch` again found no trigger-management tool in this
+*scheduled* session's toolset either (consistent with every prior LC session), but no action was
+needed — the disable already landed live and needs no further reconciliation.
 
 ---
 

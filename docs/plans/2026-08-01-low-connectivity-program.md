@@ -30,8 +30,8 @@ permanent standing routines.
 
 | Budget | Current | Enforcement | Direction |
 |---|---|---|---|
-| Hermes JS bundle (OTA cost) | 6,455,000 B budget vs ~5.0 MB measured 2026-07-20 | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
-| Android export total (JS+assets) | 12,690,000 B budget | same | same |
+| Hermes JS bundle (OTA cost) | 6,455,000 B budget vs **6,326,143 B measured 2026-08-09** (steer, fresh `expo export --platform android`) — **2.0% headroom, down from 4.1% at 2026-08-03e** (the last real Lane A measurement, 6,189,316 B). The gap (+136,827 B) landed between 08-05 and 08-09 from non-LC feature work (design-kit build-out, PRs #598–#623) with zero per-PR size-diff visibility — exactly the blind spot A-O2 (still unimplemented) exists to close. | `apps/mobile/size-budget.json` + `ci.yml mobile-bundle-size` (fails PRs over budget) | A-T1 ratchets to measured+5%; budgets only move DOWN in LC PRs; a legitimate raise needs same-PR justification |
+| Android export total (JS+assets) | 7,850,000 B budget vs **6,677,779 B measured 2026-08-09** (steer) — 14.9% headroom. **Doc-hygiene note (2026-08-09 steer):** this row had read the pre-ratchet `12,690,000` figure since the 2026-08-01 Day-0 ratchet to `7,850,000` (A-T1) — stale for 8 days across 7 prior steers, now corrected. | same | same |
 | Native per-device download | **first real measurement (2026-08-04, steer):** `EAS_RELEASE_ENABLED` is now armed and shipping — release `.aab` build `c248fbf5` (v0.17.9) measured **32,546,001 B (31.04 MiB) raw, pre-split** (`docs/APP-SIZE.md` "First shipped artifact"). Play's actual per-device download is smaller (AAB split by ABI/density/language) but not yet recorded here — pull it from Play Console → App bundle explorer once internal testers install. | A-T5 (2026-08-03) confirmed the delivery config (AAB split) + shrink levers (R8/resources) are already optimal; the measurement path (`mobile-release.yml`'s AAB-size step) is what produced this number | no new native dep without stated size cost; A-O8/B-O6 (native-build-dependent items) are no longer blocked on EAS arming itself, but still need an actual on-device or emulator check this environment can't perform (B-O6's 2026-08-04e investigation confirms why — see Lane B) |
 | Session data (core journeys) | baselined 2026-08-03 (A-T4, field-by-field trace, not live capture): customer parcel journey ≈181 KB/26min (172 KB resp + 9.3 KB req; WS-primary tracking); customer food journey ≈360-405 KB/26min (poll-only, no socket exists for food orders); rider steady-state hour ≈173-422 KB (parcel job leg) or ≈422-653 KB (food job leg), range driven by RUM sampling assumption | report-only, no CI gate yet; A-T4 traced every request+response against the real service/response-builder code, accounting for `apps/api/src/main.ts:92-99`'s gzip/brotli compression (≥1 KB bodies only) and the client's ETag conditional-GET layer (`apps/mobile/src/api/client.ts:91-118`) | provisional ≤150 KB / ≤300 KB/h targets retired as unrealistic pre-fix; new evidence-based near-term targets: customer parcel journey ≤120 KB, customer food journey ≤150 KB, rider steady-state hour ≤200 KB/h — A-O9 (food dual-poll, 2026-08-03f) and A-O6 (RUM sampling, 2026-08-03g) have both now landed; re-baselining against these targets in practice is the weekly steer's job; A-O14/A-O7 add further headroom |
 | Cold start | warm-paint shipped for home/profile/history/wallet | B-T1 baselines the boot path | targets: warm boot paints with ZERO network round-trips before first frame; cold boot interactive in ≤3 sequential round-trips |
@@ -199,7 +199,13 @@ resilience seams ([resilience]).
 evidence: A-O9 and A-O6 promoted to #4/#5 since A-T4 quantified them as the two largest per-session
 [data] byte levers by a wide margin — A-O9's food dual-poll alone costs ≈94-271 KB/session and
 A-O6's RUM telemetry ≈68-324 KB/h, dwarfing A-O1/4/5/10 — while A-O11/A-O12 stay ahead of everything
-since they gate the razor-thin Hermes CI budget, a harder constraint than [data] bytes):**
+since they gate the razor-thin Hermes CI budget, a harder constraint than [data] bytes; re-ranked
+again 2026-08-09 steer — **A-O2/A-O3 promoted ahead of A-O16/A-O10/A-O7**: a fresh `expo export`
+found Hermes headroom eroded 4.1%→2.0% (6,189,316→6,326,143 B) between the last Lane A measurement
+(08-03e) and now, entirely from non-LC feature work landing with zero per-PR size-diff visibility —
+exactly the gap these two S-effort CI-tooling items close, and real now in a way it wasn't when this
+checklist was last touched (no lane had fired in the 5 days since 08-04, the week the weekly cadence
+took effect). See `docs/LC-STEER-2026-08-09.md` §3/§4):**
 - [x] A-O12 **DONE (2026-08-03c)** **(re-ranked to #1, was #12)** **A-T2 finding (LC-A04):** stop
       zod v4's ~872 KB locale-tables barrel (`zod/v4/classic/external.js`'s `export * as locales
       from "../locales/index.js"`, 50 languages, confirmed unused) from riding into the Android
@@ -476,14 +482,23 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       `size-budget.json` untouched. `pnpm typecheck && pnpm lint && pnpm test` green (97 API test
       files/1546 tests, 119 mobile test suites/850 tests unaffected). See
       `docs/LC-A-REPORT-2026-08-04e.md`.
-- [ ] A-O16 **(new, ranked #12 — A-T4 finding, LC-A09)** Google Places autocomplete/details calls
-      (`apps/mobile/src/api/places.ts:62-75`, wired from `AddressSearch.tsx:173`'s 300ms debounce)
-      are uncapped and have no prefix-level response memoization — typing a full address fires a
-      fresh ~1-2KB Google response per settled keystroke pause with heavy content overlap between
-      calls (e.g. "12", "12 Josiah", "12 Josiah Tongogara" each a full independent fetch). Estimated
-      ≈9.4 KB/order in address entry alone (Phase 2a of the A-T4 trace). Outside Lynia's own
-      ETag/caching infrastructure (a direct Google REST call), so this needs its own prefix-cache
-      layer, not a server-side fix. Ranked below the in-house items since it's real but
+- [ ] A-O2 **(promoted to #1, was #6 — 2026-08-09 steer)** Merge-time size diff: extend the
+      `mobile-bundle-size` job to post the measured bytes + delta vs base as a PR comment / job
+      summary line, so growth is visible even under budget (DoorDash lesson 1). Promoted because
+      the 2026-08-09 steer's fresh measurement found exactly the failure mode this item exists to
+      prevent already happening: 136,827 B of Hermes headroom (4.1%→2.0%) consumed by non-LC PRs
+      between 08-05 and 08-09 with no per-PR visibility into the cost. (S)
+- [ ] A-O3 **(promoted to #2, was #7 — 2026-08-09 steer, same rationale as A-O2)** Asset-PR
+      guardrail: CI notice when a PR adds files under `apps/mobile/assets/` prompting the
+      format/necessity check (DoorDash lesson 1). (S)
+- [ ] A-O16 **(new, ranked #3, was #12 — A-T4 finding, LC-A09)** Google Places autocomplete/details
+      calls (`apps/mobile/src/api/places.ts:62-75`, wired from `AddressSearch.tsx:173`'s 300ms
+      debounce) are uncapped and have no prefix-level response memoization — typing a full address
+      fires a fresh ~1-2KB Google response per settled keystroke pause with heavy content overlap
+      between calls (e.g. "12", "12 Josiah", "12 Josiah Tongogara" each a full independent fetch).
+      Estimated ≈9.4 KB/order in address entry alone (Phase 2a of the A-T4 trace). Outside Lynia's
+      own ETag/caching infrastructure (a direct Google REST call), so this needs its own
+      prefix-cache layer, not a server-side fix. Ranked below the in-house items since it's real but
       third-party-bounded cost, not a defect in Lynia's own response shaping. (S/M)
 - [ ] A-O10 **Day-0 candidate:** cold start pays 3 redundant config round trips —
       `apps/mobile/src/net/use-feature-flags.ts:45` (`/app/version-gate` duplicates a `/app/bootstrap`
@@ -493,11 +508,6 @@ since they gate the razor-thin Hermes CI budget, a harder constraint than [data]
       stream) and `background-location-task.ts:85-103` (background-task stream) emit the same
       `rider:location` event in parallel at matching 10s/25m intervals — measured ≈13.2 KB of pure
       duplicate GPS bytes per 20-minute active job window. (M)
-- [ ] A-O2 Merge-time size diff: extend the `mobile-bundle-size` job to post the measured bytes
-      + delta vs base as a PR comment / job summary line, so growth is visible even under budget
-      (DoorDash lesson 1). (S)
-- [ ] A-O3 Asset-PR guardrail: CI notice when a PR adds files under `apps/mobile/assets/`
-      prompting the format/necessity check (DoorDash lesson 1). (S)
 - [ ] A-O8 `expo-image` migration (disk/mem cache, downsampling) — KNOWN backlog; **needs native
       build train**. (L)
 - [ ] A-O18 **(new, ranked #13 — A-O9 follow-on, 2026-08-03f)** the two food polls A-O9 deliberately
@@ -990,6 +1000,12 @@ re-confirming the same blocker instead of landing work; see `docs/LC-STEER-2026-
       to auto-merge on green typecheck/lint/jest alone. Stays unchecked; re-attempted B-O10 instead
       this firing (fully JS+API, no native/hardware dependency, actually landable here). See
       `docs/LC-B-REPORT-2026-08-04e.md`.
+      **Re-confirmed blocked, 2026-08-09 steer:** the new read-only EAS build-status bridge
+      (`.github/workflows/eas-build-status.yml`, PRs #600/#601, 2026-08-05) surfaces `eas
+      build:list` status/error-log output only — no on-device or emulator access — so it does not
+      change this item's actual blocker (verifying a native font-resolution fix against a real OS
+      font renderer). B-O3/B-O6 stay ranked behind B-O14/B-O15 for the same reason as the
+      2026-08-04b re-rank.
 - [ ] ~~B-O4 Push-registration off the first-paint path~~ — **struck through (2026-08-02 steer #2):
       superseded by B-O7.** B-T1's evidence showed the render-blocking half was already fixed
       (ALR-04); the only remaining scope — bandwidth contention on cold boot — was rescoped into
