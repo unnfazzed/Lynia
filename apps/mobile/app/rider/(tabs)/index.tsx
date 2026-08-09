@@ -16,7 +16,6 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
-import { formatMoney } from "../../../src/logic/money";
 import {
   buildSentOfferEntry,
   clearRiderBidDraft,
@@ -29,10 +28,11 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, Sub } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
+import { RiderActiveJobBanner } from "../../../src/ui/rider/RiderActiveJobBanner";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
 import { parseNum } from "../../../src/util";
@@ -58,26 +58,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 // SentOffer moved to src/logic/rider-bid-draft.ts (buildSentOfferEntry) so its construction — using
 // the SENT fare/eta, never live form state — is unit-testable without mounting this screen.
-
-/**
- * UX20-01: mirrors the customer home screen's ActiveOrderCheckFailedBanner — a rider with a genuine
- * assigned job who hits a query error on this check would otherwise see the ordinary online/board UI
- * with zero indication their active-job check failed and zero way back to /rider/job.
- */
-function ActiveJobCheckFailedBanner({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }): React.ReactElement {
-  return (
-    <Card style={{ borderColor: tokens.color.danger }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
-        <Icon name="wifi-off" size={18} color={tokens.color.danger} />
-        <Text style={{ fontWeight: "700", color: tokens.color.ink }}>Couldn&apos;t check for an active job</Text>
-      </View>
-      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>
-        If you have an assigned delivery, retry to find your way back to it.
-      </Text>
-      <Button label="Retry" variant="ghost" onPress={onRetry} loading={retrying} />
-    </Card>
-  );
-}
 
 export default function RiderHome(): React.ReactElement {
   const router = useRouter();
@@ -674,28 +654,15 @@ export default function RiderHome(): React.ReactElement {
   // Shared JSX, hoisted out of both returns below so the FlatList branch and the untouched ScrollView
   // branch render byte-identical markup for the pieces they have in common — a change to one can't
   // silently drift from the other.
-  const activeJobBanner = activeJob ? (
-    <Card accent>
-      {activeJob.status === "assigned" ? (
-        // The win state (3·3): a customer just picked this rider — say so, don't mumble.
-        <>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
-            <Icon name="check" size={18} color={tokens.color.accentText} />
-            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>A customer picked you!</Text>
-          </View>
-          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-            {activeJob.pickup.landmark} → {activeJob.dropoff.landmark} · {formatMoney(activeJob.agreedFare ?? activeJob.proposedFare)}
-          </Text>
-        </>
-      ) : (
-        <Text style={{ fontWeight: "700", color: tokens.color.ink }}>You have an active job ({statusPillLabel(activeJob.status)})</Text>
-      )}
-      {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
-      <Button label="Open job" variant="ghost" onPress={() => pushOnce(router, pathname, "/rider/job")} />
-    </Card>
-  ) : activeQ.isError ? (
-    <ActiveJobCheckFailedBanner onRetry={() => void activeQ.refetch()} retrying={activeQ.isFetching} />
-  ) : null;
+  const activeJobBanner = (
+    <RiderActiveJobBanner
+      activeJob={activeJob}
+      isError={activeQ.isError}
+      isFetching={activeQ.isFetching}
+      onRetry={() => void activeQ.refetch()}
+      onOpenJob={() => pushOnce(router, pathname, "/rider/job")}
+    />
+  );
 
   const onlineToggleCard = (
     <Card>
