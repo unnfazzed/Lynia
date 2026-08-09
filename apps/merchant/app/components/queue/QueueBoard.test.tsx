@@ -227,6 +227,36 @@ describe("QueueBoard RiderSecuredTakeover across two simultaneously-secured orde
   });
 });
 
+describe("QueueBoard ackSecuredIds is capped, not unbounded for the whole shift (B-O14)", () => {
+  // Before this fix, `ackSecuredIds` grew by one entry per "Got it" dismissal for as long as the
+  // always-mounted kitchen tablet stayed open, with no eviction. Proving the cap holds requires a
+  // behavioral difference from the unbounded version: once the cap is exceeded, the OLDEST acked
+  // order's id gets evicted, so if that same order were still sitting in `orders` as rider-secured
+  // (its takeover just never got dismissed a second time in this contrived test — real orders leave
+  // the list on refetch) it must be eligible to show its takeover again. Under the pre-fix unbounded
+  // Set, order #0 would stay acked forever and never reappear.
+  it("re-shows a rider-secured takeover for an order whose ack id fell off the cap", async () => {
+    const CAP = 200;
+    const orders = Array.from({ length: CAP + 1 }, (_, i) =>
+      order({ id: `s${i}`, merchantPhase: "ready_for_pickup", riderId: "r1" }),
+    );
+    render(<QueueBoard orders={orders} disabled={false} refetch={vi.fn().mockResolvedValue(undefined)} />);
+
+    // Dismiss orders s0..s199 (200 acks — exactly at the cap), then s200 (the 201st ack, which
+    // pushes the set past the cap and evicts the oldest entry, s0's).
+    for (let i = 0; i <= CAP; i++) {
+      const label = `#S${i}`;
+      await screen.findByText(new RegExp(`Order ${label}`));
+      fireEvent.click(screen.getByText("Got it"));
+    }
+
+    // s0 was evicted from ackSecuredIds by the 201st dismissal above — it's still rider-secured in
+    // `orders` (never removed, this harness has no refetch-driven filtering), so it must be
+    // eligible to show its takeover again instead of staying silently acked forever.
+    await screen.findByText(/Order #S0/);
+  });
+});
+
 describe("QueueBoard order actions surface failures instead of failing silently — D-D0b (LC-D03)", () => {
   it("shows an error and re-enables the button after markReady rejects", async () => {
     vi.mocked(markReady).mockRejectedValueOnce(new Error("Network error"));

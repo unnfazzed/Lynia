@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { PREP_CHIPS_MIN } from "@lynia/shared";
+import { addBoundedId } from "../../lib/bounded-id-set";
 import { useHandoverWatch } from "../../lib/handover-watch";
 import { groupQueue, isNoRiderHold, isRiderSecured, shouldUseBoard } from "../../lib/order-groups";
 import {
@@ -110,6 +111,11 @@ function Column({
  * then an open/auto-surfaced NO_RIDER hold decision (D-34) — everything else renders as ordinary
  * board/list cards so the awaiting-payment lane (M2·7) never blocks progress elsewhere.
  */
+// B-O14: the kitchen tablet stays mounted for a whole shift with no unmount to reset these —
+// bounded in practice by one restaurant's daily order volume (tens to a few hundred), same
+// low-severity shape as the mobile rider board's B-O13 fix. Cap value matches that precedent.
+const ACK_ID_CAP = 200;
+
 export function QueueBoard({
   orders,
   disabled,
@@ -161,7 +167,7 @@ export function QueueBoard({
   }, []);
 
   function handleHoldDismiss() {
-    if (holdToShow) setAckHoldIds((prev) => new Set(prev).add(holdToShow.id));
+    if (holdToShow) setAckHoldIds((prev) => addBoundedId(prev, holdToShow.id, ACK_ID_CAP));
     setOpenHoldId(null);
   }
 
@@ -219,7 +225,13 @@ export function QueueBoard({
     // switched to B, and stayed wrong indefinitely if B's own revealPickupCode() call errored. A
     // per-order key forces a full remount at the order boundary, mirroring NewOrderTakeover's own
     // key={active.id} and NoRiderHoldTakeover's key={holdToShow.id} three lines below.
-    return <RiderSecuredTakeover key={securedToShow.id} order={securedToShow} onDismiss={() => setAckSecuredIds((prev) => new Set(prev).add(securedToShow.id))} />;
+    return (
+      <RiderSecuredTakeover
+        key={securedToShow.id}
+        order={securedToShow}
+        onDismiss={() => setAckSecuredIds((prev) => addBoundedId(prev, securedToShow.id, ACK_ID_CAP))}
+      />
+    );
   }
 
   if (holdToShow) {

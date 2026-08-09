@@ -924,12 +924,23 @@ re-confirming the same blocker instead of landing work; see `docs/LC-STEER-2026-
       optimization, correctness-intact throughout, matching `B-O10`/`B-O12`'s own precedent.
       `pnpm typecheck && pnpm lint && pnpm test` all green. See
       `docs/LC-B-REPORT-2026-08-04f.md`.
-- [ ] B-O14 **(new, B-T3 finding)** **(re-ranked to #2, was #5 — 2026-08-04b steer)** Merchant
-      kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
-      (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrink for the
+- [x] B-O14 **DONE (2026-08-09)** **(new, B-T3 finding)** **(re-ranked to #2, was #5 —
+      2026-08-04b steer)** Merchant kitchen board's `ackSecuredIds`/`ackHoldIds` `Set`s
+      (`apps/merchant/app/components/queue/QueueBoard.tsx:108-109,143,188`) never shrunk for the
       always-mounted kitchen tablet's whole shift — bounded in practice by one restaurant's daily
-      order volume (tens to a few hundred), so low real-world impact; noted for completeness, not
-      worth a dedicated fix on its own. (S)
+      order volume (tens to a few hundred), so low real-world impact, but the same unbounded-growth
+      shape `LC-B08`/`B-O13` already fixed on the mobile rider board. Fixed with a new shared
+      `apps/merchant/app/lib/bounded-id-set.ts` (`addBoundedId`, a verbatim port of the mobile
+      lane's own cap+FIFO-evict helper — `ACK_ID_CAP = 200`, matching `B-O13`'s
+      `BOARD_RESOLVED_ID_CAP`), wired into both `ackSecuredIds`'s and `ackHoldIds`'s dismiss call
+      sites. Regression tests: a pure unit suite for `addBoundedId`
+      (`apps/merchant/app/lib/bounded-id-set.test.ts`), plus a behavioral `QueueBoard.test.tsx`
+      case that dismisses 201 distinct rider-secured takeovers and asserts the first one's takeover
+      reappears once its ack id falls off the 200-entry cap — confirmed to FAIL against the pre-fix
+      code (times out waiting for the reappearance, since the unbounded `Set` never evicts). No
+      `KNOWN_BUGS.md` row — pure memory-bound optimization, correctness-intact throughout, matching
+      `B-O10`/`B-O12`/`B-O13`'s own precedent. `pnpm typecheck && pnpm lint && pnpm test` all
+      green. See `docs/LC-B-REPORT-2026-08-09.md`.
 - [ ] B-O15 **(new, B-T3 finding)** **(re-ranked to #3, was #6 — 2026-08-04b steer)** Delivery-code
       device index (`CODE_INDEX_KEY`,
       `apps/mobile/src/auth/device-state.ts:38,73-74`) appends one order id per completed order for
