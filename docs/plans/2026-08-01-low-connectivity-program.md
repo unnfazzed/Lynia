@@ -1355,22 +1355,30 @@ C-O9, C-O1, C-O2, C-O4 all landed since — **only C-O10 remains (2026-08-04f)**
       `getSnapshot`-level case in `orders.service.spec.ts` (all confirmed failing pre-fix on the
       relevant assertion). Ledgered `LC-C16`. `pnpm typecheck && pnpm lint && pnpm test` green
       (full monorepo). See `docs/LC-C-REPORT-2026-08-04f.md`. (M)
-- [ ] C-O10 **(#6 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/socket.ts`'s
-      `acquireSocket` (renamed from `createSocket` by A-O17, 2026-08-04b — same underlying `io()`
-      call site, now ref-counted/shared rather than one-per-hook, but the auth-object capture below
-      is unchanged by that refactor) passes a captured `auth: { token }` OBJECT to `io()` —
-      Socket.IO's own internal auto-reconnect (a bare network drop, no React involved) replays that
-      same object on every retry, so a dead zone outlasting the 900s access-token TTL leaves the
-      socket retrying with a now-expired token until an unrelated REST call (any hook's own
-      `connect_error` handler, or a poll fallback) happens to 401 and rotates the session, which
-      only then tears down and rebuilds the socket via the hook's `token` dependency (now also
-      releasing/re-acquiring the shared connection — see A-O17). Self-heals (every hook's
-      `connect_error` handler already fires a REST call on each retry) and needs a >15min outage
-      to matter, so this is a hardening item, not a same-run defect. Fix: switch `acquireSocket` to
-      the `auth` CALLBACK pattern `apps/merchant/app/lib/queue-socket.ts`'s
-      `createMerchantQueueSocket` already uses (`(cb) => cb({ token: <freshest token> })`),
-      pulling the current token from `AuthContext`/session storage on each (re)connection attempt
-      instead of the value captured at `acquireSocket(token)` call time. (S)
+- [x] C-O10 **DONE (2026-08-09)** **(#6 — C-T5 finding, LC-C14)** `apps/mobile/src/realtime/
+      socket.ts`'s `acquireSocket` (renamed from `createSocket` by A-O17, 2026-08-04b — same
+      underlying `io()` call site, now ref-counted/shared rather than one-per-hook, but the
+      auth-object capture was unchanged by that refactor) passed a captured `auth: { token }`
+      OBJECT to `io()` — Socket.IO's own internal auto-reconnect (a bare network drop, no React
+      involved) replayed that same object on every retry, so a dead zone outlasting the 900s
+      access-token TTL left the socket retrying with a now-expired token until an unrelated REST
+      call (any hook's own `connect_error` handler, or a poll fallback) happened to 401 and
+      rotated the session. **Shipped:** `acquireSocket` now passes `auth: (cb) => cb({ token:
+      getCurrentAccessToken() ?? token })`, matching `apps/merchant/app/lib/queue-socket.ts`'s
+      `createMerchantQueueSocket` callback pattern. New `getCurrentAccessToken()` export in
+      `apps/mobile/src/api/client.ts` reads the same `AuthProvider`-registered `hooks.getSession()`
+      ref the REST client already uses for its own bearer header — no new state, no circular
+      import — so the socket's auth callback always re-reads whatever token is current at the
+      moment of each (re)connection attempt, including one Socket.IO fires internally, rather than
+      replaying the token captured when the shared entry was opened. Falls back to the entry's
+      keyed token if the hook isn't wired yet (a test harness with no `AuthProvider` mounted). Not
+      a mutation retry path — no idempotency concern, only the credential a handshake presents
+      changes. Regression tests: 3 new cases in `realtime/__tests__/socket.test.tsx` (`auth` is a
+      callback not an object; the callback returns the CURRENT mocked token on a second invocation
+      simulating a mid-lifetime rotation, not the one captured at open time; falls back to the
+      keyed token with no session — all three confirmed failing against the pre-fix code).
+      Ledgered `LC-C14`. `pnpm typecheck && pnpm lint && pnpm test` green (full monorepo). See
+      `docs/LC-C-REPORT-2026-08-09.md`. (S)
 
 ### Lane D — journey & soundness sweep (Opus 4.8, `0 8 * * 0`)
 

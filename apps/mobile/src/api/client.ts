@@ -15,6 +15,13 @@ export function configureApi(h: ApiHooks): void {
   hooks = h;
 }
 
+/** The freshest access token AuthProvider currently holds (or null if signed out / not yet loaded).
+ *  Exposed so long-lived connections (LC-C14: the shared realtime socket) can re-read the CURRENT
+ *  token on every reconnect attempt instead of replaying whatever token they were opened with. */
+export function getCurrentAccessToken(): string | null {
+  return hooks?.getSession()?.accessToken ?? null;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,

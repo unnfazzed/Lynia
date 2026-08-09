@@ -16,7 +16,7 @@ They run **once a week, on Sunday (UTC)**, interleaved on the even hours of the 
 | `LC steer — replan` | `0 0 * * 0` | `claude-fable-5` | Re-rank, budget trend, loop health, completion calls — runs first so the lanes fire against a fresh ranking |
 | `LC loop A — size & data diet` | `0 2 * * 0` | `claude-opus-5` | Install/download size + OTA & per-session bytes |
 | `LC loop B — Go-class runtime perf` | `0 4 * * 0` | `claude-opus-5` | Cold start, jank, memory on 1–2 GB devices |
-| `LC loop C — offline & 2G resilience` | `0 6 * * 0` | `claude-opus-4-8` | Journeys surviving dead zones and drops |
+| `LC loop C — offline & 2G resilience` | `0 6 * * 0` | `claude-opus-4-8` | Journeys surviving dead zones and drops — **lane complete, disable pending (tool gap — see closing note below)** |
 | `LC loop D — journey & soundness sweep` | `0 8 * * 0` | `claude-opus-4-8` | Journey blockers (mobile+admin+merchant) + read-only infra soundness — **lane complete, trigger disabled** |
 | `LC loop R — refactoring sprint` | `0 10 * * 0` | (default) | Runs the standing refactoring routine's doctrine (behavior-preserving, hotspot/`REFACTOR-LEDGER.md`-driven, characterization-first, ≤400-line single-concern PRs, strict typecheck+build+test gate); dedups with the standing routine through the same ledger |
 
@@ -206,6 +206,18 @@ SELF-DISABLE: when every Lane C box is checked, final docs/LC-C-REPORT-<date>.md
 your own trigger ("LC loop C — offline & 2G resilience") via list_triggers + update_trigger
 enabled:false, record it, reconcile docs/routines/harare-loops.md.
 ```
+
+**Status (2026-08-09): Lane C checklist COMPLETE.** Every Day-0 defect (C-D0a–e), audit territory
+(C-T1–T5), and optimization item (C-O5, C-O6, C-O7, C-O8, C-O9, C-O1, C-O2, C-O4, C-O10 — C-O3
+struck as superseded by Lane A's A-O17) in the program doc §5 Lane C section is checked or struck
+— see `docs/LC-C-REPORT-2026-08-09.md`. Per SELF-DISABLE this trigger should now be disabled, but
+the firing session that closed out C-O10 had no `list_triggers`/`update_trigger`/`create_trigger`
+tool in its toolset (only session-local `CronCreate`/`CronList`/`CronDelete`, a different
+in-memory job store that can't reach this account-level Routine) — the same gap Lane D hit
+starting 2026-08-04 (see its closing note below). **Needs either a session with `update_trigger`
+available, or the founder disabling "LC loop C — offline & 2G resilience" directly in the claude.ai
+Routines UI.** Until disabled, any further firing is a safe no-op per the program doc (nothing
+left unchecked to audit or optimize) — wasted tokens, not a correctness risk.
 
 ---
 

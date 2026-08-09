@@ -1,4 +1,5 @@
 import { io, type Socket } from "socket.io-client";
+import { getCurrentAccessToken } from "../api/client";
 import { WS_URL } from "../config";
 import { reportReachable } from "../net/reachability";
 
@@ -34,7 +35,18 @@ const shared = new Map<string, SharedEntry>();
 export function acquireSocket(token: string): Socket {
   let entry = shared.get(token);
   if (!entry) {
-    const socket = io(WS_URL, { auth: { token }, transports: ["websocket", "polling"] });
+    // LC-C14: `auth` is a CALLBACK (not a captured `{ token }` object) so Socket.IO's own internal
+    // auto-reconnect — a bare network drop, no React involved — re-reads whatever token is CURRENT
+    // at the moment of each (re)connection attempt, matching the merchant app's
+    // `createMerchantQueueSocket`. A captured object would replay the token from the moment this
+    // entry was opened on every retry; a dead zone that outlasts the access-token TTL would then
+    // keep retrying with a now-expired token until an unrelated REST call happened to 401 and force
+    // a teardown/rebuild. Falls back to the token this entry was keyed on if the auth hook isn't
+    // wired yet (e.g. a test harness that calls acquireSocket without an AuthProvider mounted).
+    const socket = io(WS_URL, {
+      auth: (cb) => cb({ token: getCurrentAccessToken() ?? token }),
+      transports: ["websocket", "polling"],
+    });
     // A successful (re)connect is a second, independent proof the network is back — on a tracking
     // screen the socket often reconnects before any REST call runs, so feeding `connect` into
     // reachability clears the offline state seconds sooner than waiting on the /health probe. Only

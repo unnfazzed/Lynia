@@ -6,9 +6,11 @@ type FakeIoSocket = {
 };
 
 let mockCreatedSockets: FakeIoSocket[] = [];
+let mockIoOptions: Array<{ auth: unknown; transports: string[] }> = [];
 
 jest.mock("socket.io-client", () => ({
-  io: jest.fn(() => {
+  io: jest.fn((_url: string, options: { auth: unknown; transports: string[] }) => {
+    mockIoOptions.push(options);
     const socket: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn() };
     mockCreatedSockets.push(socket);
     return socket;
@@ -17,8 +19,15 @@ jest.mock("socket.io-client", () => ({
 
 jest.mock("../../net/reachability", () => ({ reportReachable: jest.fn() }));
 
+let mockCurrentAccessToken: string | null = null;
+jest.mock("../../api/client", () => ({
+  getCurrentAccessToken: () => mockCurrentAccessToken,
+}));
+
 beforeEach(() => {
   mockCreatedSockets = [];
+  mockIoOptions = [];
+  mockCurrentAccessToken = null;
 });
 
 // A-O17: board/job/location hooks all want a connection for the same rider token during an active
@@ -88,5 +97,53 @@ describe("acquireSocket / releaseSocket", () => {
 
     releaseSocket("tok", socket); // extra release after the entry is already gone
     expect(mockCreatedSockets[0]!.disconnect).toHaveBeenCalledTimes(1); // still just once
+  });
+});
+
+// LC-C14/C-O10: a captured `auth: { token }` object gets replayed verbatim by Socket.IO's own
+// internal auto-reconnect on every retry, so a dead zone that outlasts the access-token TTL keeps
+// retrying with a now-expired token. `auth` must be a CALLBACK that re-reads whatever token is
+// CURRENT at the moment of each (re)connection attempt, matching the merchant app's
+// `createMerchantQueueSocket` pattern — pre-fix, this test fails because `auth` is a plain object.
+describe("acquireSocket auth handshake", () => {
+  it("passes auth as a callback, not a captured token object", () => {
+    const socket = acquireSocket("tok-shape-check");
+    const options = mockIoOptions[0]!;
+
+    expect(typeof options.auth).toBe("function");
+
+    releaseSocket("tok-shape-check", socket);
+  });
+
+  it("the auth callback re-reads the CURRENT token, not the one it was opened with", () => {
+    mockCurrentAccessToken = "tok-initial";
+    const socket = acquireSocket("tok-rotation-check");
+    const authFn = mockIoOptions[0]!.auth as (cb: (data: { token: string }) => void) => void;
+
+    const firstCall = jest.fn();
+    authFn(firstCall);
+    expect(firstCall).toHaveBeenCalledWith({ token: "tok-initial" });
+
+    // Simulate a token rotation happening while this same socket entry is still alive (a bare
+    // network drop mid-lifetime, no React re-render/reacquire involved) — Socket.IO's internal
+    // reconnect logic invokes the SAME auth function again on the next attempt.
+    mockCurrentAccessToken = "tok-rotated";
+    const secondCall = jest.fn();
+    authFn(secondCall);
+    expect(secondCall).toHaveBeenCalledWith({ token: "tok-rotated" });
+
+    releaseSocket("tok-rotation-check", socket);
+  });
+
+  it("falls back to the keyed token if the auth hook has no current session yet", () => {
+    mockCurrentAccessToken = null;
+    const socket = acquireSocket("tok-fallback");
+    const authFn = mockIoOptions[0]!.auth as (cb: (data: { token: string }) => void) => void;
+
+    const cb = jest.fn();
+    authFn(cb);
+    expect(cb).toHaveBeenCalledWith({ token: "tok-fallback" });
+
+    releaseSocket("tok-fallback", socket);
   });
 });
