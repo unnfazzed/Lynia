@@ -123,6 +123,31 @@ authoring scaffolds, `thumbnail.html`.
 
 ---
 
+## D-09 · CodeQL should not scan `packages/design/**` — PENDING (raised 2026-08-10)
+
+> **Status: not yet in effect.** The two files that implement this
+> (`.github/codeql/config.yml`, and the `config-file:` line in `.github/workflows/codeql.yml`) are
+> written to the working tree but **uncommitted** — this session's permission policy blocks commits
+> that touch `.github/`. CI on PR #640 stays red on CodeQL until someone with workflow-write access
+> commits those two files. Nothing else is blocked by this.
+
+
+The 2026-08-10 export introduced `/^cover|banner|dish|photo$/i` in
+`explorations/store/play-export.jsx` (and its compiled copy in the generated `_ds_bundle.js`).
+CodeQL is right that the precedence is wrong — it parses as `(^cover)|(banner)|(dish)|(photo$)`
+rather than the intended `^(cover|banner|dish|photo)$`. But it is a **cosmetic placeholder-name
+filter in a Play-Store screenshot mock tool**: it only decides which stock food photo fills a slot.
+No untrusted input, no security boundary, and no app imports the file.
+
+Fixing it in-repo would violate D-00's spirit and this ledger's own rule — the vendored design must
+mirror the tool — and the next export would overwrite it anyway. So `.github/codeql/config.yml`
+excludes `packages/design/**` from scanning: nothing there ships, we must not edit it, and any fix
+is transient. Every app, package and workflow we author stays fully scanned.
+
+**Reported upstream** to Design as a genuine (if low-impact) bug in `play-export.jsx`.
+
+---
+
 ## D-08 · Kit-side icon set is 38 icons — APPROVED (2026-08-10)
 
 The repo's copy of `assets/lynia-icons.js` had gained a 39th icon (`Copy`) during app work; nothing in
