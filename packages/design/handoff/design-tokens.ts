@@ -20,8 +20,6 @@ export const color = {
 
   accent: "#00B14F",
   accentPressed: "#009D3B",
-  /** @deprecated alias kept for back-compat — use `accentPressed`. */
-  accent700: "#009D3B",
   accentText: "#006630",
   accentWash: "#E9F8EF",
 

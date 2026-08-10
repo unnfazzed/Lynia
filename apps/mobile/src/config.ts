@@ -23,18 +23,22 @@ if (!isDev && API_URL.includes("localhost")) {
 export const WS_URL: string = API_URL;
 
 /**
- * Public legal pages, served by the API itself (apps/api/src/legal/) because Lynia ships no marketing
- * site. Both are Google Play listing requirements: the privacy notice is the "Privacy policy" URL in
- * Play Console → App content, and the deletion page is the "Data deletion" URL on the Data safety
- * form. Derived from API_URL rather than hardcoded so a staging/dev build links at its OWN backend's
- * copy instead of silently opening production's — the same reasoning as WS_URL above.
+ * The public privacy notice, served by the API itself (apps/api/src/legal/) because Lynia ships no
+ * marketing site. It is a Google Play listing requirement — the "Privacy policy" URL in Play Console →
+ * App content — and the Settings screen links it in-app. Derived from API_URL rather than hardcoded so
+ * a staging/dev build links at its OWN backend's copy instead of silently opening production's — the
+ * same reasoning as WS_URL above.
+ *
+ * The sibling `/legal/account-deletion` page (the "Data deletion" URL on the Data safety form) is a
+ * Play Console *listing* field, entered by hand from `docs/PLAY-STORE-SUBMISSION.md` — the app never
+ * links it, because Settings deletes the account in-app via `DELETE /auth/me`. It therefore has no
+ * constant here.
  *
  * `replace(/\/+$/, "")` guards the one realistic mis-configuration: a trailing slash on
  * EXPO_PUBLIC_API_URL would otherwise produce `…//legal/privacy`.
  */
 const apiOrigin = API_URL.replace(/\/+$/, "");
 export const PRIVACY_URL = `${apiOrigin}/legal/privacy`;
-export const ACCOUNT_DELETION_URL = `${apiOrigin}/legal/account-deletion`;
 
 /**
  * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the whole address-search

@@ -52,13 +52,6 @@ export function serializeMerchantSession(session: MerchantSession): string {
   return JSON.stringify(session);
 }
 
-/** True once the access token is at (or past) its own claimed lifetime — a soft, client-only hint
- *  used to skip a doomed request and go straight to refresh; the server's own JWT expiry is the real
- *  source of truth (a clock-skewed tablet just costs one extra 401-then-refresh round trip). */
-export function isAccessTokenStale(session: MerchantSession, now: number): boolean {
-  return now >= session.issuedAt + session.expiresIn * 1000;
-}
-
 function isBrowser(): boolean {
   return typeof document !== "undefined";
 }

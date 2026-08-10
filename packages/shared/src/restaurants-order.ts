@@ -48,7 +48,6 @@ export const RESTAURANTS_TIMING = {
 /** N-04: five prep-time chips, minutes. Free text is deliberately not offered (design rationale:
  *  invites "5 min" fiction). */
 export const PREP_CHIPS_MIN = [10, 15, 20, 30, 45] as const;
-export type PrepChipMinutes = (typeof PREP_CHIPS_MIN)[number];
 
 /** N-17: busy mode adds this many minutes to the chosen prep chip at accept time. */
 export const BUSY_MODE_EXTRA_MIN = 10;
@@ -69,7 +68,6 @@ export const MERCHANT_REJECTION_REASONS = {
   no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
   other: "The restaurant couldn't take this order.",
 } as const;
-export type MerchantRejectionReason = keyof typeof MERCHANT_REJECTION_REASONS;
 
 export function rejectionCopy(reason: string): string {
   return (MERCHANT_REJECTION_REASONS as Record<string, string>)[reason] ?? MERCHANT_REJECTION_REASONS.other;

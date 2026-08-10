@@ -3,7 +3,6 @@
  * free so the state machine unit-tests off-device. The order screen holds the React state; this file
  * only derives what to show from the server's own timestamps.
  */
-import { RESTAURANTS_DEBT } from "@lynia/shared";
 
 export type HandshakeState =
   // WALLET orders (or any non-cash method) never go through the handshake at all.
@@ -43,14 +42,4 @@ export function codeEligible(order: {
 }): boolean {
   const state = handshakeState(order);
   return state === "not_cash" || state === "confirmed";
-}
-
-/** N-19: elapsed/total ms for the CountdownRing while `waiting_rider` — the 2:00 window is anchored on
- *  the server's own `customerCashConfirmedAt`, never a client-started timer (a backgrounded app can't
- *  drift from the reconciler's own sweep). Clamped so a late poll tick never reads negative/over-100%. */
-export function handshakeCountdown(customerCashConfirmedAt: string, nowMs: number): { elapsedMs: number; totalMs: number } {
-  const totalMs = RESTAURANTS_DEBT.handshakeWindowMs;
-  const confirmedAt = new Date(customerCashConfirmedAt).getTime();
-  const elapsedMs = Number.isFinite(confirmedAt) ? Math.min(totalMs, Math.max(0, nowMs - confirmedAt)) : 0;
-  return { elapsedMs, totalMs };
 }

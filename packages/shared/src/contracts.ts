@@ -308,7 +308,6 @@ export const WS_EVENTS = {
    *  triggered the push (informational only — the client still refetches the whole queue). */
   foodQueueChanged: "food:queue-changed",
 } as const;
-export type WsEvent = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
 
 /** `order:rebroadcast` payload (F-01) — `orderId` is the cancelled order the customer is watching;
  *  `newOrderId` is the re-broadcast auction to move them to. */
@@ -547,8 +546,6 @@ export type MerchantFeatureFlagsResponse = z.infer<typeof MerchantFeatureFlagsRe
  *  InnBucks/O'mari and the fallback for EcoCash. */
 export const TopupRail = z.enum(["ecocash", "innbucks", "omari", "manual"]);
 export type TopupRail = z.infer<typeof TopupRail>;
-/** The mobile-money rails a rider can self-serve from the app (excludes `manual`, which is admin-only). */
-export const SELF_SERVE_RAILS: readonly TopupRail[] = ["ecocash", "innbucks", "omari"];
 
 /** A single ledger entry type. Credits are positive, debits negative (see WalletEntry.amount).
  *  `reversal` is reserved (no writer in the wallet-core build) — fare-adjusts append an `adjustment`. */

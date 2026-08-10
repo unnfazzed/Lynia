@@ -323,21 +323,19 @@ export async function clearSenderRatingPending(): Promise<void> {
 // the rail prompt — the exact moment the OS is most likely to reclaim/kill a backgrounded process on a
 // low-end device — and `topup`/`step` in top-up.tsx are plain component state, never persisted. An app
 // kill mid-wait previously lost all UI state with no way to tell whether the top-up landed short of
-// manually watching the balance. Persisted the instant `createTopup` resolves; cleared once the wallet
-// screen reconciles it to a terminal outcome (or the rider explicitly cancels a still-pending request).
-// Single slot — a rider has one top-up attempt in flight at a time.
+// manually watching the balance. Read + cleared by the Money tab, which reconciles the marker to a
+// terminal outcome. Single slot — a rider has one top-up attempt in flight at a time.
+//
+// NO WRITER TODAY. The `savePendingTopup` half was removed as dead code: it never had a caller in any
+// commit, because the self-serve rail it belonged to was never integrated (`WalletService
+// .creditFromTopup` has no callers either, and `app/wallet/top-up.tsx` was rewritten to a "call
+// support" screen — see `src/ui/rider/TopUpSimulator.tsx`). The read/clear half is kept deliberately:
+// it is the landing point for the rail integration, and it costs nothing until then.
 const PENDING_TOPUP_KEY = "lynia.pendingTopup";
 export interface PendingTopup {
   topupId: string;
 }
 
-export async function savePendingTopup(topupId: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PENDING_TOPUP_KEY, JSON.stringify({ topupId }));
-  } catch {
-    /* best-effort */
-  }
-}
 export async function loadPendingTopup(): Promise<PendingTopup | null> {
   try {
     const raw = await SecureStore.getItemAsync(PENDING_TOPUP_KEY);
