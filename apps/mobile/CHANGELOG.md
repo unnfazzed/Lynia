@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/unnfazzed/Lynia/compare/v0.22.0...v0.22.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **design:** execute the notable kit-vs-shipped partials (customer, rider, merchant) ([#638](https://github.com/unnfazzed/Lynia/issues/638)) ([b8a8453](https://github.com/unnfazzed/Lynia/commit/b8a8453f2235de11c780bd4c52057bc292d2df45))
+
 ## [0.22.0](https://github.com/unnfazzed/Lynia/compare/v0.21.0...v0.22.0) (2026-08-10)
 
 
