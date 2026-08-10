@@ -72,6 +72,18 @@ User instruction (2026-08-10): **track Expo deployments.** Merging is not shippi
 build is not a shipped build. Any session that lands mobile changes and is asked whether they
 shipped must verify against EAS/Play, not infer from `main`.
 
+**Monitor on trigger only — never on a schedule.** Same instruction, clarified: *"no need for
+routines .. only monitor when expo deployment is triggered."* Do **not** create a cron/routine that
+watches EAS or Play. There is no standing deployment-watch lane, and nothing here belongs in
+`docs/ROUTINES.md`. When nothing has been dispatched, do not poll.
+
+What that leaves is an ownership rule: **the session that triggers a deployment owns it until it
+reaches a terminal state.** Dispatch → build `FINISHED`/`ERRORED` → submission `FINISHED`/`ERRORED`
+→ report the outcome. Because `--no-wait` returns the GitHub job in about a minute while the EAS
+build takes tens of minutes, follow it with a **one-shot** `send_later` check-in, re-armed only
+while the build is still in progress and dropped the moment it is terminal. One-shot self check-ins
+are the mechanism; recurring triggers are not.
+
 **Nothing auto-ships.** Both mobile workflows are `workflow_dispatch`-only. `mobile-release.yml`
 does have a `v*` tag trigger, but it is separately gated behind `EAS_TAG_RELEASES_ENABLED`, and
 release-please's bot tags never fire workflows anyway. Merging to `main` reaches no device.
