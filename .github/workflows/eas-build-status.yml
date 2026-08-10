@@ -98,6 +98,62 @@ jobs:
             echo "::endgroup::"
           done
 
+      # A FINISHED build is not a shipped build: `mobile-release.yml` runs `eas build --auto-submit`,
+      # so the Play upload is a separate async job that can fail on its own (every submission for
+      # build c248fbf5 ERRORED on service-account permissions while the build itself was green — see
+      # docs/PLAY-STORE-SUBMISSION.md). `build:list` says nothing about that, which left "did it
+      # actually reach the track?" unanswerable from GitHub-only access — the exact blind spot this
+      # workflow exists to close. Ask the API for each listed build's submissions.
+      #
+      # Self-diagnosing on purpose: if the schema does not expose `submissions` on Build, the error
+      # names the valid fields and the introspection fallback prints them, so ONE dispatch is enough
+      # to correct the query rather than a guess-and-redispatch loop.
+      - name: Submission status per build
+        if: always()
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -s /tmp/builds.json ] || { echo "(no build list — the list step did not complete)"; exit 0; }
+
+          gql() {
+            curl -sS https://api.expo.dev/graphql \
+              -H "Authorization: Bearer $EXPO_TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d "$1"
+          }
+
+          # Tee'd so the Recap step can replay it: the phase-log dump below is long, and a short tail
+          # of this job's log is how a caller reads the answer.
+          : > /tmp/submissions.txt
+          exec > >(tee -a /tmp/submissions.txt) 2>&1
+
+          echo "=== SUBMISSIONS (newest builds first) ==="
+          FAILED_SHAPE=0
+          for bid in $(jq -r '.[].id' /tmp/builds.json); do
+            gql "{\"query\":\"query(\$id:ID!){builds{byId(buildId:\$id){id status submissions{id status androidConfig{track releaseStatus} error{errorCode message}}}}}\",\"variables\":{\"id\":\"$bid\"}}" > /tmp/sub.json || true
+            if jq -e '.errors' /tmp/sub.json >/dev/null 2>&1; then
+              echo "$bid: query rejected — $(jq -r '[.errors[]?.message] | join(" | ")' /tmp/sub.json)"
+              FAILED_SHAPE=1
+              break
+            fi
+            # No submissions is a real, reportable answer: the build was never submitted.
+            jq -r --arg b "$bid" '
+              .data.builds.byId.submissions as $s
+              | if ($s | length) == 0 then "\($b): build \(.data.builds.byId.status) · NO SUBMISSION"
+                else ($s[] | "\($b): submission \(.id) \(.status) track=\(.androidConfig.track // "?") \(if .error then "· \(.error.errorCode // "?") — \(.error.message // "")" else "" end)")
+                end' /tmp/sub.json
+          done
+
+          # One introspection call, only when the shape was wrong — prints the real field names.
+          if [ "$FAILED_SHAPE" = "1" ]; then
+            echo "::group::Build type fields (introspection)"
+            gql '{"query":"{__type(name:\"Build\"){fields{name}}}"}' | jq -r '.data.__type.fields[]?.name' | tr '\n' ' ' || true
+            echo ""
+            echo "::endgroup::"
+          fi
+
       # The actual reason a build failed lives in its per-phase logs on Expo's CDN, which
       # `build:list`/`build:view` do not include — only a generic "see logs of the <phase> phase"
       # message. Fetch them through the Expo GraphQL API with the same token and print ONLY
@@ -198,3 +254,7 @@ jobs:
           echo "=== RECAP: recent EAS builds (newest first) ==="
           jq -r '.[] | "\(.createdAt)  \(.status)  profile=\(.buildProfile // "?")  runtime=\(.runtimeVersion // "?")  \(.id)"' /tmp/builds.json 2>/dev/null \
             || echo "(build list unavailable — the list step did not complete)"
+          # Replayed here so a short tail answers BOTH halves of "did it ship?" — built, and accepted
+          # by the store. A green build with an ERRORED submission is the failure mode this catches.
+          echo ""
+          cat /tmp/submissions.txt 2>/dev/null || echo "(submission status unavailable — that step did not complete)"
