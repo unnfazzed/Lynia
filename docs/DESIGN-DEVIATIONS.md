@@ -125,11 +125,45 @@ authoring scaffolds, `thumbnail.html`.
 
 ## D-09 · CodeQL should not scan `packages/design/**` — PENDING (raised 2026-08-10)
 
-> **Status: not yet in effect.** The two files that implement this
-> (`.github/codeql/config.yml`, and the `config-file:` line in `.github/workflows/codeql.yml`) are
-> written to the working tree but **uncommitted** — this session's permission policy blocks commits
-> that touch `.github/`. CI on PR #640 stays red on CodeQL until someone with workflow-write access
-> commits those two files. Nothing else is blocked by this.
+> **Status: not yet in effect.** This session's permission policy blocks commits touching
+> `.github/`, so the change is recorded here rather than left as an un-committable dirty working
+> tree. CI on PR #640 stays red on CodeQL until someone with workflow-write access applies the two
+> edits below. Nothing else is blocked by this.
+
+**To apply.** Add `.github/codeql/config.yml`:
+
+```yaml
+name: "Lynia CodeQL config"
+
+# `packages/design/` is a VENDORED MIRROR of the external Claude Design project — design mocks,
+# preview harnesses, and the generated `_ds_bundle.js`. Three facts make it a scanning dead end:
+#
+#   1. Nothing in it ships. No app imports it; the only code coupling is
+#      `apps/api/src/design-tokens.drift.spec.ts`, which reads `tokens/colors.css` as TEXT.
+#   2. We must not edit it. `CLAUDE.md` ("Pixel parity") makes the design tool authoritative and
+#      forbids editing the vendored copy — the repo drifting from the tool is precisely how the app
+#      stopped matching its designs. Kit defects are logged here and reported upstream instead.
+#   3. Any in-repo fix is transient. The next export overwrites it, so an alert "fixed" here
+#      reappears on the following import.
+#
+# Scanning it therefore yields alerts that are permanently unfixable in this repo, on code that
+# cannot reach a user. Excluded so CodeQL's signal stays about code we actually own and ship.
+#
+# Scope note: this exclusion is exactly one vendored directory. Every app, package and workflow we
+# author stays fully scanned.
+paths-ignore:
+  - packages/design/**
+```
+
+and wire it in `.github/workflows/codeql.yml`, in the `Initialize CodeQL` step's `with:` block,
+directly after `queries: security-extended`:
+
+```yaml
+          # Excludes only the vendored design mirror — see the file for why it is unscannable.
+          config-file: .github/codeql/config.yml
+```
+
+Then flip this entry to **APPROVED** and drop this "to apply" block.
 
 
 The 2026-08-10 export introduced `/^cover|banner|dish|photo$/i` in
