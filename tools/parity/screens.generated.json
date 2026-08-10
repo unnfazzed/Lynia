@@ -1,0 +1,2459 @@
+{
+  "generatedFrom": "packages/design/explorations/journey/gallery-map.js + restaurants/r-gallery-data.js + gallery.jsx ADMIN",
+  "count": 244,
+  "byCategory": {
+    "customer": 102,
+    "rider": 91,
+    "merchant": 44,
+    "admin": 7
+  },
+  "screens": [
+    {
+      "key": "LJ.splash",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "splash",
+      "title": "Splash",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.onboard",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "onboard",
+      "title": "Onboarding · food",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.onboard_send",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "onboard_send",
+      "title": "Onboarding · send",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.onboard_shared",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "onboard_shared",
+      "title": "Onboarding · one app",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.login",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "login",
+      "title": "Phone login",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.otp",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "otp",
+      "title": "WhatsApp OTP",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.role_select",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "role_select",
+      "title": "Choose your role",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.register",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "register",
+      "title": "Profile registration",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.perm_loc",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "perm_loc",
+      "title": "Permission · location",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.perm_notif",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "perm_notif",
+      "title": "Permission · notifications",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.home",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "RC",
+      "id": "home",
+      "title": "Home · service tiles",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.orders",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "RC",
+      "id": "orders",
+      "title": "Orders · all services",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.orders_empty",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "RC",
+      "id": "orders_empty",
+      "title": "Orders · empty",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.list",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "RC",
+      "id": "list",
+      "title": "Restaurant list",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.list_loading",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "RC",
+      "id": "list_loading",
+      "title": "List loading",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.search",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "RC",
+      "id": "search",
+      "title": "Search",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.menu",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "RC",
+      "id": "menu",
+      "title": "Menu",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.item",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "RC",
+      "id": "item",
+      "title": "Item sheet",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.home_empty",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "home_empty",
+      "title": "Send composer · no address",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.addr_search",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "addr_search",
+      "title": "Address search",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.addr_map_confirm",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "addr_map_confirm",
+      "title": "Confirm pin on map",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.home_pins",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "home_pins",
+      "title": "Send · both set",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.home_expanded",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "home_expanded",
+      "title": "Send · sheet expanded",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.disclaimer",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "disclaimer",
+      "title": "Broadcast disclaimer",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "RC",
+      "id": "cart",
+      "title": "Cart",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart_note",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "RC",
+      "id": "cart_note",
+      "title": "Note for the kitchen",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.checkout_cash",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "RC",
+      "id": "checkout_cash",
+      "title": "Checkout · CASH",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.checkout_wallet",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "RC",
+      "id": "checkout_wallet",
+      "title": "Checkout · WALLET",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.placing",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "RC",
+      "id": "placing",
+      "title": "Placing",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.auction_finding",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "LJ",
+      "id": "auction_finding",
+      "title": "Auction · finding",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.auction_live",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "LJ",
+      "id": "auction_live",
+      "title": "Auction · offers live",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.auction_counter",
+      "category": "customer",
+      "band": "Commit & pay",
+      "src": "LJ",
+      "id": "auction_counter",
+      "title": "Counter-offer review",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.await_accept",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "await_accept",
+      "title": "Waiting on the kitchen",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.confirm_call",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "confirm_call",
+      "title": "They call to confirm",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_push",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "pay_push",
+      "title": "Push · payment requested",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_now",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "pay_now",
+      "title": "Pay the restaurant",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_wait",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "pay_wait",
+      "title": "Prompt sent",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_manual",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "pay_manual",
+      "title": "Paid another way",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_confirmed",
+      "category": "customer",
+      "band": "The kitchen confirms",
+      "src": "RC",
+      "id": "pay_confirmed",
+      "title": "Waiting to be confirmed",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.track_prep",
+      "category": "customer",
+      "band": "Track",
+      "src": "RC",
+      "id": "track_prep",
+      "title": "Prep countdown",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.track_secured",
+      "category": "customer",
+      "band": "Track",
+      "src": "RC",
+      "id": "track_secured",
+      "title": "Rider secured",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.track_way",
+      "category": "customer",
+      "band": "Track",
+      "src": "RC",
+      "id": "track_way",
+      "title": "On the way",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.track_code",
+      "category": "customer",
+      "band": "Track",
+      "src": "LJ",
+      "id": "track_code",
+      "title": "Tracking · code issued",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.track_active",
+      "category": "customer",
+      "band": "Track",
+      "src": "LJ",
+      "id": "track_active",
+      "title": "Tracking · live",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.handoff",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "RC",
+      "id": "handoff",
+      "title": "Pay at the door",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.handoff_wait",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "RC",
+      "id": "handoff_wait",
+      "title": "Waiting for rider confirm",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.handoff_code",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "RC",
+      "id": "handoff_code",
+      "title": "Both confirmed · code",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.delivered_rate",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "RC",
+      "id": "delivered_rate",
+      "title": "Delivered · rate the food",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.delivered_rate",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "LJ",
+      "id": "delivered_rate",
+      "title": "Delivered · rate the rider",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.completed",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "LJ",
+      "id": "completed",
+      "title": "Completed",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.profile",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "profile",
+      "title": "Account",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.history",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "history",
+      "title": "Orders · all services",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.notifications",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "notifications",
+      "title": "Notifications",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.notif_empty",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "notif_empty",
+      "title": "Notifications · empty",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.help",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "help",
+      "title": "Help & support",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.settings",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "settings",
+      "title": "Settings",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.sos_idle",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "sos_idle",
+      "title": "SOS · live-trip control",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.sos_confirm",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "sos_confirm",
+      "title": "SOS · confirm",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.sos_contacts",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "sos_contacts",
+      "title": "SOS · contacts",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.sos_error",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "sos_error",
+      "title": "SOS · log failed (offline)",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.report",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "report",
+      "title": "Report + block rider",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.report_done",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "report_done",
+      "title": "Report sent",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.trip_help",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "trip_help",
+      "title": "Get help with this order",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.trip_help_sent",
+      "category": "customer",
+      "band": "Trust & safety",
+      "src": "LJ",
+      "id": "trip_help_sent",
+      "title": "Issue logged",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.list_empty",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "list_empty",
+      "title": "Nothing open",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.list_error",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "list_error",
+      "title": "Offline list",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.menu_closed",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "menu_closed",
+      "title": "Closed restaurant",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.closed_interrupt",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "closed_interrupt",
+      "title": "Closes while browsing",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart_oos",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "cart_oos",
+      "title": "Item sold out",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart_price",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "cart_price",
+      "title": "Price changed",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart_empty",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "cart_empty",
+      "title": "Empty cart",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cart_min",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "cart_min",
+      "title": "Under the minimum",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.checkout_offline",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "checkout_offline",
+      "title": "Offline mid-checkout",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_open",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "pay_open",
+      "title": "Still unpaid · reminder",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.pay_failed",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "pay_failed",
+      "title": "Payment declined",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.item_removed",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "item_removed",
+      "title": "One item unavailable",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.no_rider",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "no_rider",
+      "title": "NO_RIDER",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.track_paused",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "track_paused",
+      "title": "Live paused",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.rejected",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "rejected",
+      "title": "Rejected · refund pending",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.refunded",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "refunded",
+      "title": "Refunded",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.cancel_sheet",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "cancel_sheet",
+      "title": "Cancel pre-pickup",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.rider_cancelled",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "rider_cancelled",
+      "title": "Rider cancelled · re-finding",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.handoff_dispute",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "handoff_dispute",
+      "title": "Rider didn't confirm",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.failed_noshow",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "failed_noshow",
+      "title": "No-show · returned",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RC.resume",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "RC",
+      "id": "resume",
+      "title": "App resumed mid-order",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.no_riders",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "no_riders",
+      "title": "No riders online",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.select_race",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "select_race",
+      "title": "Rider just taken",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.auction_expired",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "auction_expired",
+      "title": "Auction expired",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.rider_cancelled",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "rider_cancelled",
+      "title": "Rider cancelled",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.track_paused",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "track_paused",
+      "title": "Live paused",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.cancel",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "cancel",
+      "title": "Cancel · reason",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.cancelled",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "cancelled",
+      "title": "Cancelled",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.undelivered",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "undelivered",
+      "title": "Not delivered",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.track_dark",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "track_dark",
+      "title": "Rider went dark",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.otp_cooldown",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "otp_cooldown",
+      "title": "OTP · resend cooldown",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.otp_resent",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "otp_resent",
+      "title": "OTP · code re-sent",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.otp_locked",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "otp_locked",
+      "title": "OTP · expired / locked",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.offline",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "offline",
+      "title": "Offline banner",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.on_hold",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "on_hold",
+      "title": "Account on hold",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.force_update",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "force_update",
+      "title": "Force update",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.no_gps",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "no_gps",
+      "title": "Location off / no GPS",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.generic_error",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "generic_error",
+      "title": "Generic error",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.splash",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "splash",
+      "title": "Splash",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.onboard",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "onboard",
+      "title": "Onboarding · rider",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.login",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "login",
+      "title": "Phone sign-in",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.otp",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "otp",
+      "title": "WhatsApp OTP",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.role_select",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "role_select",
+      "title": "Choose your role",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.perm_loc",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "perm_loc",
+      "title": "Permission · location",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.perm_notif",
+      "category": "rider",
+      "band": "First run & sign in",
+      "src": "RJ",
+      "id": "perm_notif",
+      "title": "Permission · notifications",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_intro",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_intro",
+      "title": "Become a rider",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_form",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_form",
+      "title": "KYC form + consent",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.photo_capture",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "photo_capture",
+      "title": "ID photo · capture",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.photo_preview",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "photo_preview",
+      "title": "ID photo · preview",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.photo_uploading",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "photo_uploading",
+      "title": "ID photo · uploading",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_pending",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_pending",
+      "title": "Verification pending",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_verified",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_verified",
+      "title": "Verified",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.offline",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "offline",
+      "title": "Offline",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.board",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "board",
+      "title": "Jobs · one list",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.board_empty",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "board_empty",
+      "title": "Online · nothing in range",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.notifications",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "notifications",
+      "title": "One inbox",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.offer_parcel",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RJM",
+      "id": "offer_parcel",
+      "title": "Parcel · name your fare",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.offer_sent",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RJ",
+      "id": "offer_sent",
+      "title": "Offer sent · waiting",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.picked",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RJ",
+      "id": "picked",
+      "title": "Customer picked you",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.offer_food",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RJM",
+      "id": "offer_food",
+      "title": "Food · accept the job",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.offer_cash",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RR",
+      "id": "offer_cash",
+      "title": "Food · CASH collect",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.offer_upfront",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RR",
+      "id": "offer_upfront",
+      "title": "Food · kitchen wants upfront",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.offer_wallet",
+      "category": "rider",
+      "band": "Taking a job",
+      "src": "RR",
+      "id": "offer_wallet",
+      "title": "Food · already paid",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.active_parcel",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJM",
+      "id": "active_parcel",
+      "title": "Active · parcel",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_assigned",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_assigned",
+      "title": "Job · assigned",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_pickup",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_pickup",
+      "title": "En route to pickup",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_verify",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_verify",
+      "title": "Verify items at pickup",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_collect",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_collect",
+      "title": "Parcel collected",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_dropoff",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_dropoff",
+      "title": "En route to drop-off",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.active_food",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJM",
+      "id": "active_food",
+      "title": "Active · food",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.nav_rest",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "nav_rest",
+      "title": "To the restaurant",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.pay_merchant",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "pay_merchant",
+      "title": "Pay the merchant",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.pickup_confirm",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "pickup_confirm",
+      "title": "Collect · CASH job",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.pickup_paid",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "pickup_paid",
+      "title": "Collect · already PAID",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.nav_cust",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "nav_cust",
+      "title": "To the customer",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.doorstep",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "doorstep",
+      "title": "Collect · confirm cash",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.handoff",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJM",
+      "id": "handoff",
+      "title": "Delivery code",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_handoff",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_handoff",
+      "title": "Hand-off · parcel",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_delivered",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJ",
+      "id": "job_delivered",
+      "title": "Delivered",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.delivered",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "delivered",
+      "title": "Delivered · food",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.return_cash",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RR",
+      "id": "return_cash",
+      "title": "Return the kitchen's cash",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.money",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJM",
+      "id": "money",
+      "title": "Money tab",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.gate_topup",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJM",
+      "id": "gate_topup",
+      "title": "Gate · top up to keep riding",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.topup_amount",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJ",
+      "id": "topup_amount",
+      "title": "Top up · amount",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.topup_wait",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJ",
+      "id": "topup_wait",
+      "title": "Payment prompt · wait",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.topup_success",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJ",
+      "id": "topup_success",
+      "title": "Top up · success",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.wallet_low",
+      "category": "rider",
+      "band": "Money",
+      "src": "RJ",
+      "id": "wallet_low",
+      "title": "Balance low",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.account",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJM",
+      "id": "account",
+      "title": "Account",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.bike_docs",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJ",
+      "id": "bike_docs",
+      "title": "Bike & documents",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.history",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJ",
+      "id": "history",
+      "title": "Job history",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.settings",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJ",
+      "id": "settings",
+      "title": "Settings",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.help",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJ",
+      "id": "help",
+      "title": "Help & support",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.sos_idle",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "sos_idle",
+      "title": "SOS · live-job control",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.sos_confirm",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "sos_confirm",
+      "title": "SOS · confirm",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.sos_contacts",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "sos_contacts",
+      "title": "SOS · contacts",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.report",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "report",
+      "title": "Report + block customer",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.report_done",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "report_done",
+      "title": "Report sent",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_help",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "job_help",
+      "title": "Get help with this job",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_help_sent",
+      "category": "rider",
+      "band": "Trust & safety",
+      "src": "RJ",
+      "id": "job_help_sent",
+      "title": "Issue logged",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.missed_order",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "missed_order",
+      "title": "Job taken first",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.not_chosen",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "not_chosen",
+      "title": "Not chosen",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.bid_expired",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "bid_expired",
+      "title": "Auction expired · no pick",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.handoff_wrong",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "handoff_wrong",
+      "title": "Wrong code · lockout",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.undelivered",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "undelivered",
+      "title": "Not delivered",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_bail",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "job_bail",
+      "title": "Rider cancels (bail)",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_offline",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "job_offline",
+      "title": "Connection lost mid-job",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.job_cancelled",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "job_cancelled",
+      "title": "Customer cancelled",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.offer_expired",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "offer_expired",
+      "title": "Offer expired",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.cancel_reason",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "cancel_reason",
+      "title": "Drop the job · before pickup",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.cancel_blocked",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "cancel_blocked",
+      "title": "Can't drop after collecting",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.cash_dispute",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "cash_dispute",
+      "title": "Customer confirmed, you didn't",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.code_wrong",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "code_wrong",
+      "title": "Wrong code",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.unreachable",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "unreachable",
+      "title": "Customer unreachable",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.return_rest",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "return_rest",
+      "title": "Return to restaurant",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.handback",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "handback",
+      "title": "Hand back confirm",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RR.offline_resume",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RR",
+      "id": "offline_resume",
+      "title": "Resumed mid-delivery",
+      "tag": "FOOD",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_failed",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "kyc_failed",
+      "title": "Verification failed",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_expired",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "kyc_expired",
+      "title": "ID expired (later)",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.photo_failed",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "photo_failed",
+      "title": "ID photo · upload failed",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.gate_out_of_area",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "gate_out_of_area",
+      "title": "Gate · out of area",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.gate_cooldown",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "gate_cooldown",
+      "title": "Gate · cooldown",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.gate_banned",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "gate_banned",
+      "title": "Gate · account closed",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.gate_kyc_locked",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "gate_kyc_locked",
+      "title": "Gate · verification locked",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.topup_declined",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "topup_declined",
+      "title": "Top up · declined",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.offline",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "offline",
+      "title": "Offline banner",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.on_hold",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "on_hold",
+      "title": "Account on hold",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.force_update",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "force_update",
+      "title": "Force update",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.no_gps",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "no_gps",
+      "title": "Location off / no GPS",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.generic_error",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJ",
+      "id": "generic_error",
+      "title": "Generic error",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RM.login",
+      "category": "merchant",
+      "band": "Get on shift",
+      "src": "RM",
+      "id": "login",
+      "title": "Phone + OTP login",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.setup",
+      "category": "merchant",
+      "band": "Get on shift",
+      "src": "RM",
+      "id": "setup",
+      "title": "First login · setup",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.reboot",
+      "category": "merchant",
+      "band": "Get on shift",
+      "src": "RM",
+      "id": "reboot",
+      "title": "Tablet rebooted mid-shift",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.queue_empty",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "queue_empty",
+      "title": "Open · no orders",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.queue_loading",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "queue_loading",
+      "title": "Loading",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.queue_new",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "queue_new",
+      "title": "NEW ORDER · alarm",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.queue_board",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "queue_board",
+      "title": "Kitchen board · 3 live",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.two_orders",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "two_orders",
+      "title": "Two orders at once",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.offline",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "offline",
+      "title": "Connection lost",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.offline_order",
+      "category": "merchant",
+      "band": "The queue",
+      "src": "RM",
+      "id": "offline_order",
+      "title": "Order arrived offline",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.order_accept",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "order_accept",
+      "title": "Accept + prep time",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.call_confirm",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "call_confirm",
+      "title": "Call, then request payment",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.awaiting_payment",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "awaiting_payment",
+      "title": "Awaiting payment · no clock",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.reject_sheet",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "reject_sheet",
+      "title": "Reject · reason",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.waiting_rider",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "waiting_rider",
+      "title": "Accepted · do not cook yet",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.cook_now",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "cook_now",
+      "title": "Rider secured · cook now",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.mark_ready",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "mark_ready",
+      "title": "Mark ready",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.no_rider_merchant",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "no_rider_merchant",
+      "title": "NO_RIDER · never cooked",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.rider_cancelled",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "rider_cancelled",
+      "title": "Rider cancelled · re-dispatch",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_cash",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_cash",
+      "title": "Upfront · confirm cash",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_collect",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_collect",
+      "title": "Collect-and-return · release",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_wallet",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_wallet",
+      "title": "WALLET · confirm before cooking",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.wallet_mismatch",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "wallet_mismatch",
+      "title": "Short payment blocked",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_done",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_done",
+      "title": "Handed over",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.cash_return",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "cash_return",
+      "title": "Count the returned cash",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.rider_noshow",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "rider_noshow",
+      "title": "Rider no-show",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.refund_exec",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "refund_exec",
+      "title": "Refund after wallet paid",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.catalog",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "catalog",
+      "title": "Menu · grouped by category",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.category_manage",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "category_manage",
+      "title": "Categories · reorder & hide",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.category_edit",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "category_edit",
+      "title": "New category",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.category_rename",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "category_rename",
+      "title": "Edit / delete category",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.catalog_empty",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "catalog_empty",
+      "title": "No categories yet",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.item_edit",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "item_edit",
+      "title": "Edit dish · photo required",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.dish_photo",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "dish_photo",
+      "title": "Dish photo · crop",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.dish_draft",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "dish_draft",
+      "title": "Draft · needs a photo",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.oos_sheet",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "oos_sheet",
+      "title": "Out of stock today",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.hours",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "hours",
+      "title": "Operating hours",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.statement",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "statement",
+      "title": "Weekly statement",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.eod",
+      "category": "merchant",
+      "band": "Run the shop",
+      "src": "RM",
+      "id": "eod",
+      "title": "End of day",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.shop",
+      "category": "merchant",
+      "band": "Shop front",
+      "src": "RM",
+      "id": "shop",
+      "title": "Shop profile",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.cash_rule",
+      "category": "merchant",
+      "band": "Shop front",
+      "src": "RM",
+      "id": "cash_rule",
+      "title": "Your cash rule",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.shop_crop",
+      "category": "merchant",
+      "band": "Shop front",
+      "src": "RM",
+      "id": "shop_crop",
+      "title": "Position the banner",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.shop_upload",
+      "category": "merchant",
+      "band": "Shop front",
+      "src": "RM",
+      "id": "shop_upload",
+      "title": "Uploading · compressing",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.shop_upload_failed",
+      "category": "merchant",
+      "band": "Shop front",
+      "src": "RM",
+      "id": "shop_upload_failed",
+      "title": "Upload paused · offline",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "ADMIN.index.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "index.html",
+      "title": "Overview dashboard",
+      "tag": "",
+      "mode": "admin",
+      "route": "/"
+    },
+    {
+      "key": "ADMIN.orders.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "orders.html",
+      "title": "Orders — monitor & detail",
+      "tag": "",
+      "mode": "admin",
+      "route": "/orders"
+    },
+    {
+      "key": "ADMIN.riders.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "riders.html",
+      "title": "Riders — directory & profile",
+      "tag": "",
+      "mode": "admin",
+      "route": "/riders"
+    },
+    {
+      "key": "ADMIN.customers.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "customers.html",
+      "title": "Customers — directory & profile",
+      "tag": "",
+      "mode": "admin",
+      "route": "/customers"
+    },
+    {
+      "key": "ADMIN.cash.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "cash.html",
+      "title": "Cash & settlements",
+      "tag": "",
+      "mode": "admin",
+      "route": "/cash"
+    },
+    {
+      "key": "ADMIN.kyc.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "kyc.html",
+      "title": "KYC — queue & review",
+      "tag": "",
+      "mode": "admin",
+      "route": "/kyc"
+    },
+    {
+      "key": "ADMIN.issues.html",
+      "category": "admin",
+      "band": "Admin console",
+      "src": "ADMIN",
+      "id": "issues.html",
+      "title": "Issues — disputes",
+      "tag": "",
+      "mode": "admin",
+      "route": "/issues"
+    }
+  ]
+}
