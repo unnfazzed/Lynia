@@ -13,7 +13,7 @@ A static recreation of the **LyniaGo** operations console (the real app is Next.
 - `riders.html` — **Riders**: directory → profile (trips, rating, completion, strikes, cooldown, cash owed, recent trips). Actions: suspend / lift / permanent ban, all reason-coded; suspended-rider state included.
 - `customers.html` — **Customers**: directory → profile (masked phone, spend, cancel pattern, reports from riders). Edge case: **cancel-pattern flagged customer**; flag / clear / ban flows.
 - `issues.html` — **Issues**: dispute queue → investigation (what happened, OTP-not-entered evidence callout, both statements, photo placeholder) → resolve: refund / rider strike / close-no-action, each confirmed with a reason.
-- `cash.html` — **Commission**: the live prepaid-per-ride model — rate · rides · fares delivered · shadow accrual (what commission *would* be at the calibration rate, never charged), rider wallet balances, and the campaign-keyed bulk seed-credit tool for flip day (0%→10% per `packages/design/RIDER-ONE-APP-PLAN.md` decision 1).
+- `cash.html` — **Cash & settlements**: the cash-market model — rider-collected fares, 15% weekly commission, adjustments/netting, settled / due / **overdue** states, record-payment modal (agent cash / EcoCash / netted).
 
 **States & tweaks**
 Every page renders **live / empty / loading-skeleton / offline** (banner + dimmed data + disabled actions) — switch via the Tweaks panel, which also controls density (comfortable/compact), navigation (sidebar/top tabs) and data volume (pilot/growth). All destructive actions use a **confirm modal with a required reason code** and an audit-log line.

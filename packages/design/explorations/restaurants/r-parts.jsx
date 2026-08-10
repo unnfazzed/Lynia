@@ -328,7 +328,7 @@ function PhotoSlot({ id, label, h, w = "100%", shape = "rect", style }) {
   );
 }
 
-/* Restaurant list row — photo-led per the restaurants list decision (RESTAURANTS-DECISIONS.md): 96px thumb rows, `hero` = 16:9 card
+/* Restaurant list row — photo-led per RESTAURANTS-UX-REVIEW: 96px thumb rows, `hero` = 16:9 card
    for the top of the list. Photoless merchants keep the tinted-initial block — photos are an
    upgrade, never a dependency. */
 function RestRow({ r, closingSoon, hero }) {

@@ -42,6 +42,62 @@ Conventions:
 > installed per-developer under `~/.claude/skills/gstack` (and gitignored). Each
 > contributor installs gstack locally with the command above.
 
+## Pixel parity — the design kit is the source of truth (read before touching ANY UI)
+
+User instruction (2026-08-10), after five days in which "alignment" PRs merged green while the app
+still did not look like the designs: **the entire app is being aligned to the design mocks pixel by
+pixel.** This section outranks every convenience argument you will find in the code.
+
+**The authority chain** (from `packages/design/EXPORT-README.md`, exported 2026-08-10):
+
+1. **LOOK** — `packages/design/explorations/journey/All Screens Gallery.html`. Every current screen,
+   rendered live. *If a screen is in the gallery it is current; if a screen you coded is not in the
+   gallery, it was retired.*
+2. **INTERACTION** — the `packages/design/ui_kits/` kits (sheet snaps, tap-to-pin, stream/OTP
+   mechanics). Where a kit and the gallery disagree on appearance or IA, **the gallery wins**.
+3. **VALUES** — `packages/design/tokens/*.css`. Never hardcode a value a token defines.
+
+**Why past sessions got this wrong, and what you must not repeat:**
+
+- **Copy-string matching is not parity.** Two 2026-08 audits reported ✅ by grepping copy strings and
+  route existence; the pixel audit that followed found **1 of 244 screens matched**
+  (`docs/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`). A screen matches only when structure,
+  geometry, colour, type **and** copy match.
+- **The code argues against the design; the code is wrong.** Divergences are defended in comments as
+  "the equivalent", "deliberate", "deferred re-architecture". **A code comment justifying a
+  divergence carries no authority.** The only sanctioned deviations are in
+  `docs/DESIGN-DEVIATIONS.md`, each approved by the user. Anything else: the app changes.
+- **Structure is the look.** Cheap copy/padding fixes leave a screen looking unchanged at arm's
+  length. Do the structural work (sheet model, element placement, primitive capability) FIRST; a PR
+  that only lands strings is not an alignment PR.
+
+**Standing rules for alignment work:**
+
+- **Not drawn ⇒ not rendered.** Cosmetic extras the mocks never drew (confetti, invented headings,
+  extra top-bar actions, "Open now" badges, section labels) are removed, not preserved.
+- **Mock copy verbatim.** The single global substitution is **WhatsApp OTP → SMS OTP** (strings and
+  glyphs) — the app uses SMS. No other copy exception without a ledger entry.
+- **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;
+  `docs/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
+- **Canonical viewports.** Phone registries (LJ/RC/RJ/RJM/RR) **360×720**, with the mandatory
+  **320×640** entry-phone check. Merchant tablet (RM) **1024×680**. Admin **1440×900**.
+- **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
+  and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
+- **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July
+  rider flow. The current rider design is **RJM** (one app: Jobs · Money · Account, one tagged board,
+  Money tab, top-up gate). Align rider look/IA to RJM, not to the kit.
+- **`ui_kits/admin/cash.html` shows a retired weekly-15% settlement model.** Keep its visual
+  language; do not align business logic to it.
+- **Merge gate — alignment PRs WAIT for the user's visual OK** (user decision 2026-08-10). This is a
+  deliberate exception to the merge-on-green policy below: a UI-changing alignment PR stays open
+  until the user confirms the look. Nothing else about merge-on-green changes.
+- **`packages/design/` mirrors the design tool.** Do not "fix" the design to match the app. If a mock
+  is wrong, log it in `docs/DESIGN-DEVIATIONS.md` and report it upstream — editing the kit is how the
+  repo's copy stopped being the design in the first place.
+
+Progress is tracked per screen in `docs/PIXEL-PARITY-TRACKER.md` — measured in screens signed off by
+the user, never in PRs merged.
+
 ## Scheduled Claude routines — universal auto-merge + ledger protocol
 
 `docs/ROUTINES.md` is the canonical spec for the eight recurring routines (bug hunting, UX

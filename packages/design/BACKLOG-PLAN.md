@@ -111,20 +111,3 @@ Demand heat-map hint (R-14/R2-1) · auto-offline idle timeout (R2-3) · multi-jo
 - **Waves 5–6 in severity order** once live feedback starts landing; **Wave 7** scheduled against growth goals.
 
 **Standing rule:** every wave ends with the journey maps updated (screens + edges + gap-flags removed) and the three audits' findings marked resolved — the maps stay the single source of truth, and `INTERFACE-AUDIT.md`'s pair-wise discipline applies to every pair item above.
-
----
-
-## Wave 8 — Payments & trust residue (absorbed from the retired PAYMENTS-TRUST-REVIEW)
-
-The July 2026 payments/trust review retired most of its findings against `RESTAURANTS-DECISIONS.md`
-§7; these survived it and remain undesigned. B-02 is the worst unhandled money state at launch.
-
-| Item | ID | Sev | Type | Size |
-|---|---|---|---|---|
-| USD/ZiG wallet labeling on every money screen ("USD wallet" on PAY EXACTLY card, manual-rail rows, reference form) + a wrong-currency payment state | B-01 | P0 | D | M |
-| `payment_not_found` state — mistyped merchant number means the money went to a stranger; needs designed recovery (what the merchant checked, the reference, re-check path, rail-trace path, support hand-off). Never promise a refund LyniaGo can't force | B-02 | P0 | D | M |
-| No-show delivery fee on CASH is uncollectable — decide and state it: LyniaGo fronts the rider's fee, $2.50 becomes a named debt on the customer's next checkout, cash disabled until cleared | B-04 | P1 | D+E | M |
-| Refund-SLA breach screen — "Refund due by 12:00" has nothing designed for 12:01 (customer-facing overdue state + support thread with reference pre-attached) | B-05 | P1 | D | S |
-| Change-making on cash — optional "Paying with" note picker at CASH checkout so the offer card warns the rider to carry change; stated fallback when change fails | B-07 | P1 | D | S |
-| Trust tiers instead of one binary cash cap — graduate the cap ($15 first order → $25 after 1 → $40 after 5) and show the customer their ladder; rider headroom ceiling grows with completed volume | L-01 | — | D+E | M |
-| Name the merchant on the EcoCash prompt — verify the registered merchant name the customer will see and print it in the pay copy | L-02 | — | D | S |
