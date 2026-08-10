@@ -3,6 +3,7 @@ import { tokens } from "@lynia/shared";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
+import { Money } from "../Money";
 import { Icon } from "../Icon";
 import { FoodThumb } from "./FoodThumb";
 
@@ -40,7 +41,7 @@ export function MenuRow({
           </Text>
         ) : null}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 }}>
-          <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(dish.priceUsd)}</Text>
+          <Money v={dish.priceUsd} />
           {dish.outOfStock ? (
             <Text
               style={{

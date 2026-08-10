@@ -11,6 +11,7 @@ export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { ActiveOrderCheckFailedBanner, useActiveOrderCheckGate } from "./ActiveOrderCheckFailedBanner";
+export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
 export { getServiceTiles, ServiceTiles, SERVICES, type ServiceTile } from "./shell/ServiceTiles";
@@ -18,6 +19,10 @@ export { APP_TABS, RIDER_TABS, TabBar, type AppTab } from "./shell/TabBar";
 export { LiveOrderCard } from "./home/LiveOrderCard";
 export { ReorderRail } from "./home/ReorderRail";
 export { RestaurantCard } from "./home/RestaurantCard";
+
+export { CodeInput } from "./CodeInput";
+export { Money } from "./Money";
+export { SystemState } from "./SystemState";
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";

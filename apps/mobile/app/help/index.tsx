@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { supportWhatsAppUrl } from "../../src/config";
-import { Button, Card, Heading, Icon, type IconName, Screen } from "../../src/ui";
+import { AppBar, Card, Icon, type IconName, Screen } from "../../src/ui";
 
 /**
  * Help & support hub (customer A·5 / rider A·5). A topic list plus a "Chat on WhatsApp" row — live
@@ -29,7 +29,8 @@ export default function HelpScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Help</Heading>
+      {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
+      <AppBar title="Help" onBack={() => router.back()} />
 
       <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: tokens.space.sm, marginTop: tokens.space.sm }}>Browse topics</Text>
       {TOPICS.map((t) => {
@@ -76,7 +77,6 @@ export default function HelpScreen(): React.ReactElement {
           </Card>
         </Pressable>
       ) : null}
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

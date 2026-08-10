@@ -4,6 +4,7 @@ import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { formatMoney } from "../../logic/money";
 import { Button, Card, EmptyState, ErrorText, Field, Icon, isTestBuild, OfflineBanner, Screen, Stepper } from "../index";
+import { Money } from "../Money";
 import { FoodPayFailedView } from "./FoodPayFailedView";
 import { FoodPayWaitView } from "./FoodPayWaitView";
 import { ManualPayRail } from "./ManualPayRail";
@@ -168,7 +169,7 @@ export function FoodOrderAwaitingPaymentView({
             card, and its eyebrow is accent-text — not another muted micro-label. */}
         <Card accent>
           <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText, letterSpacing: 0.4 }}>PAY EXACTLY</Text>
-          <Text style={{ fontSize: 30, fontWeight: "700", color: tokens.color.ink, marginTop: 4 }}>{formatMoney(amount)}</Text>
+          <Money v={amount} size={30} style={{ marginTop: 4 }} />
           <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6 }}>No deadline — the kitchen starts the moment the money lands.</Text>
         </Card>
         {order.merchantPaymentPhone ? (

@@ -5,7 +5,7 @@ import React from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { getNotificationsFeed, type NotificationRow } from "../../src/api/notifications";
 import { notificationRowDestination } from "../../src/push/push";
-import { Button, EmptyState, Heading, Icon, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
 
 /**
  * A compact relative-time label for the feed (mockup A·3: "now", "2 min", "1 hr", "Yesterday").
@@ -68,7 +68,8 @@ export default function NotificationsScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Notifications</Heading>
+      {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
+      <AppBar title="Notifications" onBack={() => router.back()} />
       {feedQ.isLoading ? (
         <SkeletonList />
       ) : feedQ.isError ? (
@@ -93,7 +94,6 @@ export default function NotificationsScreen(): React.ReactElement {
           ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
         />
       )}
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

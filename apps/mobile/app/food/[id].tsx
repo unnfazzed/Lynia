@@ -5,9 +5,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
-import { formatMoney } from "../../src/logic/money";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
-import { Button, Card, EmptyState, haptic, Icon, Screen, SkeletonList, useToast } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, haptic, Icon, Money, Screen, SkeletonList, useToast } from "../../src/ui";
 import { FoodThumb } from "../../src/ui/food/FoodThumb";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
 import { MenuRow } from "../../src/ui/food/MenuRow";
@@ -70,10 +69,10 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   if (isError || !menu) {
     return (
       <Screen>
+        <AppBar onBack={() => router.back()} />
         <EmptyState icon="wifi-off" title="Couldn't load this menu" message="Check your connection and try again.">
           <Button label="Retry" onPress={refetch} />
         </EmptyState>
-        <Button label="Back" variant="ghost" onPress={() => router.back()} />
       </Screen>
     );
   }
@@ -93,13 +92,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={{ padding: 4 }}>
-          <View style={{ transform: [{ rotate: "180deg" }] }}>
-            <Icon name="chevron-right" size={20} color={tokens.color.ink} />
-          </View>
-        </Pressable>
-      </View>
+      {/* Shared back-only AppBar, retiring this screen's hand-rolled chevron row. */}
+      <AppBar onBack={() => router.back()} />
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 }}>
@@ -195,7 +189,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         >
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}</Text>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>{formatMoney(cart.subtotal)}</Text>
+            <Money v={cart.subtotal} size={16} />
           </View>
           <Button label="View cart" onPress={() => router.push("/food/cart")} />
         </View>

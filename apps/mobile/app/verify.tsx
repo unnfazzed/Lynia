@@ -7,7 +7,7 @@ import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
+import { AppBar, Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
 
 export default function VerifyScreen(): React.ReactElement {
   const router = useRouter();
@@ -117,6 +117,10 @@ export default function VerifyScreen(): React.ReactElement {
 
   return (
     <Screen>
+      {/* Back-only AppBar chrome: auth screens keep their in-body Heading per the kit's own auth
+          layouts (screens.jsx `Otp`), so the bar carries no title — just the way back to the phone
+          entry, replacing the retired bottom ghost "Back". */}
+      <AppBar onBack={() => router.back()} />
       <Heading>Enter your code</Heading>
       {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
           don't claim one was. Real users still see the "we sent a code" copy. */}
@@ -192,7 +196,6 @@ export default function VerifyScreen(): React.ReactElement {
         </>
       )}
 
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
       <ErrorText message={error} />
     </Screen>
   );

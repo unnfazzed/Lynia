@@ -49,7 +49,15 @@ with the accessible app.
 
 ---
 
-## 2. White on the bright `--accent` brand fill — OPEN, needs a product decision
+## 2. White on the bright `--accent` brand fill — DECIDED for SystemState (2026-08-10), remainder open
+
+> **Decision (founder, 2026-08-10, via the SystemState build):** text-bearing green fills darken to
+> `--cta` (`#00812F`, ≈4.7:1, passes AA). The bright `--accent` stays reserved for non-text graphics
+> (splash, tiles), per the colour token's own comment. Applied in the app's new
+> `apps/mobile/src/ui/SystemState.tsx` (green tone fills `cta`; force-update now renders through it).
+> The kit's `components/feedback/SystemState.jsx` should adopt the same value in an interactive
+> design session (same three-step process as §1). BrandHeader / ServiceTiles (large display type and
+> tile icons, borderline rather than failing) remain per-surface calls below.
 
 **Not** a category-1 item (the app does **not** fix this — it matches the kit), so it is listed separately
 as a decision to make, not a fix to apply.

@@ -9,7 +9,7 @@ import { deleteAccount, getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { PRIVACY_URL } from "../../src/config";
 import { pendingOrQueued } from "../../src/query/client";
-import { Button, Card, ErrorText, Heading, Icon, type IconName, Screen } from "../../src/ui";
+import { AppBar, Button, Card, ErrorText, Icon, type IconName, Screen } from "../../src/ui";
 
 /**
  * Settings (customer + rider A·6 / A·4). A lean row list — profile, notifications, language, payment
@@ -94,7 +94,8 @@ export default function SettingsScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Settings</Heading>
+      {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
+      <AppBar title="Settings" onBack={() => router.back()} />
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.md, marginBottom: tokens.space.md, marginTop: tokens.space.sm }}>
         <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
@@ -149,7 +150,6 @@ export default function SettingsScreen(): React.ReactElement {
       )}
 
       <Text style={{ fontSize: 11, color: tokens.color.muted, textAlign: "center", marginTop: tokens.space.lg }}>LyniaGo v{version}</Text>
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

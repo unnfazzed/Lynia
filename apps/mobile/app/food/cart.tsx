@@ -7,7 +7,7 @@ import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
+import { Button, Card, EmptyState, Icon, Money, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
@@ -154,9 +154,7 @@ export default function FoodCartScreen(): React.ReactElement {
                 </Pressable>
               </View>
               <QtyStepper value={line.quantity} onChange={(n) => cart.setQuantity(line.dishId, line.note, n)} max={MAX_ITEM_QTY} />
-              <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink, minWidth: 52, textAlign: "right" }}>
-                {formatMoney(line.priceUsd * line.quantity)}
-              </Text>
+              <Money v={line.priceUsd * line.quantity} style={{ minWidth: 52, textAlign: "right" }} />
             </View>
           ))}
           {/* Kit R3·1 (r-customer-a.jsx:323-327): the cart's own way back into the menu, so adding a
@@ -248,7 +246,7 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
       <Text style={{ fontSize: bold ? 14.5 : 13, fontWeight: bold ? "700" : "500", color: bold ? tokens.color.ink : tokens.color.muted }}>{label}</Text>
-      <Text style={{ fontSize: bold ? 15.5 : 13.5, fontWeight: "700", color: tokens.color.ink }}>{value}</Text>
+      <Text style={{ fontSize: bold ? 15.5 : 13.5, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{value}</Text>
     </View>
   );
 }
