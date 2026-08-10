@@ -159,7 +159,7 @@ function fillSlots() {
   document.querySelectorAll("image-slot").forEach((sl) => {
     const ph = sl.getAttribute("placeholder") || "";
     const m = ph.match(/[—-]\s*(.+)$/);
-    const name = m && !/^cover|banner|dish|photo$/i.test(m[1].trim()) ? m[1].trim() : "";
+    const name = m && !/^(cover|banner|dish|photo)$/i.test(m[1].trim()) ? m[1].trim() : "";
     const circle = sl.getAttribute("shape") === "circle";
     const img = document.createElement("img");
     img.alt = "";

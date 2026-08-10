@@ -1,0 +1,238 @@
+<!-- @dsCard group="Mobile app" viewport="1180x1720" name="Shipped states · 2026-08 alignment" subtitle="The ~20 states the app shipped with no mock, now designed into the system: connectivity & stale-cache honesty, composer resilience (draft restore, address search down, map fallback, location off), cold-start order restore, rating undo, privacy / delete-account / phone masking, rider board under the food-dispatch flag, strikes + proof-of-pickup, merchant per-item availability + pickup-code reveal, real OS-permission rows, feature-flag-off surfaces. Normal / loading / error / empty variants where they exist, with a 320 entry-phone ⇄ 360 toggle." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — shipped states (2026-08 alignment handoff)</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  html, body { margin: 0; background: #eceff1; }
+  body { font-family: var(--font-sans); color: var(--ink); padding: 28px 32px 56px; box-sizing: border-box; }
+  .head { max-width: 1100px; margin: 0 auto 8px; }
+  .head h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .head p { font-size: 14px; color: var(--muted); line-height: 1.55; margin: 0; max-width: 820px; }
+  .head .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+  .fact { font-size: 12px; font-weight: 600; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .fact b { color: var(--accent-text); font-weight: 700; }
+  .wtoggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); overflow: hidden; }
+  .wtoggle button { border: none; background: none; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); padding: 7px 14px; cursor: pointer; min-height: 32px; }
+  .wtoggle button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent-text); }
+  .sec { max-width: 1140px; margin: 34px auto 0; }
+  .sec > h2 { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 3px; display: flex; align-items: center; gap: 10px; }
+  .sec > h2 .role { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); background: var(--surface); border-radius: 5px; padding: 3px 8px; }
+  .sec > .lead { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0 0 20px; max-width: 780px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, var(--cellw, 336px)); gap: 30px 30px; justify-content: center; }
+  .grid.tablets { grid-template-columns: repeat(auto-fill, 532px); }
+  .cell { width: var(--cellw, 336px); }
+  .cell.tablet { width: 532px; }
+  .cap { display: flex; align-items: center; gap: 8px; height: 26px; margin-bottom: 9px; }
+  .badge { font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent-text); border-radius: 6px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+  .ttl { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .phone { border-radius: 30px; border: 8px solid #14181b; overflow: hidden; position: relative; background: var(--surface); box-shadow: 0 14px 40px rgba(20,24,27,.22); }
+  .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 100px; height: 20px; background: #14181b; border-radius: 0 0 12px 12px; z-index: 30; }
+  .screen { height: 100%; overflow: hidden; background: var(--surface); }
+  .slate { width: 532px; height: 358px; border-radius: 18px; border: 6px solid #14181b; overflow: hidden; position: relative; background: var(--surface); box-shadow: 0 14px 40px rgba(20,24,27,.22); }
+  .slate .inner { width: 1024px; height: 680px; transform: scale(0.508); transform-origin: 0 0; background: var(--surface); }
+  .note { margin-top: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow-card); }
+  .ref { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: #8a6a00; background: var(--highlight); border-radius: 5px; padding: 2px 7px; margin-bottom: 8px; }
+  .ref.p1 { color: #fff; background: var(--accent-text); }
+  .nrow { display: flex; gap: 7px; font-size: 12px; line-height: 1.45; margin-top: 5px; }
+  .nrow .k { flex: 0 0 54px; font-weight: 700; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; padding-top: 1px; }
+  .nrow .v { flex: 1; color: var(--ink); }
+  .nrow .v.cta { color: var(--accent-text); font-weight: 600; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+<script src="../../assets/image-slot.js"></script>
+<script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+<div class="head">
+  <h1>Shipped states — 2026-08 alignment handoff</h1>
+  <p>The states the app ships today that existed in no mock — improvised in code, so they were the one part of the product that couldn't be aligned to anything. Now designed into the system with the existing tokens, type ramp and card language. Every screen also lives in <strong>All Screens Gallery</strong> (appended at band ends — no existing badge moved). Each note names which of the <strong>normal / loading / error / empty</strong> matrix the cell is; variants that don't exist for a state (e.g. no "loading" for a restored draft) are deliberately not drawn.</p>
+  <div class="facts">
+    <span class="fact">Registries: <b>LJ · RJM · RM</b> (appended)</span>
+    <span class="fact">Designed <b>320-first</b>, verified at 360</span>
+    <span id="wt" class="wtoggle"></span>
+  </div>
+</div>
+<div id="root"></div>
+
+<script>window.__LYNIA_KIT_PAGE = true;</script>
+<script type="text/babel" src="kit-parts.js"></script>
+<script type="text/babel" src="../support/parts.js"></script>
+<script type="text/babel" src="../../explorations/journey/screens.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/screens-shipped.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/rider-one-app.jsx"></script>
+<script type="text/babel" src="../../explorations/journey/rider-screens-shipped.jsx"></script>
+<script type="text/babel" src="../../explorations/restaurants/r-parts.jsx"></script>
+<script type="text/babel" src="../../explorations/restaurants/r-merchant-shipped.jsx"></script>
+<script type="text/babel">
+const REG = { c: window.LJ, j: window.RJM, m: window.RM };
+
+const SECTIONS = [
+  {
+    title: "Connectivity & the stale-cache header", role: "Customer",
+    lead: "The offline banner already exists (LJ offline); these are its shipped siblings: the muted reconnecting strip, and the honesty header when what's on screen is a saved copy. The strip always names the copy's age — data is never silently stale.",
+    cells: [
+      { r: "c", id: "conn_reconnecting", badge: "SH1·1", title: "Reconnecting", state: "Normal (transient)", ref: "X-3 · P1", p1: true, trigger: "Socket drops, retry running", logic: "OfflineBanner state=\"reconnecting\" — muted strip, never red, composer stays usable. Auto-clears on recovery.", cta: "— auto-recovers" },
+      { r: "c", id: "stale_cache", badge: "SH1·2", title: "Saved copy · updating", state: "Stale-normal", ref: "X-3 · P1", p1: true, trigger: "Screen opens on cached data", logic: "role=status strip under the title: \u201cSaved copy from 09:41 — updating\u2026\u201d. List renders from cache; footer names the cutoff.", cta: "— refreshes in place" },
+      { r: "c", id: "stale_cache_empty", badge: "SH1·3", title: "Offline · nothing saved", state: "Empty", ref: "X-3", trigger: "Offline + no cache", logic: "EmptyState, wifi-off: the orders are safe on the account, the phone just has no copy. Retry is the one action.", cta: "Try again" },
+    ],
+  },
+  {
+    title: "Draft restored on the send composer", role: "Customer · parcel",
+    lead: "The real app persists a PII-free order draft. Restoring it silently confused people; this makes the restore visible and reversible. No loading/empty variants — a draft either restored (strip) or didn't (plain composer).",
+    cells: [
+      { r: "c", id: "draft_restored", badge: "SH2·1", title: "Draft restored", state: "Normal", ref: "Offline-first", trigger: "Composer opens with a saved draft", logic: "Mint role=status strip at the top of the sheet, dated, with Discard inline. Fields arrive pre-filled; broadcast enabled immediately.", cta: "Discard (inline)" },
+      { r: "c", id: "draft_discard", badge: "SH2·2", title: "Discard · confirm", state: "Confirm step", ref: "Offline-first", trigger: "Tap Discard", logic: "One deliberate step — names what clears (pins, item, price) and that it can't be undone. Keep editing is the primary.", cta: "Keep editing" },
+    ],
+  },
+  {
+    title: "Address search unavailable", role: "Customer · parcel",
+    lead: "No Places key (or lookup down) must not read as a broken keyboard. The field says so plainly, the pin fallback is promoted, and the drop-off label the rider will read is previewed honestly — \u201cPinned spot near\u2026\u201d, never a fake address.",
+    cells: [
+      { r: "c", id: "addr_unavailable", badge: "SH3·1", title: "Search down · pin fallback", state: "Error (of search)", ref: "A0-3 · P1", p1: true, trigger: "Places lookup unavailable", logic: "Input disabled with plain copy (\u201con our side, not your phone\u201d). Pin + my-location rows take over; preview row shows exactly how the drop-off will read.", cta: "Set the pin on the map" },
+    ],
+  },
+  {
+    title: "Map fallback & location off", role: "Customer · parcel",
+    lead: "The map is an upgrade, never a dependency: composing by address alone must stay first-class. Location-off is a hint, not a gate — nothing on the composer is blocked.",
+    cells: [
+      { r: "c", id: "map_failed", badge: "SH4·1", title: "Map didn't load", state: "Error (of map)", ref: "X-3 · P1", p1: true, trigger: "Tiles / SDK fail to load", logic: "Striped placeholder + card: you can still send, search both addresses, the pin is optional once an address is set. Retry is a chip, not a wall.", cta: "Retry the map" },
+      { r: "c", id: "loc_off", badge: "SH4·2", title: "Location off · hint", state: "Degraded-normal", ref: "A0-3", trigger: "Permission denied / GPS off", logic: "\u201cUse my location\u201d chip flips to a muted \u201cLocation is off\u201d; a calm card offers manual paths + one turn-on action. Composer fully usable throughout.", cta: "Turn on location" },
+    ],
+  },
+  {
+    title: "Active-order restore on cold start", role: "Customer",
+    lead: "The app was killed mid-delivery; on cold start the running order must find the customer, not the other way round. A banner over the home — never a redirect they didn't ask for.",
+    cells: [
+      { r: "c", id: "order_restore", badge: "SH5·1", title: "Order still running", state: "Normal", ref: "F-resume · P1", p1: true, trigger: "Cold start with a live order", logic: "Accent card above the tab bar: what's running, where the rider is, one Return action. Dismissable — the live-order card on home still carries it.", cta: "Return to your order" },
+      { r: "c", id: "order_restore_error", badge: "SH5·2", title: "Restore failed", state: "Error", ref: "F-resume", trigger: "Order fetch fails on cold start", logic: "Same position, plain card: the delivery is running, only the load failed, nothing is lost. Retry + Orders as the fallback path.", cta: "Try again" },
+    ],
+  },
+  {
+    title: "Rating undo window", role: "Customer",
+    lead: "A fat-thumbed 2-star on a cheap screen shouldn't be forever. One visible undo window after submit; after it closes the rating is final and anonymous. No loading/empty variants — the window either runs or has closed.",
+    cells: [
+      { r: "c", id: "rate_undo", badge: "SH6·1", title: "Rating sent · undo", state: "Normal (timed)", ref: "R-11", trigger: "Submit a rating", logic: "role=status row with a live countdown (tabular numerals). Undo restores the star picker with the old value selected. Timer length is a product constant (~15s).", cta: "Undo · 0:09" },
+    ],
+  },
+  {
+    title: "Privacy, delete account & phone masking", role: "Customer (rider inherits)",
+    lead: "X-2 compliance cluster. Privacy states the rules the product already lives by (first name + last initial, phone shared only while a delivery runs); deletion is two deliberate steps with a 30-day grace; the masked call row shows what \u201cafter\u201d looks like.",
+    cells: [
+      { r: "c", id: "privacy", badge: "SH7·1", title: "Privacy", state: "Normal", ref: "X-2 · P2", trigger: "Settings → Privacy", logic: "Three plain cards (collect / others see / retention) + data-copy and delete rows. No legalese — the same voice as the rest of the app.", cta: "— row actions" },
+      { r: "c", id: "delete_account", badge: "SH7·2", title: "Delete · step 1", state: "Normal", ref: "X-2 · P2", trigger: "Privacy → Delete my account", logic: "Names exactly what deletes and what the law keeps. A live order blocks deletion (stated inline). Keep my account is the primary.", cta: "Continue to delete (ghost)" },
+      { r: "c", id: "delete_final", badge: "SH7·3", title: "Delete · final confirm", state: "Confirm step", ref: "X-2 · P2", trigger: "Continue to delete", logic: "30-day grace stated in bold; acknowledge checkbox ≥44px; the danger fill appears only here — the one destructive button in the journey.", cta: "Delete my account" },
+      { r: "c", id: "phone_masked", badge: "SH7·4", title: "Numbers masked", state: "Terminal-normal", ref: "CONCEPT privacy", trigger: "Delivery ended", logic: "Call row goes inert: masked number (+263 7• ••• ••80), grey disc, and the rule stated. Help-with-this-order is the sanctioned path to reach anyone.", cta: "Get help with this order" },
+    ],
+  },
+  {
+    title: "Rider board under the food-dispatch flag", role: "Rider",
+    lead: "FLAG ON promises \u201cparcels and food, one queue\u201d — true only where food dispatch runs. FLAG OFF must never lie to a rider whose build will never show a food job: parcels-only copy, plus one honest line about when food arrives. Same board, same cards, only the promise changes.",
+    cells: [
+      { r: "j", id: "board", badge: "SH8·1", title: "Board · flag ON", state: "Normal (existing RJM board)", ref: "RJM J1", trigger: "Food dispatch ON", logic: "Unchanged one-app board — reference cell. \u201cParcels and food · one queue\u201d holds because both actually arrive.", cta: "Accept / Make an offer" },
+      { r: "j", id: "board_food_off", badge: "SH8·2", title: "Board · flag OFF", state: "Flag variant", ref: "F-flag · P1", p1: true, trigger: "Food dispatch OFF", logic: "Pill reads \u201cParcels near you\u201d; no food promise anywhere. Quiet surface row: food lands in this same list when kitchens join — nothing to set up.", cta: "Make an offer" },
+      { r: "j", id: "board_empty_food_off", badge: "SH8·3", title: "Flag OFF · empty", state: "Empty", ref: "F-flag", trigger: "Online, nothing in range", logic: "Same EmptyState as the one-queue board but the copy only promises parcels. Loading is the existing skeleton discipline (unchanged).", cta: "Refresh" },
+    ],
+  },
+  {
+    title: "Strikes & proof of pickup", role: "Rider",
+    lead: "The strike counter makes the reliability rule visible before it bites — what counts, how many, when it clears, how to dispute. Proof-of-pickup reuses the KYC photo grammar (E·1–E·4): frame guide, self-check preview, and a background upload that never blocks the job.",
+    cells: [
+      { r: "j", id: "strikes", badge: "SH9·1", title: "Strike counter", state: "Normal", ref: "R-rules · P1", p1: true, trigger: "Account → Reliability", logic: "Three slots, filled = struck. What counts is listed on the same card as the count — the rule and the state never separate. Clears on the 1st.", cta: "Dispute a strike" },
+      { r: "j", id: "strikes_final", badge: "SH9·2", title: "One from a pause", state: "Warning", ref: "R-rules · P1", p1: true, trigger: "2 of 3 strikes", logic: "Danger-wash card (never a red alarm): one more pauses the account 48h, and the safe alternative (log a problem instead of dropping) is named.", cta: "Get help with this job" },
+      { r: "j", id: "pickup_photo", badge: "SH9·3", title: "Proof photo · capture", state: "Normal", ref: "F-pop · P1", p1: true, trigger: "Collect step on a parcel job", logic: "Dark camera stage, parcel-shaped dashed guide, 68px shutter, three readability rules. Context strip names who sees the photo.", cta: "Take photo" },
+      { r: "j", id: "pickup_photo_preview", badge: "SH9·4", title: "Proof photo · preview", state: "Self-check", ref: "F-pop", trigger: "Take photo", logic: "\u201cCan you see the parcel clearly?\u201d gate before upload — and the photo is framed as the rider's protection too, not surveillance.", cta: "Use this photo" },
+      { r: "j", id: "pickup_photo_failed", badge: "SH9·5", title: "Upload failed · non-blocking", state: "Error", ref: "F-pop · offline-first", trigger: "No signal at pickup", logic: "Gold-wash strip on the active job: retries in the background, the job is never blocked. Try-again is offered, not demanded.", cta: "— ride on" },
+    ],
+  },
+  {
+    title: "Merchant queue: per-item availability & the pickup-code reveal", role: "Merchant · tablet", tablet: true,
+    lead: "\u201cDon't have it\u201d answers an order with what the kitchen actually has — the customer confirms the new total before anything cooks, and the menu is untouched (that's \u201cOut of stock today\u201d, M4·7). The pickup code stays hidden until the rider is physically at the counter.",
+    cells: [
+      { r: "m", id: "item_out", badge: "SH10·1", title: "Don't have an item", state: "Normal", ref: "M-86 · P1", p1: true, trigger: "Answering a new order", logic: "Per-row ≥44px pill control; a marked row re-totals live and states the consequence. Accept becomes \u201cAccept 2 of 3 · $10.50\u201d.", cta: "Accept 2 of 3" },
+      { r: "m", id: "item_out_wait", badge: "SH10·2", title: "Customer confirming", state: "Waiting", ref: "M-86", trigger: "Accept with items out", logic: "Timeline card, no clock (same grammar as awaiting-payment M2·7): do not cook until the yes. Phone-confirm override is logged.", cta: "They said yes — start cooking" },
+      { r: "m", id: "pickup_reveal", badge: "SH10·3", title: "Pickup code · hidden", state: "Normal", ref: "M-code · P1", p1: true, trigger: "Rider marked arrived", logic: "Masked slots + the face-to-face rule stated. Reveal is a deliberate tap — the code never sits on a screen the whole kitchen can read.", cta: "Rider is here — reveal" },
+      { r: "m", id: "pickup_revealed", badge: "SH10·4", title: "Pickup code · revealed", state: "Reveal step", ref: "M-code", trigger: "Reveal the code", logic: "Tablet-size PickupCode; rider reads it back, cash counted, then hand-over. Wrong-code keeps the food on the counter.", cta: "Code matches — hand it over" },
+    ],
+  },
+  {
+    title: "Real OS-permission rows in Settings", role: "Cross-cutting",
+    lead: "The old mock hardcoded \u201cOn\u201d. These rows are read from the phone every time the app foregrounds, and every non-granted state carries its consequence and the one exit (system settings). \u201cAsk every time\u201d is a real Android state and renders as itself.",
+    cells: [
+      { r: "c", id: "settings_perms", badge: "SH11·1", title: "Denied + ask-every-time", state: "Error/degraded", ref: "A0-2 · P1", p1: true, trigger: "Settings, permissions revoked in OS", logic: "Notifications Off gets the warning glyph + consequence line + Open system settings. Location \u201cAsk every time\u201d renders verbatim — never rounded to On/Off.", cta: "Open system settings" },
+      { r: "c", id: "settings_perms_ok", badge: "SH11·2", title: "All granted", state: "Normal", ref: "A0-2", trigger: "Settings, all granted", logic: "Values read from the OS (\u201cWhile using\u201d, \u201cOn\u201d) — same rows, no warning furniture. The footnote states the re-check rule.", cta: "— row actions" },
+    ],
+  },
+  {
+    title: "Feature-flag-off surfaces", role: "Cross-cutting",
+    lead: "When food dispatch is off, every surface that sells food must degrade honestly: the home tile goes \u201cSoon\u201d (grey, non-interactive — the ServiceTiles soon state, so navigation never moves), onboarding drops the food slide, and role selection stops promising food.",
+    cells: [
+      { r: "c", id: "home_flag_off", badge: "SH12·1", title: "Home · Food tile \u201cSoon\u201d", state: "Flag variant", ref: "F-flag · P1", p1: true, trigger: "Food flag OFF", logic: "Same AppHome, services prop override: Food joins Pharmacy as a soon tile. No venue rail, no live food cards — the parcel card still renders.", cta: "Send" },
+      { r: "c", id: "onboard_flag_off", badge: "SH12·2", title: "Onboarding · parcels only", state: "Flag variant", ref: "F-flag", trigger: "First run, flag OFF", logic: "Two slides instead of three — the food slide is dropped, not rewritten into a promise. Same carousel anatomy and dot grammar.", cta: "Next" },
+      { r: "c", id: "role_select_flag_off", badge: "SH12·3", title: "Role select · no food promise", state: "Flag variant", ref: "F-flag", trigger: "Post-OTP, flag OFF", logic: "\u201cUse LyniaGo\u201d option reads \u201cSend parcels across Harare — more services soon\u201d and takes the package icon. Rider option unchanged.", cta: "Continue as a customer" },
+    ],
+  },
+];
+
+const WIDTHS = { entry: { w: 336, h: 640, label: "320 · entry phone" }, designed: { w: 376, h: 736, label: "360 · designed" } };
+
+function Cell({ n, size }) {
+  const R = REG[n.r] && REG[n.r][n.id];
+  const refCls = "ref" + (n.p1 ? " p1" : "");
+  const tablet = n.r === "m";
+  return (
+    <div className={"cell" + (tablet ? " tablet" : "")}>
+      <div className="cap"><span className="badge">{n.badge}</span><span className="ttl">{n.title}</span></div>
+      {tablet ? (
+        <div className="slate"><div className="inner">{R ? R() : null}</div></div>
+      ) : (
+        <div className="phone" style={{ width: size.w, height: size.h }}><div className="notch" /><div className="screen">{R ? R() : null}</div></div>
+      )}
+      <div className="note">
+        <span className={refCls}>{n.ref}</span>
+        <div className="nrow"><span className="k">State</span><span className="v">{n.state}</span></div>
+        <div className="nrow"><span className="k">Trigger</span><span className="v">{n.trigger}</span></div>
+        <div className="nrow"><span className="k">Logic</span><span className="v">{n.logic}</span></div>
+        <div className="nrow"><span className="k">CTA</span><span className="v cta">{n.cta}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function Sheet() {
+  const [wk, setWk] = React.useState("entry");
+  const size = WIDTHS[wk];
+  React.useEffect(() => {
+    const host = document.getElementById("wt");
+    host.innerHTML = "";
+    Object.entries(WIDTHS).forEach(([k, v]) => {
+      const b = document.createElement("button");
+      b.textContent = v.label;
+      b.setAttribute("aria-pressed", String(k === wk));
+      b.onclick = () => setWk(k);
+      host.appendChild(b);
+    });
+  }, [wk]);
+  return (
+    <React.Fragment>
+      {SECTIONS.map((s, i) => (
+        <div className="sec" key={i} style={{ "--cellw": (s.tablet ? 532 : size.w) + "px" }}>
+          <h2>{s.title} <span className="role">{s.role}</span></h2>
+          <p className="lead">{s.lead}</p>
+          <div className={"grid" + (s.tablet ? " tablets" : "")}>{s.cells.map((c) => <Cell key={c.r + c.id + wk} n={c} size={size} />)}</div>
+        </div>
+      ))}
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Sheet />);
+</script>
+</body>
+</html>

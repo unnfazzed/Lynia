@@ -48,7 +48,9 @@ User instruction (2026-08-10), after five days in which "alignment" PRs merged g
 still did not look like the designs: **the entire app is being aligned to the design mocks pixel by
 pixel.** This section outranks every convenience argument you will find in the code.
 
-**The authority chain** (from `packages/design/EXPORT-README.md`, exported 2026-08-10):
+**The authority chain** (from `packages/design/EXPORT-README.md`, export **2026-08-10 rev 2** — which
+added the 31-screen `SH·` shipped-states wave, so states like offline, draft-restore, keyless search,
+flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised):
 
 1. **LOOK** — `packages/design/explorations/journey/All Screens Gallery.html`. Every current screen,
    rendered live. *If a screen is in the gallery it is current; if a screen you coded is not in the
@@ -75,8 +77,10 @@ pixel.** This section outranks every convenience argument you will find in the c
 
 - **Not drawn ⇒ not rendered.** Cosmetic extras the mocks never drew (confetti, invented headings,
   extra top-bar actions, "Open now" badges, section labels) are removed, not preserved.
-- **Mock copy verbatim.** The single global substitution is **WhatsApp OTP → SMS OTP** (strings and
-  glyphs) — the app uses SMS. No other copy exception without a ledger entry.
+- **Mock copy verbatim — no exceptions.** The old WhatsApp-OTP→SMS substitution is **gone**: the
+  rev 2 export changed the mocks to SMS, so applying it now would *introduce* drift. Help & support
+  still routes to WhatsApp in the mocks, and that is correct. Any new copy exception needs a ledger
+  entry first.
 - **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;
   `docs/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
 - **Canonical viewports.** Phone registries (LJ/RC/RJ/RJM/RR) **360×720**, with the mandatory

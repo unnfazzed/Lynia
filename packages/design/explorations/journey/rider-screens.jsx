@@ -124,16 +124,16 @@ const Login = () => (
   <Pad>
     <Lockup />
     <Heading>Sign in to ride</Heading>
-    <Sub>We'll WhatsApp a one-time code to this number.</Sub>
+    <Sub>We'll SMS a one-time code to this number.</Sub>
     <Field label="Phone number" value="+263 78 202 1180" onChange={noop} inputMode="tel" />
     <Button label="Send code" onClick={noop} />
   </Pad>
 );
 const Otp = () => (
   <Pad>
-    <Heading>Check your WhatsApp</Heading>
-    <Sub>We sent a 6-digit code to +263 78 202 1180 on WhatsApp.</Sub>
-    <Field label="6-digit code" value="418207" onChange={noop} inputMode="numeric" hint="No WhatsApp on this number? Contact support to sign up." />
+    <Heading>Check your messages</Heading>
+    <Sub>We sent a 6-digit code to +263 78 202 1180 by SMS.</Sub>
+    <Field label="6-digit code" value="418207" onChange={noop} inputMode="numeric" hint="SMS can take a minute on a busy network." />
     <Button label="Verify" onClick={noop} />
     <Button label="Back" variant="ghost" onClick={noop} />
   </Pad>

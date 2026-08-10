@@ -90,7 +90,7 @@ const SECTIONS = [
   },
   {
     title: "OTP resend, expiry & lockout", role: "Customer (rider inherits)",
-    lead: "Extends the existing \u201cCheck your WhatsApp\u201d screen (0·4). The idle Resend affordance is retrofitted in place; these are the throttled / re-sent / recovery states. Eng requirement baked in: a fresh code resets the attempt counter so a resend can't land in a locked record.",
+    lead: "Extends the existing \u201cCheck your messages\u201d SMS screen (0·4). The idle Resend affordance is retrofitted in place; these are the throttled / re-sent / recovery states. Eng requirement baked in: a fresh code resets the attempt counter so a resend can't land in a locked record.",
     cells: [
       { r: "c", id: "otp_cooldown", badge: "C·1", title: "Resend cooldown", ref: "A0-1 / R0-1 · Wave 4", trigger: "Tap Resend", logic: "Visible 60s timer (role=status). Verify stays enabled — the timer throttles resends, never blocks entry.", cta: "— wait, or Verify" },
       { r: "c", id: "otp_resent", badge: "C·2", title: "Code re-sent", ref: "A0-1 / R0-1", trigger: "Timer ends → Resend", logic: "New code AND attempt counter reset server-side. Quiet role=status banner; focus returns to the field; cooldown restarts.", cta: "Verify the new code" },

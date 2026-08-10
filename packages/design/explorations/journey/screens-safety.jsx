@@ -222,16 +222,16 @@ const TripHelpSent = () => (
   </Pad>
 );
 
-/* ── C · OTP resend states (extend the "Check your WhatsApp" screen; idle is retrofitted in screens.jsx) ── */
+/* ── C · OTP resend states (extend the "Check your messages" SMS screen; idle is retrofitted in screens.jsx) ── */
 function OtpState({ variant }) {
   const cooldown = variant === "cooldown", resent = variant === "resent", locked = variant === "locked";
   return (
     <Pad>
-      <Heading>Check your WhatsApp</Heading>
-      <Sub>We sent a 6-digit code to +263 77 245 1180 on WhatsApp.</Sub>
+      <Heading>Check your messages</Heading>
+      <Sub>We sent a 6-digit code to +263 77 245 1180 by SMS.</Sub>
       {resent ? (
         <div role="status" style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", background: "var(--accent-wash)", borderRadius: "var(--radius-input)", marginBottom: 12, color: "var(--accent-text)", fontSize: 13, fontWeight: 600 }}>
-          <Icon name="check" size={16} color="var(--accent-text)" /> A fresh code is on its way — check WhatsApp.
+          <Icon name="check" size={16} color="var(--accent-text)" /> A fresh code is on its way — check your messages.
         </div>
       ) : null}
       {locked ? (

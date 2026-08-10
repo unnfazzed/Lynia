@@ -18,7 +18,7 @@ function node(id, col, band, badge, title, anno, bg) { N[id] = { id, x: X(col), 
 node("splash", 0, B.B0, "0·1", "Splash", { p: "Brand launch moment while the app boots.", s: "Loading (2s, dove lift-in)", c: "— auto-advances" }, "var(--accent)");
 node("onboard", 1, B.B0, "0·2", "Onboarding · rider", { p: "Sell the rider promise in 3 slides — earn on your bike, name your fare, cash on delivery. First install only.", s: "Slide 2 of 3 · skippable", c: "Next / Get started" });
 node("login", 2, B.B0, "0·3", "Phone sign-in", { p: "Same phone-first auth as the customer app — one number, one account.", s: "Empty → typing", c: "Send code" });
-node("otp", 3, B.B0, "0·4", "WhatsApp OTP", { p: "Verify the 6-digit code delivered over WhatsApp.", s: "Awaiting 6 digits", c: "Verify" });
+node("otp", 3, B.B0, "0·4", "SMS OTP", { p: "Verify the 6-digit code delivered by SMS.", s: "Awaiting 6 digits", c: "Verify" });
 node("role_select", 4, B.B0, "0·5", "Choose your role", { p: "The fork — sign-in is identical to the customer up to here. A signed-in user says whether they want to send parcels or ride. One account, switchable later.", s: "Rider selected", c: "Continue as a rider" });
 node("perm_loc", 5, B.B0, "0·6", "Permission · location", { p: "Prime GPS before the OS dialog — shows parcels near you and navigates to pickups.", s: "Pre-permission", c: "Allow location" });
 node("perm_notif", 6, B.B0, "0·7", "Permission · notifications", { p: "Prime push so new-order pings and 'you were picked' alerts land.", s: "Pre-permission", c: "Turn on notifications" });

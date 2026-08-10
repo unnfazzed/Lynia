@@ -511,7 +511,7 @@ function App() {
       <ScreenPad>
         <Lockup />
         <Heading>Welcome to Lynia</Heading>
-        <Sub>We'll WhatsApp a one-time code to this number.</Sub>
+        <Sub>We'll SMS a one-time code to this number.</Sub>
         <Field label="Phone number" value={phone} onChange={setPhone} inputMode="tel" placeholder="+263 77 000 0000" />
         <Button label="Send code" onClick={() => setView("otp")} disabled={phone.trim().length < 6} />
         <div style={{ marginTop: 8 }}>{RoleSwitch}</div>
@@ -519,13 +519,13 @@ function App() {
     );
     if (view === "otp") return (
       <ScreenPad>
-        <Heading>Check your WhatsApp</Heading>
-        <Sub>We sent a 6-digit code to {phone || "your phone"} on WhatsApp.</Sub>
-        <Field label="6-digit code" value={code} onChange={setCode} inputMode="numeric" placeholder="000000" hint="No WhatsApp on this number? Contact support to sign up." />
+        <Heading>Check your messages</Heading>
+        <Sub>We sent a 6-digit code to {phone || "your phone"} by SMS.</Sub>
+        <Field label="6-digit code" value={code} onChange={setCode} inputMode="numeric" placeholder="000000" hint="SMS can take a minute on a busy network." />
         <Button label="Verify" onClick={() => setView("role_select")} disabled={code.trim().length !== 6} />
         {otpResent ? (
           <div role="status" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 44, fontSize: 13.5, fontWeight: 600, color: "var(--accent-text)" }}>
-            <Icon name="check" size={15} color="var(--accent-text)" /> Code re-sent on WhatsApp.
+            <Icon name="check" size={15} color="var(--accent-text)" /> Code re-sent by SMS.
           </div>
         ) : (
           <button onClick={() => setOtpResent(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 44, width: "100%", background: "none", border: "none", fontFamily: "var(--font-sans)", fontSize: 13.5, fontWeight: 600, color: "var(--accent-text)", cursor: "pointer" }}>Didn't get it? Resend code</button>
@@ -1453,7 +1453,7 @@ function RegisterScreen({ fullName, onFullName, idNum, onIdNum, phone, onContinu
       <Sub>You're sending parcels. Just a name and ID for your account record — no documents, no verification.</Sub>
       <Field label="Full name" value={fullName} onChange={onFullName} placeholder="Chipo Marufu" />
       <div style={{ position: "relative" }}>
-        <Field label="Phone number" value={phone || "+263 77 245 1180"} onChange={() => {}} inputMode="tel" hint="Verified on WhatsApp" />
+        <Field label="Phone number" value={phone || "+263 77 245 1180"} onChange={() => {}} inputMode="tel" hint="Verified by SMS" />
         <span style={{ position: "absolute", top: 30, right: 12, display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: "var(--accent-text)" }}>
           <Icon name="check" size={13} color="var(--accent-text)" /> Verified
         </span>

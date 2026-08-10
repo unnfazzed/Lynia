@@ -9,7 +9,7 @@ scope for this phase.
 |---|---|
 | Splash (dove lift-in) | ✅ |
 | Phone login | ✅ |
-| WhatsApp OTP verify | ✅ |
+| SMS OTP verify | ✅ |
 | Map home — tap-to-pin, use-my-location | ✅ |
 | Multi line-items (description + quantity, add/remove) | ✅ |
 | Sender's note | ✅ |
