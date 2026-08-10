@@ -1,0 +1,27 @@
+name: "Lynia CodeQL config"
+
+# `packages/design/` is a VENDORED MIRROR of the external Claude Design project — design mocks,
+# preview harnesses, and the generated `_ds_bundle.js`. Three facts make it a scanning dead end:
+#
+#   1. Nothing in it ships. No app imports it; the only code coupling is
+#      `apps/api/src/design-tokens.drift.spec.ts`, which reads `tokens/colors.css` as TEXT.
+#   2. We must not edit it. `CLAUDE.md` ("Pixel parity") makes the design tool authoritative and
+#      forbids editing the vendored copy — the repo drifting from the tool is precisely how the app
+#      stopped matching its designs. Kit defects are logged in `docs/DESIGN-DEVIATIONS.md` and
+#      reported upstream instead.
+#   3. Any in-repo fix is transient. The next export overwrites it, so an alert "fixed" here
+#      reappears on the following import.
+#
+# Scanning it therefore yields alerts that are permanently unfixable in this repo, on code that
+# cannot reach a user. Excluded so CodeQL's signal stays about code we actually own and ship.
+#
+# First triggered by the 2026-08-10 design export (PR #640): CodeQL flagged
+# `/^cover|banner|dish|photo$/i` in `explorations/store/play-export.jsx` (and its compiled copy in
+# `_ds_bundle.js`) — a real precedence bug, but in a Play-Store screenshot mock tool where the regex
+# only picks which stock food photo fills a placeholder slot. No untrusted input, no security
+# boundary. Logged as D-09 and queued for report back to Design.
+#
+# Scope note: this exclusion is exactly one vendored directory. Every app, package and workflow we
+# author stays fully scanned — `apps/**`, `packages/shared/**`, `infra/**`, `scripts/**`.
+paths-ignore:
+  - packages/design/**

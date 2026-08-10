@@ -29,6 +29,8 @@ jobs:
         with:
           languages: javascript-typescript
           queries: security-extended
+          # Excludes only the vendored design mirror — see the file for why it is unscannable.
+          config-file: .github/codeql/config.yml
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4.37.6
       - name: Perform CodeQL analysis
