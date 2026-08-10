@@ -17,7 +17,7 @@
  * straight through the container's proxy — not our concern here.
  */
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, normalize, resolve, extname } from "node:path";
 import { harnessHtml } from "./harness-html.mjs";
@@ -87,12 +87,18 @@ export async function startDesignServer(designRoot = DESIGN_ROOT) {
         res.writeHead(403).end("forbidden");
         return;
       }
-      const s = await stat(filePath).catch(() => null);
-      if (!s || !s.isFile()) {
-        res.writeHead(404).end(`not found: ${rel}`);
-        return;
+      // Read directly and classify the failure — no stat-then-read (that check-then-use window is a
+      // TOCTOU race). A missing path or a directory both map to 404; anything else is a real 500.
+      let buf;
+      try {
+        buf = await readFile(filePath);
+      } catch (readErr) {
+        if (readErr?.code === "ENOENT" || readErr?.code === "EISDIR") {
+          res.writeHead(404).end(`not found: ${rel}`);
+          return;
+        }
+        throw readErr;
       }
-      const buf = await readFile(filePath);
       res.writeHead(200, {
         "content-type": contentType(filePath),
         "access-control-allow-origin": "*",
