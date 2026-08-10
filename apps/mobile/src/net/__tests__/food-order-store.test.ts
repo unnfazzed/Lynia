@@ -32,7 +32,7 @@ beforeEach(() => {
 
 describe("food order restart snapshot (kit `resume`)", () => {
   it("round-trips the id, status and kitchen phase the warm paint needs", async () => {
-    await saveFoodOrderSnapshot("order-1", "requested", "preparing");
+    await saveFoodOrderSnapshot("order-1", "requested", "preparing", false);
     const snap = await loadFoodOrderSnapshot();
     expect(snap).not.toBeNull();
     expect(snap!.orderId).toBe("order-1");
@@ -40,14 +40,27 @@ describe("food order restart snapshot (kit `resume`)", () => {
     // merchantPhase is what resolves the two pre-dispatch steps — losing it would put the restored
     // tracker back at "Order placed" no matter how far the kitchen had actually got.
     expect(snap!.merchantPhase).toBe("preparing");
+    expect(snap!.sawRider).toBe(false);
     expect(typeof snap!.savedAt).toBe("string");
   });
 
   it("keeps a null kitchen phase null (post-dispatch orders have no merchantPhase)", async () => {
-    await saveFoodOrderSnapshot("order-2", "picked_up", null);
+    await saveFoodOrderSnapshot("order-2", "picked_up", null, true);
     const snap = await loadFoodOrderSnapshot();
     expect(snap!.merchantPhase).toBeNull();
     expect(snap!.status).toBe("picked_up");
+  });
+
+  it("round-trips the sawRider latch so a rider-dropped order survives an app kill", async () => {
+    // A rider had been secured before the drop — the reloaded snapshot must remember it so the cold
+    // start shows the specific "rider dropped" screen, not a generic "finding a rider".
+    await saveFoodOrderSnapshot("order-r", "requested", "ready_for_pickup", true);
+    expect((await loadFoodOrderSnapshot())!.sawRider).toBe(true);
+  });
+
+  it("defaults sawRider to false on a legacy blob that predates the field", async () => {
+    secureStore[FOOD_ORDER_SNAPSHOT_KEY] = JSON.stringify({ orderId: "old", status: "requested", merchantPhase: null, savedAt: "2026-08-01T00:00:00Z" });
+    expect((await loadFoodOrderSnapshot())!.sawRider).toBe(false);
   });
 
   it("returns null when nothing was ever saved", async () => {
@@ -65,7 +78,7 @@ describe("food order restart snapshot (kit `resume`)", () => {
   });
 
   it("does not resurrect a cleared order (cancel clears the snapshot)", async () => {
-    await saveFoodOrderSnapshot("order-3", "requested", "awaiting_accept");
+    await saveFoodOrderSnapshot("order-3", "requested", "awaiting_accept", false);
     await clearFoodOrderSnapshot();
     expect(await loadFoodOrderSnapshot()).toBeNull();
   });

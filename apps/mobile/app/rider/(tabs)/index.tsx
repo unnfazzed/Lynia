@@ -727,12 +727,15 @@ export default function RiderHome(): React.ReactElement {
         {online
           ? board.connected
             ? merchantDispatchAutoEnabled
-              ? "You're online — parcels and food orders arrive live, one queue."
+              ? // Honest to the real model: parcels land on the board below; a food job arrives as its
+                // own full-screen offer (/rider/food-offer) when it's this rider's turn — NOT as a card
+                // in this list. One online switch still covers both services.
+                "You're online — parcels arrive here, and a food offer pops up full-screen when one's yours."
               : "You're online — new orders arrive live."
             : "You're online — reconnecting to the live board…"
           : merchantDispatchAutoEnabled
             ? // RJM `offline`: one switch for everything — say so, so nobody hunts for a per-service toggle.
-              "Go online to receive parcels and food orders. One queue — there's no separate switch per service."
+              "Go online for parcels on the board and food offers as they come — one switch covers both."
             : "Go online to see and bid on nearby orders."}
       </Text>
       {locHint ? (
@@ -765,16 +768,17 @@ export default function RiderHome(): React.ReactElement {
       </View>
     ) : null;
 
-  // RJM `board_empty`: ONE empty state for both services. "Jobs that get taken simply leave the list"
-  // states the board's own no-countdown rule out loud, so a card vanishing never reads as a glitch.
-  // The food half of the promise stays behind the dispatch flag, exactly like the toggle copy above.
+  // RJM `board_empty`: the board carries PARCELS; "Jobs that get taken simply leave the list" states
+  // the board's own no-countdown rule out loud, so a card vanishing never reads as a glitch. Food is
+  // not on the board — it arrives as a full-screen offer — so the flag-ON copy names where each shows
+  // up instead of implying a merged queue here.
   const boardEmptyState = (
     <EmptyState
       icon="inbox"
       title="Nothing in range yet"
       message={
         merchantDispatchAutoEnabled
-          ? "You'll see parcels and food orders here the moment they're posted near you. Jobs that get taken simply leave the list."
+          ? "Parcels show up here the moment they're posted near you; a food offer arrives full-screen when it's your turn. Jobs that get taken simply leave the list."
           : "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list."
       }
     >

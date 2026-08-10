@@ -242,9 +242,28 @@ describe("OrderCard — preparing bucket", () => {
 });
 
 describe("OrderCard — ready bucket", () => {
-  it("CashRuleNote: shows the pay-upfront copy for cash orders on the pay_upfront rule", () => {
+  it("CashPickupHero: a pay-upfront cash order shows the count-and-acknowledge hero, not a caption", () => {
     renderCard("ready", order({ merchantPhase: "ready_for_pickup", riderId: "r1", paymentMethod: "cash", merchantCashRule: "pay_upfront", merchantGoodsTotal: 4 }));
-    expect(screen.getByText(/Rider pays you \$4\.00 cash before you hand over the food\./)).toBeTruthy();
+    expect(screen.getByText("COUNT WHAT THE RIDER HANDS YOU")).toBeTruthy();
+    expect(screen.getByText("I counted $4.00 in my hand")).toBeTruthy();
+    // The old caption is gone.
+    expect(screen.queryByText(/Rider pays you \$4\.00 cash before you hand over the food/)).toBeNull();
+  });
+
+  it("CashPickupHero: the pickup-code reveal is gated until the cash is acknowledged", () => {
+    const { onRevealPickupCode } = renderCard(
+      "ready",
+      order({ merchantPhase: "ready_for_pickup", riderId: "r1", paymentMethod: "cash", merchantCashRule: "pay_upfront", merchantGoodsTotal: 4 }),
+    );
+    const reveal = screen.getByRole("button", { name: /Show pickup code/ }) as HTMLButtonElement;
+    expect(reveal.disabled).toBe(true);
+    fireEvent.click(reveal);
+    expect(onRevealPickupCode).not.toHaveBeenCalled();
+    // Tick "I counted $4.00 in my hand" → the reveal (= releasing the food) unlocks.
+    fireEvent.click(screen.getByText("I counted $4.00 in my hand"));
+    expect((screen.getByRole("button", { name: /Show pickup code/ }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /Show pickup code/ }));
+    expect(onRevealPickupCode).toHaveBeenCalledWith("o1");
   });
 
   it("CashRuleNote: shows the release-unpaid copy for cash orders not on pay_upfront", () => {

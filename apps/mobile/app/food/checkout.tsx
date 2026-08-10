@@ -17,6 +17,7 @@ import { uuidV4FromSeed } from "../../src/util";
 import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonList } from "../../src/ui";
 import type { PickedPoint } from "../../src/ui/MapPicker";
 import { MapPicker } from "../../src/ui/MapPicker";
+import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../../src/ui/AddressSearch";
 import { PaymentMethodRow } from "../../src/ui/food/PaymentMethodRow";
 import { PriceMath } from "../../src/ui/food/PriceMath";
@@ -54,14 +55,22 @@ export default function FoodCheckoutScreen(): React.ReactElement {
     });
   }, []);
 
-  // A fresh address-search resolve always wins over anything the map pin/reverse-geocode set before it
-  // (mirrors send.tsx's onDropResolved) and clears "touched" so a LATER map drag can still auto-fill.
+  // A searched address resolves to a building CENTROID — for a food drop-off that lands the rider at
+  // the block, not the gate. Mirror send.tsx: a search result opens the drag-to-adjust confirm sheet
+  // (nudge the pin + name the landmark in context) rather than committing the centroid straight to
+  // the pin. A pin tapped/dragged directly on the map above is already its own confirmation and stays
+  // direct-commit.
+  const [confirming, setConfirming] = useState<ResolvedPlace | null>(null);
   const onDropResolved = useCallback((place: ResolvedPlace): void => {
-    setDropPoint({ lat: place.lat, lng: place.lng, placeId: place.placeId });
-    if (place.landmark) {
-      setDropLandmark(place.landmark);
-      setDropLandmarkTouched(false);
-    }
+    setConfirming(place);
+  }, []);
+  // Committed from the confirm sheet: the (possibly dragged) point + the landmark the customer typed.
+  // Marked touched so the reverse-geocode that fires when the map recenters can't overwrite it.
+  const onConfirmAddress = useCallback((point: PickedPoint, landmark: string): void => {
+    setConfirming(null);
+    setDropPoint(point);
+    setDropLandmark(landmark);
+    setDropLandmarkTouched(true);
   }, []);
   const onDropChange = useCallback((p: PickedPoint): void => {
     setDropPoint(p);
@@ -262,6 +271,15 @@ export default function FoodCheckoutScreen(): React.ReactElement {
         onPress={() => void submit()}
         disabled={!canSubmit}
         loading={busy}
+      />
+      {/* Drag-to-adjust confirm for a searched delivery address (drop slot only) — same component the
+          parcel composer uses, so food riders get a precise pin + in-context landmark, not a centroid. */}
+      <AddressConfirmSheet
+        place={confirming}
+        slot="drop"
+        initialLandmark={dropLandmark}
+        onConfirm={onConfirmAddress}
+        onCancel={() => setConfirming(null)}
       />
     </Screen>
   );

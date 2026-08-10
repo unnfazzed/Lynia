@@ -132,6 +132,9 @@ export function FoodOrderAwaitingPaymentView({
           <Button label={`Pay now · ${formatMoney(amount)}`} onPress={onForcePay} />
           <Button variant="ghost" label="Cancel the order — free" onPress={onCancelFree} disabled={busy} />
         </EmptyState>
+        {/* Keep the journey tracker visible during the longest wait — the neighbouring phases all show
+            it, so dropping it here made progress vanish exactly when the customer doubts the order. */}
+        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
         <ErrorText message={error} />
       </Screen>
     );
@@ -195,6 +198,9 @@ export function FoodOrderAwaitingPaymentView({
         {simulateRail ? (
           <Button label="SIMULATE: send payment prompt (test build)" variant="ghost" onPress={() => setPayPhase("wait")} />
         ) : null}
+        {/* The pay screen is the other long wait the tracker had gone missing on — restore it below the
+            pay actions so the kitchen-confirm/payment phase stays legible while the money is in flight. */}
+        <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
         {cancelFooter}
       </ScrollView>
     </Screen>

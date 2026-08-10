@@ -82,12 +82,21 @@ export default function PermissionsScreen(): React.ReactElement {
 
   if (!ready) return <Screen><View style={{ flex: 1 }} /></Screen>; // brief: reading the flag, about to render or forward
 
+  // Role-frame the copy off the resolved destination: a rider primes location to see nearby jobs and
+  // navigate, and notifications to catch new-job/you-were-picked pings — the customer framing ("your
+  // pickup pin", "your parcel is delivered") is wrong for half the users routed through here.
+  const isRider = dest === "/rider";
+
   if (step === "location") {
     return (
       <Prime
         icon="navigation"
         title="Turn on location"
-        message="LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
+        message={
+          isRider
+            ? "LyniaGo uses your location to show you nearby jobs and navigate you turn-by-turn to pickups and drop-offs. We only use it while you're online or on a job."
+            : "LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
+        }
         primaryLabel="Allow location"
         onPrimary={primeLocation}
         onSkip={() => setStep("notifications")}
@@ -99,7 +108,11 @@ export default function PermissionsScreen(): React.ReactElement {
     <Prime
       icon="inbox"
       title="Stay in the loop"
-      message="Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
+      message={
+        isRider
+          ? "Get notified the moment a new job is posted near you, when a customer picks you, and for delivery updates."
+          : "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
+      }
       primaryLabel="Turn on notifications"
       onPrimary={primeNotifications}
       onSkip={done}
