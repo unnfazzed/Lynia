@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/unnfazzed/Lynia/compare/v0.21.0...v0.22.0) (2026-08-10)
+
+
+### Features
+
+* **mobile:** build the five missing kit primitives (AppBar, Money, SystemState, CodeInput, food nav legs) and adopt them ([#633](https://github.com/unnfazzed/Lynia/issues/633)) ([d404781](https://github.com/unnfazzed/Lynia/commit/d404781d0d474d6b0e4609151a054eb40b92a377))
+
 ## [0.21.0](https://github.com/unnfazzed/Lynia/compare/v0.20.5...v0.21.0) (2026-08-05)
 
 
