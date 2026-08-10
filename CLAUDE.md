@@ -65,3 +65,59 @@ Routines also must: fix every defect they find in the same run (no deferrals), a
 `docs/KNOWN_BUGS.md` + their dated report **in the same PR** as the fixes. The four
 bug-finding routines (bug hunting, UX, deep sweep, wallet & data-lifecycle audit) dedupe through
 `docs/KNOWN_BUGS.md` (Phase-0 read, ledger write-back, per-lane scopes) — see `docs/ROUTINES.md`.
+
+## Expo / EAS deployments — track them, never assume they happened
+
+User instruction (2026-08-10): **track Expo deployments.** Merging is not shipping, and a green
+build is not a shipped build. Any session that lands mobile changes and is asked whether they
+shipped must verify against EAS/Play, not infer from `main`.
+
+**Monitor on trigger only — never on a schedule.** Same instruction, clarified: *"no need for
+routines .. only monitor when expo deployment is triggered."* Do **not** create a cron/routine that
+watches EAS or Play. There is no standing deployment-watch lane, and nothing here belongs in
+`docs/ROUTINES.md`. When nothing has been dispatched, do not poll.
+
+What that leaves is an ownership rule: **the session that triggers a deployment owns it until it
+reaches a terminal state.** Dispatch → build `FINISHED`/`ERRORED` → submission `FINISHED`/`ERRORED`
+→ report the outcome. Because `--no-wait` returns the GitHub job in about a minute while the EAS
+build takes tens of minutes, follow it with a **one-shot** `send_later` check-in, re-armed only
+while the build is still in progress and dropped the moment it is terminal. One-shot self check-ins
+are the mechanism; recurring triggers are not.
+
+**Nothing auto-ships.** Both mobile workflows are `workflow_dispatch`-only. `mobile-release.yml`
+does have a `v*` tag trigger, but it is separately gated behind `EAS_TAG_RELEASES_ENABLED`, and
+release-please's bot tags never fire workflows anyway. Merging to `main` reaches no device.
+
+**The `profile` input is load-bearing — the default is wrong for today's phase.**
+
+| Profile | Channel | Submit track | Usable now? |
+|---|---|---|---|
+| `preview` | `preview` | `internal` | ✅ the working lane |
+| `production` (workflow default) | `production` | `production`, 10% staged rollout | ❌ SA holds testing-track permissions only, and Play has not granted production access |
+
+A default dispatch therefore builds fine and then fails at submission, burning one of a limited
+monthly EAS build allowance. Pass `profile: preview` explicitly until the production train is
+armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
+
+**Verifying a deployment** — `eas-build-status.yml` is the read-only bridge (dispatchable, not
+environment-gated, mutates nothing). Since PR #631 its Recap answers both halves of "did it
+ship?": build status *and* submission status + track. Read the tail of the job log.
+
+- `eas build --no-wait` means a green GitHub job proves only that the build was **queued**.
+- A FINISHED build with an ERRORED submission is a real, observed failure mode (every submission
+  for build `c248fbf5` errored on service-account permissions while the build was green).
+- `NO SUBMISSION` in that output means the build was never submitted — a reportable answer, not a
+  gap to gloss over.
+
+**Before dispatching**, run `pnpm install --frozen-lockfile` locally if the lockfile moved: the
+release job uses a *strict* frozen install (deliberately diverging from CI's
+`--frozen-lockfile=false`) so both sides compute the same fingerprint runtimeVersion. Drift there
+killed build `5906d2f0`.
+
+**Current phase:** internal testing only — `play.google.com/store/apps/details?id=zw.co.lynia`
+returns 404 by design. Public release still needs a closed test, its mandatory ~14-day clock, and
+production access. Do not describe anything shipped today as being "on Google Play".
+
+The running ledger of every build/submission attempt and its failure class is
+`docs/PLAY-STORE-SUBMISSION.md`; OTA-lane constraints are `REL-01`/`REL-02` in `docs/KNOWN_BUGS.md`
+(runtimeVersion is stamped at build time, so an OTA cannot rescue a binary built before the fix).
