@@ -1,8 +1,8 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { formatMoney } from "../../logic/money";
 import { Button, Card, Icon } from "../index";
+import { Money } from "../Money";
 
 /**
  * The one board, tagged cards (plan §5 B2; `packages/design/RIDER-ONE-APP-PLAN.md` decision 2;
@@ -94,7 +94,7 @@ export const JobCard = React.memo(function JobCard(props: JobCardProps): React.R
         <TypeTag jobType={props.jobType} />
         <View style={{ flex: 1 }} />
         <Text style={{ fontSize: 12, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{props.distanceLabel}</Text>
-        <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{formatMoney(props.fare)}</Text>
+        <Money v={props.fare} size={16} />
       </View>
       <RouteLine from={props.from} to={props.to} />
       <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.sm, lineHeight: 18 }}>{props.note}</Text>

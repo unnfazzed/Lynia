@@ -5,7 +5,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
-import { Button, Card, Heading, Screen, SkeletonList, Sub } from "../../src/ui";
+import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 
 // Custom pill (not StatusPill) only because the failed state needs danger, which the shared tones
 // deliberately exclude — but it follows the DS pill spec: full radius, 12px/600, wash backgrounds.
@@ -40,8 +40,8 @@ export default function ProfileScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Account</Heading>
-      <Sub>Your details and session.</Sub>
+      {/* Kit AppBar (pushed-screen header) — title + sub live in the bar; no in-body Heading. */}
+      <AppBar title="Account" sub="Your details and session" onBack={() => router.back()} />
 
       {meQ.isLoading ? (
         <SkeletonList count={2} />
@@ -90,7 +90,6 @@ export default function ProfileScreen(): React.ReactElement {
       </Card>
 
       <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

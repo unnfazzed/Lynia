@@ -6,7 +6,7 @@ import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { Button, Card, EmptyState, Heading, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel, Sub } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel } from "../../src/ui";
 
 // The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome, so a
 // bailed-on or undelivered job read "Delivered" right next to a StatusPill saying otherwise on the
@@ -89,8 +89,8 @@ export default function HistoryScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Your trips</Heading>
-      <Sub>Every parcel you&apos;ve sent or delivered.</Sub>
+      {/* Kit AppBar (pushed-screen header) — title + sub live in the bar; no in-body Heading. */}
+      <AppBar title="Your trips" sub="Every parcel you've sent or delivered" onBack={() => router.back()} />
       {rows && rows.length > 0 ? (
         // B-O1: was a ScrollView + `.map()` over the full (server-capped 50-row) history — FlatList
         // windows the concurrently-mounted rows to what's on-screen, matching the food-catalog
@@ -132,7 +132,6 @@ export default function HistoryScreen(): React.ReactElement {
           <Button label="Retry" onPress={refetch} loading={isFetching} />
         </EmptyState>
       )}
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

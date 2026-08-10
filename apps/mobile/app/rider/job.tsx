@@ -38,7 +38,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
 import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
 import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
@@ -808,6 +808,7 @@ export default function RiderJob(): React.ReactElement {
     if (lastKnownJob) {
       return (
         <Screen>
+          <AppBar onBack={() => router.replace("/rider")} />
           <ScrollView showsVerticalScrollIndicator={false}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
               <Heading>Your job</Heading>
@@ -825,7 +826,6 @@ export default function RiderJob(): React.ReactElement {
               <Sub>Showing your last saved job — we&apos;ll refresh the moment you&apos;re back online.</Sub>
             </Card>
             <Button label="Retry now" onPress={() => void jobQ.refetch()} loading={jobQ.isFetching} />
-            <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
           </ScrollView>
         </Screen>
       );
@@ -860,9 +860,9 @@ export default function RiderJob(): React.ReactElement {
   if (!order || order.status === "cancelled") {
     return (
       <Screen>
+        <AppBar onBack={() => router.replace("/rider")} />
         <Heading>No active job</Heading>
         <Sub>Accept an order to start a delivery.</Sub>
-        <Button label="Back" onPress={() => router.replace("/rider")} />
       </Screen>
     );
   }

@@ -10,7 +10,7 @@ import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
-import { Button, Card, ErrorText, Field, Heading, Icon, isTestBuild, Label, Screen, Sub } from "../../src/ui";
+import { AppBar, Button, Card, ErrorText, Field, Heading, Icon, isTestBuild, Label, Screen, Sub } from "../../src/ui";
 import { PhotoCaptureGuide, PhotoReviewCard } from "../../src/ui/rider/PhotoReviewCard";
 
 export default function BecomeRiderScreen(): React.ReactElement {
@@ -248,6 +248,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
   return (
     <Screen>
+      {/* Back-only AppBar chrome: the KYC flow keeps its in-body Heading (kit KYC layout); the bar
+          replaces the retired bottom ghost "Back", same replace-to-dashboard destination. */}
+      <AppBar onBack={() => router.replace("/rider")} />
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Heading>Become a rider</Heading>
         <Sub>Verify your ID and register your bike to start accepting deliveries.</Sub>
@@ -339,7 +342,6 @@ export default function BecomeRiderScreen(): React.ReactElement {
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
         )}
-        <Button label="Back" variant="ghost" onPress={() => router.replace("/rider")} />
         <ErrorText message={error} />
       </ScrollView>
     </Screen>

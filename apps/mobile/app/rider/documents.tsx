@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { Button, Card, EmptyState, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, type IconName, Screen, SkeletonList, StatusPill } from "../../src/ui";
 
 /**
  * Bike & documents (rider-journey A·2). The verified ID, bike registration and rider photo, each with
@@ -43,8 +43,8 @@ export default function DocumentsScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Heading>Bike &amp; documents</Heading>
-      <Sub>What we verified to let you ride.</Sub>
+      {/* Kit AppBar (pushed-screen header) — title + sub live in the bar; no in-body Heading. */}
+      <AppBar title="Bike & documents" sub="What we verified to let you ride" onBack={() => router.back()} />
 
       {meQ.isLoading ? (
         <SkeletonList count={2} />
@@ -73,7 +73,6 @@ export default function DocumentsScreen(): React.ReactElement {
           {!verified ? <Button label="View verification status" variant="ghost" onPress={() => router.replace("/rider")} /> : null}
         </>
       )}
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
     </Screen>
   );
 }

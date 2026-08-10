@@ -28,7 +28,7 @@ export function Row({ label, value }: { label: string; value: string }): React.R
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
       <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.color.muted }}>{label}</Text>
-      <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>{value}</Text>
+      <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{value}</Text>
     </View>
   );
 }

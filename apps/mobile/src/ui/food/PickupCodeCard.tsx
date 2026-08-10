@@ -2,7 +2,7 @@ import { DELIVERY_OTP_MAX_ATTEMPTS, tokens } from "@lynia/shared";
 import React from "react";
 import { Text } from "react-native";
 import { formatMoney } from "../../logic/money";
-import { Button, Card, Field, Sub } from "../index";
+import { Button, Card, CodeInput, Sub } from "../index";
 
 /**
  * D5/N-16: the rider's pickup-code entry at the counter — mirrors rider/DeliveryOtp's shape one hop
@@ -51,7 +51,8 @@ export function PickupCodeCard({
       ) : null}
       <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Confirm pickup</Text>
       <Sub>Ask the kitchen for the 4-digit pickup code.</Sub>
-      <Field label="Pickup code" value={code} onChangeText={onChangeCode} keyboardType="number-pad" maxLength={4} />
+      {/* Kit `pickup_confirm` — four digit boxes, mirroring the 6-box hand-off grid one hop later. */}
+      <CodeInput length={4} value={code} onChangeText={onChangeCode} accessibilityLabel="Pickup code" error={attempts > 0} disabled={locked} />
       {locked ? (
         <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: 4, lineHeight: 18 }}>
           Too many attempts. Ask the kitchen to re-check the code, then enter the new one.

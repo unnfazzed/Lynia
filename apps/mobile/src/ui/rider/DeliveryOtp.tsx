@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import React from "react";
 import { Linking, Text } from "react-native";
 import { DELIVERY_OTP_MAX_ATTEMPTS } from "../../logic/rider-job";
-import { Button, Card, Field, Sub } from "../index";
+import { Button, Card, CodeInput, Sub } from "../index";
 
 // The en_route_dropoff hand-off card: the rider keys the recipient's 6-digit delivery code
 // (extracted verbatim from app/rider/job.tsx).
@@ -30,7 +30,8 @@ export function DeliveryOtp({
     <Card>
       <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Confirm hand-off</Text>
       <Sub>Ask the recipient for the 6-digit delivery code.</Sub>
-      <Field label="Delivery code" value={code} onChangeText={onChangeCode} keyboardType="number-pad" maxLength={6} />
+      {/* Kit `job_handoff` — six digit boxes, not a single field. */}
+      <CodeInput length={6} value={code} onChangeText={onChangeCode} accessibilityLabel="Delivery code" error={otpTries > 0} disabled={otpLocked} />
       {/* R9: show how many tries remain, and once locked stop inviting more taps into a dead endpoint. */}
       {otpLocked ? (
         <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginTop: 4, lineHeight: 18 }}>

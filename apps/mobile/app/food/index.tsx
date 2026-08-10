@@ -7,7 +7,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
 
 /** R1·1..R1·5 restaurant list — five states (default / loading / empty / error / offline). */
@@ -32,9 +32,8 @@ export default function RestaurantListScreen(): React.ReactElement {
   if (!restaurantsEnabled) {
     return (
       <Screen>
-        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon.">
-          <Button label="Back" variant="ghost" onPress={() => router.back()} />
-        </EmptyState>
+        <AppBar onBack={() => router.back()} />
+        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon." />
       </Screen>
     );
   }

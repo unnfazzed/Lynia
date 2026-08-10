@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import {
   confirmFoodPickup,
@@ -26,8 +27,9 @@ import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, orderStatusTone, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
+import { FoodNavLeg } from "../../src/ui/rider/FoodNavLeg";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
 import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
@@ -186,6 +188,11 @@ export default function RiderFoodJob(): React.ReactElement {
   // the real gate either way. An app kill re-shows the instruction, which costs a tap and can't
   // mislead; the alternative (persisting a payment claim the server never saw) could.
   const [paidMerchant, setPaidMerchant] = useState(false);
+  // Kit RR.nav_rest / RR.nav_cust: each en-route leg opens map-first; "I've arrived" flips to the
+  // working screen (counter / doorstep cards). LOCAL state keyed to the status value — a new leg
+  // re-opens the map, and the server status only moves at the counter/door confirms, so a mistaken
+  // arrival tap costs nothing (the map stays one tap away via the leg's own status not changing).
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   // BailSheet's reason field is UI-only here — dropDispatch takes no body (unlike a parcel's
   // CancelRequest.reason; see food-dispatch.service.ts's own docstring on why). Reused verbatim
   // rather than forked for a one-field difference; the reliability-strike warning it also renders is
@@ -670,9 +677,9 @@ export default function RiderFoodJob(): React.ReactElement {
   if (!order || order.status === "cancelled") {
     return (
       <Screen>
+        <AppBar onBack={() => router.replace("/rider")} />
         <Heading>No active job</Heading>
         <Sub>Accept an offer to start a delivery.</Sub>
-        <Button label="Back" onPress={() => router.replace("/rider")} />
       </Screen>
     );
   }
@@ -710,6 +717,29 @@ export default function RiderFoodJob(): React.ReactElement {
   const payUpfront = cashOrder && foodOrder.merchantCashRule === "pay_upfront" && foodOrder.merchantPaymentConfirmedAt == null;
   const needsPayMerchant = payUpfront && order.status === "en_route_pickup" && !paidMerchant;
   const restored = restoredJobId != null && restoredJobId === order.id && !restoreDismissed && isActive;
+
+  // Kit RR.nav_rest ("R2·1 — navigate to the restaurant") / RR.nav_cust ("R3·1 — ride to the
+  // customer"): the two en-route legs open as full-bleed map-first screens. Arrival (a local tap,
+  // never a server transition) returns to the working screen below.
+  if ((order.status === "en_route_pickup" || order.status === "en_route_dropoff") && arrivedAt !== order.status) {
+    const toRestaurant = order.status === "en_route_pickup";
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <TestBuildBanner />
+        <FoodNavLeg
+          leg={toRestaurant ? "restaurant" : "customer"}
+          order={order}
+          riderPoint={riderPoint}
+          paymentMethod={cashOrder ? "cash" : "wallet"}
+          collectAmount={!toRestaurant && cashOrder ? (foodOrder.cashHandshakeAmount ?? total) : null}
+          arrivedLabel={toRestaurant ? "I've arrived at the restaurant" : "I'm at the door"}
+          onArrived={() => setArrivedAt(order.status)}
+        >
+          {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
+        </FoodNavLeg>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <Screen>

@@ -6,6 +6,7 @@ import { QtyStepper } from "../home/QtyStepper";
 import { formatMoney } from "../../logic/money";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { Button } from "../index";
+import { Money } from "../Money";
 import { BottomSheet } from "../BottomSheet";
 import { FoodThumb } from "./FoodThumb";
 import { NoteField } from "./NoteField";
@@ -60,7 +61,7 @@ export function ItemSheet({
                   {dish.description ? (
                     <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 3, lineHeight: 17 }}>{dish.description}</Text>
                   ) : null}
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink, marginTop: 6 }}>{formatMoney(dish.priceUsd)}</Text>
+                  <Money v={dish.priceUsd} size={15} style={{ marginTop: 6 }} />
                 </View>
               </View>
               <NoteField label="NOTE FOR THE KITCHEN" value={note} onChangeText={setNote} placeholder="No chilli, please" maxLength={200} />
