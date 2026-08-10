@@ -5,6 +5,7 @@ import type { MerchantOrderResponse } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { formatMoney } from "../../lib/money-input";
 import { isNoRiderHold, isRiderSecured, isSearchingForRider } from "../../lib/order-groups";
+import { Icon } from "../icons";
 import { useNow } from "../../lib/use-now";
 import { PaymentConfirmSheet, RefundSheet } from "./PaymentConfirmSheet";
 import { PayTag } from "./PayTag";
@@ -201,19 +202,73 @@ function RefundAction({
   );
 }
 
-/** D-06/D-08: what to expect when the rider is at the counter — informational only. The actual
- *  hand-off mechanic is the rider entering the pickup code (N-16); CASH money never needs a merchant
- *  button here because collect-and-return opens the debt automatically at that moment (R-01) and
- *  pay-me-upfront settles in the rider's hand with nothing left to confirm digitally (C4 scope cut). */
+/** D-06/D-08: what to expect when the rider is at the counter. The `collect_and_return` rule is
+ *  informational (the debt opens automatically when the rider enters the pickup code, R-01). The
+ *  `pay_upfront` rule is NOT just a note — the rider hands physical cash across the counter — so it
+ *  gets the kit's count-and-acknowledge hero (`CashPickupHero`) that gates the code reveal, not a
+ *  caption. This note therefore renders for `collect_and_return` only. */
 function CashRuleNote({ order }: { order: MerchantOrderResponse }) {
-  if (order.paymentMethod !== "cash") return null;
+  if (order.paymentMethod !== "cash" || order.merchantCashRule === "pay_upfront") return null;
   const amount = Number(order.merchantGoodsTotal ?? 0);
-  const upfront = order.merchantCashRule === "pay_upfront";
   return (
     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", borderRadius: 10, padding: "8px 10px" }}>
-      {upfront
-        ? `Rider pays you $${formatMoney(amount)} cash before you hand over the food.`
-        : `Release unpaid — the rider owes you $${formatMoney(amount)} back after the drop.`}
+      {`Release unpaid — the rider owes you $${formatMoney(amount)} back after the drop.`}
+    </div>
+  );
+}
+
+/** M3·1 `pickup_cash` — the kit's count-and-acknowledge hero for a pay-upfront CASH order: the rider
+ *  hands physical cash across the counter, so "the number is the screen; confirming means
+ *  acknowledging it" (r-merchant.jsx:606-623). The ticked box gates the pickup-code reveal below —
+ *  that reveal is the release mechanic, so an un-counted order literally cannot be handed over. The
+ *  escape is a danger-ink instruction rather than a link: there is no short-cash endpoint, and the
+ *  gate itself (don't tick → code stays hidden → food not released) is the real enforcement. */
+function CashPickupHero({ amount, counted, onToggle }: { amount: number; counted: boolean; onToggle: () => void }) {
+  const amountText = formatMoney(amount);
+  return (
+    <div style={{ textAlign: "center", padding: "6px 2px" }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--muted)", letterSpacing: ".04em" }}>COUNT WHAT THE RIDER HANDS YOU</div>
+      <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: "-.02em", lineHeight: 1.05, margin: "4px 0 2px", fontVariantNumeric: "tabular-nums" }}>${amountText}</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4, marginBottom: 12 }}>
+        Food only — not the delivery fee, which the customer pays the rider at the door.
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={counted}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          border: `2px solid ${counted ? "var(--accent)" : "var(--line)"}`,
+          background: counted ? "var(--accent-wash)" : "#fff",
+          borderRadius: 12,
+          cursor: "pointer",
+          textAlign: "left",
+          width: "100%",
+        }}
+      >
+        <span
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 7,
+            border: `2px solid ${counted ? "var(--accent)" : "var(--line)"}`,
+            background: counted ? "var(--accent)" : "#fff",
+            display: "grid",
+            placeItems: "center",
+            flexShrink: 0,
+          }}
+        >
+          {counted && <Icon name="check" size={15} color="#fff" />}
+        </span>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>I counted ${amountText} in my hand</span>
+      </button>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+        Short or no cash?{" "}
+        <span style={{ color: "var(--danger-ink)", fontWeight: 700 }}>Don&apos;t tick the box — hold the food and don&apos;t show the code.</span>
+      </div>
     </div>
   );
 }
@@ -253,6 +308,9 @@ function OrderCardImpl({
   const items = order.items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
   const canRefund = order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
   const [showNoShow, setShowNoShow] = useState(false);
+  // M3·1: a pay-upfront CASH order needs the cash counted before the code (= the food) is released.
+  const payUpfrontCash = order.paymentMethod === "cash" && order.merchantCashRule === "pay_upfront";
+  const [cashCounted, setCashCounted] = useState(false);
 
   // LC-D03: mark-ready and pickup-code reveal each own per-order busy+error state instead of
   // firing as a bare `void` promise that swallows a network failure silently.
@@ -373,13 +431,18 @@ function OrderCardImpl({
                 </div>
               ) : (
                 <>
+                  {/* Pay-upfront CASH: count-and-acknowledge the cash BEFORE the reveal (= releasing the
+                      food). The reveal stays disabled until the box is ticked. */}
+                  {payUpfrontCash && (
+                    <CashPickupHero amount={Number(order.merchantGoodsTotal ?? 0)} counted={cashCounted} onToggle={() => setCashCounted((v) => !v)} />
+                  )}
                   <button
                     type="button"
                     onClick={() => void handleRevealClick()}
-                    disabled={disabled || revealAction.busy}
-                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || revealAction.busy) }}
+                    disabled={disabled || revealAction.busy || (payUpfrontCash && !cashCounted)}
+                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "var(--accent-wash)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", ...disabledStyle(disabled || revealAction.busy || (payUpfrontCash && !cashCounted)) }}
                   >
-                    {revealAction.busy ? "Loading…" : "Show pickup code"}
+                    {revealAction.busy ? "Loading…" : payUpfrontCash ? "Show pickup code · release the food" : "Show pickup code"}
                   </button>
                   {revealAction.error && <div style={{ fontSize: 12, color: "var(--danger-ink)", fontWeight: 700 }}>{revealAction.error}</div>}
                 </>

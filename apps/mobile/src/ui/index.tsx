@@ -417,14 +417,16 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
     },
   },
   rider: {
+    // Kit `PARCEL_STEPS` (rider-one-app.jsx:181), positional per the status order — the kit's string
+    // wins (2026-08-05 visual-audit §9). `picked_up`/`delivered` already matched; the other five align.
     parcel: {
-      assigned: "You're assigned",
-      confirmed: "Details confirmed",
-      en_route_pickup: "Heading to pickup",
+      assigned: "Job accepted",
+      confirmed: "Items & note confirmed",
+      en_route_pickup: "At pickup",
       picked_up: "Parcel collected",
-      en_route_dropoff: "Heading to drop-off",
+      en_route_dropoff: "On the way",
       delivered: "Delivered",
-      completed: "Completed — you're free",
+      completed: "Fare in hand",
     },
     food: {
       assigned: "Job accepted",

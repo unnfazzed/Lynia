@@ -179,13 +179,16 @@ export default function FoodOrderScreen(): React.ReactElement {
   // R6·b6 (rider dropped): `food-dispatch.service.ts:dropDispatch` (D-33) puts a SECURED food order
   // straight back to `requested` / `merchantPhase: "ready_for_pickup"` with `riderId` cleared — byte
   // for byte the same shape as an order that has never had a rider at all. What tells them apart is
-  // that we SAW one, so latch it. Session-scoped on purpose: a cold start after the drop falls back to
-  // the ordinary "finding a rider" screen — less specific, never wrong (the snapshot store this screen
-  // persists carries status/merchantPhase only, and it isn't this lane's to change).
+  // that we SAW one, so latch it — from the live `riderId`, OR from the restart snapshot for THIS
+  // order, so a cold start after the drop still shows the specific rider-dropped screen rather than a
+  // generic "finding a rider". The latch only ever goes true (never back to false).
   const [sawRider, setSawRider] = useState(false);
   useEffect(() => {
     if (order?.riderId != null) setSawRider(true);
   }, [order?.riderId]);
+  useEffect(() => {
+    if (warmSnapshot?.orderId === orderId && warmSnapshot.sawRider) setSawRider(true);
+  }, [warmSnapshot, orderId]);
   const riderDropped = sawRider && order != null && order.riderId == null && order.merchantPhase === "ready_for_pickup";
 
   // The drop also clears `otpHash` and resets `deliveryOtpAttempts` server-side, so a delivery code
@@ -311,13 +314,15 @@ export default function FoodOrderScreen(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- qc is stable; trackQ.data read fresh each run.
   }, [trackQ.data, pendingRating]);
 
-  // Restart survival (RESTAURANTS-DECISIONS.md §3): remember this order's id/status so a killed-and-
-  // relaunched app can warm-paint it; cleared once the order reaches a terminal cancelled state.
+  // Restart survival (RESTAURANTS-DECISIONS.md §3): remember this order's id/status + the sawRider
+  // latch so a killed-and-relaunched app can warm-paint it (and still know a rider had been secured);
+  // cleared once the order reaches a terminal cancelled state. `sawRider` is in the deps so the
+  // moment the latch flips true the snapshot is re-written, before any drop can strip the live signal.
   useEffect(() => {
     if (!order) return;
     if (order.status === "cancelled") void clearFoodOrderSnapshot();
-    else void saveFoodOrderSnapshot(order.id, order.status, order.merchantPhase);
-  }, [order]);
+    else void saveFoodOrderSnapshot(order.id, order.status, order.merchantPhase, sawRider);
+  }, [order, sawRider]);
 
   if (isLoading && !order) {
     return (

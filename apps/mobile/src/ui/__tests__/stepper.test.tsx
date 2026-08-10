@@ -16,8 +16,8 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
   it("defaults to the parcel rider labels when jobType is omitted", () => {
     const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" />);
     const text = textOf(tree);
-    expect(text).toContain("You're assigned");
-    expect(text).toContain("Details confirmed");
+    expect(text).toContain("Job accepted");
+    expect(text).toContain("Items & note confirmed");
     expect(text).toContain("Parcel collected");
   });
 

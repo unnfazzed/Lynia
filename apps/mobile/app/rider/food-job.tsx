@@ -44,7 +44,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { PickupCodeCard } from "../../src/ui/food/PickupCodeCard";
 import { RiderCashHandshakeCard } from "../../src/ui/food/RiderCashHandshakeCard";
 import { UnreachableCustomerCard } from "../../src/ui/food/UnreachableCustomerCard";
-import { GetHelpControl, SosControl } from "../../src/ui/safety";
+import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 
 /**
  * D5 — the rider's active FOOD job: accept → navigate → N-16 pickup code → collect → navigate →
@@ -529,6 +529,8 @@ export default function RiderFoodJob(): React.ReactElement {
             )}
           </Card>
           <GetHelpControl orderId={deliveredFood.orderId} />
+          {/* Report/block after the trip (rider → customer), same as the parcel delivered terminal. */}
+          <ReportControl orderId={deliveredFood.orderId} counterpartyNoun="customer" />
           <Button
             label={cashCollect && stillOwed ? "Cash not returned yet — leave anyway" : "Back to board"}
             variant={cashCollect && stillOwed ? "ghost" : "primary"}
@@ -581,6 +583,8 @@ export default function RiderFoodJob(): React.ReactElement {
           />
 
           <GetHelpControl orderId={undeliveredFood.orderId} />
+          {/* A no-show / refusal is exactly when a rider needs to report or block the customer. */}
+          <ReportControl orderId={undeliveredFood.orderId} counterpartyNoun="customer" />
           <Button
             label={returned ? "Back to board" : "Back to board — I'll return the food"}
             variant={returned ? "primary" : "ghost"}
@@ -634,6 +638,8 @@ export default function RiderFoodJob(): React.ReactElement {
             ) : null}
           </Card>
           <GetHelpControl orderId={order.id} />
+          {/* A cancelled-mid-job hand-back is a report/block moment too — mirror the other terminals. */}
+          <ReportControl orderId={order.id} counterpartyNoun="customer" />
           <Button
             label="Back to board"
             onPress={() => {
