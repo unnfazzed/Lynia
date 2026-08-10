@@ -548,7 +548,7 @@ function App() {
       />
     );
     if (view === "home") {
-      /* 2a launcher home — one shared home for Express + Food (the 2a home merge — usage rules in components/home/home.prompt.md).
+      /* 2a launcher home — one shared home for Express + Food (HOME-2A-MERGE-PLAN Phase 1).
          Send tile → the map composer (view "send"); Food tile is the vertical's entry (static in
          this kit — the Restaurants screens live in explorations/restaurants/). */
       const liveOrder = order && order.status !== "completed" && order.status !== "cancelled" ? order : null;

@@ -41,7 +41,7 @@ How Lynia writes copy:
 
 ## VISUAL FOUNDATIONS
 
-- **Color.** A light, near-monochrome utility base — ink `#14181B`, muted `#5B6670`, page white, surface `#F6F7F8`, hairline `#E2E6EA` — with the **bright Grab green `#00B14F`** for fills and big graphics only (CTA buttons use the sunlight-tuned `--cta-fill #00812F`, pressed `#006B27`), the **dark text-green `#006630`** (≈7:1 on white) for any green *text or small icons*, and a **mint wash `#E9F8EF`** for selected states. One sparing gold `#F2B705` strictly for the 'recommended' offer marker. Danger `#C0392B`. `onAccent` white is the single inverse. **Never set text in `#00B14F`** — it fails contrast; that's what `--accent-text` is for. Dark mode is deliberately deferred.
+- **Color.** A light, near-monochrome utility base — ink `#14181B`, muted `#5B6670`, page white, surface `#F6F7F8`, hairline `#E2E6EA` — with the **bright Grab green `#00B14F`** for fills, CTAs and big graphics (pressed `#009D3B`), the **dark text-green `#006630`** (≈7:1 on white) for any green *text or small icons*, and a **mint wash `#E9F8EF`** for selected states. One sparing gold `#F2B705` strictly for the 'recommended' offer marker. Danger `#C0392B`. `onAccent` white is the single inverse. **Never set text in `#00B14F`** — it fails contrast; that's what `--accent-text` is for. Dark mode is deliberately deferred.
 - **Type.** **Inter** for everything — the same typeface Grab's app uses in-product (free/open source). Titles bold **700** with slight negative tracking; body 400/500; labels 600. **Grab-dense scale:** 24px screen titles, 18px card/empty-state titles, **14px body, 12px captions/labels**, 16px only for inputs and button labels. **Tabular numerals** on every fare, ETA, rating, timer and count.
 - **Spacing.** Strict **8pt scale**: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 - **Radius (Grab shape language).** Buttons are **full pills**; cards **16px**; inputs **12px**; chips/status pills full.
@@ -113,11 +113,11 @@ Files in `assets/brand/`: `lyniago-mark.svg` (master), `lyniago-mark-mono.svg` (
 - `SKILL.md` — Agent-Skill entry point.
 - `HANDOFF.md` — engineering handoff: structure, how to run, source-of-truth, repo-side tickets.
 - `COVERAGE.md` — screen-by-screen map of what's designed vs. out of scope.
+- `DESIGN-IMPROVEMENTS.md` — the gstack design-review response: findings → shipped changes → how Lynia out-crafts inDrive/GrabBike.
+- `ALIGNMENT-REVIEW.md` — design ↔ functionality alignment vs. the repo contracts (all P0/P1 resolved).
+- `ITEM-DESIGN-REVIEW.md` — the "what are you sending?" model decision (multi line-items: description + quantity).
 - `RESTAURANTS-DECISIONS.md` — the Restaurants vertical: numbers picked, design decisions, interaction notes, screen inventory, open questions.
-- `RIDER-ONE-APP-PLAN.md` — one rider app (Send + Food): the model and the seven decisions taken.
-- `RIDER-JOURNEY-AUDIT.md` / `CUSTOMER-JOURNEY-AUDIT.md` — the two journey gap audits (R-/F-/A- IDs; live status in `BACKLOG-PLAN.md`).
-- `INTERFACE-AUDIT.md` — customer ⇄ rider seam audit + resolution log (D1–D12).
-- `BACKLOG-PLAN.md` — the remaining backlog sequenced into execution waves.
+- `HOME-2A-MERGE-PLAN.md` — the phased plan merging the 2a customer home across the app, journeys, rider and merchant surfaces.
 - `explorations/restaurants/` — the Restaurants vertical itself: `Restaurants Vertical.html` (80 static screens across customer / merchant tablet / rider) and `Restaurants Journey Maps.html` (three actor flows with every exception branch).
 
 **Components** (React, consumed via `window.LyniaDesignSystem_94c56a`):
@@ -133,11 +133,11 @@ These mirror `apps/mobile/src/ui/index.tsx` — the source's real primitive inve
 
 ### Intentional additions
 - **Icon** — added when the system moved from emoji to Lucide iconography; a thin wrapper that renders Lucide line icons from the self-hosted subset.
-- **OfflineBanner** — added per the ship review's "pre-auth loading discipline / global offline banner" follow-up (see `docs/DESIGN-REVIEW.md`).
-- **Home set (BrandHeader, LiveOrderCard, ReorderRail, RestaurantCard)** — promoted from the customer-home exploration (option 2a, Uber Eats/DoorDash/Glovo-informed); usage rules + regression checklist in `components/home/home.prompt.md`.
+- **OfflineBanner** — added per the ship review's "pre-auth loading discipline / global offline banner" follow-up (see `DESIGN-IMPROVEMENTS.md`).
+- **Home set (BrandHeader, LiveOrderCard, ReorderRail, RestaurantCard)** — promoted from the customer-home exploration (option 2a, Uber Eats/DoorDash/Glovo-informed); `HOME-2A-MERGE-PLAN.md` tracks the screen-by-screen merge.
 
 ## Caveats
 
 - The **live map** is a cosmetic placeholder in the kits — the real app uses Google Maps Platform (native map, tap-to-pin, live rider tracking).
-- The logo is the **Paper Dove** in `assets/brand/` (full lockup ≥32px, silhouette below); the Fredoka wordmark is still font-rendered — outline it to vector for final production.
+- **No logo asset** exists; the wordmark + L monogram stand in. Provide a real mark to replace them.
 - The mobile kit **simulates** the offer stream and step advances with timers/buttons for demo purposes; the real flow is socket-driven.

@@ -1,0 +1,35 @@
+<!-- @dsCard group="Store assets" viewport="1400x900" name="Google Play — export lab" subtitle="Linear method (short label + gallery phone frame + light backdrop), built from the real designed screens; laid out at exact Play dimensions for 1:1 capture" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LyniaGo — Google Play export lab</title>
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<style>
+  html, body { margin: 0; background: #d9dde0; }
+  body { font-family: var(--font-sans); color: var(--ink); }
+  * { -webkit-tap-highlight-color: transparent; }
+  #root { min-height: 100vh; }
+  .leaflet-control-attribution { display: none; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="../../assets/lynia-icons.js?v=38"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="../../ui_kits/mobile/kit-parts.js"></script>
+<script type="text/babel" src="../../ui_kits/support/parts.js"></script>
+<script type="text/babel" src="../journey/screens.jsx"></script>
+<script type="text/babel" src="../journey/screens-safety.jsx"></script>
+<script src="../restaurants/r-gallery-data.js"></script>
+<script type="text/babel" src="../restaurants/r-parts.jsx"></script>
+<script type="text/babel" src="../restaurants/r-customer-a.jsx"></script>
+<script type="text/babel" src="play-export.jsx"></script>
+</body>
+</html>

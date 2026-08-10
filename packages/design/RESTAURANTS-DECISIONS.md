@@ -429,21 +429,3 @@ clock* (release action, prep-starts-at-confirm note).
    confirm costs the rider money, not the merchant.)
 4. Is the 2:00 handshake window (N-19) right for gate/complex deliveries where the customer walks
    away after paying?
-
----
-
-## Appendix — rationale defended under review (absorbed from the retired RESTAURANTS-UX-REVIEW)
-
-The July 2026 adversarial UX review (28 findings, all fixed and folded into the D-/N- numbers above)
-closed with four positions worth restating because they are deliberate trade-offs, not oversights:
-
-- **Pay-after-accept, not pay-first.** Slower than every competitor's checkout, and correct here:
-  LyniaGo never holds funds, so taking money before a kitchen has agreed to cook would create a
-  refund queue nobody can service.
-- **"Don't start cooking yet" as a full screen.** Competitors fire the kitchen on acceptance because
-  they have dispatch density. We don't, so the cost of a wrong signal is wasted food — the loud
-  amber hold is worth the extra step.
-- **Code-only proof of delivery.** No photos, no signatures. Cheap phones, expensive data, and a
-  code the customer already understands from Express.
-- **Services as tiles, not tabs.** Costs one tap versus a tab; buys a navigation that survives
-  Pharmacies and everything after it.

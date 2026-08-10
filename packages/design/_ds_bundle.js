@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"LyniaDesignSystem_94c56a","components":[{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"Money","sourcePath":"components/core/Money.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"OfflineBanner","sourcePath":"components/feedback/OfflineBanner.jsx"},{"name":"Skeleton","sourcePath":"components/feedback/Skeleton.jsx"},{"name":"SkeletonCard","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SkeletonList","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SystemState","sourcePath":"components/feedback/SystemState.jsx"},{"name":"Field","sourcePath":"components/forms/Field.jsx"},{"name":"AppHome","sourcePath":"components/home/AppHome.jsx"},{"name":"BrandHeader","sourcePath":"components/home/BrandHeader.jsx"},{"name":"LiveOrderCard","sourcePath":"components/home/LiveOrderCard.jsx"},{"name":"ReorderRail","sourcePath":"components/home/ReorderRail.jsx"},{"name":"RestaurantCard","sourcePath":"components/home/RestaurantCard.jsx"},{"name":"SERVICES","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"ServiceTiles","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"RESTAURANT_STEPS","sourcePath":"components/journey/Stepper.jsx"},{"name":"Stepper","sourcePath":"components/journey/Stepper.jsx"},{"name":"AppBar","sourcePath":"components/shell/AppBar.jsx"},{"name":"AppScreen","sourcePath":"components/shell/AppScreen.jsx"},{"name":"StatusBar","sourcePath":"components/shell/StatusBar.jsx"},{"name":"APP_TABS","sourcePath":"components/shell/TabBar.jsx"},{"name":"TabBar","sourcePath":"components/shell/TabBar.jsx"},{"name":"Heading","sourcePath":"components/typography/Heading.jsx"},{"name":"Label","sourcePath":"components/typography/Label.jsx"},{"name":"Sub","sourcePath":"components/typography/Sub.jsx"}],"sourceHashes":{"assets/brand/doc-page.js":"7feb7a4009b0","assets/image-slot.js":"fff26d081c8d","assets/lynia-icons.js":"6a3e1ac668ab","components/core/Button.jsx":"9e208204ffc3","components/core/Card.jsx":"66a8dcfefd5a","components/core/Icon.jsx":"8dbdfbb2d1ae","components/core/Money.jsx":"7f9753b1ccae","components/core/StatusPill.jsx":"01dada6a8e01","components/feedback/EmptyState.jsx":"d45ffee74d6a","components/feedback/OfflineBanner.jsx":"a043da4e36dd","components/feedback/Skeleton.jsx":"93e10984efec","components/feedback/SkeletonList.jsx":"e4d7860ab93c","components/feedback/SystemState.jsx":"7e37b87c8291","components/forms/Field.jsx":"4f36ea86faab","components/home/AppHome.jsx":"190d94978f7b","components/home/BrandHeader.jsx":"ecebc6e33244","components/home/LiveOrderCard.jsx":"b556ddf823e3","components/home/ReorderRail.jsx":"e91d9109e1f6","components/home/RestaurantCard.jsx":"ad955cfb8110","components/home/ServiceTiles.jsx":"e81fa8c0ca72","components/journey/Stepper.jsx":"4fd7dca7cd8c","components/shell/AppBar.jsx":"02732aab7916","components/shell/AppScreen.jsx":"fc71db556211","components/shell/StatusBar.jsx":"6fd92cb7fc2a","components/shell/TabBar.jsx":"68557e322e6d","components/typography/Heading.jsx":"1ea3a190680c","components/typography/Label.jsx":"abe06bcbafa6","components/typography/Sub.jsx":"2212189f67d3","explorations/journey/gallery-map.js":"12e875630fcb","explorations/journey/gallery.jsx":"a1efa07a0996","explorations/journey/map.jsx":"b5e837fa151a","explorations/journey/rider-map.jsx":"b1678a303198","explorations/journey/rider-one-app.jsx":"7249015b54fe","explorations/journey/rider-screens-safety.jsx":"b225a773d96f","explorations/journey/rider-screens-wallet.jsx":"999ab63dd6d7","explorations/journey/rider-screens.jsx":"daba2a490158","explorations/journey/screens-safety.jsx":"dbceb6b19168","explorations/journey/screens.jsx":"07578c369f34","explorations/restaurants/r-customer-a.jsx":"836b116be589","explorations/restaurants/r-customer-b.jsx":"93d2d414abfc","explorations/restaurants/r-gallery-data.js":"5fdc58afcad6","explorations/restaurants/r-gallery.jsx":"c7113958fd6a","explorations/restaurants/r-home-explore.jsx":"7980259e593c","explorations/restaurants/r-maps.jsx":"3ebde2c9aeb1","explorations/restaurants/r-merchant.jsx":"da44cbd2722b","explorations/restaurants/r-parts.jsx":"878d4a769943","explorations/restaurants/r-rider.jsx":"30a50a58ba1b","explorations/store/store.jsx":"8ddaa60df41f","handoff/design-tokens.ts":"8cb3917717c8","handoff/google-play/src/play-shot-parts.jsx":"23e5cd2628ca","handoff/google-play/src/tweaks-panel.jsx":"6591467622ed","ui_kits/admin/shell.js":"14476b705b8b","ui_kits/mobile/app.js":"d52f07db072a","ui_kits/mobile/kit-parts.js":"daa687bca144","ui_kits/support/parts.js":"a940ef2c5b36","ui_kits/support/screens.js":"fba807fd3daf"},"inlinedExternals":[],"unexposedExports":[{"name":"color","sourcePath":"handoff/design-tokens.ts"},{"name":"font","sourcePath":"handoff/design-tokens.ts"},{"name":"leading","sourcePath":"handoff/design-tokens.ts"},{"name":"radius","sourcePath":"handoff/design-tokens.ts"},{"name":"shadow","sourcePath":"handoff/design-tokens.ts"},{"name":"space","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetMin","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetPrimary","sourcePath":"handoff/design-tokens.ts"}]} */
+/* @ds-bundle: {"format":4,"namespace":"LyniaDesignSystem_94c56a","components":[{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"Money","sourcePath":"components/core/Money.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"OfflineBanner","sourcePath":"components/feedback/OfflineBanner.jsx"},{"name":"Skeleton","sourcePath":"components/feedback/Skeleton.jsx"},{"name":"SkeletonCard","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SkeletonList","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SystemState","sourcePath":"components/feedback/SystemState.jsx"},{"name":"Field","sourcePath":"components/forms/Field.jsx"},{"name":"AppHome","sourcePath":"components/home/AppHome.jsx"},{"name":"BrandHeader","sourcePath":"components/home/BrandHeader.jsx"},{"name":"LiveOrderCard","sourcePath":"components/home/LiveOrderCard.jsx"},{"name":"ReorderRail","sourcePath":"components/home/ReorderRail.jsx"},{"name":"RestaurantCard","sourcePath":"components/home/RestaurantCard.jsx"},{"name":"SERVICES","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"ServiceTiles","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"RESTAURANT_STEPS","sourcePath":"components/journey/Stepper.jsx"},{"name":"Stepper","sourcePath":"components/journey/Stepper.jsx"},{"name":"AppBar","sourcePath":"components/shell/AppBar.jsx"},{"name":"AppScreen","sourcePath":"components/shell/AppScreen.jsx"},{"name":"StatusBar","sourcePath":"components/shell/StatusBar.jsx"},{"name":"APP_TABS","sourcePath":"components/shell/TabBar.jsx"},{"name":"TabBar","sourcePath":"components/shell/TabBar.jsx"},{"name":"Heading","sourcePath":"components/typography/Heading.jsx"},{"name":"Label","sourcePath":"components/typography/Label.jsx"},{"name":"Sub","sourcePath":"components/typography/Sub.jsx"}],"sourceHashes":{"assets/brand/doc-page.js":"7feb7a4009b0","assets/image-slot.js":"fff26d081c8d","assets/lynia-icons.js":"6a3e1ac668ab","components/core/Button.jsx":"9e208204ffc3","components/core/Card.jsx":"66a8dcfefd5a","components/core/Icon.jsx":"8dbdfbb2d1ae","components/core/Money.jsx":"7f9753b1ccae","components/core/StatusPill.jsx":"01dada6a8e01","components/feedback/EmptyState.jsx":"d45ffee74d6a","components/feedback/OfflineBanner.jsx":"a043da4e36dd","components/feedback/Skeleton.jsx":"93e10984efec","components/feedback/SkeletonList.jsx":"e4d7860ab93c","components/feedback/SystemState.jsx":"7e37b87c8291","components/forms/Field.jsx":"4f36ea86faab","components/home/AppHome.jsx":"190d94978f7b","components/home/BrandHeader.jsx":"ecebc6e33244","components/home/LiveOrderCard.jsx":"b556ddf823e3","components/home/ReorderRail.jsx":"e91d9109e1f6","components/home/RestaurantCard.jsx":"ad955cfb8110","components/home/ServiceTiles.jsx":"e81fa8c0ca72","components/journey/Stepper.jsx":"4fd7dca7cd8c","components/shell/AppBar.jsx":"02732aab7916","components/shell/AppScreen.jsx":"fc71db556211","components/shell/StatusBar.jsx":"6fd92cb7fc2a","components/shell/TabBar.jsx":"68557e322e6d","components/typography/Heading.jsx":"1ea3a190680c","components/typography/Label.jsx":"abe06bcbafa6","components/typography/Sub.jsx":"2212189f67d3","explorations/journey/gallery-map.js":"12e875630fcb","explorations/journey/gallery.jsx":"a1efa07a0996","explorations/journey/map.jsx":"b5e837fa151a","explorations/journey/rider-map.jsx":"b1678a303198","explorations/journey/rider-one-app.jsx":"7249015b54fe","explorations/journey/rider-screens-safety.jsx":"b225a773d96f","explorations/journey/rider-screens-wallet.jsx":"999ab63dd6d7","explorations/journey/rider-screens.jsx":"daba2a490158","explorations/journey/screens-safety.jsx":"dbceb6b19168","explorations/journey/screens.jsx":"07578c369f34","explorations/restaurants/r-customer-a.jsx":"836b116be589","explorations/restaurants/r-customer-b.jsx":"93d2d414abfc","explorations/restaurants/r-gallery-data.js":"5fdc58afcad6","explorations/restaurants/r-gallery.jsx":"c7113958fd6a","explorations/restaurants/r-maps.jsx":"3ebde2c9aeb1","explorations/restaurants/r-merchant.jsx":"da44cbd2722b","explorations/restaurants/r-parts.jsx":"878d4a769943","explorations/restaurants/r-rider.jsx":"30a50a58ba1b","explorations/store/play-export.jsx":"fee94fa41557","explorations/store/store.jsx":"8ddaa60df41f","handoff/design-tokens.ts":"8cb3917717c8","handoff/google-play/src/play-shot-parts.jsx":"23e5cd2628ca","handoff/google-play/src/tweaks-panel.jsx":"6591467622ed","ui_kits/admin/shell.js":"14476b705b8b","ui_kits/mobile/app.js":"d52f07db072a","ui_kits/mobile/kit-parts.js":"daa687bca144","ui_kits/support/parts.js":"a940ef2c5b36","ui_kits/support/screens.js":"fba807fd3daf"},"inlinedExternals":[],"unexposedExports":[{"name":"color","sourcePath":"handoff/design-tokens.ts"},{"name":"font","sourcePath":"handoff/design-tokens.ts"},{"name":"leading","sourcePath":"handoff/design-tokens.ts"},{"name":"radius","sourcePath":"handoff/design-tokens.ts"},{"name":"shadow","sourcePath":"handoff/design-tokens.ts"},{"name":"space","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetMin","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetPrimary","sourcePath":"handoff/design-tokens.ts"}]} */
 
 (() => {
 
@@ -20933,1358 +20933,6 @@ function App() {
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 })(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/restaurants/r-gallery.jsx", error: String((e && e.message) || e) }); }
 
-// explorations/restaurants/r-home-explore.jsx
-try { (() => {
-/* LyniaGo — customer home explorations: three directions for a richer root home.
-   Photos are now allowed for Food (lazy-load, compressed); every photo is a drop-slot the founder
-   can fill with real dish/kitchen shots. No promos anywhere — richness comes from real content. */
-
-const P = window.RParts;
-const {
-  Icon,
-  Card,
-  Money,
-  TAB,
-  StatusBar,
-  TabBar,
-  HomeHead,
-  ServiceTiles,
-  REST,
-  MENU,
-  nop
-} = P;
-const OPEN = REST.filter(r => r.open);
-const MORE = [{
-  id: "pitstop",
-  name: "Pit Stop Braai",
-  kind: "Braai · Wors rolls",
-  km: "2.8",
-  eta: "30–40",
-  fee: "2.00",
-  rating: "4.6",
-  n: 71,
-  open: true
-}, {
-  id: "amais",
-  name: "Amai's Pot",
-  kind: "Stews · Rice",
-  km: "1.8",
-  eta: "25–35",
-  fee: "1.50",
-  rating: "4.9",
-  n: 33,
-  open: true
-}];
-const CUISINES = ["Sadza & stews", "Chicken", "Braai", "Breakfast", "Drinks"];
-const REORDER = [{
-  id: "huku",
-  name: "Half roast huku",
-  price: "6.00",
-  from: "Huku House"
-}, {
-  id: "sadza",
-  name: "Sadza & beef stew",
-  price: "4.50",
-  from: "Sadza Republic"
-}, {
-  id: "mazoe",
-  name: "Mazoe crush 500ml",
-  price: "1.50",
-  from: "Sadza Republic"
-}];
-
-/* Photo drop-slot in a sized box. Bottom-left stays clear (credit overlay corner). */
-function Slot({
-  id,
-  label,
-  h,
-  w = "100%",
-  shape = "rect",
-  style
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      width: w,
-      height: h,
-      background: "var(--surface)",
-      overflow: "hidden",
-      flexShrink: 0,
-      borderRadius: shape === "circle" ? "50%" : 0,
-      ...style
-    }
-  }, /*#__PURE__*/React.createElement("image-slot", {
-    id: id,
-    shape: shape,
-    placeholder: label,
-    style: {
-      position: "absolute",
-      inset: 0,
-      width: "100%",
-      height: "100%"
-    }
-  }));
-}
-
-/* Tall phone: full scroll length visible, dashed fold marker at 744px, tab bar pinned at the end. */
-function Phone({
-  children,
-  dark,
-  topBg
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      width: 360,
-      background: "var(--bg)",
-      borderRadius: 24,
-      boxShadow: "0 16px 48px rgba(20,24,27,.16)",
-      overflow: "hidden",
-      fontFamily: "var(--font-sans)",
-      color: "var(--ink)"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: topBg ? {
-      background: topBg
-    } : null
-  }, /*#__PURE__*/React.createElement(StatusBar, {
-    dark: dark
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      paddingBottom: 70
-    }
-  }, children), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      top: 744,
-      borderTop: "1.5px dashed rgba(20,24,27,.3)",
-      zIndex: 30,
-      pointerEvents: "none"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 8,
-      top: 3,
-      fontSize: 9.5,
-      fontFamily: "ui-monospace, monospace",
-      color: "rgba(20,24,27,.5)",
-      background: "rgba(255,255,255,.85)",
-      padding: "1px 6px",
-      borderRadius: 4
-    }
-  }, "fold \xB7 360\xD7744")), /*#__PURE__*/React.createElement(TabBar, {
-    active: "home"
-  }));
-}
-function H({
-  t,
-  sub,
-  action,
-  style
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "baseline",
-      gap: 8,
-      padding: "16px 16px 10px",
-      ...style
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 16,
-      fontWeight: 700
-    }
-  }, t), sub ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "var(--muted)",
-      marginTop: 1
-    }
-  }, sub) : null), action ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12.5,
-      fontWeight: 700,
-      color: "var(--accent-text)",
-      flexShrink: 0
-    }
-  }, action) : null);
-}
-const Rail = ({
-  children,
-  gap = 10
-}) => /*#__PURE__*/React.createElement("div", {
-  style: {
-    display: "flex",
-    gap,
-    padding: "0 16px",
-    overflow: "hidden"
-  }
-}, children);
-const Star = ({
-  r,
-  n
-}) => /*#__PURE__*/React.createElement("span", {
-  style: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 3,
-    fontSize: 12,
-    fontWeight: 700,
-    color: "var(--ink)",
-    ...TAB
-  }
-}, /*#__PURE__*/React.createElement("span", {
-  style: {
-    color: "var(--highlight)"
-  }
-}, "\u2605"), r, n ? /*#__PURE__*/React.createElement("span", {
-  style: {
-    color: "var(--muted)",
-    fontWeight: 400
-  }
-}, "(", n, ")") : null);
-
-/* ── 1a · Launcher, upgraded — D-01 untouched, richness added below the tiles ── */
-function LiveOrderCard() {
-  return /*#__PURE__*/React.createElement(Card, {
-    accent: true,
-    style: {
-      padding: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 11
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 42,
-      height: 42,
-      borderRadius: "50%",
-      background: "var(--accent-wash)",
-      display: "grid",
-      placeItems: "center",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "bike",
-    size: 20,
-    color: "var(--accent-text)"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13.5,
-      fontWeight: 700
-    }
-  }, "Rider on the way \xB7 ~6 min"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "var(--muted)",
-      marginTop: 1,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, "Half roast huku + 2 more \xB7 Sadza Republic"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 4,
-      marginTop: 6
-    }
-  }, [1, 1, 1, 1, 1, 0, 0].map((on, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    style: {
-      flex: 1,
-      height: 3,
-      borderRadius: 2,
-      background: on ? "var(--accent)" : "var(--line)"
-    }
-  })))), /*#__PURE__*/React.createElement(Icon, {
-    name: "chevron-right",
-    size: 18,
-    color: "var(--muted)",
-    style: {
-      flexShrink: 0
-    }
-  })));
-}
-function KitchenCard({
-  r,
-  pre
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 152,
-      borderRadius: 14,
-      background: "var(--bg)",
-      boxShadow: "var(--shadow-card)",
-      overflow: "hidden",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `${pre}-${r.id}`,
-    label: `photo — ${r.name}`,
-    h: 92
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "9px 11px 11px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13.5,
-      fontWeight: 700,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, r.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      marginTop: 3,
-      fontSize: 11.5,
-      color: "var(--muted)",
-      ...TAB
-    }
-  }, /*#__PURE__*/React.createElement(Star, {
-    r: r.rating
-  }), /*#__PURE__*/React.createElement("span", null, r.eta, " min")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: "var(--accent-text)",
-      marginTop: 3,
-      ...TAB
-    }
-  }, "$", r.fee, " delivery")));
-}
-function VarA() {
-  return /*#__PURE__*/React.createElement(Phone, null, /*#__PURE__*/React.createElement(HomeHead, null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "2px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(ServiceTiles, null)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(LiveOrderCard, null)), /*#__PURE__*/React.createElement(H, {
-    t: "Order again"
-  }), /*#__PURE__*/React.createElement(Rail, {
-    gap: 14
-  }, REORDER.map(d => /*#__PURE__*/React.createElement("div", {
-    key: d.id,
-    style: {
-      width: 84,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 6,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `hxa-d-${d.id}`,
-    label: "dish",
-    h: 62,
-    w: 62,
-    shape: "circle"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 600,
-      lineHeight: 1.25
-    }
-  }, d.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: "var(--muted)",
-      marginTop: 1,
-      ...TAB
-    }
-  }, "$", d.price))))), /*#__PURE__*/React.createElement(H, {
-    t: "Restaurants near you",
-    action: "See all"
-  }), /*#__PURE__*/React.createElement(Rail, null, [OPEN[0], MORE[1], OPEN[1], OPEN[2]].map(r => /*#__PURE__*/React.createElement(KitchenCard, {
-    key: r.id,
-    r: r,
-    pre: "hxa-r"
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 16
-    }
-  }));
-}
-
-/* ── 1b · Food-forward storefront — services compress to pills, photos lead ── */
-function ServicePills() {
-  const pill = (icon, label, soon) => /*#__PURE__*/React.createElement("span", {
-    key: label,
-    style: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 7,
-      border: "1px solid var(--line)",
-      borderRadius: 999,
-      padding: "9px 14px",
-      background: "var(--bg)",
-      opacity: soon ? .55 : 1
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: icon,
-    size: 16,
-    color: soon ? "var(--muted)" : "var(--accent-text)"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      fontWeight: 700,
-      color: soon ? "var(--muted)" : "var(--ink)"
-    }
-  }, label), soon ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10,
-      fontWeight: 700,
-      color: "var(--muted)",
-      background: "var(--surface)",
-      borderRadius: 999,
-      padding: "1px 6px"
-    }
-  }, "Soon") : null);
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      padding: "2px 16px 0"
-    }
-  }, pill("package", "Send"), pill("utensils", "Food"), pill("plus", "Pharmacy", true));
-}
-function BigCard({
-  r,
-  pre
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderRadius: 16,
-      background: "var(--bg)",
-      boxShadow: "var(--shadow-card)",
-      overflow: "hidden",
-      marginBottom: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `${pre}-${r.id}`,
-    label: `kitchen photo — ${r.name}`,
-    h: 148
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 10,
-      bottom: 10,
-      background: "var(--bg)",
-      borderRadius: 999,
-      padding: "5px 11px",
-      fontSize: 12,
-      fontWeight: 800,
-      boxShadow: "var(--shadow-card)",
-      ...TAB
-    }
-  }, r.eta, " min")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 13px 12px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      flex: 1,
-      fontSize: 15,
-      fontWeight: 700,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, r.name), /*#__PURE__*/React.createElement(Star, {
-    r: r.rating,
-    n: r.n
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: "var(--muted)",
-      marginTop: 2,
-      ...TAB
-    }
-  }, r.kind, " \xB7 ", r.km, " km \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--accent-text)",
-      fontWeight: 700
-    }
-  }, "$", r.fee, " delivery"))));
-}
-function VarB() {
-  return /*#__PURE__*/React.createElement(Phone, null, /*#__PURE__*/React.createElement(HomeHead, null), /*#__PURE__*/React.createElement(ServicePills, null), /*#__PURE__*/React.createElement(H, {
-    t: "What are you craving?"
-  }), /*#__PURE__*/React.createElement(Rail, {
-    gap: 14
-  }, CUISINES.map((c, i) => /*#__PURE__*/React.createElement("div", {
-    key: c,
-    style: {
-      width: 68,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 6,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `hxb-c-${i}`,
-    label: "food",
-    h: 62,
-    w: 62,
-    shape: "circle"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 600,
-      textAlign: "center",
-      lineHeight: 1.2
-    }
-  }, c)))), /*#__PURE__*/React.createElement(H, {
-    t: "Open now",
-    action: "See all"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "0 16px"
-    }
-  }, [OPEN[0], MORE[0], OPEN[2]].map(r => /*#__PURE__*/React.createElement(BigCard, {
-    key: r.id,
-    r: r,
-    pre: "hxb-r"
-  }))));
-}
-
-/* ── 1c · ETA-first grid — dense, honest about speed, closed kitchens sink ── */
-function GridCard({
-  r,
-  pre
-}) {
-  const closed = !r.open;
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderRadius: 14,
-      background: "var(--bg)",
-      boxShadow: "var(--shadow-card)",
-      overflow: "hidden",
-      opacity: closed ? .6 : 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `${pre}-${r.id}`,
-    label: `photo — ${r.name}`,
-    h: 96
-  }), closed ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 8,
-      top: 8,
-      fontSize: 10.5,
-      fontWeight: 700,
-      color: "var(--ink)",
-      background: "var(--bg)",
-      borderRadius: 999,
-      padding: "3px 8px",
-      boxShadow: "var(--shadow-card)"
-    }
-  }, r.note) : null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "8px 10px 10px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      fontWeight: 700,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, r.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      marginTop: 3,
-      fontSize: 11,
-      whiteSpace: "nowrap",
-      ...TAB
-    }
-  }, closed ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--muted)"
-    }
-  }, "Closed") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700
-    }
-  }, r.eta, " min"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--muted)"
-    }
-  }, "$", r.fee)), /*#__PURE__*/React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--muted)"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--highlight)"
-    }
-  }, "\u2605"), r.rating))));
-}
-function VarC() {
-  const grid = [OPEN[0], MORE[1], OPEN[1], MORE[0], OPEN[2], REST[3]];
-  return /*#__PURE__*/React.createElement(Phone, null, /*#__PURE__*/React.createElement(HomeHead, null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "2px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(ServiceTiles, null)), /*#__PURE__*/React.createElement(H, {
-    t: "Fastest to you",
-    sub: "Sorted by delivery time \u2014 closed kitchens last",
-    action: "See all"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 10,
-      padding: "0 16px 16px"
-    }
-  }, grid.map(r => /*#__PURE__*/React.createElement(GridCard, {
-    key: r.id,
-    r: r,
-    pre: "hxc-r"
-  }))));
-}
-
-/* ── 2a · Launcher, upgraded — POP: Grab-style green brand header, floating search, bigger photo cards ── */
-function GreenHead() {
-  const circ = icon => /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 36,
-      height: 36,
-      borderRadius: "50%",
-      background: "var(--accent-700, #009D3B)",
-      display: "grid",
-      placeItems: "center",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: icon,
-    size: 17,
-    color: "#fff"
-  }));
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "var(--accent)",
-      padding: "6px 16px 38px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: "rgba(255,255,255,.85)",
-      letterSpacing: ".05em"
-    }
-  }, "DELIVER TO"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 16,
-      fontWeight: 700,
-      color: "#fff",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, "12 Lanark Rd, Belgravia"), /*#__PURE__*/React.createElement(Icon, {
-    name: "chevron-down",
-    size: 15,
-    color: "#fff"
-  }))), circ("bell"), circ("user")));
-}
-function PopKitchenCard({
-  r,
-  pre
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 172,
-      borderRadius: 16,
-      background: "var(--bg)",
-      boxShadow: "var(--shadow-card)",
-      overflow: "hidden",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `${pre}-${r.id}`,
-    label: `photo — ${r.name}`,
-    h: 104
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 8,
-      bottom: 8,
-      background: "var(--bg)",
-      borderRadius: 999,
-      padding: "4px 10px",
-      fontSize: 11.5,
-      fontWeight: 800,
-      boxShadow: "var(--shadow-card)",
-      ...TAB
-    }
-  }, r.eta, " min")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "9px 12px 12px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 14,
-      fontWeight: 700,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, r.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      marginTop: 3,
-      fontSize: 11.5,
-      whiteSpace: "nowrap",
-      ...TAB
-    }
-  }, /*#__PURE__*/React.createElement(Star, {
-    r: r.rating
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      color: "var(--accent-text)"
-    }
-  }, "$", r.fee, " delivery"))));
-}
-function VarPop() {
-  return /*#__PURE__*/React.createElement(Phone, {
-    dark: true,
-    topBg: "var(--accent)"
-  }, /*#__PURE__*/React.createElement(GreenHead, null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      margin: "-26px 16px 0",
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      background: "var(--bg)",
-      borderRadius: "var(--radius-input)",
-      padding: "12px 13px",
-      boxShadow: "var(--shadow-card)",
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "search",
-    size: 16,
-    color: "var(--muted)"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13.5,
-      color: "var(--muted)"
-    }
-  }, "Search food, or send a parcel")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "14px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(ServiceTiles, null)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(LiveOrderCard, null)), /*#__PURE__*/React.createElement(H, {
-    t: "Order again"
-  }), /*#__PURE__*/React.createElement(Rail, {
-    gap: 14
-  }, REORDER.map(d => /*#__PURE__*/React.createElement("div", {
-    key: d.id,
-    style: {
-      width: 86,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 6,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      padding: 3,
-      borderRadius: "50%",
-      border: "2px solid var(--accent)",
-      display: "inline-flex"
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `hxp-d-${d.id}`,
-    label: "dish",
-    h: 58,
-    w: 58,
-    shape: "circle"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 600,
-      lineHeight: 1.25
-    }
-  }, d.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: "var(--accent-text)",
-      marginTop: 1,
-      ...TAB
-    }
-  }, "$", d.price))))), /*#__PURE__*/React.createElement(H, {
-    t: "Restaurants near you",
-    action: "See all \u2192"
-  }), /*#__PURE__*/React.createElement(Rail, null, [OPEN[0], MORE[1], OPEN[1], OPEN[2]].map(r => /*#__PURE__*/React.createElement(PopKitchenCard, {
-    key: r.id,
-    r: r,
-    pre: "hxp-r"
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 16
-    }
-  }));
-}
-
-/* ── 3a · 2a + localized intelligence (DoorDash daypart ranking, Uber Lite tap-over-type + data saver, ZW reality) ── */
-const CHIPS = ["Half roast huku", "sadza & stew", "Mazoe crush"];
-function ZWKitchenCard({
-  r,
-  pre,
-  power,
-  noPhoto,
-  neu
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 172,
-      borderRadius: 16,
-      background: "var(--bg)",
-      boxShadow: "var(--shadow-card)",
-      overflow: "hidden",
-      flexShrink: 0,
-      opacity: power ? .65 : 1
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative"
-    }
-  }, noPhoto ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 104,
-      background: "var(--accent-wash)",
-      display: "grid",
-      placeItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 40,
-      fontWeight: 800,
-      color: "var(--accent-text)",
-      opacity: .5
-    }
-  }, r.name[0])) : /*#__PURE__*/React.createElement(Slot, {
-    id: `${pre}-${r.id}`,
-    label: `photo — ${r.name}`,
-    h: 104
-  }), power ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      left: 8,
-      top: 8,
-      background: "var(--bg)",
-      borderRadius: 999,
-      padding: "4px 9px",
-      fontSize: 10.5,
-      fontWeight: 700,
-      color: "var(--danger-ink)",
-      boxShadow: "var(--shadow-card)"
-    }
-  }, "Power cut \xB7 back ~14:00") : /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 8,
-      bottom: 8,
-      background: "var(--bg)",
-      borderRadius: 999,
-      padding: "4px 10px",
-      fontSize: 11.5,
-      fontWeight: 800,
-      boxShadow: "var(--shadow-card)",
-      ...TAB
-    }
-  }, r.eta, " min"), neu ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      left: 8,
-      top: 8,
-      background: "var(--accent)",
-      color: "#fff",
-      borderRadius: 999,
-      padding: "3px 8px",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: ".04em"
-    }
-  }, "NEW") : null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "9px 12px 11px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 14,
-      fontWeight: 700,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, r.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      marginTop: 3,
-      fontSize: 11.5,
-      whiteSpace: "nowrap",
-      ...TAB
-    }
-  }, r.rating === "new" ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--highlight)"
-    }
-  }, "\u2605"), " new") : /*#__PURE__*/React.createElement(Star, {
-    r: r.rating
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      color: "var(--accent-text)"
-    }
-  }, "$", r.fee, " delivery")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 4,
-      fontSize: 10.5,
-      fontWeight: 600,
-      color: "var(--muted)",
-      letterSpacing: ".02em"
-    }
-  }, "Cash \xB7 EcoCash")));
-}
-function VarZW() {
-  return /*#__PURE__*/React.createElement(Phone, {
-    dark: true,
-    topBg: "var(--accent)"
-  }, /*#__PURE__*/React.createElement(GreenHead, null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      margin: "-26px 16px 0",
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      background: "var(--bg)",
-      borderRadius: "var(--radius-input)",
-      padding: "12px 13px",
-      boxShadow: "var(--shadow-card)",
-      position: "relative"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "search",
-    size: 16,
-    color: "var(--muted)"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13.5,
-      color: "var(--muted)"
-    }
-  }, "Search food, or send a parcel")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      padding: "10px 16px 0",
-      overflow: "hidden"
-    }
-  }, CHIPS.map(c => /*#__PURE__*/React.createElement("span", {
-    key: c,
-    style: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 5,
-      background: "var(--surface)",
-      borderRadius: 999,
-      padding: "7px 11px",
-      fontSize: 12,
-      fontWeight: 600,
-      color: "var(--ink)",
-      whiteSpace: "nowrap",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "history",
-    size: 12,
-    color: "var(--muted)"
-  }), c))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      padding: "10px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "wifi-off",
-    size: 13,
-    color: "var(--muted)"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      flex: 1,
-      fontSize: 11.5,
-      fontWeight: 600,
-      color: "var(--muted)"
-    }
-  }, "Data saver is on \u2014 photos load when you tap them"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 30,
-      height: 18,
-      borderRadius: 999,
-      background: "var(--accent)",
-      position: "relative",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      position: "absolute",
-      right: 2,
-      top: 2,
-      width: 14,
-      height: 14,
-      borderRadius: "50%",
-      background: "#fff"
-    }
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "12px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(ServiceTiles, null)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 16px 0"
-    }
-  }, /*#__PURE__*/React.createElement(LiveOrderCard, null)), /*#__PURE__*/React.createElement(H, {
-    t: "Order again"
-  }), /*#__PURE__*/React.createElement(Rail, {
-    gap: 14
-  }, REORDER.map(d => /*#__PURE__*/React.createElement("div", {
-    key: d.id,
-    style: {
-      width: 86,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 6,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      padding: 3,
-      borderRadius: "50%",
-      border: "2px solid var(--accent)",
-      display: "inline-flex"
-    }
-  }, /*#__PURE__*/React.createElement(Slot, {
-    id: `hxz-d-${d.id}`,
-    label: "dish",
-    h: 58,
-    w: 58,
-    shape: "circle"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 600,
-      lineHeight: 1.25
-    }
-  }, d.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: "var(--accent-text)",
-      marginTop: 1,
-      ...TAB
-    }
-  }, "$", d.price))))), /*#__PURE__*/React.createElement(H, {
-    t: "Lunch near you",
-    sub: "Re-ranked through the day \u2014 supper looks different",
-    action: "See all \u2192"
-  }), /*#__PURE__*/React.createElement(Rail, null, /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: OPEN[0],
-    pre: "hxz-r"
-  }), /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: REST[3],
-    pre: "hxz-r",
-    power: true
-  }), /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: OPEN[1],
-    pre: "hxz-r",
-    noPhoto: true
-  }), /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: MORE[1],
-    pre: "hxz-r"
-  })), /*#__PURE__*/React.createElement(H, {
-    t: "New this week",
-    sub: "Fresh kitchens, seen first"
-  }), /*#__PURE__*/React.createElement(Rail, null, /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: REST[4],
-    pre: "hxz-n",
-    noPhoto: true,
-    neu: true
-  }), /*#__PURE__*/React.createElement(ZWKitchenCard, {
-    r: MORE[0],
-    pre: "hxz-n",
-    neu: true
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 16
-    }
-  }));
-}
-
-/* ── canvas layout ── */
-function Note({
-  children
-}) {
-  return /*#__PURE__*/React.createElement("li", {
-    style: {
-      marginBottom: 4
-    }
-  }, children);
-}
-function Option({
-  id,
-  x,
-  y = 190,
-  title,
-  bullets,
-  children
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      left: x,
-      top: y,
-      width: 380
-    },
-    id: id
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 12,
-      alignItems: "flex-start",
-      marginBottom: 16,
-      minHeight: 118
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 34,
-      height: 34,
-      borderRadius: 10,
-      background: "var(--ink)",
-      color: "#fff",
-      display: "grid",
-      placeItems: "center",
-      fontSize: 14,
-      fontWeight: 800,
-      flexShrink: 0
-    }
-  }, id), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 17,
-      fontWeight: 800,
-      color: "var(--ink)"
-    }
-  }, title), /*#__PURE__*/React.createElement("ul", {
-    style: {
-      margin: "6px 0 0",
-      paddingLeft: 16,
-      fontSize: 12.5,
-      lineHeight: 1.45,
-      color: "var(--muted)"
-    }
-  }, bullets))), children);
-}
-function App() {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      fontFamily: "var(--font-sans)"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      left: 40,
-      top: 36,
-      width: 900
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 24,
-      fontWeight: 800,
-      color: "var(--ink)"
-    }
-  }, "Customer home \u2014 three directions"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13.5,
-      color: "var(--muted)",
-      marginTop: 6,
-      lineHeight: 1.5,
-      maxWidth: 760
-    }
-  }, "Root home only (tiles stay the way into Food per D-01, except where noted). Photos are now allowed for Food \u2014 lazy-loaded, compressed to ~15\u201325KB each, with the tinted-initial block as the no-photo fallback. No promo banners. Drag real dish/kitchen shots onto any grey slot \u2014 they persist. ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: "var(--ink)"
-    }
-  }, "3a is the lead: 2a plus daypart ranking, tap-over-type, data saver and ZW-only states"), " \u2014 earlier rounds sit beside and below for reference.")), /*#__PURE__*/React.createElement(Option, {
-    id: "3a",
-    x: 40,
-    title: "2a + localized intelligence",
-    bullets: [/*#__PURE__*/React.createElement(Note, {
-      key: "1"
-    }, "Time-of-day home (DoorDash): the rail is \u201CLunch near you\u201D, re-ranked per daypart \u2014 precomputed server-side, so it loads instantly."), /*#__PURE__*/React.createElement(Note, {
-      key: "2"
-    }, "Tap over type (Uber Lite): cached chips under search \u2014 your usual order is one tap, works offline."), /*#__PURE__*/React.createElement(Note, {
-      key: "3"
-    }, "Data saver (Uber Lite \u201Cmaps on request\u201D): photos load on tap; the tinted-initial block is the first-class fallback, not a failure."), /*#__PURE__*/React.createElement(Note, {
-      key: "4"
-    }, "ZW reality: ZESA power-cut status on the card (\u201Cback ~14:00\u201D), Cash \xB7 EcoCash on every kitchen."), /*#__PURE__*/React.createElement(Note, {
-      key: "5"
-    }, "\u201CNew this week\u201D gives small kitchens first exposure \u2014 DoorDash saw carousels drive small-merchant discovery.")]
-  }, /*#__PURE__*/React.createElement(VarZW, null)), /*#__PURE__*/React.createElement(Option, {
-    id: "2a",
-    x: 520,
-    title: "Launcher, upgraded \u2014 pop",
-    bullets: [/*#__PURE__*/React.createElement(Note, {
-      key: "1"
-    }, "Grab-style green brand header with the search bar floating over the seam \u2014 the one big colour moment, still solid fills."), /*#__PURE__*/React.createElement(Note, {
-      key: "2"
-    }, "Photo cards grow (172px, ETA pill on the photo); reorder dishes get an accent ring and green price."), /*#__PURE__*/React.createElement(Note, {
-      key: "3"
-    }, "Same modules as 1a \u2014 D-01 untouched, nothing moved, just louder.")]
-  }, /*#__PURE__*/React.createElement(VarPop, null)), /*#__PURE__*/React.createElement(Option, {
-    id: "1a",
-    x: 40,
-    y: 2150,
-    title: "Launcher, upgraded",
-    bullets: [/*#__PURE__*/React.createElement(Note, {
-      key: "1"
-    }, "Safest: D-01 untouched \u2014 tiles, then live order, reorder, kitchen rail."), /*#__PURE__*/React.createElement(Note, {
-      key: "2"
-    }, "\u201COrder again\u201D is the highest-converting module Uber Eats runs \u2014 one tap to a filled cart."), /*#__PURE__*/React.createElement(Note, {
-      key: "3"
-    }, "Food shows above the fold without claiming the whole home.")]
-  }, /*#__PURE__*/React.createElement(VarA, null)), /*#__PURE__*/React.createElement(Option, {
-    id: "1b",
-    x: 520,
-    y: 2150,
-    title: "Food-forward storefront",
-    bullets: [/*#__PURE__*/React.createElement(Note, {
-      key: "1"
-    }, "Glovo-style: services compress to pills, photos lead the page."), /*#__PURE__*/React.createElement(Note, {
-      key: "2"
-    }, "Cuisine circles give browsers a way in when they don\u2019t know the kitchen yet."), /*#__PURE__*/React.createElement(Note, {
-      key: "3"
-    }, "Bends D-01 \u2014 Food dominates; right only if Food becomes the main event.")]
-  }, /*#__PURE__*/React.createElement(VarB, null)), /*#__PURE__*/React.createElement(Option, {
-    id: "1c",
-    x: 1000,
-    y: 2150,
-    title: "ETA-first grid",
-    bullets: [/*#__PURE__*/React.createElement(Note, {
-      key: "1"
-    }, "DoorDash density: 6 kitchens in one screen, ETA is the biggest number."), /*#__PURE__*/React.createElement(Note, {
-      key: "2"
-    }, "Speed-led sort is the honest brag vs. Sadieexpress \u2014 we show the minutes."), /*#__PURE__*/React.createElement(Note, {
-      key: "3"
-    }, "Closed kitchens stay visible but sink, with their opening time.")]
-  }, /*#__PURE__*/React.createElement(VarC, null)));
-}
-ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
-})(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/restaurants/r-home-explore.jsx", error: String((e && e.message) || e) }); }
-
 // explorations/restaurants/r-maps.jsx
 try { (() => {
 /* LyniaGo Restaurants — journey maps for the three actors. Happy path across the top of each act,
@@ -32477,6 +31125,465 @@ RR.cancel_blocked = () => /*#__PURE__*/React.createElement(Screen, {
 })))));
 })(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/restaurants/r-rider.jsx", error: String((e && e.message) || e) }); }
 
+// explorations/store/play-export.jsx
+try { (() => {
+/* LyniaGo — Google Play export lab. Linear mobile method (short label + one device frame + minimal
+   light backdrop), built from the REAL designed app screens (window.RC / window.LJ) inside the
+   gallery's phone frame. Lays out phone / 7in / 10in shots + feature graphic + app icon at EXACT
+   Play dimensions for 1:1 capture. Mounts to #root. */
+
+const RC = window.RC || {};
+const LJ = window.LJ || {};
+const INK = "#14181b",
+  MUTED = "#5b6670",
+  BACKDROP = "#f6f7f8";
+const DGREEN = "#006630",
+  GREEN = "#00b14f",
+  AGREEN = "#009d3b";
+
+/* the six store slots → the real screen that already exists in the kit */
+const SHOTS = [{
+  file: "01-home",
+  pre: "One ",
+  accent: "app",
+  render: () => RC.home && RC.home()
+}, {
+  file: "02-restaurants",
+  pre: "Order ",
+  accent: "food",
+  render: () => RC.list && RC.list()
+}, {
+  file: "03-menu-cart",
+  pre: "Your ",
+  accent: "cart",
+  render: () => RC.cart && RC.cart()
+}, {
+  file: "04-tracking",
+  pre: "Track ",
+  accent: "live",
+  render: () => LJ.track_active && LJ.track_active()
+}, {
+  file: "05-send-parcel",
+  pre: "Send ",
+  accent: "parcels",
+  render: () => LJ.home_pins && LJ.home_pins()
+}, {
+  file: "06-payment",
+  pre: "Pay your ",
+  accent: "way",
+  render: () => RC.checkout_cash && RC.checkout_cash()
+}];
+
+/* device shot geometry: exact Play dims + a frame scale + label size per device */
+const DEVICES = {
+  phone: {
+    pre: "ph",
+    W: 1080,
+    H: 1920,
+    fs: 1.72,
+    lbl: 74,
+    lblTop: 128,
+    stageTop: 262
+  },
+  t7: {
+    pre: "t7",
+    W: 1200,
+    H: 2133,
+    fs: 1.9,
+    lbl: 82,
+    lblTop: 156,
+    stageTop: 300
+  },
+  t10: {
+    pre: "t10",
+    W: 1620,
+    H: 2880,
+    fs: 2.56,
+    lbl: 110,
+    lblTop: 212,
+    stageTop: 400
+  }
+};
+
+/* Neutral frameless screen — no device bezel, no notch. Soft rounded corners + a light hairline
+   and shadow so the screen still reads as a screen on the backdrop, without implying iOS/Android. */
+const LW = 384,
+  LH = 816;
+function PhoneFrame({
+  children
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: LW,
+      height: LH,
+      borderRadius: 40,
+      background: "#fff",
+      overflow: "hidden",
+      position: "relative",
+      boxSizing: "border-box",
+      border: "1px solid rgba(20,24,27,.06)",
+      boxShadow: "0 40px 70px -24px rgba(20,24,27,.26), 0 8px 22px -10px rgba(20,24,27,.16)"
+    }
+  }, children);
+}
+function Shot({
+  dev,
+  shot
+}) {
+  let body;
+  try {
+    body = shot.render() || /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 24,
+        color: MUTED
+      }
+    }, "\u201C", shot.file, "\u201D unavailable");
+  } catch (e) {
+    body = /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 24,
+        color: "var(--danger)",
+        fontSize: 13
+      }
+    }, shot.file, ": ", String(e.message || e));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    id: dev.pre + "-" + shot.file.slice(0, 2),
+    style: {
+      position: "relative",
+      width: dev.W,
+      height: dev.H,
+      background: BACKDROP,
+      overflow: "hidden",
+      fontFamily: "var(--font-sans)",
+      flex: "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: "50%",
+      top: "56%",
+      width: "120%",
+      height: "70%",
+      transform: "translate(-50%,-50%)",
+      background: "radial-gradient(ellipse at center, rgba(0,177,79,.06), rgba(0,177,79,0) 62%)"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: dev.lblTop,
+      textAlign: "center",
+      fontWeight: 700,
+      fontSize: dev.lbl,
+      letterSpacing: "-.02em",
+      color: INK,
+      lineHeight: 1
+    }
+  }, shot.pre, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: DGREEN,
+      fontWeight: 700
+    }
+  }, shot.accent)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: dev.stageTop,
+      bottom: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      transform: `scale(${dev.fs})`
+    }
+  }, /*#__PURE__*/React.createElement(PhoneFrame, null, body))));
+}
+
+/* ── app tile (from assets/brand/lyniago-icon.svg) — full bleed, opaque ── */
+function AppTile({
+  px
+}) {
+  return /*#__PURE__*/React.createElement("svg", {
+    width: px,
+    height: px,
+    viewBox: "0 0 128 128",
+    style: {
+      display: "block"
+    }
+  }, /*#__PURE__*/React.createElement("rect", {
+    width: "128",
+    height: "128",
+    fill: "#00B14F"
+  }), /*#__PURE__*/React.createElement("g", {
+    transform: "translate(16,16)"
+  }, /*#__PURE__*/React.createElement("polygon", {
+    points: "28,6 58,32 38,42",
+    fill: "#fff"
+  }), /*#__PURE__*/React.createElement("polygon", {
+    points: "90,26 14,52 48,60",
+    fill: "#fff"
+  }), /*#__PURE__*/React.createElement("polygon", {
+    points: "90,26 48,60 42,84",
+    fill: "#fff",
+    opacity: ".62"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M90 26 L48 60",
+    stroke: "#00B14F",
+    strokeWidth: "2.4",
+    fill: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M70.5 30.2 L81.5 43.8",
+    stroke: "#00B14F",
+    strokeWidth: "2.4",
+    fill: "none"
+  })));
+}
+
+/* ── feature graphic 1024×500: wordmark lockup + tagline, real tracking screen entering right ── */
+function Feature() {
+  let track;
+  try {
+    track = LJ.track_active ? LJ.track_active() : null;
+  } catch (e) {
+    track = null;
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    id: "feature",
+    style: {
+      position: "relative",
+      width: 1024,
+      height: 500,
+      background: BACKDROP,
+      overflow: "hidden",
+      fontFamily: "var(--font-sans)",
+      display: "flex",
+      alignItems: "center",
+      paddingLeft: 74,
+      flex: "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: "32%",
+      top: "50%",
+      width: "80%",
+      height: "80%",
+      transform: "translate(-50%,-50%)",
+      background: "radial-gradient(ellipse at center, rgba(0,177,79,.07), rgba(0,177,79,0) 60%)"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      zIndex: 3,
+      maxWidth: 560
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 16,
+      marginBottom: 22
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 60,
+      height: 60
+    }
+  }, /*#__PURE__*/React.createElement(AppTile, {
+    px: 60
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: "var(--font-wordmark)",
+      fontWeight: 600,
+      fontSize: 52,
+      letterSpacing: ".3px",
+      color: INK,
+      lineHeight: 1
+    }
+  }, "Lynia", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: AGREEN
+    }
+  }, "Go"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 38,
+      fontWeight: 700,
+      letterSpacing: "-.02em",
+      color: INK,
+      lineHeight: 1.1
+    }
+  }, "Packages & food,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: DGREEN
+    }
+  }, "delivered.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 19,
+      fontWeight: 600,
+      color: MUTED,
+      marginTop: 14
+    }
+  }, "Order food or send a parcel \u2014 track it live.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      right: -40,
+      top: "50%",
+      transform: "translateY(-50%) scale(.92)",
+      zIndex: 1
+    }
+  }, /*#__PURE__*/React.createElement(PhoneFrame, null, track)));
+}
+function Group({
+  title,
+  children
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 26,
+      fontWeight: 800,
+      color: INK,
+      letterSpacing: "-.3px"
+    }
+  }, title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 48,
+      alignItems: "flex-start"
+    }
+  }, children));
+}
+
+/* The mocks pass <image-slot> drop-slots as photos. For a photo-less store asset we swap each slot
+   for a plain <img> tinted-initial tile (the card's designed no-photo look). Plain <img> — no custom
+   element / shadow DOM — so html-to-image captures it reliably; a MutationObserver re-applies the
+   swap if React re-renders and restores a slot. */
+function tileURL(initial, circle) {
+  const c = document.createElement("canvas");
+  c.width = 300;
+  c.height = circle ? 300 : 200;
+  const x = c.getContext("2d");
+  x.fillStyle = "#e9f8ef";
+  x.fillRect(0, 0, c.width, c.height);
+  if (initial) {
+    x.fillStyle = "#006630";
+    x.globalAlpha = 0.5;
+    x.font = "800 " + (circle ? 130 : 96) + "px Inter, system-ui, sans-serif";
+    x.textAlign = "center";
+    x.textBaseline = "middle";
+    x.fillText(initial, c.width / 2, c.height / 2 + 6);
+  }
+  return c.toDataURL("image/png");
+}
+/* Appetising food photos (Foodish repo, copied into _food/ — local files, so they load in the
+   sandbox and rasterize cleanly in html-to-image). Restaurant-named slots get a real photo
+   (best cuisine match, else a stable rotation by name); generic dish/cover/drink slots keep the
+   clean tinted-initial tile. */
+const FOOD = ["butter-chicken-1.jpg", "butter-chicken-2.jpg", "butter-chicken-3.jpg", "rice-1.jpg", "rice-2.jpg", "rice-3.jpg", "biryani-1.jpg", "biryani-2.jpg", "biryani-3.jpg", "burger-1.jpg", "burger-2.jpg", "burger-3.jpg", "dosa-1.jpg", "dosa-2.jpg", "pizza-1.jpg", "pizza-2.jpg"];
+const REST_MATCH = [[/sadza republic/i, "rice-1.jpg"], [/huku/i, "butter-chicken-2.jpg"], [/msasa|caf/i, "dosa-1.jpg"], [/kombi/i, "biryani-1.jpg"], [/spice/i, "butter-chicken-1.jpg"], [/burger/i, "burger-1.jpg"], [/mama/i, "rice-2.jpg"], [/pizza/i, "pizza-1.jpg"]];
+function foodURL(name) {
+  for (const [re, f] of REST_MATCH) if (re.test(name)) return "_food/" + f;
+  let s = 0;
+  for (const c of name) s += c.charCodeAt(0);
+  return "_food/" + FOOD[s % FOOD.length];
+}
+/* Neutralize the status bar: blank the clock / carrier / battery so the shots carry no fake
+   system indicators. Keep the bar element (height + background) so layout is unchanged. */
+function clearStatusBars() {
+  document.querySelectorAll("div").forEach(n => {
+    const t = (n.textContent || "").trim();
+    if (/^09:41/.test(t) && t.length < 24 && n.getBoundingClientRect().height < 60 && n.children.length) {
+      while (n.firstChild) n.removeChild(n.firstChild);
+    }
+  });
+}
+function fillSlots() {
+  document.querySelectorAll("image-slot").forEach(sl => {
+    const ph = sl.getAttribute("placeholder") || "";
+    const m = ph.match(/[—-]\s*(.+)$/);
+    const name = m && !/^cover|banner|dish|photo$/i.test(m[1].trim()) ? m[1].trim() : "";
+    const circle = sl.getAttribute("shape") === "circle";
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = name ? foodURL(name) : tileURL("", circle);
+    img.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" + (circle ? "border-radius:50%;" : "");
+    sl.replaceWith(img);
+  });
+}
+function App() {
+  React.useEffect(() => {
+    const apply = () => {
+      fillSlots();
+      clearStatusBars();
+    };
+    apply();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(apply);
+    const ts = [300, 800, 1600, 2800].map(d => setTimeout(apply, d));
+    const mo = new MutationObserver(() => {
+      if (document.querySelector("image-slot")) fillSlots();
+      clearStatusBars();
+    });
+    mo.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    return () => {
+      ts.forEach(clearTimeout);
+      mo.disconnect();
+    };
+  }, []);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 60,
+      display: "flex",
+      flexDirection: "column",
+      gap: 64,
+      background: "#d9dde0",
+      minHeight: "100vh",
+      width: "max-content"
+    }
+  }, /*#__PURE__*/React.createElement(Group, {
+    title: "Phone \xB7 1080\xD71920"
+  }, SHOTS.map(s => /*#__PURE__*/React.createElement(Shot, {
+    key: "ph" + s.file,
+    dev: DEVICES.phone,
+    shot: s
+  }))), /*#__PURE__*/React.createElement(Group, {
+    title: "7-inch tablet \xB7 1200\xD72133"
+  }, SHOTS.map(s => /*#__PURE__*/React.createElement(Shot, {
+    key: "t7" + s.file,
+    dev: DEVICES.t7,
+    shot: s
+  }))), /*#__PURE__*/React.createElement(Group, {
+    title: "10-inch tablet \xB7 1620\xD72880"
+  }, SHOTS.map(s => /*#__PURE__*/React.createElement(Shot, {
+    key: "t10" + s.file,
+    dev: DEVICES.t10,
+    shot: s
+  }))), /*#__PURE__*/React.createElement(Group, {
+    title: "Feature graphic \xB7 1024\xD7500  +  App icon \xB7 512\xD7512"
+  }, /*#__PURE__*/React.createElement(Feature, null), /*#__PURE__*/React.createElement("div", {
+    id: "icon",
+    style: {
+      flex: "none"
+    }
+  }, /*#__PURE__*/React.createElement(AppTile, {
+    px: 512
+  }))));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+})(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/store/play-export.jsx", error: String((e && e.message) || e) }); }
+
 // explorations/store/store.jsx
 try { (() => {
 /* LyniaGo — Google Play store assets. Frameless, Airbnb-style marketing screenshots
@@ -34915,7 +34022,6 @@ function TweaksPanel({
   }, [open, clampToViewport]);
   React.useEffect(() => {
     const onMsg = e => {
-      if (e.origin !== window.location.origin && !(e.origin === 'null' && window.location.protocol === 'file:')) return;
       const t = e?.data?.type;
       if (t === '__activate_edit_mode') setOpen(true);else if (t === '__deactivate_edit_mode') setOpen(false);
     };
@@ -35399,7 +34505,6 @@ try { (() => {
 
   /* ── Tweaks host protocol (listener BEFORE announce) ── */
   window.addEventListener("message", e => {
-    if (e.origin !== window.location.origin && !(e.origin === "null" && window.location.protocol === "file:")) return;
     const t = e.data && e.data.type;
     if (t === "__activate_edit_mode") document.getElementById("tweaks-panel").classList.add("open");
     if (t === "__deactivate_edit_mode") document.getElementById("tweaks-panel").classList.remove("open");

@@ -1,0 +1,785 @@
+LyniaGo Design System — EXPORT MANIFEST
+Export date: 2026-08-10
+Baseline check: explorations/journey/All Screens Gallery.html md5 = 8e9c62380c72af325dcf538f88fd5cd3 (matches the 2026-08-05 baseline prefix 8e9c6238)
+Files: 344 (including this manifest; excluding the transient .export-hashes.json)   Total bytes (excluding this manifest): 22660665
+Hash: SHA-256 of exact file bytes. Format: <bytes>  <sha256>  <path>
+
+== FILES ==
+     4772  ec54d51e44be37632b0faf42114f321ebbe0865e908b6e7c76fcdf984764d83e  .thumbnail
+    11554  3fa434120298ce4759160d4939aec61585072d440d8e719128beca9b2c92dac3  ALIGNMENT-REVIEW.md
+     8082  c3bcc200a88404d172dd958174eb78f0e7319b9cf578ffae588021862909b294  BACKLOG-PLAN.md
+    10573  5330c694aded4dddfa36b0a1400459afa4b5cdff5a858907ef1fe0f2b55cd754  COVERAGE.md
+    14162  23eac0f353b3259a567cd1908893742787bc80adc07a93eba027c000731ed38d  CUSTOMER-JOURNEY-AUDIT.md
+     5068  6c973d1484275e537476d0aeaa28fc1cdbb0343d6cc4fca338e264769e3e6b7c  DESIGN-IMPROVEMENTS.md
+     1975  fe10b633bcd834ce9a830b1b4e12a9006932122a1ca56eca5f5889ef2d384b5b  EXPORT-CHANGELOG.md
+     7968  4a73623453ca5e66334d758cc8f37c4ad9a23099a64ce0473518a65c6730bb5e  EXPORT-README.md
+    28403  6580ffd5020a70d568b350e5d0eb931c4d337e75f245cfe31f464fcc8053127f  HANDOFF.md
+     3373  0c8095c6a21359d01ae043748747e457af52f2c8012f1cfa2e9770f29483d07d  HARMONISATION-REVIEW.md
+     3004  003e76b1602de8fdff237e71097a6dd4f657fb1c933033a1789c0888db3dc8c1  HOME-2A-MERGE-PLAN.md
+    18643  efdce9d49795c4e0bc9c3ce3f9b2713c54509bbd10abb5bdc4ff8e2f0f8def23  INTERFACE-AUDIT.md
+     7653  84b80f13716be1a12f8820457b202db9ec4dd05eb55262f9e5961cc443736035  ITEM-DESIGN-REVIEW.md
+    15867  6c43e951ce26bcc9345e6c58f703331eb0aa4b2911dcdbb2fd5b0a3645e885ad  PAYMENTS-TRUST-REVIEW.md
+    31579  af1ed36760ca1a7f18302238b2b4706c8397625f7dc1f4c2f002f4de302abe49  RESTAURANTS-DECISIONS.md
+    12866  097b7b24e2d920ad2d8932acde7b95bdaf5acf6e58be1e5793fc32474545cb8c  RESTAURANTS-UX-REVIEW.md
+    13838  08e94e68b9a6d34d641719bb3c6a29a749dce9a5b308710b2b4addecc2b7d8c7  RIDER-JOURNEY-AUDIT.md
+     4247  c2fa1bbbb4c3fce35624a0ad4d352c69e0d1b7925d8d84256b3bce6719c8826b  RIDER-ONE-APP-PLAN.md
+     2791  341b350e0c307f366c1d9e56dbdfce0c31539ed6550311a1b321c8c1718d04fc  SKILL.md
+     3027  ba6a8389c09b687fcf4850795b1a61404df859cc35b78b9260ff7aa4bfd49626  WALLET-HANDOFF-README.md
+    16915  750fee28ed866bb13600a6675d855965afce4409d0850aade3b6cb99a4d87586  _adherence.oxlintrc.json
+  1252890  543ba0d18773c805c81fbb07b21cd9c746ea1aabf9e304ce2616e2aa2d30598b  _ds_bundle.js
+    21358  74d49ce7d016829ae1e48a2daf7471e88f67f43a04b72cca607a78ce312b755d  _ds_manifest.json
+     6957  ad5b82112906eeb99c9173a149d368033f069d1126f774e311455c3cab64639a  assets/brand/LyniaGo One-Pager.html
+     9539  7feb7a4009b0e340fd7bb8067fa45ec54a64ee5b5ecfc9a3f3669fe53d775eb7  assets/brand/doc-page.js
+     1169  6024708bdf4b06d41fd9395c27099616d75ab3f447332f99e7ea389abb23c94b  assets/brand/icon/README.md
+     2123  14931e975a1a09806d244bfc1d1dc6db648d352e6b62fd6869988002a899366e  assets/brand/icon/favicon.ico
+    46374  02c6514bd6360c8b69fd7cda851426754c0f9f9f6f8ab7d41816653029dd9ec0  assets/brand/icon/lyniago-icon-1024.png
+     3126  3d747be0873e7994e1db0de7aeb25551c467b7a8e0fa2aa53b7d1f068cf0bbcf  assets/brand/icon/lyniago-icon-128.png
+      362  c87e47f352fc563f3d1159e1e9876a74e83d1e40e0c05fac63c90c3c37413c2b  assets/brand/icon/lyniago-icon-16.png
+     4474  cb32ac7e842029100a3ea930238a92d64d06d50219c7e8b78fb6576992762cc2  assets/brand/icon/lyniago-icon-180.png
+     4782  aa64167d0ed8760061000397ab61b1f87e96f11fcb5d30ed8b813bd3a79d7763  assets/brand/icon/lyniago-icon-192.png
+     6664  1b6cdca6e4a7dc8789e157ec637c9426351946142d69a25040a86696c96e644c  assets/brand/icon/lyniago-icon-256.png
+      650  17b46e2860a147519ff0135a98cc51e9e370d4b911d0ca8ac642db2b0100c585  assets/brand/icon/lyniago-icon-32.png
+     1057  e73f56ab263ac5c23e086d994df15aefa5fd95997587c98f44ac225ac613587c  assets/brand/icon/lyniago-icon-48.png
+    17763  7fccacfba1f0dbd702af79e944c613c37abc884e9c1c613632ff94ec75cd6173  assets/brand/icon/lyniago-icon-512.png
+     1436  617d9778ca34f542d58e6d809c1ff2b87c9e4ebb8ee5dc71633cf0e047166242  assets/brand/icon/lyniago-icon-64.png
+    12484  226e5cae489a5a65bfe2fff503002c2a4d4e8287468e1af3740fe7854d6e675c  assets/brand/icon/lyniago-icon-maskable-512.png
+      702  e2a957427f26762cb80aa72cacbe5c07bd79bf5229a6aeb73fc2a6571d3f4ff6  assets/brand/icon/site.webmanifest
+      556  7b926ee8dd7cc3df6b3c15847d4079b9dc9f21891322f41bd99b129795c07628  assets/brand/lyniago-icon.svg
+      427  2e64cb369e886ab6aed90eb7534a44bfeefb4481d1554b163a50b3e846c9e4b2  assets/brand/lyniago-mark-mono.svg
+      427  830e2a61af278f9e1983e9b97b305dd04dca82a3d43005e3aa363f886f465199  assets/brand/lyniago-mark.svg
+     2616  513dbe820a5783f26d961c4e43758b51e6bac4ffd19355dbfeedf1357aa789fd  assets/brand/rails/ecocash.png
+   140025  6c0fcacb9ae69c6f18ec1ecaf8c24d0755920039f37240760c778861e04d741d  assets/brand/rails/innbucks.jpg
+    43474  19d96dbb6750aee00fd149d6c321ae45d7a69a7d20c2ae9a42c0b9df5dfb5661  assets/brand/rails/innbucks.png
+     6428  df6cabd0253b751759ceb37ee765d718b71c88f971a95a78a6f9983304ba2ab5  assets/brand/rails/omari.png
+    16468  b62f2898de150f019961f4884a49f83dcd2ce74375be5e0992c594ebb8f30294  assets/fonts/fredoka-600.woff2
+    23664  8909904ab6c872eb994093482a88a28eca2cd95912d7b6fecd72103b0dc07edc  assets/fonts/inter-400.woff2
+    24452  f9a06e79cd3a2a20951c0f0e28f66dd0e6d3fda73911d640a2125c8fcb78f21a  assets/fonts/inter-600.woff2
+    24356  6f56409fd3d64bb85f7d070bce20749db2d66b6d63cec586cc22d1c761be2491  assets/fonts/inter-700.woff2
+      251  a150108cb4d32643ab18a34552c9e1f5b06000921e74d8fbc7c9cf76ec8c0fdd  assets/icons/arrow-right.svg
+      270  dfe23cd083834d4b68aef02a0788c449cca4befb750da552b003f351ca56449e  assets/icons/ban.svg
+      328  fab46073d67a3da8820ab9cfb969fde960652e814199e90bfbaa55ed61d5ab0b  assets/icons/banknote.svg
+      383  e1522dc3e8fc6c182e16a5c056ecab86e11218c61bb34935da14f2a43c2c5190  assets/icons/bell.svg
+      371  74f3362c9b5fed1caacd273a3a14eb4779b248f5424f624ce519579fc14fb4a4  assets/icons/bike.svg
+      224  d584f9ac3be0003bc205c1f8b789f90eba97252391bbdbb53fa4846dbde808a0  assets/icons/check.svg
+      221  751d7daa675ca4f9ce34335049c95281fbf54d694ca4159f8c693bf15e527b64  assets/icons/chevron-down.svg
+      222  f1fc16cf91c6a9ced407ef47c047ab7d0363dbe43379f74bbc202d0b2de94523  assets/icons/chevron-right.svg
+      223  5b91f2a68fbe48af1360d79e4b8da50d5991e42ed4b3c4bad5aa514748c28751  assets/icons/chevron-up.svg
+      329  48e857da27a7e75ef66819e1a16e552a4e48166d2b254553685d230e7cedd56c  assets/icons/circle-alert.svg
+      265  ad2dd30ec4039a6c7640a9c3cc41453ee90ed8472293b2b8f24e2968ef0f66aa  assets/icons/circle-check.svg
+      263  13e66796329138db8142077f17aed1a5826e3277421bf38e599a2c4eb59e01b4  assets/icons/clock.svg
+      319  4e710a7ac106b61e62376a28b53f9e5219f2e10f3d94bcf87edbae796c93bf96  assets/icons/history.svg
+      391  3044f2f3b63a2fa2522cb7f3918fc5fad8ea730721da1ec17f49d738f678701d  assets/icons/id-card.svg
+      382  6eda79f4536845993640ddfed0ae0dd7a964efa5e54337f889b68a61b0212683  assets/icons/inbox.svg
+      351  fa5f198fbb509245ac7e126b0eae48dff28a44ce9accd693b3236e82438b4758  assets/icons/map-pin.svg
+      217  b228c4f6393547c4197e914d757b03a0b9a4625bc110d09d733560a28ac0ceee  assets/icons/minus.svg
+      246  b38771026a0f5e0cbca9cc42c663a9045c73cdabfc2a2e1d3b738e004b49da47  assets/icons/navigation.svg
+      450  16184398b055ff5247410fcf13350cbf85215e00fe818f8b41e0fa0765af0385  assets/icons/package.svg
+      367  68378bcbbb74af8f6d3d564b148f6472db6f568602031abad0505d715a9afd50  assets/icons/pencil.svg
+      422  39fa2d72be304dde7acdbee242ffea03da7bcfd53f3f81c4bce953efde35d4dd  assets/icons/phone.svg
+      246  7b2fd5dcdba4554dd50f5d6906f703116abadea70a949c6f829793a92cbe56c9  assets/icons/plus.svg
+      266  074a662bf1b2ec2c6878b9ac1897fdb6ae7fb35c299b6d5f1574d2860779152e  assets/icons/power.svg
+      374  51e92cf6e7de5aa158c717c949875c9fa0581a00f2924f08e6096633fc05e281  assets/icons/receipt.svg
+      392  49757dc485f709fa50e0d8557dfe4a080e03608502bc4e5fcd7a471553a25aef  assets/icons/refresh-cw.svg
+      267  fb967d004167abe936542ba221e2930046b00590f4f77d5fb31fed5ba160712c  assets/icons/search.svg
+      328  2fd815141fc2a1aa9acaab9a507e29d5328f38cbc69e2e9c4a8ff9cd970ee196  assets/icons/shopping-bag.svg
+      573  219d51ae1b767e634dad1d2d64502c9188e2efb9d8070baf128a0e74b61c07a5  assets/icons/star.svg
+      713  617713dbcaf1d7494d423da05bc3fab7ff756e1204d7086c5622dfe37cacdf9b  assets/icons/store.svg
+      324  a9f41dcc40e6acd25eff7ef5d280c2f57277c14a3f829f31768dda91f6360820  assets/icons/timer.svg
+      432  6ef7ade21266128ddb4f552c2fe8c31590f9e989d1b4af3a91a4bd6b7835e3b5  assets/icons/trash-2.svg
+      340  a89a6754bc7520eb782d961710122d7dd3788f3de5c82f6fe7eae15b1789233c  assets/icons/triangle-alert.svg
+      291  50394017179d765077a9d2c14e8568867c5fca7d0d8e1885155d0fa39cb4532e  assets/icons/user.svg
+      343  6a267d270aaaa2502e6034aa67f210df35fce5f77667fd4989dba93515122c18  assets/icons/utensils.svg
+      471  91aad995accb42756041325c85b7def70d11745c8c1bb90a9b1d14245d1a1e70  assets/icons/volume-2.svg
+      377  ad459b4c872a446b61d22bd49495d501fdbb6b8a63b46af145bb88f7d4aa86b5  assets/icons/wallet.svg
+      509  ff04797c5c79f87577946275929954646fb97f8dcf66679059cfbdea293f8ae6  assets/icons/wifi-off.svg
+      250  6d2b9c8b22c2179a2bd49b160b8ae257c9fcfc3c2dcb8d61982e0bcbc5864ac6  assets/icons/x.svg
+    65350  fff26d081c8d9d60870f86c7539a5d179b9cdab15e67f2b205508a068e7c7ff6  assets/image-slot.js
+     7888  6a3e1ac668ab81319c86c953ee1e6836f0e39c27e9b968020197c1b634fbe6f2  assets/lynia-icons.js
+      719  cd36fc70c6e28b6aee0ba271434ab3e91e1eb5c0312b9ab9c7865ba3f433f9cf  components/core/Button.d.ts
+     3122  9e208204ffc34ffc633bfd21978e11ffd1a66d6371ed71c59fb96dd9ab518e1c  components/core/Button.jsx
+      657  66c72b26f22f86baa3ac864b143d772d296bd1cb112861104dd427094e0f5587  components/core/Button.prompt.md
+      412  cf30561c0a0d4b4ed590bf80a20b4dd55d2a36e6add855fd3ab065374d66271d  components/core/Card.d.ts
+      824  66a8dcfefd5a9a07a954c8183af24a8dad5deb6df4b53ed007902f2dbea4aa75  components/core/Card.jsx
+      370  17a30e6dd62e2518716a0de1210c45410e2b645de9fcb90370f695d3eda356dc  components/core/Card.prompt.md
+      569  714c303885abe5f609f0604d585c787f7f8ac79670e3d644056aa27b3c60847f  components/core/Icon.d.ts
+     1671  8dbdfbb2d1aea5271011b31136c55a23c1145a718989f9ae7dfa4facc2d1d642  components/core/Icon.jsx
+      792  6992f0e08389824d655daa6c9b84cb050ff06e64d8c9bce0362b3c34d7e9b9c2  components/core/Icon.prompt.md
+      500  52e2ebc007d8d6e0fb8c7879bef38e48db66b154e701d0da4beb8eeac5288b4d  components/core/Money.d.ts
+      482  7f9753b1ccaeb214ce4593ecab663519587a06b675df277a078b135ea7cafd18  components/core/Money.jsx
+      591  0636339b0f3c29df993e9e58c674f99aa2a6119a87aa4f903d599299c8979d0e  components/core/StatusPill.d.ts
+     1695  01dada6a8e01fec452c2fbc932fa18f6afb86677dc36efa976e3847e090cbf18  components/core/StatusPill.jsx
+      517  b2dc2a8a1e737d3842e20f2226024b5fea90967608356a1264911f6047c85fe6  components/core/StatusPill.prompt.md
+     3123  352bec3347e53de42337a8583e9644bf596ef646177bb8d59fb353f5571cce16  components/core/core.card.html
+      554  c98cdde944bee8d5fdaeef7c104f73e365280ea8d223a969e278e2a3d86edad6  components/feedback/EmptyState.d.ts
+     2225  d45ffee74d6a3fa91b40410d7f3017d965b482422e3306549006ec7a1f1955ed  components/feedback/EmptyState.jsx
+      855  6702336d02ce7644b53dd221f81812f6f2e0d4c08d646434c1d64b1ca3d6ecee  components/feedback/EmptyState.prompt.md
+      443  e571608f9a4992416c01efbc7ebf86b12ea11ad4b4d8fd09bb7a8f0f9e569abc  components/feedback/OfflineBanner.d.ts
+     1491  a043da4e36ddabeaecaa72cb8dbe53636db3e87e455c027d1ca6ef02b739d004  components/feedback/OfflineBanner.jsx
+      503  b719ad9b078a9f2b1d4c6e4353f101dd133cec51baf950dc7ef26b2ffc016eae  components/feedback/OfflineBanner.prompt.md
+      344  7ee68b1d9149c9408b14d3a9b712ba39f0a0bf71a5734de63540b9a10e264bf4  components/feedback/Skeleton.d.ts
+      729  93e10984efec6a9d302a2c5f6b36eaff582f42d315553233861bff820e182062  components/feedback/Skeleton.jsx
+      625  7d638c7269d7259b3b9f05ab4685c4c5804153188aa1b059c6044abf0c481065  components/feedback/SkeletonList.d.ts
+     3280  e4d7860ab93c39ccdded81c82f6fb94adba18f87dcfea80dec9b1dc4218f0c34  components/feedback/SkeletonList.jsx
+      802  16f9d96bf7225e5d75b9aebfd7ec807d8cd79f7cb2060da76cdda4f46e8b7ee9  components/feedback/SystemState.d.ts
+     2144  7e37b87c8291bb21ab8d4392e07e3e89bffcb3238b9ba9b560d45ddbe7ed8be4  components/feedback/SystemState.jsx
+     2352  a6ad089fd7872d793ed1f4aaf79970294cb1f30615750081376e43d602fb34d6  components/feedback/feedback.card.html
+      640  f0b069ca791a72e861ed6c8382f95260b807b4e4ed04f056f30dccb6f0ea2969  components/feedback/skeleton.prompt.md
+     1092  d3fa559cafd0fce1db0a8aad2f345305af01a991290a0db2ebb39fca8f6e7023  components/forms/Field.d.ts
+     3905  4f36ea86faab4e0850b3c7e47a28f9b1ee1c9a8ede868fa663dcc75553051b72  components/forms/Field.jsx
+     1174  2f2df4f3eb963081eacb0f7943b9f5887947cf2dcb35e61d2ce081a8d91f8ff3  components/forms/Field.prompt.md
+     2353  ed7bcf55ac9986d64008b15e850710dbc9eef1611f8974e794ac91367a15f2bc  components/forms/forms.card.html
+     1772  918adc5e32b34c7bbb81a08c034c1bb573ff4dd109734be483a41736b51104cf  components/home/AppHome.d.ts
+     2643  190d94978f7bc790759bd049d48e796d4a638309e02edf14fa06165aaea580d5  components/home/AppHome.jsx
+      829  19e8a39dbddb29f444751018a2fe22391ab834df15f05d7f59c07e863d729d6f  components/home/BrandHeader.d.ts
+     2709  ecebc6e332442f8afd1fc2f59424aa073e0a33eb22c5212d798a9ae742202cd8  components/home/BrandHeader.jsx
+      766  12550d5444ff12559ab61220d03985f09c72970b7c506c11d4b6ae5a69bca720  components/home/LiveOrderCard.d.ts
+     1714  b556ddf823e3c41b42bff26a14f64cb9f034ddd5971e121b2ae6ad5f5f63276f  components/home/LiveOrderCard.jsx
+      821  d2d42d951cc3018e99d0adbfd6bf3453d5d40ea7a9fbe710a841e590de607995  components/home/ReorderRail.d.ts
+     2068  e91d9109e1f6236c1621c63eb98e56438e48c51eabef40972de95b5b686c11fc  components/home/ReorderRail.jsx
+     1075  02f4a95585f457a805eb4f8a69409979ab1e4efea7e283d8920cb50e0fd494e7  components/home/RestaurantCard.d.ts
+     2867  ad955cfb811065879bfd4c87a54af476fe824c526e9c9f680bb3b831e5005a03  components/home/RestaurantCard.jsx
+      955  90ae5db19eb3871a8c131df84300e5749c01f2211290615756b9dd9420c85a4d  components/home/ServiceTiles.d.ts
+     2099  e81fa8c0ca72f5c1d35e43affaaa4ecf3e0e2a9594548b28f24ab8fe406e5f2b  components/home/ServiceTiles.jsx
+     2370  7361d327ba8adec20fa5d153954031b30e12180b2925752d3facc2b839579cce  components/home/home.card.html
+     1582  42f7f2b306e072e0791c4fa5cfeb2e430dec693ec9874529a3f69e9bd775ba12  components/home/home.prompt.md
+     1280  36b0be01685320dc95eb66736ba1fa85faa7d24573919f380206a875ea83b614  components/journey/Stepper.d.ts
+     4560  4fd7dca7cd8c00f96899150f9c652911d1d72e3ac909b2e0ee856edf6332bea7  components/journey/Stepper.jsx
+      712  070dd57f3b218adc94ba0813d419a2dab93b7bb386f8593775c4a4cf3d4860ee  components/journey/Stepper.prompt.md
+     2061  c3e9fee55a90646126fe0b159711e6bdee0508a84753432ab14e4acfb16baa38  components/journey/journey.card.html
+      688  d8b4b92b5e25576168e4d70b9a83345b29a2d4ba6ad63e3f5c5b8a8f91c3b16e  components/shell/AppBar.d.ts
+     1292  02732aab7916b0f886c013e2046e72eefca7f402248b0a99e71c6ee8c144156e  components/shell/AppBar.jsx
+     1099  ba9a9a8819dc8cd67752c33eaa2029ff03f1355c81d8448cc25bf2bdfb995b56  components/shell/AppScreen.d.ts
+     1167  fc71db556211d4ae304f2ad2e22a464c04e56da5d8c8157c628a25535ec2c0f3  components/shell/AppScreen.jsx
+      473  6703f3210e9c832a2d66baaac21f23854f0cf82ab7446b01dcfa7a63c0830b5c  components/shell/StatusBar.d.ts
+      692  6fd92cb7fc2a01b4011c23903429f51d0c7bbb3258aff9e531e959cc474ea065  components/shell/StatusBar.jsx
+      605  66f27a960d21b8f8680c3ac0642ef5bf4e55ca84413a1bd25256c113651a3d64  components/shell/TabBar.d.ts
+     1610  68557e322e6da90536303780ddb3281eec178f7781395e5e427cd2d8c924ebaa  components/shell/TabBar.jsx
+     2179  0d7d8f4e19cde6b700607a228516d3503df9704c3282026dcf1c7c22680570c8  components/shell/shell.card.html
+      265  15e873316c8ff18f25ca4adcfe0ccdad497b0d8246e613a4486939afe6db2926  components/typography/Heading.d.ts
+      630  1ea3a190680ce7a123e284b0bdfd192d77dd51e3986d523103a137828fb6780a  components/typography/Heading.jsx
+      262  4e6707170bdf0f3aad8ceead363f3dd68e02993bbb0843001f5812bff253a881  components/typography/Label.d.ts
+      546  abe06bcbafa6e9a05b87552e01b2635af03b0cbb75f855a0beabf385a4639827  components/typography/Label.jsx
+      266  924b85a7d01e232633c5222a41a914c6069178e5dd2cdcc7ecbb96c668a4a217  components/typography/Sub.d.ts
+      587  2212189f67d3b8b19962b0b8d45de23fb9fd339e7ea5e559077a23b38de3b65c  components/typography/Sub.jsx
+     1428  d243aa2fd3f5b732196a5a366a5628c34674e927a6dfe29702d537a3cd4a9f73  components/typography/typography.card.html
+      511  300aa2bc9d07d3d86739d1d2d3550d93c2c0dbf5bbe5090e09a9494d28b4da43  components/typography/typography.prompt.md
+     8019  0da4ea207c84241340c8da562945be550054c103918b3d815767d5db31b3dc98  explorations/LyniaGo Dove Cross.html
+     5609  fc1c6afd25693a739b9e9a0b3e604cfc09123e37c55b80d99d128306f0da8c76  explorations/LyniaGo Paper Dove.html
+     9153  3fb95068c885f14bc8ed1ace2bccfd1e87c9db133b7c931752b7b3186b4299fe  explorations/Wallet Journey.html
+     3173  c2ec54a8382ba3537be7e5d1ea49566b93de6016b6619cc582aed123e9ee7156  explorations/journey/All Screens Gallery.html
+     1795  5d67cd1ddbbbbb35725f6c1b16998a545be5fc7ff88a776905fe41a1ce8972c3  explorations/journey/LyniaGo Customer Journey Map.html
+     1884  1ab301c994e6527dd597a29828e6eb86b49de68fcb635cf0ab3a4c55426cc24f  explorations/journey/LyniaGo Rider Journey Map.html
+    14113  12e875630fcb8c9a0ae0a6de73720904cd70ad9ed1f1c66ebfc775043a12e960  explorations/journey/gallery-map.js
+    16992  a1efa07a0996a548fab48926bedab1de82aecdf8bedfd3e0fca126d2293a3cf2  explorations/journey/gallery.jsx
+    36025  b5e837fa151a58af9a53530aa8756cc99b5420d668577c6ca98bf66f70f3906a  explorations/journey/map.jsx
+    44588  b1678a303198496638b1254509872b543967349e12cec435f46fc65156c458e9  explorations/journey/rider-map.jsx
+    21453  7249015b54fe2dc292a377fba07a915ca13f87b4674086f5a5bff5c020db3355  explorations/journey/rider-one-app.jsx
+    21081  b225a773d96f7a696f7fe4de22de850edf4bda6a38269801cbb6a08d0cac9ee6  explorations/journey/rider-screens-safety.jsx
+    16144  999ab63dd6d7acb75c4aa97febf33acadaf1b5a02c2ac070e529a2468d900825  explorations/journey/rider-screens-wallet.jsx
+    51704  daba2a4901584e9095f3a3f297567f6f42d669b18bee9ff1901612f3f00ef29f  explorations/journey/rider-screens.jsx
+    17615  dbceb6b1916821e8c9d9e854e32f87ac958c47eeba45b6f9b2a8c1e268e45bf8  explorations/journey/screens-safety.jsx
+    57341  07578c369f349328ef100bd5d51e58a2d289b119e81582569a63a297ec0113a5  explorations/journey/screens.jsx
+     2804  65a7979ff1be213b6acd4b3f9dc03e237fde5dd1385cd26437721f28fd8cfdfe  explorations/journey/single-screen.html
+     1566  04366134be99e2a04c1dde4fff82e47c19e9d909deaff51e102cfd555c45b601  explorations/restaurants/Restaurants Journey Maps.html
+     2683  25d034b57ad618742e5f7af87fbbf97382badc58659e79200f9cb3ae9bb13fc6  explorations/restaurants/Restaurants Vertical.html
+    41288  836b116be589ff444a7297364a3a04655d8b33ed8f9778e8e3317f0694ad02ca  explorations/restaurants/r-customer-a.jsx
+    40879  93d2d414abfc934a7b04965c3db24cb1052205d92f3f149c658b1c323aa9a1eb  explorations/restaurants/r-customer-b.jsx
+     9336  5fdc58afcad691c020cb87dcce018e5dd9cbf795ad4420826c6eec1c785519ad  explorations/restaurants/r-gallery-data.js
+     8679  c7113958fd6a0c2a0e55a7c62c9d63a6bc585a05f28f4b357016c192aedf5ab4  explorations/restaurants/r-gallery.jsx
+    17728  3ebde2c9aeb1de6a39716661288c35ba03cc2bb93de77dd1c10de6bd7478eba9  explorations/restaurants/r-maps.jsx
+   112055  da44cbd2722ba3a3ef3ff15df73365882e7c37e0d5e2797eb3bbb37872aa9bb9  explorations/restaurants/r-merchant.jsx
+    41397  878d4a769943a28375ab1587c377b4b7900711af3bf129dc76abd79cc6406865  explorations/restaurants/r-parts.jsx
+    38385  30a50a58ba1b23c3803e3711c754c4f7b567898beebcf6b8316690d0dd1c372b  explorations/restaurants/r-rider.jsx
+     1933  92a7f52fe5a7f195d327154d828be4cb4378624831ced63ea6fe563939610409  explorations/store/Google Play Assets.html
+     2391  558d6f1ceb4f57139ea87e521ecbf5ddbf0f66aa04e9dd3c4a5bf00cbd31b365  explorations/store/Play Export Lab.html
+   266603  f05b71f4ecbd77e22dfc0260a1fb955ce6463baca86a3e670675b0a1a6412930  explorations/store/_food/biryani-1.jpg
+    70924  1dd262213de7c48cd8c268f655ddd2d5383fb025944c229e594a7414096db6b6  explorations/store/_food/biryani-2.jpg
+    86365  264ee3768665e625603b585d7ef60fe988014fb5c0c84df69467de7abbb4c0f5  explorations/store/_food/biryani-3.jpg
+    34673  3989acfee5bf0c7a968bd98bfba5864aef8fe6e837976a53416916aef4e7509b  explorations/store/_food/burger-1.jpg
+    87442  9f01b5adb256d580c3540f552d023b9c0607adfaab206666fb7653a0858d15a9  explorations/store/_food/burger-2.jpg
+    67241  44fc982a921b55722e4aab035a74b2dea7a3eb1c1ee1a9b5122a95c62f9db914  explorations/store/_food/burger-3.jpg
+   101564  a5d08558c099f34ba1ad383ba56dda58fdb3a9ded07726842c54f71201790a0f  explorations/store/_food/butter-chicken-1.jpg
+    97036  2b5e1b125a8a60cc37cc65632489db604003cc6f5be970b72031ec13f436e98f  explorations/store/_food/butter-chicken-2.jpg
+    55531  c4405d79409d15a38586fa20a2bbb684bca35ba6704fcac71e6d93f7455657e9  explorations/store/_food/butter-chicken-3.jpg
+   197672  42a689bd74c15f79a31d173ebf8c1dd1337dcf5b2d96176fd59f200c15444e82  explorations/store/_food/dosa-1.jpg
+    71874  9feed0173a1aad84252bc80f2695479cbff27d5729d6fc49d9e6dcabb45c67f6  explorations/store/_food/dosa-2.jpg
+    64101  6a83e50adb189af88647265f77ed081f38038566132e7bc1c56c1bfd2f59f368  explorations/store/_food/pizza-1.jpg
+   113333  f6c8ed92f1ac2a20077263a1830eccf91cace74c7041c4465be4605a946866f5  explorations/store/_food/pizza-2.jpg
+   156303  eb697ce9b53ae94f4550a67708ea7520a92d183ac6b6ab61f5b1f11d1aa6a90b  explorations/store/_food/rice-1.jpg
+    97606  f12734bcf1cbaa84eee30f04d9bcd301bedb0ebe5b08eb2507596e3545cba21f  explorations/store/_food/rice-2.jpg
+    48142  42db637027a09e848dfb31a4615988c9fa712d2c6a1b1c2d9e7423909c62cd7f  explorations/store/_food/rice-3.jpg
+    10808  fee94fa41557f930c7e09001f02d93ef4261f2cc8bf03e11b80d472f01dc8e70  explorations/store/play-export.jsx
+    15396  8ddaa60df41fbec0740a43cd2ec1766afd3d9ea4c2164cde2b38b1bbabd13794  explorations/store/store.jsx
+     2034  441a7a9bb34ec7ee1d2062ad66523225fb498bb59688c1a0551b7de8fc2e6fcc  guidelines/brand-databudget.card.html
+     2138  9fbf9f84454b7e164a35a15797c36bdca36a5b59c09994a9213750cf14725e12  guidelines/brand-iconography.card.html
+     4540  ec7d991543486c25983de982bc5cb933f47fe91605f62ba7360fccf83847697b  guidelines/brand-logo.card.html
+     5082  97558ea3fcae022414795b638df108b263ea0065174a7c711f928094454a3476  guidelines/brand-splash.card.html
+     1742  8065844680c652b17c8b7eb559b3e21f67d862c1b9c84cf5f5e4f08a1fd7da2c  guidelines/brand-voice.card.html
+     1508  151751498632ef9f392f73009a0905bfe59db914b1b10a73d99d07530532b304  guidelines/brand-wordmark.card.html
+     1851  39bcbccabf8590bbc3c6899804df6991418445db8c7919323f9c80d71534d894  guidelines/color-accent.card.html
+     1685  eb69535fa5faf488ed59ea48d23efa301a8243056bafbe218bcb46834202b3e9  guidelines/color-neutrals.card.html
+     1530  74afdb713268217a4ab5169a03d6d47c0ce097270cc23de693eefa6eda0fd82f  guidelines/color-semantic.card.html
+     1533  0ae747524d6b292f2e07b93d4b40130c965526b0eb39e202eacf937a4feba3f1  guidelines/spacing-radius.card.html
+     1742  d555f7fe30ad90aa67d5ceb634dcc08bce81412226944247b706e12cd5e41e0a  guidelines/spacing-scale.card.html
+     1217  b8373acf91d5270d63beb4986ea30da694d8a82cce925a61229da20c2de8d385  guidelines/type-body.card.html
+     1172  7fac99cd96864988ea5590720c0aeb9d80a9e27c18ee4e59a0f41db9a592f0ad  guidelines/type-display.card.html
+     1236  eb94e4c338365965a725895bb8acf5f68f710965b7f764cb6b5764091f846d69  guidelines/type-numerals.card.html
+     4483  a1d6f0ff252e1082bed59e474b6a7f118c9a7618272fd7dc206c59de19a55168  handoff/CHANGES.md
+     7294  6711f2ebeda3a7c5dd08d0124dfb08274ae7b5f24967b065adda19e5140c0726  handoff/CLAUDE-CODE-PROMPT.md
+     3226  c3e6f6371262b0b703e83221933f706aaec1e34930e8cbde20a4285cc0172563  handoff/README.md
+     9474  188a0ad6345eb3592d558178d8c18d58c435281e01d24efba330b47b846b21bf  handoff/WALLET-CLAUDE-CODE-PROMPT.md
+     2693  8cb3917717c8d37c23e83a07ca62b61f052670dc163e2297cbd83a4254d31395  handoff/design-tokens.ts
+     3108  dd3566b05ade26afe7c6fe52d33dccf80c5e443229ad0cfd40ef9ae47aa4def0  handoff/google-play/LISTING-COPY.md
+     5933  c5f0bda4b45de8a0042b45ff92a718ebac88dfcc7564809b0822e5003615a9c3  handoff/google-play/Play Store Kit.html
+   235602  da3697695dc641b45225354eb7a211a46557893b59f9ea4d1719a9084dccac11  handoff/google-play/export/01-shot.png
+   235352  860238b9daab807e40fe87a2fe9d64c50f4f42ab53f91d2f7439d5dbc65c5bd5  handoff/google-play/export/02-shot.png
+   179392  cbb2ce64dc0927cc086018f4d7e9b9125c323ef675e43c83a1e697478691c8ad  handoff/google-play/export/03-shot.png
+   183166  7427b31101e956b4f98ad5106fbe8bb012c293b8a35b35d97afa65908d61a7ec  handoff/google-play/export/04-shot.png
+   256671  fe058bec4013afea29095e0b67572d81b81f735a5a2ec085ff1e438940ec3a3f  handoff/google-play/export/05-shot.png
+   274064  cf2bd1bc43d72e67fc6de4c7de14e86d28fd5cacbccfcf0bd0d029e72fc73329  handoff/google-play/export/06-shot.png
+   265390  64c90fec2daa9c69cd72a1da999351c7bbfbe176d52ad8e2ab0c7ba2900650a6  handoff/google-play/export/07-shot.png
+   179151  d208d75eaa5475d66246765f93b54c7fb63274905f3057c9cd732f2854034286  handoff/google-play/export/08-shot.png
+    44016  ad88825e788645305833df08e1c09c97d8450c21f4f8bdc58e691a9e8ce34b58  handoff/google-play/export/feature.png
+    17891  c17027369d6333001d278ccf1220456150ca7bdbf021634344d13bf2783ea50d  handoff/google-play/export/icon.png
+     3075  9aa2e411dffccf5fba4f5d530f4fbbaa19fff8c5e197130af6db889930ac25ae  handoff/google-play/src/feature.html
+     1137  c483a56e05b3daa5dd2ab6cef73f85ae40da5b122145a938235a0d47ffc504b0  handoff/google-play/src/icon.html
+    27193  23e5cd2628cae68ba0a2ccdfd41a2e95d5d2a77327423c4175d40f2ff4e87168  handoff/google-play/src/play-shot-parts.jsx
+     3655  78501d56deaf69fda380f9ad1b639de4aa4660c32ea9d2ee04846091509533c3  handoff/google-play/src/shots.html
+    24657  6591467622edc7b2425def3fcf6447556fa698a1d10090583ebb9e782da064b5  handoff/google-play/src/tweaks-panel.jsx
+    10632  0f9138c4276e17d8ab9db3d5d00c6963bfe265841d7bc202525a2b684d43ec87  handoff/update-2026-07/CLAUDE-CODE-PROMPT.md
+     5215  d68e6b2c07dab0e86927c1f9a1b1d7137f9112445be339b3e56f2344bf98fed7  handoff/update-2026-07/README.md
+    17735  45439f4226c5501f9e716a082e4b8cf3e20fc986122a59187d554bd6f6b6943c  readme.md
+    18876  b77e132e01fb26043ffce685a1f3fc8cde6ed6930d8d6e89ecfd6a9b61f80cbe  scraps/01-kit-flow.png
+    21198  d0d9059ad644492fdaef31a748f0c59bae3da32ee0a101ed3b91cca28f55382a  scraps/01-kit-topup.png
+    18935  afae6c8c30e11c732a9573d2b07c64872f81883b5e40b49e1820ab738baafd18  scraps/01-topup.png
+    18859  b7af9a27c5c83c12e5163d62b0fc55dccc333b8a86eedfc3c0832d121009d40b  scraps/01-wallet2.png
+    19944  bb7f4a1fe5bab4ddf0d8e3e809afeac782b81f4118c0a71ab94e6c2c22de5074  scraps/01-wallet3.png
+    23587  f1291c0f75738becfa196274d0f219846bc0ef94bd0ae155f4014034c2d33959  scraps/02-kit-flow.png
+    18453  ab4fd0a71f8ff9bb1cf369d2e2f8192eb3236484d52c8089c40b1823944da4c3  scraps/02-kit-topup.png
+    15195  135d3032ddca38b21280692310944c1648b1a586b5d35be2ad39a8476113bca6  scraps/02-topup.png
+    19465  e35bf6f02b0d6ebbeae8d13e2dff21f74a66a161aae5eaaddf354944de46cc6a  scraps/02-wallet2.png
+    18816  3d4f1e19303f8490c5c44e470ebf0ff9ea670192061dd1156952713f3f157afd  scraps/02-wallet3.png
+    21888  abba8f6a6e716f9bef54f562dbecb8889f499b164ad66a0f7b0c686de2bebc4a  scraps/03-kit-flow.png
+    17201  434bb3f7922e6a12360d8cbedfe89e80b7fd76488ed10bab206329858e68f953  scraps/04-kit-flow.png
+    18479  78e25355bbc62aec319cee48f02995d16c46615a60499889a4c7f64d357d3209  scraps/05-kit-flow.png
+    20848  5f81dbf480433b7abb9fb83792093aacbde983d8059018f5b7e32fa7a67ea54b  scraps/06-kit-flow.png
+    21103  63a66bd15bc30688325cf6e4f4baed5d5fb5756a29e71faec802916c80bf11c1  scraps/07-kit-flow.png
+    28816  e31d36f465ee3952a8c7ade43e7bc3134e817d15e6d6ad62ecf9d6d86384237c  scraps/cash.png
+    17268  9d5be4d996c50b00a8b091923d75e19083f691004b0a91d467e4acfe951652fb  scraps/earnings.png
+    25776  62e107f70f4004227da048434ebb8f281124c15a604c0a929bae354f403ebc92  scraps/fix12.png
+    17430  fb079b9e7e5bca0fa6aa0fe6addade00155508663b2700535f4967b1a1295491  scraps/flow.png
+    17516  c96a965a0fe81751545550e5c3781e468892425a7eda63b65a4666d3471fa548  scraps/gate.png
+    17554  af3fcbbe9b99f52215ae61f93789c19fae2d31782f886c3a4901b17fb5f16567  scraps/gate2.png
+    21037  a09934fc194f7095d6da96ca6127b363614b6637eb5d3509a1623e7f3464d96f  scraps/jmap.png
+    17280  53350de446edba4d31ec88f098c53c3db8363790f5dbb644afd39da3b8a633d8  scraps/kit-wallet.png
+    24704  119a85ee574bd0a1ed290a5f3c38cf5c47bb2789155b3b4c4b8d06b4f9cf3528  scraps/rider-credit.png
+    26254  25f7dcd4b5872173da99c714f18f31eec689a5ca17fe03580596fb1f2cbf0b10  scraps/rider-wallet.png
+    35646  4b188ddb491474370f293a9de52d51758636f727c6120536051c8722a423d90c  scraps/seed.png
+    20305  63375e50e32cfc00eba5f8f3841ad905aaff2e2107e31f4ef6816b8fee1abaad  scraps/store-overview.png
+    19108  5fe4940c957ee9ce947eceefdfd01692909fe717f9b79438a09be2af758801c6  scraps/topup3.png
+     3234  24dbfe8ef549f54501b8552b35b004f0ffb3386aedd8213b5b6490f1751f5a54  store-assets/google-play/README.md
+    19512  c34a6660f456367c187cdb91983ec766e0321cdfff537add44fbf9ec49790d09  store-assets/google-play/app-icon/icon-512.png
+   237159  71ee5dc689509fcee02c600c07d965238e3bc32e9e4c82f2cd8d93c467c01a40  store-assets/google-play/feature-graphic/feature-graphic-1024x500.png
+   632558  c0c8265ec1a9048e5e3efdf5447cbb34323dbabdcffbe6a4bbe49b8e63543227  store-assets/google-play/phone-screenshots/01-home.png
+   975593  fd39a5382228034e45e8f5ae1fa523f48e4fb0e69871b3925856a9d655e7accd  store-assets/google-play/phone-screenshots/02-restaurants.png
+   418522  869e6103962301a90b727902551dce68c0ba7906b2ef3b44fd2931d70dff32d2  store-assets/google-play/phone-screenshots/03-menu-cart.png
+   519507  027821e08689c047133d710c279e5da79ef816710999925ddfb00c8fded101b4  store-assets/google-play/phone-screenshots/04-tracking.png
+   556865  a7408bffd6f61f05d512102f70e6046b5123201d6194eea31dba86338de6b443  store-assets/google-play/phone-screenshots/05-send-parcel.png
+   435101  e8ac3fb2d6f378fad320f59f5884fc1153d5f6bd163b9a850273ce0a74dc7559  store-assets/google-play/phone-screenshots/06-payment.png
+  1190602  6376d812a4addc18f84cb60dfd752d24aa77ccd3bb7e4f7653b5ae0763960ff3  store-assets/google-play/tablet-10in/01-home.png
+  1914713  d79977663ac0e880da0713e5593103b45cdc207bd998698613d3859379ea8dc3  store-assets/google-play/tablet-10in/02-restaurants.png
+   740853  e06630ef6201e443eaf0ca36098035f90100b618e1f4834bae1ce328d06f65c5  store-assets/google-play/tablet-10in/03-menu-cart.png
+   947177  06da9b1bfe2b1846610bb0fdb8e04e8f45f2562400c129cbd2062834597c4b36  store-assets/google-play/tablet-10in/04-tracking.png
+  1020398  aad269be5ef46ded6e3d3357ebf64d293db78ce9e94507849912aa7c2a030f13  store-assets/google-play/tablet-10in/05-send-parcel.png
+   769549  a8a8ce630e648115ba0cb2030ef51ca5881c1ea674d5d91eca0b0ec3f9edf732  store-assets/google-play/tablet-10in/06-payment.png
+   750114  0dc7ca6cbadf7be00059d6e7aa9eb1355a668d83a4a9d4beb473e91b8afdcb36  store-assets/google-play/tablet-7in/01-home.png
+  1167037  a9f0ca962ebb00a4056d03589e0da69aaf246868bf471c7dd2545e13e8987ea9  store-assets/google-play/tablet-7in/02-restaurants.png
+   482532  855c934b8c5860fd7341c741481cb9f9dc9a2f3294e5a958bd23a58ddb26fd0e  store-assets/google-play/tablet-7in/03-menu-cart.png
+   607092  e766ccb7df988ca5383d464c3c0bfcb865ab24caaacc888454cf7bb6a8a0898f  store-assets/google-play/tablet-7in/04-tracking.png
+   648266  754e80b1477955666e31e58332fab1d3355a12ea28a915edfa57fb1f25007fa6  store-assets/google-play/tablet-7in/05-send-parcel.png
+   504102  8a1b4382f51392b2e91a0ba4245e7a9cb4c91d0f83e8c9d1beb4b15660ad8f3f  store-assets/google-play/tablet-7in/06-payment.png
+      302  1567ce0b7b7af694e034044e93e5a5fe87cb9fa8470072fc9b988fda15bb03ba  styles.css
+    69150  8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe  support.js
+     4814  f9f68512b03e07245479070fd6578ee99b3ba894f10fe3f75df771ab4c1200de  templates/app-screen/.thumbnail
+     3019  0cfbc023ab891a6ab5bef125164896e8b27f82651587545b930b5015f7ce1c57  templates/app-screen/AppScreen.dc.html
+     1116  755987744d8b1e51e16eca6fb330adb3bcea7e10a9e02f09607d7bdb5f296f58  templates/app-screen/ds-base.js
+    60151  e0650b109ec8f78ccc370fa27762b0c485cee4f208156a671f346e8544fc2214  templates/app-screen/support.js
+     5910  f07f886e8fd49c3f00684a844f355bfc27ebbaadf354ec2d9d25f0055afcb214  templates/gate-state/.thumbnail
+     7673  f9aacf16a1c59e6fe3a4d87be1d540e75ab132621b974cb8f3152143c7e1dedc  templates/gate-state/GateState.dc.html
+     1007  1fe673e6e21db821ba3979d4b78a94abf52b2e46b00f2026842870e5c3256a9d  templates/gate-state/ds-base.js
+    64222  ae4f0ac8449655e17cca1e3b179effcb6817a3b0d8dc47f112a9c39c25c39fd7  templates/gate-state/support.js
+     7144  4fbd87c333c0da323e2c4c373d0d33f8e3c407889d5a21c809c5d6a6251bbe2b  templates/top-up/.thumbnail
+    20451  82f188bff58b299c6bcdcab2020b2d860d1bc7983a14774ce0ae3f1e84fe115c  templates/top-up/TopUp.dc.html
+     1007  1fe673e6e21db821ba3979d4b78a94abf52b2e46b00f2026842870e5c3256a9d  templates/top-up/ds-base.js
+    64222  ae4f0ac8449655e17cca1e3b179effcb6817a3b0d8dc47f112a9c39c25c39fd7  templates/top-up/support.js
+     9072  1b6ee51d6b1442c2318851a1a6d2341c6320731d33818cdbf8856dea62b714d8  templates/wallet/.thumbnail
+    14386  64ad6ee0cd4be81ba4348f65b6ef72382efb48b9cc541cf243f17cae033d9ab4  templates/wallet/Wallet.dc.html
+     1007  1fe673e6e21db821ba3979d4b78a94abf52b2e46b00f2026842870e5c3256a9d  templates/wallet/ds-base.js
+    64222  ae4f0ac8449655e17cca1e3b179effcb6817a3b0d8dc47f112a9c39c25c39fd7  templates/wallet/support.js
+     1170  d86a48770e1ae41391c51862304b73cbccd37acddf8bb702bbcbe7717949f661  thumbnail.html
+     3099  714e5a4f13e26932e2208d0591565eaa08d2c6c0dc27262c113ee30e7b6e0eb6  tokens/colors.css
+     1951  03a3d78d6593b4c8703b2e99995987425a4caf78efe0e851717b24dbe3b850c7  tokens/fonts.css
+      675  15f5c76e05c80e5d5d64ece94586f8c095128e3498e60db2f023ec3c53dd33a5  tokens/icons.css
+     1771  69dd81c0dd48502245de8fa607fc8300169f0b14c12dd48ccb6797a086d989de  tokens/spacing.css
+     1984  2f57813b379bfaae3eaabe841225dc764db73859e21f78d1068f4ea4dc007b00  tokens/typography.css
+     2861  686c2389212ee3fd28f053ffb7660977430a27d088c5f3d36e75ba85738702c9  ui_kits/admin/README.md
+    14460  467529e8c559e0f1196a877b3e9dec607d41d25946dc423caa8156070d233545  ui_kits/admin/admin.css
+     9511  dcee19b629231beb00b0e60aa431e4e2d8eb2452a27d99fafbd0c007d3dcff62  ui_kits/admin/cash.html
+    13162  ab64158c4473b8fccf880cca732dfe8c508c0eef774f5f858ad40887d088e50c  ui_kits/admin/customers.html
+     7819  0c567dac713e0b077cdcf086635d3523f1415c333ecd3127a82159309290c356  ui_kits/admin/index.html
+    11576  46bc323e72ee432cbeb3958cf71ac6ba0bf18a68ffa71e729a8ab21b62b46f10  ui_kits/admin/issues.html
+    13203  141030b3fd6a9ead17b787435e378afd5be200d6b207b6df26388649e3245c32  ui_kits/admin/kyc.html
+    14704  d053082ecddcc3ee0490fbaa2a4e6f384c2463941174f5612be8ba9e7d65b83c  ui_kits/admin/orders.html
+    22745  ed154b9603a73adf03e5f89dc40400816135bb867541a99f0079fd67b150a7dc  ui_kits/admin/riders.html
+     9130  14476b705b8b360bc35f5f6fe229f34d1739e071511183c2341877cf3204976c  ui_kits/admin/shell.js
+     2167  92c72427043fcabe3809c779ca0a8318c182b189879e5feeddf641d18314b9b0  ui_kits/mobile/README.md
+   103247  d52f07db072a1f4daf28ca86d8826236c0c4bce97dbde894756af498f75a3d57  ui_kits/mobile/app.js
+     1922  808b166b10a2189b130ac2c569a12346883806b03b8f2cb14f9e76532f85162d  ui_kits/mobile/index.html
+    10193  daa687bca1441ee9082eff74fed8864ad363dad92bef88836b225f402bf2fc9a  ui_kits/mobile/kit-parts.js
+     7096  7ca3bcad4fc5b0b424ead9948d1d25410a9f9e4a07ad0f507648f1b3abde8e79  ui_kits/mobile/new-flows.html
+    15351  35075d16bf8dc054f926deb32d9a45be0fcff109386a835e9cd28e97382e770d  ui_kits/mobile/safety-flows.html
+     1627  a381046932247e27abdc64f22f04d1c0d3bb73384a8132ad09e50df44c6b196e  ui_kits/support/README.md
+     1477  ae85f265f5f8aaa1592580ea1472b307bbc4d8121bd0eaeee81bfe61aaf6d4e1  ui_kits/support/index.html
+     5149  a940ef2c5b36df78b779db01538d33e85b776a5869ea5eb341c28131b439fa09  ui_kits/support/parts.js
+    11226  fba807fd3dafc85eb52031f3a6cccc7441d4d231a293a6cc2c681fffc3e35732  ui_kits/support/screens.js
+     2616  513dbe820a5783f26d961c4e43758b51e6bac4ffd19355dbfeedf1357aa789fd  uploads/EcoCash.png
+   140025  6c0fcacb9ae69c6f18ec1ecaf8c24d0755920039f37240760c778861e04d741d  uploads/InnBucks_MicroBank_Limited.jpg
+     6428  df6cabd0253b751759ceb37ee765d718b71c88f971a95a78a6f9983304ba2ab5  uploads/O'mari.png
+    43474  19d96dbb6750aee00fd149d6c321ae45d7a69a7d20c2ae9a42c0b9df5dfb5661  uploads/id338OfHpg_logos.png
+    59484  8849e8b50bf8e60ac7e9beb424c66e03ed9e6cd93e9f0a7ce32e2e4d4b3e8ab0  uploads/pasted-1783027239005-0.png
+   201087  2c7ed0d42629d3935a7e126fa699c3bc2217d1021a1069bbecaaa6a800483a84  uploads/pasted-1785173751344-0.png
+        -  (not hashed: this file cannot contain its own digest)                    EXPORT-MANIFEST.txt
+
+== EXTERNAL URL AUDIT (hosts referenced in text files; all fonts/icons/images ship locally) ==
+fonts.googleapis.com  (2 files)
+    explorations/LyniaGo Dove Cross.html
+    explorations/LyniaGo Paper Dove.html
+github.com  (2 files)
+    DESIGN-IMPROVEMENTS.md
+    readme.md
+maps.google.com  (2 files)
+    _ds_bundle.js
+    ui_kits/mobile/app.js
+tile.openstreetmap.org  (2 files)
+    _ds_bundle.js
+    explorations/restaurants/r-parts.jsx
+unpkg.com  (26 files)
+    components/core/core.card.html
+    components/feedback/feedback.card.html
+    components/forms/forms.card.html
+    components/home/home.card.html
+    components/journey/journey.card.html
+    components/shell/shell.card.html
+    components/typography/typography.card.html
+    explorations/journey/All Screens Gallery.html
+    explorations/journey/LyniaGo Customer Journey Map.html
+    explorations/journey/LyniaGo Rider Journey Map.html
+    explorations/journey/single-screen.html
+    explorations/restaurants/Restaurants Journey Maps.html
+    explorations/restaurants/Restaurants Vertical.html
+    explorations/store/Google Play Assets.html
+    explorations/store/Play Export Lab.html
+    handoff/google-play/Play Store Kit.html
+    handoff/google-play/src/shots.html
+    support.js
+    templates/app-screen/support.js
+    templates/gate-state/support.js
+    templates/top-up/support.js
+    templates/wallet/support.js
+    ui_kits/mobile/index.html
+    ui_kits/mobile/new-flows.html
+    ui_kits/mobile/safety-flows.html
+    ui_kits/support/index.html
+unsplash.com  (2 files)
+    _ds_bundle.js
+    assets/image-slot.js
+Runtime-fetched at render: unpkg.com (pinned react/react-dom/babel + leaflet, SRI-locked) and tile.openstreetmap.org (live tiles on real-map frames). Other hosts (github.com, unsplash.com, maps.google.com, fonts.googleapis.com) — verify per file above; most are reference links in docs/comments, not fetched.
+
+== SCREEN INVENTORY ==
+Registries: LJ Send-customer · RC Food-customer · RJ rider (parcel-built) · RR rider (food-built) · RJM merged one-app rider · RM merchant tablet.
+Badges are the generated All-Screens-Gallery badges (band·tile, 1-based); registry id = the stable key in the *.jsx screen registries.
+
+### CUSTOMER (All Screens Gallery)
+  -- band C1 · First run --
+  C1·1    LJ splash                    Splash
+  C1·2    LJ onboard                   Onboarding · food  [FOOD]
+  C1·3    LJ onboard_send              Onboarding · send  [PARCEL]
+  C1·4    LJ onboard_shared            Onboarding · one app  [BOTH]
+  C1·5    LJ login                     Phone login
+  C1·6    LJ otp                       WhatsApp OTP
+  C1·7    LJ role_select               Choose your role
+  C1·8    LJ register                  Profile registration
+  C1·9    LJ perm_loc                  Permission · location
+  C1·10   LJ perm_notif                Permission · notifications
+  -- band C2 · Home & orders --
+  C2·1    RC home                      Home · service tiles  [BOTH]
+  C2·2    RC orders                    Orders · all services  [BOTH]
+  C2·3    RC orders_empty              Orders · empty  [BOTH]
+  -- band C3 · Browse & compose --
+  C3·1    RC list                      Restaurant list  [FOOD]
+  C3·2    RC list_loading              List loading  [FOOD]
+  C3·3    RC search                    Search  [FOOD]
+  C3·4    RC menu                      Menu  [FOOD]
+  C3·5    RC item                      Item sheet  [FOOD]
+  C3·6    LJ home_empty                Send composer · no address  [PARCEL]
+  C3·7    LJ addr_search               Address search  [PARCEL]
+  C3·8    LJ addr_map_confirm          Confirm pin on map  [PARCEL]
+  C3·9    LJ home_pins                 Send · both set  [PARCEL]
+  C3·10   LJ home_expanded             Send · sheet expanded  [PARCEL]
+  C3·11   LJ disclaimer                Broadcast disclaimer  [PARCEL]
+  -- band C4 · Commit & pay --
+  C4·1    RC cart                      Cart  [FOOD]
+  C4·2    RC cart_note                 Note for the kitchen  [FOOD]
+  C4·3    RC checkout_cash             Checkout · CASH  [FOOD]
+  C4·4    RC checkout_wallet           Checkout · WALLET  [FOOD]
+  C4·5    RC placing                   Placing  [FOOD]
+  C4·6    LJ auction_finding           Auction · finding  [PARCEL]
+  C4·7    LJ auction_live              Auction · offers live  [PARCEL]
+  C4·8    LJ auction_counter           Counter-offer review  [PARCEL]
+  -- band C5 · The kitchen confirms --
+  C5·1    RC await_accept              Waiting on the kitchen  [FOOD]
+  C5·2    RC confirm_call              They call to confirm  [FOOD]
+  C5·3    RC pay_push                  Push · payment requested  [FOOD]
+  C5·4    RC pay_now                   Pay the restaurant  [FOOD]
+  C5·5    RC pay_wait                  Prompt sent  [FOOD]
+  C5·6    RC pay_manual                Paid another way  [FOOD]
+  C5·7    RC pay_confirmed             Waiting to be confirmed  [FOOD]
+  -- band C6 · Track --
+  C6·1    RC track_prep                Prep countdown  [FOOD]
+  C6·2    RC track_secured             Rider secured  [FOOD]
+  C6·3    RC track_way                 On the way  [FOOD]
+  C6·4    LJ track_code                Tracking · code issued  [PARCEL]
+  C6·5    LJ track_active              Tracking · live  [PARCEL]
+  -- band C7 · Hand-off & close --
+  C7·1    RC handoff                   Pay at the door  [FOOD]
+  C7·2    RC handoff_wait              Waiting for rider confirm  [FOOD]
+  C7·3    RC handoff_code              Both confirmed · code  [FOOD]
+  C7·4    RC delivered_rate            Delivered · rate the food  [FOOD]
+  C7·5    LJ delivered_rate            Delivered · rate the rider  [PARCEL]
+  C7·6    LJ completed                 Completed  [PARCEL]
+  -- band C8 · Account & support --
+  C8·1    LJ profile                   Account
+  C8·2    LJ history                   Orders · all services  [BOTH]
+  C8·3    LJ notifications             Notifications
+  C8·4    LJ notif_empty               Notifications · empty
+  C8·5    LJ help                      Help & support
+  C8·6    LJ settings                  Settings
+  -- band C9 · Trust & safety --
+  C9·1    LJ sos_idle                  SOS · live-trip control  [BOTH]
+  C9·2    LJ sos_confirm               SOS · confirm  [BOTH]
+  C9·3    LJ sos_contacts              SOS · contacts  [BOTH]
+  C9·4    LJ sos_error                 SOS · log failed (offline)  [BOTH]
+  C9·5    LJ report                    Report + block rider  [BOTH]
+  C9·6    LJ report_done               Report sent  [BOTH]
+  C9·7    LJ trip_help                 Get help with this order  [BOTH]
+  C9·8    LJ trip_help_sent            Issue logged  [BOTH]
+  -- band C10 · Exceptions & edge --
+  C10·1   RC list_empty                Nothing open  [FOOD]
+  C10·2   RC list_error                Offline list  [FOOD]
+  C10·3   RC menu_closed               Closed restaurant  [FOOD]
+  C10·4   RC closed_interrupt          Closes while browsing  [FOOD]
+  C10·5   RC cart_oos                  Item sold out  [FOOD]
+  C10·6   RC cart_price                Price changed  [FOOD]
+  C10·7   RC cart_empty                Empty cart  [FOOD]
+  C10·8   RC cart_min                  Under the minimum  [FOOD]
+  C10·9   RC checkout_offline          Offline mid-checkout  [FOOD]
+  C10·10  RC pay_open                  Still unpaid · reminder  [FOOD]
+  C10·11  RC pay_failed                Payment declined  [FOOD]
+  C10·12  RC item_removed              One item unavailable  [FOOD]
+  C10·13  RC no_rider                  NO_RIDER  [FOOD]
+  C10·14  RC track_paused              Live paused  [FOOD]
+  C10·15  RC rejected                  Rejected · refund pending  [FOOD]
+  C10·16  RC refunded                  Refunded  [FOOD]
+  C10·17  RC cancel_sheet              Cancel pre-pickup  [FOOD]
+  C10·18  RC rider_cancelled           Rider cancelled · re-finding  [FOOD]
+  C10·19  RC handoff_dispute           Rider didn't confirm  [FOOD]
+  C10·20  RC failed_noshow             No-show · returned  [FOOD]
+  C10·21  RC resume                    App resumed mid-order  [FOOD]
+  C10·22  LJ no_riders                 No riders online  [PARCEL]
+  C10·23  LJ select_race               Rider just taken  [PARCEL]
+  C10·24  LJ auction_expired           Auction expired  [PARCEL]
+  C10·25  LJ rider_cancelled           Rider cancelled  [PARCEL]
+  C10·26  LJ track_paused              Live paused  [PARCEL]
+  C10·27  LJ cancel                    Cancel · reason  [PARCEL]
+  C10·28  LJ cancelled                 Cancelled  [PARCEL]
+  C10·29  LJ undelivered               Not delivered  [PARCEL]
+  C10·30  LJ track_dark                Rider went dark  [PARCEL]
+  C10·31  LJ otp_cooldown              OTP · resend cooldown
+  C10·32  LJ otp_resent                OTP · code re-sent
+  C10·33  LJ otp_locked                OTP · expired / locked
+  C10·34  LJ offline                   Offline banner
+  C10·35  LJ on_hold                   Account on hold
+  C10·36  LJ force_update              Force update
+  C10·37  LJ no_gps                    Location off / no GPS
+  C10·38  LJ generic_error             Generic error
+
+### RIDER (All Screens Gallery)
+  -- band R1 · First run & sign in --
+  R1·1    RJ splash                    Splash
+  R1·2    RJ onboard                   Onboarding · rider
+  R1·3    RJ login                     Phone sign-in
+  R1·4    RJ otp                       WhatsApp OTP
+  R1·5    RJ role_select               Choose your role
+  R1·6    RJ perm_loc                  Permission · location
+  R1·7    RJ perm_notif                Permission · notifications
+  -- band R2 · Become a rider (KYC) --
+  R2·1    RJ kyc_intro                 Become a rider
+  R2·2    RJ kyc_form                  KYC form + consent
+  R2·3    RJ photo_capture             ID photo · capture
+  R2·4    RJ photo_preview             ID photo · preview
+  R2·5    RJ photo_uploading           ID photo · uploading
+  R2·6    RJ kyc_pending               Verification pending
+  R2·7    RJ kyc_verified              Verified
+  -- band R3 · Online & the one board --
+  R3·1    RJM offline                  Offline  [BOTH]
+  R3·2    RJM board                    Jobs · one list  [BOTH]
+  R3·3    RJM board_empty              Online · nothing in range  [BOTH]
+  R3·4    RJM notifications            One inbox  [BOTH]
+  -- band R4 · Taking a job --
+  R4·1    RJM offer_parcel             Parcel · name your fare  [PARCEL]
+  R4·2    RJ offer_sent                Offer sent · waiting  [PARCEL]
+  R4·3    RJ picked                    Customer picked you  [PARCEL]
+  R4·4    RJM offer_food               Food · accept the job  [FOOD]
+  R4·5    RR offer_cash                Food · CASH collect  [FOOD]
+  R4·6    RR offer_upfront             Food · kitchen wants upfront  [FOOD]
+  R4·7    RR offer_wallet              Food · already paid  [FOOD]
+  -- band R5 · The active job --
+  R5·1    RJM active_parcel            Active · parcel  [PARCEL]
+  R5·2    RJ job_assigned              Job · assigned  [PARCEL]
+  R5·3    RJ job_pickup                En route to pickup  [PARCEL]
+  R5·4    RJ job_verify                Verify items at pickup  [PARCEL]
+  R5·5    RJ job_collect               Parcel collected  [PARCEL]
+  R5·6    RJ job_dropoff               En route to drop-off  [PARCEL]
+  R5·7    RJM active_food              Active · food  [FOOD]
+  R5·8    RR nav_rest                  To the restaurant  [FOOD]
+  R5·9    RR pay_merchant              Pay the merchant  [FOOD]
+  R5·10   RR pickup_confirm            Collect · CASH job  [FOOD]
+  R5·11   RR pickup_paid               Collect · already PAID  [FOOD]
+  R5·12   RR nav_cust                  To the customer  [FOOD]
+  R5·13   RR doorstep                  Collect · confirm cash  [FOOD]
+  R5·14   RJM handoff                  Delivery code  [BOTH]
+  R5·15   RJ job_handoff               Hand-off · parcel  [PARCEL]
+  R5·16   RJ job_delivered             Delivered  [PARCEL]
+  R5·17   RR delivered                 Delivered · food  [FOOD]
+  R5·18   RR return_cash               Return the kitchen's cash  [FOOD]
+  -- band R6 · Money --
+  R6·1    RJM money                    Money tab  [BOTH]
+  R6·2    RJM gate_topup               Gate · top up to keep riding  [BOTH]
+  R6·3    RJ topup_amount              Top up · amount  [BOTH]
+  R6·4    RJ topup_wait                Payment prompt · wait  [BOTH]
+  R6·5    RJ topup_success             Top up · success  [BOTH]
+  R6·6    RJ wallet_low                Balance low  [BOTH]
+  -- band R7 · Account & support --
+  R7·1    RJM account                  Account
+  R7·2    RJ bike_docs                 Bike & documents
+  R7·3    RJ history                   Job history  [BOTH]
+  R7·4    RJ settings                  Settings
+  R7·5    RJ help                      Help & support
+  -- band R8 · Trust & safety --
+  R8·1    RJ sos_idle                  SOS · live-job control  [BOTH]
+  R8·2    RJ sos_confirm               SOS · confirm  [BOTH]
+  R8·3    RJ sos_contacts              SOS · contacts  [BOTH]
+  R8·4    RJ report                    Report + block customer  [BOTH]
+  R8·5    RJ report_done               Report sent  [BOTH]
+  R8·6    RJ job_help                  Get help with this job  [BOTH]
+  R8·7    RJ job_help_sent             Issue logged  [BOTH]
+  -- band R9 · Exceptions & edge --
+  R9·1    RJ missed_order              Job taken first  [PARCEL]
+  R9·2    RJ not_chosen                Not chosen  [PARCEL]
+  R9·3    RJ bid_expired               Auction expired · no pick  [PARCEL]
+  R9·4    RJ handoff_wrong             Wrong code · lockout  [PARCEL]
+  R9·5    RJ undelivered               Not delivered  [PARCEL]
+  R9·6    RJ job_bail                  Rider cancels (bail)  [PARCEL]
+  R9·7    RJ job_offline               Connection lost mid-job  [PARCEL]
+  R9·8    RJ job_cancelled             Customer cancelled  [PARCEL]
+  R9·9    RR offer_expired             Offer expired  [FOOD]
+  R9·10   RR cancel_reason             Drop the job · before pickup  [FOOD]
+  R9·11   RR cancel_blocked            Can't drop after collecting  [FOOD]
+  R9·12   RR cash_dispute              Customer confirmed, you didn't  [FOOD]
+  R9·13   RR code_wrong                Wrong code  [FOOD]
+  R9·14   RR unreachable               Customer unreachable  [FOOD]
+  R9·15   RR return_rest               Return to restaurant  [FOOD]
+  R9·16   RR handback                  Hand back confirm  [FOOD]
+  R9·17   RR offline_resume            Resumed mid-delivery  [FOOD]
+  R9·18   RJ kyc_failed                Verification failed
+  R9·19   RJ kyc_expired               ID expired (later)
+  R9·20   RJ photo_failed              ID photo · upload failed
+  R9·21   RJ gate_out_of_area          Gate · out of area
+  R9·22   RJ gate_cooldown             Gate · cooldown
+  R9·23   RJ gate_banned               Gate · account closed
+  R9·24   RJ gate_kyc_locked           Gate · verification locked
+  R9·25   RJ topup_declined            Top up · declined  [BOTH]
+  R9·26   RJ offline                   Offline banner
+  R9·27   RJ on_hold                   Account on hold
+  R9·28   RJ force_update              Force update
+  R9·29   RJ no_gps                    Location off / no GPS
+  R9·30   RJ generic_error             Generic error
+
+### MERCHANT (All Screens Gallery ← RGD.MERCHANT; trailing (RV …) = Restaurants Vertical badge)
+  -- band M1 · Get on shift --
+  M1·1    RM login                     Phone + OTP login  (RV M0·1)
+  M1·2    RM setup                     First login · setup  (RV M0·2)
+  M1·3    RM reboot                    Tablet rebooted mid-shift  (RV M0·b1)
+  -- band M2 · The queue --
+  M2·1    RM queue_empty               Open · no orders  (RV M1·1)
+  M2·2    RM queue_loading             Loading  (RV M1·2)
+  M2·3    RM queue_new                 NEW ORDER · alarm  (RV M1·3)
+  M2·4    RM queue_board               Kitchen board · 3 live  (RV M1·4)
+  M2·5    RM two_orders                Two orders at once  (RV M1·b1)
+  M2·6    RM offline                   Connection lost  (RV M1·b2)
+  M2·7    RM offline_order             Order arrived offline  (RV M1·b3)
+  -- band M3 · Accept & cook --
+  M3·1    RM order_accept              Accept + prep time  (RV M2·1)
+  M3·2    RM call_confirm              Call, then request payment  (RV M2·6)
+  M3·3    RM awaiting_payment          Awaiting payment · no clock  (RV M2·7)
+  M3·4    RM reject_sheet              Reject · reason  (RV M2·2)
+  M3·5    RM waiting_rider             Accepted · do not cook yet  (RV M2·3)
+  M3·6    RM cook_now                  Rider secured · cook now  (RV M2·4)
+  M3·7    RM mark_ready                Mark ready  (RV M2·5)
+  M3·8    RM no_rider_merchant         NO_RIDER · never cooked  (RV M2·b1)
+  M3·9    RM rider_cancelled           Rider cancelled · re-dispatch  (RV M2·b2)
+  -- band M4 · Pickup confirm --
+  M4·1    RM pickup_cash               Upfront · confirm cash  (RV M3·1)
+  M4·2    RM pickup_collect            Collect-and-return · release  (RV M3·1b)
+  M4·3    RM pickup_wallet             WALLET · confirm before cooking  (RV M3·2)
+  M4·4    RM wallet_mismatch           Short payment blocked  (RV M3·b1)
+  M4·5    RM pickup_done               Handed over  (RV M3·3)
+  M4·6    RM cash_return               Count the returned cash  (RV M3·4)
+  M4·7    RM rider_noshow              Rider no-show  (RV M3·b2)
+  M4·8    RM refund_exec               Refund after wallet paid  (RV M3·b3)
+  -- band M5 · Run the shop --
+  M5·1    RM catalog                   Menu · grouped by category  (RV M4·1)
+  M5·2    RM category_manage           Categories · reorder & hide  (RV M4·2)
+  M5·3    RM category_edit             New category  (RV M4·3)
+  M5·4    RM category_rename           Edit / delete category  (RV M4·4)
+  M5·5    RM catalog_empty             No categories yet  (RV M4·b1)
+  M5·6    RM item_edit                 Edit dish · photo required  (RV M4·5)
+  M5·7    RM dish_photo                Dish photo · crop  (RV M4·6)
+  M5·8    RM dish_draft                Draft · needs a photo  (RV M4·b2)
+  M5·9    RM oos_sheet                 Out of stock today  (RV M4·7)
+  M5·10   RM hours                     Operating hours  (RV M4·8)
+  M5·11   RM statement                 Weekly statement  (RV M4·9)
+  M5·12   RM eod                       End of day  (RV M4·10)
+  -- band M6 · Shop front --
+  M6·1    RM shop                      Shop profile  (RV M5·1)
+  M6·2    RM cash_rule                 Your cash rule  (RV M5·4)
+  M6·3    RM shop_crop                 Position the banner  (RV M5·2)
+  M6·4    RM shop_upload               Uploading · compressing  (RV M5·3)
+  M6·5    RM shop_upload_failed        Upload paused · offline  (RV M5·b1)
+
+### Restaurants Vertical gallery badges (explorations/restaurants/Restaurants Vertical.html)
+  -- Customer · Act 0 · Home --
+  0·1     RC home                      Home · service tiles
+  0·2     RC orders                    Orders (all services)
+  0·b1    RC orders_empty              Orders · empty
+  -- Customer · Act 1 · Discover --
+  1·1     RC list                      Restaurant list
+  1·2     RC list_loading              Loading
+  1·3     RC list_empty                Nothing open
+  1·4     RC list_error                Offline / can't reach
+  1·5     RC search                    Search
+  -- Customer · Act 2 · Menu --
+  2·1     RC menu                      Menu
+  2·2     RC item                      Item sheet
+  2·3     RC menu_closed               Closed restaurant
+  2·b1    RC closed_interrupt          Closes while browsing
+  -- Customer · Act 3 · Cart --
+  3·1     RC cart                      Cart
+  3·2     RC cart_note                 Note for the kitchen
+  3·b1    RC cart_oos                  Item sold out
+  3·b2    RC cart_price                Price changed
+  3·b3    RC cart_empty                Empty cart
+  3·b4    RC cart_min                  Under the minimum
+  -- Customer · Act 4 · Checkout --
+  4·1     RC checkout_cash             Checkout · CASH
+  4·2     RC checkout_wallet           Checkout · WALLET
+  4·b1    RC checkout_offline          Offline mid-checkout
+  4·b2    RC placing                   Placing
+  -- Customer · Act 5 · Pay after accept (WALLET) --
+  5·1     RC await_accept              Waiting on the kitchen
+  5·1b    RC confirm_call              They call to confirm
+  5·2     RC pay_push                  Push · payment requested
+  5·3     RC pay_now                   Pay the restaurant
+  5·4     RC pay_wait                  Prompt sent
+  5·5     RC pay_manual                Paid another way
+  5·6     RC pay_confirmed             Waiting to be confirmed
+  5·b1    RC pay_open                  Still unpaid · reminder
+  5·b2    RC pay_failed                Payment declined
+  5·b3    RC item_removed              One item unavailable
+  -- Customer · Act 6 · Track --
+  6·1     RC track_prep                Prep countdown
+  6·2     RC track_secured             Rider secured
+  6·3     RC track_way                 On the way
+  6·b1    RC track_paused              Live paused
+  6·b2    RC no_rider                  NO_RIDER
+  6·b6    RC rider_cancelled           Rider cancelled · re-finding
+  6·b3    RC rejected                  Rejected · refund pending
+  6·b4    RC refunded                  Refunded
+  6·b5    RC cancel_sheet              Cancel pre-pickup
+  -- Customer · Act 7 · Hand-off & close --
+  7·1     RC handoff                   Pay at the door
+  7·1b    RC handoff_wait              Waiting for rider confirm
+  7·1c    RC handoff_code              Both confirmed · code
+  7·2     RC delivered_rate            Delivered · rate
+  7·b3    RC handoff_dispute           Rider didn't confirm
+  7·b1    RC failed_noshow             No-show · returned
+  7·b2    RC resume                    App resumed mid-order
+
+### ADMIN (ui_kits/admin — pages, gallery badges A1-A7)
+  A1      index.html                   Overview dashboard
+  A2      orders.html                  Orders — monitor & detail
+  A3      riders.html                  Riders — directory & profile
+  A4      customers.html               Customers — directory & profile
+  A5      cash.html                    Cash & settlements (business model retired — see EXPORT-README)
+  A6      kyc.html                     KYC — queue & review
+  A7      issues.html                  Issues — disputes
+
+### New customer flows sheet (ui_kits/mobile/new-flows.html)
+  1·2     addr_search                  Address search  (ref Addressing redesign)
+  1·3     addr_map_confirm             Confirm pin on map  (ref Addressing redesign)
+  1·6     disclaimer                   Broadcast disclaimer  (ref A1-8 · P1)
+  2·3     auction_counter              Counter-offer review  (ref F-07 · P0)
+  3·b0    rider_cancelled              Rider cancelled → re-broadcast  (ref F-01 · P0)
+  3·b5    undelivered                  Not delivered (terminal)  (ref F-02 · P0)
+  3·2     track_active                 Live tracking + Maps sync  (ref Maps sync)
+
+### Trust, safety & recovery sheet (ui_kits/mobile/safety-flows.html; c=customer, r=rider)
+  B1·1    c sos_idle                   Idle — SOS pinned  (ref R-16 · P1)
+  B1·2    c sos_confirm                Confirm step  (ref Q3 · resolved)
+  B1·3    c sos_contacts               Emergency contacts  (ref Q3 · resolved)
+  B1·4    c sos_error                  Log failed (offline)  (ref Offline-first)
+  B2·1    c report                     Report + block rider  (ref F-15 / R-11 · P1)
+  B2·2    c report_done                Report sent  (ref F-15 / R-11)
+  B3·1    c trip_help                  Get help with this trip  (ref X-1 · P1)
+  B3·2    c trip_help_sent             Issue logged  (ref X-1)
+  C·1     c otp_cooldown               Resend cooldown  (ref A0-1 / R0-1 · Wave 4)
+  C·2     c otp_resent                 Code re-sent  (ref A0-1 / R0-1)
+  C·3     c otp_locked                 Expired / locked  (ref A0-1 / R0-1)
+  D·1     c track_dark                 Rider went dark  (ref R-04 / R-05 · C5)
+  A1      r gate_out_of_area           Outside service area  (ref A1-1 / R2-2 · Wave 3)
+  A2      r gate_cooldown              Short cooldown  (ref gates.ts · cooldown)
+  A3      r gate_banned                Account closed  (ref gates.ts · banned)
+  A4      r gate_kyc_locked            Verification locked  (ref R-04 · isKycLocked)
+  E·1     r photo_capture              Capture  (ref P3 · KYC photo)
+  E·2     r photo_preview              Preview & self-check  (ref P3 · KYC photo)
+  E·3     r photo_uploading            Uploading (non-blocking)  (ref P3 · KYC photo)
+  E·4     r photo_failed               Upload failed  (ref P3 · recoverable)
+
+### Support kit (ui_kits/support/screens.js)
+  onboarding carousel (3 slides + skip/dots)
+  permission priming — location
+  permission priming — notifications
+  notifications centre
+  notifications — empty
+  help & support
+  settings
+  edge — account on hold
+  edge — force update
+  edge — location off / no GPS
+  edge — generic error
+
+### Interactive mobile kit flow states (ui_kits/mobile/app.js state machine)
+  splash · login · WhatsApp OTP · 2a launcher home · DT5 map send composer (peek/expanded sheet, pin toggle) · auction (finding/live/sorts/race/expired/no-riders) · tracking (code/live/paused/cancel) · rate/delivered · history · profile · rider: KYC gate states · online/board · offer · active job · OTP hand-off (wrong-code/lockout) · delivered · wallet/top-up + gate · 320px variant · offline/reconnecting demos
+
+### RETIRED ids (kept in registries for record; never align to these — see EXPORT-README)
+  LJ home_launcher · RJ rider_offline · RJ online_empty · RJ board · RJ offer_compose · RJ earnings · RJ earnings_new · RJ wallet · RJ profile · RJ gate_commission

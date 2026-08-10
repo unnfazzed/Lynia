@@ -22,7 +22,5 @@ design-system components so they're consistent with the product.
 
 **Voice** stays on-brand: second person, calm, honest, every dead-end offers an action.
 
-**Not yet designed** (deliberately deferred — the financial/superapp phase): credit offer,
-repayment, bike leasing. (The rider commission wallet has since shipped — it lives in the rider
-Money tab; see `packages/design/RIDER-ONE-APP-PLAN.md`.) Localisation copy (Shona/Ndebele) is also pending —
-screens are English-only.
+**Not yet designed** (deliberately deferred — the financial/superapp phase): wallet, credit offer,
+repayment, bike leasing. Localisation copy (Shona/Ndebele) is also pending — screens are English-only.
