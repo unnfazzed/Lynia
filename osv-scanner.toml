@@ -18,3 +18,40 @@
 # three are now real `pnpm.overrides` bumps in `package.json` (`brace-expansion@1.1.16`: `1.1.18`,
 # `brace-expansion@2.1.2`: `2.1.4`, `brace-expansion@>=5.0.0 <5.0.9`: `>=5.0.9`) — no vulnerable
 # version remains in `pnpm-lock.yaml`, so no exception entry is needed for either advisory.
+
+# ── image-size (2026-08-10) ──────────────────────────────────────────────────────────────────────
+# Two DoS advisories against `image-size`, both accepted here because THERE IS NO FIXED VERSION IN
+# ANY MAJOR — not because a bump is inconvenient. OSV records `last_affected: 2.0.2` on both, and
+# 2.0.2 is npm's current `latest`; `legacy` is 1.2.1, the newest 1.x. Upgrading cannot clear these.
+#
+# (For the record, an upgrade would also break the build even if it did fix something: `metro`
+# declares `image-size: ^1.0.2` and calls the module object itself — `const getImageSize =
+# require("image-size"); getImageSize(content)` in `metro/src/Assets.js`. In 1.2.1 the CJS export IS
+# a callable function; 2.x replaced that with an `exports` map exposing a named `imageSize` and moved
+# file-path reads to a separate `./fromFile` entry, so a `@2` override would throw "not a function".)
+#
+# REACHABILITY — why this is acceptable rather than merely unavoidable:
+#   • Single importer. `image-size@1.2.1` has exactly ONE importer in the whole lockfile: `metro`
+#     @0.81.5, React Native's BUILD-TIME bundler (`grep '^      image-size:' pnpm-lock.yaml` → one
+#     hit). It is not a dependency of `apps/api` (which has no image dependency at all) and it is not
+#     part of the JS bundle shipped to devices — Metro produces the bundle, it never runs inside it.
+#   • No untrusted input. Metro calls it on the repo's OWN committed image assets to read their
+#     dimensions at bundle time. Both advisories require an attacker-supplied crafted buffer (a
+#     zero-valued size field in a JXL/HEIF box, or a zero-valued ICNS entry length). There is no path
+#     for a third party to feed bytes into this parser; reaching it needs commit access to the asset
+#     tree, at which point a hung bundler is not the interesting problem.
+#   • Bounded impact. Both vectors are availability-only (CVSS `C:N/I:N/A:H`) and the effect is an
+#     infinite loop in the parsing process. The blast radius is one developer's — or one CI/EAS
+#     runner's — bundler process, recoverable by killing it. No production surface, no data exposure.
+#
+# Re-review on expiry: check whether upstream has shipped a fix (`npm view image-size versions`), and
+# whether Metro has moved off the 1.x line. Renew only if both are still true.
+[[IgnoredVulns]]
+id = "GHSA-5p2g-fcmc-qvqq"
+ignoreUntil = 2026-11-08
+reason = "JXL/HEIF infinite-loop DoS in image-size. No fixed version exists in any major (OSV last_affected 2.0.2 = current npm latest). Build-time only: sole importer is metro@0.81.5, which parses the repo's own committed assets — never attacker-supplied input — and is not shipped in the mobile bundle or used by apps/api. Availability-only impact, bounded to a local/CI bundler process."
+
+[[IgnoredVulns]]
+id = "GHSA-w3rx-r6r6-pgpr"
+ignoreUntil = 2026-11-08
+reason = "ICNS infinite-loop DoS in image-size. Same package, same single build-time importer (metro@0.81.5), same absence of any fixed version upstream (OSV last_affected 2.0.2 = current npm latest). Not reachable from a production surface: no untrusted image ever reaches this parser."
