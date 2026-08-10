@@ -95,6 +95,14 @@ pixel.** This section outranks every convenience argument you will find in the c
   is wrong, log it in `docs/DESIGN-DEVIATIONS.md` and report it upstream — editing the kit is how the
   repo's copy stopped being the design in the first place.
 
+**Every parity claim becomes an image — the screenshot lane.** Copy-string/route greps are what let
+"aligned" PRs merge while the app still didn't match (1 of 244 screens actually matched, 2026-08-05).
+So an alignment claim is made with a **side-by-side image**, not prose: `tools/parity/` renders the
+design mock beside the app screen in one browser at the canonical viewport and composes a sheet
+(`node pair.mjs --keys <src.id> --out out/sheet`) — the mock via the design system, the mobile app via
+react-native-web, merchant/admin via Playwright on their Next servers. Attach the sheet to the
+alignment PR; the user approves the picture. Spec + commands: `docs/SCREENSHOT-LANE.md`.
+
 Progress is tracked per screen in `docs/PIXEL-PARITY-TRACKER.md` — measured in screens signed off by
 the user, never in PRs merged.
 

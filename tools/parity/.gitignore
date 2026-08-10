@@ -1,0 +1,11 @@
+# Downloaded on first run (pinned react/react-dom/babel/leaflet) — not vendored into git.
+.vendor/
+# Rendered screenshots + sheets.
+out/
+# Local node_modules if a contributor runs `npm i` here.
+node_modules/
+# Ad-hoc debug scripts.
+debug.mjs
+probe*.mjs
+netlog*.mjs
+bypass-test.mjs

@@ -1,0 +1,22 @@
+{
+  "name": "@lynia/parity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pixel-parity screenshot lane — renders design mocks and app screens side-by-side so every alignment claim becomes an image (CLAUDE.md → 'Pixel parity'). Not a workspace package (repo globs are apps/* and packages/*), so it never enters turbo build/typecheck/test gates; it is a Claude-run tool.",
+  "scripts": {
+    "mock": "node render-mock.mjs",
+    "mobile": "node render-mobile.mjs",
+    "web": "node render-web.mjs",
+    "sheet": "node sheet.mjs",
+    "pair": "node pair.mjs"
+  },
+  "//deps": "playwright-core + esbuild are OPTIONAL here: the loaders in lib/ first try the container's global install (this is a Claude-run lane), then a local one. Run `npm i` in this dir only if you are on a machine without the global toolchain.",
+  "dependencies": {
+    "esbuild": "^0.24.0",
+    "playwright-core": "^1.49.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native-web": "^0.19.13"
+  }
+}
