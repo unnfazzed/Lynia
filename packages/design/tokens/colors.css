@@ -51,7 +51,7 @@
   --border-default: var(--line);
   --border-strong: var(--muted);
 
-  --action-primary: var(--accent);
+  --action-primary: var(--cta-fill);
   --action-primary-pressed: var(--accent-700);
   --marker-recommended: var(--highlight);
   --state-error: var(--danger);

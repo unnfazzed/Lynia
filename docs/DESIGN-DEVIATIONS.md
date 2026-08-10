@@ -9,24 +9,65 @@ user's explicit approval; record the date and the reason. When a deviation is la
 kit, delete the entry and align.
 
 Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's decision — do not act) ·
-**RESOLVED** (decided in the mock's favour — not a deviation, an app defect to fix) · **PENDING**
-(decided, but not yet in effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the
-kit; the app is right, to be reported back to Design).
+**RESOLVED** (decided in the mock's favour — not a deviation, an app defect to fix) · **RETIRED**
+(the kit absorbed it; align to the mock, nothing special to do) · **PENDING** (decided, but not yet in
+effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
+be reported back to Design).
+
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09.** D-01 and D-02 were retired by the
+2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side effect.
 
 ---
 
-## D-01 · WhatsApp OTP → SMS OTP — APPROVED (2026-08-10)
+## D-01 · WhatsApp OTP → SMS OTP — RETIRED by the rev 2 export (2026-08-10)
 
-**Scope:** global, every surface. **Mock:** all OTP screens say WhatsApp and use WhatsApp glyphs
-(`LJ otp` C1·6, the rider equivalents, `ui_kits/mobile` OTP states, `safety-flows.html` C·1–C·3).
-**App:** SMS wording and a neutral/SMS glyph.
+**No longer a deviation.** The 2026-08-10 **rev 2** export changed the mocks themselves to SMS, so
+there is nothing left to substitute — align to the mock copy verbatim, as everywhere else.
 
-The product sends OTP by SMS. `EXPORT-README.md` records this as an intentional known deviation on the
-design side too. Substitute copy **and** iconography; everything else on those screens matches the mock.
+Changed on the design side: `LJ login` (C1·5), `LJ otp` (C1·6, now titled *SMS OTP* — "Check your
+messages", "…by SMS", "SMS can take a minute on a busy network."), `LJ register` (C1·8, "Verified by
+SMS ✓"), `otp_cooldown`/`otp_resent`/`otp_locked` (C10·31–33 = safety-flows C·1–C·3), `RJ login`
+(R1·3), `RJ otp` (R1·4), the interactive kit's login/OTP/registration strings, plus the map and
+README labels.
+
+**Deliberately still WhatsApp, and correct:** help & support routes ("Chat with us on WhatsApp",
+`map.jsx` A·5, `rider-map.jsx` A·5). That is a real product decision, not OTP. Verified by hand
+across all six remaining files that mention WhatsApp — none is an OTP string.
 
 ---
 
-## D-02 · States the mocks never modelled — APPROVED (2026-08-10)
+## D-02 · States the mocks never modelled — RETIRED by the rev 2 export (2026-08-10)
+
+**No longer a deviation.** rev 2 added the **`SH·` shipped-states wave — 31 screens** covering every
+item on the list below, so these stop being improvised UI and become ordinary alignment targets with
+mocks to match. Handoff sheet: `ui_kits/mobile/shipped-states.html` (SH1–SH12), with
+normal/loading/error/empty coverage and the 320⇄360 toggle per state.
+
+Where each went (gallery badge · registry id):
+
+| Was undesigned | Now |
+|---|---|
+| Offline / reconnecting banner | C10·39 `conn_reconnecting` |
+| Stale-cache header; offline with nothing saved | C2·6 `stale_cache` · C10·40 `stale_cache_empty` |
+| Draft restore, and discarding it | C3·12 `draft_restored` · C10·42 `draft_discard` |
+| Keyless address-search fallback | C3·13 `addr_unavailable` |
+| "Map didn't load" | C3·14 `map_failed` |
+| Location permission off (composer) | C3·15 `loc_off` |
+| Active-order restore on cold start, and its failure | C2·5 `order_restore` · C10·41 `order_restore_error` |
+| Rating undo window | C7·7 `rate_undo` |
+| Real OS-permission rows (denied / ask-every-time) | C8·7 `settings_perms` · C8·8 `settings_perms_ok` |
+| Privacy, delete-account, phone masking | C8·9 · C8·10 · C8·11 `delete_final` · C8·12 `phone_masked` |
+| Feature-flag-off onboarding / role select / home tiles | C1·11 · C1·12 · C2·4 |
+| Rider board with food dispatch OFF | R3·5 `board_food_off` · R3·6 `board_empty_food_off` |
+| Proof-of-pickup capture, preview, upload failure | R5·19 · R5·20 · R9·31 `pickup_photo_failed` |
+| Rider strike counter | R7·6 `strikes` · R9·32 `strikes_final` |
+| Merchant per-item "don't have it" | M3·10 `item_out` · M3·11 `item_out_wait` |
+| Merchant pickup-code reveal | M4·9 `pickup_reveal` · M4·10 `pickup_revealed` |
+
+**If a genuinely undesigned state turns up during the screen walks, it gets a NEW ledger entry** —
+do not treat this retired one as blanket cover for improvising.
+
+<details><summary>Original rule, kept for the record</summary>
 
 **Rule:** these stay in the app, but are **rebuilt from kit primitives** (kit cards, type ramp,
 spacing, colour) so they read as the same product. The happy path stays 100% mock.
@@ -48,6 +89,8 @@ spacing, colour) so they read as the same product. The happy path stays 100% moc
 
 The kit should eventually absorb these; until it does, "match the kit" and "don't ship a lie" point in
 opposite directions on exactly these screens.
+
+</details>
 
 ---
 
@@ -93,27 +136,43 @@ the user's rather than mine. Resolved above in favour of the mock.
 
 ---
 
-## D-05 · `--action-primary` alias is stale in the kit — UPSTREAM (no pixel effect)
+## D-05 · `--action-primary` alias — HALF-FIXED in rev 2 · UPSTREAM (no pixel effect)
 
-`tokens/colors.css` in the design tool maps `--action-primary: var(--accent)` (#00B14F), but the kit's
-own `components/core/Button.jsx` paints `var(--cta-fill)` (#00812F) directly — the alias is unused, so
-**nothing renders differently**. The repo's copy had been edited to point the alias at `--cta-fill`;
-the export restored the tool's version.
+**Fixed:** `tokens/colors.css` now maps `--action-primary: var(--cta-fill)` (#00812F), matching what
+`components/core/Button.jsx` actually paints.
 
-The shipped app uses `#00812F` for primary CTAs, which matches what the kit actually renders. **No app
-change.** Report to Design so the semantic layer stops contradicting the component — anyone building
-from the alias would produce the wrong green.
+**Still stale:** `--action-primary-pressed` remains `var(--accent-700)` (#009D3B) while the component
+presses to `var(--cta-fill-pressed)` (#006B27). Design flagged this deliberately in
+`EXPORT-README.md` §3 and left it "pending your call".
+
+**Our call: point it at `--cta-fill-pressed`.** The pressed alias should track the resting one, and
+`Button.jsx` is the thing that renders. Still **no app change and no pixel effect** — the alias has no
+consumers; this is purely so the semantic layer stops contradicting the component. Carry it in the
+next round-trip to Design.
 
 ---
 
 ## D-06 · Design preview harnesses keep the repo's `postMessage` origin guard — APPROVED (2026-08-10)
 
 `support.js` (root + the four `templates/*/` copies), `ui_kits/admin/shell.js` and
-`handoff/google-play/src/tweaks-panel.jsx` receive `postMessage` with **no origin check** in the
-design tool. The repo added a same-origin guard (with a `file://` opaque-origin allowance). The
-overlay of the 2026-08-10 export deliberately **kept the repo's hardened versions**.
+`handoff/google-play/src/tweaks-panel.jsx` receive `postMessage`. rev 1 had **no origin check at
+all**; the repo had added a same-origin guard with a `file://` opaque-origin allowance.
 
-These files are preview plumbing, not design content — no screen renders differently. Report upstream.
+**rev 2 adopted a guard — but a weaker one, so we still keep ours.** Compare:
+
+```js
+// rev 2 (design tool)
+if (e.origin !== window.location.origin && e.origin !== "null" && window.location.protocol !== "file:") return;
+// repo (kept)
+if (e.origin !== window.location.origin && !(e.origin === "null" && window.location.protocol === "file:")) return;
+```
+
+The design version rejects only when **all three** conditions hold, so it accepts a message when
+*either* the origin is `"null"` (on any page, including one served over https) *or* the page happens
+to be on `file://` (from **any** origin, including a real attacker page). Ours accepts `"null"` only
+**when** the page is itself `file://` — which is the actual case the allowance exists for.
+
+Still preview plumbing, so no screen renders differently. Report the precise boolean upstream.
 
 ---
 

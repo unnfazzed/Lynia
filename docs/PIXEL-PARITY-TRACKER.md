@@ -1,8 +1,8 @@
 # Pixel-parity tracker
 
 Progress for the app-wide pixel-alignment workstream (`CLAUDE.md` → "Pixel parity"). Source of
-truth is the 2026-08-10 design export in `packages/design/`; the inventory below is generated from
-`packages/design/EXPORT-MANIFEST.txt`.
+truth is the **2026-08-10 rev 2** design export in `packages/design/`; the inventory below is
+generated from `packages/design/EXPORT-MANIFEST.txt`.
 
 **A screen counts as done only when the user has signed off on a side-by-side.** Not when a PR merged,
 not when copy matched. Structure, geometry, colour, type and copy must all match the mock.
@@ -19,12 +19,16 @@ not when copy matched. Structure, geometry, colour, type and copy must all match
 phase begins by verifying build status for its own screens against source — a screen is never
 dropped from scope on the strength of a stale audit line.
 
-Retired designs (`LJ home_launcher`; `RJ rider_offline`/`online_empty`/`board`/`offer_compose`/
-`earnings`/`earnings_new`/`wallet`/`profile`/`gate_commission`) are **absent from the gallery by
+Retired designs (`LJ home_launcher`; the nine `RJ` originals) are **absent from the gallery by
 design** and therefore absent below — never align to them. Note `RJM board` and `LJ profile` ARE
 current; only the `RJ` originals were retired.
 
-Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · admin 7 · safety sheet 20.
+**rev 2 added 31 states (the `SH·` shipped-states wave)** — the offline / draft-restore / keyless-
+search / flag-off / permissions / proof-of-pickup / merchant-item-out states the app already ships
+but that had never been designed. They are built-but-unaligned, so they start at ⬜ like any other
+screen; the handoff sheet is `ui_kits/mobile/shipped-states.html` (SH1–SH12).
+
+Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · admin 7 · safety sheet 20.
 
 ---
 
@@ -40,11 +44,13 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | | |
 | ⬜ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | | |
 | ⬜ | C1·5 | `LJ login` | Phone login | | |
-| ⬜ | C1·6 | `LJ otp` | WhatsApp OTP | | |
+| ⬜ | C1·6 | `LJ otp` | SMS OTP | | |
 | ⬜ | C1·7 | `LJ role_select` | Choose your role | | |
 | ⬜ | C1·8 | `LJ register` | Profile registration | | |
 | ⬜ | C1·9 | `LJ perm_loc` | Permission · location | | |
 | ⬜ | C1·10 | `LJ perm_notif` | Permission · notifications | | |
+| ⬜ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | | |
+| ⬜ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | | |
 
 ### C2 · Home & orders
 
@@ -53,6 +59,9 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C2·1 | `RC home` | Home · service tiles  [BOTH] | | |
 | ⬜ | C2·2 | `RC orders` | Orders · all services  [BOTH] | | |
 | ⬜ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | | |
+| ⬜ | C2·4 | `LJ home_flag_off` | Home · Food tile soon  [BOTH] | | |
+| ⬜ | C2·5 | `LJ order_restore` | Cold start · order running  [BOTH] | | |
+| ⬜ | C2·6 | `LJ stale_cache` | Orders · saved copy  [BOTH] | | |
 
 ### C3 · Browse & compose
 
@@ -69,6 +78,10 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C3·9 | `LJ home_pins` | Send · both set  [PARCEL] | | |
 | ⬜ | C3·10 | `LJ home_expanded` | Send · sheet expanded  [PARCEL] | | |
 | ⬜ | C3·11 | `LJ disclaimer` | Broadcast disclaimer  [PARCEL] | | |
+| ⬜ | C3·12 | `LJ draft_restored` | Draft restored  [PARCEL] | | |
+| ⬜ | C3·13 | `LJ addr_unavailable` | Address search down  [PARCEL] | | |
+| ⬜ | C3·14 | `LJ map_failed` | Map didn't load  [PARCEL] | | |
+| ⬜ | C3·15 | `LJ loc_off` | Location off · composer  [PARCEL] | | |
 
 ### C4 · Commit & pay
 
@@ -115,6 +128,7 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | | |
 | ⬜ | C7·5 | `LJ delivered_rate` | Delivered · rate the rider  [PARCEL] | | |
 | ⬜ | C7·6 | `LJ completed` | Completed  [PARCEL] | | |
+| ⬜ | C7·7 | `LJ rate_undo` | Rating sent · undo  [PARCEL] | | |
 
 ### C8 · Account & support
 
@@ -126,6 +140,12 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | ⬜ | C8·5 | `LJ help` | Help & support | | |
 | ⬜ | C8·6 | `LJ settings` | Settings | | |
+| ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
+| ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
+| ⬜ | C8·9 | `LJ privacy` | Privacy | | |
+| ⬜ | C8·10 | `LJ delete_account` | Delete account | | |
+| ⬜ | C8·11 | `LJ delete_final` | Delete · final confirm | | |
+| ⬜ | C8·12 | `LJ phone_masked` | Order ended · numbers masked  [BOTH] | | |
 
 ### C9 · Trust & safety
 
@@ -182,6 +202,10 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | C10·36 | `LJ force_update` | Force update | | |
 | ⛔ | C10·37 | `LJ no_gps` | Location off / no GPS | | |
 | ⬜ | C10·38 | `LJ generic_error` | Generic error | | |
+| ⬜ | C10·39 | `LJ conn_reconnecting` | Reconnecting banner | | |
+| ⬜ | C10·40 | `LJ stale_cache_empty` | Offline · nothing saved | | |
+| ⬜ | C10·41 | `LJ order_restore_error` | Restore failed  [BOTH] | | |
+| ⬜ | C10·42 | `LJ draft_discard` | Discard draft · confirm  [PARCEL] | | |
 
 ## RIDER (All Screens Gallery)
 
@@ -193,7 +217,7 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | R1·1 | `RJ splash` | Splash | | |
 | ⬜ | R1·2 | `RJ onboard` | Onboarding · rider | | |
 | ⬜ | R1·3 | `RJ login` | Phone sign-in | | |
-| ⬜ | R1·4 | `RJ otp` | WhatsApp OTP | | |
+| ⬜ | R1·4 | `RJ otp` | SMS OTP | | |
 | ⬜ | R1·5 | `RJ role_select` | Choose your role | | |
 | ⬜ | R1·6 | `RJ perm_loc` | Permission · location | | |
 | ⬜ | R1·7 | `RJ perm_notif` | Permission · notifications | | |
@@ -218,6 +242,8 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | R3·2 | `RJM board` | Jobs · one list  [BOTH] | | |
 | ⬜ | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | | |
 | ⬜ | R3·4 | `RJM notifications` | One inbox  [BOTH] | | |
+| ⬜ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | | |
+| ⬜ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | | |
 
 ### R4 · Taking a job
 
@@ -253,6 +279,8 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | R5·16 | `RJ job_delivered` | Delivered  [PARCEL] | | |
 | ⬜ | R5·17 | `RR delivered` | Delivered · food  [FOOD] | | |
 | ⬜ | R5·18 | `RR return_cash` | Return the kitchen's cash  [FOOD] | | |
+| ⬜ | R5·19 | `RJM pickup_photo` | Proof of pickup · capture  [PARCEL] | | |
+| ⬜ | R5·20 | `RJM pickup_photo_preview` | Proof of pickup · preview  [PARCEL] | | |
 
 ### R6 · Money
 
@@ -274,6 +302,7 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | R7·3 | `RJ history` | Job history  [BOTH] | | |
 | ⬜ | R7·4 | `RJ settings` | Settings | | |
 | ⬜ | R7·5 | `RJ help` | Help & support | | |
+| ⬜ | R7·6 | `RJM strikes` | Reliability · strikes | | |
 
 ### R8 · Trust & safety
 
@@ -321,6 +350,8 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | R9·28 | `RJ force_update` | Force update | | |
 | ⬜ | R9·29 | `RJ no_gps` | Location off / no GPS | | |
 | ⬜ | R9·30 | `RJ generic_error` | Generic error | | |
+| ⬜ | R9·31 | `RJM pickup_photo_failed` | Proof photo · upload failed  [PARCEL] | | |
+| ⬜ | R9·32 | `RJM strikes_final` | One strike from a pause | | |
 
 ## MERCHANT (All Screens Gallery ← RGD.MERCHANT; trailing (RV …) = Restaurants Vertical badge)
 
@@ -358,6 +389,8 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | M3·7 | `RM mark_ready` | Mark ready  (RV M2·5) | | |
 | ⬜ | M3·8 | `RM no_rider_merchant` | NO_RIDER · never cooked  (RV M2·b1) | | |
 | ⬜ | M3·9 | `RM rider_cancelled` | Rider cancelled · re-dispatch  (RV M2·b2) | | |
+| ⬜ | M3·10 | `RM item_out` | Don't have an item  (RV M2·8) | | |
+| ⬜ | M3·11 | `RM item_out_wait` | New total · customer confirming  (RV M2·9) | | |
 
 ### M4 · Pickup confirm
 
@@ -371,6 +404,8 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 | ⬜ | M4·6 | `RM cash_return` | Count the returned cash  (RV M3·4) | | |
 | ⬜ | M4·7 | `RM rider_noshow` | Rider no-show  (RV M3·b2) | | |
 | ⬜ | M4·8 | `RM refund_exec` | Refund after wallet paid  (RV M3·b3) | | |
+| ⬜ | M4·9 | `RM pickup_reveal` | Pickup code · hidden  (RV M3·5) | | |
+| ⬜ | M4·10 | `RM pickup_revealed` | Pickup code · revealed  (RV M3·6) | | |
 
 ### M5 · Run the shop
 
@@ -448,11 +483,15 @@ Counts: **264 designed states** — customer 102 · rider 91 · merchant 44 · a
 ## Interactive mobile kit flow states (ui_kits/mobile/app.js state machine)
 
 
+## Shipped-states sheet (ui_kits/mobile/shipped-states.html; c=customer LJ, j=rider RJM, m=merchant RM)
+
+
 ## RETIRED ids (kept in registries for record; never align to these — see EXPORT-README)
 
 
 ---
 
-Generated from `packages/design/EXPORT-MANIFEST.txt` (export 2026-08-10). If a future export changes
-the inventory, regenerate the skeleton but carry the status column across by hand — never reset it.
+Generated from `packages/design/EXPORT-MANIFEST.txt` (export 2026-08-10 rev 2). If a future export
+changes the inventory, regenerate the skeleton but carry the status column across by hand — never
+reset it.
 

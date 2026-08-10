@@ -47,11 +47,13 @@ const MERCHANT = [
   ["Act 2 · Accept & cook", "Accept, call the customer to confirm, request payment — no payment clock, no auto-cancel. The kitchen does not start until the money is confirmed and 'rider secured' turns green.", [
     ["order_accept", "M2·1", "Accept + prep time"], ["call_confirm", "M2·6", "Call, then request payment"], ["awaiting_payment", "M2·7", "Awaiting payment · no clock"], ["reject_sheet", "M2·2", "Reject · reason"], ["waiting_rider", "M2·3", "Accepted · do not cook yet"],
     ["cook_now", "M2·4", "Rider secured · cook now"], ["mark_ready", "M2·5", "Mark ready"], ["no_rider_merchant", "M2·b1", "NO_RIDER · never cooked"], ["rider_cancelled", "M2·b2", "Rider cancelled · re-dispatch"],
+    ["item_out", "M2·8", "Don't have an item"], ["item_out_wait", "M2·9", "New total · customer confirming"],
   ]],
   ["Act 3 · Pickup confirm", "The second money screen. Under collect-and-return the food leaves against a recorded debt; under pay-me-upfront the cash is counted first. Either way, confirming means acknowledging a number.", [
     ["pickup_cash", "M3·1", "Upfront · confirm cash"], ["pickup_collect", "M3·1b", "Collect-and-return · release"], ["pickup_wallet", "M3·2", "WALLET · confirm before cooking"],
     ["wallet_mismatch", "M3·b1", "Short payment blocked"], ["pickup_done", "M3·3", "Handed over"], ["cash_return", "M3·4", "Count the returned cash"], ["rider_noshow", "M3·b2", "Rider no-show"],
     ["refund_exec", "M3·b3", "Refund after wallet paid"],
+    ["pickup_reveal", "M3·5", "Pickup code · hidden"], ["pickup_revealed", "M3·6", "Pickup code · revealed"],
   ]],
   ["Act 4 · Run the shop", "The merchant defines the menu structure: categories first, dishes added into them, and the customer's menu tabs are a mirror of that list. Every dish needs a photo before it can go live.", [
     ["catalog", "M4·1", "Menu · grouped by category"], ["category_manage", "M4·2", "Categories · reorder & hide"], ["category_edit", "M4·3", "New category"],

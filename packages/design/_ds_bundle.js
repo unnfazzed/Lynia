@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"LyniaDesignSystem_94c56a","components":[{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"Money","sourcePath":"components/core/Money.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"OfflineBanner","sourcePath":"components/feedback/OfflineBanner.jsx"},{"name":"Skeleton","sourcePath":"components/feedback/Skeleton.jsx"},{"name":"SkeletonCard","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SkeletonList","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SystemState","sourcePath":"components/feedback/SystemState.jsx"},{"name":"Field","sourcePath":"components/forms/Field.jsx"},{"name":"AppHome","sourcePath":"components/home/AppHome.jsx"},{"name":"BrandHeader","sourcePath":"components/home/BrandHeader.jsx"},{"name":"LiveOrderCard","sourcePath":"components/home/LiveOrderCard.jsx"},{"name":"ReorderRail","sourcePath":"components/home/ReorderRail.jsx"},{"name":"RestaurantCard","sourcePath":"components/home/RestaurantCard.jsx"},{"name":"SERVICES","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"ServiceTiles","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"RESTAURANT_STEPS","sourcePath":"components/journey/Stepper.jsx"},{"name":"Stepper","sourcePath":"components/journey/Stepper.jsx"},{"name":"AppBar","sourcePath":"components/shell/AppBar.jsx"},{"name":"AppScreen","sourcePath":"components/shell/AppScreen.jsx"},{"name":"StatusBar","sourcePath":"components/shell/StatusBar.jsx"},{"name":"APP_TABS","sourcePath":"components/shell/TabBar.jsx"},{"name":"TabBar","sourcePath":"components/shell/TabBar.jsx"},{"name":"Heading","sourcePath":"components/typography/Heading.jsx"},{"name":"Label","sourcePath":"components/typography/Label.jsx"},{"name":"Sub","sourcePath":"components/typography/Sub.jsx"}],"sourceHashes":{"assets/brand/doc-page.js":"7feb7a4009b0","assets/image-slot.js":"fff26d081c8d","assets/lynia-icons.js":"6a3e1ac668ab","components/core/Button.jsx":"9e208204ffc3","components/core/Card.jsx":"66a8dcfefd5a","components/core/Icon.jsx":"8dbdfbb2d1ae","components/core/Money.jsx":"7f9753b1ccae","components/core/StatusPill.jsx":"01dada6a8e01","components/feedback/EmptyState.jsx":"d45ffee74d6a","components/feedback/OfflineBanner.jsx":"a043da4e36dd","components/feedback/Skeleton.jsx":"93e10984efec","components/feedback/SkeletonList.jsx":"e4d7860ab93c","components/feedback/SystemState.jsx":"7e37b87c8291","components/forms/Field.jsx":"4f36ea86faab","components/home/AppHome.jsx":"190d94978f7b","components/home/BrandHeader.jsx":"ecebc6e33244","components/home/LiveOrderCard.jsx":"b556ddf823e3","components/home/ReorderRail.jsx":"e91d9109e1f6","components/home/RestaurantCard.jsx":"ad955cfb8110","components/home/ServiceTiles.jsx":"e81fa8c0ca72","components/journey/Stepper.jsx":"4fd7dca7cd8c","components/shell/AppBar.jsx":"02732aab7916","components/shell/AppScreen.jsx":"fc71db556211","components/shell/StatusBar.jsx":"6fd92cb7fc2a","components/shell/TabBar.jsx":"68557e322e6d","components/typography/Heading.jsx":"1ea3a190680c","components/typography/Label.jsx":"abe06bcbafa6","components/typography/Sub.jsx":"2212189f67d3","explorations/journey/gallery-map.js":"12e875630fcb","explorations/journey/gallery.jsx":"a1efa07a0996","explorations/journey/map.jsx":"b5e837fa151a","explorations/journey/rider-map.jsx":"b1678a303198","explorations/journey/rider-one-app.jsx":"7249015b54fe","explorations/journey/rider-screens-safety.jsx":"b225a773d96f","explorations/journey/rider-screens-wallet.jsx":"999ab63dd6d7","explorations/journey/rider-screens.jsx":"daba2a490158","explorations/journey/screens-safety.jsx":"dbceb6b19168","explorations/journey/screens.jsx":"07578c369f34","explorations/restaurants/r-customer-a.jsx":"836b116be589","explorations/restaurants/r-customer-b.jsx":"93d2d414abfc","explorations/restaurants/r-gallery-data.js":"5fdc58afcad6","explorations/restaurants/r-gallery.jsx":"c7113958fd6a","explorations/restaurants/r-maps.jsx":"3ebde2c9aeb1","explorations/restaurants/r-merchant.jsx":"da44cbd2722b","explorations/restaurants/r-parts.jsx":"878d4a769943","explorations/restaurants/r-rider.jsx":"30a50a58ba1b","explorations/store/play-export.jsx":"fee94fa41557","explorations/store/store.jsx":"8ddaa60df41f","handoff/design-tokens.ts":"8cb3917717c8","handoff/google-play/src/play-shot-parts.jsx":"23e5cd2628ca","handoff/google-play/src/tweaks-panel.jsx":"6591467622ed","ui_kits/admin/shell.js":"14476b705b8b","ui_kits/mobile/app.js":"d52f07db072a","ui_kits/mobile/kit-parts.js":"daa687bca144","ui_kits/support/parts.js":"a940ef2c5b36","ui_kits/support/screens.js":"fba807fd3daf"},"inlinedExternals":[],"unexposedExports":[{"name":"color","sourcePath":"handoff/design-tokens.ts"},{"name":"font","sourcePath":"handoff/design-tokens.ts"},{"name":"leading","sourcePath":"handoff/design-tokens.ts"},{"name":"radius","sourcePath":"handoff/design-tokens.ts"},{"name":"shadow","sourcePath":"handoff/design-tokens.ts"},{"name":"space","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetMin","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetPrimary","sourcePath":"handoff/design-tokens.ts"}]} */
+/* @ds-bundle: {"format":4,"namespace":"LyniaDesignSystem_94c56a","components":[{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"Money","sourcePath":"components/core/Money.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"OfflineBanner","sourcePath":"components/feedback/OfflineBanner.jsx"},{"name":"Skeleton","sourcePath":"components/feedback/Skeleton.jsx"},{"name":"SkeletonCard","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SkeletonList","sourcePath":"components/feedback/SkeletonList.jsx"},{"name":"SystemState","sourcePath":"components/feedback/SystemState.jsx"},{"name":"Field","sourcePath":"components/forms/Field.jsx"},{"name":"AppHome","sourcePath":"components/home/AppHome.jsx"},{"name":"BrandHeader","sourcePath":"components/home/BrandHeader.jsx"},{"name":"LiveOrderCard","sourcePath":"components/home/LiveOrderCard.jsx"},{"name":"ReorderRail","sourcePath":"components/home/ReorderRail.jsx"},{"name":"RestaurantCard","sourcePath":"components/home/RestaurantCard.jsx"},{"name":"SERVICES","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"ServiceTiles","sourcePath":"components/home/ServiceTiles.jsx"},{"name":"RESTAURANT_STEPS","sourcePath":"components/journey/Stepper.jsx"},{"name":"Stepper","sourcePath":"components/journey/Stepper.jsx"},{"name":"AppBar","sourcePath":"components/shell/AppBar.jsx"},{"name":"AppScreen","sourcePath":"components/shell/AppScreen.jsx"},{"name":"StatusBar","sourcePath":"components/shell/StatusBar.jsx"},{"name":"APP_TABS","sourcePath":"components/shell/TabBar.jsx"},{"name":"TabBar","sourcePath":"components/shell/TabBar.jsx"},{"name":"Heading","sourcePath":"components/typography/Heading.jsx"},{"name":"Label","sourcePath":"components/typography/Label.jsx"},{"name":"Sub","sourcePath":"components/typography/Sub.jsx"}],"sourceHashes":{"assets/brand/doc-page.js":"7feb7a4009b0","assets/image-slot.js":"fff26d081c8d","assets/lynia-icons.js":"6a3e1ac668ab","components/core/Button.jsx":"9e208204ffc3","components/core/Card.jsx":"66a8dcfefd5a","components/core/Icon.jsx":"8dbdfbb2d1ae","components/core/Money.jsx":"7f9753b1ccae","components/core/StatusPill.jsx":"01dada6a8e01","components/feedback/EmptyState.jsx":"d45ffee74d6a","components/feedback/OfflineBanner.jsx":"a043da4e36dd","components/feedback/Skeleton.jsx":"93e10984efec","components/feedback/SkeletonList.jsx":"e4d7860ab93c","components/feedback/SystemState.jsx":"7e37b87c8291","components/forms/Field.jsx":"4f36ea86faab","components/home/AppHome.jsx":"190d94978f7b","components/home/BrandHeader.jsx":"ecebc6e33244","components/home/LiveOrderCard.jsx":"b556ddf823e3","components/home/ReorderRail.jsx":"e91d9109e1f6","components/home/RestaurantCard.jsx":"ad955cfb8110","components/home/ServiceTiles.jsx":"e81fa8c0ca72","components/journey/Stepper.jsx":"4fd7dca7cd8c","components/shell/AppBar.jsx":"02732aab7916","components/shell/AppScreen.jsx":"fc71db556211","components/shell/StatusBar.jsx":"6fd92cb7fc2a","components/shell/TabBar.jsx":"68557e322e6d","components/typography/Heading.jsx":"1ea3a190680c","components/typography/Label.jsx":"abe06bcbafa6","components/typography/Sub.jsx":"2212189f67d3","explorations/journey/gallery-map.js":"3369888e364f","explorations/journey/gallery.jsx":"a1efa07a0996","explorations/journey/map.jsx":"cd01cf52c5c2","explorations/journey/rider-map.jsx":"a21bcbef5244","explorations/journey/rider-one-app.jsx":"7249015b54fe","explorations/journey/rider-screens-safety.jsx":"b225a773d96f","explorations/journey/rider-screens-shipped.jsx":"f636c708e7af","explorations/journey/rider-screens-wallet.jsx":"999ab63dd6d7","explorations/journey/rider-screens.jsx":"2d5ba63a6111","explorations/journey/screens-safety.jsx":"fb8e1ed73496","explorations/journey/screens-shipped.jsx":"dfc9c60cc237","explorations/journey/screens.jsx":"ef1fdf325db2","explorations/restaurants/r-customer-a.jsx":"836b116be589","explorations/restaurants/r-customer-b.jsx":"93d2d414abfc","explorations/restaurants/r-gallery-data.js":"24c3947285b2","explorations/restaurants/r-gallery.jsx":"c7113958fd6a","explorations/restaurants/r-maps.jsx":"3ebde2c9aeb1","explorations/restaurants/r-merchant-shipped.jsx":"5b1126ccd888","explorations/restaurants/r-merchant.jsx":"da44cbd2722b","explorations/restaurants/r-parts.jsx":"878d4a769943","explorations/restaurants/r-rider.jsx":"30a50a58ba1b","explorations/store/play-export.jsx":"e509ef449052","explorations/store/store.jsx":"8ddaa60df41f","handoff/design-tokens.ts":"8cb3917717c8","handoff/google-play/src/play-shot-parts.jsx":"23e5cd2628ca","handoff/google-play/src/tweaks-panel.jsx":"635d43e7acd6","ui_kits/admin/shell.js":"9daa9cf22d89","ui_kits/mobile/app.js":"94324dd09a78","ui_kits/mobile/kit-parts.js":"daa687bca144","ui_kits/support/parts.js":"a940ef2c5b36","ui_kits/support/screens.js":"fba807fd3daf"},"inlinedExternals":[],"unexposedExports":[{"name":"color","sourcePath":"handoff/design-tokens.ts"},{"name":"font","sourcePath":"handoff/design-tokens.ts"},{"name":"leading","sourcePath":"handoff/design-tokens.ts"},{"name":"radius","sourcePath":"handoff/design-tokens.ts"},{"name":"shadow","sourcePath":"handoff/design-tokens.ts"},{"name":"space","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetMin","sourcePath":"handoff/design-tokens.ts"},{"name":"touchTargetPrimary","sourcePath":"handoff/design-tokens.ts"}]} */
 
 (() => {
 
@@ -3763,10 +3763,14 @@ try { (() => {
    · RJ earnings / earnings_new — the weekly-settlement model is retired (prepaid wallet for both).
    · RJ wallet — replaced by the merged Money tab (RJM money).
    · RJ profile — replaced by the merged rider Account (RJM account).
-   · RJ gate_commission — replaced by the one balance gate (RJM gate_topup).                      */
+   · RJ gate_commission — replaced by the one balance gate (RJM gate_topup).
+
+   2026-08 SH wave: the shipped-states screens (screens-shipped.jsx / rider-screens-shipped.jsx /
+   r-merchant-shipped.jsx, sheet ui_kits/mobile/shipped-states.html) are APPENDED at band ends
+   only, so no pre-existing generated badge moved.                                                */
 (() => {
-  const CUSTOMER = [["First run", "First install only — one sign-in for both services, then the role fork and permission priming.", [["LJ", "splash", "Splash", ""], ["LJ", "onboard", "Onboarding · food", "FOOD"], ["LJ", "onboard_send", "Onboarding · send", "PARCEL"], ["LJ", "onboard_shared", "Onboarding · one app", "BOTH"], ["LJ", "login", "Phone login", ""], ["LJ", "otp", "WhatsApp OTP", ""], ["LJ", "role_select", "Choose your role", ""], ["LJ", "register", "Profile registration", ""], ["LJ", "perm_loc", "Permission · location", ""], ["LJ", "perm_notif", "Permission · notifications", ""]]], ["Home & orders", "One home for both services: tiles, a live-order card per running job, restaurants near you. One Orders list across everything.", [["RC", "home", "Home · service tiles", "BOTH"], ["RC", "orders", "Orders · all services", "BOTH"], ["RC", "orders_empty", "Orders · empty", "BOTH"]]], ["Browse & compose", "Where the two services diverge most: food is a catalogue, a parcel is a route you build.", [["RC", "list", "Restaurant list", "FOOD"], ["RC", "list_loading", "List loading", "FOOD"], ["RC", "search", "Search", "FOOD"], ["RC", "menu", "Menu", "FOOD"], ["RC", "item", "Item sheet", "FOOD"], ["LJ", "home_empty", "Send composer · no address", "PARCEL"], ["LJ", "addr_search", "Address search", "PARCEL"], ["LJ", "addr_map_confirm", "Confirm pin on map", "PARCEL"], ["LJ", "home_pins", "Send · both set", "PARCEL"], ["LJ", "home_expanded", "Send · sheet expanded", "PARCEL"], ["LJ", "disclaimer", "Broadcast disclaimer", "PARCEL"]]], ["Commit & pay", "Food is priced and paid; a parcel is priced by the market — you name it and riders answer.", [["RC", "cart", "Cart", "FOOD"], ["RC", "cart_note", "Note for the kitchen", "FOOD"], ["RC", "checkout_cash", "Checkout · CASH", "FOOD"], ["RC", "checkout_wallet", "Checkout · WALLET", "FOOD"], ["RC", "placing", "Placing", "FOOD"], ["LJ", "auction_finding", "Auction · finding", "PARCEL"], ["LJ", "auction_live", "Auction · offers live", "PARCEL"], ["LJ", "auction_counter", "Counter-offer review", "PARCEL"]]], ["The kitchen confirms", "Food only: no payment clock. The kitchen calls, then requests the money — and the money only moves to the merchant.", [["RC", "await_accept", "Waiting on the kitchen", "FOOD"], ["RC", "confirm_call", "They call to confirm", "FOOD"], ["RC", "pay_push", "Push · payment requested", "FOOD"], ["RC", "pay_now", "Pay the restaurant", "FOOD"], ["RC", "pay_wait", "Prompt sent", "FOOD"], ["RC", "pay_manual", "Paid another way", "FOOD"], ["RC", "pay_confirmed", "Waiting to be confirmed", "FOOD"]]], ["Track", "One tracker grammar, two step vocabularies — plus the prep countdown food adds.", [["RC", "track_prep", "Prep countdown", "FOOD"], ["RC", "track_secured", "Rider secured", "FOOD"], ["RC", "track_way", "On the way", "FOOD"], ["LJ", "track_code", "Tracking · code issued", "PARCEL"], ["LJ", "track_active", "Tracking · live", "PARCEL"]]], ["Hand-off & close", "The same 6-digit code closes both. Food adds the money handshake before the code appears.", [["RC", "handoff", "Pay at the door", "FOOD"], ["RC", "handoff_wait", "Waiting for rider confirm", "FOOD"], ["RC", "handoff_code", "Both confirmed · code", "FOOD"], ["RC", "delivered_rate", "Delivered · rate the food", "FOOD"], ["LJ", "delivered_rate", "Delivered · rate the rider", "PARCEL"], ["LJ", "completed", "Completed", "PARCEL"]]], ["Account & support", "One account, one history, one help desk for everything the customer orders.", [["LJ", "profile", "Account", ""], ["LJ", "history", "Orders · all services", "BOTH"], ["LJ", "notifications", "Notifications", ""], ["LJ", "notif_empty", "Notifications · empty", ""], ["LJ", "help", "Help & support", ""], ["LJ", "settings", "Settings", ""]]], ["Trust & safety", "SOS, report + block, and get-help-with-this-order — identical whichever service is running.", [["LJ", "sos_idle", "SOS · live-trip control", "BOTH"], ["LJ", "sos_confirm", "SOS · confirm", "BOTH"], ["LJ", "sos_contacts", "SOS · contacts", "BOTH"], ["LJ", "sos_error", "SOS · log failed (offline)", "BOTH"], ["LJ", "report", "Report + block rider", "BOTH"], ["LJ", "report_done", "Report sent", "BOTH"], ["LJ", "trip_help", "Get help with this order", "BOTH"], ["LJ", "trip_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Every branch that isn't the happy path, plus the overlays that can interrupt any screen.", [["RC", "list_empty", "Nothing open", "FOOD"], ["RC", "list_error", "Offline list", "FOOD"], ["RC", "menu_closed", "Closed restaurant", "FOOD"], ["RC", "closed_interrupt", "Closes while browsing", "FOOD"], ["RC", "cart_oos", "Item sold out", "FOOD"], ["RC", "cart_price", "Price changed", "FOOD"], ["RC", "cart_empty", "Empty cart", "FOOD"], ["RC", "cart_min", "Under the minimum", "FOOD"], ["RC", "checkout_offline", "Offline mid-checkout", "FOOD"], ["RC", "pay_open", "Still unpaid · reminder", "FOOD"], ["RC", "pay_failed", "Payment declined", "FOOD"], ["RC", "item_removed", "One item unavailable", "FOOD"], ["RC", "no_rider", "NO_RIDER", "FOOD"], ["RC", "track_paused", "Live paused", "FOOD"], ["RC", "rejected", "Rejected · refund pending", "FOOD"], ["RC", "refunded", "Refunded", "FOOD"], ["RC", "cancel_sheet", "Cancel pre-pickup", "FOOD"], ["RC", "rider_cancelled", "Rider cancelled · re-finding", "FOOD"], ["RC", "handoff_dispute", "Rider didn't confirm", "FOOD"], ["RC", "failed_noshow", "No-show · returned", "FOOD"], ["RC", "resume", "App resumed mid-order", "FOOD"], ["LJ", "no_riders", "No riders online", "PARCEL"], ["LJ", "select_race", "Rider just taken", "PARCEL"], ["LJ", "auction_expired", "Auction expired", "PARCEL"], ["LJ", "rider_cancelled", "Rider cancelled", "PARCEL"], ["LJ", "track_paused", "Live paused", "PARCEL"], ["LJ", "cancel", "Cancel · reason", "PARCEL"], ["LJ", "cancelled", "Cancelled", "PARCEL"], ["LJ", "undelivered", "Not delivered", "PARCEL"], ["LJ", "track_dark", "Rider went dark", "PARCEL"], ["LJ", "otp_cooldown", "OTP · resend cooldown", ""], ["LJ", "otp_resent", "OTP · code re-sent", ""], ["LJ", "otp_locked", "OTP · expired / locked", ""], ["LJ", "offline", "Offline banner", ""], ["LJ", "on_hold", "Account on hold", ""], ["LJ", "force_update", "Force update", ""], ["LJ", "no_gps", "Location off / no GPS", ""], ["LJ", "generic_error", "Generic error", ""]]]];
-  const RIDER = [["First run & sign in", "Identical to the customer up to the role fork — one app, one account.", [["RJ", "splash", "Splash", ""], ["RJ", "onboard", "Onboarding · rider", ""], ["RJ", "login", "Phone sign-in", ""], ["RJ", "otp", "WhatsApp OTP", ""], ["RJ", "role_select", "Choose your role", ""], ["RJ", "perm_loc", "Permission · location", ""], ["RJ", "perm_notif", "Permission · notifications", ""]]], ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "ID photo · capture", ""], ["RJ", "photo_preview", "ID photo · preview", ""], ["RJ", "photo_uploading", "ID photo · uploading", ""], ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_verified", "Verified", ""]]], ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"], ["RJM", "notifications", "One inbox", "BOTH"]]], ["Taking a job", "The only real difference between the services: a food fare is fixed and accepted, a parcel fare is yours to name.", [["RJM", "offer_parcel", "Parcel · name your fare", "PARCEL"], ["RJ", "offer_sent", "Offer sent · waiting", "PARCEL"], ["RJ", "picked", "Customer picked you", "PARCEL"], ["RJM", "offer_food", "Food · accept the job", "FOOD"], ["RR", "offer_cash", "Food · CASH collect", "FOOD"], ["RR", "offer_upfront", "Food · kitchen wants upfront", "FOOD"], ["RR", "offer_wallet", "Food · already paid", "FOOD"]]], ["The active job", "One job at a time, one screen, one tracker with per-service step copy. Cash you carry is split: yours vs owed to a kitchen.", [["RJM", "active_parcel", "Active · parcel", "PARCEL"], ["RJ", "job_assigned", "Job · assigned", "PARCEL"], ["RJ", "job_pickup", "En route to pickup", "PARCEL"], ["RJ", "job_verify", "Verify items at pickup", "PARCEL"], ["RJ", "job_collect", "Parcel collected", "PARCEL"], ["RJ", "job_dropoff", "En route to drop-off", "PARCEL"], ["RJM", "active_food", "Active · food", "FOOD"], ["RR", "nav_rest", "To the restaurant", "FOOD"], ["RR", "pay_merchant", "Pay the merchant", "FOOD"], ["RR", "pickup_confirm", "Collect · CASH job", "FOOD"], ["RR", "pickup_paid", "Collect · already PAID", "FOOD"], ["RR", "nav_cust", "To the customer", "FOOD"], ["RR", "doorstep", "Collect · confirm cash", "FOOD"], ["RJM", "handoff", "Delivery code", "BOTH"], ["RJ", "job_handoff", "Hand-off · parcel", "PARCEL"], ["RJ", "job_delivered", "Delivered", "PARCEL"], ["RR", "delivered", "Delivered · food", "FOOD"], ["RR", "return_cash", "Return the kitchen's cash", "FOOD"]]], ["Money", "One prepaid commission balance for both services, one ledger, one gate when it runs out.", [["RJM", "money", "Money tab", "BOTH"], ["RJM", "gate_topup", "Gate · top up to keep riding", "BOTH"], ["RJ", "topup_amount", "Top up · amount", "BOTH"], ["RJ", "topup_wait", "Payment prompt · wait", "BOTH"], ["RJ", "topup_success", "Top up · success", "BOTH"], ["RJ", "wallet_low", "Balance low", "BOTH"]]], ["Account & support", "One identity, one set of documents, one job history — whatever the rider carries.", [["RJM", "account", "Account", ""], ["RJ", "bike_docs", "Bike & documents", ""], ["RJ", "history", "Job history", "BOTH"], ["RJ", "settings", "Settings", ""], ["RJ", "help", "Help & support", ""]]], ["Trust & safety", "SOS, report + block, get-help-with-this-job — one set for both services.", [["RJ", "sos_idle", "SOS · live-job control", "BOTH"], ["RJ", "sos_confirm", "SOS · confirm", "BOTH"], ["RJ", "sos_contacts", "SOS · contacts", "BOTH"], ["RJ", "report", "Report + block customer", "BOTH"], ["RJ", "report_done", "Report sent", "BOTH"], ["RJ", "job_help", "Get help with this job", "BOTH"], ["RJ", "job_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Lost jobs, refused hand-offs, gate refusals and the overlays that can interrupt any screen.", [["RJ", "missed_order", "Job taken first", "PARCEL"], ["RJ", "not_chosen", "Not chosen", "PARCEL"], ["RJ", "bid_expired", "Auction expired · no pick", "PARCEL"], ["RJ", "handoff_wrong", "Wrong code · lockout", "PARCEL"], ["RJ", "undelivered", "Not delivered", "PARCEL"], ["RJ", "job_bail", "Rider cancels (bail)", "PARCEL"], ["RJ", "job_offline", "Connection lost mid-job", "PARCEL"], ["RJ", "job_cancelled", "Customer cancelled", "PARCEL"], ["RR", "offer_expired", "Offer expired", "FOOD"], ["RR", "cancel_reason", "Drop the job · before pickup", "FOOD"], ["RR", "cancel_blocked", "Can't drop after collecting", "FOOD"], ["RR", "cash_dispute", "Customer confirmed, you didn't", "FOOD"], ["RR", "code_wrong", "Wrong code", "FOOD"], ["RR", "unreachable", "Customer unreachable", "FOOD"], ["RR", "return_rest", "Return to restaurant", "FOOD"], ["RR", "handback", "Hand back confirm", "FOOD"], ["RR", "offline_resume", "Resumed mid-delivery", "FOOD"], ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "ID photo · upload failed", ""], ["RJ", "gate_out_of_area", "Gate · out of area", ""], ["RJ", "gate_cooldown", "Gate · cooldown", ""], ["RJ", "gate_banned", "Gate · account closed", ""], ["RJ", "gate_kyc_locked", "Gate · verification locked", ""], ["RJ", "topup_declined", "Top up · declined", "BOTH"], ["RJ", "offline", "Offline banner", ""], ["RJ", "on_hold", "Account on hold", ""], ["RJ", "force_update", "Force update", ""], ["RJ", "no_gps", "Location off / no GPS", ""], ["RJ", "generic_error", "Generic error", ""]]]];
+  const CUSTOMER = [["First run", "First install only — one sign-in for both services, then the role fork and permission priming.", [["LJ", "splash", "Splash", ""], ["LJ", "onboard", "Onboarding · food", "FOOD"], ["LJ", "onboard_send", "Onboarding · send", "PARCEL"], ["LJ", "onboard_shared", "Onboarding · one app", "BOTH"], ["LJ", "login", "Phone login", ""], ["LJ", "otp", "SMS OTP", ""], ["LJ", "role_select", "Choose your role", ""], ["LJ", "register", "Profile registration", ""], ["LJ", "perm_loc", "Permission · location", ""], ["LJ", "perm_notif", "Permission · notifications", ""], ["LJ", "onboard_flag_off", "Onboarding · food off", "PARCEL"], ["LJ", "role_select_flag_off", "Choose your role · food off", ""]]], ["Home & orders", "One home for both services: tiles, a live-order card per running job, restaurants near you. One Orders list across everything.", [["RC", "home", "Home · service tiles", "BOTH"], ["RC", "orders", "Orders · all services", "BOTH"], ["RC", "orders_empty", "Orders · empty", "BOTH"], ["LJ", "home_flag_off", "Home · Food tile soon", "BOTH"], ["LJ", "order_restore", "Cold start · order running", "BOTH"], ["LJ", "stale_cache", "Orders · saved copy", "BOTH"]]], ["Browse & compose", "Where the two services diverge most: food is a catalogue, a parcel is a route you build.", [["RC", "list", "Restaurant list", "FOOD"], ["RC", "list_loading", "List loading", "FOOD"], ["RC", "search", "Search", "FOOD"], ["RC", "menu", "Menu", "FOOD"], ["RC", "item", "Item sheet", "FOOD"], ["LJ", "home_empty", "Send composer · no address", "PARCEL"], ["LJ", "addr_search", "Address search", "PARCEL"], ["LJ", "addr_map_confirm", "Confirm pin on map", "PARCEL"], ["LJ", "home_pins", "Send · both set", "PARCEL"], ["LJ", "home_expanded", "Send · sheet expanded", "PARCEL"], ["LJ", "disclaimer", "Broadcast disclaimer", "PARCEL"], ["LJ", "draft_restored", "Draft restored", "PARCEL"], ["LJ", "addr_unavailable", "Address search down", "PARCEL"], ["LJ", "map_failed", "Map didn't load", "PARCEL"], ["LJ", "loc_off", "Location off · composer", "PARCEL"]]], ["Commit & pay", "Food is priced and paid; a parcel is priced by the market — you name it and riders answer.", [["RC", "cart", "Cart", "FOOD"], ["RC", "cart_note", "Note for the kitchen", "FOOD"], ["RC", "checkout_cash", "Checkout · CASH", "FOOD"], ["RC", "checkout_wallet", "Checkout · WALLET", "FOOD"], ["RC", "placing", "Placing", "FOOD"], ["LJ", "auction_finding", "Auction · finding", "PARCEL"], ["LJ", "auction_live", "Auction · offers live", "PARCEL"], ["LJ", "auction_counter", "Counter-offer review", "PARCEL"]]], ["The kitchen confirms", "Food only: no payment clock. The kitchen calls, then requests the money — and the money only moves to the merchant.", [["RC", "await_accept", "Waiting on the kitchen", "FOOD"], ["RC", "confirm_call", "They call to confirm", "FOOD"], ["RC", "pay_push", "Push · payment requested", "FOOD"], ["RC", "pay_now", "Pay the restaurant", "FOOD"], ["RC", "pay_wait", "Prompt sent", "FOOD"], ["RC", "pay_manual", "Paid another way", "FOOD"], ["RC", "pay_confirmed", "Waiting to be confirmed", "FOOD"]]], ["Track", "One tracker grammar, two step vocabularies — plus the prep countdown food adds.", [["RC", "track_prep", "Prep countdown", "FOOD"], ["RC", "track_secured", "Rider secured", "FOOD"], ["RC", "track_way", "On the way", "FOOD"], ["LJ", "track_code", "Tracking · code issued", "PARCEL"], ["LJ", "track_active", "Tracking · live", "PARCEL"]]], ["Hand-off & close", "The same 6-digit code closes both. Food adds the money handshake before the code appears.", [["RC", "handoff", "Pay at the door", "FOOD"], ["RC", "handoff_wait", "Waiting for rider confirm", "FOOD"], ["RC", "handoff_code", "Both confirmed · code", "FOOD"], ["RC", "delivered_rate", "Delivered · rate the food", "FOOD"], ["LJ", "delivered_rate", "Delivered · rate the rider", "PARCEL"], ["LJ", "completed", "Completed", "PARCEL"], ["LJ", "rate_undo", "Rating sent · undo", "PARCEL"]]], ["Account & support", "One account, one history, one help desk for everything the customer orders.", [["LJ", "profile", "Account", ""], ["LJ", "history", "Orders · all services", "BOTH"], ["LJ", "notifications", "Notifications", ""], ["LJ", "notif_empty", "Notifications · empty", ""], ["LJ", "help", "Help & support", ""], ["LJ", "settings", "Settings", ""], ["LJ", "settings_perms", "Settings · real permissions", ""], ["LJ", "settings_perms_ok", "Settings · all granted", ""], ["LJ", "privacy", "Privacy", ""], ["LJ", "delete_account", "Delete account", ""], ["LJ", "delete_final", "Delete · final confirm", ""], ["LJ", "phone_masked", "Order ended · numbers masked", "BOTH"]]], ["Trust & safety", "SOS, report + block, and get-help-with-this-order — identical whichever service is running.", [["LJ", "sos_idle", "SOS · live-trip control", "BOTH"], ["LJ", "sos_confirm", "SOS · confirm", "BOTH"], ["LJ", "sos_contacts", "SOS · contacts", "BOTH"], ["LJ", "sos_error", "SOS · log failed (offline)", "BOTH"], ["LJ", "report", "Report + block rider", "BOTH"], ["LJ", "report_done", "Report sent", "BOTH"], ["LJ", "trip_help", "Get help with this order", "BOTH"], ["LJ", "trip_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Every branch that isn't the happy path, plus the overlays that can interrupt any screen.", [["RC", "list_empty", "Nothing open", "FOOD"], ["RC", "list_error", "Offline list", "FOOD"], ["RC", "menu_closed", "Closed restaurant", "FOOD"], ["RC", "closed_interrupt", "Closes while browsing", "FOOD"], ["RC", "cart_oos", "Item sold out", "FOOD"], ["RC", "cart_price", "Price changed", "FOOD"], ["RC", "cart_empty", "Empty cart", "FOOD"], ["RC", "cart_min", "Under the minimum", "FOOD"], ["RC", "checkout_offline", "Offline mid-checkout", "FOOD"], ["RC", "pay_open", "Still unpaid · reminder", "FOOD"], ["RC", "pay_failed", "Payment declined", "FOOD"], ["RC", "item_removed", "One item unavailable", "FOOD"], ["RC", "no_rider", "NO_RIDER", "FOOD"], ["RC", "track_paused", "Live paused", "FOOD"], ["RC", "rejected", "Rejected · refund pending", "FOOD"], ["RC", "refunded", "Refunded", "FOOD"], ["RC", "cancel_sheet", "Cancel pre-pickup", "FOOD"], ["RC", "rider_cancelled", "Rider cancelled · re-finding", "FOOD"], ["RC", "handoff_dispute", "Rider didn't confirm", "FOOD"], ["RC", "failed_noshow", "No-show · returned", "FOOD"], ["RC", "resume", "App resumed mid-order", "FOOD"], ["LJ", "no_riders", "No riders online", "PARCEL"], ["LJ", "select_race", "Rider just taken", "PARCEL"], ["LJ", "auction_expired", "Auction expired", "PARCEL"], ["LJ", "rider_cancelled", "Rider cancelled", "PARCEL"], ["LJ", "track_paused", "Live paused", "PARCEL"], ["LJ", "cancel", "Cancel · reason", "PARCEL"], ["LJ", "cancelled", "Cancelled", "PARCEL"], ["LJ", "undelivered", "Not delivered", "PARCEL"], ["LJ", "track_dark", "Rider went dark", "PARCEL"], ["LJ", "otp_cooldown", "OTP · resend cooldown", ""], ["LJ", "otp_resent", "OTP · code re-sent", ""], ["LJ", "otp_locked", "OTP · expired / locked", ""], ["LJ", "offline", "Offline banner", ""], ["LJ", "on_hold", "Account on hold", ""], ["LJ", "force_update", "Force update", ""], ["LJ", "no_gps", "Location off / no GPS", ""], ["LJ", "generic_error", "Generic error", ""], ["LJ", "conn_reconnecting", "Reconnecting banner", ""], ["LJ", "stale_cache_empty", "Offline · nothing saved", ""], ["LJ", "order_restore_error", "Restore failed", "BOTH"], ["LJ", "draft_discard", "Discard draft · confirm", "PARCEL"]]]];
+  const RIDER = [["First run & sign in", "Identical to the customer up to the role fork — one app, one account.", [["RJ", "splash", "Splash", ""], ["RJ", "onboard", "Onboarding · rider", ""], ["RJ", "login", "Phone sign-in", ""], ["RJ", "otp", "SMS OTP", ""], ["RJ", "role_select", "Choose your role", ""], ["RJ", "perm_loc", "Permission · location", ""], ["RJ", "perm_notif", "Permission · notifications", ""]]], ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "ID photo · capture", ""], ["RJ", "photo_preview", "ID photo · preview", ""], ["RJ", "photo_uploading", "ID photo · uploading", ""], ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_verified", "Verified", ""]]], ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"], ["RJM", "notifications", "One inbox", "BOTH"], ["RJM", "board_food_off", "Jobs · food dispatch off", "PARCEL"], ["RJM", "board_empty_food_off", "Food off · nothing in range", "PARCEL"]]], ["Taking a job", "The only real difference between the services: a food fare is fixed and accepted, a parcel fare is yours to name.", [["RJM", "offer_parcel", "Parcel · name your fare", "PARCEL"], ["RJ", "offer_sent", "Offer sent · waiting", "PARCEL"], ["RJ", "picked", "Customer picked you", "PARCEL"], ["RJM", "offer_food", "Food · accept the job", "FOOD"], ["RR", "offer_cash", "Food · CASH collect", "FOOD"], ["RR", "offer_upfront", "Food · kitchen wants upfront", "FOOD"], ["RR", "offer_wallet", "Food · already paid", "FOOD"]]], ["The active job", "One job at a time, one screen, one tracker with per-service step copy. Cash you carry is split: yours vs owed to a kitchen.", [["RJM", "active_parcel", "Active · parcel", "PARCEL"], ["RJ", "job_assigned", "Job · assigned", "PARCEL"], ["RJ", "job_pickup", "En route to pickup", "PARCEL"], ["RJ", "job_verify", "Verify items at pickup", "PARCEL"], ["RJ", "job_collect", "Parcel collected", "PARCEL"], ["RJ", "job_dropoff", "En route to drop-off", "PARCEL"], ["RJM", "active_food", "Active · food", "FOOD"], ["RR", "nav_rest", "To the restaurant", "FOOD"], ["RR", "pay_merchant", "Pay the merchant", "FOOD"], ["RR", "pickup_confirm", "Collect · CASH job", "FOOD"], ["RR", "pickup_paid", "Collect · already PAID", "FOOD"], ["RR", "nav_cust", "To the customer", "FOOD"], ["RR", "doorstep", "Collect · confirm cash", "FOOD"], ["RJM", "handoff", "Delivery code", "BOTH"], ["RJ", "job_handoff", "Hand-off · parcel", "PARCEL"], ["RJ", "job_delivered", "Delivered", "PARCEL"], ["RR", "delivered", "Delivered · food", "FOOD"], ["RR", "return_cash", "Return the kitchen's cash", "FOOD"], ["RJM", "pickup_photo", "Proof of pickup · capture", "PARCEL"], ["RJM", "pickup_photo_preview", "Proof of pickup · preview", "PARCEL"]]], ["Money", "One prepaid commission balance for both services, one ledger, one gate when it runs out.", [["RJM", "money", "Money tab", "BOTH"], ["RJM", "gate_topup", "Gate · top up to keep riding", "BOTH"], ["RJ", "topup_amount", "Top up · amount", "BOTH"], ["RJ", "topup_wait", "Payment prompt · wait", "BOTH"], ["RJ", "topup_success", "Top up · success", "BOTH"], ["RJ", "wallet_low", "Balance low", "BOTH"]]], ["Account & support", "One identity, one set of documents, one job history — whatever the rider carries.", [["RJM", "account", "Account", ""], ["RJ", "bike_docs", "Bike & documents", ""], ["RJ", "history", "Job history", "BOTH"], ["RJ", "settings", "Settings", ""], ["RJ", "help", "Help & support", ""], ["RJM", "strikes", "Reliability · strikes", ""]]], ["Trust & safety", "SOS, report + block, get-help-with-this-job — one set for both services.", [["RJ", "sos_idle", "SOS · live-job control", "BOTH"], ["RJ", "sos_confirm", "SOS · confirm", "BOTH"], ["RJ", "sos_contacts", "SOS · contacts", "BOTH"], ["RJ", "report", "Report + block customer", "BOTH"], ["RJ", "report_done", "Report sent", "BOTH"], ["RJ", "job_help", "Get help with this job", "BOTH"], ["RJ", "job_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Lost jobs, refused hand-offs, gate refusals and the overlays that can interrupt any screen.", [["RJ", "missed_order", "Job taken first", "PARCEL"], ["RJ", "not_chosen", "Not chosen", "PARCEL"], ["RJ", "bid_expired", "Auction expired · no pick", "PARCEL"], ["RJ", "handoff_wrong", "Wrong code · lockout", "PARCEL"], ["RJ", "undelivered", "Not delivered", "PARCEL"], ["RJ", "job_bail", "Rider cancels (bail)", "PARCEL"], ["RJ", "job_offline", "Connection lost mid-job", "PARCEL"], ["RJ", "job_cancelled", "Customer cancelled", "PARCEL"], ["RR", "offer_expired", "Offer expired", "FOOD"], ["RR", "cancel_reason", "Drop the job · before pickup", "FOOD"], ["RR", "cancel_blocked", "Can't drop after collecting", "FOOD"], ["RR", "cash_dispute", "Customer confirmed, you didn't", "FOOD"], ["RR", "code_wrong", "Wrong code", "FOOD"], ["RR", "unreachable", "Customer unreachable", "FOOD"], ["RR", "return_rest", "Return to restaurant", "FOOD"], ["RR", "handback", "Hand back confirm", "FOOD"], ["RR", "offline_resume", "Resumed mid-delivery", "FOOD"], ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "ID photo · upload failed", ""], ["RJ", "gate_out_of_area", "Gate · out of area", ""], ["RJ", "gate_cooldown", "Gate · cooldown", ""], ["RJ", "gate_banned", "Gate · account closed", ""], ["RJ", "gate_kyc_locked", "Gate · verification locked", ""], ["RJ", "topup_declined", "Top up · declined", "BOTH"], ["RJ", "offline", "Offline banner", ""], ["RJ", "on_hold", "Account on hold", ""], ["RJ", "force_update", "Force update", ""], ["RJ", "no_gps", "Location off / no GPS", ""], ["RJ", "generic_error", "Generic error", ""], ["RJM", "pickup_photo_failed", "Proof photo · upload failed", "PARCEL"], ["RJM", "strikes_final", "One strike from a pause", ""]]]];
 
   /* Merchant — the kitchen tablet. Food-only by definition, so no service tags. */
   const MERCHANT = (window.RGD ? window.RGD.MERCHANT : []).map(([title, sub, tiles]) => [title.replace(/^Act \d+ · /, ""), sub, tiles.map(([id,, t]) => ["RM", id, t, ""])]);
@@ -4634,8 +4638,8 @@ node("login", 2, B.B0, "0·3", "Phone login", {
   s: "Empty → typing",
   c: "Send code"
 });
-node("otp", 3, B.B0, "0·4", "WhatsApp OTP", {
-  p: "Verify the 6-digit code delivered over WhatsApp. Extended (C-OTP): a Resend-code affordance now sits under Verify — the cooldown / resent / locked states are drawn in the C band below.",
+node("otp", 3, B.B0, "0·4", "SMS OTP", {
+  p: "Verify the 6-digit code delivered by SMS. Extended (C-OTP): a Resend-code affordance now sits under Verify — the cooldown / resent / locked states are drawn in the C band below.",
   s: "Awaiting 6 digits · resend idle",
   c: "Verify"
 });
@@ -4971,7 +4975,7 @@ const ZONES = [{
 }];
 
 /* ── band labels ── */
-const LABELS = [[B.B0, "ACT 0 · First run", "First install only — register a name + ID (stored, not KYC'd), pick a role, prime permissions. 'Earn as a rider' exits to the Rider journey map."], [B.B1, "ACT 1 · Compose a parcel", "Search-first addressing: type or pick pickup & drop-off, confirm the pin, name your price, add both phones."], [B.B2s, "ACT 2 · The offer auction", "You name the price; nearby riders counter once; you pick. 90-second window."], [B.B2b, "↳ Auction branches & empty states", null], [B.B3s, "ACT 3 · Track the delivery", "Hand-off code, live 7-step timeline, call the rider."], [B.B3b, "↳ Tracking branches", null], [B.B4, "ACT 4 · Close the loop", "Confirm delivery by OTP, rate the rider, back to send another."], [B.B7, "NEW · Trust & safety — SOS, report, get help (plan §2 · B1–B3)", "Shipped in code (PR #98) with no mockup — these align the UI to the real contracts in safety.ts. Decisions final (5 Jul): 999 emergency · +263 77 883 1938 Lynia safety line · contact-support = tel: call. SOS entry: the pill on any live-trip map · report entry: delivered/rate (4·1) · get-help entry: any order screen."], [B.B8, "NEW · OTP resend states (C) + rider-went-dark escalation (D)", "C extends the existing 0·4 “Check your WhatsApp” screen — the idle resend affordance is retrofitted in place up there; these are the cooldown / resent / locked states. D escalates 3·b1 after ~2 min of stale position."]];
+const LABELS = [[B.B0, "ACT 0 · First run", "First install only — register a name + ID (stored, not KYC'd), pick a role, prime permissions. 'Earn as a rider' exits to the Rider journey map."], [B.B1, "ACT 1 · Compose a parcel", "Search-first addressing: type or pick pickup & drop-off, confirm the pin, name your price, add both phones."], [B.B2s, "ACT 2 · The offer auction", "You name the price; nearby riders counter once; you pick. 90-second window."], [B.B2b, "↳ Auction branches & empty states", null], [B.B3s, "ACT 3 · Track the delivery", "Hand-off code, live 7-step timeline, call the rider."], [B.B3b, "↳ Tracking branches", null], [B.B4, "ACT 4 · Close the loop", "Confirm delivery by OTP, rate the rider, back to send another."], [B.B7, "NEW · Trust & safety — SOS, report, get help (plan §2 · B1–B3)", "Shipped in code (PR #98) with no mockup — these align the UI to the real contracts in safety.ts. Decisions final (5 Jul): 999 emergency · +263 77 883 1938 Lynia safety line · contact-support = tel: call. SOS entry: the pill on any live-trip map · report entry: delivered/rate (4·1) · get-help entry: any order screen."], [B.B8, "NEW · OTP resend states (C) + rider-went-dark escalation (D)", "C extends the existing 0·4 “Check your messages” screen — the idle resend affordance is retrofitted in place up there; these are the cooldown / resent / locked states. D escalates 3·b1 after ~2 min of stale position."]];
 
 /* ── gap flags (not-yet-designed) ── */
 const GAPS = [[6, B.B1, "Manage saved places", "Home & Work show in search, but there's no screen to add, rename or delete saved addresses.", B.B1 + 74], [6, B.B1, "Scheduled / later delivery", "Send is immediate only — no 'deliver at 3pm' or recurring drops.", B.B1 + 218], [3, B.B2s, "Multi-order list & switcher", "One live order at a time — no way to run or view several sends at once."], [3, B.B3s, "Edit an order in flight", "After broadcast you can only cancel — not change drop-off, price or items."], [4, B.B3s, "Proof of delivery", "Nothing beyond the OTP hand-off — no delivery photo or shareable receipt."], [3, B.B4, "Tip / re-book a rider", "No tipping, and no 're-book Tendai' from a past trip."], [5, B.B6, "In-app chat + localisation", "Help routes to WhatsApp (by decision); English only — Shona/Ndebele deferred."]];
@@ -5730,8 +5734,8 @@ node("login", 2, B.B0, "0·3", "Phone sign-in", {
   s: "Empty → typing",
   c: "Send code"
 });
-node("otp", 3, B.B0, "0·4", "WhatsApp OTP", {
-  p: "Verify the 6-digit code delivered over WhatsApp.",
+node("otp", 3, B.B0, "0·4", "SMS OTP", {
+  p: "Verify the 6-digit code delivered by SMS.",
   s: "Awaiting 6 digits",
   c: "Verify"
 });
@@ -9062,6 +9066,709 @@ try { (() => {
 })();
 })(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/journey/rider-screens-safety.jsx", error: String((e && e.message) || e) }); }
 
+// explorations/journey/rider-screens-shipped.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/* file-scoped: Babel classic scripts share one global scope, so every declaration below is
+   wrapped in an IIFE — only window.RJM leaves this file. */
+(() => {
+  /* LyniaGo — rider journey: SHIPPED-STATES alignment wave (2026-08, SH·). Board copy honest under
+     the food-dispatch feature flag (ON promises one queue; OFF never promises food), the strike
+     counter surface, and the proof-of-pickup photo loop on the active parcel job.
+     Same conventions as rider-one-app.jsx (frozen state, real DS bundle). Extends window.RJM.
+     Sheet + logic notes: ui_kits/mobile/shipped-states.html. */
+
+  const DS = window.LyniaDesignSystem_94c56a;
+  const {
+    Button,
+    Card,
+    StatusPill,
+    EmptyState,
+    Icon,
+    Stepper
+  } = DS;
+  const SUP = window.LyniaSupport;
+  const {
+    Top
+  } = SUP;
+  const Money = DS.Money || (({
+    v,
+    size = 14,
+    weight = 700,
+    color = "var(--ink)"
+  }) => /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: size,
+      fontWeight: weight,
+      color
+    }
+  }, "$", v));
+  const SHELL = DS.AppScreen || (({
+    children
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      overflow: "hidden"
+    }
+  }, children));
+  const AppBar = DS.AppBar || (({
+    title
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 16px",
+      fontSize: 16,
+      fontWeight: 700
+    }
+  }, title));
+  const nop = () => {};
+  const TAB = {
+    fontVariantNumeric: "tabular-nums"
+  };
+  const TABS = [{
+    id: "jobs",
+    icon: "bike",
+    label: "Jobs"
+  }, {
+    id: "money",
+    icon: "wallet",
+    label: "Money"
+  }, {
+    id: "acct",
+    icon: "user",
+    label: "Account"
+  }];
+  const S = (node, o = {}) => /*#__PURE__*/React.createElement(SHELL, {
+    tab: o.tab,
+    tabs: TABS,
+    footer: o.footer,
+    bg: o.bg,
+    dark: o.dark
+  }, node);
+  const Pad = ({
+    children,
+    style
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 16px 16px",
+      ...style
+    }
+  }, children);
+
+  /* Same card anatomy as the one-app board (rider-one-app.jsx). */
+  function JobCard({
+    from,
+    to,
+    km,
+    fare,
+    note,
+    action
+  }) {
+    return /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 12,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        background: "var(--accent-wash)",
+        color: "var(--accent-text)",
+        borderRadius: 999,
+        padding: "2px 8px",
+        fontSize: 10.5,
+        fontWeight: 800,
+        letterSpacing: ".04em"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "package",
+      size: 11,
+      color: "var(--accent-text)"
+    }), "PARCEL"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        ...TAB
+      }
+    }, km, " km"), /*#__PURE__*/React.createElement(Money, {
+      v: fare,
+      size: 16
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        paddingTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 9,
+        height: 9,
+        borderRadius: "50%",
+        border: "2px solid var(--accent)",
+        boxSizing: "border-box"
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 2,
+        flex: 1,
+        minHeight: 14,
+        background: "var(--line)"
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 9,
+        height: 9,
+        borderRadius: 2,
+        border: "2px solid var(--danger)",
+        boxSizing: "border-box"
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, from), /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, to))), note ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        marginTop: 8,
+        lineHeight: 1.4
+      }
+    }, note) : null, /*#__PURE__*/React.createElement(Button, {
+      label: action,
+      onClick: nop
+    }));
+  }
+  const PARCEL_JOBS = [{
+    from: "Eastgate Mall, CBD",
+    to: "14 Glenara Ave, Avenues",
+    km: "3.1",
+    fare: "3.00",
+    note: "Documents envelope · asking $3.00",
+    action: "Make an offer"
+  }, {
+    from: "Avondale Shops",
+    to: "8 Fife Ave, Avenues",
+    km: "1.8",
+    fare: "2.20",
+    note: "Small box · asking $2.20",
+    action: "Make an offer"
+  }];
+
+  /* ── SH8 · The board when food dispatch is OFF — the copy never promises a queue food can't join ── */
+  const OnlinePillOff = () => /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "0 16px 8px"
+    }
+  }, /*#__PURE__*/React.createElement(StatusPill, {
+    status: "online"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--muted)"
+    }
+  }, "Parcels near you"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 700,
+      color: "var(--accent-text)"
+    }
+  }, "Go offline"));
+  const board_food_off = () => S(/*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(AppBar, {
+    title: "Jobs near you",
+    back: false,
+    right: /*#__PURE__*/React.createElement(Icon, {
+      name: "bell",
+      size: 19,
+      color: "var(--ink)"
+    })
+  }), /*#__PURE__*/React.createElement(OnlinePillOff, null), /*#__PURE__*/React.createElement(Pad, {
+    style: {
+      paddingTop: 0
+    }
+  }, PARCEL_JOBS.map((j, i) => /*#__PURE__*/React.createElement(JobCard, _extends({
+    key: i
+  }, j))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      padding: "10px 12px",
+      borderRadius: 10,
+      background: "var(--surface)"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "utensils",
+    size: 15,
+    color: "var(--muted)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--muted)",
+      lineHeight: 1.45
+    }
+  }, "Food deliveries aren't on in your area yet. When kitchens join, those jobs land in this same list \u2014 nothing to set up.")))), {
+    tab: "jobs"
+  });
+  const board_empty_food_off = () => S(/*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(AppBar, {
+    title: "Jobs near you",
+    back: false
+  }), /*#__PURE__*/React.createElement(OnlinePillOff, null), /*#__PURE__*/React.createElement(Pad, {
+    style: {
+      paddingTop: 4
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "inbox",
+    title: "Nothing in range yet",
+    message: "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list."
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Refresh",
+    variant: "ghost",
+    onClick: nop
+  }))))), {
+    tab: "jobs"
+  });
+
+  /* ── SH9a · Strike counter — a rule you can see, never a surprise ── */
+  function Strikes({
+    final: fin
+  }) {
+    const count = fin ? 2 : 1;
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Reliability"
+    })), /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        paddingTop: 4
+      }
+    }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, [0, 1, 2].map(n => /*#__PURE__*/React.createElement("span", {
+      key: n,
+      style: {
+        width: 26,
+        height: 26,
+        borderRadius: "50%",
+        background: n < count ? "var(--danger-wash)" : "var(--surface)",
+        border: `2px solid ${n < count ? "var(--danger-ink)" : "var(--line)"}`,
+        display: "grid",
+        placeItems: "center",
+        boxSizing: "border-box"
+      }
+    }, n < count ? /*#__PURE__*/React.createElement(Icon, {
+      name: "x",
+      size: 13,
+      color: "var(--danger-ink)"
+    }) : null))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: "var(--ink)"
+      },
+      className: "lynia-tabular"
+    }, count, " of 3 strikes")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.5
+      }
+    }, "Three strikes in a month pauses your account for 48 hours. Strikes clear on the 1st \u2014 this counter resets 1 September.")), fin ? /*#__PURE__*/React.createElement(Card, {
+      style: {
+        background: "var(--danger-wash)",
+        border: "1px solid transparent",
+        boxShadow: "none"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 9
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "triangle-alert",
+      size: 17,
+      color: "var(--danger-ink)"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--danger-ink)",
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("b", null, "One more strike pauses your account until it clears."), " If a job goes wrong, use \"Get help with this job\" before dropping it \u2014 a logged problem is never a strike."))) : null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 4
+      }
+    }, [["14 Aug · Dropped a job after collecting", "Eastgate → Avenues"], fin ? ["9 Aug · No-show at pickup", "Avondale Shops"] : null].filter(Boolean).map(([t, m]) => /*#__PURE__*/React.createElement("div", {
+      key: t,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        padding: "11px 10px",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "history",
+      size: 17,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        fontWeight: 600
+      },
+      className: "lynia-tabular"
+    }, t), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)"
+      }
+    }, m)), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 16,
+      color: "var(--muted)"
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "11px 10px",
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.45
+      }
+    }, "What counts as a strike: dropping a job after collecting \xB7 not showing at a pickup you accepted \xB7 3 wrong hand-off codes.")), /*#__PURE__*/React.createElement(Button, {
+      label: "Dispute a strike",
+      variant: "ghost",
+      onClick: nop
+    })));
+  }
+
+  /* ── SH9b · Proof-of-pickup photo — capture → preview → (background) upload ── */
+  function PhotoStage({
+    preview
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: "100%",
+        background: "#14181b",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "38px 16px 10px"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "x",
+      size: 20,
+      color: "#fff"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "#fff"
+      }
+    }, "Proof of pickup"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: "rgba(255,255,255,.75)",
+        ...TAB
+      }
+    }, "LG-88f3")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "0 16px 10px",
+        fontSize: 12,
+        color: "rgba(255,255,255,.75)",
+        lineHeight: 1.45
+      }
+    }, "Eastgate Mall pickup \u2014 the sender sees this photo the moment you collect."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minHeight: 0,
+        margin: "0 16px",
+        position: "relative",
+        borderRadius: 14,
+        overflow: "hidden",
+        background: preview ? "repeating-linear-gradient(45deg, #2a3136, #2a3136 14px, #232a2e 14px, #232a2e 28px)" : "#22282c"
+      }
+    }, preview ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 0,
+        display: "grid",
+        placeItems: "center",
+        fontFamily: "ui-monospace, monospace",
+        fontSize: 12,
+        color: "rgba(255,255,255,.65)"
+      }
+    }, "parcel photo") : /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 18,
+        border: "2px dashed rgba(255,255,255,.55)",
+        borderRadius: 12,
+        display: "grid",
+        placeItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: "rgba(255,255,255,.85)",
+        textAlign: "center",
+        padding: "0 20px",
+        lineHeight: 1.5
+      }
+    }, "Fit the whole parcel in the frame"))), preview ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "var(--bg)",
+        borderRadius: "16px 16px 0 0",
+        padding: 16,
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Can you see the parcel clearly?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        marginTop: 2
+      }
+    }, "This photo is your protection too \u2014 it shows what you collected, in what condition."), /*#__PURE__*/React.createElement(Button, {
+      label: "Use this photo",
+      onClick: nop
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Retake",
+      variant: "ghost",
+      onClick: nop
+    })) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+        padding: "14px 16px 24px"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11.5,
+        color: "rgba(255,255,255,.7)"
+      }
+    }, "Good light \xB7 hold steady \xB7 label visible"), /*#__PURE__*/React.createElement("span", {
+      "aria-label": "Take photo",
+      style: {
+        width: 68,
+        height: 68,
+        borderRadius: "50%",
+        background: "#fff",
+        border: "4px solid rgba(255,255,255,.4)",
+        boxSizing: "border-box"
+      }
+    })));
+  }
+  const PP_STEPS = ["Job accepted", "Items & note confirmed", "At pickup", "Parcel collected", "On the way", "Delivered", "Fare in hand"];
+  const pickup_photo_failed = () => S(/*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(AppBar, {
+    title: "Active job",
+    sub: "Parcel \xB7 Eastgate \u2192 Avenues",
+    back: false
+  }), /*#__PURE__*/React.createElement(Pad, {
+    style: {
+      paddingTop: 0
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      background: "var(--highlight-wash)",
+      border: "1px solid var(--highlight-border)",
+      boxShadow: "none",
+      padding: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 9
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "wifi-off",
+    size: 16,
+    color: "var(--highlight-ink)"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      fontWeight: 700,
+      color: "var(--highlight-ink)"
+    }
+  }, "Pickup photo didn't upload"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--highlight-ink)",
+      lineHeight: 1.45,
+      marginTop: 2
+    }
+  }, "No signal at the pickup. It retries in the background \u2014 ride on, the job isn't blocked."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 700,
+      color: "var(--accent-text)",
+      marginTop: 7,
+      minHeight: 24
+    }
+  }, "Try again now")))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 4,
+      background: "var(--accent-wash)",
+      color: "var(--accent-text)",
+      borderRadius: 999,
+      padding: "2px 8px",
+      fontSize: 10.5,
+      fontWeight: 800,
+      letterSpacing: ".04em"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "package",
+    size: 11,
+    color: "var(--accent-text)"
+  }), "PARCEL"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 700,
+      color: "var(--accent-text)"
+    }
+  }, "Navigate")), /*#__PURE__*/React.createElement(Stepper, {
+    steps: PP_STEPS,
+    step: 4,
+    times: {
+      0: "09:41",
+      1: "09:44",
+      2: "09:52",
+      3: "09:55",
+      4: "just now"
+    }
+  })))), {
+    tab: "jobs",
+    footer: /*#__PURE__*/React.createElement(Button, {
+      label: "I've arrived at the drop-off",
+      onClick: nop,
+      style: {
+        marginTop: 0
+      }
+    })
+  });
+  window.RJM = Object.assign(window.RJM || {}, {
+    board_food_off,
+    board_empty_food_off,
+    strikes: () => S(/*#__PURE__*/React.createElement(Strikes, null), {
+      tab: "acct"
+    }),
+    strikes_final: () => S(/*#__PURE__*/React.createElement(Strikes, {
+      final: true
+    }), {
+      tab: "acct"
+    }),
+    pickup_photo: () => /*#__PURE__*/React.createElement(PhotoStage, null),
+    pickup_photo_preview: () => /*#__PURE__*/React.createElement(PhotoStage, {
+      preview: true
+    }),
+    pickup_photo_failed
+  });
+})();
+})(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/journey/rider-screens-shipped.jsx", error: String((e && e.message) || e) }); }
+
 // explorations/journey/rider-screens-wallet.jsx
 try { (() => {
 /* file-scoped: Babel classic scripts share one global scope, so every declaration below is
@@ -10293,7 +11000,7 @@ try { (() => {
       onClick: noop
     }));
   }
-  const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to ride"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+  const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Sign in to ride"), /*#__PURE__*/React.createElement(Sub, null, "We'll SMS a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
     label: "Phone number",
     value: "+263 78 202 1180",
     onChange: noop,
@@ -10302,12 +11009,12 @@ try { (() => {
     label: "Send code",
     onClick: noop
   }));
-  const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your WhatsApp"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 78 202 1180 on WhatsApp."), /*#__PURE__*/React.createElement(Field, {
+  const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your messages"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 78 202 1180 by SMS."), /*#__PURE__*/React.createElement(Field, {
     label: "6-digit code",
     value: "418207",
     onChange: noop,
     inputMode: "numeric",
-    hint: "No WhatsApp on this number? Contact support to sign up."
+    hint: "SMS can take a minute on a busy network."
   }), /*#__PURE__*/React.createElement(Button, {
     label: "Verify",
     onClick: noop
@@ -13139,14 +13846,14 @@ try { (() => {
     onClick: noop
   }));
 
-  /* ── C · OTP resend states (extend the "Check your WhatsApp" screen; idle is retrofitted in screens.jsx) ── */
+  /* ── C · OTP resend states (extend the "Check your messages" SMS screen; idle is retrofitted in screens.jsx) ── */
   function OtpState({
     variant
   }) {
     const cooldown = variant === "cooldown",
       resent = variant === "resent",
       locked = variant === "locked";
-    return /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your WhatsApp"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 77 245 1180 on WhatsApp."), resent ? /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your messages"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 77 245 1180 by SMS."), resent ? /*#__PURE__*/React.createElement("div", {
       role: "status",
       style: {
         display: "flex",
@@ -13164,7 +13871,7 @@ try { (() => {
       name: "check",
       size: 16,
       color: "var(--accent-text)"
-    }), " A fresh code is on its way \u2014 check WhatsApp.") : null, locked ? /*#__PURE__*/React.createElement(Field, {
+    }), " A fresh code is on its way \u2014 check your messages.") : null, locked ? /*#__PURE__*/React.createElement(Field, {
       label: "6-digit code",
       value: "418207",
       onChange: noop,
@@ -13302,6 +14009,1786 @@ try { (() => {
   });
 })();
 })(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/journey/screens-safety.jsx", error: String((e && e.message) || e) }); }
+
+// explorations/journey/screens-shipped.jsx
+try { (() => {
+/* file-scoped: Babel classic scripts share one global scope, so every declaration below is
+   wrapped in an IIFE — only window.LJ leaves this file. */
+(() => {
+  /* LyniaGo — customer journey: SHIPPED-STATES alignment wave (2026-08, SH·). The states the app
+     shipped with no mock: connectivity & cache honesty, composer resilience (draft restore, address
+     search down, map fallback, location off), cold-start order restore, rating undo, privacy /
+     delete-account / phone masking, real OS-permission rows, and feature-flag-off variants.
+     Same conventions as screens.jsx (frozen state, real DS bundle). Extends window.LJ.
+     Sheet + logic notes: ui_kits/mobile/shipped-states.html. */
+
+  const DS = window.LyniaDesignSystem_94c56a;
+  const K = window.LyniaKit;
+  const SUP = window.LyniaSupport;
+  const {
+    Button,
+    Card,
+    Field,
+    StatusPill,
+    EmptyState,
+    Heading,
+    Sub,
+    Icon,
+    OfflineBanner,
+    SkeletonList,
+    ServiceTiles
+  } = DS;
+  const AppHome = DS.AppHome || (() => /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      fontSize: 12,
+      color: "var(--muted)"
+    }
+  }, "Home needs a design-system rebuild (AppHome missing from the bundle)."));
+  const AppScreen = DS.AppScreen || (({
+    children
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      overflow: "hidden"
+    }
+  }, children));
+  const {
+    Dove,
+    Wordmark,
+    Pad,
+    Top
+  } = SUP;
+  const noop = () => {};
+  const PINS = {
+    a: {
+      x: 26,
+      y: 30
+    },
+    b: {
+      x: 76,
+      y: 70
+    }
+  };
+  const TAB = {
+    fontVariantNumeric: "tabular-nums"
+  };
+
+  /* ── shared bits (same visual vocabulary as screens.jsx) ── */
+  function OrderHead({
+    status,
+    tone
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(Heading, {
+      style: {
+        marginBottom: 0
+      }
+    }, "Order 8f3a91c2"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement(StatusPill, {
+      status: status,
+      tone: tone
+    }));
+  }
+  function TopChrome() {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        top: 34,
+        left: 12,
+        right: 12,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        zIndex: 5
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-pill)",
+        padding: "6px 12px 6px 6px",
+        boxShadow: "var(--shadow-card)",
+        fontWeight: 700,
+        fontSize: 14
+      }
+    }, /*#__PURE__*/React.createElement(Dove, {
+      size: 22,
+      on: "white"
+    }), /*#__PURE__*/React.createElement(Wordmark, {
+      size: 15
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 40,
+        height: 40,
+        borderRadius: "50%",
+        background: "var(--bg)",
+        boxShadow: "var(--shadow-card)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "user",
+      size: 18,
+      color: "var(--accent-text)"
+    })));
+  }
+  /* Address rows — same anatomy as the composer's AddressFields (screens.jsx). */
+  function AddrRows({
+    pickup,
+    drop,
+    dropStyle
+  }) {
+    const Row = ({
+      role,
+      value,
+      ph
+    }) => {
+      const color = role === "pickup" ? "var(--accent)" : "var(--danger)";
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          minHeight: 48,
+          padding: "6px 12px"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 12,
+          height: 12,
+          borderRadius: role === "pickup" ? "50%" : 3,
+          background: value ? color : "var(--bg)",
+          border: `2px solid ${color}`,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: ".05em",
+          color: "var(--muted)"
+        }
+      }, role === "pickup" ? "PICKUP" : "DROP-OFF"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 14.5,
+          fontWeight: 600,
+          color: value ? "var(--ink)" : "var(--muted)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          ...(role === "drop" ? dropStyle : null)
+        }
+      }, value || ph)), /*#__PURE__*/React.createElement(Icon, {
+        name: value ? "pencil" : "search",
+        size: 16,
+        color: "var(--muted)"
+      }));
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-input)",
+        background: "var(--bg)",
+        marginBottom: 10,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement(Row, {
+      role: "pickup",
+      value: pickup,
+      ph: "Set pickup location"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 1,
+        background: "var(--line)",
+        marginLeft: 35
+      }
+    }), /*#__PURE__*/React.createElement(Row, {
+      role: "drop",
+      value: drop,
+      ph: "Where to?"
+    }));
+  }
+
+  /* ── The composer, parameterised across the shipped resilience states.
+        variant: "draft" | "discard" | "mapfail" | "locoff" ── */
+  function ComposerState({
+    variant
+  }) {
+    const draft = variant === "draft" || variant === "discard";
+    const pins = draft ? PINS : null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        height: "100%",
+        overflow: "hidden"
+      }
+    }, variant === "mapfail" ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 0,
+        background: "repeating-linear-gradient(45deg, var(--surface), var(--surface) 14px, #eef1f3 14px, #eef1f3 28px)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        top: 96,
+        left: 24,
+        right: 24,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-card)",
+        boxShadow: "var(--shadow-card)",
+        padding: 16,
+        textAlign: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 52,
+        height: 52,
+        borderRadius: "50%",
+        background: "var(--surface)",
+        display: "grid",
+        placeItems: "center",
+        margin: "0 auto 10px"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "map-pin",
+      size: 24,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "The map didn't load"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.5,
+        marginTop: 4
+      }
+    }, "You can still send \u2014 search both addresses below. The pin is optional once an address is set."), /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 10,
+        minHeight: 40,
+        padding: "0 16px",
+        borderRadius: "var(--radius-pill)",
+        border: "1px solid var(--line)",
+        fontSize: 13,
+        fontWeight: 700,
+        color: "var(--accent-text)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "refresh-cw",
+      size: 14,
+      color: "var(--accent-text)"
+    }), " Retry the map"))) : /*#__PURE__*/React.createElement(K.FauxMap, {
+      fill: true,
+      pins: {
+        a: pins ? pins.a : null,
+        b: pins ? pins.b : null
+      }
+    }), /*#__PURE__*/React.createElement(TopChrome, null), variant === "locoff" ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        position: "absolute",
+        top: 78,
+        right: 12,
+        zIndex: 5,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-pill)",
+        padding: "9px 14px",
+        boxShadow: "var(--shadow-card)",
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--muted)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "navigation",
+      size: 14,
+      color: "var(--muted)"
+    }), " Location is off") : variant !== "mapfail" ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        position: "absolute",
+        top: 78,
+        right: 12,
+        zIndex: 5,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-pill)",
+        padding: "9px 14px",
+        boxShadow: "var(--shadow-card)",
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--accent-text)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "navigation",
+      size: 14,
+      color: "var(--accent-text)"
+    }), " Use my location") : null, variant === "locoff" ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        top: 124,
+        left: 24,
+        right: 24,
+        zIndex: 5,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-card)",
+        boxShadow: "var(--shadow-card)",
+        padding: "12px 14px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 9
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "navigation",
+      size: 16,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Location is off"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        marginTop: 2
+      }
+    }, "Search an address or tap the map to place your pins by hand \u2014 nothing is blocked."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        fontWeight: 700,
+        color: "var(--accent-text)",
+        marginTop: 7,
+        minHeight: 24
+      }
+    }, "Turn on location")))) : null, /*#__PURE__*/React.createElement(K.MapSheet, {
+      expanded: false,
+      onToggle: noop,
+      footer: /*#__PURE__*/React.createElement(Button, {
+        label: "Broadcast request",
+        onClick: noop,
+        disabled: !draft
+      })
+    }, draft ? /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "9px 11px",
+        background: "var(--accent-wash)",
+        borderRadius: "var(--radius-input)",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "history",
+      size: 15,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 12.5,
+        fontWeight: 600,
+        color: "var(--accent-text)",
+        lineHeight: 1.4
+      }
+    }, "Draft restored from Tuesday 18:12."), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12.5,
+        fontWeight: 700,
+        color: "var(--accent-text)",
+        minHeight: 24,
+        display: "inline-flex",
+        alignItems: "center"
+      }
+    }, "Discard")) : null, /*#__PURE__*/React.createElement(AddrRows, {
+      pickup: draft ? "Eastgate Mall, CBD" : "",
+      drop: draft ? "14 Glenara Ave, Avenues" : ""
+    }), /*#__PURE__*/React.createElement(Field, {
+      label: "What are you sending?",
+      value: draft ? "Documents envelope" : "",
+      onChange: noop,
+      placeholder: "Documents envelope"
+    }), /*#__PURE__*/React.createElement(Field, {
+      label: "Your price (USD)",
+      value: draft ? "3.00" : "",
+      onChange: noop,
+      inputMode: "decimal",
+      hint: draft ? "Suggested $3.36 · 3.1 km · riders here usually accept around $2.96." : "We'll suggest a fair price once your pins are set."
+    })), variant === "discard" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        inset: 0,
+        background: "rgba(20,24,27,.45)",
+        zIndex: 40
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: 10,
+        right: 10,
+        bottom: 10,
+        zIndex: 41,
+        background: "var(--bg)",
+        borderRadius: "var(--radius-card)",
+        padding: 16,
+        boxShadow: "var(--shadow-card)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: "var(--ink)",
+        marginBottom: 4
+      }
+    }, "Discard the restored draft?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)",
+        lineHeight: 1.5
+      }
+    }, "The pickup, drop-off, item and price from Tuesday will be cleared. This can't be undone."), /*#__PURE__*/React.createElement(Button, {
+      label: "Keep editing",
+      onClick: noop
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Discard draft",
+      variant: "ghost",
+      onClick: noop,
+      style: {
+        color: "var(--danger-ink)"
+      }
+    }))) : null);
+  }
+
+  /* ── SH1 · Connectivity & cache honesty ── */
+  function ConnReconnecting() {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column"
+      }
+    }, /*#__PURE__*/React.createElement(OfflineBanner, {
+      state: "reconnecting"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minHeight: 0,
+        position: "relative"
+      }
+    }, /*#__PURE__*/React.createElement(ComposerState, {
+      variant: "draft"
+    })));
+  }
+  const CACHED_ORDERS = [{
+    icon: "package",
+    t: "Parcel · Eastgate → Avenues",
+    m: "Delivered Tue 18:44 · $2.50",
+    pill: "delivered"
+  }, {
+    icon: "utensils",
+    t: "Sadza Republic",
+    m: "Delivered Tue 13:10 · $9.50",
+    pill: "delivered"
+  }, {
+    icon: "package",
+    t: "Parcel · Avondale → CBD",
+    m: "Cancelled Mon 09:12",
+    pill: "cancelled",
+    tone: "offline"
+  }];
+  function StaleStrip({
+    failed
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 16px",
+        background: "var(--surface)",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: failed ? "wifi-off" : "history",
+      size: 14,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.4
+      }
+    }, failed ? "Saved copy from 09:41 — couldn't refresh." : "Saved copy from 09:41 — updating…"), failed ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: "var(--accent-text)",
+        minHeight: 24,
+        display: "inline-flex",
+        alignItems: "center"
+      }
+    }, "Retry") : null);
+  }
+  function StaleOrders({
+    empty,
+    failed
+  }) {
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Your orders",
+      onBack: false
+    })), /*#__PURE__*/React.createElement(StaleStrip, {
+      failed: failed
+    }), empty ? /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(EmptyState, {
+      icon: "wifi-off",
+      title: "Nothing saved on this phone yet",
+      message: "You're offline and there's no saved copy of your orders to show. They're safe on your account \u2014 they'll appear the moment you're back on the network."
+    }, /*#__PURE__*/React.createElement(Button, {
+      label: "Try again",
+      variant: "ghost",
+      onClick: noop
+    }))) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "4px var(--space-screen) var(--space-screen)"
+      }
+    }, CACHED_ORDERS.map(o => /*#__PURE__*/React.createElement("div", {
+      key: o.t,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        padding: "12px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        background: "var(--surface)",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: o.icon,
+      size: 16,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        fontWeight: 600,
+        color: "var(--ink)",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, o.t), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        marginTop: 1
+      },
+      className: "lynia-tabular"
+    }, o.m)), /*#__PURE__*/React.createElement(StatusPill, {
+      status: o.pill,
+      tone: o.tone
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: "var(--muted)",
+        textAlign: "center",
+        marginTop: 12,
+        lineHeight: 1.45
+      }
+    }, "Anything newer than 09:41 isn't shown yet.")));
+  }
+
+  /* ── SH3 · Address search unavailable (no Places) — the pin fallback named honestly ── */
+  function AddrUnavailable() {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--bg)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "36px 16px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "x",
+      size: 20,
+      color: "var(--ink)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Set drop-off"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 11,
+        height: 11,
+        borderRadius: 3,
+        border: "2px solid var(--danger)",
+        background: "var(--bg)"
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        background: "var(--surface)",
+        borderRadius: "var(--radius-input)",
+        padding: "0 12px",
+        height: 46,
+        border: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "search",
+      size: 18,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 15,
+        color: "var(--muted)"
+      }
+    }, "Search isn't available right now"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        overflow: "hidden",
+        padding: "0 16px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        padding: "11px 12px",
+        borderRadius: "var(--radius-input)",
+        background: "var(--surface)",
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "circle-alert",
+      size: 16,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.5
+      }
+    }, "Address lookup is down on our side \u2014 not your phone. Set the exact point on the map instead: ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: "var(--ink)"
+      }
+    }, "your rider navigates to the pin"), "; the name below is only the label they read.")), [["map-pin", "Set the pin on the map"], ["navigation", "Use my current location"]].map(([ic, lbl]) => /*#__PURE__*/React.createElement("div", {
+      key: lbl,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "11px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "grid",
+        placeItems: "center",
+        width: 34,
+        height: 34,
+        borderRadius: "50%",
+        background: "var(--accent-wash)",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: ic,
+      size: 16,
+      color: "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--accent-text)"
+      }
+    }, lbl), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 16,
+      color: "var(--muted)"
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: ".04em",
+        color: "var(--muted)",
+        margin: "14px 0 4px"
+      }
+    }, "HOW YOUR DROP-OFF WILL READ"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        padding: "10px 12px",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-input)"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 11,
+        height: 11,
+        borderRadius: 3,
+        border: "2px solid var(--danger)",
+        background: "var(--danger)",
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, "Pinned spot \u2014 near Fife Ave & 3rd St"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: "var(--muted)"
+      }
+    }, "No street address \xB7 add a landmark note so the rider knows the gate")))));
+  }
+
+  /* ── SH5 · Cold start with a live order ── */
+  function OrderRestore({
+    error
+  }) {
+    const under = window.LJ && window.LJ.home_launcher;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        height: "100%",
+        overflow: "hidden"
+      }
+    }, under ? under() : null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: 12,
+        right: 12,
+        bottom: 70,
+        zIndex: 30
+      }
+    }, error ? /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "circle-alert",
+      size: 18,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14.5,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "You have a delivery running"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        marginTop: 2
+      }
+    }, "It didn't load just now \u2014 your rider is still on the job and nothing is lost."))), /*#__PURE__*/React.createElement(Button, {
+      label: "Try again",
+      onClick: noop
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Open Orders",
+      variant: "ghost",
+      onClick: noop
+    })) : /*#__PURE__*/React.createElement(Card, {
+      accent: true,
+      style: {
+        marginBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 38,
+        height: 38,
+        borderRadius: "50%",
+        background: "var(--accent-wash)",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "bike",
+      size: 18,
+      color: "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14.5,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Your delivery is still running"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        marginTop: 2
+      },
+      className: "lynia-tabular"
+    }, "Parcel to Avenues \xB7 Tendai M. is 4 min away")), /*#__PURE__*/React.createElement(Icon, {
+      name: "x",
+      size: 17,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement(Button, {
+      label: "Return to your order",
+      onClick: noop
+    }))));
+  }
+
+  /* ── SH6 · Rating undo window ── */
+  function RateUndo() {
+    return /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(OrderHead, {
+      status: "delivered"
+    }), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        marginBottom: 8
+      }
+    }, "Rating sent"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 4,
+        marginBottom: 10
+      }
+    }, [1, 2, 3, 4, 5].map(n => /*#__PURE__*/React.createElement("span", {
+      key: n,
+      style: {
+        fontSize: 30,
+        color: "var(--highlight)"
+      }
+    }, "\u2605"))), /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "9px 11px",
+        background: "var(--surface)",
+        borderRadius: "var(--radius-input)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "history",
+      size: 15,
+      color: "var(--muted)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 12.5,
+        color: "var(--muted)"
+      }
+    }, "You rated Tendai M. 5 stars."), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: "var(--accent-text)",
+        minHeight: 24,
+        display: "inline-flex",
+        alignItems: "center"
+      },
+      className: "lynia-tabular"
+    }, "Undo \xB7 0:09")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        marginTop: 8
+      }
+    }, "You can change it for a few seconds \u2014 after that the rating is final, and your rider never sees who rated what.")), /*#__PURE__*/React.createElement(Button, {
+      label: "Back home",
+      onClick: noop
+    }));
+  }
+
+  /* ── SH7 · Privacy, delete account, phone masking ── */
+  function Privacy() {
+    const rows = [["user", "What we collect", "Your name, phone number and the pins on your deliveries. No ID documents for customers."], ["id-card", "What others see", "First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked."], ["history", "How long we keep it", "Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days."]];
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Privacy"
+    })), /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        paddingTop: 4
+      }
+    }, rows.map(([ic, t, m]) => /*#__PURE__*/React.createElement(Card, {
+      key: t,
+      style: {
+        padding: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 11
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        background: "var(--accent-wash)",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: ic,
+      size: 17,
+      color: "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, t), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.5,
+        marginTop: 2
+      }
+    }, m))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "inbox",
+      size: 19,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, "Request a copy of my data"), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 17,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 0"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "trash-2",
+      size: 19,
+      color: "var(--danger)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--danger)"
+      }
+    }, "Delete my account"), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 17,
+      color: "var(--muted)"
+    }))));
+  }
+  function DeleteAccount() {
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Delete account"
+    })), /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        paddingTop: 4
+      }
+    }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 52,
+        height: 52,
+        borderRadius: "50%",
+        background: "var(--danger-wash)",
+        display: "grid",
+        placeItems: "center",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "trash-2",
+      size: 22,
+      color: "var(--danger-ink)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 17,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Delete your account?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)",
+        lineHeight: 1.55,
+        marginTop: 4
+      }
+    }, "Your profile, saved places, notifications and order history will be permanently deleted. Records the law makes us keep (payments) are kept only as long as it requires.")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        padding: "9px 11px",
+        borderRadius: "var(--radius-input)",
+        background: "var(--accent-wash)",
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 15,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--accent-text)",
+        lineHeight: 1.45
+      }
+    }, "No delivery is running \u2014 you're clear to continue. (A live order blocks deletion until it ends.)")), /*#__PURE__*/React.createElement(Button, {
+      label: "Keep my account",
+      onClick: noop
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Continue to delete",
+      variant: "ghost",
+      onClick: noop,
+      style: {
+        color: "var(--danger-ink)"
+      }
+    })));
+  }
+  function DeleteFinal() {
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Delete account"
+    })), /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        paddingTop: 4
+      }
+    }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 17,
+        fontWeight: 700,
+        color: "var(--danger-ink)"
+      }
+    }, "This is the final step"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)",
+        lineHeight: 1.55,
+        marginTop: 4
+      }
+    }, "Your account closes now and is permanently deleted after ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: "var(--ink)"
+      }
+    }, "30 days"), ". Sign back in within 30 days and the deletion is cancelled \u2014 after that, nothing can be recovered."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "11px 12px",
+        borderRadius: "var(--radius-input)",
+        border: "1.5px solid var(--accent)",
+        background: "var(--accent-wash)",
+        marginTop: 12,
+        minHeight: 44
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 20,
+        height: 20,
+        borderRadius: 6,
+        background: "var(--accent)",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 13,
+      color: "#fff"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: "var(--ink)",
+        lineHeight: 1.4
+      }
+    }, "I understand my history and saved places will be gone"))), /*#__PURE__*/React.createElement(Button, {
+      label: "Delete my account",
+      onClick: noop,
+      style: {
+        background: "var(--danger)"
+      }
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Keep my account",
+      variant: "ghost",
+      onClick: noop
+    })));
+  }
+  function PhoneMasked() {
+    return /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(OrderHead, {
+      status: "completed"
+    }), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)",
+        marginBottom: 8
+      },
+      className: "lynia-tabular"
+    }, "Agreed fare $2.50 \xB7 delivered Tue 18:44"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 10px",
+        background: "var(--surface)",
+        borderRadius: "var(--radius-input)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: "var(--muted)"
+      }
+    }, "Your rider"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, "Tendai M."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)"
+      },
+      className: "lynia-tabular"
+    }, "+263 7\u2022 \u2022\u2022\u2022 \u2022\u202280")), /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 44,
+        height: 44,
+        borderRadius: "50%",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "phone",
+      size: 18,
+      color: "var(--muted)"
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        marginTop: 8
+      }
+    }, "Numbers are masked when a delivery ends \u2014 you and your rider can't call each other any more. Need to reach them about this order? Go through Lynia.")), /*#__PURE__*/React.createElement(Button, {
+      label: "Get help with this order",
+      variant: "ghost",
+      onClick: noop
+    }));
+  }
+
+  /* ── SH11 · Settings with REAL OS-permission rows (never a hardcoded "On") ── */
+  function SettingsPerms({
+    granted
+  }) {
+    const Row = ({
+      icon,
+      label,
+      value,
+      warn,
+      consequence
+    }) => /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 0",
+        minHeight: 44
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: icon,
+      size: 19,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 13,
+        fontWeight: warn ? 700 : 400,
+        color: warn ? "var(--danger-ink)" : "var(--muted)"
+      }
+    }, warn ? /*#__PURE__*/React.createElement(Icon, {
+      name: "triangle-alert",
+      size: 14,
+      color: "var(--danger-ink)"
+    }) : null, value), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 17,
+      color: "var(--muted)"
+    })), consequence ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        padding: "0 0 12px 31px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        fontSize: 12,
+        color: "var(--muted)",
+        lineHeight: 1.45
+      }
+    }, consequence, " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: "var(--accent-text)"
+      }
+    }, "Open system settings"))) : null);
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        minHeight: 0,
+        paddingBottom: 0
+      }
+    }, /*#__PURE__*/React.createElement(Top, {
+      title: "Settings",
+      onBack: false
+    })), /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        paddingTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 52,
+        height: 52,
+        borderRadius: "50%",
+        background: "var(--accent-wash)",
+        display: "grid",
+        placeItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "user",
+      size: 24,
+      color: "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Chipo M."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)"
+      },
+      className: "lynia-tabular"
+    }, "+263 77 245 1180"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: ".04em",
+        color: "var(--muted)",
+        margin: "10px 0 2px"
+      }
+    }, "PERMISSIONS \u2014 READ FROM YOUR PHONE"), granted ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Row, {
+      icon: "navigation",
+      label: "Location",
+      value: "While using"
+    }), /*#__PURE__*/React.createElement(Row, {
+      icon: "bell",
+      label: "Notifications",
+      value: "On"
+    })) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Row, {
+      icon: "navigation",
+      label: "Location",
+      value: "Ask every time"
+    }), /*#__PURE__*/React.createElement(Row, {
+      icon: "bell",
+      label: "Notifications",
+      value: "Off",
+      warn: true,
+      consequence: "You won't hear when a rider offers or when your parcel arrives."
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: "var(--muted)",
+        lineHeight: 1.45,
+        margin: "8px 0 12px"
+      }
+    }, "These show your phone's real settings \u2014 LyniaGo re-checks them every time you come back to the app. Changing one opens Android settings."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "map-pin",
+      size: 19,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, "Language"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)"
+      }
+    }, "English"), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 17,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "13px 0",
+        borderBottom: "1px solid var(--line)"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "banknote",
+      size: 19,
+      color: "var(--accent-text)"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--ink)"
+      }
+    }, "Payment"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        color: "var(--muted)"
+      }
+    }, "Cash"), /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 17,
+      color: "var(--muted)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: "var(--muted)",
+        textAlign: "center",
+        marginTop: 14
+      }
+    }, "LyniaGo v1.0.0")));
+  }
+
+  /* ── SH12 · Feature-flag-off variants (food dispatch OFF) ── */
+  function OnboardFlagOff() {
+    return /*#__PURE__*/React.createElement(Pad, {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--bg)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 7
+      }
+    }, /*#__PURE__*/React.createElement(Dove, {
+      size: 24,
+      on: "white"
+    }), /*#__PURE__*/React.createElement(Wordmark, {
+      size: 17
+    })), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "var(--muted)",
+        fontSize: 13,
+        fontWeight: 600
+      }
+    }, "Skip")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 120,
+        height: 120,
+        borderRadius: "50%",
+        background: "var(--accent-wash)",
+        display: "grid",
+        placeItems: "center",
+        marginBottom: 18
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "banknote",
+      size: 52,
+      color: "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, "Name your price to send"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        lineHeight: 1.55,
+        color: "var(--muted)",
+        maxWidth: 240
+      }
+    }, "Say what you'll pay to send a parcel. Riders bid for it \u2014 no fixed tariff, no haggling in the street.")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "center",
+        gap: 7,
+        marginBottom: 16
+      }
+    }, [0, 1].map(n => /*#__PURE__*/React.createElement("span", {
+      key: n,
+      style: {
+        width: n === 0 ? 22 : 7,
+        height: 7,
+        borderRadius: 999,
+        background: n === 0 ? "var(--accent)" : "var(--line)"
+      }
+    }))), /*#__PURE__*/React.createElement(Button, {
+      label: "Next",
+      onClick: noop
+    }));
+  }
+  function RoleSelectFlagOff() {
+    const Opt = ({
+      icon,
+      title,
+      desc,
+      selected
+    }) => /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: 14,
+        borderRadius: "var(--radius-card)",
+        border: `1.5px solid ${selected ? "var(--accent)" : "var(--line)"}`,
+        background: selected ? "var(--accent-wash)" : "var(--bg)",
+        marginBottom: 10,
+        boxShadow: selected ? "none" : "var(--shadow-card)"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 46,
+        height: 46,
+        borderRadius: "50%",
+        background: selected ? "var(--accent)" : "var(--surface)",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: icon,
+      size: 22,
+      color: selected ? "#fff" : "var(--accent-text)"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "var(--ink)"
+      }
+    }, title), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: "var(--muted)",
+        lineHeight: 1.4
+      }
+    }, desc)), selected ? /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 20,
+      color: "var(--accent-text)"
+    }) : /*#__PURE__*/React.createElement(Icon, {
+      name: "chevron-right",
+      size: 18,
+      color: "var(--muted)"
+    }));
+    return /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 20
+      }
+    }, /*#__PURE__*/React.createElement(Dove, {
+      size: 40,
+      on: "white"
+    }), /*#__PURE__*/React.createElement(Wordmark, {
+      size: 24
+    })), /*#__PURE__*/React.createElement(Heading, null, "How do you want to start?"), /*#__PURE__*/React.createElement(Sub, null, "It's one account \u2014 pick how you'll use LyniaGo now, and switch anytime."), /*#__PURE__*/React.createElement(Opt, {
+      icon: "package",
+      title: "Use LyniaGo",
+      desc: "Send parcels across Harare \u2014 more services soon.",
+      selected: true
+    }), /*#__PURE__*/React.createElement(Opt, {
+      icon: "bike",
+      title: "Earn as a rider",
+      desc: "Deliver parcels near you and get paid in cash.",
+      selected: false
+    }), /*#__PURE__*/React.createElement(Button, {
+      label: "Continue as a customer",
+      onClick: noop
+    }));
+  }
+  const FLAG_OFF_SERVICES = [{
+    id: "send",
+    icon: "package",
+    label: "Send",
+    sub: "Parcel"
+  }, {
+    id: "food",
+    icon: "utensils",
+    label: "Food",
+    sub: "Soon",
+    bg: "var(--line)",
+    soon: true
+  }, {
+    id: "pharmacy",
+    icon: "plus",
+    label: "Pharmacy",
+    sub: "Soon",
+    bg: "var(--line)",
+    soon: true
+  }];
+  function HomeFlagOff() {
+    return /*#__PURE__*/React.createElement(AppScreen, {
+      tab: "home",
+      dark: true,
+      bg: "var(--accent)"
+    }, /*#__PURE__*/React.createElement(AppHome, {
+      address: "12 Lanark Rd, Belgravia",
+      services: FLAG_OFF_SERVICES,
+      restaurants: [],
+      venuesTitle: "",
+      live: [{
+        id: "p1",
+        title: "Parcel to Msasa · rider 4 min away",
+        meta: "Delivery code 4192 · $3.36",
+        step: 5
+      }]
+    }));
+  }
+  const S = (node, o = {}) => /*#__PURE__*/React.createElement(AppScreen, {
+    tab: o.tab,
+    bg: o.bg,
+    dark: o.dark
+  }, node);
+  Object.assign(window.LJ, {
+    conn_reconnecting: () => S(/*#__PURE__*/React.createElement(ConnReconnecting, null)),
+    stale_cache: () => S(/*#__PURE__*/React.createElement(StaleOrders, null), {
+      tab: "orders"
+    }),
+    stale_cache_empty: () => S(/*#__PURE__*/React.createElement(StaleOrders, {
+      empty: true,
+      failed: true
+    }), {
+      tab: "orders"
+    }),
+    draft_restored: () => S(/*#__PURE__*/React.createElement(ComposerState, {
+      variant: "draft"
+    })),
+    draft_discard: () => S(/*#__PURE__*/React.createElement(ComposerState, {
+      variant: "discard"
+    })),
+    addr_unavailable: () => S(/*#__PURE__*/React.createElement(AddrUnavailable, null)),
+    map_failed: () => S(/*#__PURE__*/React.createElement(ComposerState, {
+      variant: "mapfail"
+    })),
+    loc_off: () => S(/*#__PURE__*/React.createElement(ComposerState, {
+      variant: "locoff"
+    })),
+    order_restore: () => /*#__PURE__*/React.createElement(OrderRestore, null),
+    order_restore_error: () => /*#__PURE__*/React.createElement(OrderRestore, {
+      error: true
+    }),
+    rate_undo: () => S(/*#__PURE__*/React.createElement(RateUndo, null)),
+    privacy: () => S(/*#__PURE__*/React.createElement(Privacy, null)),
+    delete_account: () => S(/*#__PURE__*/React.createElement(DeleteAccount, null)),
+    delete_final: () => S(/*#__PURE__*/React.createElement(DeleteFinal, null)),
+    phone_masked: () => S(/*#__PURE__*/React.createElement(PhoneMasked, null)),
+    settings_perms: () => S(/*#__PURE__*/React.createElement(SettingsPerms, null)),
+    settings_perms_ok: () => S(/*#__PURE__*/React.createElement(SettingsPerms, {
+      granted: true
+    })),
+    onboard_flag_off: () => S(/*#__PURE__*/React.createElement(OnboardFlagOff, null)),
+    role_select_flag_off: () => S(/*#__PURE__*/React.createElement(RoleSelectFlagOff, null)),
+    home_flag_off: () => /*#__PURE__*/React.createElement(HomeFlagOff, null)
+  });
+})();
+})(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/journey/screens-shipped.jsx", error: String((e && e.message) || e) }); }
 
 // explorations/journey/screens.jsx
 try { (() => {
@@ -15225,7 +17712,7 @@ try { (() => {
       color: "#fff"
     }
   }, "LyniaGo"));
-  const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+  const Login = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll SMS a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
     label: "Phone number",
     value: "+263 77 245 1180",
     onChange: noop,
@@ -15234,12 +17721,12 @@ try { (() => {
     label: "Send code",
     onClick: noop
   }));
-  const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your WhatsApp"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 77 245 1180 on WhatsApp."), /*#__PURE__*/React.createElement(Field, {
+  const Otp = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your messages"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to +263 77 245 1180 by SMS."), /*#__PURE__*/React.createElement(Field, {
     label: "6-digit code",
     value: "418207",
     onChange: noop,
     inputMode: "numeric",
-    hint: "No WhatsApp on this number? Contact support to sign up."
+    hint: "SMS can take a minute on a busy network."
   }), /*#__PURE__*/React.createElement(Button, {
     label: "Verify",
     onClick: noop
@@ -15275,7 +17762,7 @@ try { (() => {
     value: "+263 77 245 1180",
     onChange: noop,
     inputMode: "tel",
-    hint: "Verified on WhatsApp \u2713"
+    hint: "Verified by SMS \u2713"
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       position: "absolute",
@@ -20462,7 +22949,7 @@ try { (() => {
    and the all-screens gallery. Plain script: window.RGD = { CUSTOMER, MERCHANT, RIDER }. */
 (() => {
   const CUSTOMER = [["Act 0 · Home", "One home for both products — Send and Food launch together as tiles, not tabs. Pharmacies later is a fourth tile, not a navigation change.", [["home", "0·1", "Home · service tiles"], ["orders", "0·2", "Orders (all services)"], ["orders_empty", "0·b1", "Orders · empty"]]], ["Act 1 · Discover", "Tapping Food pushes the list full-screen — the root tab bar stays behind it. Corridor-scoped, distance first; closed kitchens stay visible with their hours.", [["list", "1·1", "Restaurant list"], ["list_loading", "1·2", "Loading"], ["list_empty", "1·3", "Nothing open"], ["list_error", "1·4", "Offline / can't reach"], ["search", "1·5", "Search"]]], ["Act 2 · Menu", "Out-of-stock dishes are visible but disabled — never hidden, so trust survives.", [["menu", "2·1", "Menu"], ["item", "2·2", "Item sheet"], ["menu_closed", "2·3", "Closed restaurant"], ["closed_interrupt", "2·b1", "Closes while browsing"]]], ["Act 3 · Cart", "ETA promised before payment; goods + per-km fee shown honestly, and every change re-totalled in front of the customer.", [["cart", "3·1", "Cart"], ["cart_note", "3·2", "Note for the kitchen"], ["cart_oos", "3·b1", "Item sold out"], ["cart_price", "3·b2", "Price changed"], ["cart_empty", "3·b3", "Empty cart"], ["cart_min", "3·b4", "Under the minimum"]]], ["Act 4 · Checkout", "CASH or WALLET for anyone — no first-order cap. Cash is collect-at-the-door (the rider fronts nothing); mobile money stays a first-class option.", [["checkout_cash", "4·1", "Checkout · CASH"], ["checkout_wallet", "4·2", "Checkout · WALLET"], ["checkout_offline", "4·b1", "Offline mid-checkout"], ["placing", "4·b2", "Placing"]]], ["Act 5 · Pay after accept (WALLET)", "No payment window, no auto-cancel. The kitchen calls to confirm, then requests payment — the money moves only to the merchant, including when the prompt fails and the customer pays by USSD. Unpaid orders close with the kitchen's day.", [["await_accept", "5·1", "Waiting on the kitchen"], ["confirm_call", "5·1b", "They call to confirm"], ["pay_push", "5·2", "Push · payment requested"], ["pay_now", "5·3", "Pay the restaurant"], ["pay_wait", "5·4", "Prompt sent"], ["pay_manual", "5·5", "Paid another way"], ["pay_confirmed", "5·6", "Waiting to be confirmed"], ["pay_open", "5·b1", "Still unpaid · reminder"], ["pay_failed", "5·b2", "Payment declined"], ["item_removed", "5·b3", "One item unavailable"]]], ["Act 6 · Track", "The shared Send tracker grammar + prep countdown + the rider-secured moment. Every exception is a designed screen.", [["track_prep", "6·1", "Prep countdown"], ["track_secured", "6·2", "Rider secured"], ["track_way", "6·3", "On the way"], ["track_paused", "6·b1", "Live paused"], ["no_rider", "6·b2", "NO_RIDER"], ["rider_cancelled", "6·b6", "Rider cancelled · re-finding"], ["rejected", "6·b3", "Rejected · refund pending"], ["refunded", "6·b4", "Refunded"], ["cancel_sheet", "6·b5", "Cancel pre-pickup"]]], ["Act 7 · Hand-off & close", "Food first, then cash, then both confirm in-app — the delivery code appears only after the handshake, so the money moment can't be skipped. A missing confirmation freezes the trip and auto-calls support.", [["handoff", "7·1", "Pay at the door"], ["handoff_wait", "7·1b", "Waiting for rider confirm"], ["handoff_code", "7·1c", "Both confirmed · code"], ["delivered_rate", "7·2", "Delivered · rate"], ["handoff_dispute", "7·b3", "Rider didn't confirm"], ["failed_noshow", "7·b1", "No-show · returned"], ["resume", "7·b2", "App resumed mid-order"]]]];
-  const MERCHANT = [["Act 0 · Get on shift", "Phone + OTP, then the alarm-unlock tap — browsers only allow looping audio after a gesture, so login IS the unlock.", [["login", "M0·1", "Phone + OTP login"], ["setup", "M0·2", "First login · setup"], ["reboot", "M0·b1", "Tablet rebooted mid-shift"]]], ["Act 1 · The queue", "The money screen. A new order changes the whole screen, not a corner of it.", [["queue_empty", "M1·1", "Open · no orders"], ["queue_loading", "M1·2", "Loading"], ["queue_new", "M1·3", "NEW ORDER · alarm"], ["queue_board", "M1·4", "Kitchen board · 3 live"], ["two_orders", "M1·b1", "Two orders at once"], ["offline", "M1·b2", "Connection lost"], ["offline_order", "M1·b3", "Order arrived offline"]]], ["Act 2 · Accept & cook", "Accept, call the customer to confirm, request payment — no payment clock, no auto-cancel. The kitchen does not start until the money is confirmed and 'rider secured' turns green.", [["order_accept", "M2·1", "Accept + prep time"], ["call_confirm", "M2·6", "Call, then request payment"], ["awaiting_payment", "M2·7", "Awaiting payment · no clock"], ["reject_sheet", "M2·2", "Reject · reason"], ["waiting_rider", "M2·3", "Accepted · do not cook yet"], ["cook_now", "M2·4", "Rider secured · cook now"], ["mark_ready", "M2·5", "Mark ready"], ["no_rider_merchant", "M2·b1", "NO_RIDER · never cooked"], ["rider_cancelled", "M2·b2", "Rider cancelled · re-dispatch"]]], ["Act 3 · Pickup confirm", "The second money screen. Under collect-and-return the food leaves against a recorded debt; under pay-me-upfront the cash is counted first. Either way, confirming means acknowledging a number.", [["pickup_cash", "M3·1", "Upfront · confirm cash"], ["pickup_collect", "M3·1b", "Collect-and-return · release"], ["pickup_wallet", "M3·2", "WALLET · confirm before cooking"], ["wallet_mismatch", "M3·b1", "Short payment blocked"], ["pickup_done", "M3·3", "Handed over"], ["cash_return", "M3·4", "Count the returned cash"], ["rider_noshow", "M3·b2", "Rider no-show"], ["refund_exec", "M3·b3", "Refund after wallet paid"]]], ["Act 4 · Run the shop", "The merchant defines the menu structure: categories first, dishes added into them, and the customer's menu tabs are a mirror of that list. Every dish needs a photo before it can go live.", [["catalog", "M4·1", "Menu · grouped by category"], ["category_manage", "M4·2", "Categories · reorder & hide"], ["category_edit", "M4·3", "New category"], ["category_rename", "M4·4", "Edit / delete category"], ["catalog_empty", "M4·b1", "No categories yet"], ["item_edit", "M4·5", "Edit dish · photo required"], ["dish_photo", "M4·6", "Dish photo · crop"], ["dish_draft", "M4·b2", "Draft · needs a photo"], ["oos_sheet", "M4·7", "Out of stock today"], ["hours", "M4·8", "Operating hours"], ["statement", "M4·9", "Weekly statement"], ["eod", "M4·10", "End of day"]]], ["Act 5 · Shop front", "The banner, logo and blurb customers meet before the menu — edited against a live preview of the customer's screen, and live the moment it saves.", [["shop", "M5·1", "Shop profile"], ["cash_rule", "M5·4", "Your cash rule"], ["shop_crop", "M5·2", "Position the banner"], ["shop_upload", "M5·3", "Uploading · compressing"], ["shop_upload_failed", "M5·b1", "Upload paused · offline"]]]];
+  const MERCHANT = [["Act 0 · Get on shift", "Phone + OTP, then the alarm-unlock tap — browsers only allow looping audio after a gesture, so login IS the unlock.", [["login", "M0·1", "Phone + OTP login"], ["setup", "M0·2", "First login · setup"], ["reboot", "M0·b1", "Tablet rebooted mid-shift"]]], ["Act 1 · The queue", "The money screen. A new order changes the whole screen, not a corner of it.", [["queue_empty", "M1·1", "Open · no orders"], ["queue_loading", "M1·2", "Loading"], ["queue_new", "M1·3", "NEW ORDER · alarm"], ["queue_board", "M1·4", "Kitchen board · 3 live"], ["two_orders", "M1·b1", "Two orders at once"], ["offline", "M1·b2", "Connection lost"], ["offline_order", "M1·b3", "Order arrived offline"]]], ["Act 2 · Accept & cook", "Accept, call the customer to confirm, request payment — no payment clock, no auto-cancel. The kitchen does not start until the money is confirmed and 'rider secured' turns green.", [["order_accept", "M2·1", "Accept + prep time"], ["call_confirm", "M2·6", "Call, then request payment"], ["awaiting_payment", "M2·7", "Awaiting payment · no clock"], ["reject_sheet", "M2·2", "Reject · reason"], ["waiting_rider", "M2·3", "Accepted · do not cook yet"], ["cook_now", "M2·4", "Rider secured · cook now"], ["mark_ready", "M2·5", "Mark ready"], ["no_rider_merchant", "M2·b1", "NO_RIDER · never cooked"], ["rider_cancelled", "M2·b2", "Rider cancelled · re-dispatch"], ["item_out", "M2·8", "Don't have an item"], ["item_out_wait", "M2·9", "New total · customer confirming"]]], ["Act 3 · Pickup confirm", "The second money screen. Under collect-and-return the food leaves against a recorded debt; under pay-me-upfront the cash is counted first. Either way, confirming means acknowledging a number.", [["pickup_cash", "M3·1", "Upfront · confirm cash"], ["pickup_collect", "M3·1b", "Collect-and-return · release"], ["pickup_wallet", "M3·2", "WALLET · confirm before cooking"], ["wallet_mismatch", "M3·b1", "Short payment blocked"], ["pickup_done", "M3·3", "Handed over"], ["cash_return", "M3·4", "Count the returned cash"], ["rider_noshow", "M3·b2", "Rider no-show"], ["refund_exec", "M3·b3", "Refund after wallet paid"], ["pickup_reveal", "M3·5", "Pickup code · hidden"], ["pickup_revealed", "M3·6", "Pickup code · revealed"]]], ["Act 4 · Run the shop", "The merchant defines the menu structure: categories first, dishes added into them, and the customer's menu tabs are a mirror of that list. Every dish needs a photo before it can go live.", [["catalog", "M4·1", "Menu · grouped by category"], ["category_manage", "M4·2", "Categories · reorder & hide"], ["category_edit", "M4·3", "New category"], ["category_rename", "M4·4", "Edit / delete category"], ["catalog_empty", "M4·b1", "No categories yet"], ["item_edit", "M4·5", "Edit dish · photo required"], ["dish_photo", "M4·6", "Dish photo · crop"], ["dish_draft", "M4·b2", "Draft · needs a photo"], ["oos_sheet", "M4·7", "Out of stock today"], ["hours", "M4·8", "Operating hours"], ["statement", "M4·9", "Weekly statement"], ["eod", "M4·10", "End of day"]]], ["Act 5 · Shop front", "The banner, logo and blurb customers meet before the menu — edited against a live preview of the customer's screen, and live the moment it saves.", [["shop", "M5·1", "Shop profile"], ["cash_rule", "M5·4", "Your cash rule"], ["shop_crop", "M5·2", "Position the banner"], ["shop_upload", "M5·3", "Uploading · compressing"], ["shop_upload_failed", "M5·b1", "Upload paused · offline"]]]];
   const RIDER = [["Act 1 · The auto offer", "No bidding for merchant orders. Collect-and-return is the default — nothing from the rider's pocket, no minimum balance, no float checks anywhere. A kitchen can ask for cash upfront; riders self-judge whether they're carrying enough.", [["offer_cash", "R1·1", "Offer · CASH collect"], ["offer_upfront", "R1·1b", "Offer · kitchen wants upfront"], ["offer_wallet", "R1·2", "Offer · WALLET"], ["offer_expired", "R1·b2", "Offer expired"]]], ["Act 2 · Restaurant leg", "Navigate and take the food. WALLET orders arrive already PAID and confirmed by the kitchen — the rider sees it in one glance and collects nothing. Paying the merchant first happens only at kitchens whose rule is upfront.", [["nav_rest", "R2·1", "To the restaurant"], ["pay_merchant", "R2·2", "Pay the merchant"], ["pickup_confirm", "R2·3", "Collect · CASH job"], ["pickup_paid", "R2·3b", "Collect · already PAID"], ["cancel_reason", "R2·b1", "Drop the job · before pickup"], ["cancel_blocked", "R2·b2", "Can't drop after collecting"]]], ["Act 3 · Customer leg", "Food first, cash second, both confirm — the code closes the trip only after the handshake. Then the food money rides back to the kitchen as a real leg.", [["nav_cust", "R3·1", "To the customer"], ["doorstep", "R3·2", "Collect · confirm cash"], ["cash_dispute", "R3·b2", "Customer confirmed, you didn't"], ["code_wrong", "R3·b1", "Wrong code"], ["delivered", "R3·3", "Delivered · earnings"], ["return_cash", "R3·4", "Return the cash"]]], ["Act 4 · When the door doesn't open", "A structured wait, logged attempts, then a return leg with its own navigation and hand-back.", [["unreachable", "R4·1", "Customer unreachable"], ["return_rest", "R4·2", "Return to restaurant"], ["handback", "R4·3", "Hand back confirm"], ["offline_resume", "R4·b1", "Resumed mid-delivery"]]]];
   window.RGD = {
     CUSTOMER,
@@ -21318,6 +23805,488 @@ function App() {
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 })(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/restaurants/r-maps.jsx", error: String((e && e.message) || e) }); }
+
+// explorations/restaurants/r-merchant-shipped.jsx
+try { (() => {
+/* LyniaGo Restaurants — merchant tablet: SHIPPED-STATES alignment wave (2026-08, SH·).
+   Per-item "don't have it" in the queue (answer with what you have, customer confirms the new
+   total before you cook) and the pickup-code reveal step (code hidden until the rider is at the
+   counter). Same conventions as r-merchant.jsx (frozen state, 1024×680). Extends window.RM.
+   Sheet + logic notes: ui_kits/mobile/shipped-states.html. */
+(() => {
+  const M = window.RParts;
+  window.RM = window.RM || {};
+  const {
+    Button,
+    Card,
+    Icon,
+    Money,
+    Kitchen,
+    PayTag,
+    PickupCode,
+    nop,
+    TAB
+  } = M;
+  const Body = ({
+    children,
+    style
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      overflow: "hidden",
+      padding: 20,
+      boxSizing: "border-box",
+      ...style
+    }
+  }, children);
+  const H = ({
+    children,
+    sub
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 21,
+      fontWeight: 800,
+      letterSpacing: "-0.01em"
+    }
+  }, children), sub ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--muted)",
+      marginTop: 2
+    },
+    className: "lynia-tabular"
+  }, sub) : null);
+  const Big = ({
+    v,
+    size = 38
+  }) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: size,
+      fontWeight: 800,
+      ...TAB
+    }
+  }, "$", v);
+  const ITEMS = [{
+    q: "1",
+    n: "Half roast huku",
+    p: "6.00",
+    out: false
+  }, {
+    q: "1",
+    n: "Sadza & beef stew",
+    p: "4.50",
+    out: false
+  }, {
+    q: "1",
+    n: "Muriwo une dovi",
+    p: "2.50",
+    out: true
+  }];
+
+  /* ── SH10a · Per-item "don't have it" — answer with what you have ── */
+  window.RM.item_out = () => /*#__PURE__*/React.createElement(Kitchen, {
+    nav: "queue",
+    bar: {
+      orders: 4
+    }
+  }, /*#__PURE__*/React.createElement(Body, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      height: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(H, {
+    sub: "LG-4471 \xB7 Rufaro C. \xB7 Belgravia \xB7 CASH"
+  }, "Answer with what you have"), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, ITEMS.map(it => /*#__PURE__*/React.createElement("div", {
+    key: it.n,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "9px 0",
+      borderBottom: "1px solid var(--line)",
+      background: it.out ? "var(--danger-wash)" : "transparent",
+      borderRadius: it.out ? 10 : 0,
+      paddingLeft: it.out ? 10 : 0,
+      paddingRight: it.out ? 10 : 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 30,
+      height: 30,
+      borderRadius: 8,
+      background: it.out ? "transparent" : "var(--surface)",
+      display: "grid",
+      placeItems: "center",
+      fontSize: 15,
+      fontWeight: 800,
+      color: it.out ? "var(--danger-ink)" : "var(--ink)",
+      ...TAB
+    }
+  }, it.q), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16,
+      fontWeight: 600,
+      color: it.out ? "var(--danger-ink)" : "var(--ink)"
+    }
+  }, it.n), it.out ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--danger-ink)",
+      marginTop: 1
+    }
+  }, "Marked out \u2014 Rufaro will be asked before you cook") : null), /*#__PURE__*/React.createElement(Money, {
+    v: it.p,
+    size: 15,
+    weight: 600,
+    color: it.out ? "var(--danger-ink)" : "var(--ink)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      minHeight: 44,
+      padding: "0 14px",
+      borderRadius: 999,
+      border: "1px solid var(--line)",
+      background: "var(--bg)",
+      fontSize: 13,
+      fontWeight: 700,
+      color: it.out ? "var(--accent-text)" : "var(--danger-ink)",
+      flexShrink: 0
+    }
+  }, it.out ? "Put it back" : "Don't have it"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "baseline",
+      gap: 12,
+      paddingTop: 14
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      color: "var(--muted)"
+    }
+  }, "New total ", /*#__PURE__*/React.createElement("s", {
+    style: {
+      marginLeft: 6,
+      ...TAB
+    }
+  }, "$13.00")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Big, {
+    v: "10.50",
+    size: 32
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 300,
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: "var(--muted)",
+      marginBottom: 8
+    }
+  }, "WHAT HAPPENS NEXT"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--muted)",
+      lineHeight: 1.55
+    }
+  }, "Rufaro sees the new total and confirms \u2014 or cancels \u2014 before you cook. Marking an item out never cancels the order by itself, and it doesn't touch tomorrow's menu (use \"Out of stock today\" for that).")), /*#__PURE__*/React.createElement(Button, {
+    label: "Accept 2 of 3 \xB7 $10.50 \xB7 20 min",
+    onClick: nop,
+    style: {
+      minHeight: 68,
+      fontSize: 17,
+      marginTop: 0
+    }
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Can't take any of it",
+    variant: "ghost",
+    onClick: nop,
+    style: {
+      color: "var(--danger-ink)",
+      marginTop: 0
+    }
+  })))));
+
+  /* ── SH10a · Waiting on the customer's yes — no clock, one honest exit ── */
+  window.RM.item_out_wait = () => /*#__PURE__*/React.createElement(Kitchen, {
+    nav: "queue",
+    bar: {
+      orders: 4
+    }
+  }, /*#__PURE__*/React.createElement(Body, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      height: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(H, {
+    sub: "LG-4471 \xB7 Rufaro C. \xB7 CASH"
+  }, "Waiting for Rufaro to confirm the change"), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 22
+    }
+  }, [["09:44", "You marked Muriwo une dovi as out"], ["09:44", "Rufaro was asked to confirm the new $10.50 total"], ["—", "Waiting — do not cook until they say yes"]].map(([t, l], i, a) => /*#__PURE__*/React.createElement("div", {
+    key: l,
+    style: {
+      display: "flex",
+      gap: 12,
+      padding: "7px 0",
+      borderTop: i ? "1px solid var(--line)" : "none",
+      fontSize: 14.5,
+      color: i === a.length - 1 ? "var(--muted)" : "var(--ink)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--muted)",
+      minWidth: 48,
+      ...TAB
+    }
+  }, t), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: i === a.length - 1 ? 400 : 600
+    }
+  }, l))), /*#__PURE__*/React.createElement(Button, {
+    label: "They said yes on the phone \u2014 start cooking",
+    onClick: nop,
+    style: {
+      minHeight: 60,
+      fontSize: 17,
+      marginTop: 16
+    }
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Put the item back \u2014 cook the full order",
+    variant: "ghost",
+    onClick: nop
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 280
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: "var(--muted)",
+      marginBottom: 8
+    }
+  }, "NO CLOCK ON THIS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--muted)",
+      lineHeight: 1.55
+    }
+  }, "Most customers answer inside a minute. If they cancel instead, nothing was cooked and nothing is owed \u2014 the order simply closes."))))));
+
+  /* ── SH10b · Pickup code — hidden until the rider is at the counter, then read face-to-face ── */
+  window.RM.pickup_reveal = () => /*#__PURE__*/React.createElement(Kitchen, {
+    nav: "queue",
+    bar: {
+      orders: 4
+    }
+  }, /*#__PURE__*/React.createElement(Body, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      height: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(H, {
+    sub: "LG-4471 \xB7 ready 10:01 \xB7 Tendai M. marked arrived"
+  }, "Rider at the counter?"), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 24,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      justifyContent: "center",
+      marginBottom: 12
+    }
+  }, [0, 1, 2, 3].map(i => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    style: {
+      width: 52,
+      height: 64,
+      borderRadius: 12,
+      border: "1.5px solid var(--line)",
+      background: "var(--surface)",
+      display: "grid",
+      placeItems: "center",
+      fontSize: 26,
+      fontWeight: 800,
+      color: "var(--muted)"
+    }
+  }, "\u2022"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: "var(--muted)",
+      lineHeight: 1.5,
+      maxWidth: 420,
+      margin: "0 auto"
+    }
+  }, "The code proves the person at your counter is the assigned rider. Reveal it only face-to-face \u2014 never over the phone, never to someone \"picking up for\" them."), /*#__PURE__*/React.createElement(Button, {
+    label: "Rider is here \u2014 reveal the code",
+    onClick: nop,
+    style: {
+      minHeight: 64,
+      fontSize: 17,
+      maxWidth: 380,
+      margin: "16px auto 0"
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 280
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: "var(--muted)"
+    }
+  }, "YOU WILL BE PAID"), /*#__PURE__*/React.createElement(Big, {
+    v: "13.00",
+    size: 40
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement(PayTag, {
+    pay: "CASH"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--muted)",
+      lineHeight: 1.45,
+      marginTop: 10
+    }
+  }, "Count the cash before the food leaves the counter."))))));
+  window.RM.pickup_revealed = () => /*#__PURE__*/React.createElement(Kitchen, {
+    nav: "queue",
+    bar: {
+      orders: 4
+    }
+  }, /*#__PURE__*/React.createElement(Body, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      height: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(H, {
+    sub: "LG-4471 \xB7 Tendai M. at the counter"
+  }, "Ask the rider to read it back"), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 24,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement(PickupCode, {
+    code: "7241",
+    tone: "tablet"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: "var(--muted)",
+      lineHeight: 1.5,
+      maxWidth: 420,
+      margin: "12px auto 0"
+    }
+  }, "The rider types it into their app. When it matches, count the cash, then hand the food over."), /*#__PURE__*/React.createElement(Button, {
+    label: "Code matches \u2014 hand it over",
+    onClick: nop,
+    style: {
+      minHeight: 64,
+      fontSize: 17,
+      maxWidth: 380,
+      margin: "16px auto 0"
+    }
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Wrong code \u2014 don't release the food",
+    variant: "ghost",
+    onClick: nop,
+    style: {
+      color: "var(--danger-ink)",
+      maxWidth: 380,
+      margin: "8px auto 0"
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 280
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: "var(--muted)"
+    }
+  }, "YOU WILL BE PAID"), /*#__PURE__*/React.createElement(Big, {
+    v: "13.00",
+    size: 40
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement(PayTag, {
+    pay: "CASH"
+  })))))));
+})();
+})(); } catch (e) { __ds_ns.__errors.push({ path: "explorations/restaurants/r-merchant-shipped.jsx", error: String((e && e.message) || e) }); }
 
 // explorations/restaurants/r-merchant.jsx
 try { (() => {
@@ -31511,7 +34480,7 @@ function fillSlots() {
   document.querySelectorAll("image-slot").forEach(sl => {
     const ph = sl.getAttribute("placeholder") || "";
     const m = ph.match(/[—-]\s*(.+)$/);
-    const name = m && !/^cover|banner|dish|photo$/i.test(m[1].trim()) ? m[1].trim() : "";
+    const name = m && !/^(cover|banner|dish|photo)$/i.test(m[1].trim()) ? m[1].trim() : "";
     const circle = sl.getAttribute("shape") === "circle";
     const img = document.createElement("img");
     img.alt = "";
@@ -34022,6 +36991,8 @@ function TweaksPanel({
   }, [open, clampToViewport]);
   React.useEffect(() => {
     const onMsg = e => {
+      /* same-origin guard — 'null' (opaque origin) allowed so file:// local previews keep working */
+      if (e.origin !== window.location.origin && e.origin !== 'null' && window.location.protocol !== 'file:') return;
       const t = e?.data?.type;
       if (t === '__activate_edit_mode') setOpen(true);else if (t === '__deactivate_edit_mode') setOpen(false);
     };
@@ -34505,6 +37476,8 @@ try { (() => {
 
   /* ── Tweaks host protocol (listener BEFORE announce) ── */
   window.addEventListener("message", e => {
+    /* same-origin guard — "null" (opaque origin) allowed so file:// local previews keep working */
+    if (e.origin !== window.location.origin && e.origin !== "null" && window.location.protocol !== "file:") return;
     const t = e.data && e.data.type;
     if (t === "__activate_edit_mode") document.getElementById("tweaks-panel").classList.add("open");
     if (t === "__deactivate_edit_mode") document.getElementById("tweaks-panel").classList.remove("open");
@@ -35986,7 +38959,7 @@ function App() {
         color: "#fff"
       }
     }, "LyniaGo"));
-    if (view === "login") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll WhatsApp a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
+    if (view === "login") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Lockup, null), /*#__PURE__*/React.createElement(Heading, null, "Welcome to Lynia"), /*#__PURE__*/React.createElement(Sub, null, "We'll SMS a one-time code to this number."), /*#__PURE__*/React.createElement(Field, {
       label: "Phone number",
       value: phone,
       onChange: setPhone,
@@ -36001,13 +38974,13 @@ function App() {
         marginTop: 8
       }
     }, RoleSwitch));
-    if (view === "otp") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your WhatsApp"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to ", phone || "your phone", " on WhatsApp."), /*#__PURE__*/React.createElement(Field, {
+    if (view === "otp") return /*#__PURE__*/React.createElement(ScreenPad, null, /*#__PURE__*/React.createElement(Heading, null, "Check your messages"), /*#__PURE__*/React.createElement(Sub, null, "We sent a 6-digit code to ", phone || "your phone", " by SMS."), /*#__PURE__*/React.createElement(Field, {
       label: "6-digit code",
       value: code,
       onChange: setCode,
       inputMode: "numeric",
       placeholder: "000000",
-      hint: "No WhatsApp on this number? Contact support to sign up."
+      hint: "SMS can take a minute on a busy network."
     }), /*#__PURE__*/React.createElement(Button, {
       label: "Verify",
       onClick: () => setView("role_select"),
@@ -36028,7 +39001,7 @@ function App() {
       name: "check",
       size: 15,
       color: "var(--accent-text)"
-    }), " Code re-sent on WhatsApp.") : /*#__PURE__*/React.createElement("button", {
+    }), " Code re-sent by SMS.") : /*#__PURE__*/React.createElement("button", {
       onClick: () => setOtpResent(true),
       style: {
         display: "flex",
@@ -38747,7 +41720,7 @@ function RegisterScreen({
     value: phone || "+263 77 245 1180",
     onChange: () => {},
     inputMode: "tel",
-    hint: "Verified on WhatsApp"
+    hint: "Verified by SMS"
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       position: "absolute",

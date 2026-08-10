@@ -18,7 +18,7 @@ function node(id, col, band, badge, title, anno, bg) { N[id] = { id, x: X(col), 
 node("splash", 0, B.B0, "0·1", "Splash", { p: "Brand launch moment while the app boots.", s: "Loading (2s, dove lift-in)", c: "— auto-advances" }, "var(--accent)");
 node("onboard", 1, B.B0, "0·2", "Onboarding carousel (3 slides)", { p: "Three slides: food from kitchens near you, name-your-price sending, then the promise both share — one app, one code at the door, more services soon. First install only.", s: "Slide 1 of 3 · skippable", c: "Next / Get started" });
 node("login", 2, B.B0, "0·3", "Phone login", { p: "Capture the phone number to send an OTP.", s: "Empty → typing", c: "Send code" });
-node("otp", 3, B.B0, "0·4", "WhatsApp OTP", { p: "Verify the 6-digit code delivered over WhatsApp. Extended (C-OTP): a Resend-code affordance now sits under Verify — the cooldown / resent / locked states are drawn in the C band below.", s: "Awaiting 6 digits · resend idle", c: "Verify" });
+node("otp", 3, B.B0, "0·4", "SMS OTP", { p: "Verify the 6-digit code delivered by SMS. Extended (C-OTP): a Resend-code affordance now sits under Verify — the cooldown / resent / locked states are drawn in the C band below.", s: "Awaiting 6 digits · resend idle", c: "Verify" });
 node("role_select", 4, B.B0, "0·5", "Choose your role", { p: "One account, two roles — chosen first. 'Use LyniaGo' (order food, send parcels, more services soon) continues below; 'Earn as a rider' exits to the Rider journey map (KYC takes over there). Switch anytime.", s: "Customer selected", c: "Continue as a customer" });
 node("register", 5, B.B0, "0·6", "Profile registration", { p: "After choosing to send parcels: full name + national ID, stored on the account record — NOT verified (no KYC). Phone pre-filled from OTP. Riders KYC separately.", s: "First sign-up", c: "Continue" });
 node("perm_loc", 6, B.B0, "0·7", "Permission · location", { p: "Prime GPS before the OS dialog — sets pickup, matches riders.", s: "Pre-permission", c: "Allow location" });
@@ -137,7 +137,7 @@ const LABELS = [
   [B.B3b, "↳ Tracking branches", null],
   [B.B4, "ACT 4 · Close the loop", "Confirm delivery by OTP, rate the rider, back to send another."],
   [B.B7, "NEW · Trust & safety — SOS, report, get help (plan §2 · B1–B3)", "Shipped in code (PR #98) with no mockup — these align the UI to the real contracts in safety.ts. Decisions final (5 Jul): 999 emergency · +263 77 883 1938 Lynia safety line · contact-support = tel: call. SOS entry: the pill on any live-trip map · report entry: delivered/rate (4·1) · get-help entry: any order screen."],
-  [B.B8, "NEW · OTP resend states (C) + rider-went-dark escalation (D)", "C extends the existing 0·4 “Check your WhatsApp” screen — the idle resend affordance is retrofitted in place up there; these are the cooldown / resent / locked states. D escalates 3·b1 after ~2 min of stale position."],
+  [B.B8, "NEW · OTP resend states (C) + rider-went-dark escalation (D)", "C extends the existing 0·4 “Check your messages” screen — the idle resend affordance is retrofitted in place up there; these are the cooldown / resent / locked states. D escalates 3·b1 after ~2 min of stale position."],
 ];
 
 /* ── gap flags (not-yet-designed) ── */
