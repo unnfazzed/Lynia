@@ -189,6 +189,16 @@ describe("rider food-job screen — A-O9 order-room socket gates the activeJob p
   it("still renders the active job correctly with the job socket already connected", async () => {
     mockUseRiderJobSocket.mockReturnValue({ connected: true });
     const tree = await render();
+    // Kit RR.nav_rest: an en-route job opens as the map-first nav leg — the working screen (with its
+    // status pill) sits behind the arrival tap, which is local UI state, never a server transition.
+    const arriveLabel = tree.root.findAll((n) => n.props.children === "I've arrived at the restaurant");
+    expect(arriveLabel.length).toBeGreaterThan(0);
+    let pressable: (typeof arriveLabel)[number] | null = arriveLabel[0] ?? null;
+    while (pressable && typeof pressable.props.onPress !== "function") pressable = pressable.parent;
+    expect(pressable).not.toBeNull();
+    await act(async () => {
+      pressable!.props.onPress();
+    });
     const statusPill = tree.root.findAll((n) => n.props.status === "en_route_pickup");
     expect(statusPill.length).toBeGreaterThan(0);
   });
