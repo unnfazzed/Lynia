@@ -1,4 +1,4 @@
-import { codeEligible, handshakeCountdown, handshakeState } from "../food-doorstep";
+import { codeEligible, handshakeState } from "../food-doorstep";
 
 const base = {
   paymentMethod: "cash" as string | null,
@@ -69,22 +69,5 @@ describe("codeEligible", () => {
         cashHandshakeFrozenAt: "2026-07-31T10:16:00Z",
       }),
     ).toBe(false);
-  });
-});
-
-describe("handshakeCountdown", () => {
-  it("starts at 0 elapsed the instant the customer confirms", () => {
-    const now = new Date("2026-07-31T10:14:00Z").getTime();
-    expect(handshakeCountdown("2026-07-31T10:14:00Z", now)).toEqual({ elapsedMs: 0, totalMs: 120_000 });
-  });
-
-  it("advances with wall-clock time, anchored on the server timestamp", () => {
-    const now = new Date("2026-07-31T10:14:35Z").getTime();
-    expect(handshakeCountdown("2026-07-31T10:14:00Z", now)).toEqual({ elapsedMs: 35_000, totalMs: 120_000 });
-  });
-
-  it("clamps at totalMs rather than reading over-100% on a late poll tick", () => {
-    const now = new Date("2026-07-31T10:20:00Z").getTime();
-    expect(handshakeCountdown("2026-07-31T10:14:00Z", now)).toEqual({ elapsedMs: 120_000, totalMs: 120_000 });
   });
 });

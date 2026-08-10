@@ -25,7 +25,7 @@ unchanged; the brand green, typeface, and shape language changed. The token sour
 |--------|--------|-----------------|-------|
 | Typeface | Manrope | **Inter** 400/600/700 (+ Fredoka 600 wordmark) | Self-hosted, system fallback |
 | Green (fill) | `#1E7A46` | `accent` **`#00B14F`** | Fills / graphics / map pins **only** |
-| Green (pressed) | `accent700 #16633A` | `accentPressed` **`#009D3B`** | `accent700` kept as a deprecated alias |
+| Green (pressed) | `accent700 #16633A` | `accentPressed` **`#009D3B`** | the `accent700` alias was kept for back-compat, then removed once it had zero consumers |
 | Green (text/icon) | — (reused `accent`) | `accentText` **`#006630`** | ≈7:1 on white — all green **text** uses this |
 | Green (CTA fill) | — (reused `accent`) | `cta` **`#00812F`** (`ctaPressed #006B27`) | White label ≈4.7:1 (AA large), sunlight-tuned |
 | Selected wash | — | `accentWash` **`#E9F8EF`** | Mint |

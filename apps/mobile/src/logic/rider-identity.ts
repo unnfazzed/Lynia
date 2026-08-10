@@ -68,11 +68,3 @@ export async function loadRiderIdentity(orderId: string): Promise<RiderIdentity 
     return null;
   }
 }
-
-export async function clearRiderIdentity(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(RIDER_IDENTITY_KEY);
-  } catch {
-    /* best-effort */
-  }
-}

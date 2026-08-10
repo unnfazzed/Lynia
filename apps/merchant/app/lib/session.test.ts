@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAccessTokenStale, parseMerchantSession, serializeMerchantSession, type MerchantSession } from "./session";
+import { parseMerchantSession, serializeMerchantSession, type MerchantSession } from "./session";
 
 const SESSION: MerchantSession = {
   accessToken: "access",
@@ -31,16 +31,5 @@ describe("parseMerchantSession", () => {
 
   it("returns null for a value with wrong field types", () => {
     expect(parseMerchantSession(JSON.stringify({ ...SESSION, expiresIn: "900" }))).toBeNull();
-  });
-});
-
-describe("isAccessTokenStale", () => {
-  it("is false before the token's own claimed lifetime elapses", () => {
-    expect(isAccessTokenStale(SESSION, SESSION.issuedAt + SESSION.expiresIn * 1000 - 1)).toBe(false);
-  });
-
-  it("is true at or after the token's claimed expiry", () => {
-    expect(isAccessTokenStale(SESSION, SESSION.issuedAt + SESSION.expiresIn * 1000)).toBe(true);
-    expect(isAccessTokenStale(SESSION, SESSION.issuedAt + SESSION.expiresIn * 1000 + 1)).toBe(true);
   });
 });

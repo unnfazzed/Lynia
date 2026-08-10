@@ -28,7 +28,6 @@ import type {
   CreateOrderRequest,
   LatLng,
   MakeOfferRequest,
-  MerchantFeatureFlagsResponse,
   OrderItem,
   Topup,
   TopupRail,
@@ -230,20 +229,6 @@ export function makeTopup(overrides?: Partial<Topup>): Topup {
       expiresAt: FIXTURE_TIME.expiresAt,
       createdAt: FIXTURE_TIME.createdAt,
     },
-    overrides,
-  );
-}
-
-/**
- * Merchant-vertical kill-switch state — parses against `MerchantFeatureFlagsResponse` (`.strict()`).
- * Defaults to the launch-inert all-off state so a fixture consumer opts INTO an enabled vertical
- * explicitly (mirrors makeCommissionConfig's posture).
- */
-export function makeMerchantFeatureFlags(
-  overrides?: Partial<MerchantFeatureFlagsResponse>,
-): MerchantFeatureFlagsResponse {
-  return make<MerchantFeatureFlagsResponse>(
-    { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false },
     overrides,
   );
 }

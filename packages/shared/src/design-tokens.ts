@@ -27,8 +27,6 @@ export const color = {
   accent: "#00B14F",
   /** Pressed/hover-deep fill for the brand green. */
   accentPressed: "#009D3B",
-  /** @deprecated alias kept for back-compat — use `accentPressed`. */
-  accent700: "#009D3B",
   /** Green TEXT & small icons (≈7:1 on white). Use this anywhere green needs to read. */
   accentText: "#006630",
   /** Light mint wash — selected states, chips, highlighted rows. */

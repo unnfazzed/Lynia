@@ -25,11 +25,6 @@
  */
 const PROCESS_START_MS = Date.now();
 
-/** Exposed for tests — the moment this JS process loaded. */
-export function processStartMs(): number {
-  return PROCESS_START_MS;
-}
-
 /**
  * True when `saved` is a summary of `orderId` written by an EARLIER app process — i.e. the app was
  * killed and relaunched while this job was live. `processStart` is injected so this stays pure.
