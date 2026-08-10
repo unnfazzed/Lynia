@@ -9,7 +9,9 @@ user's explicit approval; record the date and the reason. When a deviation is la
 kit, delete the entry and align.
 
 Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's decision — do not act) ·
-**UPSTREAM** (a defect in the kit; app is right, reported back to Design).
+**RESOLVED** (decided in the mock's favour — not a deviation, an app defect to fix) · **PENDING**
+(decided, but not yet in effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the
+kit; the app is right, to be reported back to Design).
 
 ---
 
@@ -62,7 +64,20 @@ exactly, since CSS supports it.
 
 ---
 
-## D-04 · Stepper "done" node contrast — OPEN (needs your decision)
+## D-04 · Stepper "done" node contrast — RESOLVED: follow the mock (2026-08-10)
+
+> **Decision (user, 2026-08-10): follow the mock.** The done node becomes the `--accent` (#00B14F)
+> fill with a white glyph, as drawn. This is therefore **not** a deviation — it is an app defect to
+> fix, tracked here only so the reasoning is not re-litigated by a future session.
+>
+> **What changes:** `apps/mobile/src/ui/index.tsx`'s Stepper adopts the mock's done node. Scheduled
+> for the shared-primitives pass (plan Phase 2) rather than done ad hoc, because the Stepper renders
+> on every tracking and active-job screen and the change should arrive with a side-by-side like any
+> other alignment work. `packages/design/` already mirrors the tool and needs no edit.
+>
+> One factual note, recorded once and not re-raised: the white-on-`#00B14F` mark measures ≈2.9:1, so
+> Play's pre-launch accessibility scan may flag it — same class of report as the strict-mock-size
+> decision. That is the accepted cost of matching the design.
 
 **Mock (`components/journey/Stepper.jsx`, design tool):** done node is a **`--accent` (#00B14F) fill
 with a white glyph**. **App (`apps/mobile/src/ui/index.tsx`) and, until this export landed, the repo's
@@ -73,15 +88,8 @@ repo's variant measures ≈6.5:1. Commit `2e42159` changed **the design file in 
 app, which is backwards under kit-as-truth; the export has now restored the design's version, so
 `packages/design/` mirrors the tool again.
 
-The Stepper appears on every tracking and active-job screen in the product, so this is a visible,
-repeated decision — hence it is yours, not mine:
-
-- **(a) Follow the mock** — bright green fill, white glyph, accept ≈2.9:1 on that mark.
-- **(b) Keep the accessible variant** — approve this as a permanent deviation, and ask Design to
-  restyle the done node in the kit.
-
-Nothing changes on the Stepper until you pick. (Your 2026-08-10 "strict mock size" decision covers
-touch-target **geometry**; this is a **contrast** question, which is why it is not auto-resolved.)
+The Stepper appears on every tracking and active-job screen in the product, which is why the call was
+the user's rather than mine. Resolved above in favour of the mock.
 
 ---
 
@@ -120,6 +128,15 @@ including `explorations/store/_food/` (food photography needed to render the RC 
 Also excluded from parity work entirely, per `EXPORT-README.md`: brand-record explorations, Play-Store
 marketing assets, `guidelines/*.card.html` + `components/*.card.html` specimen cards, `templates/`
 authoring scaffolds, `thumbnail.html`.
+
+---
+
+## D-08 · Kit-side icon set is 38 icons — APPROVED (2026-08-10)
+
+The repo's copy of `assets/lynia-icons.js` had gained a 39th icon (`Copy`) during app work; nothing in
+the design references it (the only `copy` hit is a CSS class). The export's 38-icon set is restored.
+If an app screen genuinely needs a glyph the kit lacks, request it from Design rather than adding it
+to the vendored kit.
 
 ---
 
@@ -178,13 +195,5 @@ mirror the tool — and the next export would overwrite it anyway. So `.github/c
 excludes `packages/design/**` from scanning: nothing there ships, we must not edit it, and any fix
 is transient. Every app, package and workflow we author stays fully scanned.
 
-**Reported upstream** to Design as a genuine (if low-impact) bug in `play-export.jsx`.
-
----
-
-## D-08 · Kit-side icon set is 38 icons — APPROVED (2026-08-10)
-
-The repo's copy of `assets/lynia-icons.js` had gained a 39th icon (`Copy`) during app work; nothing in
-the design references it (the only `copy` hit is a CSS class). The export's 38-icon set is restored.
-If an app screen genuinely needs a glyph the kit lacks, request it from Design rather than adding it
-to the vendored kit.
+**To report upstream** to Design as a genuine (if low-impact) bug in `play-export.jsx` — alongside
+D-05 and D-06. None of the three have actually been sent yet; they need a design-tool round-trip.
