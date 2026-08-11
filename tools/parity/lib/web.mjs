@@ -43,6 +43,28 @@ export async function renderWeb(o) {
   const ctx = await o.browser.newContext(
     contextDefaults({ viewport: { width: dims.w, height: dims.h }, deviceScaleFactor: scale }),
   );
+  // The merchant tablet middleware fail-closes every non-login route to /login unless a session
+  // cookie is PRESENT (it checks presence only, never verifies — see apps/merchant/app/lib/
+  // merchant-access.ts). So to render a gated merchant page's offline shell we present a dummy
+  // cookie; the page then renders empty (its API calls still 401) exactly like the admin console
+  // does. The /login screen itself must stay cookie-less, or the gate bounces it to /queue.
+  if (o.app === "merchant" && !o.route.startsWith("/login")) {
+    // The value must PARSE to a MerchantSession (apps/merchant/app/lib/session.ts parseMerchantSession)
+    // — the (app) layout's client safety-net signs the tab out at mount if the cookie doesn't
+    // deserialize, bouncing back to /login. No signature is checked (that boundary is server-side), so
+    // a well-formed dummy is enough to reach the page; its API calls still 401 → the offline shell.
+    const session = {
+      accessToken: "parity",
+      refreshToken: "parity",
+      expiresIn: 3600,
+      issuedAt: 4102444800000, // year 2100 — never reads as "probably expired"
+      profileId: "parity-merchant",
+      role: "merchant",
+    };
+    await ctx.addCookies([
+      { name: "lynia_merchant_session", value: encodeURIComponent(JSON.stringify(session)), url: base },
+    ]);
+  }
   const page = await ctx.newPage();
   try {
     const url = base.replace(/\/$/, "") + o.route;
