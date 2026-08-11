@@ -9,3 +9,5 @@ debug.mjs
 probe*.mjs
 netlog*.mjs
 bypass-test.mjs
+dbg*.mjs
+webtest.mjs

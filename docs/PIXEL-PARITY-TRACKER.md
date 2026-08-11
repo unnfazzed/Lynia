@@ -30,6 +30,15 @@ screen; the handoff sheet is `ui_kits/mobile/shipped-states.html` (SH1–SH12).
 
 Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · admin 7 · safety sheet 20.
 
+> **Lane wiring ≠ sign-off.** Phase 2 of the screenshot lane (PR for `claude/phase-2-multi-agent`) wired
+> the app side of **47 screens** — the primary populated state of every top-level app route across all
+> four surfaces — so an alignment reviewer can now generate a real side-by-side for them
+> (`cd tools/parity && node pair.mjs --keys <src.id> --out out/sheet`) instead of an app-column
+> "pending". This does **not** advance any status below: a screen still only earns 👁/✅ when its
+> side-by-side is built and the user signs it off. The wiring is the *tool* that makes those sheets
+> cheap to produce; the alignment work and sign-off remain per-screen. Wired keys and their fixtures
+> are listed in `tools/parity/app-targets.mjs`; the coverage summary is in `docs/SCREENSHOT-LANE.md`.
+
 ---
 
 ## CUSTOMER (All Screens Gallery)
