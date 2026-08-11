@@ -1619,6 +1619,57 @@ export const ADOPTED = [
       },
     ],
   },
+  // ─────────────────────────── RIDER MONEY + ACCOUNT (RJM Money·Account tabs) ───────────────────────────
+  // The current rider design is RJM (one app: Jobs · Money · Account), authored in `rider-one-app.jsx`.
+  // BOTH the Money tab (M1 `money`) and the Account tab (A1 `account`) are un-adoptable by the current
+  // codegen model for ONE root reason shared by the WHOLE `rider-one-app.jsx` family, and each carries a
+  // second, app-side live-vs-static divergence on top. Deferred honestly per CLAUDE.md (honesty over
+  // volume; wallet/money is SENSITIVE — behaviour kept identical, tests green).
+  //
+  // ROOT WALL (whole family) — the `S()` render-helper CALL-WRAPPER. Every screen in rider-one-app.jsx
+  // returns `S(<div>…</div>, { tab })`, where `S` is a mock-local helper that wraps the body in the DS
+  // `AppScreen`/SHELL (tab bar + banner + footer). The normalizer (normalize.mjs — the CI guardrail
+  // engine) cannot see through this call: its render-root readers (`rootFrom`→`jsxFrom`→`fromExpression`
+  // for whole-screen, `jsxRootNode` for regions) only recognise JSX elements/fragments/blocks/`.map`
+  // calls — a NON-`.map` CallExpression yields `[]`/null. Empirically BOTH paths throw "no JSX render
+  // found in component" / "mock component <name> has no JSX render" for `money` AND `account` (and would
+  // for board/offer_*/active_*/handoff/notifications too). So neither a whole-screen view NOR a region
+  // fragment/composition can be extracted from these mocks at all — this is a normalizer gap, not a
+  // primitive/backend gap. It is a Foundation-F (#42) prerequisite of the SAME class as the plan's
+  // "variant-switch state isolation" + "mock-local helper inlining": Foundation-F must teach the
+  // normalizer to unwrap a render-helper call (`S(jsxArg, opts)` → treat the first JSX arg as the render
+  // root) AND canonicalise the SHELL/`S()` wrapper to SCREEN (folding its `tabs`/banner/footer slots) so
+  // the mock's tab-shell matches the app's `<AppScreen>` root. Until then, no rider-one-app screen adopts.
+  {
+    key: "RJM.money",
+    container: "apps/mobile/app/rider/(tabs)/money.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RJM.money",
+        reason:
+          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'money' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('money')` throws 'no JSX render found' and every region path (`treeOfMockFragment`/`mockCompositionTree` via `jsxRootNode`) throws 'mock component money has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted from this mock until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). (2) LIVE-VS-STATIC — even once the wrapper is solved, money.tsx is a live MULTI-STATE container, not the static single-state mock: it early-returns a `SkeletonRows` loading state and an `EmptyState`+Retry error state the mock never draws, renders a live `pendingTopupBanner` recovery Card superset (an app-kill-during-top-up reconciliation surface, money.tsx:223 — not in the mock), draws the balance as a bare `<Text>{formatMoney(balance)}</Text>` where the mock draws `<Money v=\"4.60\" size={28}>` beside a fabricated '≈ 30 more jobs' estimate the app HONESTLY omits (no such projection exists), switches the hero Card accent→dangerWash with four conditional copy branches (negative/belowFloor/gettingLow/healthy) for the one static mock line, gives the ledger an honest empty-state + a 'Load older' pagination control (server caps pages at 25) the mock's fixed 4-row LEDGER never shows, and heads the screen with `<Heading>Money</Heading>` where the mock draws `AppBar title=\"Money\"`. Wallet/money is SENSITIVE — behaviour kept byte-identical. Adoptable once Foundation-F unwraps the shell AND the mock's static data-state sub-tree earns a boundary separable from the loading/error/recovery-banner branches (or the mock is redrawn to draw them).",
+      },
+    ],
+  },
+  {
+    key: "RJM.account",
+    container: "apps/mobile/app/rider/(tabs)/account.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RJM.account",
+        reason:
+          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'acct' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('account')` throws 'no JSX render found' and the region paths throw 'mock component account has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). Account is otherwise the CLOSEST-to-leaf screen in the cluster — an identity Card + a 5-row settings Card, all plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map canvas — so it becomes adoptable the moment the shell wall falls. (2) LIVE-VS-STATIC (minor) — the identity Card sits behind the live `['me']` query and early-returns a `SkeletonList` loading state the static mock never draws (the mock hardcodes 'Tendai M. · ★ 4.9 · 312 jobs · verified'; the app fills real name/rating/trips/KYC-tag with an honest '★ new' until the first rating lands), and the screen heads with `<Heading>Account</Heading>` where the mock draws `AppBar title=\"Account\"`. The settings-row list and identity structure otherwise match the mock 1:1. Adoptable once Foundation-F unwraps the shell (the loading skeleton is a normal multi-state branch the model already handles once the mock is readable).",
+      },
+    ],
+  },
 ];
 
 /**
