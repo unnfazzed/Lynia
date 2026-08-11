@@ -523,13 +523,14 @@ describe("OrderLifecycleService.rate", () => {
     expect(emits).toEqual([["o1", "completed"]]);
   });
 
-  it("#672: a food order persists foodScore + tags on the rating row, but the rider aggregate uses the rider `score` alone", async () => {
+  it("#672/#673: a food order persists foodScore + tags, moves the RESTAURANT rating by foodScore, and the rider aggregate by the rider score — independently", async () => {
     let riderData: Record<string, unknown> | undefined;
     let ratingData: Record<string, unknown> | undefined;
+    let merchantData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
         // orderType "merchant" = a food order; foodScore/tags come from the delivered mock.
-        findUnique: async () => ({ status: "delivered", orderType: "merchant", customerId: "c1", riderId: "r1" }),
+        findUnique: async () => ({ status: "delivered", orderType: "merchant", customerId: "c1", riderId: "r1", merchantId: "m1" }),
         updateMany: async () => ({ count: 1 }),
         count: async () => 5, // established customer → the rider `score` moves the aggregate
       },
@@ -538,6 +539,11 @@ describe("OrderLifecycleService.rate", () => {
         count: async () => 0, // distinct customer→rider pair
       },
       orderEvent: { create: async () => ({}) },
+      // #673: the restaurant rating aggregate, moved by the FOOD score (3), not the rider score.
+      merchant: {
+        findUnique: async () => ({ foodRatingAvg: 4.0, foodRatingCount: 1 }),
+        update: async (args: { data: Record<string, unknown> }) => { merchantData = args.data; return {}; },
+      },
       rider: {
         findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
         update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
@@ -549,6 +555,32 @@ describe("OrderLifecycleService.rate", () => {
     // The rider aggregate moves by the rider score (4.0*2 + 5)/3 = 4.333 — the food score never touches it.
     expect(riderData!.ratingAvg).toBeCloseTo(4.3333, 3);
     expect(riderData).toMatchObject({ ratingCount: 3, tripsCount: 6 });
+    // #673: the restaurant aggregate moves by the FOOD score (4.0*1 + 3)/2 = 3.5, count 1 → 2.
+    expect(merchantData!.foodRatingAvg).toBeCloseTo(3.5, 3);
+    expect(merchantData).toMatchObject({ foodRatingCount: 2 });
+  });
+
+  it("#673: a food order with NO food score leaves the restaurant rating untouched", async () => {
+    let merchantUpdated = false;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", orderType: "merchant", customerId: "c1", riderId: "r1", merchantId: "m1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 0,
+      },
+      rating: { create: async () => ({}), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      merchant: {
+        findUnique: async () => ({ foodRatingAvg: 0, foodRatingCount: 0 }),
+        update: async () => { merchantUpdated = true; return {}; },
+      },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async () => ({}),
+      },
+    });
+    await svc.rate("o1", "c1", 5); // rider score only, no foodScore
+    expect(merchantUpdated).toBe(false);
   });
 
   it("#672: omitting foodScore/tags (the parcel path) persists null foodScore + empty tags", async () => {

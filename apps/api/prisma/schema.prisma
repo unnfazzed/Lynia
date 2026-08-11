@@ -899,6 +899,15 @@ model Merchant {
   // N-17 busy mode: a manual on/off the merchant flips from the kitchen board (E2/E4); a plain
   // +10min prep-time bump signal while true, no auto-expiry specified.
   busyMode       Boolean          @default(false) @map("busy_mode")
+  // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
+  // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
+  // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).
+  foodRatingAvg   Float            @default(0) @map("food_rating_avg")
+  foodRatingCount Int              @default(0) @map("food_rating_count")
+  // #673 discovery: the merchant's typical kitchen prep time. The card's ETA is this baseline + a
+  // delivery-leg estimate the CLIENT computes from the customer's deliver-to distance. Nullable —
+  // unset until the merchant configures it (the client falls back to a default prep then).
+  prepBaselineMinutes Int?         @map("prep_baseline_minutes")
   // Pre-launch pilot-corridor allowlist (status-keyed-query-audit.md "P0 exit-gate status" — the
   // seeded-cohort leg this field unblocks). A merchant is only visible on the customer-facing
   // restaurant list/menu when this is true, even with RESTAURANTS_ENABLED=true globally — the

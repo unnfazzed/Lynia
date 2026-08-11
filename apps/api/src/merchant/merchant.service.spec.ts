@@ -539,6 +539,21 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[0]!.logoUrl).toBe("https://signed.example/merchant/m1/logo.jpg");
   });
 
+  it("listRestaurants surfaces the #673 rating + prep baseline; an unrated shop shows ratingAvg null (never a fake 0)", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async () => [
+          { id: "m1", name: "Rated", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null, foodRatingAvg: 4.6, foodRatingCount: 20, prepBaselineMinutes: 18 },
+          { id: "m2", name: "Unrated", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null, foodRatingAvg: 0, foodRatingCount: 0, prepBaselineMinutes: null },
+        ],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]).toMatchObject({ ratingAvg: 4.6, ratingCount: 20, prepBaselineMinutes: 18 });
+    // Unrated: no star (null), not a misleading "0"; prep unset falls back client-side.
+    expect(res.restaurants[1]).toMatchObject({ ratingAvg: null, ratingCount: 0, prepBaselineMinutes: null });
+  });
+
   /** Bare merchant row shape `toListItem` needs — real rows carry more Prisma columns, but the
    *  service only ever reads these off what `findMany` hands back. */
   function merchantRow(id: string) {

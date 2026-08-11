@@ -542,7 +542,10 @@ export class MerchantService {
   // the media bucket enforces public_access_prevention, so the raw GCS object key these fields used
   // to pass through could never render on a customer's phone (plan §10 blocker, 2026-07-31).
   private async toListItem(
-    merchant: Pick<MerchantWithOwner, "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location">,
+    merchant: Pick<
+      MerchantWithOwner,
+      "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes"
+    >,
   ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
@@ -556,6 +559,11 @@ export class MerchantService {
       hours: (merchant.hours as MerchantHours | null) ?? null,
       // Geo-point only (D-17) — see the field's doc comment in contracts.ts.
       location: location ? location.point : null,
+      // #673: star rating (null while unrated — the card shows no star, never a fake "0") + the
+      // merchant's prep baseline for the client-side ETA.
+      ratingAvg: merchant.foodRatingCount > 0 ? merchant.foodRatingAvg : null,
+      ratingCount: merchant.foodRatingCount,
+      prepBaselineMinutes: merchant.prepBaselineMinutes,
     };
   }
 
