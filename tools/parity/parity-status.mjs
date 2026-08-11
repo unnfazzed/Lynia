@@ -14,9 +14,18 @@
  *                  yet. It renders its MOCK in the parity harness; the app column is honestly "pending".
  *                  Moving it to `app-targets.mjs` is pure wiring — the screen renders from a static
  *                  fixture (mobile) with no backend.
- *   BACKEND_GATED  ⛔ the design cannot be faithfully rendered by the static fixture/offline harness
- *                  because it is populated entirely from live API/DB state (a seeded authenticated
- *                  backend). Tracked as a backend-fixture issue, not app drift. `reason` says why.
+ *   BACKEND_GATED  ⛔ RESERVED for screens whose STRUCTURE genuinely cannot render honestly without a
+ *                  live backend — they exist solely to reflect a live server-driven state with NO honest
+ *                  empty form. `reason` says why. This is NOT for screens the mock merely populates with
+ *                  a value the API doesn't send (that renders an honest empty state) nor for a web route
+ *                  the offline SCREENSHOT harness can't reach (that is a verification-lane limit, not a
+ *                  structure gate) — those are `PENDING` / ADOPTABLE-NOW.
+ *
+ * RECALIBRATION (2026-08-11): UI structure is NOT backend-gated — the structural-snapshot guardrail
+ * verifies the element TREE, not data values. This pass moved the 47 RM merchant-tablet screens back
+ * from BACKEND_GATED to PENDING (their structure is built to the mock via direct-DOM; only the offline
+ * screenshot needs a seeded instance) and keeps only the 3 genuinely live-only RC payment states gated.
+ * Per-screen classification + the Foundation-D primitive backlog: docs/parity/ADOPTION-CLASSIFICATION.md.
  *
  * Never list a RETIRED screen here (retired ids live in packages/design/EXPORT-README.md); retired
  * screens are absent from screens.generated.json, so they can't appear in the coverage set at all.
@@ -32,7 +41,10 @@ export const PARITY_STATUS = {
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
   "LJ.order_restore": { status: "PENDING" }, // Cold start · order running
   "LJ.stale_cache": { status: "PENDING" }, // Orders · saved copy
-  "LJ.addr_search": { status: "PENDING" }, // Address search
+  "LJ.addr_search": {
+    status: "PENDING",
+    reason: "SUPERSET — the app folds address-search INTO the send compose sheet (live inline AddressSearch) where the mock draws it as a standalone screen; composite-adopt or ledger. See docs/parity/ADOPTION-CLASSIFICATION.md",
+  }, // Address search
   "LJ.addr_map_confirm": { status: "PENDING" }, // Confirm pin on map
   "LJ.home_expanded": { status: "PENDING" }, // Send · sheet expanded
   "LJ.disclaimer": { status: "PENDING" }, // Broadcast disclaimer
@@ -43,7 +55,10 @@ export const PARITY_STATUS = {
   "LJ.auction_finding": { status: "PENDING" }, // Auction · finding
   "LJ.auction_live": { status: "PENDING" }, // Auction · offers live
   "LJ.auction_counter": { status: "PENDING" }, // Counter-offer review
-  "LJ.delivered_rate": { status: "PENDING" }, // Delivered · rate the rider
+  "LJ.delivered_rate": {
+    status: "PENDING",
+    reason: "CONTROL-DEVIATION — structure adopts; the mock's static 'Submit rating' footer button clashes with the app's shipped tap-to-arm + 4s-undo rating (BH-06). Honest-keep the app model or ledger the one control; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
+  }, // Delivered · rate the rider
   "LJ.completed": { status: "PENDING" }, // Completed
   "LJ.rate_undo": { status: "PENDING" }, // Rating sent · undo
   "LJ.notif_empty": { status: "PENDING" }, // Notifications · empty
@@ -92,23 +107,26 @@ export const PARITY_STATUS = {
   "RC.confirm_call": { status: "PENDING" }, // They call to confirm
   "RC.pay_push": {
     status: "BACKEND_GATED",
-    reason: "prompt-send pay — the payment-prompt send/confirm state is driven by a live payment request on the order; not renderable from a static fixture",
+    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Push · payment requested
   "RC.pay_wait": {
     status: "BACKEND_GATED",
-    reason: "prompt-send pay — the payment-prompt send/confirm state is driven by a live payment request on the order; not renderable from a static fixture",
+    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Prompt sent
   "RC.pay_manual": { status: "PENDING" }, // Paid another way
   "RC.pay_confirmed": {
     status: "BACKEND_GATED",
-    reason: "prompt-send pay — the payment-prompt send/confirm state is driven by a live payment request on the order; not renderable from a static fixture",
+    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Waiting to be confirmed
   "RC.track_prep": { status: "PENDING" }, // Prep countdown
   "RC.track_secured": { status: "PENDING" }, // Rider secured — #671 lifted the gate: the rider's identity (name·plate·vehicle·rating·KYC) is now a plain field on the food order read (MerchantOrderResponse.rider), so the tracker renders it from live data and a static fixture can stand it up. Adopted; parity target+fixture wiring pending.
   "RC.handoff": { status: "PENDING" }, // Pay at the door
   "RC.handoff_wait": { status: "PENDING" }, // Waiting for rider confirm
   "RC.handoff_code": { status: "PENDING" }, // Both confirmed · code
-  "RC.list_empty": { status: "PENDING" }, // Nothing open
+  "RC.list_empty": {
+    status: "PENDING",
+    reason: "CONTROL-DEVIATION — structure adopts; the mock draws a 'Notify me when they open' primary with no notify-when-open backend (a dead control) + a live 'area · time' AppBar sub. Honest-disable the one control or ledger; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
+  }, // Nothing open
   "RC.list_error": { status: "PENDING" }, // Offline list
   "RC.menu_closed": { status: "PENDING" }, // Closed restaurant
   "RC.closed_interrupt": { status: "PENDING" }, // Closes while browsing
@@ -192,7 +210,10 @@ export const PARITY_STATUS = {
   "RJM.notifications": { status: "PENDING" }, // One inbox
   "RJM.board_food_off": { status: "PENDING" }, // Jobs · food dispatch off
   "RJM.board_empty_food_off": { status: "PENDING" }, // Food off · nothing in range
-  "RJM.offer_parcel": { status: "PENDING" }, // Parcel · name your fare
+  "RJM.offer_parcel": {
+    status: "PENDING",
+    reason: "SUPERSET — structure adopts; the app renders a live dispatch countdown timer where the RJM still draws a no-countdown offer. The live countdown is the honest realization; keep or ledger. See docs/parity/ADOPTION-CLASSIFICATION.md",
+  }, // Parcel · name your fare
   "RJM.active_parcel": { status: "PENDING" }, // Active · parcel
   "RJM.handoff": { status: "PENDING" }, // Delivery code
   "RJM.pickup_photo": { status: "PENDING" }, // Proof of pickup · capture
@@ -224,192 +245,192 @@ export const PARITY_STATUS = {
 
   // ── RM ──────────────────────────────────────────────────────────
   "RM.setup": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // First login · setup
   "RM.reboot": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Tablet rebooted mid-shift
   "RM.queue_empty": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Open · no orders
   "RM.queue_loading": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Loading
   "RM.queue_new": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // NEW ORDER · alarm
   "RM.queue_board": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Kitchen board · 3 live
   "RM.two_orders": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Two orders at once
   "RM.offline": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Connection lost
   "RM.offline_order": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Order arrived offline
   "RM.order_accept": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Accept + prep time
   "RM.call_confirm": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Call, then request payment
   "RM.awaiting_payment": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Awaiting payment · no clock
   "RM.reject_sheet": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Reject · reason
   "RM.waiting_rider": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Accepted · do not cook yet
   "RM.cook_now": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Rider secured · cook now
   "RM.mark_ready": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Mark ready
   "RM.no_rider_merchant": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // NO_RIDER · never cooked
   "RM.rider_cancelled": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Rider cancelled · re-dispatch
   "RM.item_out": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Don't have an item
   "RM.item_out_wait": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // New total · customer confirming
   "RM.pickup_cash": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Upfront · confirm cash
   "RM.pickup_collect": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Collect-and-return · release
   "RM.pickup_wallet": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // WALLET · confirm before cooking
   "RM.wallet_mismatch": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Short payment blocked
   "RM.pickup_done": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Handed over
   "RM.cash_return": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Count the returned cash
   "RM.rider_noshow": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Rider no-show
   "RM.refund_exec": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Refund after wallet paid
   "RM.pickup_reveal": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Pickup code · hidden
   "RM.pickup_revealed": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Pickup code · revealed
   "RM.catalog": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Menu · grouped by category
   "RM.category_manage": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Categories · reorder & hide
   "RM.category_edit": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // New category
   "RM.category_rename": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Edit / delete category
   "RM.catalog_empty": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // No categories yet
   "RM.item_edit": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Edit dish · photo required
   "RM.dish_photo": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Dish photo · crop
   "RM.dish_draft": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Draft · needs a photo
   "RM.oos_sheet": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Out of stock today
   "RM.hours": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Operating hours
   "RM.statement": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Weekly statement
   "RM.eod": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // End of day
   "RM.shop": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Shop profile
   "RM.cash_rule": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Your cash rule
   "RM.shop_crop": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Position the banner
   "RM.shop_upload": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Uploading · compressing
   "RM.shop_upload_failed": {
-    status: "BACKEND_GATED",
-    reason: "merchant tablet route renders only against a seeded authenticated API (gated routes client-redirect to /login without one — see app-targets.mjs); needs backend fixture",
+    status: "PENDING",
+    reason: "ADOPTABLE-NOW (web) — merchant tablet structure is built to the mock via direct-DOM (docs/parity/PHASE6-merchant.md; classification in docs/parity/ADOPTION-CLASSIFICATION.md); adopts now with honest-empty data. The offline screenshot-harness auth-redirect (gated routes redirect to /login without a seeded PARITY_MERCHANT_URL) is a verification-lane limit, NOT a structure gate — was over-classified BACKEND_GATED",
   }, // Upload paused · offline
 };
 
