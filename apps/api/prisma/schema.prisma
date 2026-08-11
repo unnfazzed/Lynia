@@ -571,6 +571,16 @@ model Order {
   merchantPaymentReference   String?                @map("merchant_payment_reference")
   // R-11: the merchant's own-statement match — this is what starts the prep clock, not acceptance.
   merchantPaymentConfirmedAt DateTime?              @map("merchant_payment_confirmed_at")
+  // #670 payment-prompt push flow: a mobile-money prompt pushed to the customer's phone, ALONGSIDE
+  // the manual-reference rail above. status = pending|confirmed|declined|expired (null = no prompt),
+  // validated at the wire layer (PaymentPromptStatus); rail = ecocash|innbucks|omari; ref = the rail's
+  // own txn id (PaymentRailResult.providerRef). A confirmed prompt bridges into the manual path
+  // (its ref is written to merchantPaymentReference) so the merchant's own-statement confirm is unchanged.
+  paymentPromptStatus        String?                @map("payment_prompt_status")
+  paymentPromptRail          String?                @map("payment_prompt_rail")
+  paymentPromptRef           String?                @map("payment_prompt_ref")
+  paymentPromptSentAt        DateTime?              @map("payment_prompt_sent_at")
+  paymentPromptResolvedAt    DateTime?              @map("payment_prompt_resolved_at")
   // N-04 chip minutes (10/15/20/30/45), + N-17's +10 busy-mode bump already folded in at accept time.
   prepMinutes                Int?                   @map("prep_minutes")
   prepStartedAt              DateTime?              @map("prep_started_at")

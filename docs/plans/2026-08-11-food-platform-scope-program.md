@@ -133,6 +133,22 @@ component, re-check for an open alignment PR touching the same file.
 - **Consumer:** RC pay screens adopt the three states.
 - **Test:** send-prompt → pending → simulated confirm flips order paid; simulated decline → declined
   state; double send-prompt is idempotent; manual-reference path still works.
+- **Delivered 2026-08-11 (refined):** reused the **existing** `PaymentRail` seam
+  (`apps/api/src/adapters/payments/payment-rail.interface.ts`, `initiate`/`confirm`, default binding
+  the inert `StubPaymentRail`) rather than build a new adapter — `FoodOrderService` injects
+  `PAYMENT_RAIL`, order id as the idempotency anchor. **Money-path safety:** the default binding stays
+  the inert stub (returns `pending`, never fabricates a `confirmed`), so this can never mark an order
+  paid on its own; a real EcoCash/InnBucks/O'mari client is a later binding, **flagged for owner
+  confirmation before any live call** (the "SimulatedRail that auto-confirms" is a test-only fake, not
+  a prod binding). Order gains `paymentPromptStatus/rail/ref/sentAt/resolvedAt` (text, wire-validated
+  by `PaymentPromptStatus`/`PaymentPromptRail` — no Prisma enum), migration `0049_order_payment_prompt`
+  (5 nullable cols, additive). `sendPaymentPrompt` (idempotent, cash-rejected) + `checkPaymentPrompt`
+  (a `confirmed` rail result bridges the ref into `merchantPaymentReference` so the merchant's existing
+  own-statement confirm is unchanged). Contract `SendPaymentPromptRequest` + 4 response fields
+  (omitted-when-null). Client fns `sendFoodPaymentPrompt`/`checkFoodPaymentPrompt`. `RC.pay_push`/
+  `pay_wait`/`pay_confirmed` flipped `BACKEND_GATED → PENDING` (renderable from the new order field
+  now — the last three gated states are cleared). Pay-screen pixel adoption is the alignment lane's.
+  **Closes #670.**
 
 ### #674 — Seeded parity instance
 - **Goal:** `PARITY_MERCHANT_URL` / `PARITY_ADMIN_URL` (per `docs/SCREENSHOT-LANE.md`) point at a
@@ -207,8 +223,8 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 | — | Program plan doc | ✅ landed | #679 |
 | #671 | Food rider identity | ✅ merged | #679 |
 | #672 | Dual ratings + tags | ✅ merged | #681 |
-| #673 | Discovery data model | 🟡 PR open — (a) rating+prep #684 merged; (b) dish search | — |
-| #670 | Payment push flow | ⬜ not started | — |
+| #673 | Discovery data model | ✅ merged — (a) #684, (b) #686 | #684 #686 |
+| #670 | Payment push flow | 🟡 PR open | — |
 | #674 | Seeded parity instance | ⬜ not started | — |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ merged to `main` (guardrails green).

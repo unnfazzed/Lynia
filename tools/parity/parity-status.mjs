@@ -105,19 +105,10 @@ export const PARITY_STATUS = {
   "RC.placing": { status: "PENDING" }, // Placing
   "RC.await_accept": { status: "PENDING" }, // Waiting on the kitchen
   "RC.confirm_call": { status: "PENDING" }, // They call to confirm
-  "RC.pay_push": {
-    status: "BACKEND_GATED",
-    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
-  }, // Push · payment requested
-  "RC.pay_wait": {
-    status: "BACKEND_GATED",
-    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
-  }, // Prompt sent
+  "RC.pay_push": { status: "PENDING" }, // Push · payment requested — #670 lifted the gate: the payment-prompt lifecycle is now a plain order field (MerchantOrderResponse.paymentPromptStatus), so a static fixture can stand up each state. Adopted; parity wiring pending.
+  "RC.pay_wait": { status: "PENDING" }, // Prompt sent — #670: paymentPromptStatus="pending" renders this; renderable from a fixture now.
   "RC.pay_manual": { status: "PENDING" }, // Paid another way
-  "RC.pay_confirmed": {
-    status: "BACKEND_GATED",
-    reason: "TRUE-BACKEND-GATED — exists solely to reflect a LIVE payment request on the order; it has NO honest empty form (the structure only exists while a live request is in flight), so it cannot be rendered from a static fixture. See docs/parity/ADOPTION-CLASSIFICATION.md",
-  }, // Waiting to be confirmed
+  "RC.pay_confirmed": { status: "PENDING" }, // Waiting to be confirmed — #670: paymentPromptStatus="confirmed" renders this; renderable from a fixture now.
   "RC.track_prep": { status: "PENDING" }, // Prep countdown
   "RC.track_secured": { status: "PENDING" }, // Rider secured — #671 lifted the gate: the rider's identity (name·plate·vehicle·rating·KYC) is now a plain field on the food order read (MerchantOrderResponse.rider), so the tracker renders it from live data and a static fixture can stand it up. Adopted; parity target+fixture wiring pending.
   "RC.handoff": { status: "PENDING" }, // Pay at the door

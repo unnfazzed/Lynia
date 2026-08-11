@@ -4,8 +4,20 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import { TokenService } from "../auth/token.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { PaymentRail } from "../adapters/payments/payment-rail.interface";
 import type { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
+
+// #670: the PaymentRail seam. Default mirrors StubPaymentRail (always `pending` — never fabricates a
+// confirm), so existing tests are unaffected; the prompt tests pass a rail that confirms or fails.
+function fakeRail(overrides: Record<string, unknown> = {}): PaymentRail {
+  return {
+    initiate: async () => ({ status: "pending", providerRef: "rail_ref_1" }),
+    confirm: async () => ({ status: "pending" }),
+    reconcile: async () => ({ status: "pending" }),
+    ...overrides,
+  } as unknown as PaymentRail;
+}
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "food-order-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
 const notified: Array<{ profileIds: string[]; title: string; body: string }> = [];
@@ -35,12 +47,12 @@ function fakeGateway(overrides: Record<string, unknown> = {}) {
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring order-lifecycle.service.spec.ts's `build()`. */
-function build(methods: Record<string, unknown>, gateway: TrackingGateway = fakeGateway()) {
+function build(methods: Record<string, unknown>, gateway: TrackingGateway = fakeGateway(), rail: PaymentRail = fakeRail()) {
   notified.length = 0;
   queueChanges.length = 0;
   const prisma = { ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway);
+  const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway, rail);
   return { svc, prisma };
 }
 
@@ -467,7 +479,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     prisma.order = { update: async () => ({}) };
     prisma.orderEvent = { create: async () => ({}) };
     const spyDebt = { openDebtIfNeeded: async (_tx: unknown, order: Record<string, unknown>) => (opened = order) } as unknown as FoodDebtService;
-    const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt, fakeGateway());
+    const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt, fakeGateway(), fakeRail());
 
     await svc.confirmPickup("o1", "r1", "4242");
     expect(opened).toEqual({
@@ -812,5 +824,90 @@ describe("FoodOrderService.toResponse — #671 assigned-rider identity block", (
     const { svc } = build({ order: { findFirst: async () => assignedOrder(null) } });
     const res = await svc.getAsRider("o1", "r1");
     expect(res).not.toHaveProperty("rider");
+  });
+});
+
+describe("FoodOrderService payment prompt (#670)", () => {
+  const awaitingOrder = (over: Record<string, unknown> = {}) => ({
+    id: "o1",
+    merchantId: "m1",
+    customerId: "c1",
+    status: "confirmed",
+    merchantPhase: "awaiting_payment",
+    merchantPaymentMethod: "wallet",
+    merchantGoodsTotal: 13,
+    deliveryFee: 2.5,
+    merchantItems: [],
+    pickupCodeAttempts: 0,
+    noShowCallTimestamps: [],
+    paymentPromptStatus: null,
+    paymentPromptRef: null,
+    merchantPaymentReference: null,
+    ...over,
+  });
+
+  it("sendPaymentPrompt pushes the prompt via the rail and records pending + the rail ref", async () => {
+    let updated: Record<string, unknown> | undefined;
+    const base = awaitingOrder();
+    const { svc } = build({
+      order: {
+        findFirst: async () => base,
+        findUnique: async () => ({ ...base, paymentPromptStatus: "pending", paymentPromptRef: "rail_ref_1" }),
+        update: async ({ data }: { data: Record<string, unknown> }) => { updated = data; return {}; },
+      },
+      profile: { findUnique: async () => ({ phone: "+263771234567" }) },
+    });
+    const res = await svc.sendPaymentPrompt("o1", "c1", "ecocash");
+    expect(updated).toMatchObject({ paymentPromptStatus: "pending", paymentPromptRail: "ecocash", paymentPromptRef: "rail_ref_1" });
+    expect(res.paymentPromptStatus).toBe("pending");
+  });
+
+  it("sendPaymentPrompt is idempotent — a prompt already pending is never re-pushed", async () => {
+    let initiated = false;
+    const { svc } = build(
+      { order: { findFirst: async () => awaitingOrder({ paymentPromptStatus: "pending", paymentPromptRef: "rail_ref_1" }) } },
+      undefined,
+      fakeRail({ initiate: async () => { initiated = true; return { status: "pending", providerRef: "x" }; } }),
+    );
+    const res = await svc.sendPaymentPrompt("o1", "c1", "ecocash");
+    expect(initiated).toBe(false);
+    expect(res.paymentPromptStatus).toBe("pending");
+  });
+
+  it("sendPaymentPrompt rejects a cash order (paid at the door, not by prompt)", async () => {
+    const { svc } = build({ order: { findFirst: async () => awaitingOrder({ merchantPaymentMethod: "cash" }) } });
+    await expect(svc.sendPaymentPrompt("o1", "c1", "ecocash")).rejects.toThrow(/paid at the door/i);
+  });
+
+  it("checkPaymentPrompt on a confirmed rail result marks confirmed and bridges the ref into merchantPaymentReference", async () => {
+    let updated: Record<string, unknown> | undefined;
+    const base = awaitingOrder({ paymentPromptStatus: "pending", paymentPromptRef: "rail_ref_1" });
+    const { svc } = build(
+      {
+        order: {
+          findFirst: async () => base,
+          findUnique: async () => ({ ...base, paymentPromptStatus: "confirmed" }),
+          update: async ({ data }: { data: Record<string, unknown> }) => { updated = data; return {}; },
+        },
+      },
+      undefined,
+      fakeRail({ confirm: async () => ({ status: "confirmed", providerRef: "rail_ref_1" }) }),
+    );
+    await svc.checkPaymentPrompt("o1", "c1");
+    expect(updated).toMatchObject({ paymentPromptStatus: "confirmed", merchantPaymentReference: "rail_ref_1" });
+  });
+
+  it("checkPaymentPrompt leaves a still-pending prompt untouched (stub rail never confirms)", async () => {
+    let touched = false;
+    const { svc } = build({
+      order: {
+        findFirst: async () => awaitingOrder({ paymentPromptStatus: "pending", paymentPromptRef: "rail_ref_1" }),
+        findUnique: async () => awaitingOrder({ paymentPromptStatus: "pending", paymentPromptRef: "rail_ref_1" }),
+        update: async () => { touched = true; return {}; },
+      },
+    }); // default fakeRail confirm → pending
+    const res = await svc.checkPaymentPrompt("o1", "c1");
+    expect(touched).toBe(false);
+    expect(res.paymentPromptStatus).toBe("pending");
   });
 });
