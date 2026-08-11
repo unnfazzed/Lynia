@@ -31,6 +31,7 @@ const mockDeleteItemAsync = jest.fn(async (key: string) => {
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: mockReplace }),
+  useLocalSearchParams: () => ({ phone: "+263 77 245 1180" }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: (...args: [string]) => mockGetItemAsync(...args),
@@ -86,8 +87,9 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     });
     await settle();
 
-    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
-    setFieldByAccessibilityLabel(tree, "Last name", "Moyo");
+    // The mock (screens.jsx `Register`) draws a single "Full name" field; setup.tsx splits it into
+    // first/last only at the draft + PATCH boundaries, so the durable draft still round-trips.
+    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
     setFieldByAccessibilityLabel(tree, "National ID number", "63-123456-A-42");
     await settle();
 
@@ -100,8 +102,7 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     });
     await settle();
 
-    expect(getFieldValue(fresh, "First name")).toBe("Tendai");
-    expect(getFieldValue(fresh, "Last name")).toBe("Moyo");
+    expect(getFieldValue(fresh, "Full name")).toBe("Tendai Moyo");
     expect(getFieldValue(fresh, "National ID number")).toBe("63-123456-A-42");
   });
 
@@ -112,13 +113,12 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     });
     await settle();
 
-    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
-    setFieldByAccessibilityLabel(tree, "Last name", "Moyo");
+    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
     setFieldByAccessibilityLabel(tree, "National ID number", "63-123456-A-42");
     await settle();
 
-    const saveButton = tree.root.findAll((n) => n.props.label === "Save and continue" && typeof n.props.onPress === "function")[0];
-    if (!saveButton) throw new Error("no Save and continue button found");
+    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
+    if (!saveButton) throw new Error("no Continue button found");
     await act(async () => {
       await saveButton.props.onPress();
     });

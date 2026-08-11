@@ -49,14 +49,14 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⬜ | C1·1 | `LJ splash` | Splash | | |
-| ⬜ | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | | |
+| 👁 | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | ⬜ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | | |
 | ⬜ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | | |
-| ⬜ | C1·5 | `LJ login` | Phone login | | |
-| ⬜ | C1·6 | `LJ otp` | SMS OTP | | |
-| ⬜ | C1·7 | `LJ role_select` | Choose your role | | |
-| ⬜ | C1·8 | `LJ register` | Profile registration | | |
-| ⬜ | C1·9 | `LJ perm_loc` | Permission · location | | |
+| 👁 | C1·5 | `LJ login` | Phone login | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| 👁 | C1·6 | `LJ otp` | SMS OTP | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| 👁 | C1·7 | `LJ role_select` | Choose your role | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| 👁 | C1·8 | `LJ register` | Profile registration | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| 👁 | C1·9 | `LJ perm_loc` | Permission · location | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | ⬜ | C1·10 | `LJ perm_notif` | Permission · notifications | | |
 | ⬜ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | | |
 | ⬜ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | | |

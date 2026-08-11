@@ -136,6 +136,9 @@ export function Field(props: {
   // error shows. Honest and specific — never a placeholder-as-error.
   error?: string;
   hint?: string;
+  // Read-only display (e.g. the register screen's already-verified phone): renders the same field
+  // chrome but the input can't be focused or edited.
+  editable?: boolean;
 }): React.ReactElement {
   const hasError = props.error != null && props.error !== "";
   // Focus draws the accent border the kit's Field specifies (`:focus { border-color: --accent-700 }`);
@@ -154,6 +157,7 @@ export function Field(props: {
         maxLength={props.maxLength}
         autoComplete={props.autoComplete}
         textContentType={props.textContentType}
+        editable={props.editable}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         // The visible Label is a sibling Text with no programmatic link, so name the input for
