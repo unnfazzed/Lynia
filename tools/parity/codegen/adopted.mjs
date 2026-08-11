@@ -215,7 +215,94 @@ export const ADOPTED = [
         state: "data",
         key: "RC.list",
         reason:
-          "the mock header (a fixed 'DELIVER TO' address, four STATIC sort pills, a static '5 places' count) supersets the app's LIVE header (geolocated deliver-to, one functional Open-now toggle, search navigation, cursor pagination). The list body itself is fine — FlatList≡map (normalize.mjs) makes the virtualized list congruent to the mock's `{REST.map(...)}` — but adopting the whole state would either revert live behavior or superset the mock. Deferred on the header, not the list.",
+          "BACKEND/wire-contract-gated, not a live-superset the app can restructure into. The mock header draws four sort pills — Open now (wireable from `hours`) BUT also Nearest, Under $2 fee, Top rated — and each RestRow's meta line is `★ rating (n) · <km> km · <eta> min`. rating, geo-distance (km), per-restaurant delivery fee and ETA are ALL absent from the `RestaurantListItem` wire contract (contracts.ts: id/name/cover/logo/cuisineTags/priceLevel/hours/location only), and the list screen has no customer geolocation. Mock-wins says wire behaviour INTO the drawn elements, but there is no data to wire three of the pills or the rating/km/eta to — rendering them anyway would ship three permanently-dead sort pills and fabricated rating/distance/eta figures (CLAUDE.md forbids both). The list BODY is fine (FlatList≡map), but the header+row meta need the customer read API to carry rating/distance/fee before this state can adopt. Tracked as a Track-2 backend gap, not app drift.",
+      },
+    ],
+  },
+  {
+    // RC.checkout — the food checkout flow (app/food/checkout.tsx). Multi-state: cart-empty / loading /
+    // placing(busy) / data(cash|wallet). Only the PLACING state is a clean structural match today; the
+    // cash/wallet DATA states are deferred (see below).
+    key: "RC.checkout",
+    container: "apps/mobile/app/food/checkout.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [
+      {
+        // R4·b2 placing — the one-beat "Sending your order to the kitchen…" state the checkout renders
+        // while the placeFoodOrder mutation is in flight (`busy`). A pure content skeleton (centred
+        // receipt glyph + two lines + two skeleton bars, its own Screen), no data seam — the copy is
+        // fixed in the mock, so the generated view is 0-residual and needs no `bind`. The container
+        // early-returns it (like list_loading), replacing the whole screen for the placing beat.
+        state: "placing",
+        key: "RC.placing",
+        component: "placing",
+        componentName: "CheckoutPlacingView",
+        viewFile: "apps/mobile/app/food/checkout-placing.view.tsx",
+      },
+    ],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.checkout_cash",
+        reason:
+          "the app collects the drop-off LIVE on this screen (MapPicker + AddressSearch + landmark Field + contact-phone Field), but the mock draws ONLY a static address-summary Card row + an EtaLine ('3.1 km away', '30–40 min') — there is no address-capture surface anywhere in the mock's checkout flow to wire that live capture INTO, so it is a genuine superset with no mock home (a DESIGN-DEVIATIONS.md-worthy ledger entry, not a silent keep). It further needs an `EtaLine` primitive (delivery ETA/distance the app can only estimate once a drop-pin exists) and a `Screen` `footer` slot the DS does not yet have. Structural adoption blocked on all three; deferring rather than shipping a divergent tree or reverting live drop-off capture.",
+      },
+      {
+        state: "data",
+        key: "RC.checkout_wallet",
+        reason:
+          "same drop-off-capture superset + missing `EtaLine`/`Screen.footer` foundation as RC.checkout_cash (the wallet variant differs only in the pay-rows' selected state and copy, which the app already renders faithfully via PaymentMethodRow). Deferred with the cash variant until the address-capture ledger entry + EtaLine + footer-slot land.",
+      },
+    ],
+  },
+  {
+    // RC.menu — the restaurant menu (app/food/[id].tsx). CoverPhoto + MenuRow exist (Foundation), but the
+    // DATA state is still gated: no adopted state today, so this is a defer-only registration (documentation).
+    key: "RC.menu",
+    container: "apps/mobile/app/food/[id].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.menu",
+        reason:
+          "BACKEND/wire-contract-gated + primitive-gap. The mock's shop-header meta is `★ 4.7 (210) · 1.2 km · 25–35 min · $1.50 delivery` — rating, geo-distance, ETA and delivery fee are ALL absent from the customer menu read contract (RestaurantMenuResponse), and this screen has no customer geolocation, so wiring them is impossible (rendering ships fabricated figures). It also needs a `ShopLogo` primitive and a `Screen` `footer` slot (the mock puts the '2 items · View cart' bar in `<Screen footer=…>`) that the DS does not have. The app's live category tabs / closed-state RemindWhenOpen / 'just closed' interrupt are functional supersets the static mock never drew. Deferred until the read contract carries rating/distance/fee and ShopLogo/footer-slot land.",
+      },
+    ],
+  },
+  {
+    // RC.cart — the food cart (app/food/cart.tsx). cart_empty is adopted (above); the DATA state defers.
+    key: "RC.cart",
+    container: "apps/mobile/app/food/cart.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.cart",
+        reason:
+          "superset + primitive-gap. The mock draws an `EtaLine` ('30–40 min · arrive 10:11–10:21' — a delivery ETA that needs a drop-off the cart deliberately does NOT collect; the app defers drop-off, and therefore delivery fee + ETA, to checkout), an 'Add a drink?' `FoodThumb` upsell rail (no upsell backend), and a full `PriceMath` with a delivery/km line the app honestly cannot show here (it names delivery in the footnote instead). It needs `EtaLine`/`FoodThumb` primitives + a `Screen` `footer` slot. The app's live per-line QtyStepper + editable per-line notes + min-order card are functional supersets of the static mock. Deferred until the delivery-at-cart data model, the upsell backend, and the EtaLine/FoodThumb/footer foundation exist.",
+      },
+    ],
+  },
+  {
+    // RC.orders — the Orders tab (app/(tabs)/orders.tsx). orders_empty exists as its own key; the composite
+    // DATA state defers. Defer-only registration.
+    key: "RC.orders",
+    container: "apps/mobile/app/(tabs)/orders.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.orders",
+        reason:
+          "live multi-state container vs a single static composite. The mock is one frozen composite — title + one accent active-order Card + an EARLIER label + three history rows (each ending in `<Money>`). The app Orders tab is a live container that interleaves, in ONE scroll: the active-order card, an active-order-check-FAILED banner, a stale-cache 'showing your last saved orders' retry line, a first-load skeleton, the empty state (its own RC.orders_empty mock) and a fetch-error state — none of which the mock's data composite draws. There is no clean 'data' boundary to swap a generated composite in without regressing those live sub-states (and the app's history rows render the fare as `<Text>`, not the mock's `<Money>`). This is a live-vs-static case with no lossless mock-wins restructure; deferred rather than regress the stale/failed/skeleton behaviour.",
       },
     ],
   },
