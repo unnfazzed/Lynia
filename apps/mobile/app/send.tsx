@@ -28,11 +28,10 @@ import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, s
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { saveActiveOrderHint } from "../src/net/last-active-store";
-import { ActiveOrderCheckFailedBanner, Button, ErrorText, Field, haptic, Icon, TestBuildBanner, useActiveOrderCheckGate } from "../src/ui";
+import { ActiveOrderCheckFailedBanner, ErrorText, Field, haptic, Icon, TestBuildBanner, useActiveOrderCheckGate } from "../src/ui";
 import { AddressConfirmSheet } from "../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
-import { ComposeMap } from "../src/ui/ComposeMap";
 import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
 import { AddressHint, AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
 import { placesEnabled } from "../src/config";
@@ -43,6 +42,11 @@ import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
 import { SendPhoneFields } from "../src/ui/send/SendPhoneFields";
 import { SendPriceQuote } from "../src/ui/send/SendPriceQuote";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
+// Foundation-F.c region-adopted fragments — generated, structure-parity views of the mock `Home`'s
+// map canvas (FauxMap→ComposeMap) and submit sheet-footer. Mounted below in the mock's composition
+// order; all live behaviour flows in through their props seam (see tools/parity/codegen/adopted.mjs).
+import { SendMapView } from "./send-map.view";
+import { SendComposeFooterView } from "./send-compose-footer.view";
 
 // LayoutAnimation needs an explicit opt-in on old-architecture Android; a no-op on iOS / Fabric.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -600,6 +604,22 @@ export default function HomeScreen(): React.ReactElement {
     void submit();
   };
 
+  // The submit sheet-footer is region-adopted (LJ.home_empty#footer): the mock draws a single
+  // until-pins hint above the "Broadcast request" CTA. The app's hint names EVERY still-missing
+  // requirement (one noun each, matching the kit's single-line phrasing) so a disabled CTA is never a
+  // silent greyed dead-end — the same copy as before, hoisted here so SendComposeFooterView owns the
+  // hint+CTA sub-tree while the out-of-area notice + ErrorText stay live glue beside it.
+  const missingHint = `Add ${[
+    !coordsOk ? "pickup & drop-off pins" : null,
+    !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
+    !pickupPhoneOk || !dropPhoneOk ? "both phones" : null,
+    !landmarksOk ? "both landmarks" : null,
+    !declaredValueOk ? "a declared value between 0 and 150" : null,
+    !(fare !== null && fare > 0) ? "a price" : null,
+  ]
+    .filter(Boolean)
+    .join(", ")} to broadcast.`;
+
   // S·2: a held customer can't broadcast — show a calm, blocking screen (not the compose form) with a
   // real "contact support" affordance, matching the mockup's OnHold. Overrides the whole home so a
   // held customer never reaches the map/compose UI.
@@ -625,7 +645,10 @@ export default function HomeScreen(): React.ReactElement {
           lower half. Tapping an address row (now inside the sheet) picks which pin the map edits. */}
       <View style={{ flex: 1 }}>
         <View style={StyleSheet.absoluteFill}>
-          <ComposeMap
+          {/* Region-adopted map canvas (LJ.home_empty#map): the mock's full-bleed K.FauxMap, realized
+              live as ComposeMap. SendMapView is a thin controlled wrapper — every prop below is
+              forwarded straight through, geolocation + tap-to-pin unchanged. */}
+          <SendMapView
             pickup={pickupPoint}
             drop={dropPoint}
             active={activePin}
@@ -730,28 +753,6 @@ export default function HomeScreen(): React.ReactElement {
             style={{ paddingBottom: tokens.space.lg + insets.bottom }}
             footer={
             <>
-              {!canSubmit ? (
-                // A disabled Pressable swallows the tap, so name what's still missing here rather
-                // than only on an edge-complete submit — never a silent greyed dead-end.
-                <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs }}>
-                  {`Add ${[
-                    !coordsOk ? "pickup & drop-off pins" : null,
-                    !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
-                    // One noun per requirement, matching the kit's single-line hint ("\u2026an item, a price
-                    // and both phones to broadcast."). Naming each phone separately, then spelling out
-                    // which collapsed section two other fields hide in, turned this into a four-line
-                    // wall \u2014 and a list you have to parse is worse than a list you can scan. The
-                    // details section now opens itself when it's the blocker, so the hint no longer has
-                    // to give directions to it.
-                    !pickupPhoneOk || !dropPhoneOk ? "both phones" : null,
-                    !landmarksOk ? "both landmarks" : null,
-                    !declaredValueOk ? "a declared value between 0 and 150" : null,
-                    !(fare !== null && fare > 0) ? "a price" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")} to broadcast.`}
-                </Text>
-              ) : null}
               {outOfArea ? (
                 // Q1: a distinct, calm out-of-area state (not a red error) — the fix is moving a pin,
                 // so it names that rather than implying something went wrong.
@@ -777,8 +778,17 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              {/* Kit copy (screens.jsx:172) — "Broadcast request", not "Send to riders". */}
-              <Button label="Broadcast request" onPress={() => void onBroadcast()} loading={busy} disabled={!canSubmit} />
+              {/* Region-adopted submit sheet-footer (LJ.home_empty#footer): the until-complete hint +
+                  the kit's verbatim "Broadcast request" CTA. onBroadcast runs the disclaimer gate + the
+                  idempotent create — unchanged. The out-of-area notice above + ErrorText below stay live
+                  glue (pruned from the composition; the static mock draws neither). */}
+              <SendComposeFooterView
+                showHint={!canSubmit}
+                hint={missingHint}
+                onBroadcast={() => void onBroadcast()}
+                busy={busy}
+                disabled={!canSubmit}
+              />
               <ErrorText message={error} />
             </>
           }

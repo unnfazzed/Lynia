@@ -38,6 +38,13 @@ const KIND = new Map(Object.entries({
   lockup: "BRANDLOCKUP", brandlockup: "BRANDLOCKUP",
   dove: "DOVEMARK", dovemark: "DOVEMARK", wordmark: "WORDMARK",
   systemstate: "SYSTEMSTATE", heading: "HEADING", sub: "SUB", label: "LABEL",
+  // Foundation-F.c — map/sheet kit primitives fold to ONE canonical kind across the mock and the app
+  // realization (the Lockup→BrandLockup precedent, matched by transpile.mjs DS_RENAME). The mock's
+  // `FauxMap`/`HarareMap` map stand-ins and the app's `ComposeMap`/`LiveMap` all reduce to MAP; the
+  // mock's `MapSheet` and the app's `BottomSheet` reduce to SHEET — so a fragment rooted at (or
+  // containing) either stays congruent by construction.
+  fauxmap: "MAP", hararemap: "MAP", composemap: "MAP", livemap: "MAP",
+  mapsheet: "SHEET", bottomsheet: "SHEET",
   svg: "SVG", path: "SVG", circle: "SVG", rect: "SVG", g: "SVG", line: "SVG", polyline: "SVG", polygon: "SVG",
 }));
 const TRANSPARENT = new Set(["pressable", "touchableopacity", "touchablewithoutfeedback", "touchablehighlight", "fragment"]);
@@ -400,9 +407,13 @@ function isMapYielding(ts, e, tag) {
 /**
  * Locate a region's mock sub-node inside a render root, per an engine-agnostic locator descriptor —
  * the TS-side twin of emit.mjs's `locateBabel`, so gen and check find the SAME sub-tree.
- *   { el }   → first descendant JSX element with that tag.
+ *   { el }   → first descendant JSX element with that tag (terminal name, so a member tag like
+ *              `K.FauxMap` matches `{el:"FauxMap"}` — the Foundation-F.b member-tag idiom, read side).
  *   { map }  → first `.map()` call yielding that tag (returns the CallExpression).
- *   { slot } → the named attribute's expression on the first Screen element.
+ *   { slot } → the named JSX-valued attribute's expression on the first element that carries it.
+ *              Foundation-F.c generalized this beyond `<Screen>`: the send-composer's submit lives in
+ *              `MapSheet.footer` (a sheet, not a Screen), so `{slot:"footer"}` anchors on ANY element
+ *              bearing the attribute — the first one in document order.
  */
 export function locateTs(ts, root, locator) {
   let found = null;
@@ -415,7 +426,7 @@ export function locateTs(ts, root, locator) {
       found = node; return;
     } else if (locator.slot && (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node))) {
       const opening = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
-      if (tagName(ts, opening) === "Screen") { const e = attrExpr(ts, opening, locator.slot); if (e) { found = e; return; } }
+      const e = attrExpr(ts, opening, locator.slot); if (e) { found = e; return; }
     }
     ts.forEachChild(node, visit);
   };
@@ -477,12 +488,17 @@ function reduceComp(ts, node, opts) {
     const rawChildren = ts.isJsxSelfClosingElement(node) ? [] : node.children;
     let kids = [];
     for (const c of rawChildren) kids.push(...reduceCompChild(ts, c, opts));
-    if (sk === "SCREEN") kids = [...kids, ...reduceSlot(ts, opening, "banner", opts, true), ...reduceSlot(ts, opening, "footer", opts, false)];
+    // Fold any region {slot} attributes this element carries (trailing — the footer/pinned bar renders
+    // after the body). Foundation-F.c generalized this beyond `<Screen>`: the send-composer mounts its
+    // submit region in `BottomSheet.footer`, so a sheet (or any element) bearing a slot the regions
+    // reference folds it too. A `<Screen>` still folds its `footer` here identically to before (menu /
+    // cart / checkout), and an element with no such attribute is untouched.
+    for (const prop of opts.slotProps || []) kids = [...kids, ...reduceSlot(ts, opening, prop, opts)];
     if (sk) {
       if (!kids.some(hasAnyRegion)) return [];
       return sk !== "SCREEN" && kids.length === 1 ? kids : [{ kind: sk, axes: [], children: kids }];
     }
-    return kids.filter(hasAnyRegion); // non-scaffold: drop the wrapper, bubble regions
+    return kids.filter(hasAnyRegion); // non-scaffold: drop the wrapper, bubble regions (incl. a slot's)
   }
   return [];
 }
@@ -510,7 +526,7 @@ function reduceExprComp(ts, e, opts) {
   return [];
 }
 
-function reduceSlot(ts, opening, prop, opts, leading) {
+function reduceSlot(ts, opening, prop, opts) {
   const e = attrExpr(ts, opening, prop);
   if (!e) return [];
   const reduced = reduceExprComp(ts, e, opts).filter(hasAnyRegion);
@@ -522,11 +538,15 @@ function reduceSlot(ts, opening, prop, opts, leading) {
 function optsFromRegions(regions, side) {
   const slotRegion = {};
   for (const r of regions) if (r.locator?.slot) slotRegion[r.locator.slot] = r.region;
+  // The set of slot-attribute names the regions anchor on — folded on ANY element that carries one
+  // (Foundation-F.c), not just `<Screen>`. Empty for screens with no `{slot}` region (a pure no-op).
+  const slotProps = [...new Set(regions.filter((r) => r.locator?.slot).map((r) => r.locator.slot))];
   if (side === "mock") {
     return {
       elementRegion: (name) => regions.find((r) => r.locator?.el === name)?.region ?? null,
       exprRegion: () => null, // rebound in mockCompositionTree with the injected `ts` module
       slotRegion,
+      slotProps,
     };
   }
   return {
@@ -535,6 +555,7 @@ function optsFromRegions(regions, side) {
     elementRegion: (name) => regions.find((r) => r.componentName === name)?.region ?? null,
     exprRegion: () => null,
     slotRegion: {},
+    slotProps,
   };
 }
 

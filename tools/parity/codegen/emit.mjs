@@ -67,8 +67,12 @@ function locateBabel(ast, locator) {
     }
     return false;
   };
+  // The terminal tag name — for a member tag (`K.FauxMap`, JSXMemberExpression) it is the `.property`,
+  // matching the Foundation-F.b idiom (transpile collapses `<Ns.Name>`→`<Name>`) and the normalizer's
+  // `tagName`, so `{el:"FauxMap"}` anchors the send-composer's map canvas the same on gen and check.
+  const tagOf = (n) => (n.type === "JSXMemberExpression" ? n.property.name : n.name);
   if (locator.el) {
-    traverse(ast, { JSXElement(path) { if (!found && path.node.openingElement.name.name === locator.el) found = path.node; } });
+    traverse(ast, { JSXElement(path) { if (!found && tagOf(path.node.openingElement.name) === locator.el) found = path.node; } });
   } else if (locator.map) {
     traverse(ast, {
       CallExpression(path) {
@@ -81,10 +85,12 @@ function locateBabel(ast, locator) {
       },
     });
   } else if (locator.slot) {
+    // Foundation-F.c: a slot region anchors on the first element carrying the JSX-valued attribute,
+    // not only `<Screen>` — the send-composer's submit lives in `MapSheet.footer`. `<Screen footer=…>`
+    // (menu / cart / checkout) still matches identically (it is an element with the attribute).
     traverse(ast, {
       JSXOpeningElement(path) {
         if (found) return;
-        if (path.node.name.name !== "Screen") return;
         const a = path.node.attributes.find((x) => x.type === "JSXAttribute" && x.name.name === locator.slot);
         if (a && a.value && a.value.type === "JSXExpressionContainer") found = a.value.expression;
       },
@@ -204,12 +210,17 @@ function assembleFile(spec, body) {
   // The app DS primitives codegen may emit. Every kit primitive the transpiler keeps by name (or
   // remaps to) must be import-able from `src/ui` — batch 2 flagged that Skeleton/Money were missing,
   // and the mock→RN foundation adds the four kit primitives (PriceMath/Banner/CoverPhoto/MenuRow).
-  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  // `ComposeMap`/`BottomSheet` are the Foundation-F.c map/sheet realizations (`FauxMap`→`ComposeMap`,
+  // `MapSheet`→`BottomSheet` via DS_RENAME); both are re-exported from `src/ui` so a map/sheet region
+  // fragment imports them from the one DS specifier like every other primitive.
+  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark", "ComposeMap", "BottomSheet"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
   // Region fragments type their data seam against the DS primitives' item types (e.g. the menu-rows
-  // fragment's `rows: MenuRowItem[]`), so those types must be import-able from `src/ui` too.
-  const uiTypes = ["MenuRowItem", "MenuCategory", "FoodThumbCategory", "BannerTone"].filter((tn) => new RegExp(`\\b${tn}\\b`).test(spec.propsType || ""));
+  // fragment's `rows: MenuRowItem[]`), so those types must be import-able from `src/ui` too. The
+  // map-canvas region types its seam against `ComposeMap`'s controlled-point contract (PickedPoint /
+  // ActiveSlot), re-exported from `src/ui` alongside the component.
+  const uiTypes = ["MenuRowItem", "MenuCategory", "FoodThumbCategory", "BannerTone", "PickedPoint", "ActiveSlot"].filter((tn) => new RegExp(`\\b${tn}\\b`).test(spec.propsType || ""));
 
   const lines = [];
   const sourceLabel = spec.isFragment ? `${spec.mockComponent} :: region ${spec.region}` : spec.component;

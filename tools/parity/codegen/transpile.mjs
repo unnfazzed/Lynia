@@ -38,7 +38,17 @@ const TAG = {
 // (`Dove`/`Lockup` from the mock's LyniaSupport) maps to the app's `DoveMark`/`BrandLockup`; the
 // normalizer (normalize.mjs KIND) folds each old→new name pair to the SAME canonical kind so mock and
 // view stay congruent by construction.
-const DS_RENAME = { Top: "AppBar", Lockup: "BrandLockup", Dove: "DoveMark" };
+//
+// Foundation-F.c — MAP/SHEET remaps. The map-anchored screens (send-composer, tracking, food
+// track_way, rider board) root in the mock's kit map/sheet placeholders: `K.FauxMap`/`K.HarareMap` are
+// stylised map stand-ins, `K.MapSheet` the two-snap bottom sheet over the full-bleed map. The app
+// realizes the map as `ComposeMap` (customer compose) / `LiveMap` (tracking) and the sheet as
+// `BottomSheet`. Fold the mock tag → the app component here (transpiler) AND fold both to ONE canonical
+// KIND in normalize.mjs (`fauxmap`/`hararemap`/`composemap`→MAP, `mapsheet`/`bottomsheet`→SHEET), the
+// Lockup→BrandLockup precedent — so a fragment rooted at (or containing) the map/sheet stays congruent
+// by construction. `FauxMap`/`HarareMap` both fold to `ComposeMap`: a region can override per-screen via
+// its bind (e.g. tracking wiring `LiveMap`) but the default realization is the compose map.
+const DS_RENAME = { Top: "AppBar", Lockup: "BrandLockup", Dove: "DoveMark", FauxMap: "ComposeMap", HarareMap: "ComposeMap", MapSheet: "BottomSheet" };
 // `Pad` is a screen-edge-padding <div> in the kit; reproduce that as a padded View.
 const PAD_BASE = () => [
   ["padding", tokenMember("space.screen")],

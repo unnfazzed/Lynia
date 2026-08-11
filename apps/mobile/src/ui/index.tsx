@@ -33,6 +33,11 @@ export { MenuRow, type MenuRowItem, type MenuCategory } from "./MenuRow";
 export { EtaLine } from "./EtaLine";
 export { ShopLogo } from "./ShopLogo";
 export { FoodThumb, type FoodThumbCategory } from "./FoodThumb";
+// Map/sheet realizations (Foundation-F.c parity remaps: FauxMap→ComposeMap, MapSheet→BottomSheet).
+// Re-exported here so a generated map/sheet region fragment imports them from the one DS specifier.
+export { ComposeMap, type ActiveSlot } from "./ComposeMap";
+export { BottomSheet } from "./BottomSheet";
+export type { PickedPoint } from "./MapPicker";
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
