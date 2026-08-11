@@ -9,6 +9,7 @@ import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { AppBar, Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
+import { FoodListErrorView } from "./food-list.error.view";
 import { FoodListLoadingView } from "./food-list.loading.view";
 
 /** R1·1..R1·5 restaurant list — five states (default / loading / empty / error / offline). */
@@ -46,6 +47,16 @@ export default function RestaurantListScreen(): React.ReactElement {
   // fresh) exists the header + list render below exactly as before.
   if (feed.isFetching && !(feed.restaurants && feed.restaurants.length > 0)) {
     return <FoodListLoadingView />;
+  }
+
+  // R1·4 list_error — cold offline/fetch failure: the fetch settled in error with NO data to show (not
+  // even a stale copy). The mock draws a full-screen offline state (`<Screen banner={<Banner offline/>}>`
+  // → AppBar → Card → EmptyState with a Try-again), so replace the whole screen — matching RC.list_error
+  // by construction (structural-snapshot guardrail). Composition, not a rewrite: the retry is still
+  // feed.refetch and the state LOGIC is unchanged; only its look moves to the generated view. A stale
+  // copy (showingStale) keeps the list + inline retry below instead — that is a different, honest state.
+  if (feed.isError && !(feed.restaurants && feed.restaurants.length > 0)) {
+    return <FoodListErrorView onBack={() => router.back()} onRetry={feed.refetch} loading={feed.isFetching} />;
   }
 
   const all = feed.restaurants ?? [];
@@ -142,14 +153,11 @@ export default function RestaurantListScreen(): React.ReactElement {
             </EmptyState>
           </Card>
         )
-      ) : feed.hasLiveData ? (
-        <EmptyState icon="utensils" title="No restaurants deliver here yet" message="We're onboarding kitchens in your area — check back soon." />
       ) : (
-        // Kit R1·4 `list_error` (r-customer-a.jsx:146-148): same shape as the empty state, an honest
-        // reason, and one retry.
-        <EmptyState icon="wifi-off" title="We can't reach the kitchens" message="Your connection dropped. Nothing was ordered and nothing was charged.">
-          <Button label="Try again" onPress={feed.refetch} loading={feed.isFetching} />
-        </EmptyState>
+        // No restaurants to show and it isn't an error (the cold error state is the full-screen
+        // FoodListErrorView early-return above) — a successful-but-empty corridor, or the rare settled
+        // idle state. Either way there is genuinely nothing here yet.
+        <EmptyState icon="utensils" title="No restaurants deliver here yet" message="We're onboarding kitchens in your area — check back soon." />
       )}
     </Screen>
   );

@@ -9,7 +9,7 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { ActivityIndicator, FlatList } from "react-native";
-import { Skeleton } from "../../../src/ui";
+import { Banner, EmptyState, Skeleton } from "../../../src/ui";
 
 // The adopted RC.list_loading view renders <Skeleton/>, whose Animated pulse is an infinite loop, and
 // the screen's useNow() runs a 60s interval — both would fire after Jest teardown on the real clock.
@@ -48,6 +48,14 @@ const mockFeedStub = {
   hasMore: false,
   isLoadingMore: false,
   loadMore: jest.fn(),
+};
+const resetFeedStub = () => {
+  mockFeedStub.restaurants = mockRestaurants;
+  mockFeedStub.showingStale = false;
+  mockFeedStub.isFetching = false;
+  mockFeedStub.isError = false;
+  mockFeedStub.hasLiveData = true;
+  mockFeedStub.refetch.mockClear();
 };
 jest.mock("../../../src/query/use-restaurants", () => ({
   useRestaurantListFeed: () => mockFeedStub,
@@ -116,6 +124,59 @@ describe("RestaurantListScreen (RC.list_loading: cold load renders the adopted s
       tree = renderer.create(<RestaurantListScreen />);
     });
     expect(tree!.root.findByType(FlatList).props.data).toHaveLength(mockRestaurants.length);
+  });
+});
+
+describe("RestaurantListScreen (RC.list_error: cold fetch failure renders the adopted offline view)", () => {
+  let tree: renderer.ReactTestRenderer | null = null;
+  afterEach(() => {
+    if (tree) act(() => tree!.unmount());
+    tree = null;
+    resetFeedStub();
+  });
+
+  it("renders FoodListErrorView (offline Banner + retry EmptyState) and no FlatList on a cold error", () => {
+    // Cold error: the fetch settled in error with NO data (not even a stale copy).
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isError = true;
+    mockFeedStub.isFetching = false;
+    mockFeedStub.hasLiveData = false;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    // The adopted RC.list_error view draws the mock's offline Banner slot + the retry EmptyState…
+    expect(tree!.root.findAllByType(Banner).length).toBeGreaterThan(0);
+    expect(tree!.root.findAllByType(EmptyState).length).toBeGreaterThan(0);
+    // …and the data-state FlatList must NOT mount.
+    expect(tree!.root.findAllByType(FlatList)).toHaveLength(0);
+  });
+
+  it("preserves retry behavior — the EmptyState's Try again button calls feed.refetch", () => {
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isError = true;
+    mockFeedStub.isFetching = false;
+    mockFeedStub.hasLiveData = false;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    act(() => {
+      tree!.root.findByProps({ label: "Try again" }).props.onPress();
+    });
+    expect(mockFeedStub.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT show the cold error view when a stale copy exists (list + inline retry render instead)", () => {
+    // showingStale means feed.restaurants is the stale copy — data exists, so the error screen must not
+    // take over; the honest 'showing what we had' path keeps the list.
+    mockFeedStub.restaurants = mockRestaurants;
+    mockFeedStub.showingStale = true;
+    mockFeedStub.isError = true;
+    mockFeedStub.hasLiveData = false;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    expect(tree!.root.findByType(FlatList).props.data).toHaveLength(mockRestaurants.length);
+    expect(tree!.root.findAllByType(Banner)).toHaveLength(0);
   });
 });
 

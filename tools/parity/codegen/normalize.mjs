@@ -41,6 +41,20 @@ const TRANSPARENT = new Set(["pressable", "touchableopacity", "touchablewithoutf
 // the principled dual of the transpiler's content-aware seam, on the read side.
 const VIRTUAL_LIST = new Set(["flatlist", "sectionlist", "virtualizedlist", "flashlist", "animated.flatlist", "animated.sectionlist"]);
 
+// STRUCTURAL SLOTS — a primitive's JSX-VALUED ATTRIBUTE that renders as part of the layout tree, not a
+// data value. The normalizer walks element CHILDREN only, so slotted content (`<Screen banner={<Banner/>}>`)
+// is structurally INVISIBLE: a mock with a banner and a view WITHOUT one both reduce to the same tree,
+// and the guardrail would certify the missing banner as congruent. This map lists, per canonical KIND,
+// the slot props to fold INTO the node's children at the position the primitive renders them, so slotted
+// content IS verified. Applied identically to the mock and the view (same nodeOf), keeping parity by
+// construction — a slot present in the mock must be present, and structurally equal, in the view.
+//   `position`: "leading" (rendered above the children — the kit's Screen draws `banner` before the body)
+//               or "trailing" (rendered after the children).
+const STRUCTURAL_SLOTS = new Map(Object.entries({
+  // Screen/AppScreen scaffold: status bar → BANNER → body → footer. `banner` is a leading child.
+  SCREEN: [{ prop: "banner", position: "leading" }],
+}));
+
 function tagName(ts, node) {
   const nameNode = node.tagName;
   if (ts.isPropertyAccessExpression(nameNode)) return nameNode.name.text; // React.Fragment
@@ -137,7 +151,28 @@ function nodeOf(ts, el) {
   if (TRANSPARENT.has(name.toLowerCase())) {
     return children.length === 1 ? children[0] : { kind: "GROUP", axes: [], children, __transparent: true };
   }
-  return { kind: kindOf(ts, name, hasElementChild, hasTextChild), axes: axesOf(ts, opening), children };
+  const kind = kindOf(ts, name, hasElementChild, hasTextChild);
+  return { kind, axes: axesOf(ts, opening), children: withSlots(ts, kind, opening, children) };
+}
+
+/**
+ * Fold this element's STRUCTURAL SLOT props (JSX-valued attributes the primitive renders as layout —
+ * e.g. `Screen`'s `banner`) into its children at the declared position, so slotted content is VISIBLE
+ * to the structural diff on both the mock and the view. A no-op for elements with no configured slot or
+ * an unset slot, so nothing that doesn't draw a slot is affected.
+ */
+function withSlots(ts, kind, opening, children) {
+  const slots = STRUCTURAL_SLOTS.get(kind);
+  if (!slots) return children;
+  let out = children;
+  for (const { prop, position } of slots) {
+    const slotExpr = attrExpr(ts, opening, prop);
+    if (!slotExpr) continue;
+    const slotNodes = fromExpression(ts, slotExpr);
+    if (!slotNodes.length) continue;
+    out = position === "trailing" ? [...out, ...slotNodes] : [...slotNodes, ...out];
+  }
+  return out;
 }
 
 function childrenOf(ts, list) {
