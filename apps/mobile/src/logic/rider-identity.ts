@@ -26,6 +26,13 @@ export interface RiderIdentity {
   ratingAvg: string;
   ratingCount: number;
   tripsCount: number;
+  // #671 (food only): the assigned rider's vehicle/plate/KYC, sourced from the food order read
+  // (`MerchantOrderResponse.rider`), not from a cached offer — a food rider is auto-dispatched, so
+  // there is no offer to cache from. Optional so the parcel SecureStore path (which never sets them)
+  // is unaffected; the food tracker builds this shape live and does not persist it.
+  plate?: string | null;
+  vehicleInfo?: string | null;
+  kycVerified?: boolean;
 }
 
 export async function saveRiderIdentity(identity: RiderIdentity): Promise<void> {

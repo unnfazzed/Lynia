@@ -956,6 +956,34 @@ export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
 export const MerchantDebtStatus = z.enum(["open", "settled_cash", "settled_goods", "written_off"]);
 export type MerchantDebtStatus = z.infer<typeof MerchantDebtStatus>;
 
+/** #671: the assigned rider's public identity, surfaced on a food order so the map-anchored live
+ *  tracker can draw the "rider secured" card (RC.track_secured: name · plate · vehicle · rating ·
+ *  KYC). Populated ONLY once a rider is assigned (`riderId != null`), else the whole block is
+ *  omitted. Unlike the parcel path — which caches the chosen offer's rider identity on-device — a
+ *  food rider is auto-dispatched with no offer-selection moment, so identity must come from the
+ *  order read itself. `ratingAvg` is the Prisma Float sent as a raw JSON number (like the offer
+ *  path's `rider.ratingAvg`), not the Decimal-as-string the fare fields use. Public profile data
+ *  only (name/photo/rating/vehicle/plate) — no contact PII; the phone stays on the masked
+ *  `counterpartyPhone` reveal path. */
+export const FoodOrderRiderIdentity = z
+  .object({
+    profileId: z.string().uuid(),
+    firstName: z.string(),
+    lastName: z.string(),
+    photoUrl: z.string().nullable(),
+    ratingAvg: z.number(),
+    ratingCount: z.number().int(),
+    tripsCount: z.number().int(),
+    /** Free-text vehicle description (`riders.vehicle_info`) — e.g. "Red Honda Ace". */
+    vehicleInfo: z.string().nullable(),
+    /** Registration plate (`riders.bike_reg`) — the "AEE 4471" chip the tracking mock draws. */
+    plate: z.string().nullable(),
+    /** Derived from `riders.kyc_status === "verified"` — the trust badge on the rider card. */
+    kycVerified: z.boolean(),
+  })
+  .strict();
+export type FoodOrderRiderIdentity = z.infer<typeof FoodOrderRiderIdentity>;
+
 /** Shared shape both the customer's order view and the merchant's queue card render. Every
  *  timestamp is an ISO-8601 string (server-authoritative; the client never computes one). */
 export const MerchantOrderResponse = z
@@ -990,6 +1018,10 @@ export const MerchantOrderResponse = z
     // point `status`/`merchantPhase` have already moved on (assigned, merchantPhase cleared) — this
     // stays the one place a poller can see WHO, without a second round-trip to the generic order read.
     riderId: z.string().uuid().nullable(),
+    // #671: the assigned rider's public identity block (name/photo/rating/vehicle/plate/KYC) for the
+    // food live tracker's "rider secured" card. Omitted until a rider is assigned (see A-O14 omit
+    // note below); optional so an OLD client that never reads it is unaffected (additive contract).
+    rider: FoodOrderRiderIdentity.nullable().optional(),
     dispatchAttempt: z.number().int(),
     dispatchOfferExpiresAt: z.string().nullable(),
     noRiderHoldAt: z.string().nullable(),

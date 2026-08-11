@@ -104,10 +104,7 @@ export const PARITY_STATUS = {
     reason: "prompt-send pay — the payment-prompt send/confirm state is driven by a live payment request on the order; not renderable from a static fixture",
   }, // Waiting to be confirmed
   "RC.track_prep": { status: "PENDING" }, // Prep countdown
-  "RC.track_secured": {
-    status: "BACKEND_GATED",
-    reason: "food rider-identity — the assigned rider block is populated from live order/rider (KYC) data the static fixture harness cannot stand up",
-  }, // Rider secured
+  "RC.track_secured": { status: "PENDING" }, // Rider secured — #671 lifted the gate: the rider's identity (name·plate·vehicle·rating·KYC) is now a plain field on the food order read (MerchantOrderResponse.rider), so the tracker renders it from live data and a static fixture can stand it up. Adopted; parity target+fixture wiring pending.
   "RC.handoff": { status: "PENDING" }, // Pay at the door
   "RC.handoff_wait": { status: "PENDING" }, // Waiting for rider confirm
   "RC.handoff_code": { status: "PENDING" }, // Both confirmed · code

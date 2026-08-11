@@ -44,6 +44,22 @@ import { isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "
 const ORDER_WITH_ITEMS_INCLUDE = {
   merchantItems: true,
   merchant: { select: { location: true, ownerProfile: { select: { phone: true } } } },
+  // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
+  // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
+  // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
+  rider: {
+    select: {
+      profileId: true,
+      bikeReg: true,
+      vehicleInfo: true,
+      ratingAvg: true,
+      ratingCount: true,
+      tripsCount: true,
+      kycStatus: true,
+      photoUrl: true,
+      profile: { select: { firstName: true, lastName: true } },
+    },
+  },
 } satisfies Prisma.OrderInclude;
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
 
@@ -815,6 +831,22 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchantPaymentConfirmedAt: order.merchantPaymentConfirmedAt?.toISOString() ?? null,
       // C3: dispatch view (see MerchantOrderResponse's docstring).
       riderId: order.riderId,
+      // #671: the assigned rider's public identity for the food live tracker. Populated only once a
+      // rider is joined (order.rider is null pre-dispatch); omitted otherwise via the null-omit pass.
+      rider: order.rider
+        ? {
+            profileId: order.rider.profileId,
+            firstName: order.rider.profile.firstName,
+            lastName: order.rider.profile.lastName,
+            photoUrl: order.rider.photoUrl,
+            ratingAvg: order.rider.ratingAvg,
+            ratingCount: order.rider.ratingCount,
+            tripsCount: order.rider.tripsCount,
+            vehicleInfo: order.rider.vehicleInfo,
+            plate: order.rider.bikeReg,
+            kycVerified: order.rider.kycStatus === "verified",
+          }
+        : null,
       dispatchAttempt: order.dispatchAttempt,
       dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
       noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
@@ -854,6 +886,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 /** A-O14 (LC-A06): fields `toResponse()` omits from the JSON payload, rather than serializing as an
  *  explicit `null`, whenever they don't apply to the order's current state. */
 const RESPONSE_NULL_OMIT_FIELDS = [
+  // #671: the rider-identity block is null on every poll before a rider is assigned — omit it, since
+  // the consumer reads it via `??`/truthy (same A-O14 rationale as the handshake/debt fields).
+  "rider",
   "cashHandshakeAmount",
   "customerCashConfirmedAt",
   "riderCashConfirmedAt",

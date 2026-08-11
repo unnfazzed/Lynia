@@ -131,6 +131,39 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
             ratingCount={props.riderIdentity.ratingCount}
             tripsCount={props.riderIdentity.tripsCount}
           />
+          {/* #671 (RC.track_secured): plate chip · vehicle · KYC badge under the rider mini. The
+              plate is the ink chip the mock draws ("AEE 4471"); vehicle + verified badge only render
+              when present, so a rider with no vehicle_info / unverified KYC degrades cleanly. */}
+          {props.riderIdentity.plate || props.riderIdentity.vehicleInfo || props.riderIdentity.kycVerified ? (
+            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+              {props.riderIdentity.plate ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "800",
+                    letterSpacing: 0.6,
+                    color: tokens.color.onAccent,
+                    backgroundColor: tokens.color.ink,
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    fontVariant: ["tabular-nums"],
+                  }}
+                >
+                  {props.riderIdentity.plate}
+                </Text>
+              ) : null}
+              {props.riderIdentity.vehicleInfo ? (
+                <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{props.riderIdentity.vehicleInfo}</Text>
+              ) : null}
+              {props.riderIdentity.kycVerified ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                  <Icon name="circle-check" size={13} color={tokens.color.accentText} />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>Verified</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
       {isFood && eta ? (
