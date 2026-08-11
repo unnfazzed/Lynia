@@ -31,6 +31,16 @@ if (!app) {
   process.exit(2);
 }
 
+// #674 seeded parity: API_BASE_URL is forwarded (env spread below) — set it to a seeded, migrated
+// instance (a local api on :3000 after `pnpm db:seed`, or a hosted PARITY_MERCHANT_URL/PARITY_ADMIN_URL
+// backend) to render POPULATED merchant-tablet + admin states; leave it unset for the offline shell.
+const seededApi = process.env.API_BASE_URL;
+console.error(
+  seededApi
+    ? `serve-web ${which} on :${app.port} → seeded API_BASE_URL=${seededApi} (populated states)`
+    : `serve-web ${which} on :${app.port} → API_BASE_URL unset (offline shell; set it + \`pnpm db:seed\` for populated states)`,
+);
+
 // --webpack: both apps compile `@lynia/shared` (ESM source) via transpilePackages, and Next 16's
 // default Turbopack dev mis-labels it CommonJS ("module format … not matching") → 500 on every page.
 // The apps' own build scripts use `next build --webpack` for the same reason; match that in dev.
