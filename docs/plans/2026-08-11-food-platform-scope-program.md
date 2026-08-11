@@ -108,7 +108,14 @@ component, re-check for an open alignment PR touching the same file.
   in `rate()` from `foodScore` like the rider aggregate — no P1-6 weighting, a display average not a
   supply gate) + `Merchant.prepBaselineMinutes` (nullable); migration `0048_restaurant_discovery_rating`;
   `RestaurantListItem` gains `ratingAvg` (null while unrated — no fake "0"), `ratingCount`,
-  `prepBaselineMinutes`. **(b) dish index — next.**
+  `prepBaselineMinutes`.
+- **(b) delivered 2026-08-11:** `GET /restaurants/search?q=` → `RestaurantSearchResponse` = PLACES
+  (`RestaurantListItem[]` by name) + DISHES (`RestaurantSearchDish[]` = dish name/price/photo +
+  merchant id/name, across pilot merchants' non-draft menu items via case-insensitive name/description
+  match, pilot-bounded up front). No new column/migration — searches `merchant_dishes.name` directly
+  (a pg_trgm index is a future scale item, not needed at pilot size); blank/1-char queries return
+  empty. Client fn `searchRestaurants` added; DISHES-section pixel adoption is the alignment lane's
+  (RC.search is `PENDING`). **#673 backend complete.**
 
 ### #670 — Payment-prompt push flow  ‹money path›
 - **Goal:** `RC.pay_push` (send prompt) → `RC.pay_wait` (pending) → `RC.pay_confirmed`
@@ -200,7 +207,7 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 | — | Program plan doc | ✅ landed | #679 |
 | #671 | Food rider identity | ✅ merged | #679 |
 | #672 | Dual ratings + tags | ✅ merged | #681 |
-| #673 | Discovery data model | 🟡 PR open — (a) rating+prep; (b) dish index next | — |
+| #673 | Discovery data model | 🟡 PR open — (a) rating+prep #684 merged; (b) dish search | — |
 | #670 | Payment push flow | ⬜ not started | — |
 | #674 | Seeded parity instance | ⬜ not started | — |
 

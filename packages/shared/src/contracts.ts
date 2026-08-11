@@ -860,6 +860,30 @@ export const RestaurantListResponse = z
   .strict();
 export type RestaurantListResponse = z.infer<typeof RestaurantListResponse>;
 
+/** #673: a search hit on a specific dish, across all pilot restaurants — the mock's cross-restaurant
+ *  "DISHES" section under search (r-customer-a.jsx). Carries the dish's restaurant id + name so the
+ *  row renders "Dish · Restaurant · $price" and can deep-link to that restaurant's menu. */
+export const RestaurantSearchDish = z
+  .object({
+    dishId: z.string().uuid(),
+    name: z.string(),
+    priceUsd: z.number(),
+    photoUrl: z.string().nullable(),
+    merchantId: z.string().uuid(),
+    merchantName: z.string(),
+  })
+  .strict();
+export type RestaurantSearchDish = z.infer<typeof RestaurantSearchDish>;
+
+/** #673: cross-restaurant search result — matching PLACES (restaurants) + DISHES (menu items across
+ *  the pilot corridor). Both arrays are empty for a blank / too-short query (the search screen only
+ *  shows results once the customer types). This is the server dish index the client search screen
+ *  noted it was missing (it could only filter the already-loaded restaurant list before). */
+export const RestaurantSearchResponse = z
+  .object({ restaurants: z.array(RestaurantListItem), dishes: z.array(RestaurantSearchDish) })
+  .strict();
+export type RestaurantSearchResponse = z.infer<typeof RestaurantSearchResponse>;
+
 /** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`
  *  (N-14 daily auto-reset — a past timestamp reads as back in stock, no reset job needed). Draft
  *  (photoless) dishes never appear here at all (D-31). */
