@@ -33,6 +33,13 @@ const KIND = new Map(Object.entries({
   svg: "SVG", path: "SVG", circle: "SVG", rect: "SVG", g: "SVG", line: "SVG", polyline: "SVG", polygon: "SVG",
 }));
 const TRANSPARENT = new Set(["pressable", "touchableopacity", "touchablewithoutfeedback", "touchablehighlight", "fragment"]);
+// Virtualized lists — Bucket-C equivalence. A `<FlatList data renderItem={item => <Row/>} />` renders
+// the SAME element tree as the mock's `{items.map(item => <Row/>)}`: a virtualized list is a windowed
+// map, structurally identical (it just mounts a sliding window of the identical per-item subtree). So
+// a virtual list normalizes to a MAP node whose child is the renderItem's returned subtree — letting a
+// data-list state adopt its mock WITHOUT the app reverting virtualization to a literal `.map`. This is
+// the principled dual of the transpiler's content-aware seam, on the read side.
+const VIRTUAL_LIST = new Set(["flatlist", "sectionlist", "virtualizedlist", "flashlist", "animated.flatlist", "animated.sectionlist"]);
 
 function tagName(ts, node) {
   const nameNode = node.tagName;
@@ -85,10 +92,37 @@ function isBlankText(ts, c) {
   return ts.isJsxText(c) && c.text.trim() === "";
 }
 
+/** Read a JSX attribute's expression initializer (`prop={expr}`) → the expression node, or null. */
+function attrExpr(ts, opening, attrName) {
+  const attrs = opening.attributes?.properties || [];
+  const a = attrs.find((x) => ts.isJsxAttribute(x) && x.name.getText() === attrName);
+  const init = a?.initializer;
+  return init && ts.isJsxExpression(init) ? init.expression : null;
+}
+
+/**
+ * A virtualized list (`FlatList`/`SectionList`/…) → a MAP node, so it compares structurally-equal to
+ * the mock's `{items.map(item => <Row/>)}`. The list's `renderItem`/`renderSectionHeader` callback IS
+ * the map body: its returned JSX is the per-item subtree (`renderItem={({ item }) => <Row/>}`), exactly
+ * what `.map` yields. Returns null when there is no resolvable render callback (so the caller treats the
+ * element as an ordinary BOX rather than pretending it is a list).
+ */
+function virtualListToMap(ts, opening) {
+  const fn = attrExpr(ts, opening, "renderItem") || attrExpr(ts, opening, "renderSectionHeader");
+  if (!fn || !(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return null;
+  const nodes = jsxFrom(ts, fn.body);
+  if (!nodes.length) return null;
+  return { kind: "MAP", axes: [], children: nodes };
+}
+
 /** Build a normalized node from a JsxElement / JsxSelfClosingElement. */
 function nodeOf(ts, el) {
   const opening = ts.isJsxSelfClosingElement(el) ? el : el.openingElement;
   const name = tagName(ts, opening);
+  if (VIRTUAL_LIST.has(name.toLowerCase())) {
+    const asMap = virtualListToMap(ts, opening);
+    if (asMap) return asMap;
+  }
   const rawChildren = ts.isJsxSelfClosingElement(el) ? [] : el.children;
   const kids = rawChildren.filter((c) => !isBlankText(ts, c));
   // A `{…}` child that yields JSX elements (a `.map()`, a ternary of elements) makes this a container,
