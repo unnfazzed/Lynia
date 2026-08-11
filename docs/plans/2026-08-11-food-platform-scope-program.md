@@ -170,8 +170,8 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 
 | # | Feature | State | PR |
 |---|---|---|---|
-| — | Program plan doc | ✅ landed | — |
-| #671 | Food rider identity | 🟡 PR open | — |
+| — | Program plan doc | ✅ landed | #679 |
+| #671 | Food rider identity | 🟡 PR open (draft) | #679 |
 | #672 | Dual ratings + tags | ⬜ not started | — |
 | #673 | Discovery data model | ⬜ not started | — |
 | #670 | Payment push flow | ⬜ not started | — |
