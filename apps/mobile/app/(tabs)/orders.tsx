@@ -3,13 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { getActiveCustomerOrder, type OrderHistoryRow } from "../../src/api/orders";
-import { LIVE_ORDER_STEP_COUNT, liveOrderCardCopy, liveOrderStepIndex } from "../../src/logic/home-feed";
+import { getActiveCustomerOrder, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
 import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { ActiveOrderCheckFailedBanner, AppScreen, Button, EmptyState, Heading, Icon, LiveOrderCard, SkeletonRows, statusPillLabel, useActiveOrderCheckGate } from "../../src/ui";
+import { ActiveOrderCheckFailedBanner, AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, useActiveOrderCheckGate } from "../../src/ui";
 
 const ACTIVE_ORDER_KEY = ["activeCustomerOrder"] as const;
 
@@ -68,6 +67,37 @@ function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): 
   );
 }
 
+// Kit RC.orders (r-customer-a.jsx:48-57): the pinned live order is a compact accent card — a round
+// icon avatar keyed off `orderType`, the order's headline, its status line in accent-green, and the
+// fare. Not the home tab's stepper LiveOrderCard: the mock draws no progress strip here.
+function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void }): React.ReactElement {
+  const isFood = o.orderType === "merchant";
+  // The generic OrderSnapshot carries no merchant name, so a food job reads as "Restaurant order";
+  // a parcel reads as its route (matching the EARLIER OrderRow anatomy).
+  const title = isFood ? "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
+  const fare = o.agreedFare ?? o.proposedFare;
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open live order ${title}`} style={{ marginBottom: tokens.space.md }}>
+      <Card accent style={{ padding: 12, marginBottom: 0 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
+            <Icon name={isFood ? "utensils" : "package"} size={17} color={tokens.color.accentText} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>
+              {title}
+            </Text>
+            <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginTop: 1 }}>
+              {statusPillLabel(o.status)}
+            </Text>
+          </View>
+          <Money v={fare} size={14} />
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
 /**
  * Orders tab (plan §5 A3) — absorbs `app/history/`'s content directly instead of bridging out to
  * it: one cross-service list, live order pinned on top. `app/history/index.tsx` itself is left
@@ -116,17 +146,11 @@ export default function OrdersTabScreen(): React.ReactElement {
         contentContainerStyle={{ padding: tokens.space.screen, paddingBottom: tokens.space.xl }}
         showsVerticalScrollIndicator={false}
       >
-        <Heading>Your orders</Heading>
+        {/* Kit RC.orders: the screen title is 19px/700, not the 24px shared Heading. */}
+        <Text style={{ fontSize: 19, fontWeight: "700", color: tokens.color.ink, marginBottom: 10 }}>Your orders</Text>
 
         {activeOrder ? (
-          <View style={{ marginBottom: tokens.space.md }}>
-            <LiveOrderCard
-              {...liveOrderCardCopy(activeOrder, statusPillLabel(activeOrder.status))}
-              step={liveOrderStepIndex(activeOrder.status)}
-              steps={LIVE_ORDER_STEP_COUNT}
-              onPress={() => router.push(`/order/${activeOrder.id}`)}
-            />
-          </View>
+          <ActiveOrderCard o={activeOrder} onPress={() => router.push(`/order/${activeOrder.id}`)} />
         ) : activeOrderCheckFailed ? (
           // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
           // hits an error on this exact check must see a way back to it, not just the earlier list —

@@ -5,7 +5,8 @@ import { Image, Pressable, Text, View } from "react-native";
 import { avatarTint } from "../../logic/avatar";
 
 const CARD_WIDTH = 172;
-const PHOTO_HEIGHT = 88;
+// Kit RestaurantCard (r-parts.jsx RC_HOME_VENUES / DS RestaurantCard): 84px photo band.
+const PHOTO_HEIGHT = 84;
 
 /**
  * Home "Restaurants near you" card (plan §5 A2, ported from
@@ -77,7 +78,7 @@ export function RestaurantCard({
             </View>
           ) : null}
         </View>
-        <View style={{ padding: 10 }}>
+        <View style={{ paddingTop: 7, paddingHorizontal: 10, paddingBottom: 9 }}>
           <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>
             {restaurant.name}
           </Text>

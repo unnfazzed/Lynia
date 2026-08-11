@@ -127,10 +127,11 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
-  it("default: an active order pins the LiveOrderCard above the earlier list", async () => {
+  it("default: an active order pins the compact live-order card above the earlier list", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue({
       id: "order-1",
       status: "en_route_pickup",
+      orderType: "parcel",
       agreedFare: null,
       proposedFare: "12.00",
       pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
@@ -139,6 +140,9 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
-    expect(has(activeTree, /Delivery in progress/)).toBe(true);
+    // Kit RC.orders compact card: route headline, accent-green status line, and the fare — no stepper.
+    expect(has(activeTree, /Home/)).toBe(true);
+    expect(has(activeTree, /Heading to pickup/)).toBe(true);
+    expect(has(activeTree, /\$12\.00/)).toBe(true);
   });
 });
