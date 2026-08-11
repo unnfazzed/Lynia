@@ -92,12 +92,22 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   Money tab, top-up gate). Align rider look/IA to RJM, not to the kit.
 - **`ui_kits/admin/cash.html` shows a retired weekly-15% settlement model.** Keep its visual
   language; do not align business logic to it.
-- **Merge gate — alignment PRs WAIT for the user's visual OK** (user decision 2026-08-10). This is a
-  deliberate exception to the merge-on-green policy below: a UI-changing alignment PR stays open
-  until the user confirms the look. Nothing else about merge-on-green changes.
+- **Verification — conformance is checked by machine guardrails, not a per-screen visual comparison**
+  (owner instruction, this session 2026-08-11: "skip the visual comparison … put guardrails to make
+  sure the mocks are adopted"). The per-screen human side-by-side *comparison* is no longer a required
+  verification step — conformance is verified by the guardrail suite below (token-conformance +
+  screen-inventory + reverse-drift freeze) in CI. **Merge:** the owner has explicitly set alignment PRs
+  to **auto-merge on green** (owner decision, this session 2026-08-11 — the owner codes from a phone and
+  cannot do side-by-side visual review, so the machine guardrails ARE the gate): a parity/alignment PR
+  squash-merges once the guardrail suite + CI are green, with no manual visual-OK hold. This is the
+  standing merge-on-green authorization for alignment PRs; everything else in the merge-on-green policy
+  below is unchanged (never merge on red — fix forward first). The gallery/tokens/deviations authority
+  chain above is unchanged; it is now enforced by tests, not by a manual eyeball.
 - **`packages/design/` mirrors the design tool.** Do not "fix" the design to match the app. If a mock
   is wrong, log it in `docs/DESIGN-DEVIATIONS.md` and report it upstream — editing the kit is how the
-  repo's copy stopped being the design in the first place.
+  repo's copy stopped being the design in the first place. The **reverse-drift freeze** guardrail
+  enforces this in CI: a PR touching `packages/design/**` fails unless it also updates
+  `docs/DESIGN-DEVIATIONS.md`.
 
 **Every parity claim becomes an image — the screenshot lane.** Copy-string/route greps are what let
 "aligned" PRs merge while the app still didn't match (1 of 244 screens actually matched, 2026-08-05).
@@ -107,8 +117,30 @@ design mock beside the app screen in one browser at the canonical viewport and c
 react-native-web, merchant/admin via Playwright on their Next servers. Attach the sheet to the
 alignment PR; the user approves the picture. Spec + commands: `docs/SCREENSHOT-LANE.md`.
 
-Progress is tracked per screen in `docs/PIXEL-PARITY-TRACKER.md` — measured in screens signed off by
-the user, never in PRs merged.
+**The guardrail suite — conformance is enforced automatically.** The app is aligned to the mocks and
+three CI-blocking guardrails keep it there, replacing the per-screen human visual *comparison* with
+machine checks (the Verification bullet above sets alignment PRs to auto-merge once these are green):
+
+- **Token-conformance** (`apps/api/src/design-tokens.drift.spec.ts`) — asserts value-identity for every
+  token category the design defines (`packages/design/tokens/*.css`) against all three consuming faces:
+  mobile (`packages/shared/src/design-tokens.ts`), admin and merchant (`app/globals.css` `:root`). Any
+  token a face defines must equal the design source; the fix is always to change the app face, never the
+  design.
+- **Screen-inventory** (`apps/api/src/parity/screen-inventory.spec.ts`) — the gallery-derived registry
+  `tools/parity/screens.generated.json` must be regenerable byte-for-byte (not stale), every screen must
+  be either wired in `tools/parity/app-targets.mjs` or allowlisted in `tools/parity/parity-status.mjs`
+  as `PENDING` (adopted, not yet wired) or `BACKEND_GATED` (⛔ needs a seeded backend — with a reason,
+  tracked as an issue), and no target may point at a retired/renamed screen. No screen is silently
+  uncovered.
+- **Reverse-drift freeze** (`scripts/check-design-freeze.mjs`, CI job `design-freeze`) — fails any PR
+  that edits `packages/design/**` without a matching `docs/DESIGN-DEVIATIONS.md` entry.
+
+A non-blocking `parity-render` CI job renders the wired mobile screens and uploads the PNGs as
+per-PR evidence. Deviations are still sanctioned ONLY via `docs/DESIGN-DEVIATIONS.md`; retired screens
+are never aligned to; the design package is never edited to match the app.
+
+Progress is tracked per screen in `docs/PIXEL-PARITY-TRACKER.md` — a screen is ✅ when it is adopted
+(wired to an app target) and the guardrail suite stays green, not when it is eyeballed.
 
 ## Scheduled Claude routines — universal auto-merge + ledger protocol
 

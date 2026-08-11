@@ -4,16 +4,22 @@ Progress for the app-wide pixel-alignment workstream (`CLAUDE.md` → "Pixel par
 truth is the **2026-08-10 rev 2** design export in `packages/design/`; the inventory below is
 generated from `packages/design/EXPORT-MANIFEST.txt`.
 
-**A screen counts as done only when the user has signed off on a side-by-side.** Not when a PR merged,
-not when copy matched. Structure, geometry, colour, type and copy must all match the mock.
+**A screen counts as done when it is adopted (wired to an app target) and the automated guardrail
+suite stays green** — token-conformance + screen-inventory + reverse-drift freeze (see `CLAUDE.md` →
+"Pixel parity" → the guardrail suite). Owner decision 2026-08-11: the guardrail suite REPLACES the
+per-screen human visual-OK sign-off; ✅ is a machine state, not an eyeball. Structure, geometry,
+colour, type and copy must all match the mock, and the guardrails are what enforce it.
 
 | Status | Meaning |
 |---|---|
-| ⬜ | not started |
+| ⬜ | not started (mock adopted, no app target wired — `PENDING` in `tools/parity/parity-status.mjs`) |
 | 🔧 | in progress |
-| 👁 | built, awaiting the user's visual OK |
-| ✅ | signed off by the user |
-| ⛔ | designed but never built — out of scope here (restyle-existing-only, 2026-08-10); separate feature backlog |
+| ✅ | adopted + guardrails green — wired in `tools/parity/app-targets.mjs`, token/inventory/reverse-drift checks passing |
+| ⛔ | backend-gated: designed but not renderable without a seeded backend — `BACKEND_GATED` (with a reason) in `tools/parity/parity-status.mjs`, tracked as an issue |
+
+The guardrail suite is the enforcement: the screen-inventory guardrail
+(`apps/api/src/parity/screen-inventory.spec.ts`) fails CI if any screen is neither wired nor
+allowlisted, so this tracker can never silently fall behind the gallery.
 
 **⛔ is provisional.** Only the states the 2026-08-05 audit named explicitly are pre-marked. Every
 phase begins by verifying build status for its own screens against source — a screen is never

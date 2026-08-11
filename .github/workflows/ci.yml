@@ -106,6 +106,62 @@ jobs:
       # launch-plan.md Lane E): gate the fail-closed access-gate / alarm / reconnect specs explicitly.
       - run: pnpm --filter @lynia/merchant test
 
+  # Reverse-drift freeze — pixel-parity guardrail (CLAUDE.md "Pixel parity": never edit the design to
+  # match the app). Fails a PR that touches packages/design/** unless the same PR also updates the
+  # deviations ledger (docs/DESIGN-DEVIATIONS.md) — the one sanctioned way to record a design-side
+  # change. PR-only: it needs the base ref to diff against, and on push-to-main there is no PR to gate.
+  design-freeze:
+    name: reverse-drift freeze · design is source of truth
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need the merge base to diff origin/<base>...HEAD
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Fail if packages/design/** changed without a deviations-ledger entry
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+            | node scripts/check-design-freeze.mjs
+
+  # Parity-render EVIDENCE — pixel-parity guardrail, non-blocking. Renders every WIRED mobile screen
+  # (app-targets.mjs kind:"mobile") to a PNG via react-native-web and uploads them as an artifact, so
+  # every PR carries app-side screenshots. `continue-on-error: true` at the job level keeps a flaky /
+  # environment-sensitive render from ever blocking a merge — it is evidence, not a gate.
+  parity-render:
+    name: parity render · mobile evidence (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      # The mobile screens import @lynia/shared at render time (as the app does).
+      - run: pnpm --filter @lynia/shared build
+      # The parity lane is not a workspace package; install its own deps (esbuild + react-native-web
+      # + playwright-core) locally, then the Chromium the renderer drives.
+      - name: Install parity lane deps
+        working-directory: tools/parity
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright-core install chromium || npx playwright install chromium || true
+      - name: Render wired mobile screens
+        working-directory: tools/parity
+        run: node render-wired-mobile.mjs --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parity-mobile-renders
+          path: tools/parity/out/*.png
+          if-no-files-found: warn
+
   schema:
     name: prisma migrate · constraint proof (PostGIS)
     runs-on: ubuntu-latest
