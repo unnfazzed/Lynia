@@ -58,16 +58,19 @@ export function harnessHtml() {
 <script type="text/babel" src="../../ui_kits/support/parts.js"></script>
 <script type="text/babel" src="screens.jsx"></script>
 <script type="text/babel" src="screens-safety.jsx"></script>
+<script type="text/babel" src="screens-shipped.jsx"></script>
 <script type="text/babel" src="rider-screens.jsx"></script>
 <script type="text/babel" src="rider-screens-wallet.jsx"></script>
 <script type="text/babel" src="rider-screens-safety.jsx"></script>
 <script type="text/babel" src="rider-one-app.jsx"></script>
+<script type="text/babel" src="rider-screens-shipped.jsx"></script>
 <script src="../restaurants/r-gallery-data.js"></script>
 <script src="gallery-map.js"></script>
 <script type="text/babel" src="../restaurants/r-parts.jsx"></script>
 <script type="text/babel" src="../restaurants/r-customer-a.jsx"></script>
 <script type="text/babel" src="../restaurants/r-customer-b.jsx"></script>
 <script type="text/babel" src="../restaurants/r-merchant.jsx"></script>
+<script type="text/babel" src="../restaurants/r-merchant-shipped.jsx"></script>
 <script type="text/babel" src="../restaurants/r-rider.jsx"></script>
 <script type="text/babel" data-parity-mount>
   (function () {

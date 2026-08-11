@@ -31,7 +31,7 @@ gen-manifest.mjs     regenerate screens.generated.json from the design gallery d
 
 screens.mjs          merged registry: generated inventory + app-targets
 app-targets.mjs      hand-maintained app-side map (grows per screen as they're aligned)
-screens.generated.json   mock-side inventory (244 screens), generated — do not hand-edit
+screens.generated.json   mock-side inventory (275 screens), generated — do not hand-edit
 
 lib/    design-server, harness-html, mock, mobile, web, sheet, browser, vendor, args
 mobile/ bundle.mjs (esbuild+rn-web), fonts.mjs, shims/, fixtures/

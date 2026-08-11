@@ -86,9 +86,15 @@ shows the mock, the app (or an honest pending), and the screen's parity status c
 
 ## The registry
 
-- `screens.generated.json` — the **mock-side inventory** (244 screens: customer 102 · rider 91 ·
-  merchant 44 · admin 7), generated from the design's own gallery data. Regenerate after a new export:
+- `screens.generated.json` — the **mock-side inventory** (275 screens: customer 122 · rider 98 ·
+  merchant 48 · admin 7), generated from the design's own gallery data. Regenerate after a new export:
   `node gen-manifest.mjs`. Never hand-edit.
+
+  > Regenerating the manifest is **not sufficient on its own.** The manifest comes from the gallery
+  > *data*, but the renderer loads the registry *files* listed in `lib/harness-html.mjs`. If an export
+  > adds a registry file (rev 2 added three), the new screens appear in the manifest and then fail to
+  > render with `not found in registry`. Add the `<script>` tags too, in the same order as
+  > `All Screens Gallery.html` — extension registries must load **after** the base they extend.
 - `app-targets.mjs` — the **hand-maintained** app-side map, keyed by `${src}.${id}`. This is where the
   lane grows: as each screen is aligned, add its target.
 
@@ -116,7 +122,7 @@ shows the mock, the app (or an honest pending), and the screen's parity status c
 
 ## What Phase 1 proved, and what's incremental
 
-Proven end-to-end: the hermetic mock renderer (all 244 screens, phone/320/tablet + admin kit pages), the
+Proven end-to-end: the hermetic mock renderer (all 275 screens, phone/320/tablet + admin kit pages), the
 mobile react-native-web renderer (`force-update` as the reference screen), the web renderer (admin
 console, both `/` and `/orders`), and the pair→sheet pipeline. Incremental, per screen, as alignment
 proceeds: the `app-targets.mjs` entries and mobile `fixtures/` — each is the same provider-mocking the

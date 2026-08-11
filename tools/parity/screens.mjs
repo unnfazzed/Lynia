@@ -1,5 +1,5 @@
 /**
- * The parity screen registry: the generated mock-side inventory (244 screens from the design gallery)
+ * The parity screen registry: the generated mock-side inventory (275 screens from the design gallery)
  * merged with the hand-maintained app-target layer. This is what every driver keys off.
  *
  *   import { getScreens, getScreen } from "./screens.mjs";
