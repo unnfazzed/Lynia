@@ -532,6 +532,121 @@ export const ADOPTED = [
     ],
   },
   {
+    // ── RC.closed_interrupt — the "kitchen closes while you're browsing" interrupt (R2·b1). It is NOT a
+    // standalone screen: the app raises it as a modal OVERLAY inside the same interactive menu container
+    // (app/food/[id].tsx) the moment `hours` cross open→closed mid-browse (the `justClosed` state). So it
+    // adopts the SAME way RC.menu did — PIECE-BY-PIECE (Foundation-E), not as a whole-screen view: one
+    // generated, guarded FRAGMENT of the mock's overlay Card, composed by the container. This is the SECOND
+    // region-adopted mock keyed to `app/food/[id].tsx` (RC.menu is the first); the composition check runs
+    // per-entry — `optsFromRegions` anchors ONLY this entry's region, so it prunes the RC.menu cover/rows/
+    // footer regions (and vice-versa), and the two checks stay independent on the one container.
+    //
+    // The mock draws the interrupt over a DIMMED SKELETON placeholder of the menu; the app draws it over
+    // the LIVE menu (mock-wins: the skeleton is the design's stand-in for "the menu you were browsing", the
+    // app shows the actual one). That backdrop is not a region and is pruned from the composition, so no
+    // deviation is needed. Both mock and container reduce to `SCREEN( REGION:interrupt )`.
+    key: "RC.closed_interrupt",
+    container: "apps/mobile/app/food/[id].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    mockComponent: "closed_interrupt",
+    uiImport: "../../src/ui",
+    regions: [
+      {
+        // Interrupt region — the centred modal Card: a highlight clock-tile, headline, body line and two
+        // named ways forward (see-open / keep-cart). Locator {el:"Card"} anchors the mock's single Card;
+        // the app mounts <ClosedInterruptView/> inside its transparent dim-overlay Pressable (invisible to
+        // the composition walker, which bubbles a non-scaffold wrapper's region). No backend gate, no
+        // fabricated control — both actions are honest (navigate to the open list · dismiss keeping cart).
+        region: "interrupt",
+        locator: { el: "Card" },
+        componentName: "ClosedInterruptView",
+        viewFile: "apps/mobile/app/food/closed-interrupt.view.tsx",
+        propsParam: "{ title, body, onSeeOpen, onDismiss }: ClosedInterruptViewProps",
+        propsType: [
+          "export type ClosedInterruptViewProps = {",
+          "  /** '<Shop> just closed' — the live restaurant name drives the headline. */",
+          "  title: string;",
+          "  /** The reassurance line (cart kept, nothing ordered). */",
+          "  body: string;",
+          "  /** 'See places still open' → the browse list. */",
+          "  onSeeOpen: () => void;",
+          "  /** 'Keep my cart for tomorrow' → dismiss the interrupt. */",
+          "  onDismiss: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          // The headline + body are the DATA SEAM: the restaurant name and (honest) reassurance copy come
+          // from the container. The structural guardrail ignores text, so these are leaf swaps.
+          JSXText(path) {
+            const v = path.node.value.trim();
+            if (v === "Sadza Republic just closed") path.replaceWith(t.jsxExpressionContainer(expr("title")));
+            else if (v.startsWith("They stopped taking orders")) path.replaceWith(t.jsxExpressionContainer(expr("body")));
+          },
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "Button") return;
+            // Kit Button's web `onClick={nop}` → the app Button's `onPress`; route by the mock label.
+            const label = path.node.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "label");
+            const lv = label && label.value && label.value.value;
+            path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+            const handler = lv === "See places still open" ? "onSeeOpen" : "onDismiss";
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr(handler))));
+          },
+        }),
+      },
+    ],
+  },
+  {
+    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx). DEFER-only: a kit-COMPOSITE member-tag
+    // screen (Foundation-F #42) atop a live-vs-static multi-state divergence. See the deferred reason.
+    key: "RC.home",
+    container: "apps/mobile/app/(tabs)/home.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.home",
+        reason:
+          "KIT-COMPOSITE member-tag wall (Foundation-F #42) + live-vs-static, not a primitive/backend gap. The mock `RC.home` is `<Screen><HomeBody/></Screen>` where HomeBody is a single opaque DS composite `<AppHome address live restaurants .../>` (destructured from `P.DSR.AppHome`). The transpiler cannot inline AppHome — its whole tree (BrandHeader → ServiceTiles → LiveOrderCard(s) → 'restaurants near you' RestaurantCards) lives INSIDE the DS component, not as JSX in the mock file — so a generated whole-screen view emits an unresolved `<AppHome/>`, and region locators can't anchor sub-trees that root inside an opaque composite (same class as the send-composer's FauxMap/MapSheet regions). The app ALSO supersets: home is a live container that switches, in ONE tree, a first-load skeleton, an active-order LiveOrderCard, an active-order-check-FAILED banner and a reorder rail before the restaurants rail (a horizontal 'See all →' scroll, not the mock's vertical list) — none of which the static AppHome composite draws. Adoptable once AppHome's members are authored as locatable DS primitive regions (Foundation-F remaps + region roots), OR the composite earns per-state boundaries — a Foundation build, not one iteration.",
+      },
+    ],
+  },
+  {
+    // ── RC.search — restaurant/dish search (app/food/search.tsx). DEFER-only: the same RestRow backend
+    // gate as RC.list#data, PLUS a dish-index the API lacks, PLUS a live-vs-static multi-state superset.
+    key: "RC.search",
+    container: "apps/mobile/app/food/search.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.search",
+        reason:
+          "THREE walls, none a missing primitive. (1) BACKEND gate — the mock's PLACES section is `<RestRow r={REST[0]}/>`, whose meta line draws `★ rating (n) · km · eta min` + `$fee delivery`; rating, geo-distance (km), per-restaurant ETA and delivery fee are ALL absent from the `RestaurantListItem` wire contract and the app has no customer geolocation (issue #673 / task #24 — the SAME gate that defers RC.list#data). The app's shared RestaurantRow already honest-empties this (cuisine tags + an open/closing-now line instead of the fabricated rating/km/eta), so its meta STRUCTURE diverges from the mock's RestRow by design; rendering the mock's rating/km/eta nodes would ship fabricated figures (CLAUDE.md forbids). (2) DISH INDEX — the mock's second `DISHES` section lists cross-restaurant dish matches (`Sadza & beef stew · Sadza Republic · $4.50`), which needs a cross-restaurant menu/dish search index the C1 customer read API does not expose; the app search runs client-side over the already-fetched restaurant list (name + cuisine only) and honestly omits the DISHES section rather than fake it. (3) LIVE-vs-STATIC multi-state — the static mock draws only the populated 'sadza' result; the app screen interleaves an empty-query hint, a 'still searching more kitchens…' pagination line, the results list and a no-matches EmptyState, none of which the one frozen mock draws. Adoptable once the customer read API carries rating/distance/fee + a cross-restaurant dish index, and the search states earn their own mock keys.",
+      },
+    ],
+  },
+  {
+    // ── RC.menu_closed — the closed-restaurant menu (a state of app/food/[id].tsx). DEFER-only: a
+    // live-vs-static structural divergence within the already-region-adopted interactive menu container.
+    key: "RC.menu_closed",
+    container: "apps/mobile/app/food/[id].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "closed",
+        key: "RC.menu_closed",
+        reason:
+          "LIVE-vs-STATIC structural divergence inside an already-region-adopted INTERACTIVE container, plus a backend-gated meta line — not a missing primitive. The static mock frames the closed state as its OWN whole `<Screen banner={<Banner warn 'is closed'/>} footer={<Button 'Remind me when they open'/>}>` with a dimmed CoverPhoto + shop-meta + an all-OOS MenuRow list. The app realizes the SAME closed state LIVE inside the shared menu container (app/food/[id].tsx, already region-adopted for RC.menu): it derives open/closed from `hours` and, when closed, renders an INLINE notice Card (clock icon + `nextOpenDescription` copy + the working `RemindWhenOpen` control) BETWEEN the shop-meta and the category tabs — NOT as the mock's Screen `banner` + pinned `footer` button. Mock-wins can't losslessly restructure this without regressing the live open/closed derivation, the category tabs and the real reopen-reminder toggle (which, unlike RC.list's dead 'Notify me', IS backed by `useReopenReminder`). The mock's shop-meta also draws `4.0 km` (geo-distance — the RC.menu#meta backend gate). A separate whole-screen or banner/footer-region view is not expressible over the live menu container without either a Foundation build (banner/footer region roots for the closed variant) or regressing the interactive glue. Adoptable once the closed variant earns banner/footer region boundaries against the app's inline-notice tree.",
+      },
+    ],
+  },
+  {
     // RC.cart — the food cart (app/food/cart.tsx). cart_empty is adopted (above); the DATA state defers.
     key: "RC.cart",
     container: "apps/mobile/app/food/cart.tsx",
