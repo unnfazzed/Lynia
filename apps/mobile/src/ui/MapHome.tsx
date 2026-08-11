@@ -11,7 +11,10 @@ import { Icon, type IconName } from "./index";
  * AddressFields) that also chooses which pin the single map hero edits.
  */
 
-export function MapHomeTopBar(props: { onNotifications: () => void; onAccount: () => void }): React.ReactElement {
+export function MapHomeTopBar(props: { onAccount: () => void }): React.ReactElement {
+  // Kit Home (screens.jsx:154–162): the floating chrome over the map is a brand pill top-left and a
+  // SINGLE round action top-right — the account avatar. The mock draws no second (notifications) button
+  // here; that entry point lives on the Account tab instead, so it is not duplicated on the map.
   return (
     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.sm }}>
       <View
@@ -30,8 +33,6 @@ export function MapHomeTopBar(props: { onNotifications: () => void; onAccount: (
         <BrandLockup size={22} />
       </View>
       <View style={{ flex: 1 }} />
-      <RoundButton icon="inbox" label="Notifications" onPress={props.onNotifications} />
-      <View style={{ width: tokens.space.sm }} />
       <RoundButton icon="user" label="Account" onPress={props.onAccount} />
     </View>
   );

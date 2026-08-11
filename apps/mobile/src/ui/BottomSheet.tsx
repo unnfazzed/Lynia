@@ -83,6 +83,7 @@ export function BottomSheet({
   snapPoints = [1],
   initialSnap = snapPoints.length - 1,
   onSnapChange,
+  maxHeight,
 }: {
   children: React.ReactNode;
   /** Optional footer pinned below the body — e.g. the primary CTA + error text. */
@@ -92,22 +93,39 @@ export function BottomSheet({
    * Snap positions as FRACTIONS of the sheet's own height, ascending. Each fraction is how much of the
    * sheet is VISIBLE at that snap: 1 = fully shown (expanded), 0.45 = collapsed to 45%. Defaults to a
    * single expanded stop (`[1]`) — static-equivalent; pass multiple stops only when a map sits behind
-   * the sheet (otherwise collapsing drags the footer CTA off-screen).
+   * the sheet.
    */
   snapPoints?: number[];
   /** Index into `snapPoints` to rest at initially (default: last = expanded). */
   initialSnap?: number;
   /** Called with the snap index whenever the resting snap changes. */
   onSnapChange?: (index: number) => void;
+  /**
+   * HEIGHT-SNAP mode (the map-anchored home, kit `K.MapSheet`). When set, the fractions in `snapPoints`
+   * are fractions of THIS px value (the sheet's fully-expanded height, typically a share of the screen),
+   * and the sheet snaps by changing its own HEIGHT — the top edge moves while the footer stays PINNED to
+   * the bottom. This is the mock's peek/expanded model (58% / 88% of the screen), and unlike the default
+   * translateY collapse it never drags the footer CTA off-screen. Omit for the legacy content-sized,
+   * translateY-drag sheet (every other consumer) — that path is unchanged.
+   */
+  maxHeight?: number;
 }): React.ReactElement {
-  // Ascending fractions → we work in translateY OFFSETS (px hidden below the bottom), which is
-  // (1 - fraction) * height. Larger offset = more collapsed.
+  // Ascending fractions → we work in OFFSETS (px), which is (1 - fraction) * H. Larger offset = more
+  // collapsed. In the default sheet the offset is a translateY; in height-snap mode it is subtracted
+  // from `maxHeight` to give the sheet's height (footer pinned), so the SAME offset math drives both.
   const fractions = useMemo(() => [...snapPoints].sort((a, b) => a - b), [snapPoints]);
   const clampedInitial = Math.min(Math.max(initialSnap, 0), fractions.length - 1);
+  const heightMode = maxHeight != null;
 
-  const [height, setHeight] = useState(0);
+  const [measured, setMeasured] = useState(0);
+  // The reference height the fractions are taken of: the explicit `maxHeight` in height-snap mode, else
+  // the sheet's own measured content height.
+  const H = heightMode ? (maxHeight as number) : measured;
   const [snapIndex, setSnapIndex] = useState(clampedInitial);
-  const translateY = useRef(new Animated.Value(0)).current;
+  // Seed the offset at the initial snap so a height-snap sheet paints at its resting height on the FIRST
+  // frame (no full-height → shrink flash); the legacy path seeds at 0 and settles after onLayout.
+  const initialOffset = heightMode ? (1 - (fractions[clampedInitial] ?? 1)) * (maxHeight as number) : 0;
+  const translateY = useRef(new Animated.Value(initialOffset)).current;
   // The offset the sheet currently rests at (px). Kept in a ref so the PanResponder (created once) reads
   // a live value without re-subscribing.
   const restOffset = useRef(0);
@@ -127,11 +145,11 @@ export function BottomSheet({
   // Convert a snap index → translateY offset (px). Offset 0 is the fully-shown fraction (== 1 or the
   // largest fraction). A fraction f leaves (1 - f) * height hidden below.
   const offsetForIndex = useCallback(
-    (index: number): number => (1 - (fractions[index] ?? 1)) * height,
-    [fractions, height],
+    (index: number): number => (1 - (fractions[index] ?? 1)) * H,
+    [fractions, H],
   );
 
-  const snapOffsets = useMemo(() => fractions.map((f) => (1 - f) * height), [fractions, height]);
+  const snapOffsets = useMemo(() => fractions.map((f) => (1 - f) * H), [fractions, H]);
   // Drag bounds are the extremes of the VALID snap offsets (not the raw sheet height), so a drag can
   // never carry the sheet past its most-collapsed snap. With a single snap these collapse to one point.
   const minOffset = useMemo(() => (snapOffsets.length ? Math.min(...snapOffsets) : 0), [snapOffsets]);
@@ -145,7 +163,9 @@ export function BottomSheet({
       if (reduceMotion) {
         translateY.setValue(toValue);
       } else {
-        Animated.spring(translateY, { toValue, useNativeDriver: true, bounciness: 4 }).start();
+        // Height-snap mode feeds `translateY` into a layout prop (height), which the native driver
+        // cannot animate — drive it on the JS thread there; the default translateY path stays native.
+        Animated.spring(translateY, { toValue, useNativeDriver: !heightMode, bounciness: 4 }).start();
       }
       if (clamped !== snapIndex) {
         setSnapIndex(clamped);
@@ -155,14 +175,14 @@ export function BottomSheet({
     [fractions.length, offsetForIndex, reduceMotion, translateY, snapIndex, onSnapChange],
   );
 
-  // Once we know the height, position the sheet at its resting snap. Re-runs if height/snap change.
+  // Once we know the reference height, position the sheet at its resting snap. Re-runs if H/snap change.
   useEffect(() => {
-    if (height === 0) return;
+    if (H === 0) return;
     const toValue = offsetForIndex(snapIndex);
     restOffset.current = toValue;
     translateY.setValue(toValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-seat on height change; snapIndex is applied via animateTo elsewhere.
-  }, [height]);
+  }, [H]);
 
   const panResponder = useMemo(
     () =>
@@ -202,8 +222,13 @@ export function BottomSheet({
   );
 
   const onLayout = useCallback((e: LayoutChangeEvent): void => {
-    setHeight(e.nativeEvent.layout.height);
+    setMeasured(e.nativeEvent.layout.height);
   }, []);
+
+  // Height-snap mode: the offset is subtracted from the reference height so the sheet's HEIGHT shrinks
+  // from the top while the footer stays pinned (kit K.MapSheet maxHeight). The default sheet keeps the
+  // translateY transform it always had.
+  const sheetHeight = heightMode ? Animated.subtract(H, translateY) : undefined;
 
   return (
     <Animated.View
@@ -219,7 +244,7 @@ export function BottomSheet({
           borderTopWidth: 1,
           borderColor: tokens.color.line,
           padding: tokens.space.lg,
-          transform: [{ translateY }],
+          ...(heightMode ? { height: sheetHeight } : { transform: [{ translateY }] }),
         },
         style,
       ]}

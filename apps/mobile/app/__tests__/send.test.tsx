@@ -512,6 +512,36 @@ describe("send.tsx — Price/quote block (RF-21 characterization, pre-extraction
   });
 });
 
+describe("send.tsx — map-anchored top bar (pixel parity: single action)", () => {
+  it("floats a single round action (Account) over the map — the kit draws no second (Notifications) button", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    // The account avatar is present…
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Account" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    // …and the old top-bar Notifications round button is gone (notifications live on the Account tab).
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Notifications").length).toBe(0);
+  });
+
+  it("shows no invented 'Delivery details' heading — the sheet opens straight into the address rows and fields", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findAll((n) => n.props.children === "Delivery details").length).toBe(0);
+    // The address rows are now inside the sheet (their PICKUP/DROP-OFF labels render).
+    expect(tree.root.findAll((n) => n.props.children === "PICKUP").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.children === "DROP-OFF").length).toBeGreaterThan(0);
+  });
+});
+
 describe("send.tsx — draft flush before submit (LC-C06)", () => {
   it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);

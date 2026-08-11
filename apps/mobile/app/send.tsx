@@ -2,7 +2,7 @@ import { CreateOrderRequest, normalizePhone, quoteFare, tokens } from "@lynia/sh
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, UIManager, View } from "react-native";
+import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, UIManager, useWindowDimensions, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { getMe } from "../src/api/auth";
 import { acceptDisclaimer, createOrder, getActiveCustomerOrder, type OrderSnapshot } from "../src/api/orders";
@@ -53,6 +53,11 @@ export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
+  // The compose sheet snaps over the full-bleed map at the kit's two heights (K.MapSheet `maxHeight`):
+  // PEEK = 58% of the screen, EXPANDED = 88%. home_empty / home_pins both rest at PEEK.
+  const { height: screenH } = useWindowDimensions();
+  const SHEET_PEEK = 0.58;
+  const SHEET_EXPANDED = 0.88;
   // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
   // stored draft — the customer explicitly asked to re-send THIS order.
   const rbParams = useLocalSearchParams<RebroadcastParams>();
@@ -205,15 +210,10 @@ export default function HomeScreen(): React.ReactElement {
     setDetailsOpen((v) => !v);
   }, [reduceMotion]);
 
-  // Collapse-to-peek: let the customer fold the compose form away to give the MAP room to breathe while
-  // placing pins, then bring it back to fill in details. We hide the form BODY only — the Broadcast CTA
-  // and its "what's still missing" hint stay pinned in the footer, so collapsing never drags the primary
-  // action off-screen (the exact regression that deferred a full drag re-architecture of this sheet).
-  const [composeCollapsed, setComposeCollapsed] = useState(false);
-  const toggleCompose = useCallback((): void => {
-    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setComposeCollapsed((v) => !v);
-  }, [reduceMotion]);
+  // Collapse-to-peek is now the SHEET's own job: the compose sheet snaps over the full-bleed map
+  // between a peek (58% of the screen) and an expanded (88%) state (kit K.MapSheet), so folding the form
+  // away to see the map is a handle drag, not a bespoke in-form toggle. The footer CTA stays pinned in
+  // both snaps.
 
   // Rehydrate the draft once on mount.
   useEffect(() => {
@@ -619,19 +619,25 @@ export default function HomeScreen(): React.ReactElement {
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface }}>
       <TestBuildBanner />
-      {/* Full-bleed map hero (1·1): ONE map carrying both pins (pickup green, drop-off red) + the route
-          line, with the floating chrome (brand pill, notifications, account, and the search-first
-          address rows) laid over its top. Tapping a row picks which pin the map edits. */}
+      {/* Map-anchored home (1·1): ONE full-bleed map carrying both pins (pickup green, drop-off red) +
+          the route line, BEHIND the compose sheet (kit Home: K.FauxMap `fill` under K.MapSheet). The
+          floating brand pill + account avatar sit over its top; the compose sheet snaps up over its
+          lower half. Tapping an address row (now inside the sheet) picks which pin the map edits. */}
       <View style={{ flex: 1 }}>
-        <ComposeMap
-          pickup={pickupPoint}
-          drop={dropPoint}
-          active={activePin}
-          onChangePickup={setPickupPoint}
-          onChangeDrop={setDropPoint}
-          onReverseGeocodePickup={onPickupReverseGeocode}
-          onReverseGeocodeDrop={onDropReverseGeocode}
-        />
+        <View style={StyleSheet.absoluteFill}>
+          <ComposeMap
+            pickup={pickupPoint}
+            drop={dropPoint}
+            active={activePin}
+            onChangePickup={setPickupPoint}
+            onChangeDrop={setDropPoint}
+            onReverseGeocodePickup={onPickupReverseGeocode}
+            onReverseGeocodeDrop={onDropReverseGeocode}
+            // Clear the floating brand row (avatar ends ~48px down) so the map's own top-band controls
+            // (Use-my-location pill, tap hint) sit just below it, kit-style.
+            topOffset={insets.top + tokens.space.sm + 48}
+          />
+        </View>
         {/* box-none: the map stays pannable/tappable everywhere except on the actual controls. */}
         <View
           pointerEvents="box-none"
@@ -639,8 +645,9 @@ export default function HomeScreen(): React.ReactElement {
         >
           {/* plan §5 A3: /profile is still a live route (the rider Account bridge still reaches it),
               but every customer-surface entry point now targets the richer Account tab instead —
-              matches `(tabs)/home.tsx`'s BrandHeader `onProfile` already doing the same. */}
-          <MapHomeTopBar onNotifications={() => router.push("/notifications")} onAccount={() => router.push("/account")} />
+              matches `(tabs)/home.tsx`'s BrandHeader `onProfile` already doing the same. Notifications
+              are reached from the Account tab (kit draws a single top-right action here). */}
+          <MapHomeTopBar onAccount={() => router.push("/account")} />
 
           {meQ.data?.rider?.isOnline ? (
             // A rider who switches to the customer view stayed online server-side with no reminder here
@@ -707,42 +714,21 @@ export default function HomeScreen(): React.ReactElement {
               </Pressable>
             </View>
           ) : null}
-
-          {/* Search-first address rows: tapping one chooses which pin the map edits (pickup = green
-              dot, drop-off = red square). The CTA is gated on both points being set. */}
-          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={pickSlot} />
-          <AddressHint searchEnabled={placesEnabled()} />
-
-          {/* The active slot's search, floating over the map so a resolved place drops the active pin.
-              On an unkeyed build this renders the disabled explainer rather than nothing — see
-              AddressSearch's header. */}
-          {activePin === "pickup" ? (
-            <AddressSearch
-              key="pickup-search"
-              label="Pickup"
-              placeholder="Search pickup address"
-              onResolved={onPickupResolved}
-              focusSignal={searchFocus}
-            />
-          ) : (
-            <AddressSearch
-              key="drop-search"
-              label="Drop-off"
-              placeholder="Search drop-off address"
-              onResolved={onDropResolved}
-              focusSignal={searchFocus}
-            />
-          )}
         </View>
-      </View>
 
-      {/* Docked compose sheet BELOW the map — a flex sibling (not an overlay), so KeyboardAvoidingView
-          lifts it cleanly when the price/phone fields are focused. The form scrolls inside; the
-          Broadcast CTA stays pinned in the footer, always reachable. */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <BottomSheet
-          style={{ paddingBottom: tokens.space.lg + insets.bottom }}
-          footer={
+        {/* Compose sheet snapped OVER the map (kit K.MapSheet): peek 58% / expanded 88% of the screen,
+            footer pinned. Absolutely anchored to the bottom so the map fills the whole screen behind it;
+            KeyboardAvoidingView lifts it when the price/phone fields are focused. */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+        >
+          <BottomSheet
+            maxHeight={screenH}
+            snapPoints={[SHEET_PEEK, SHEET_EXPANDED]}
+            initialSnap={0}
+            style={{ paddingBottom: tokens.space.lg + insets.bottom }}
+            footer={
             <>
               {!canSubmit ? (
                 // A disabled Pressable swallows the tap, so name what's still missing here rather
@@ -797,22 +783,33 @@ export default function HomeScreen(): React.ReactElement {
             </>
           }
         >
-          {/* Collapse header — tap to fold the form away and give the map room, or bring it back. The
-              footer CTA stays pinned regardless, so this never hides the primary action. */}
-          <Pressable
-            onPress={toggleCompose}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: !composeCollapsed }}
-            accessibilityLabel={composeCollapsed ? "Show delivery details" : "Hide delivery details to see more of the map"}
-            style={{ flexDirection: "row", alignItems: "center", minHeight: tokens.touchTargetMin }}
-          >
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>Delivery details</Text>
-            <Icon name={composeCollapsed ? "chevron-up" : "chevron-down"} size={16} color={tokens.color.muted} />
-          </Pressable>
-          {/* The form scrolls inside the sheet (capped height) so it never pushes the pinned CTA off
-              the bottom, and the map behind stays visible above the sheet. Hidden when collapsed. */}
-          {composeCollapsed ? null : (
-          <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {/* The sheet body scrolls between the pinned handle and the pinned footer (kit K.MapSheet).
+              There is no invented "Delivery details" heading — the mock opens straight into the address
+              rows, then the compose fields. */}
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {/* Address block — the FIRST content in the sheet (kit AddressFields): the pickup/drop-off
+              rows, the search-or-tap caption, then the active slot's search. Tapping a row chooses which
+              pin the map behind edits (pickup = green dot, drop-off = red square); on an unkeyed build
+              the search renders its honest disabled explainer rather than nothing. */}
+          <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={pickSlot} />
+          <AddressHint searchEnabled={placesEnabled()} />
+          {activePin === "pickup" ? (
+            <AddressSearch
+              key="pickup-search"
+              label="Pickup"
+              placeholder="Search pickup address"
+              onResolved={onPickupResolved}
+              focusSignal={searchFocus}
+            />
+          ) : (
+            <AddressSearch
+              key="drop-search"
+              label="Drop-off"
+              placeholder="Search drop-off address"
+              onResolved={onDropResolved}
+              focusSignal={searchFocus}
+            />
+          )}
           <SendItemsList items={items} updateItem={updateItem} addItem={addItem} removeItem={removeItem} />
           {/* Sender's note for the rider (contract `note`, ≤280) — the mockup's "ask for Rita at the
               pharmacy counter; keep it upright." Optional; shown to the assigned rider on the job. */}
@@ -858,9 +855,9 @@ export default function HomeScreen(): React.ReactElement {
             onChangeDeclaredValue={setDeclaredValue}
           />
           </ScrollView>
-          )}
-        </BottomSheet>
-      </KeyboardAvoidingView>
+          </BottomSheet>
+        </KeyboardAvoidingView>
+      </View>
       <AddressConfirmSheet
         place={confirming?.place ?? null}
         slot={confirming?.slot ?? "pickup"}
