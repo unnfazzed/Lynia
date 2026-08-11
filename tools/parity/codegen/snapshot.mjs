@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { treeOfNamedComponent, treeOfViewFile, sexpr, diff } from "./normalize.mjs";
-import { ADOPTED } from "./adopted.mjs";
+import { expandAdopted } from "./adopted.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
@@ -43,11 +43,14 @@ export function checkScreen(ts, spec) {
   const actualTree = treeOfViewFile(ts, viewSrc);
 
   const d = diff(expectedTree, actualTree);
+  const label = spec.state ? `${spec.key} (${spec.screen} · ${spec.state})` : spec.key;
   return {
     key: spec.key,
+    screen: spec.screen ?? spec.key,
+    state: spec.state ?? null,
     ok: !d,
     message: d
-      ? `structural drift on ${spec.key} — the app view no longer matches the mock:\n  ${d}`
+      ? `structural drift on ${label} — the app view no longer matches the mock:\n  ${d}`
       : `structurally congruent (${sexpr(expectedTree)})`,
     expected: sexpr(expectedTree),
     actual: sexpr(actualTree),
@@ -55,8 +58,9 @@ export function checkScreen(ts, spec) {
   };
 }
 
+/** Check every ADOPTED view — one per single-view screen, one per adopted STATE of a multi-state screen. */
 export function checkAll(ts) {
-  return ADOPTED.map((spec) => checkScreen(ts, spec));
+  return expandAdopted().map((spec) => checkScreen(ts, spec));
 }
 
 export function formatResult(r) {

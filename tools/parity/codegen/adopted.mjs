@@ -1,11 +1,13 @@
 /**
  * Registry of screens ADOPTED via mock→RN codegen. The structural-snapshot guardrail
- * (apps/api/src/parity/structure-snapshot.spec.ts) iterates THIS list: each entry's generated
- * `.view.tsx` must stay structurally congruent to its mock. Screens absent here are NOT gated by the
- * structural guardrail (it no-ops for them, exactly like the screen-inventory allowlist) — they are
- * still covered by the other three guardrails.
+ * (apps/api/src/parity/structure-snapshot.spec.ts) iterates the EXPANDED form of this list
+ * (`expandAdopted()`): each adopted view's generated `.view.tsx` must stay structurally congruent to
+ * its mock. Screens absent here are NOT gated by the structural guardrail (it no-ops for them, exactly
+ * like the screen-inventory allowlist) — they are still covered by the other three guardrails.
  *
- * Each entry:
+ * TWO SHAPES of entry — a screen is either a single view, or a MULTI-STATE container:
+ *
+ * ── single-view screen ── (LJ.help, RC.cart_empty): one mock, one `.view.tsx`.
  *   key            parity key (matches screens.generated.json)
  *   mockFile       path (from repo root) of the mock bundle
  *   component      the mock component name to extract
@@ -16,6 +18,24 @@
  *   propsParam     the component's destructured props param + TS type
  *   propsType      the exported TS prop/data types
  *   bind({t,expr,attrsOf,wrap,traverse}) → a Babel visitor applying the DATA SEAM (structure-neutral)
+ *
+ * ── multi-state screen ── (RC.list): batch 2 found most screens are NOT standalone — they are
+ *   loading / empty / error / data CONTAINERS, and each STATE is its own mock key
+ *   (RC.list_loading / RC.list_empty / RC.list_error / RC.list). One container, N presentational
+ *   state-views, each 0-residual against ITS OWN state's mock. Such an entry carries the shared
+ *   `key` (the screen's canonical/data key), `container`, `mockFile`, `uiImport`, and:
+ *     states[]    the ADOPTED states — each a single-view spec (state, key, component, componentName,
+ *                 viewFile, [propsParam, propsType, bind, hoist, mockFile, uiImport]). Inherits the
+ *                 screen's mockFile/uiImport/container unless a state overrides them. `expandAdopted()`
+ *                 flattens each into a check UNIT the guardrail gates independently.
+ *     deferred[]  states NOT adopted, recorded honestly with a `reason` (superset/primitive-gap/dead
+ *                 action). These are documentation only — never gated, never generated — so the
+ *                 tracker and `cli.mjs check` can report per-state disposition without forcing a
+ *                 divergent view into the app. (CLAUDE.md "Pixel parity": honesty over volume.)
+ *
+ * The container renders the correct state-view from its EXISTING state machine (loading→LoadingView,
+ * …), passing each its data seam — composition, not a rewrite: the queries, pagination and FlatList
+ * virtualization stay exactly as they were.
  */
 export const ADOPTED = [
   {
@@ -122,8 +142,98 @@ export const ADOPTED = [
       },
     }),
   },
+  {
+    // RC.list — the food restaurant-list screen (app/food/index.tsx). The first MULTI-STATE adoption:
+    // its state machine (loading / empty / error / data) maps each state to its own RC.list* mock key.
+    // Only the states that are a CLEAN structural match given Foundation-A's primitives are adopted;
+    // the rest are DEFERRED with a precise reason (below) rather than forced into a divergent view.
+    key: "RC.list",
+    container: "apps/mobile/app/food/index.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [
+      {
+        // R1·2 list_loading — a full-screen content skeleton (its own Screen), drawn while the cold
+        // load has NO data yet (not even a stale copy). Pure presentational: no data seam, no handlers,
+        // no props — the mock is fixed skeleton geometry, so the generated view is 0-residual and needs
+        // no `bind`. The container early-returns it (like RC.cart_empty), replacing the whole screen so
+        // the layout does not jump when data lands.
+        state: "loading",
+        key: "RC.list_loading",
+        component: "list_loading",
+        componentName: "FoodListLoadingView",
+        viewFile: "apps/mobile/app/food/food-list.loading.view.tsx",
+      },
+    ],
+    // Deferred states — recorded, not forced (CLAUDE.md "Pixel parity": honesty over volume). Each is a
+    // genuine wall, not laziness; adopting anyway would ship a divergent or dishonest screen.
+    deferred: [
+      {
+        state: "empty",
+        key: "RC.list_empty",
+        reason:
+          "the mock draws a 'Notify me when they open' primary action with NO backend to honor it (a permanently dead button — CLAUDE.md forbids promising an action the app can't deliver), plus a live 'Belgravia · 22:40' AppBar sub; it also collapses the app's two honest empty conditions (open-now-filtered-empty vs no-restaurants-at-all) into one. Needs a notify-when-open feature before it can adopt.",
+      },
+      {
+        state: "error",
+        key: "RC.list_error",
+        reason:
+          "the mock wraps the screen in `<Screen banner={<Banner tone=\"offline\"/>}>`, but the app's DS `Screen` primitive (src/ui/index.tsx) has NO `banner` slot — the generated view would not typecheck. This is a Foundation-A primitive gap (Screen must grow a banner slot), not app drift.",
+      },
+      {
+        state: "data",
+        key: "RC.list",
+        reason:
+          "the mock header (a fixed 'DELIVER TO' address, four STATIC sort pills, a static '5 places' count) supersets the app's LIVE header (geolocated deliver-to, one functional Open-now toggle, search navigation, cursor pagination). The list body itself is fine — FlatList≡map (normalize.mjs) makes the virtualized list congruent to the mock's `{REST.map(...)}` — but adopting the whole state would either revert live behavior or superset the mock. Deferred on the header, not the list.",
+      },
+    ],
+  },
 ];
 
+/**
+ * Flatten the registry into per-view CHECK UNITS — the shape the transpiler + guardrail consume. A
+ * single-view screen yields one unit (state:null); a multi-state screen yields one unit per ADOPTED
+ * state (deferred states are documentation only and never appear here). Each unit carries `screen`
+ * (the owning screen's key) and `state` so `cli.mjs check` can group per-screen, per-state.
+ */
+export function expandAdopted() {
+  const units = [];
+  for (const e of ADOPTED) {
+    if (Array.isArray(e.states)) {
+      for (const st of e.states) {
+        units.push({
+          screen: e.key,
+          state: st.state,
+          key: st.key,
+          mockFile: st.mockFile || e.mockFile,
+          component: st.component,
+          componentName: st.componentName,
+          viewFile: st.viewFile,
+          container: st.container || e.container,
+          uiImport: st.uiImport || e.uiImport,
+          propsParam: st.propsParam,
+          propsType: st.propsType,
+          bind: st.bind,
+          hoist: st.hoist,
+        });
+      }
+    } else {
+      units.push({ screen: e.key, state: null, ...e });
+    }
+  }
+  return units;
+}
+
+/** All (screen, state, reason) rows that are deliberately NOT adopted — for reporting/tracking. */
+export function deferredStates() {
+  const out = [];
+  for (const e of ADOPTED) {
+    for (const d of e.deferred || []) out.push({ screen: e.key, ...d });
+  }
+  return out;
+}
+
+/** Find one check unit by its (per-state) parity key — `gen RC.list_loading`, `gen LJ.help`, etc. */
 export function findAdopted(key) {
-  return ADOPTED.find((s) => s.key === key);
+  return expandAdopted().find((u) => u.key === key);
 }

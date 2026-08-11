@@ -31,15 +31,21 @@ import { describe, it, expect, beforeAll } from "vitest";
 const CODEGEN_DIR = resolve(__dirname, "../../../../tools/parity/codegen");
 const importCodegen = (file: string) => import(pathToFileURL(resolve(CODEGEN_DIR, file)).href);
 
-type SnapshotResult = { key: string; ok: boolean; message: string; expected: string; actual: string | null; diff: string | null };
+type SnapshotResult = { key: string; screen: string; state: string | null; ok: boolean; message: string; expected: string; actual: string | null; diff: string | null };
 
 let results: SnapshotResult[];
-let adopted: { key: string }[];
+let adopted: { key: string; states?: unknown[]; deferred?: unknown[] }[];
+let units: { key: string; screen: string; state: string | null; viewFile: string }[];
+let deferred: { screen: string; state: string; key: string; reason: string }[];
+let normalize: { treeOfViewFile: (ts: unknown, src: string) => unknown; sexpr: (n: unknown) => string };
 
 beforeAll(async () => {
   const snapshot = await importCodegen("snapshot.mjs");
   const registry = await importCodegen("adopted.mjs");
+  normalize = await importCodegen("normalize.mjs");
   adopted = registry.ADOPTED;
+  units = registry.expandAdopted();
+  deferred = registry.deferredStates();
   results = snapshot.checkAll(ts);
 });
 
@@ -49,10 +55,64 @@ describe("parity structural snapshot · adopted screens match their mock by cons
     for (const s of adopted) expect(typeof s.key).toBe("string");
   });
 
-  it("every codegen-adopted screen is structurally congruent with its mock", () => {
-    // Join every failing screen's tree-path message; compare to "" so a drift prints the readable
-    // path (Vitest shows the non-empty "received" string) instead of a bare boolean.
+  it("every codegen-adopted state-view is structurally congruent with its mock", () => {
+    // Join every failing view's tree-path message; compare to "" so a drift prints the readable
+    // path (Vitest shows the non-empty "received" string) instead of a bare boolean. Multi-state
+    // screens contribute one result PER adopted state (checkAll iterates expandAdopted()).
     const report = results.filter((r) => !r.ok).map((f) => f.message).join("\n\n");
     expect(report).toBe("");
+  });
+});
+
+describe("parity structural snapshot · multi-state adoption model", () => {
+  it("expands multi-state screens into one check unit per ADOPTED state", () => {
+    // The food list is the proving screen — its `loading` state adopts; `empty`/`error`/`data` defer.
+    const foodStates = units.filter((u) => u.screen === "RC.list").map((u) => u.state);
+    expect(foodStates).toContain("loading");
+    const foodDeferred = deferred.filter((d) => d.screen === "RC.list").map((d) => d.state).sort();
+    expect(foodDeferred).toEqual(["data", "empty", "error"]);
+    // Every deferral carries a non-empty reason (honesty over volume — never a silent skip).
+    for (const d of deferred) expect(d.reason.length).toBeGreaterThan(20);
+  });
+
+  it("every check unit has a state-scoped result (per-state congruence, not per-screen)", () => {
+    for (const u of units) {
+      const r = results.find((x) => x.key === u.key);
+      expect(r, `no result for adopted unit ${u.key}`).toBeTruthy();
+      expect(r!.screen).toBe(u.screen);
+      expect(r!.state).toBe(u.state);
+    }
+  });
+});
+
+describe("parity structural snapshot · Bucket-C FlatList ≡ map equivalence", () => {
+  const treeStr = (src: string) => normalize.sexpr(normalize.treeOfViewFile(ts, src));
+
+  it("a FlatList with data/renderItem normalizes identically to the mock's {items.map(...)}", () => {
+    const withFlatList = `function V() {
+      return <View><FlatList data={xs} keyExtractor={(r) => r.id} renderItem={({ item }) => <Card><Text>{item.name}</Text></Card>} /></View>;
+    }`;
+    const withMap = `function V() {
+      return <View>{xs.map((item) => <Card key={item.id}><Text>{item.name}</Text></Card>)}</View>;
+    }`;
+    // Both must reduce to the same tree: a virtualized list is a windowed map of the identical subtree.
+    expect(treeStr(withFlatList)).toBe(treeStr(withMap));
+    expect(treeStr(withFlatList)).toBe("BOX( MAP( CARD( TEXT ) ) )");
+  });
+
+  it("a FlatList's ListFooterComponent/header props do not leak into the mapped item subtree", () => {
+    // Only the renderItem subtree is the MAP body — footer/header are app-only chrome (a loading
+    // spinner), never part of the mock's `.map`, so they must not appear inside the MAP node.
+    const src = `function V() {
+      return <FlatList data={xs} renderItem={({ item }) => <Card><Text>{item}</Text></Card>} ListFooterComponent={<View><ActivityIndicator /></View>} />;
+    }`;
+    expect(treeStr(src)).toBe("MAP( CARD( TEXT ) )");
+  });
+
+  it("a renderItem with a block body (explicit return) resolves the same as a concise arrow", () => {
+    const block = `function V() {
+      return <FlatList data={xs} renderItem={({ item }) => { return <Card><Text>{item}</Text></Card>; }} />;
+    }`;
+    expect(treeStr(block)).toBe("MAP( CARD( TEXT ) )");
   });
 });

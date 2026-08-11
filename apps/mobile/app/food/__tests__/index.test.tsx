@@ -9,6 +9,12 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { ActivityIndicator, FlatList } from "react-native";
+import { Skeleton } from "../../../src/ui";
+
+// The adopted RC.list_loading view renders <Skeleton/>, whose Animated pulse is an infinite loop, and
+// the screen's useNow() runs a 60s interval — both would fire after Jest teardown on the real clock.
+// Fake timers keep every scheduled callback off the real clock (same pattern as auction-clock.test).
+jest.useFakeTimers();
 
 const mockRestaurants = Array.from({ length: 40 }, (_, i) => ({
   id: `r-${i}`,
@@ -75,6 +81,41 @@ describe("RestaurantListScreen (B-T3: unbounded catalog must be virtualized, not
     expect(list.props.data.map((r: { id: string }) => r.id)).toEqual(mockRestaurants.map((r) => r.id));
     const first = mockRestaurants[0]!;
     expect(list.props.keyExtractor(first)).toBe(first.id);
+  });
+});
+
+describe("RestaurantListScreen (RC.list_loading: cold load renders the adopted skeleton view, not the list)", () => {
+  // The generated loading view renders <Skeleton/>, whose Animated pulse is an infinite loop — unmount
+  // every tree so the timer's cleanup fires and no animation leaks past Jest teardown.
+  let tree: renderer.ReactTestRenderer | null = null;
+  afterEach(() => {
+    if (tree) act(() => tree!.unmount());
+    tree = null;
+    // Restore the shared stub to its data state for the rest of the suite.
+    mockFeedStub.restaurants = mockRestaurants;
+    mockFeedStub.isFetching = false;
+  });
+
+  it("renders FoodListLoadingView's content skeletons and no FlatList on a cold load (no data yet)", () => {
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isFetching = true;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    // The generated RC.list_loading view is a full-screen content skeleton — Skeletons present…
+    expect(tree!.root.findAllByType(Skeleton).length).toBeGreaterThan(0);
+    // …and the data-state FlatList must NOT mount (findAllByType returns [] rather than throwing).
+    expect(tree!.root.findAllByType(FlatList)).toHaveLength(0);
+  });
+
+  it("does NOT show the cold skeleton once a stale copy exists (header + list render instead)", () => {
+    // showingStale means feed.restaurants is the stale copy — data exists, so loading must not take over.
+    mockFeedStub.restaurants = mockRestaurants;
+    mockFeedStub.isFetching = true;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    expect(tree!.root.findByType(FlatList).props.data).toHaveLength(mockRestaurants.length);
   });
 });
 

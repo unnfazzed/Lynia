@@ -14,7 +14,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { emitView } from "./emit.mjs";
-import { ADOPTED, findAdopted } from "./adopted.mjs";
+import { expandAdopted, deferredStates, findAdopted } from "./adopted.mjs";
 import { checkAll, formatResult } from "./snapshot.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,18 +35,39 @@ const [cmd, arg] = process.argv.slice(2);
 
 if (cmd === "gen") {
   const spec = findAdopted(arg);
-  if (!spec) { console.error(`no adopted screen "${arg}". Known: ${ADOPTED.map((s) => s.key).join(", ")}`); process.exit(1); }
+  if (!spec) { console.error(`no adopted view "${arg}". Known: ${expandAdopted().map((s) => s.key).join(", ")}`); process.exit(1); }
   gen(spec, process.argv.includes("--stdout"));
 } else if (cmd === "gen-all") {
-  for (const spec of ADOPTED) gen(spec, false);
+  for (const spec of expandAdopted()) gen(spec, false);
 } else if (cmd === "check") {
   const results = checkAll(ts);
-  let bad = 0;
+  // Group per SCREEN so a multi-state screen reports each state's congruence under one heading.
+  const byScreen = new Map();
   for (const r of results) {
-    console.log(formatResult(r));
-    if (!r.ok) bad++;
+    if (!byScreen.has(r.screen)) byScreen.set(r.screen, []);
+    byScreen.get(r.screen).push(r);
   }
-  console.log(`\n${results.length - bad}/${results.length} adopted screens structurally congruent.`);
+  const deferred = deferredStates();
+  let bad = 0;
+  for (const [screen, rs] of byScreen) {
+    const multi = rs.length > 1 || rs.some((r) => r.state) || deferred.some((d) => d.screen === screen);
+    if (multi) {
+      console.log(`\n${screen} — multi-state screen (${rs.length} adopted state${rs.length === 1 ? "" : "s"}):`);
+      for (const r of rs) {
+        console.log("  " + formatResult({ ...r, key: r.state ? `${r.state}` : r.key }).replace(/\n/g, "\n  "));
+        if (!r.ok) bad++;
+      }
+      for (const d of deferred.filter((x) => x.screen === screen)) {
+        console.log(`  ⊘ ${d.state} (${d.key}) — DEFERRED: ${d.reason}`);
+      }
+    } else {
+      for (const r of rs) {
+        console.log(formatResult(r));
+        if (!r.ok) bad++;
+      }
+    }
+  }
+  console.log(`\n${results.length - bad}/${results.length} adopted state-views structurally congruent; ${deferred.length} state(s) deferred.`);
   process.exit(bad ? 1 : 0);
 } else {
   console.log("usage: cli.mjs gen <key> [--stdout] | gen-all | check");

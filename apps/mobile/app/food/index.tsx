@@ -7,8 +7,9 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
+import { FoodListLoadingView } from "./food-list.loading.view";
 
 /** R1·1..R1·5 restaurant list — five states (default / loading / empty / error / offline). */
 export default function RestaurantListScreen(): React.ReactElement {
@@ -36,6 +37,15 @@ export default function RestaurantListScreen(): React.ReactElement {
         <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon." />
       </Screen>
     );
+  }
+
+  // R1·2 list_loading — cold load: fetching with NO data yet (not even a stale copy). The mock draws a
+  // full-screen content skeleton (its own Screen), so replace the whole screen — matching RC.list_loading
+  // by construction (structural-snapshot guardrail). This is composition, not a rewrite: the state LOGIC
+  // (when loading shows) is unchanged; only its look moves to the generated view. Once any data (stale or
+  // fresh) exists the header + list render below exactly as before.
+  if (feed.isFetching && !(feed.restaurants && feed.restaurants.length > 0)) {
+    return <FoodListLoadingView />;
   }
 
   const all = feed.restaurants ?? [];
@@ -132,8 +142,6 @@ export default function RestaurantListScreen(): React.ReactElement {
             </EmptyState>
           </Card>
         )
-      ) : feed.isFetching ? (
-        <SkeletonList />
       ) : feed.hasLiveData ? (
         <EmptyState icon="utensils" title="No restaurants deliver here yet" message="We're onboarding kitchens in your area — check back soon." />
       ) : (
