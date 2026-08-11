@@ -65,8 +65,8 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C2·1 | `RC home` | Home · service tiles  [BOTH] | | |
-| ⬜ | C2·2 | `RC orders` | Orders · all services  [BOTH] | | |
+| 👁 | C2·1 | `RC home` | Home · service tiles  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | |
+| 👁 | C2·2 | `RC orders` | Orders · all services  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | compact accent live-order card replaces the stepper LiveOrderCard per the mock |
 | ⬜ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | | |
 | ⬜ | C2·4 | `LJ home_flag_off` | Home · Food tile soon  [BOTH] | | |
 | ⬜ | C2·5 | `LJ order_restore` | Cold start · order running  [BOTH] | | |
@@ -76,10 +76,10 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C3·1 | `RC list` | Restaurant list  [FOOD] | | |
+| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header/rows aligned; filter chips, count line & hero row deviate on honest-data grounds — see doc |
 | ⬜ | C3·2 | `RC list_loading` | List loading  [FOOD] | | |
-| ⬜ | C3·3 | `RC search` | Search  [FOOD] | | |
-| ⬜ | C3·4 | `RC menu` | Menu  [FOOD] | | |
+| 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
+| 👁 | C3·4 | `RC menu` | Menu  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | cover band + overhanging shop logo + floating back button replace the plain AppBar + thumb row |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
 | 👁 | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | map-behind-sheet align (`docs/parity/PHASE3-send.md`, `tools/parity/out/send_v2.png`) | |
 | ⬜ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | | |
