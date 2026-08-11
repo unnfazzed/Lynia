@@ -77,6 +77,15 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 
 - **Not drawn ⇒ not rendered.** Cosmetic extras the mocks never drew (confetti, invented headings,
   extra top-bar actions, "Open now" badges, section labels) are removed, not preserved.
+- **Live-vs-static — the mock's STRUCTURE wins; derive the live behaviour inside it** (owner decision
+  2026-08-11). When the app's live/functional layout structurally diverges from a *static* mock (e.g.
+  a geolocated deliver-to + a working open-now toggle + search where the mock draws a fixed address +
+  static sort-pills), **restructure the app to the mock's element tree and wire the live behaviour
+  INTO those elements** — do NOT keep the divergent app structure as a "the app is more functional"
+  deviation. A static mock is the *design of* the live screen, not a lesser version of it: the
+  functionality is derived within the drawn structure. (This is the general form of "the code argues
+  against the design; the code is wrong.") The only escape remains a user-approved
+  `docs/DESIGN-DEVIATIONS.md` entry.
 - **Mock copy verbatim — no exceptions.** The old WhatsApp-OTP→SMS substitution is **gone**: the
   rev 2 export changed the mocks to SMS, so applying it now would *introduce* drift. Help & support
   still routes to WhatsApp in the mocks, and that is correct. Any new copy exception needs a ledger

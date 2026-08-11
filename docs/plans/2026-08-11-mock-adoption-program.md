@@ -1,0 +1,70 @@
+# Mock-adoption program — structure-by-construction across all screens
+
+**Owner instruction (2026-08-11):** adopt the design mocks' structure across **all 275 current screens**,
+enforced by **automated guardrails** (no per-screen human visual comparison — the owner codes from a
+phone and cannot eyeball side-by-sides). This doc is the durable spec + decision log so the work
+survives across sessions and the two active sessions stay coordinated.
+
+## Goal
+Every adoptable screen's presentational structure is **provably the mock's**, verified in CI by a
+**text diff readable on a phone** — not an image. No visual comparison anywhere in the loop.
+
+## Architecture (in `main`)
+- **Mobile** — `tools/parity/codegen/`: a Babel transpiler turns a mock's JSX + inline CSS into a
+  structurally-faithful RN presentational component (`<name>.view.tsx`). 96% of style decls map
+  mechanically; the container wires the data seam (the only hand work). `react-strict-dom` was
+  evaluated and **rejected** (mocks are dynamic-inline `<div style>`, not RSD's static-StyleX model).
+- **Web (admin/merchant)** — direct-DOM adoption (same React/DOM/CSS substrate); work is data-wiring.
+- **Four CI-blocking guardrails** enforce conformance:
+  1. **token-conformance** (`apps/api/src/design-tokens.drift.spec.ts`) — every token category × all
+     three faces value-identical to `packages/design/tokens/*.css`.
+  2. **screen-inventory** (`apps/api/src/parity/screen-inventory.spec.ts` + `tools/parity/parity-status.mjs`)
+     — every current mock is wired or allowlisted (`PENDING`/`BACKEND_GATED`); no phantom/retired targets.
+  3. **reverse-drift freeze** (`scripts/check-design-freeze.mjs`, CI job `design-freeze`) — fails any PR
+     editing `packages/design/**` without a `docs/DESIGN-DEVIATIONS.md` entry.
+  4. **structural-snapshot** (`apps/api/src/parity/structure-snapshot.spec.ts` + `tools/parity/codegen/`)
+     — reduces mock-tree and app-view-tree to a normalized component-tree S-expression and fails with a
+     phone-readable tree-path diff. Supports **multi-state** screens (per-state `state → mock-key → view`)
+     and treats `FlatList ≡ virtualized map`. `node tools/parity/codegen/cli.mjs check` reports per-state
+     congruence + deferrals.
+
+Adoption is registered in `tools/parity/codegen/adopted.mjs`; a screen is **✅ adopted** when its
+generated view(s) are congruent and the guardrail suite is green — never "eyeballed".
+
+## The three tracks
+- **Track 1 — UI adoption** *(this session: `apps/mobile` + `tools/parity`)*. Foundation → broad
+  codegen adoption of the ~220 customer/rider screens; web direct-DOM for admin/merchant.
+- **Track 2 — Backend for the 51 hard-blocked screens** *(the OTHER session: `apps/api`)*. Builds the
+  features behind mocks that can't be adopted by restyling. Tracked as issues **#670–#674**. When a
+  feature lands, its ⛔ screens become adoptable by Track 1.
+- **Track 3 — Design/soft-blockers**. Superset screens (app exceeds the base mock) split into:
+  **(A)** the superset already has its own mock (e.g. settings' Play rows → `C8·9–12`) → composite-adopt;
+  **(B)** genuinely-undesigned visible state → draft a mock upstream (sanctioned shipped-state addition
+  + ledger, like the `SH·` wave) or descope; **(C)** invisible/technical (e.g. `FlatList` virtualization)
+  → guardrail equivalence, no design.
+
+## Standing policies (owner decisions)
+- **Verification is by guardrails, not human visual comparison** (2026-08-11).
+- **Alignment/parity PRs auto-merge on green** (2026-08-11) — never on red; fix forward.
+- **Live-vs-static: the mock's STRUCTURE wins; derive the live behaviour inside it** (2026-08-11) — see
+  CLAUDE.md "Pixel parity". Restructure the app to the mock's tree and wire functionality into it;
+  don't keep a divergent app structure because it's "more functional".
+- **Hard blockers: build the backend** (not descope) — the other session owns this.
+- Mocks are the source of truth; **never edit `packages/design/` to match the app**; deviations only via
+  `docs/DESIGN-DEVIATIONS.md`; never align to retired screens.
+
+## Status (2026-08-11)
+- Foundations complete in `main`: guardrail suite (#667), codegen + structural-snapshot (#668, #675),
+  DS primitives + empty-state Card (#676), multi-state model + `FlatList≡map` (#678).
+- **Adopted: 3** — `LJ.help`, `RC.cart_empty`, `RC.list_loading` (all congruent).
+- Registry: 275 screens (customer 122 · rider 98 · merchant 48 · admin 7); **51 `BACKEND_GATED`**
+  (issues #670–#674), the rest `PENDING` adoption.
+- Known follow-ups: give the DS `Screen` a `banner` slot (unblocks *error* states app-wide); the
+  structural guardrail treats primitive JSX-attribute *slots* (e.g. `Screen banner=`) as invisible —
+  extend to verify slotted content.
+
+## Honest velocity note
+The hard architecture is done; adoption itself is **incremental** — each screen tends to surface one
+small thing (a missing primitive capability, a backend feature, or a live-vs-static restructure). It is
+many small auto-merged PRs, not a single finish line. Backend-gated screens complete only when the
+other session lands #670–#674.
