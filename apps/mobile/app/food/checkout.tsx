@@ -161,7 +161,19 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   };
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        // Kit R4·1/R4·2 (r-customer-a.jsx:424, 469): the pay bar is the kit's `<Screen footer=…>`
+        // pinned bar (Foundation-D slot). The CTA names how the money moves, not just the figure —
+        // "pay $X cash" for CASH, "pay after they accept" for mobile money.
+        <Button
+          label={paymentMethod === "cash" ? `Place order · pay ${formatMoney(total)} cash` : "Place order · pay after they accept"}
+          onPress={() => void submit()}
+          disabled={!canSubmit}
+          loading={busy}
+        />
+      }
+    >
       <OfflineBanner state={reachable ? "online" : "offline"} />
       {/* Kit RC.checkout_cash (r-customer-a.jsx:426): the header is the shared AppBar — 16/700
           title + 11.5 muted sub (the kitchen's name) + a rotated-chevron back. */}
@@ -275,14 +287,6 @@ export default function FoodCheckoutScreen(): React.ReactElement {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Kit R4·1/R4·2 (r-customer-a.jsx:424, 469): the CTA names how the money moves, not just the
-          figure — "pay $X cash" for CASH, "pay after they accept" for mobile money. */}
-      <Button
-        label={paymentMethod === "cash" ? `Place order · pay ${formatMoney(total)} cash` : "Place order · pay after they accept"}
-        onPress={() => void submit()}
-        disabled={!canSubmit}
-        loading={busy}
-      />
       {/* Drag-to-adjust confirm for a searched delivery address (drop slot only) — same component the
           parcel composer uses, so food riders get a precise pin + in-context landmark, not a centroid. */}
       <AddressConfirmSheet

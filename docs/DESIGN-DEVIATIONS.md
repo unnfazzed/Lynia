@@ -14,8 +14,10 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09.** D-01 and D-02 were retired by the
-2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side effect.
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12.** D-01 and D-02 were
+retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
+effect. D-10/D-11/D-12 are the Foundation-D food-cluster per-element dispositions (in-menu search
+omitted · checkout live drop-off capture · cart upsell omitted).
 
 ---
 
@@ -233,3 +235,45 @@ is transient. Every app, package and workflow we author stays fully scanned.
 
 **To report upstream** to Design as a genuine (if low-impact) bug in `play-export.jsx` — alongside
 D-05 and D-06. None of the three have actually been sent yet; they need a design-tool round-trip.
+
+---
+
+## D-10 · RC.menu in-menu search button omitted — APPROVED (2026-08-11)
+
+**In effect.** The kit's `RC.menu` (r-customer-a.jsx:196-198) draws a search button on the cover's
+top-right corner. There is **no in-menu dish-search backend** — it would be a permanently dead
+control, which CLAUDE.md forbids ("never promise an action the app can't deliver"). Per the owner's
+Foundation-D instruction (2026-08-11) — *"the in-menu search button is a dead control → honest-disable
+or ledger-omit; a PER-ELEMENT call"* — the app **omits** it (the cover keeps only the back button + the
+DS `ShopLogo`). Everything else on the menu cover is adopted to the kit via the `CoverPhoto`/`ShopLogo`
+primitives. Restore this button (align to the mock) the moment an in-menu search feature exists.
+
+---
+
+## D-11 · RC.checkout live drop-off capture — APPROVED (2026-08-11)
+
+**In effect.** The kit's `RC.checkout_cash`/`RC.checkout_wallet` (r-customer-a.jsx:423-500) draw only a
+**static address-summary Card** ("12 Lanark Rd, Belgravia · 3.1 km away"). The app collects the drop-off
+**live on this screen** — `MapPicker` + `AddressSearch` + a landmark `Field` + a contact-phone `Field` +
+the drag-to-adjust `AddressConfirmSheet` — because a food delivery has nowhere else in the flow to
+capture where the food is going (the cart deliberately defers drop-off to here). This live capture is
+**load-bearing** and is a sanctioned **superset** of the static mock, which draws no address-capture
+surface to wire it into. Per the owner's Foundation-D instruction (2026-08-11) — *"the app's live
+drop-off capture that the mock lacks a surface for → a DESIGN-DEVIATIONS.md entry (keep the capture;
+it's load-bearing) and adopt the rest of the structure to the mock."* The rest of the checkout is
+adopted to the kit: the pay bar now rides the Foundation-D `<Screen footer=…>` slot, the pay rows are
+`PaymentMethodRow`, and the totals are the `PriceMath` card. The `EtaLine` primitive exists (Foundation-D)
+but stays **un-wired** here until an ETA estimator backs it — rendering a fabricated arrival window would
+violate the no-invented-figures rule.
+
+---
+
+## D-12 · RC.cart "Add a drink?" upsell rail omitted — APPROVED (2026-08-11)
+
+**In effect.** The kit's `RC.cart` (r-customer-a.jsx:329-341) draws an "ADD A DRINK?" upsell rail of
+`FoodThumb` cards. There is **no upsell/recommendation backend** to populate it — an empty "ADD A DRINK?"
+heading is dead chrome, and hardcoding the mock's two static drinks would fabricate a menu. Per the
+owner's Foundation-D instruction (2026-08-11) — *"the 'Add a drink?' upsell → if un-backed, ledger-omit"*
+— the app **omits** the rail. The `FoodThumb` primitive exists (Foundation-D) and backs the menu-row
+thumbnails; the upsell rail returns the moment an upsell backend exists. The cart's checkout bar now
+rides the Foundation-D `<Screen footer=…>` slot.

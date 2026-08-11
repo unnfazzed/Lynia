@@ -27,6 +27,7 @@ const KIND = new Map(Object.entries({
   b: "TEXT", p: "TEXT", h1: "TEXT", h2: "TEXT", h3: "TEXT", a: "TEXT", label: "TEXT", text: "TEXT",
   icon: "ICON", field: "FIELD", card: "CARD", button: "BUTTON", statuspill: "STATUSPILL", emptystate: "EMPTYSTATE", stepper: "STEPPER", money: "MONEY", avatar: "AVATAR",
   pricemath: "PRICEMATH", banner: "BANNER", coverphoto: "COVERPHOTO", menurow: "MENUROW", skeleton: "SKELETON",
+  etaline: "ETALINE", shoplogo: "SHOPLOGO", foodthumb: "FOODTHUMB",
   img: "IMAGE", image: "IMAGE",
   top: "APPBAR", appbar: "APPBAR",
   screen: "SCREEN", appscreen: "SCREEN",
@@ -51,8 +52,13 @@ const VIRTUAL_LIST = new Set(["flatlist", "sectionlist", "virtualizedlist", "fla
 //   `position`: "leading" (rendered above the children — the kit's Screen draws `banner` before the body)
 //               or "trailing" (rendered after the children).
 const STRUCTURAL_SLOTS = new Map(Object.entries({
-  // Screen/AppScreen scaffold: status bar → BANNER → body → footer. `banner` is a leading child.
-  SCREEN: [{ prop: "banner", position: "leading" }],
+  // Screen/AppScreen scaffold: status bar → BANNER → body → FOOTER. `banner` is a leading child;
+  // `footer` (the kit's pinned bottom action bar — cart "View cart" / checkout pay / menu cart bar)
+  // is a trailing child, rendered after the body. Both are JSX-valued slots the normalizer would
+  // otherwise not see (it walks children only), so folding them in makes the slot content VISIBLE to
+  // the structural diff on both the mock and the view — a footer present in the mock must be present,
+  // and structurally equal, in the view.
+  SCREEN: [{ prop: "banner", position: "leading" }, { prop: "footer", position: "trailing" }],
 }));
 
 function tagName(ts, node) {

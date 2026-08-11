@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import React from "react";
 import { Image, Text, View } from "react-native";
 import renderer from "react-test-renderer";
-import { Banner, CoverPhoto, MenuRow, PriceMath } from "../index";
+import { Banner, CoverPhoto, EtaLine, FoodThumb, MenuRow, PriceMath, Screen, ShopLogo } from "../index";
 
 /**
  * The mock→RN foundation primitives (r-parts.jsx kit mirrors). These are the components codegen
@@ -87,5 +87,83 @@ describe("CoverPhoto (kit CoverPhoto)", () => {
   it("renders a real Image when given a URI", () => {
     const tree = renderer.create(<CoverPhoto name="Sadza Republic" photo="https://example.com/cover.jpg" />);
     expect(tree.root.findAllByType(Image).length).toBe(1);
+  });
+});
+
+describe("EtaLine (kit EtaLine · Foundation-D)", () => {
+  it("renders the 'Arrives in <range>' promise with the arrive window and the honest note", () => {
+    const tree = renderer.create(<EtaLine range="30–40 min" arrive="10:11–10:21" />);
+    const t = texts(tree);
+    expect(t.some((x) => x.includes("Arrives in"))).toBe(true);
+    expect(t).toContain("30–40 min");
+    expect(t.some((x) => x.includes("10:11–10:21"))).toBe(true);
+    expect(t).toContain("Confirmed the moment the kitchen accepts.");
+    // The strip background defaults to the accent wash token, never a literal hex.
+    const strip = tree.root.findAllByType(View).map(flatStyle).find((s) => s.backgroundColor === tokens.color.accentWash && s.borderRadius === tokens.radius.input);
+    expect(strip).toBeTruthy();
+  });
+
+  it("honest-empty: drops the arrive-window span when no arrive is known (no drop-off yet)", () => {
+    const tree = renderer.create(<EtaLine range="30–40 min" note="We'll confirm the exact time once we have your address." />);
+    const t = texts(tree);
+    expect(t).toContain("30–40 min");
+    // No fabricated clock-time window when the drop-off is unknown.
+    expect(t.some((x) => x.includes("·") && /\d\d:\d\d/.test(x))).toBe(false);
+  });
+});
+
+describe("ShopLogo (kit ShopLogo · Foundation-D)", () => {
+  it("renders the accent-circle initial fallback (photoless), taking the ring/fill from tokens", () => {
+    const tree = renderer.create(<ShopLogo name="Sadza Republic" photo={false} size={52} />);
+    expect(texts(tree)).toContain("S");
+    expect(tree.root.findAllByType(Image).length).toBe(0);
+    const ring = tree.root.findAllByType(View).map(flatStyle).find((s) => s.borderColor === tokens.color.bg && s.borderWidth === 3);
+    expect(ring?.backgroundColor).toBe(tokens.color.accent);
+    expect(ring?.borderRadius).toBe(26);
+  });
+
+  it("renders a real Image when given a logo URI", () => {
+    const tree = renderer.create(<ShopLogo name="Sadza Republic" photo="https://example.com/logo.jpg" />);
+    expect(tree.root.findAllByType(Image).length).toBe(1);
+  });
+});
+
+describe("FoodThumb (kit FoodThumb · Foundation-D)", () => {
+  it("renders the tinted-initial block (photoless default) with the category tint from tokens", () => {
+    const tree = renderer.create(<FoodThumb name="Mazoe orange" cat="drinks" />);
+    expect(texts(tree)).toContain("M");
+    expect(tree.root.findAllByType(Image).length).toBe(0);
+    const tile = tree.root.findAllByType(View).map(flatStyle).find((s) => s.backgroundColor === tokens.color.highlightWash);
+    expect(tile).toBeTruthy();
+  });
+
+  it("renders a real Image when given a photo URI, sized by the caller", () => {
+    const tree = renderer.create(<FoodThumb name="Sadza" photo="https://example.com/dish.jpg" size={116} radius={9} />);
+    const img = tree.root.findAllByType(Image);
+    expect(img.length).toBe(1);
+    expect(flatStyle(img[0]!).borderRadius).toBe(9);
+  });
+});
+
+describe("Screen.footer slot (Foundation-D)", () => {
+  it("renders the footer content pinned below the body, on the bg surface with a hairline top border", () => {
+    const tree = renderer.create(
+      <Screen footer={<Text>View cart</Text>}>
+        <Text>body</Text>
+      </Screen>,
+    );
+    expect(texts(tree)).toContain("View cart");
+    const bar = tree.root.findAllByType(View).map(flatStyle).find((s) => s.borderTopWidth === 1 && s.borderTopColor === tokens.color.line);
+    expect(bar).toBeTruthy();
+  });
+
+  it("renders nothing extra when no footer is passed (backward-compatible)", () => {
+    const tree = renderer.create(
+      <Screen>
+        <Text>body</Text>
+      </Screen>,
+    );
+    const bar = tree.root.findAllByType(View).map(flatStyle).find((s) => s.borderTopWidth === 1 && s.borderTopColor === tokens.color.line);
+    expect(bar).toBeFalsy();
   });
 });

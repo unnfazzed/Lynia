@@ -3,10 +3,10 @@ import { tokens } from "@lynia/shared";
 import { isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, haptic, Icon, Money, Screen, SkeletonList, useToast } from "../../src/ui";
+import { AppBar, Button, Card, CoverPhoto, EmptyState, haptic, Icon, Money, Screen, ShopLogo, SkeletonList, useToast } from "../../src/ui";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
 import { MenuRow } from "../../src/ui/food/MenuRow";
 import { RemindWhenOpen } from "../../src/ui/food/RemindWhenOpen";
@@ -89,53 +89,43 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     else toast.show(`Added ${dish.name}`, "success");
   };
 
-  const logoInitial = (restaurant.name[0] ?? "•").toUpperCase();
-
   return (
-    <Screen>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Kit RC.menu (r-customer-a.jsx:191-200): a full-bleed cover band with the back button
-            floating on it and the round shop logo overhanging its bottom-left corner. The cover
-            breaks out of Screen's 16px padding; photo/logo fall back to a tinted band + monogram
-            (the customer read API's coverPhotoUrl/logoUrl are an upgrade, not a dependency). */}
-        <View style={{ marginTop: -tokens.space.screen, marginHorizontal: -tokens.space.screen }}>
-          <View style={{ height: 92 }}>
-            {restaurant.coverPhotoUrl ? (
-              <Image
-                source={{ uri: restaurant.coverPhotoUrl }}
-                accessibilityElementsHidden
-                importantForAccessibility="no"
-                style={{ width: "100%", height: "100%", backgroundColor: tokens.color.surface }}
-              />
-            ) : (
-              <View
-                accessibilityElementsHidden
-                importantForAccessibility="no"
-                style={{ flex: 1, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ fontSize: 28, fontWeight: "700", color: tokens.color.accentText, opacity: 0.45 }}>{restaurant.name}</Text>
-              </View>
-            )}
-          </View>
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            style={{ position: "absolute", left: 12, top: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.bg, alignItems: "center", justifyContent: "center", ...tokens.shadow.card }}
-          >
-            <View style={{ transform: [{ rotate: "180deg" }] }}>
-              <Icon name="chevron-right" size={18} color={tokens.color.ink} />
+    <Screen
+      footer={
+        cart.itemCount > 0 && cart.cart.restaurantId === restaurant.id ? (
+          // Kit RC.menu (r-customer-a.jsx:182-189): the "N items · View cart" bar is the kit's
+          // `<Screen footer=…>` pinned bar (Foundation-D slot), not a body child.
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}</Text>
+              <Money v={cart.subtotal} size={16} />
             </View>
-          </Pressable>
-          <View style={{ position: "absolute", left: 14, bottom: -22, width: 52, height: 52, borderRadius: 26, borderWidth: 3, borderColor: tokens.color.bg, overflow: "hidden", ...tokens.shadow.card }}>
-            {restaurant.logoUrl ? (
-              <Image source={{ uri: restaurant.logoUrl }} accessibilityElementsHidden importantForAccessibility="no" style={{ width: "100%", height: "100%" }} />
-            ) : (
-              <View style={{ flex: 1, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ fontSize: 22, fontWeight: "700", color: tokens.color.onAccent }}>{logoInitial}</Text>
-              </View>
-            )}
+            <Button label="View cart" onPress={() => router.push("/food/cart")} />
           </View>
+        ) : null
+      }
+    >
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Kit RC.menu (r-customer-a.jsx:191-200): a full-bleed cover band (the DS CoverPhoto
+            primitive) with the back button floating on it and the round shop logo (DS ShopLogo,
+            Foundation-D) overhanging its bottom-left corner. The cover breaks out of Screen's 16px
+            padding; photo/logo fall back to a tinted band + monogram (the customer read API's
+            coverPhotoUrl/logoUrl are an upgrade, not a dependency). The kit's cover-top-right search
+            button is omitted — there is no in-menu search backend (dead control; DESIGN-DEVIATIONS D-10). */}
+        <View style={{ marginTop: -tokens.space.screen, marginHorizontal: -tokens.space.screen }}>
+          <CoverPhoto height={92} name={restaurant.name} photo={restaurant.coverPhotoUrl ?? false}>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={{ position: "absolute", left: 12, top: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.bg, alignItems: "center", justifyContent: "center", ...tokens.shadow.card }}
+            >
+              <View style={{ transform: [{ rotate: "180deg" }] }}>
+                <Icon name="chevron-right" size={18} color={tokens.color.ink} />
+              </View>
+            </Pressable>
+            <ShopLogo size={52} name={restaurant.name} photo={restaurant.logoUrl ?? false} style={{ position: "absolute", left: 14, bottom: -22 }} />
+          </CoverPhoto>
         </View>
 
         <View style={{ marginTop: 26, marginBottom: 10 }}>
@@ -219,25 +209,6 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         )}
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
-
-      {cart.itemCount > 0 && cart.cart.restaurantId === restaurant.id ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            paddingTop: 10,
-            borderTopWidth: 1,
-            borderTopColor: tokens.color.line,
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}</Text>
-            <Money v={cart.subtotal} size={16} />
-          </View>
-          <Button label="View cart" onPress={() => router.push("/food/cart")} />
-        </View>
-      ) : null}
 
       {justClosed ? (
         <Pressable
