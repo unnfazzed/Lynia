@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.26.0](https://github.com/unnfazzed/Lynia/compare/v0.25.0...v0.26.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** align customer food browse cluster to mocks ([ee993d4](https://github.com/unnfazzed/Lynia/commit/ee993d41ade0960d781ff68c167cacc9d68aeb48))
+* **parity:** align customer food cart & checkout cluster to mocks ([aec83b7](https://github.com/unnfazzed/Lynia/commit/aec83b790c2f95e2b9158a550eb8c1a87adceb9b))
+* **parity:** align customer food order tracker cluster to mocks ([4c6ce4a](https://github.com/unnfazzed/Lynia/commit/4c6ce4a4a27d0fcad901c65376c796f8622bba43))
+
 ## [0.25.0](https://github.com/unnfazzed/Lynia/compare/v0.24.0...v0.25.0) (2026-08-11)
 
 
