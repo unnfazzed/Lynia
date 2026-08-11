@@ -64,6 +64,32 @@ and with `API_BASE_URL` unset the pages render their **offline/empty state** rat
 faithful render of the console/tablet shell with no API/DB/auth to stand up. Point
 `PARITY_ADMIN_URL` / `PARITY_MERCHANT_URL` at a seeded instance to shoot populated data instead.
 
+#### Seeded instance — populated merchant/admin states (#674)
+
+The offline shell is honest but empty; the **populated** merchant-tablet + admin states need a real,
+migrated, seeded backend. The seed (`apps/api/prisma/seed.ts`) covers this: alongside the admin +
+customer + riders + parcel order it seeds a **`pilotEnabled` merchant (Sadza Republic) + a Mains menu
++ four food orders across the `MerchantPhase` set**, so the queue board, menu, KPIs and needs-attention
+queue have real rows.
+
+```bash
+# 1. bring up Postgres + apply migrations, then seed
+pnpm db:up && pnpm db:migrate && pnpm db:seed
+# 2. run the api against that DB (its own shell) — this is the backend the web servers hit
+pnpm --filter @lynia/api start          # → http://127.0.0.1:3000 (or your api port)
+# 3. point the Next dev servers at the seeded api and shoot populated states
+API_BASE_URL=http://127.0.0.1:3000 node tools/parity/serve-web.mjs merchant   # :4312
+API_BASE_URL=http://127.0.0.1:3000 node tools/parity/serve-web.mjs admin      # :4311
+# 4. render — or set PARITY_MERCHANT_URL/PARITY_ADMIN_URL at hosted seeded instances instead of :4312/:4311
+PARITY_MERCHANT_URL=http://127.0.0.1:4312 node tools/parity/pair.mjs --category merchant --out out/sheet-merchant
+```
+
+`serve-web.mjs` forwards `API_BASE_URL` to the Next server and logs whether it started in seeded or
+offline mode. The admin auth gate is off in dev; the merchant tablet's gated routes render against the
+seeded api (offline they honestly redirect to `/login`). This is a **verification-lane** capability —
+the screens' STRUCTURE is already adopted (direct-DOM, structural-snapshot guardrail); the seeded
+instance is only what lets the offline screenshot show populated data like-for-like.
+
 ## Commands
 
 ```bash

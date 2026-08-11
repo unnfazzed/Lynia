@@ -159,6 +159,17 @@ component, re-check for an open alignment PR touching the same file.
   populated entries in `parity-status.mjs` to covered once they render.
 - **Test:** parity render of a gated merchant route (e.g. `RM.board`) and an admin populated route
   produces a populated PNG, not a login/error shell.
+- **Delivered 2026-08-11 (refined):** after PR #683's recalibration, the merchant/admin screen
+  *structure* is already adopted (direct-DOM + structural-snapshot guardrail) — #674 is now purely the
+  **verification-lane** capability, not a structure gate, so there is nothing to flip in
+  `parity-status.mjs`. The real gap was **data**: `apps/api/prisma/seed.ts` seeded no merchant/food.
+  Extended it with a `pilotEnabled` merchant (Sadza Republic) + a Mains menu (3 non-draft dishes, with
+  the #673 `foodRatingAvg/Count` + `prepBaselineMinutes` seeded) + **4 food orders across the
+  `MerchantPhase` set** (idempotent re-run guard). `serve-web.mjs` already forwards `API_BASE_URL`;
+  added an explicit seeded-vs-offline log. Documented the end-to-end seeded-instance runbook in
+  `docs/SCREENSHOT-LANE.md` (`pnpm db:seed` → run api → `API_BASE_URL=… serve-web` →
+  `PARITY_*_URL`). No contract/schema change; no migration. The populated-PNG render itself runs where
+  a Postgres + servers exist (parity CI / ops), which this container can't stand up. **Closes #674.**
 
 ### §3.6 Codebase anchors (map 2026-08-11)
 
@@ -224,7 +235,14 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 | #671 | Food rider identity | ✅ merged | #679 |
 | #672 | Dual ratings + tags | ✅ merged | #681 |
 | #673 | Discovery data model | ✅ merged — (a) #684, (b) #686 | #684 #686 |
-| #670 | Payment push flow | 🟡 PR open | — |
-| #674 | Seeded parity instance | ⬜ not started | — |
+| #670 | Payment push flow | ✅ merged | #687 |
+| #674 | Seeded parity instance | 🟡 PR open | — |
+
+**Program complete 2026-08-11:** all five BACKEND_GATED blockers built and shipped as sequential
+auto-merged PRs (#679 #681 #684 #686 #687 + this). Nothing descoped; no `docs/DESIGN-DEVIATIONS.md`
+entries (the app was built up to the mocks). The three RC payment states were the last
+`BACKEND_GATED` entries in the gallery — with #670 they are `PENDING` (adoptable), so **no gallery
+screen remains backend-gated**. Remaining work is pixel adoption (the alignment lane) + the real
+payment-rail client (#670's stub → live EcoCash/InnBucks/O'mari, gated behind owner sign-off).
 
 Legend: ⬜ not started · 🟡 in progress · ✅ merged to `main` (guardrails green).
