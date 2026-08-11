@@ -885,6 +885,54 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── PARCEL SEND-COMPOSER cluster — the customer flagship INTERACTIVE screen (app/send.tsx).
+    // A map-anchored composer: a full-bleed map + tap-to-pin, a two-snap compose sheet, inline
+    // address search, a confirm-pin modal, item/price/phone/landmark capture and submit. The three
+    // gallery keys home_empty/home_pins/home_expanded are the SAME mock `Home` (screens.jsx:145)
+    // param'd across pins/expanded; addr_search/addr_map_confirm are its address sub-states. This is
+    // exactly the live-vs-static case the region model (Foundation-E) was built for — but the mock as
+    // AUTHORED exposes no locatable, transpilable DS-primitive region roots, so it registers DEFER-only
+    // (like LJ.otp / RC.orders), NOT as fabricated regions. Full analysis in the primary deferral.
+    key: "LJ.home_empty",
+    container: "apps/mobile/app/send.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    mockComponent: "Home",
+    uiImport: "../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "composer",
+        key: "LJ.home_empty",
+        reason:
+          "NOT decomposable into region fragments under the region/fragment codegen model (Foundation-E), and NOT a backend gap — a live-vs-static shell whose mock exposes no locatable, transpilable DS-primitive region roots. The mock `Home` (screens.jsx:145, param'd pins/expanded across home_empty/home_pins/home_expanded) is a full-bleed kit `K.FauxMap` under a two-snap kit `K.MapSheet`, with the compose form built from the mock-LOCAL helpers `AddressFields` (the pickup/drop rows) and `QtyStepper`, raw styled `<div>`/`<span>` (brand top bar, 'tap to drop pin' hint, 'Use my location' pill), repeated DS `<Field>`s, and a single `<Button>` 'Broadcast request' that lives in `K.MapSheet.footer`. All three region locators are tag-based and none can anchor a faithful region here: (1) `{el:tag}` needs a UNIQUE DS/kit tag heading the sub-tree — `FauxMap`/`MapSheet` are kit primitives absent from the transpiler's DS remap (transpile.mjs DS_RENAME) AND from emit.mjs's uiPrims import set, so a fragment rooted at them emits unresolved components; `AddressFields`/`QtyStepper` are mock-local functions the transpiler neither inlines nor can resolve; `Field` appears ~7× so `{el:'Field'}` anchors ALL Fields under one region name (mock reduces to N `REGION` leaves, the container mounts 1 → the composition diff diverges); and the only unique DS tags, `Dove`/`Wordmark`, are leaf glyphs inside the brand pill (the app draws them as ONE `BrandLockup`, so even that wouldn't be congruent) — the meaningful blocks (top bar, address sheet, details form, submit bar) are each rooted in a raw `<div>`, and only the FIRST `<div>` (the whole screen) is `{el:'div'}`-locatable. (2) `{map:tag}` is inapplicable — `Home` has no `.map()`. (3) `{slot}` matches only a `Screen` attribute (normalize.mjs `locateTs` + `reduceComp` fold banner/footer slots for `Screen` alone); the mock root is a plain `<div>` (no `Screen`), so the lone Broadcast `<Button>` in `K.MapSheet.footer` is never traversed by the composition walker (non-`Screen` element footer props aren't folded) and cannot anchor a submit region the way RC.menu's `<Screen footer=…>` did. The app already realizes this static shell LIVE and mock-wins-correctly: `ComposeMap` (geolocation + tap-to-pin) under a `BottomSheet` (peek/expanded snaps) with inline `AddressSearch`, an `AddressConfirmSheet` modal (= addr_search/addr_map_confirm), `SendItemsList`/`SendPhoneFields`/`SendPriceQuote`/`SendLandmarksDetails`, and full submit validation + idempotency + disclaimer gate. Region-adopting it would require EITHER re-authoring the mock with DS primitives + a `<Screen footer=…>` shell (FORBIDDEN — editing packages/design to match the app trips the reverse-drift freeze) OR a Foundation-level codegen build (FauxMap→ComposeMap / MapSheet→BottomSheet remaps + a sheet-footer scaffold, mock-local-helper inlining, a generalized non-`Screen` slot locator) — out of scope for one adoption iteration, and even then the live ComposeMap/BottomSheet/AddressSearch trees differ from the static FauxMap/MapSheet placeholders, so fragment congruence would need further modelling. Registered defer-only, not forced into invented regions (CLAUDE.md Pixel-parity: honesty over volume; never ship a dead/fabricated control).",
+      },
+      {
+        state: "pins",
+        key: "LJ.home_pins",
+        reason:
+          "the SAME mock `Home` at pins=true (screens.jsx:145) — the set-pin state only fills the AddressFields/price/phone leaf VALUES; it adds no new locatable region root. Identical region-model wall as LJ.home_empty; deferred with the composer.",
+      },
+      {
+        state: "expanded",
+        key: "LJ.home_expanded",
+        reason:
+          "the SAME mock `Home` at pins=true/expanded=true (screens.jsx:145) — the expanded branch swaps the collapsed 'Add landmarks' button for three more DS `<Field>`s inside a raw `<div>`, adding no unique locatable region root (the extra Fields make `{el:'Field'}` still more ambiguous). Identical region-model wall as LJ.home_empty; deferred with the composer.",
+      },
+      {
+        state: "addr_search",
+        key: "LJ.addr_search",
+        reason:
+          "the address-search sub-state of the send composer. The app folds it INLINE into the compose sheet as a live `AddressSearch` (classification SUPERSET — mock draws it as a standalone screen `AddrSearch`), so it has no standalone container to point a view at, and it inherits the same kit-primitive/mock-local region-model wall as the composer. Deferred with LJ.home_empty.",
+      },
+      {
+        state: "addr_confirm",
+        key: "LJ.addr_map_confirm",
+        reason:
+          "the confirm-pin-on-map sub-state of the send composer — realized in-app as the `AddressConfirmSheet` MODAL opened from the compose sheet (not a routed screen), over the same FauxMap/sheet shell. Same region-model wall (kit `K.FauxMap` map canvas + no locatable DS region root); no standalone container. Deferred with LJ.home_empty.",
+      },
+    ],
+  },
 ];
 
 /**
