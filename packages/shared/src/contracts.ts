@@ -838,6 +838,16 @@ export const RestaurantListItem = z
     // will (haversineKm + deliveryFeeForDistance, ./restaurants-order + ./pricing) before placing
     // the order — null until the merchant has set a location (placeOrder itself requires one).
     location: LatLng.nullable(),
+    // #673 discovery: the restaurant's star rating, a denormalised aggregate of customers' food
+    // scores (Rating.foodScore, #672). `ratingAvg` is null until `ratingCount > 0` — the card shows
+    // no star rather than an invented "0" or "new" for an unrated shop (not-drawn ⇒ not-rendered).
+    ratingAvg: z.number().nullable(),
+    ratingCount: z.number().int(),
+    // #673 discovery: the merchant's typical kitchen prep time (minutes). The card's ETA is this +
+    // a delivery-leg estimate the client computes from `location` (same haversine path as the fee
+    // above). Null until the merchant sets it → the client falls back to a default prep. All three
+    // fields are additive (C1 shipped this response without them; an old client ignores them).
+    prepBaselineMinutes: z.number().int().nullable(),
   })
   .strict();
 export type RestaurantListItem = z.infer<typeof RestaurantListItem>;

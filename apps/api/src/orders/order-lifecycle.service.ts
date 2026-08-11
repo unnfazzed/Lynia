@@ -549,7 +549,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, agreedFare: true, suggestedFare: true, orderType: true },
+        select: { status: true, customerId: true, riderId: true, merchantId: true, agreedFare: true, suggestedFare: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
@@ -576,6 +576,23 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         data: { orderId, byProfileId: customerId, score, comment: comment ?? null, foodScore: foodScore ?? null, tags: tags ?? [] },
       });
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
+
+      // #673: maintain the restaurant's denormalised star rating from the customer's food score, the
+      // same running-average shape the rider aggregate below uses. Food orders only, and only when a
+      // food score was given. Deliberately simpler than the rider aggregate: a restaurant rating has
+      // no reliability-hold / auto-suspend consequence, so it carries no P1-6 collusion weighting —
+      // it is a display average, not a supply gate.
+      if (order.orderType === "merchant" && order.merchantId && foodScore != null) {
+        const merchant = await tx.merchant.findUnique({
+          where: { id: order.merchantId },
+          select: { foodRatingAvg: true, foodRatingCount: true },
+        });
+        if (merchant) {
+          const foodRatingCount = merchant.foodRatingCount + 1;
+          const foodRatingAvg = (merchant.foodRatingAvg * merchant.foodRatingCount + foodScore) / foodRatingCount;
+          await tx.merchant.update({ where: { id: order.merchantId }, data: { foodRatingAvg, foodRatingCount } });
+        }
+      }
 
       if (order.riderId) {
         await this.lockRiderRow(tx, order.riderId);

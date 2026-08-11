@@ -93,6 +93,22 @@ component, re-check for an open alignment PR touching the same file.
 - **Test:** discovery endpoint returns rating/ETA/fee for a seeded restaurant; dish search returns
   cross-restaurant matches; sort by each filter; a restaurant with no ratings yet omits the rating
   (card degrades gracefully, still no invented "Open now").
+- **Refined split (2026-08-11):** ETA and delivery-fee are **distance-based and the client already
+  has both endpoints** (its deliver-to + the merchant `location` on the list item) — the contract
+  even documents that checkout computes the fee via `haversineKm + deliveryFeeForDistance`
+  (`@lynia/shared`). So the server's genuinely-new discovery datum is the **rating** (a server
+  aggregate) plus a **prep baseline** (so the client's ETA has a real prep number); the delivery
+  leg + fee stay client-computed. **Deviation from the original "delivery-fee merchant-set" line:**
+  the authoritative fee is the distance-based figure charged at placement (`Order.deliveryFee`); a
+  merchant-set flat fee would diverge from what's actually billed, so the card shows the same
+  distance estimate the customer will pay — no merchant fee field added. (Not a design-mock
+  deviation; no ledger entry needed — the mock draws a fee, and it renders, just sourced honestly.)
+  Split into **(a)** rating + prep baseline, **(b)** the cross-restaurant dish search index.
+- **(a) delivered 2026-08-11:** `Merchant.foodRatingAvg`/`foodRatingCount` (denormalised, maintained
+  in `rate()` from `foodScore` like the rider aggregate — no P1-6 weighting, a display average not a
+  supply gate) + `Merchant.prepBaselineMinutes` (nullable); migration `0048_restaurant_discovery_rating`;
+  `RestaurantListItem` gains `ratingAvg` (null while unrated — no fake "0"), `ratingCount`,
+  `prepBaselineMinutes`. **(b) dish index — next.**
 
 ### #670 — Payment-prompt push flow  ‹money path›
 - **Goal:** `RC.pay_push` (send prompt) → `RC.pay_wait` (pending) → `RC.pay_confirmed`
@@ -183,8 +199,8 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 |---|---|---|---|
 | — | Program plan doc | ✅ landed | #679 |
 | #671 | Food rider identity | ✅ merged | #679 |
-| #672 | Dual ratings + tags | 🟡 PR open | — |
-| #673 | Discovery data model | ⬜ not started | — |
+| #672 | Dual ratings + tags | ✅ merged | #681 |
+| #673 | Discovery data model | 🟡 PR open — (a) rating+prep; (b) dish index next | — |
 | #670 | Payment push flow | ⬜ not started | — |
 | #674 | Seeded parity instance | ⬜ not started | — |
 

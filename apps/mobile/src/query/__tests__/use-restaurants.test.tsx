@@ -11,7 +11,7 @@ jest.mock("../../api/restaurants", () => ({
 }));
 
 function restaurant(id: string) {
-  return { id, name: `Kitchen ${id}`, coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: null, hours: null, location: null };
+  return { id, name: `Kitchen ${id}`, coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: null, hours: null, location: null, ratingAvg: null, ratingCount: 0, prepBaselineMinutes: null };
 }
 
 type HookResult = ReturnType<typeof useRestaurantListFeed>;
