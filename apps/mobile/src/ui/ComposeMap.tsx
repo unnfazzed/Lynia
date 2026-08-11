@@ -57,7 +57,15 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   onChangeDrop: (p: PickedPoint) => void;
   onReverseGeocodePickup?: (landmark: string) => void;
   onReverseGeocodeDrop?: (landmark: string) => void;
+  /**
+   * Distance (px) from the top of the map to clear the floating brand/account chrome laid over it by
+   * the parent. The kit (screens.jsx Home) stacks the "Use my location" pill and the "tap the map" hint
+   * just BELOW that top row; with the compose sheet now covering the map's bottom, both must sit in the
+   * visible top band rather than bottom-right (where the sheet would hide them).
+   */
+  topOffset?: number;
 }): React.ReactElement {
+  const topOffset = props.topOffset ?? tokens.space.md;
   const { pickup, drop, active } = props;
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
@@ -192,10 +200,11 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
         ) : null}
       </MapView>
 
-      {/* Floating "use my location". The kit offers this for BOTH roles (`AddrSearch`'s
-          onUseLocation handles pickup and drop-off alike): a customer standing at the drop-off
-          arranging a collection, or sending to where they already are, was previously left with no
-          shortcut at all on that slot. Bottom-right, clear of the address chrome up top. */}
+      {/* Floating "use my location" (kit Home screens.jsx:166 — top-right, just below the account
+          avatar). The kit offers this for BOTH roles (`AddrSearch`'s onUseLocation handles pickup and
+          drop-off alike): a customer standing at the drop-off arranging a collection, or sending to where
+          they already are, was previously left with no shortcut at all on that slot. Anchored top-right
+          (not bottom) so the compose sheet over the map's lower half can't hide it. */}
       {(
         <Pressable
           onPress={() => void useMyLocation()}
@@ -204,7 +213,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
           style={({ pressed }) => ({
             position: "absolute",
             right: tokens.space.md,
-            bottom: tokens.space.md,
+            top: topOffset,
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
@@ -240,12 +249,13 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       {mapReady && !activePoint ? (
         <View
           pointerEvents="none"
-          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, alignSelf: "center", ...tokens.shadow.card }}
+          style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
         >
+          {/* Kit Home (screens.jsx:164): a centred dark pill, verbatim copy. The "search an address"
+              half of the hint now lives on the AddressHint caption inside the sheet, so this map pill is
+              just the pin instruction the mock draws. */}
           <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, textAlign: "center" }}>
-            {placesEnabled()
-              ? `Search an address, or tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin.`
-              : `Tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin.`}
+            {`Tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin`}
           </Text>
         </View>
       ) : null}

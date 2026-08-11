@@ -81,10 +81,10 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | C3·3 | `RC search` | Search  [FOOD] | | |
 | ⬜ | C3·4 | `RC menu` | Menu  [FOOD] | | |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
-| ⬜ | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | | |
+| 👁 | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | map-behind-sheet align (`docs/parity/PHASE3-send.md`, `tools/parity/out/send_v2.png`) | |
 | ⬜ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | | |
 | ⬜ | C3·8 | `LJ addr_map_confirm` | Confirm pin on map  [PARCEL] | | |
-| ⬜ | C3·9 | `LJ home_pins` | Send · both set  [PARCEL] | | |
+| 👁 | C3·9 | `LJ home_pins` | Send · both set  [PARCEL] | map-behind-sheet align (`docs/parity/PHASE3-send.md`, `tools/parity/out/send_v2.png`) | |
 | ⬜ | C3·10 | `LJ home_expanded` | Send · sheet expanded  [PARCEL] | | |
 | ⬜ | C3·11 | `LJ disclaimer` | Broadcast disclaimer  [PARCEL] | | |
 | ⬜ | C3·12 | `LJ draft_restored` | Draft restored  [PARCEL] | | |

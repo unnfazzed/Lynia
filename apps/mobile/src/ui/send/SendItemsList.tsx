@@ -3,7 +3,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemRow } from "../../logic/order-draft";
 import { MAX_ITEMS } from "../../logic/order-draft";
-import { Button, Field, Icon, Label } from "../index";
+import { Field, Icon, Label } from "../index";
 import { QtyStepper } from "../home/QtyStepper";
 
 /**
@@ -77,7 +77,26 @@ export function SendItemsList({
         </View>
       ))}
       {items.length < MAX_ITEMS ? (
-        <Button label="Add another item" variant="ghost" onPress={addItem} />
+        // Kit Home (screens.jsx:184–187): "Add another item" is a small INLINE text link with a package
+        // icon — not a full-width outlined/ghost button. Keep the 44px hit area (a11y floor) around the
+        // compact label.
+        <Pressable
+          onPress={addItem}
+          accessibilityRole="button"
+          accessibilityLabel="Add another item"
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            alignSelf: "flex-start",
+            minHeight: tokens.touchTargetMin,
+            marginBottom: tokens.space.sm,
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Icon name="package" size={16} color={tokens.color.accentText} />
+          <Text style={{ fontSize: 13, fontWeight: "600", color: tokens.color.accentText }}>Add another item</Text>
+        </Pressable>
       ) : (
         // The control never just vanishes — say why it's gone (every dead-end explains itself).
         <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Up to 10 items per order.</Text>
