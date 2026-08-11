@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/unnfazzed/Lynia/compare/v0.22.1...v0.23.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** align send-home template — map-behind-sheet, rows in sheet, single top-bar action ([2ab909e](https://github.com/unnfazzed/Lynia/commit/2ab909ed9b0216b1164ca04419a4ad0957c437dc))
+
 ## [0.22.1](https://github.com/unnfazzed/Lynia/compare/v0.22.0...v0.22.1) (2026-08-10)
 
 
