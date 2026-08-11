@@ -20,12 +20,15 @@ const order = {
   agreedFare: "4.50",
   proposedFare: "4.50",
   pickup: { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Eastgate Mall, city centre", contactPhone: null },
-  dropoff: { point: { lat: -17.8016, lng: 31.0431 }, landmark: "Avondale Shops", contactPhone: null },
+  dropoff: { point: { lat: -17.8016, lng: 31.0431 }, landmark: "Avondale Shops", contactPhone: "+263 78 202 1180" },
   items: [{ description: "Documents envelope", quantity: 1 }],
   note: "Ask for Rita at reception.",
   rider: { profileId: RIDER_ID, currentLat: -17.826, currentLng: 31.053, updatedAt: now },
   events: [{ status: "assigned", createdAt: now }],
-  counterpartyPhone: null,
+  // The counterparty phone IS revealed from `assigned` onward (PHONE_REVEAL_STATUSES), so the CallRow
+  // the LJ.track_code mock draws renders here too. The rider's display NAME still comes from cached
+  // RiderIdentity (SecureStore, inert in parity), so the row shows label + number without the name.
+  counterpartyPhone: "+263 78 202 1180",
   expiresAt: null,
   ridersNearby: null,
 };

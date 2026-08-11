@@ -124,8 +124,8 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | | |
 | ⬜ | C6·2 | `RC track_secured` | Rider secured  [FOOD] | | |
 | ⬜ | C6·3 | `RC track_way` | On the way  [FOOD] | | |
-| ⬜ | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | | |
-| ⬜ | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | | |
+| 👁 | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
+| 👁 | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
 
 ### C7 · Hand-off & close
 
