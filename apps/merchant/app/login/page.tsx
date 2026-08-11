@@ -71,7 +71,11 @@ export default function LoginPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/lyniago-mark.svg" alt="" width={32} height={32} />
-          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em" }}>LyniaGo</span>
+          {/* The wordmark is Fredoka 600 with "Go" in --accent-700 (r-parts.jsx Wordmark, size 22) —
+           *  not the app's plain Inter run. */}
+          <span style={{ fontFamily: "var(--font-wordmark)", fontSize: 22, fontWeight: 600 }}>
+            Lynia<span style={{ color: "var(--accent-700)" }}>Go</span>
+          </span>
         </div>
         <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Kitchen sign-in</div>
 
@@ -102,17 +106,60 @@ export default function LoginPage() {
             <div style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 16 }}>
               Enter the code we sent to {step.phone}.
             </div>
-            <input
-              ref={inputRef}
-              type="text"
-              inputMode="numeric"
-              required
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="000000"
-              style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center", fontSize: 26 }}
-            />
+            {/* r-merchant.jsx:87-91 — the code is six segmented boxes (52×60, radius 12), the
+             *  next-empty box carrying the accent border. A single transparent input laid over the
+             *  boxes captures typing and screen-reader focus, so the `code` state and the verify path
+             *  are unchanged — the boxes are only its view. */}
+            <div style={{ position: "relative", marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                {Array.from({ length: 6 }, (_, i) => {
+                  const active = i === Math.min(code.length, 5);
+                  return (
+                    <span
+                      key={i}
+                      style={{
+                        width: 52,
+                        height: 60,
+                        borderRadius: 12,
+                        border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 26,
+                        fontWeight: 700,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {code[i] ?? ""}
+                    </span>
+                  );
+                })}
+              </div>
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                aria-label="6-digit code"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  margin: 0,
+                  padding: 0,
+                  border: "none",
+                  background: "transparent",
+                  color: "transparent",
+                  caretColor: "transparent",
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              />
+            </div>
             {/* r-merchant.jsx:92-95 — the alarm notice carries the volume glyph. */}
             <div
               style={{
@@ -121,7 +168,7 @@ export default function LoginPage() {
                 padding: "11px 13px",
                 background: "var(--accent-wash)",
                 borderRadius: 12,
-                marginBottom: 14,
+                marginBottom: 4,
                 fontSize: 12.5,
                 color: "var(--ink)",
                 lineHeight: 1.45,
