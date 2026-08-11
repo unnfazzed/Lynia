@@ -95,7 +95,7 @@ export default function OnboardingScreen(): React.ReactElement {
         >
           <Icon name={slide.icon} size={52} color={tokens.color.accentText} strokeWidth={1.75} />
         </View>
-        <Text style={{ fontSize: tokens.font.size.h2, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
+        <Text style={{ fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
           {slide.title}
         </Text>
         <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, textAlign: "center", lineHeight: 22, marginTop: 6, maxWidth: 240 }}>

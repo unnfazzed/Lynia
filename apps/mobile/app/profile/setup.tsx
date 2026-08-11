@@ -1,13 +1,25 @@
 import { tokens } from "@lynia/shared";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference } from "../../src/auth/session";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
-import { Button, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
+import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../../src/ui";
+
+/**
+ * The mock (screens.jsx `Register`) draws a single "Full name" field; the account record and the
+ * update-profile contract still carry firstName + lastName separately, so we hold one editable string
+ * here and split it at the two boundaries that need the halves — the durable draft and the PATCH. The
+ * first whitespace-run splits given name from the rest (family name), matching how the draft used to
+ * store the two fields directly.
+ */
+function splitName(full: string): { firstName: string; lastName: string } {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] ?? "", lastName: parts.slice(1).join(" ") };
+}
 
 /**
  * Post-OTP profile setup — the "Tell us who you are" step (finding C12). A freshly-verified account is
@@ -26,8 +38,10 @@ import { Button, ErrorText, Field, Heading, Screen, Sub } from "../../src/ui";
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
   const { session, signIn } = useAuth();
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  // The just-verified number, threaded from verify.tsx; shown read-only in the "Verified" phone field.
+  const params = useLocalSearchParams<{ phone?: string }>();
+  const phone = typeof params.phone === "string" ? params.phone : "";
+  const [fullName, setFullName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +58,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
         return;
       }
       if (d && profileDraftHasContent(d)) {
-        setFirstName(d.firstName);
-        setLastName(d.lastName);
+        setFullName([d.firstName, d.lastName].filter(Boolean).join(" "));
         setIdNumber(d.idNumber);
         setDraftRestored(true);
       }
@@ -59,19 +72,21 @@ export default function ProfileSetupScreen(): React.ReactElement {
   // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveProfileDraft({ firstName, lastName, idNumber });
-  }, [firstName, lastName, idNumber]);
+    void saveProfileDraft({ ...splitName(fullName), idNumber });
+  }, [fullName, idNumber]);
 
   // Mirror the contract floor (UpdateProfileRequest: both names non-empty ≤80, idNumber 4–40) so Save
-  // can't enable only to bounce off a raw server Zod error.
-  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && idNumber.trim().length >= 4;
+  // can't enable only to bounce off a raw server Zod error. The single name field must split into a
+  // given AND a family name for that to hold.
+  const { firstName, lastName } = splitName(fullName);
+  const canSubmit = firstName.length > 0 && lastName.length > 0 && idNumber.trim().length >= 4;
 
   const submit = async (): Promise<void> => {
     if (!canSubmit) return;
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
+      await updateProfile({ firstName, lastName, idNumber: idNumber.trim() });
       // The draft has served its purpose — wipe the stored national ID immediately rather than leaving
       // it in the keystore any longer than needed (mirrors become.tsx clearing the KYC draft on submit).
       void clearProfileDraft();
@@ -92,30 +107,37 @@ export default function ProfileSetupScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>Tell us who you are</Heading>
-      <Sub>A name and ID for your account record. Your phone is already verified.</Sub>
+      <Sub>You&apos;re sending parcels. Just a name and ID for your account record — no documents, no verification.</Sub>
       {draftRestored ? (
         <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginBottom: tokens.space.xs }}>
           We saved what you&apos;d filled in — pick up where you left off.
         </Text>
       ) : null}
       <Field
-        label="First name"
-        value={firstName}
-        onChangeText={setFirstName}
-        placeholder="Chipo"
+        label="Full name"
+        value={fullName}
+        onChangeText={setFullName}
+        placeholder="Chipo Marufu"
         maxLength={80}
-        autoComplete="name-given"
-        textContentType="givenName"
+        autoComplete="name"
+        textContentType="name"
       />
-      <Field
-        label="Last name"
-        value={lastName}
-        onChangeText={setLastName}
-        placeholder="Marufu"
-        maxLength={80}
-        autoComplete="name-family"
-        textContentType="familyName"
-      />
+      {/* The phone is already verified (OTP) — a read-only display with the "Verified" badge the mock
+          draws, not an editable field. */}
+      <View>
+        <Field
+          label="Phone number"
+          value={phone}
+          onChangeText={() => {}}
+          editable={false}
+          keyboardType="phone-pad"
+          hint="Verified by SMS ✓"
+        />
+        <View style={{ position: "absolute", top: 30, right: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Icon name="check" size={13} color={tokens.color.accentText} />
+          <Text style={{ fontSize: 11.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Verified</Text>
+        </View>
+      </View>
       {/* National ID stored on the account record (0·6). Default (text) keyboard:
           Zimbabwean IDs are alphanumeric (e.g. "63-123456-A-42"), so a number pad would block them. */}
       <Field
@@ -124,9 +146,9 @@ export default function ProfileSetupScreen(): React.ReactElement {
         onChangeText={setIdNumber}
         placeholder="63-123456-A-42"
         maxLength={40}
-        hint="Stored on your account record."
+        hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
       />
-      <Button label="Save and continue" onPress={submit} loading={busy} disabled={!canSubmit} />
+      <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
       <ErrorText message={error} />
     </Screen>
   );

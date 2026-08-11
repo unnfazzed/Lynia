@@ -1,13 +1,13 @@
 import { tokens } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { AppState, Text, View } from "react-native";
+import { AppState, Pressable, Text, View } from "react-native";
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { AppBar, Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
+import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
 
 export default function VerifyScreen(): React.ReactElement {
   const router = useRouter();
@@ -91,7 +91,9 @@ export default function VerifyScreen(): React.ReactElement {
       // profile-setup step FIRST (finding C12) before the role fork / home. That screen routes onward
       // to /role or /home itself once the name is saved.
       if (res.needsProfile) {
-        router.replace("/profile/setup");
+        // Carry the just-verified number to the setup screen so it can show the read-only "Verified"
+        // phone field the mock draws (LJ.register); setup.tsx has no other source for it.
+        router.replace({ pathname: "/profile/setup", params: { phone } });
         return;
       }
       // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
@@ -117,14 +119,12 @@ export default function VerifyScreen(): React.ReactElement {
 
   return (
     <Screen>
-      {/* Back-only AppBar chrome: auth screens keep their in-body Heading per the kit's own auth
-          layouts (screens.jsx `Otp`), so the bar carries no title — just the way back to the phone
-          entry, replacing the retired bottom ghost "Back". */}
-      <AppBar onBack={() => router.back()} />
-      <Heading>Enter your code</Heading>
+      {/* The kit's `Otp` screen (screens.jsx) carries no top bar — just the in-body heading and a
+          bottom ghost "Back". */}
+      <Heading>Check your messages</Heading>
       {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
           don't claim one was. Real users still see the "we sent a code" copy. */}
-      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"}.`}</Sub>
+      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"} by SMS.`}</Sub>
 
       {/* Calm confirmation after a resend, announced to screen readers. */}
       {resent && !locked ? (
@@ -163,7 +163,8 @@ export default function VerifyScreen(): React.ReactElement {
         // now that the OTP is delivered over SMS (Bird) rather than WhatsApp.
         autoComplete="sms-otp"
         textContentType="oneTimeCode"
-        error={locked ? "That code won't work anymore — send a fresh one below." : undefined}
+        hint="SMS can take a minute on a busy network."
+        error={locked ? "That code has expired." : undefined}
       />
 
       {locked ? (
@@ -178,7 +179,7 @@ export default function VerifyScreen(): React.ReactElement {
             }}
           >
             <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-              Codes expire, and too many wrong tries locks one. Send a fresh code — it resets your tries, too.
+              Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.
             </Text>
           </View>
           <Button label="Send a fresh code" onPress={() => void requestFreshCode()} loading={resending} />
@@ -186,15 +187,33 @@ export default function VerifyScreen(): React.ReactElement {
       ) : (
         <>
           <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
-          <Button
-            label={cooldown > 0 ? `Resend code in ${formatCountdown(cooldown)}` : "Resend code"}
-            variant="ghost"
+          {/* Resend affordance (screens.jsx `Otp` idle · screens-safety.jsx `OtpState`): an inline
+              centred link, not a ghost button. Idle → green "Didn't get it? Resend code"; during the
+              cooldown → a muted "Resend in m:ss" (or "Resend again in m:ss" after a resend). */}
+          <Pressable
             onPress={resend}
-            loading={resending}
             disabled={cooldown > 0}
-          />
+            accessibilityRole="button"
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: tokens.space.xs + 2, minHeight: tokens.touchTargetMin }}
+          >
+            {cooldown > 0 ? (
+              <>
+                <Icon name="clock" size={15} color={tokens.color.muted} />
+                <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>
+                  Resend {resent ? "again " : ""}in <Text style={{ fontVariant: ["tabular-nums"] }}>{formatCountdown(cooldown)}</Text>
+                </Text>
+              </>
+            ) : (
+              <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+                Didn&apos;t get it? Resend code
+              </Text>
+            )}
+          </Pressable>
         </>
       )}
+
+      {/* The kit draws the way back as a bottom ghost button (no top bar). */}
+      <Button label="Back" variant="ghost" onPress={() => router.back()} />
 
       <ErrorText message={error} />
     </Screen>

@@ -98,6 +98,10 @@ export default function PermissionsScreen(): React.ReactElement {
             : "LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
         }
         primaryLabel="Allow location"
+        // Mock (screens.jsx `PermLoc`) secondary is "Enter address manually" — the customer's manual
+        // pickup path. A rider has no pickup address to type, so that framing is wrong for them; keep
+        // the neutral skip there.
+        secondaryLabel={isRider ? "Not now" : "Enter address manually"}
         onPrimary={primeLocation}
         onSkip={() => setStep("notifications")}
         busy={busy}
@@ -114,6 +118,7 @@ export default function PermissionsScreen(): React.ReactElement {
           : "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
       }
       primaryLabel="Turn on notifications"
+      secondaryLabel="Not now"
       onPrimary={primeNotifications}
       onSkip={done}
       busy={busy}
@@ -126,23 +131,31 @@ function Prime(props: {
   title: string;
   message: string;
   primaryLabel: string;
+  secondaryLabel: string;
   onPrimary: () => void;
   onSkip: () => void;
   busy: boolean;
 }): React.ReactElement {
+  // Mirrors the mock's `SystemState` (screens.jsx `PermLoc` renders it): a vertically-centred group —
+  // 84px surface disc + 36px text-green icon, 19px title, one 13px muted sentence (max 230), then the
+  // primary / secondary actions directly under the copy (not pinned to the screen bottom).
   return (
     <Screen>
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: tokens.space.lg }}>
-        <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.xl }}>
-          <Icon name={props.icon} size={40} color={tokens.color.accentText} />
+        <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+          <Icon name={props.icon} size={36} color={tokens.color.accentText} />
         </View>
-        <Text style={{ fontSize: tokens.font.size.h1, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center", marginBottom: tokens.space.sm }}>
+        <Text style={{ fontSize: 19, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
           {props.title}
         </Text>
-        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, textAlign: "center", lineHeight: 22 }}>{props.message}</Text>
+        <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", lineHeight: 20, maxWidth: 230, marginTop: 4 }}>
+          {props.message}
+        </Text>
+        <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>
+          <Button label={props.primaryLabel} onPress={props.onPrimary} loading={props.busy} />
+          <Button label={props.secondaryLabel} variant="ghost" onPress={props.onSkip} />
+        </View>
       </View>
-      <Button label={props.primaryLabel} onPress={props.onPrimary} loading={props.busy} />
-      <Button label="Not now" variant="ghost" onPress={props.onSkip} />
     </Screen>
   );
 }

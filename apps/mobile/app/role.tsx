@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
-import { Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
+import { BrandLockup, Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
 
 /**
  * Post-OTP role fork (RIDER-JOURNEY-AUDIT R0-4): sign-in is identical to the customer up to here, so
@@ -35,6 +35,10 @@ export default function RoleScreen(): React.ReactElement {
 
   return (
     <Screen>
+      {/* The mock (screens.jsx `RoleSelect`) opens with the brand lockup above the heading. */}
+      <View style={{ marginBottom: tokens.space.xl }}>
+        <BrandLockup size={40} />
+      </View>
       <Heading>How do you want to start?</Heading>
       <Sub>It&apos;s one account — pick how you&apos;ll use LyniaGo now, and switch anytime.</Sub>
 
