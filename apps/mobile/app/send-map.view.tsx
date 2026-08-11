@@ -6,7 +6,8 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/send.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { ComposeMap, type PickedPoint, type ActiveSlot } from "../src/ui";
+import { ComposeMap, type ActiveSlot } from "../src/ui/ComposeMap";
+import { type PickedPoint } from "../src/ui/MapPicker";
 
 export type SendMapViewProps = {
   pickup: PickedPoint | null;

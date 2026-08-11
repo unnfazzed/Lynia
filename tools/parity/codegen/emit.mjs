@@ -234,12 +234,25 @@ function assembleFile(spec, body) {
   lines.push(`import React from "react";`);
   if (rnPrims.length) lines.push(`import { ${rnPrims.join(", ")} } from "react-native";`);
   const typeImports = [...(usesIconName ? ["type IconName"] : []), ...uiTypes.map((tn) => `type ${tn}`)];
-  if (usesTokens) {
-    const ui = [...uiPrims, ...typeImports];
-    lines.push(`import { tokens } from "@lynia/shared";`);
-    if (ui.length) lines.push(`import { ${dedupeUi(ui).join(", ")} } from "${spec.uiImport}";`);
-  } else if (uiPrims.length || typeImports.length) {
-    lines.push(`import { ${dedupeUi(uiPrims.concat(typeImports)).join(", ")} } from "${spec.uiImport}";`);
+  if (usesTokens) lines.push(`import { tokens } from "@lynia/shared";`);
+  // Map/sheet realizations import from their OWN modules, NOT the `src/ui` barrel: the barrel
+  // (index.tsx) re-exporting a component that imports Icon/Button/Label back FROM the barrel forms a
+  // `no-circular` dependency-cruiser violation. Everything else stays on the one barrel specifier.
+  const NON_BARREL = { ComposeMap: "/ComposeMap", ActiveSlot: "/ComposeMap", BottomSheet: "/BottomSheet", PickedPoint: "/MapPicker" };
+  const baseName = (tok) => tok.replace(/^type\s+/, "");
+  const allUi = dedupeUi([...uiPrims, ...typeImports]);
+  if (allUi.length) {
+    const byModule = new Map();
+    for (const tok of allUi) {
+      const mod = `${spec.uiImport}${NON_BARREL[baseName(tok)] || ""}`;
+      if (!byModule.has(mod)) byModule.set(mod, []);
+      byModule.get(mod).push(tok);
+    }
+    // Barrel import first (stable ordering), then any own-module imports.
+    if (byModule.has(spec.uiImport)) lines.push(`import { ${byModule.get(spec.uiImport).join(", ")} } from "${spec.uiImport}";`);
+    for (const [mod, toks] of byModule) {
+      if (mod !== spec.uiImport) lines.push(`import { ${toks.join(", ")} } from "${mod}";`);
+    }
   }
   lines.push("");
   if (spec.propsType) { lines.push(spec.propsType); lines.push(""); }
