@@ -647,18 +647,101 @@ export const ADOPTED = [
     ],
   },
   {
-    // RC.cart — the food cart (app/food/cart.tsx). cart_empty is adopted (above); the DATA state defers.
+    // ── RC.cart — the populated food cart (app/food/cart.tsx). The THIRD region-adopted INTERACTIVE
+    // container (Foundation-E), after RC.menu + RC.closed_interrupt. cart_empty is adopted separately as a
+    // whole-screen state view (above); the POPULATED cart cannot be a whole-screen generated view — its
+    // live behaviour (per-line QtyStepper quantity editing, editable per-line notes, the menu-reconcile
+    // OOS/price notices, the CartNoteSheet overlay) would be regressed by a single static tree. So it
+    // adopts PIECE-BY-PIECE: the Screen.footer CHECKOUT bar is a cleanly congruent region the container
+    // composes while keeping all interactive glue. The guardrail asserts BOTH (a) the fragment ≡ its mock
+    // sub-tree, AND (b) the container mounts it in the mock's region position (the pinned slot →
+    // SCREEN(REGION:footer) on both sides). The interactive line-items Card, the un-wireable EtaLine, the
+    // delivery-bearing PriceMath summary, the un-backed upsell rail, and the live OOS/price/min/note states
+    // are honestly DEFERRED (below), each pruned from the composition check as container glue.
     key: "RC.cart",
     container: "apps/mobile/app/food/cart.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    mockComponent: "cart",
     uiImport: "../../src/ui",
-    states: [],
+    regions: [
+      {
+        // Footer region — the pinned "Go to checkout · $X" bar the kit draws in <Screen footer=…>
+        // (Foundation-D slot). Locator {slot:"footer"} folds the slot value; the fragment is the lone
+        // Button. Mirrors RC.menu's footer region. The label is computed by the container (the live total).
+        region: "footer",
+        locator: { slot: "footer" },
+        componentName: "CartCheckoutBarView",
+        viewFile: "apps/mobile/app/food/cart-checkout-bar.view.tsx",
+        propsParam: "{ label, onCheckout }: CartCheckoutBarViewProps",
+        propsType: [
+          "export type CartCheckoutBarViewProps = {",
+          "  label: string;",
+          "  onCheckout: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "Button") return;
+            // Kit-only props (web onClick, style, the frozen label string) → drop; wire onPress + label.
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["onClick", "style", "label"].includes(a.name.name)),
+            );
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("label"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onCheckout"))));
+          },
+        }),
+      },
+    ],
+    // Deferred — each a genuine wall, recorded honestly and pruned from the composition check (CLAUDE.md
+    // "Pixel parity": honesty over volume; never ship a dead or fabricated control).
     deferred: [
       {
-        state: "data",
-        key: "RC.cart",
+        state: "lines",
+        key: "RC.cart#lines",
         reason:
-          "Foundation-D CLOSED the primitive gap — EtaLine + FoodThumb + Screen.footer now exist, and the container ADOPTS the footer: the 'Go to checkout · $X' bar rides the `<Screen footer=…>` slot. What remains is NOT the primitive gap: the cart deliberately does NOT collect a drop-off (that's checkout's job), so there is no honest delivery ETA to feed EtaLine — it stays un-wired rather than fabricate a '30–40 min' figure; the 'Add a drink?' FoodThumb upsell rail has no upsell backend and is omitted (ledgered DESIGN-DEVIATIONS D-12); and the app's live per-line QtyStepper + editable per-line notes + min-order card are load-bearing interactive supersets the static whole-screen mock never drew and the codegen model cannot host in a single gated view without regressing inline quantity editing. Adopted at the element level (Screen.footer); the whole-screen gated view is deferred by the no-drop-off-at-cart data model, the un-backed upsell (D-12), and the live QtyStepper superset — not a missing primitive.",
+          "the line-items Card is a live INTERACTIVE superset the static mock never drew, not a missing primitive. The mock draws each line's quantity as a READ-ONLY 28px tab badge (a bare number) and the per-dish note as static text; the app renders a live per-line QtyStepper (increment / decrement / remove-at-1 — the ONLY place quantity is editable after the menu ItemSheet), an editable note Pressable that opens the CartNoteSheet, an inline order-note row, and an 'Add more items' link back to the menu. Generating the mock's static badge as a fragment and mounting it would REGRESS inline quantity editing — the mock draws no +/− control to wire increment/decrement into, so CLAUDE.md's live-vs-static 'wire the behaviour INTO the drawn elements' has no element to target here. Kept as container glue (pruned from the composition); adoptable once quantity editing earns a drawn stepper in the cart mock.",
+      },
+      {
+        state: "eta",
+        key: "RC.cart#eta",
+        reason:
+          "the mock's <EtaLine range='30–40 min' arrive='10:11–10:21'/> promises a delivery ETA + arrival window BEFORE payment, but the cart deliberately does NOT collect a drop-off (that is checkout's job), so there is no honest distance/ETA to feed it — wiring a figure here would fabricate an arrival window (CLAUDE.md forbids). Not rendered; not a region (pruned from the composition). Adoptable once an ETA estimator + a cart-time destination back it.",
+      },
+      {
+        state: "upsell",
+        key: "RC.cart#upsell",
+        reason:
+          "the mock's 'ADD A DRINK?' FoodThumb rail is an upsell with no upsell/cross-sell backend to populate it; omitted per ledgered DESIGN-DEVIATIONS D-12. Not rendered; not a region (pruned from the composition).",
+      },
+      {
+        state: "summary",
+        key: "RC.cart#summary",
+        reason:
+          "the mock's <PriceMath goods='13.00' fee='2.50' km='3.1' total='15.50'/> DRAWS a Delivery(fee · km) breakdown row — and the codegen-target DS PriceMath (src/ui/PriceMath.tsx, the kit-faithful mirror the transpiler resolves off src/ui) REQUIRES goods/fee/km/total and renders that Delivery row. But the cart deliberately collects NO drop-off (that is checkout's job), so there is no honest delivery distance/fee to feed it — the SAME no-drop-off wall as the EtaLine region. The app therefore renders the food-cart PriceMath (src/ui/food/PriceMath.tsx, a {rows,total,footnote} variant) showing only Food + optional small-order fee + Total with a 'delivery added at checkout' footnote — an honest omission, but one that means a faithful mock-mirror fragment (kit PriceMath with a delivery row) is not expressible without fabricating fee/km (CLAUDE.md forbids). Kept as container glue (pruned from the composition); adoptable once the cart carries a drop-off + delivery-fee estimate, or the mock draws a delivery-free cart summary.",
+      },
+      {
+        state: "oos",
+        key: "RC.cart_oos",
+        reason:
+          "the item-sold-out state — the mock frames it as its OWN whole `<Screen banner={<Banner warn/>}>` with a struck-through 'Removed' line and a re-totalled PriceMath. The app realizes it LIVE inside the one cart container as a dismissible inline notice Card (highlight-wash + circle-alert + 'Got it') driven by the menu-reconciliation pass, NOT as a Screen.banner, and DROPS the removed line rather than showing a struck-through row. Live-vs-static structural divergence (same class as RC.menu_closed); no lossless mock-wins restructure without regressing reconcile-on-open. Deferred.",
+      },
+      {
+        state: "price",
+        key: "RC.cart_price",
+        reason:
+          "the price-changed state — the mock is a whole `<Screen>` whose footer swaps to 'Accept the new total' + 'Remove that item' and whose body shows an old→new struck-price row. The app realizes it LIVE as the same dismissible reconciliation notice Card (the reconcile pass applies the new price to the line and surfaces a 'price changed … from → to' notice), keeping the single 'Go to checkout' footer — it never presents a separate accept/remove footer screen. Live-vs-static; deferred.",
+      },
+      {
+        state: "min",
+        key: "RC.cart_min",
+        reason:
+          "the under-minimum state — the mock draws a whole `<Screen>` with a helper line ABOVE the checkout button IN THE FOOTER ('Add $1.50 more, or pay the $1 small-order fee'). The app realizes belowMinimum LIVE in the base cart container as a highlight-wash warning Card in the body (structurally faithful to the mock's body warning Card) but keeps the plain 'Go to checkout · $X' footer (the small-order fee flows through the PriceMath rows), and the body also carries the note/disclaimer chrome the frozen cart_min mock omits. The footer helper-line variant is a per-STATE footer the base RC.cart region does not host. Live-vs-static; deferred.",
+      },
+      {
+        state: "note",
+        key: "RC.cart_note",
+        reason:
+          "the note-for-the-kitchen bottom sheet — the mock draws it as a whole `<Screen pad={false}>` with a dimmed skeleton backdrop and an absolutely-positioned sheet + quick-chip suggestions. The app realizes it LIVE as the CartNoteSheet MODAL opened from a line's note Pressable (not a routed screen), over the live cart. Same overlay-vs-whole-screen disposition as RC.closed_interrupt's backdrop; the sheet has no standalone container to point a whole-screen view at, and its quick-chip suggestions are a superset. Deferred as a live sheet overlay.",
       },
     ],
   },
