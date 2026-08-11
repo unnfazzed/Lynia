@@ -346,8 +346,10 @@ export const ADOPTED = [
   },
   {
     // RC.checkout — the food checkout flow (app/food/checkout.tsx). Multi-state: cart-empty / loading /
-    // placing(busy) / data(cash|wallet). Only the PLACING state is a clean structural match today; the
-    // cash/wallet DATA states are deferred (see below).
+    // placing(busy) / data(cash|wallet). The PLACING state adopts as a whole-screen state view here; the
+    // interactive DATA screen (drop-off capture, payment select, live totals, place-order) is region-
+    // adopted PIECE-BY-PIECE under the RC.checkout_cash entry below (Foundation-E) — two entries on the one
+    // container, exactly like RC.menu + RC.closed_interrupt share app/food/[id].tsx.
     key: "RC.checkout",
     container: "apps/mobile/app/food/checkout.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
@@ -366,18 +368,132 @@ export const ADOPTED = [
         viewFile: "apps/mobile/app/food/checkout-placing.view.tsx",
       },
     ],
+  },
+  {
+    // ── RC.checkout_cash — the food checkout DATA screen (app/food/checkout.tsx). The FOURTH region-adopted
+    // INTERACTIVE container (Foundation-E), after RC.menu + RC.closed_interrupt + RC.cart. A whole-screen
+    // generated view cannot host this screen's live behaviour (the load-bearing drop-off CAPTURE —
+    // MapPicker + AddressSearch + landmark/phone Fields + AddressConfirmSheet, ledgered D-11 — plus live
+    // payment-select, a live delivery-fee estimate, and place-order with idempotency) without regressing
+    // it, so it adopts PIECE-BY-PIECE. TWO regions are cleanly congruent and composed by the container:
+    //   • summary — the kit `<PriceMath goods/fee/km/total/note>` totals card. Unlike RC.cart#summary
+    //     (deferred: the cart collects no drop-off, so fee/km would be fabricated), CHECKOUT has a real
+    //     drop-off, so the delivery fee AND the distance are HONEST here — `estimateDeliveryFee` already
+    //     computes both from `haversineKm(merchant, dropPoint)`. The app therefore adopts the kit PriceMath
+    //     (goods/fee/km/total), NOT the {rows,total,footnote} food variant. The under-minimum small-order
+    //     fee — which the kit PriceMath has no row for — folds into the `note` exactly as the design's own
+    //     `cart_min` mock does it (`note="Includes a $1.00 small-order fee."`), so no money is hidden or
+    //     fabricated; goods + delivery + the note reconcile to the total.
+    //   • footer (place-bar) — the pinned "Place order · pay $X" Button in the kit's `<Screen footer=…>`
+    //     slot (Foundation-D). Mirrors RC.cart#footer / RC.menu#footer; label + disabled + loading + onPress
+    //     are the data seam.
+    // The composition check reduces BOTH mock and container to `SCREEN( REGION:summary, REGION:footer )`.
+    // The wallet variant (RC.checkout_wallet) is served by the SAME container + the SAME two regions
+    // (structurally identical); it differs only in the deferred payment region's selected state/copy.
+    key: "RC.checkout_cash",
+    container: "apps/mobile/app/food/checkout.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    mockComponent: "checkout_cash",
+    uiImport: "../../src/ui",
+    regions: [
+      {
+        // Summary region — the totals card `<Card><PriceMath goods fee km total note/></Card>`. Locator
+        // {el:"PriceMath"} anchors the kit PriceMath (the first, only, PriceMath in checkout_cash); the
+        // wrapping Card is container glue (bubbled through in the composition, like RC.cart's summary would
+        // be). The bind swaps the mock's frozen figures for the live seam: goods = food subtotal, fee = the
+        // honest delivery estimate, km = the honest drop distance, total, and the note.
+        region: "summary",
+        locator: { el: "PriceMath" },
+        componentName: "CheckoutSummaryView",
+        viewFile: "apps/mobile/app/food/checkout-summary.view.tsx",
+        propsParam: "{ goods, fee, km, total, note }: CheckoutSummaryViewProps",
+        propsType: [
+          "export type CheckoutSummaryViewProps = {",
+          "  /** Food subtotal (the kit PriceMath's 'Food' row). */",
+          "  goods: number;",
+          "  /** Honest delivery-fee estimate from the drop pin (0 before a drop-off is set). */",
+          "  fee: number;",
+          "  /** Honest drop distance in km (drives the delivery row's per-km sub-line). */",
+          "  km: number;",
+          "  total: number;",
+          "  /** Cash/wallet consequence copy, with any small-order fee folded in (cart_min convention). */",
+          "  note?: string;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "PriceMath") return;
+            // Drop the mock's frozen goods/fee/km/total/note literals; wire the live seam.
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["goods", "fee", "km", "total", "note"].includes(a.name.name)),
+            );
+            for (const k of ["goods", "fee", "km", "total", "note"]) {
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(k), t.jsxExpressionContainer(expr(k))));
+            }
+          },
+        }),
+      },
+      {
+        // Footer region — the pinned "Place order · pay $X" bar the kit draws in <Screen footer=…>
+        // (Foundation-D slot). Locator {slot:"footer"} folds the slot value; the fragment is the lone
+        // Button. Mirrors RC.cart#footer / RC.menu#footer. The label is computed by the container (the pay
+        // method + live total drive the copy), and disabled/loading reflect the submit gate + in-flight
+        // placeFoodOrder mutation — the money-sensitive place-order logic is unchanged.
+        region: "footer",
+        locator: { slot: "footer" },
+        componentName: "CheckoutPlaceBarView",
+        viewFile: "apps/mobile/app/food/checkout-place-bar.view.tsx",
+        propsParam: "{ label, onPlace, disabled, loading }: CheckoutPlaceBarViewProps",
+        propsType: [
+          "export type CheckoutPlaceBarViewProps = {",
+          "  label: string;",
+          "  onPlace: () => void;",
+          "  disabled?: boolean;",
+          "  loading?: boolean;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "Button") return;
+            // Kit-only props (web onClick, style, the frozen label string) → drop; wire the app Button's
+            // label + onPress + disabled + loading.
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["onClick", "style", "label"].includes(a.name.name)),
+            );
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("label"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onPlace"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("disabled"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
+          },
+        }),
+      },
+    ],
+    // Deferred regions — genuine walls, recorded honestly and pruned from the composition check (CLAUDE.md
+    // "Pixel parity": honesty over volume; never ship a dead or fabricated control).
     deferred: [
       {
-        state: "data",
-        key: "RC.checkout_cash",
+        state: "dropoff",
+        key: "RC.checkout#dropoff",
         reason:
-          "Foundation-D CLOSED the primitive gap — EtaLine + Screen.footer now exist, and the container ADOPTS them: the pay bar rides the `<Screen footer=…>` slot, pay rows are PaymentMethodRow, totals are the PriceMath card. What remains is NOT the primitive gap: the app collects the drop-off LIVE on this screen (MapPicker + AddressSearch + landmark Field + contact-phone Field) and the static mock draws NO address-capture surface to wire that load-bearing capture into — a sanctioned superset now ledgered as DESIGN-DEVIATIONS D-11 (keep the capture). Because that ledgered live capture makes the container's tree diverge from the whole-screen mock, and the codegen model gates a WHOLE-screen generated view (it cannot host the live capture as a partial insert), a byte-for-byte gated view is not expressible without reverting the capture. EtaLine also stays un-wired until an ETA estimator backs it (no fabricated arrival window). Adopted at the element level (footer/pay-rows/PriceMath); the whole-screen gated view is deferred by the codegen model + D-11, not a missing primitive.",
+          "the mock draws a STATIC address-summary Card (map-pin + '12 Lanark Rd, Belgravia · Gate 2, ask for Rufaro · 3.1 km away' + chevron) — a display of an already-known address. The app collects the drop-off LIVE on this screen (MapPicker + AddressSearch + landmark Field + contact-phone Field + the drag-to-adjust AddressConfirmSheet) because a food delivery has nowhere else in the flow to capture where the food is going (the cart defers drop-off to here). This load-bearing capture is a sanctioned SUPERSET ledgered as DESIGN-DEVIATIONS D-11: the static mock draws no capture surface to wire it into (CLAUDE.md live-vs-static 'wire the behaviour INTO the drawn elements' has no +/− control to target — the mock's element is a read-only summary row, not a picker). Kept as container glue (pruned from the composition); adoptable once the capture earns a drawn picker in the checkout mock, or the summary-row is redrawn as an address-picker entry.",
+      },
+      {
+        state: "eta",
+        key: "RC.checkout#eta",
+        reason:
+          "the mock's <EtaLine range='30–40 min' arrive='10:11–10:21'/> (r-customer-a.jsx:428) promises a delivery ETA + arrival window, but there is no ETA estimator behind it — the app has an honest drop distance/fee but no honest arrival-time model, and wiring a figure would fabricate an arrival window (CLAUDE.md forbids). The EtaLine primitive exists (Foundation-D) but stays un-wired, per D-11. Not rendered; not a region (pruned from the composition). Adoptable once an ETA estimator backs it.",
+      },
+      {
+        state: "payment",
+        key: "RC.checkout#payment",
+        reason:
+          "the 'HOW YOU'LL PAY' cash/wallet rows are a live-vs-static VARIANT switch, not a clean single fragment. The two mock keys draw structurally-DIFFERENT payment blocks: checkout_cash's wallet row is a bare row, while checkout_wallet's selected wallet row carries an EXTRA child — a clock-glyph + 'You pay only after the restaurant accepts…' disclosure note (r-customer-a.jsx:491-494) that appears only while wallet is selected. A single static generated fragment (from ONE mock key) can therefore not guard both variants: it would either freeze one selected state or add/drop the wallet-only note child, diverging from whichever mock it wasn't generated from. The app already realizes BOTH faithfully with the live PaymentMethodRow (accent-selected border/wash + filled check, and the disclosure note wired as its selected-only `children`) — kept as container glue (pruned from the composition). Adoptable once the payment rows earn a variant-neutral drawn structure (or the selected-note becomes a per-row region boundary).",
       },
       {
         state: "data",
         key: "RC.checkout_wallet",
         reason:
-          "same disposition as RC.checkout_cash — Foundation-D primitive gap closed, the container adopts the Screen.footer pay bar + PaymentMethodRow + PriceMath; the wallet variant differs only in the pay-rows' selected state/copy (already faithful). The remaining wall is the ledgered live drop-off capture (D-11) vs the whole-screen codegen model, not a primitive. Deferred as a gated whole-screen view with the cash variant.",
+          "the mobile-money variant of the checkout DATA screen — served by the SAME container and the SAME two adopted regions (summary + place-bar footer are structurally identical to the cash variant: the footer label and the note copy differ only as leaf data the container computes). It differs from checkout_cash ONLY in the deferred payment region's selected state + the wallet disclosure note (see RC.checkout#payment). No separate regions entry is needed; recorded here so the ledger is explicit.",
       },
     ],
   },
