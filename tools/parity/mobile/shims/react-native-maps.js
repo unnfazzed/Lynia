@@ -4,13 +4,27 @@
 import * as React from "react";
 import { View } from "react-native"; // aliased to react-native-web
 
-const MapView = React.forwardRef((props, ref) =>
-  React.createElement(View, {
-    ref,
-    ...props,
-    style: [{ backgroundColor: "#e5e7eb" }, props && props.style],
-  }, props && props.children),
-);
+// The app calls imperative methods on the map ref in effects (LiveMap.tsx: fitToCoordinates; others:
+// animateToRegion/animateCamera). react-native-web's View exposes none of these, so a bare ref would
+// throw "…is not a function" and unmount the tree (a blank screenshot). useImperativeHandle gives the
+// ref inert no-ops so the effect runs harmlessly while the map itself stays a gray fill.
+const MapView = React.forwardRef((props, ref) => {
+  React.useImperativeHandle(ref, () => ({
+    fitToCoordinates() {},
+    fitToSuppliedMarkers() {},
+    fitToElements() {},
+    animateToRegion() {},
+    animateCamera() {},
+    setCamera() {},
+    getCamera() { return Promise.resolve({}); },
+    getMapBoundaries() { return Promise.resolve({}); },
+  }));
+  return React.createElement(
+    View,
+    { ...props, style: [{ backgroundColor: "#e5e7eb" }, props && props.style] },
+    props && props.children,
+  );
+});
 const Nothing = () => null;
 export const Marker = Nothing;
 export const MarkerAnimated = Nothing;

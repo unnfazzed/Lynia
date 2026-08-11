@@ -27,9 +27,9 @@ const SHIMS = join(HERE, "shims");
 
 // Native-only modules with no bearing on a static screenshot → the generic empty shim.
 const EMPTY_MODULES = [
-  "expo-secure-store", "expo-notifications", "expo-linking", "expo-location", "expo-image-picker",
+  "expo-secure-store", "expo-linking", "expo-image-picker",
   "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
-  "expo-splash-screen", "expo-task-manager", "expo-updates", "expo-asset",
+  "expo-splash-screen", "expo-updates", "expo-asset", "expo-file-system",
   "expo-haptics", "posthog-react-native",
   "react-native-screens", "react-native-gesture-handler",
   "@react-native-async-storage/async-storage",
@@ -74,6 +74,9 @@ export function aliasMap() {
     "expo-router": join(SHIMS, "expo-router.js"),
     "expo-font": join(SHIMS, "expo-font.js"),
     "expo-status-bar": join(SHIMS, "expo-status-bar.js"),
+    "expo-notifications": join(SHIMS, "expo-notifications.js"),
+    "expo-task-manager": join(SHIMS, "expo-task-manager.js"),
+    "expo-location": join(SHIMS, "expo-location.js"),
     "react-native-maps": join(SHIMS, "react-native-maps.js"),
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
