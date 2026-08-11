@@ -28,10 +28,10 @@ const SHIMS = join(HERE, "shims");
 // Native-only modules with no bearing on a static screenshot → the generic empty shim.
 const EMPTY_MODULES = [
   "expo-secure-store", "expo-notifications", "expo-linking", "expo-location", "expo-image-picker",
-  "expo-image-manipulator", "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
-  "expo-splash-screen", "expo-status-bar", "expo-task-manager", "expo-updates", "expo-font", "expo-asset",
-  "expo-haptics", "posthog-react-native", "socket.io-client",
-  "react-native-maps", "react-native-screens", "react-native-gesture-handler",
+  "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
+  "expo-splash-screen", "expo-task-manager", "expo-updates", "expo-asset",
+  "expo-haptics", "posthog-react-native",
+  "react-native-screens", "react-native-gesture-handler",
   "@react-native-async-storage/async-storage",
 ];
 
@@ -72,10 +72,24 @@ export function aliasMap() {
     "react-native-svg": join(SHIMS, "react-native-svg.js"),
     "expo-constants": join(SHIMS, "expo-constants.js"),
     "expo-router": join(SHIMS, "expo-router.js"),
+    "expo-font": join(SHIMS, "expo-font.js"),
+    "expo-status-bar": join(SHIMS, "expo-status-bar.js"),
+    "react-native-maps": join(SHIMS, "react-native-maps.js"),
+    "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
+    "socket.io-client": join(SHIMS, "socket-io.js"),
     "@sentry/react-native": join(SHIMS, "sentry.js"),
     "@lynia/shared": join(SHARED_SRC, "index.ts"),
     "@lynia/shared/fixtures": join(SHARED_SRC, "fixtures.ts"),
   };
+  // react-query is pinned to the mobile app's copy so a fixture harness (tools/parity/mobile/fixtures)
+  // and the screen share ONE QueryClient/context — otherwise the fixture's Provider and the screen's
+  // useQuery resolve to different module instances and the seeded cache is invisible to the screen.
+  try {
+    const reqM = createRequire(join(MOBILE_APP, "noop.js"));
+    a["@tanstack/react-query"] = dirname(reqM.resolve("@tanstack/react-query/package.json"));
+  } catch {
+    /* leave unaliased — esbuild will resolve it by walking up if present */
+  }
   for (const m of EMPTY_MODULES) if (!a[m]) a[m] = join(SHIMS, "empty.js");
   return a;
 }

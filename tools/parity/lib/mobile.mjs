@@ -74,7 +74,11 @@ export async function renderMobile(o) {
     const harnessErr = await page.evaluate(() => window.__PARITY_ERROR || null);
     if (harnessErr) return { ok: false, error: harnessErr, width: dims.w * scale, height: dims.h * scale };
     await page.evaluate(() => (document.fonts ? document.fonts.ready : null));
-    await page.waitForTimeout(150);
+    // Settle async data: a fixture's fetch-router feeds the real hooks/queries, and use-feature-flags
+    // fires its fetch a beat (250ms) after mount, so a populated flag-gated screen only paints after
+    // that resolves. A fixture can tune the wait via window.__PARITY_SETTLE_MS (default 600).
+    const settle = await page.evaluate(() => Number(window.__PARITY_SETTLE_MS) || 600);
+    await page.waitForTimeout(settle);
     const el = await page.$("#root");
     const buffer = await el.screenshot({ type: "png" });
     if (o.out) {
