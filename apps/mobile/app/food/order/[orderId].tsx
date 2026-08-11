@@ -509,6 +509,7 @@ export default function FoodOrderScreen(): React.ReactElement {
         onReferenceChange={setReferenceInput}
         onSubmitReference={() => void submitReference()}
         onCancelFree={() => void cancelUnpaid()}
+        onBack={() => router.back()}
         cancelFooter={CancelFooter}
       />
     );

@@ -2,8 +2,9 @@ import { tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
+import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, isTestBuild, OfflineBanner, Screen, Stepper } from "../index";
+import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, isTestBuild, OfflineBanner, Screen, Stepper } from "../index";
 import { Money } from "../Money";
 import { FoodPayFailedView } from "./FoodPayFailedView";
 import { FoodPayWaitView } from "./FoodPayWaitView";
@@ -15,9 +16,11 @@ type AwaitingPaymentOrder = Pick<
   | "id"
   | "total"
   | "merchantGoodsTotal"
+  | "deliveryFee"
   | "merchantPaymentReference"
   | "merchantPaymentConfirmedAt"
   | "paymentRequestedAt"
+  | "paymentCallLoggedAt"
   | "merchantPaymentPhone"
   | "status"
   | "merchantPhase"
@@ -39,6 +42,7 @@ export function FoodOrderAwaitingPaymentView({
   onReferenceChange,
   onSubmitReference,
   onCancelFree,
+  onBack,
   cancelFooter,
 }: {
   order: AwaitingPaymentOrder;
@@ -53,6 +57,7 @@ export function FoodOrderAwaitingPaymentView({
   onReferenceChange: (value: string) => void;
   onSubmitReference: () => void;
   onCancelFree: () => void;
+  onBack: () => void;
   cancelFooter: React.ReactNode;
 }): React.ReactElement {
   const amount = order.total ?? order.merchantGoodsTotal ?? 0;
@@ -163,17 +168,32 @@ export function FoodOrderAwaitingPaymentView({
   }
 
   // R5·3/R5·4/R5·5: pay the restaurant — manual rail (D-24), plus "I paid another way".
+  const goods = order.merchantGoodsTotal;
+  const fee = order.deliveryFee;
+  const calledAt = order.paymentCallLoggedAt ? fmtClock(order.paymentCallLoggedAt) : null;
   return (
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
-      <OrderHeader restaurantName={restaurantName} pillLabel="Payment requested" pillTone="neutral" />
+      {/* Kit RC.pay_now (r-customer-b.jsx:85): the header is the shared AppBar — 16/700 "Pay {kitchen}"
+          title over an 11.5/muted order-ref sub — not the restaurant-name + status-pill OrderHeader. */}
+      <AppBar title={`Pay ${restaurantName}`} sub={`Order ${order.id.slice(0, 8).toUpperCase()}`} onBack={onBack} />
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Kit R5·3 (r-customer-b.jsx:87-88): the amount-to-pay card is the accent-bordered emphasis
-            card, and its eyebrow is accent-text — not another muted micro-label. */}
+        {/* Kit RC.pay_now (r-customer-b.jsx:87-91): the amount-to-pay card is the accent-bordered emphasis
+            card — accent-text eyebrow, the total as the 30px hero, the goods+delivery split beneath it,
+            then the no-deadline reassurance naming the phone-confirm time. */}
         <Card accent>
           <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText, letterSpacing: 0.4 }}>PAY EXACTLY</Text>
-          <Money v={amount} size={30} style={{ marginTop: 4 }} />
-          <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6 }}>No deadline — the kitchen starts the moment the money lands.</Text>
+          <Money v={amount} size={30} weight="800" style={{ marginTop: 4 }} />
+          {goods != null && fee != null ? (
+            <Text style={{ fontSize: 12, color: tokens.color.muted }}>
+              Food {formatMoney(goods)} + delivery {formatMoney(fee)}
+            </Text>
+          ) : null}
+          <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6 }}>
+            {calledAt
+              ? `No deadline — you confirmed by phone at ${calledAt}, and the kitchen starts the moment the money lands.`
+              : "No deadline — the kitchen starts the moment the money lands."}
+          </Text>
         </Card>
         {order.merchantPaymentPhone ? (
           <ManualPayRail

@@ -4,9 +4,8 @@ import { Text, View } from "react-native";
 import type { OrderEvent } from "../../api/orders";
 import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
-import { Button, Card, ErrorText, Icon, OfflineBanner, Screen } from "../index";
+import { Button, ErrorText, Icon, OfflineBanner, Screen } from "../index";
 import { RatingCard } from "../order/RatingCard";
-import { OrderHeader } from "./FoodOrderHelpers";
 
 type DeliveredOrder = Pick<MerchantOrderResponse, "status" | "paymentMethod" | "total" | "merchantGoodsTotal">;
 
@@ -44,22 +43,21 @@ export function FoodOrderDeliveredView({
   return (
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
-      <OrderHeader restaurantName={restaurantName} pillLabel="Delivered" pillTone="success" />
-      <Card>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <View
-            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}
-          >
-            <Icon name="circle-check" size={22} color={tokens.color.accentText} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>{deliveredAt ? `Delivered at ${deliveredAt}` : "Delivered"}</Text>
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>
-              {formatMoney(amount)} {order.paymentMethod === "cash" ? "paid in cash" : "paid"} · {restaurantName}
-            </Text>
-          </View>
+      {/* Kit RC.delivered_rate (r-customer-b.jsx:504-511): no top bar / status pill — the screen leads
+          with a CENTERED confirmation hero (56 accent-wash check circle, an 18/700 "Delivered at HH:MM"
+          headline, and a 13/muted "$X paid in cash · {kitchen}" line), not a left-aligned summary row
+          under a header. */}
+      <View style={{ alignItems: "center", paddingTop: 18, marginBottom: 16 }}>
+        <View
+          style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
+        >
+          <Icon name="circle-check" size={26} color={tokens.color.accentText} />
         </View>
-      </Card>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>{deliveredAt ? `Delivered at ${deliveredAt}` : "Delivered"}</Text>
+        <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 4 }}>
+          {formatMoney(amount)} {order.paymentMethod === "cash" ? "paid in cash" : "paid"} · {restaurantName}
+        </Text>
+      </View>
       {order.status === "delivered" ? (
         <RatingCard
           saving={rateBusy}

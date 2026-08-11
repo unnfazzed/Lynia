@@ -112,7 +112,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | C5·1 | `RC await_accept` | Waiting on the kitchen  [FOOD] | | |
 | ⬜ | C5·2 | `RC confirm_call` | They call to confirm  [FOOD] | | |
 | ⬜ | C5·3 | `RC pay_push` | Push · payment requested  [FOOD] | | |
-| ⬜ | C5·4 | `RC pay_now` | Pay the restaurant  [FOOD] | | |
+| 👁 | C5·4 | `RC pay_now` | Pay the restaurant  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | |
 | ⛔ | C5·5 | `RC pay_wait` | Prompt sent  [FOOD] | | |
 | ⬜ | C5·6 | `RC pay_manual` | Paid another way  [FOOD] | | |
 | ⬜ | C5·7 | `RC pay_confirmed` | Waiting to be confirmed  [FOOD] | | |
@@ -123,7 +123,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 |---|---|---|---|---|---|
 | ⬜ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | | |
 | ⬜ | C6·2 | `RC track_secured` | Rider secured  [FOOD] | | |
-| ⬜ | C6·3 | `RC track_way` | On the way  [FOOD] | | |
+| 👁 | C6·3 | `RC track_way` | On the way  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | map-bg+sheet + RiderCard are honest deviations (gray-map stub, no rider identity in food API) — see doc |
 | 👁 | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
 | 👁 | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
 
@@ -134,7 +134,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | C7·1 | `RC handoff` | Pay at the door  [FOOD] | | |
 | ⬜ | C7·2 | `RC handoff_wait` | Waiting for rider confirm  [FOOD] | | |
 | ⬜ | C7·3 | `RC handoff_code` | Both confirmed · code  [FOOD] | | |
-| ⬜ | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | | |
+| 👁 | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | single rider rating vs mock's food+rider+chips is an honest deviation (API carries one score) — see doc |
 | ⬜ | C7·5 | `LJ delivered_rate` | Delivered · rate the rider  [PARCEL] | | |
 | ⬜ | C7·6 | `LJ completed` | Completed  [PARCEL] | | |
 | ⬜ | C7·7 | `LJ rate_undo` | Rating sent · undo  [PARCEL] | | |
