@@ -83,14 +83,25 @@ mock-wins-correctly** (`ComposeMap` tap-to-pin under a peek/expanded `BottomShee
 *guardrail* that can't yet prove congruence.
 
 The **same `FauxMap`/`MapSheet`/`BottomSheet` family underlies parcel tracking and the rider board/jobs
-screens**, so this is one high-leverage build that unblocks a whole cluster family. Foundation-F =
-(a) `DS_RENAME`/uiPrims remaps `FauxMap→ComposeMap`, `MapSheet→BottomSheet`; (b) a **sheet-footer
-scaffold** + a **generalized non-`Screen` slot locator** so a submit region anchors under a plain-`<div>`
-root; (c) **mock-local helper inlining** (`AddressFields`/`QtyStepper`). Strategy: **harvest-first** — keep
-adopting the many clusters that don't need it (food, rider money/account, merchant, admin, leaf/simple-region
-screens), then do Foundation-F once and sweep the map/sheet family (send-composer, tracking, rider board/jobs)
-in one wave — alongside the transpiler-idiom cleanup (template-literal border / conditional shadow-spread /
-mixed text+element siblings) that the auth/register/role deferrals need.
+screens**, so this is one high-leverage build that unblocks a whole cluster family. A **second domain**
+surfaced the same class of gap: the **parcel auction / order-detail** screens (`LJ.auction_live`/`finding`/
+`expired`/`counter`, container `order/[id].tsx`) are authored as **kit-composite member tags** (`K.OfferCard`,
+`K.SortChips` — `JSXMemberExpression` tags the transpiler can't rename/import and locators can't anchor),
+**mock-local helpers** (`OrderHead`), and a **variant-switch function** (`Auction(variant)`) whose states are
+early-returns the normalizer can't isolate by component name — plus one composite `<Screen>` interleaving all
+order states (no per-state Screen to swap a whole-screen view into). Registered defer-only alongside the
+composer.
+
+Foundation-F is therefore the consolidated codegen build that unblocks BOTH domains:
+(a) `DS_RENAME`/uiPrims remaps `FauxMap→ComposeMap`, `MapSheet→BottomSheet`; (b) a **sheet-footer scaffold** +
+a **generalized non-`Screen` slot locator** so a submit region anchors under a plain-`<div>` root;
+(c) **mock-local + member-tag (`K.*`) helper inlining/resolution** (`AddressFields`/`QtyStepper`/`OrderHead`/
+`OfferCard`/`SortChips`); (d) **variant-switch state isolation** so `Auction(variant)` early-returns map to
+per-state views without editing the mock. Strategy: **harvest-first** — keep adopting the many clusters that
+don't need it (food browse/cart/checkout, rider onboarding/money/account, merchant, admin, leaf/simple-region
+screens), then do Foundation-F once and sweep the map/sheet + composite-order family (send-composer, auction,
+tracking, rider board/jobs) in one wave — alongside the transpiler-idiom cleanup (template-literal border /
+conditional shadow-spread / mixed text+element siblings) that the auth/register/role deferrals need.
 
 ## Honest velocity note
 The hard architecture is done; adoption itself is **incremental** — each screen tends to surface one

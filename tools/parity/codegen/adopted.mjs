@@ -933,6 +933,62 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── PARCEL AUCTION / OFFERS cluster — the customer reviewing ranked rider bids on a broadcast
+    //    parcel (app/order/[id].tsx). The four gallery keys are the mock `Auction` (screens.jsx:210,
+    //    variant=finding|live|expired) + `AuctionCounter` (screens.jsx:512). This is a list+card
+    //    composite (NOT map-dependent — no Foundation-F FauxMap gap in the auction states themselves),
+    //    but it registers DEFER-only, like the send composer / RC.orders / LJ.otp: a deeply-live
+    //    composite container the whole-screen + region codegen model cannot host without regressing a
+    //    SENSITIVE area (best-match offer RANKING, accept-offer idempotency + agreed-price, counter-offer
+    //    accept/decline F-07, select-race 409 recovery, rebroadcast). Three structural walls run through
+    //    the whole cluster: (W1) KIT-COMPOSITE member tags — the mocks author the offer cards + sort
+    //    chips as `K.OfferCard`/`K.SortChips` (K = window.LyniaKit), JSXMemberExpression tags the
+    //    transpiler leaves verbatim (transpile.mjs reads `open.name.name`, undefined for a member tag, so
+    //    no DS_RENAME + no import) and the region locators can't anchor (`{el}` matches
+    //    `openingElement.name.name`, also undefined for `K.SortChips`); there is NO app OfferCard/SortChips
+    //    DS primitive to import (the app draws each bid inline as `Card(RiderMini, Money, Button)` and the
+    //    sort chips inline as `Pressable(Text)`), so a generated view emits `<K.OfferCard>` against an
+    //    undefined `K` and neither typechecks nor composes. (W2) `OrderHead` is a mock-local helper
+    //    (screens.jsx:31) the transpiler neither inlines nor can import — every auction mock leads with it.
+    //    (W3) LIVE-VS-STATIC composite with no whole-screen boundary — the app's `open_for_offers` render
+    //    is NOT an early-return Screen; it is a `<View>` interleaved inside ONE `<Screen><ScrollView>`
+    //    alongside the active-tracking / delivered / completed / expired / cancelled terminal states, so
+    //    there is no per-state Screen to swap a generated whole-screen view into (unlike food-list's
+    //    early-returned loading/error). Full per-state analysis below.
+    key: "LJ.auction_live",
+    container: "apps/mobile/app/order/[id].tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    mockComponent: "Auction",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.auction_live",
+        reason:
+          "the populated offers list — mock `Auction` default return (screens.jsx:265) `Pad(OrderHead, headerRow[muted '3 riders bidding' + tabular timer], askingLine, K.SortChips, K.OfferCard recommended, K.OfferCard, K.OfferCard)`. Hits all three cluster walls at once: (W1) the sort chips + three offer cards are `K.SortChips`/`K.OfferCard` kit-composite member tags with no app DS primitive and no transpiler/locator handling — the generated view emits `<K.OfferCard o={RIDERS[0]}>` against an undefined `K`/`RIDERS`; (W2) it leads with the mock-local `<OrderHead>`; (W3) in-app the live offers list is a `<View>` inside the composite order Screen, gating `<AuctionClock/>` (the 1s countdown header extracted per PERF20-02), an `orderedOffers.map` that mixes `<CounterOfferCard>` and inline `<Card>` per `isActiveCounter`, `BidEntrance` animations, a `>1`-gated sort-chip row, a select-race notice and a one-primary-CTA rule — not a whole-screen swap. The region model can't rescue it either: the mock's three offer cards are LITERAL siblings with NO `.map()` for `{map:}` to find, and the root is a `<Pad>` (not a `<Screen>`) so `{slot:}` can't fold a footer. Also note `Auction` is a variant-SWITCH function (finding/race/expired/noriders/live) so extractComponent pulls all five returns into one view and normalize.mjs's `returnedExpr` reads only the LAST (live) top-level return. Adoptable once OfferCard/SortChips are authored as DS primitives (or the transpiler learns kit-composite→app-component remaps) and the live auction earns per-state boundaries — a Foundation build, not one iteration in a sensitive area.",
+      },
+      {
+        state: "loading",
+        key: "LJ.auction_finding",
+        reason:
+          "the waiting-for-bids state — mock `Auction` variant=\"finding\" (screens.jsx:211), an EARLY return inside `if (variant===\"finding\")`. Not isolable by the codegen model: normalize.mjs reads only the LAST top-level return of a component (the live variant), so a finding-only view cannot be extracted by component NAME without splitting `Auction` into a named per-variant component in packages/design — FORBIDDEN (reverse-drift freeze). In-app it is the live-but-empty `SkeletonCard + Sub('No offers yet — riders nearby have been pinged. Hang tight.')` sub-branch INSIDE the open_for_offers composite (W3), not an early-return Screen, and it still leads with the mock-local `OrderHead` (W2) and draws the `askingLine` price context. Deferred with the cluster; adoptable once the Auction variants are modelled as separate named mocks and the finding state earns its own boundary.",
+      },
+      {
+        state: "expired",
+        key: "LJ.auction_expired",
+        reason:
+          "the window-closed terminal — mock `Auction` variant=\"expired\" (screens.jsx:242) `Pad(OrderHead[expired,offline], EmptyState(Button 'Nudge price & re-broadcast', Button ghost 'Edit order'))`. Same variant-branch non-isolability as auction_finding (an `if` early return the normalizer can't select by name), and the mock-local `OrderHead` wall (W2). In-app it is one of THREE honest `expiredTerminalKind` EmptyState conditionals (had-offers / no-supply / default — the app deliberately supersets the single mock EmptyState with cold-start-safe copy driven by `hadOffers`/`expiryNoSupply`) rendered inside the composite Screen (W3), not a whole-screen swap. Deferred with the cluster.",
+      },
+      {
+        state: "counter",
+        key: "LJ.auction_counter",
+        reason:
+          "the counter-offer review — mock `AuctionCounter` (screens.jsx:512) IS a clean single-return named component, and its counter CARD transpiles cleanly (static `border` shorthand expands, `boxShadow` token spreads, `placeItems:center`→flex-center, `borderRadius:50%`→px all lower fine). But it still (a) leads with the mock-local `<OrderHead>` and ends with the kit-composite `<K.OfferCard o={RIDERS[0]}>` ('Other offers'), both undefined refs (W1/W2); and (b) has no whole-screen container boundary — the app renders a counter as ONE `<CounterOfferCard>` (a bespoke app component, not the mock's inline primitives) interleaved in the live `orderedOffers.map` gated by `isActiveCounter`, NOT as a separate auction_counter screen (W3). Adopting the whole-screen mock would mean rebuilding the entire live auction around a static composite, regressing streaming/ranking/select-race and the F-07 decline (one round, no counter-back). Deferred with the cluster; adoptable once OfferCard is a DS primitive and the counter state earns its own boundary.",
+      },
+    ],
+  },
 ];
 
 /**
