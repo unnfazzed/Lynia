@@ -719,6 +719,12 @@ model Rating {
   byProfileId String   @map("by_profile_id") @db.Uuid
   by          Profile  @relation("ratingBy", fields: [byProfileId], references: [id])
   score       Int
+  // #672: a food order's customer rates the food AND the rider. `score` is the rider score (drives
+  // rider reputation, unchanged); `foodScore` is the food quality (null on parcel ratings) and feeds
+  // the restaurant rating aggregate (#673). `tags` are the delivered-screen feedback chips
+  // (hot_food / on_time / polite / right_order) — a controlled vocabulary validated at the wire layer.
+  foodScore   Int?     @map("food_score")
+  tags        String[] @default([]) @map("tags")
   comment     String?
   createdAt   DateTime @default(now()) @map("created_at")
 

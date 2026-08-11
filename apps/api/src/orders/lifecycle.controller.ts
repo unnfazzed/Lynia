@@ -96,7 +96,7 @@ export class LifecycleController {
     @Body(new ZodBody(RateRequest)) body: RateRequest,
     @CurrentUser() customerId: string,
   ) {
-    return this.lifecycle.rate(orderId, customerId, body.score, body.comment);
+    return this.lifecycle.rate(orderId, customerId, body.score, body.comment, body.foodScore, body.tags);
   }
 
   /** Rider rates the sender (rider-journey 4·7) — recorded-only, doesn't change the order status. */
