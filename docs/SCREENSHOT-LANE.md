@@ -1,6 +1,9 @@
 # The screenshot lane — every parity claim becomes an image
 
-**Status:** Phase 1 landed (the lane itself). Per-screen app fixtures grow as screens are aligned.
+**Status:** Phase 1 landed the lane; **Phase 2 wired the app side across all four surfaces** — the
+primary populated state of every top-level app route now renders beside its mock (39 mobile keys +
+7 admin routes + merchant login = 47 wired screens, up from 4). Remaining per-screen states grow as
+screens are aligned. See "What Phase 2 wired" below.
 
 This is the process fix behind the pixel-parity workstream (`CLAUDE.md` → "Pixel parity"). Five days of
 "alignment" PRs merged green while the app still didn't look like the designs, because the checks were
@@ -118,6 +121,36 @@ mobile react-native-web renderer (`force-update` as the reference screen), the w
 console, both `/` and `/orders`), and the pair→sheet pipeline. Incremental, per screen, as alignment
 proceeds: the `app-targets.mjs` entries and mobile `fixtures/` — each is the same provider-mocking the
 jest suites already encode, added when a screen is actually being aligned.
+
+## What Phase 2 wired
+
+Phase 2 grew the app side from 4 proof screens to **47 wired screens** — the primary populated state of
+every top-level app route, across all four surfaces — so an alignment reviewer sees a real app render
+next to the mock, not a "pending" placeholder. The scalable mechanism is a **fixture harness**
+(`mobile/fixtures/_harness.mjs`, recipe in `mobile/fixtures/README.md`): a `globalThis.fetch` router
+that feeds the *real* hooks/queries their data (so the screen paints its live state the way it does on
+device), a `withQuery`/`withAuthQuery` provider wrap, and `setParams` for expo-router params. Native
+modules the screens import are covered by shims under `mobile/shims/` (safe-area, svg, maps as a gray
+stub, notifications/task-manager/location/file-system, socket.io, fonts, status-bar).
+
+Coverage:
+- **Customer food (RC)** — home, orders, list, search, menu, cart, checkout (cash + wallet), and the
+  food order tracker (on-the-way, pay-now, delivered-rate).
+- **Customer send + auth + account (LJ)** — phone, OTP, onboarding, role, permission, register, the
+  send composer (empty + both-pins), parcel tracking (active + code), account, notifications, help,
+  settings, history, force-update.
+- **Rider (RJM / RJ / RR)** — the one board (jobs + empty), money, account, food offer, food job,
+  parcel job, become-a-rider, documents, top-up.
+- **Admin console** — all 7 console routes render their offline "API not connected" shells.
+- **Merchant tablet** — `/login` renders; the gated routes need a seeded API (see the honesty note).
+
+Honest gaps carried forward (not faked): a few states live only in component `useState` with no route
+param to seed (`onboard_send`/`onboard_shared`, `perm_notif`) — they need a small `initialStep`-style
+prop before a fixture can reach them; the parcel tracking screens show the "re-issue code" card rather
+than the plaintext digits (the code lives in customer-local SecureStore, inert here); and the
+socket-driven rider boards show a "Reconnecting" chip and `0.0 km` distances because the socket and GPS
+are inert shims. The merchant tablet's queue/menu/shop render only against a seeded
+`PARITY_MERCHANT_URL` — offline they redirect to sign-in, which is the honest state.
 
 ## Environment notes (this container)
 
