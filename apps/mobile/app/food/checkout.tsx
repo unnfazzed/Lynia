@@ -21,6 +21,7 @@ import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../../src/ui/AddressSearch";
 import { PaymentMethodRow } from "../../src/ui/food/PaymentMethodRow";
 import { PriceMath } from "../../src/ui/food/PriceMath";
+import { CheckoutPlacingView } from "./checkout-placing.view";
 
 /** How often the checkout screen re-checks the kitchen's own hours while the customer is filling in
  *  the form — mirrors [id].tsx's 60s "just closed while browsing" poll, so a kitchen that closes
@@ -108,12 +109,11 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   }
 
   if (busy) {
-    return (
-      <Screen>
-        <EmptyState icon="receipt" title="Sending your order to the kitchen…" message="Don't close the app. If this fails, nothing is ordered and nothing is paid." />
-        <SkeletonList count={2} />
-      </Screen>
-    );
+    // RC.placing — the presentational "Sending your order to the kitchen…" beat is GENERATED from the
+    // mock (checkout-placing.view.tsx) and locked to it by the structural-snapshot guardrail; this
+    // container owns only WHEN it shows (the in-flight placeFoodOrder mutation). Composition, not a
+    // rewrite: the placing LOGIC is unchanged, only its look moves to the generated view.
+    return <CheckoutPlacingView />;
   }
 
   const open = isMerchantOpenNow(restaurant.hours, now);

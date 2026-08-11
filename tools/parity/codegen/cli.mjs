@@ -48,6 +48,10 @@ if (cmd === "gen") {
     byScreen.get(r.screen).push(r);
   }
   const deferred = deferredStates();
+  // Defer-only screens — registered in adopted.mjs with a `deferred[]` but NO adopted state yet (a
+  // documentation-only entry). They contribute zero check units, so they never appear in `byScreen`;
+  // seed an empty group so their deferrals still print (the ledger is only useful if `check` surfaces it).
+  for (const d of deferred) if (!byScreen.has(d.screen)) byScreen.set(d.screen, []);
   let bad = 0;
   for (const [screen, rs] of byScreen) {
     const multi = rs.length > 1 || rs.some((r) => r.state) || deferred.some((d) => d.screen === screen);
