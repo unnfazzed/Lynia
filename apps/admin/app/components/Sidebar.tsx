@@ -103,7 +103,7 @@ export function Sidebar({ operator, counts }: { operator?: string | null; counts
 
       <div className="foot">
         <b>{operator || "Ops admin"}</b>
-        Harare pilot · single ops role
+        ops admin · Harare pilot
         {/* IAP sign-out: clearing the IAP login cookie bounces the operator back through Google. Only
             shown when there's a real signed-in identity (the dev/offline path has none). */}
         {operator ? (
