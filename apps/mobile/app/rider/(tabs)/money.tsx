@@ -12,7 +12,7 @@ import { formatMoney } from "../../../src/logic/money";
 import { reconcilePendingTopup } from "../../../src/logic/topup";
 import { filterLedgerEntries, type LedgerFilter } from "../../../src/logic/wallet-ledger";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows, Sub } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows } from "../../../src/ui";
 import { CashHeldStrip } from "../../../src/ui/rider/CashHeldStrip";
 
 /** One ledger receipt. A debit renders in ink (never red text on white); a credit in the text-green.
@@ -180,16 +180,20 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const negative = balance < 0;
   const firstOpen = allEntries.length === 1 && allEntries[0]!.type === "grace";
 
+  // RJM M1 healthy state is an accent-BORDERED white card (Card accent), not a solid-green fill: a
+  // muted uppercase "COMMISSION BALANCE" eyebrow, the balance in ink, and the commission line + Top up
+  // living inside it. The low/negative states (not drawn by M1 — RJM.gate_topup is the empty gate) keep
+  // the dangerWash treatment so a real money block still reads as danger.
+  // The accent hero and the dangerWash low/negative hero both sit on light fills, so ink + muted read
+  // in either — the difference is the card's fill/border (accent vs dangerWash), set on the Card below.
   const heroBad = negative || belowFloor;
-  const heroBg = heroBad ? tokens.color.dangerWash : tokens.color.cta;
-  const heroTextColor = heroBad ? tokens.color.ink : tokens.color.onAccent;
-  const heroSubColor = heroBad ? tokens.color.muted : tokens.color.onAccent;
+  const heroTextColor = tokens.color.ink;
+  const heroSubColor = tokens.color.muted;
 
   return (
     <AppScreen>
       <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
         <Heading>Money</Heading>
-        <Sub>Balance, cash held, and every job that moved money — parcels and food in one ledger.</Sub>
 
         {isLoading ? (
           <SkeletonRows count={4} />
@@ -240,25 +244,30 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
               </Card>
             ) : null}
 
-            {/* Balance hero */}
-            <Card style={{ backgroundColor: heroBg, borderColor: heroBg }}>
-              <Text style={{ color: heroSubColor, fontSize: 12, fontWeight: "600", opacity: heroBad ? 1 : 0.9 }}>
-                {firstOpen ? "Grace credit · balance" : "Commission balance"}
+            {/* Balance hero (RJM M1): accent-bordered white card, uppercase muted eyebrow, ink
+                balance, the commission line + Top up inside it. Low/negative keeps the dangerWash. */}
+            <Card accent={!heroBad} style={heroBad ? { backgroundColor: tokens.color.dangerWash, borderColor: tokens.color.dangerWash } : undefined}>
+              <Text style={{ color: heroSubColor, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 }}>
+                {firstOpen ? "GRACE CREDIT · BALANCE" : "COMMISSION BALANCE"}
               </Text>
-              <Text style={{ color: heroTextColor, fontSize: 32, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>
+              <Text style={{ color: heroTextColor, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>
                 {formatMoney(balance)}
               </Text>
               {negative ? (
-                <Text style={{ color: heroSubColor, fontSize: 12, marginTop: 4 }}>You owe this — your next top-up clears it first.</Text>
+                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>You owe this — your next top-up clears it first.</Text>
               ) : belowFloor ? (
-                <Text style={{ color: heroSubColor, fontSize: 12, marginTop: 4 }}>Below the ${floor.toFixed(2)} floor — top up to keep riding.</Text>
+                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>Below the ${floor.toFixed(2)} floor — top up to keep riding.</Text>
               ) : gettingLow ? (
-                <Text style={{ color: heroSubColor, fontSize: 12, marginTop: 4, opacity: 0.9 }}>Getting low — top up soon so you don&apos;t get blocked.</Text>
-              ) : firstOpen ? (
-                <Text style={{ color: heroSubColor, fontSize: 12, marginTop: 4, opacity: 0.9 }}>We&apos;ve added this to get you started.</Text>
-              ) : null}
+                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>Getting low — top up soon so you don&apos;t get blocked.</Text>
+              ) : (
+                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+                  {config && config.ratePct > 0
+                    ? `${config.ratePct}% comes off this balance when a job closes — parcels and food, same rate. Run it to zero and you can't go online.`
+                    : "No commission comes off yet — you keep the full agreed fare. When that changes, the same small per-job commission comes off this balance for parcels and food alike."}
+                </Text>
+              )}
+              <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
             </Card>
-            <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
 
             {/* Cash held — RIDER-ONE-APP-PLAN.md decision 6. "owed" is now live (D5) — the single
                 active food job's own open debt. "yours" stays 0 here: the active-job screen is where a
@@ -268,9 +277,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
               <CashHeldStrip yours={0} owed={owed} />
             </View>
 
-            {/* Ledger */}
+            {/* Ledger — filter chips then bare hairline-divided rows (RJM M1: no "History" label, no
+                card wrapper; the rows sit directly on the page). */}
             <View style={{ marginTop: tokens.space.lg }}>
-              <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: tokens.space.sm }}>History</Text>
               <FilterChips value={filter} onChange={setFilter} />
               {ledgerLoading ? (
                 <SkeletonRows count={3} />
@@ -287,14 +296,11 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
                   }
                 />
               ) : (
-                <Card>
-                  {entries.map((e, i) => (
-                    <View key={e.id}>
-                      {i > 0 ? <View style={{ height: 1, backgroundColor: tokens.color.line }} /> : null}
-                      <LedgerRow entry={e} />
-                    </View>
-                  ))}
-                </Card>
+                entries.map((e) => (
+                  <View key={e.id} style={{ borderBottomWidth: 1, borderBottomColor: tokens.color.line }}>
+                    <LedgerRow entry={e} />
+                  </View>
+                ))
               )}
               {/* LC-B-SIB-2: the server caps every page at 25 entries; before this, `nextCursor` was
                   never read, so older deductions vanished with no signal anything was missing. */}
@@ -304,15 +310,6 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
                 </View>
               ) : null}
             </View>
-
-            {/* Honest-copy card */}
-            <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
-              <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18 }}>
-                {config && config.ratePct > 0
-                  ? `LyniaGo takes ${config.ratePct}% of each delivery — parcels and food, same rate — out of the balance you top up in advance, never the cash you're handed. Every deduction sits next to the job it came from, so you can always check the math.`
-                  : "LyniaGo doesn't take a commission yet — you keep the full agreed fare. When that changes, the same small per-job commission will come out of this prepaid balance for parcels and food alike, and every deduction will be shown here next to its job."}
-              </Text>
-            </Card>
 
             <View style={{ height: tokens.space.xxl }} />
           </ScrollView>

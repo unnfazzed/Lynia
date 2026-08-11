@@ -98,7 +98,9 @@ export const JobCard = React.memo(function JobCard(props: JobCardProps): React.R
       </View>
       <RouteLine from={props.from} to={props.to} />
       <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: tokens.space.sm, lineHeight: 18 }}>{props.note}</Text>
-      <Button label={props.actionLabel} variant="ghost" onPress={props.onAction} />
+      {/* RJM `JobCard` draws the action as a filled `Button` (primary), not a ghost — one card, one
+          clear primary action (bid on a parcel / accept a food job). */}
+      <Button label={props.actionLabel} onPress={props.onAction} />
     </Card>
   );
 });

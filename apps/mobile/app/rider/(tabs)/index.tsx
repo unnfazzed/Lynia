@@ -29,7 +29,7 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
@@ -653,7 +653,7 @@ export default function RiderHome(): React.ReactElement {
         to={o.dropoff.landmark}
         distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
         fare={o.proposedFare}
-        note={o.itemDesc}
+        note={`${o.itemDesc} · asking $${o.proposedFare}`}
         actionLabel="Make an offer"
         onAction={() => chooseOrder(o)}
       />
@@ -918,13 +918,58 @@ export default function RiderHome(): React.ReactElement {
     />
   );
 
+  // RJM `board`: a plain white "Jobs near you" bar with only a bell on the right (the mock draws no
+  // green surface and no profile action here — profile lives on the Account tab). The title is a
+  // `Heading`, matching how the Money/Account tabs realise their mock AppBar titles.
+  const boardHeaderRow = (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+      <Heading>Jobs near you</Heading>
+      <Pressable
+        onPress={() => router.push("/notifications")}
+        accessibilityRole="button"
+        accessibilityLabel="Notifications"
+        hitSlop={8}
+        style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: -8 }}
+      >
+        <Icon name="bell" size={20} color={tokens.color.ink} />
+      </Pressable>
+    </View>
+  );
+
+  // RJM `board` `OnlinePill`: a compact status row (online/reconnecting pill · "one queue" subtitle ·
+  // a "Go offline" text action), not the big go-online Card — that Card is the OFFLINE presentation
+  // (RJM `offline`), kept on the ScrollView path below. The reconnecting state is honest: the parity
+  // socket is inert, so the chip reads "Reconnecting" rather than a faked "Online".
+  const onlinePillRow = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
+      <StatusPill
+        status={board.connected && !beatStale ? "Online" : "Reconnecting"}
+        tone={board.connected && !beatStale ? "online" : "reconnecting"}
+        dot
+      />
+      <Text style={{ fontSize: 12, color: tokens.color.muted }}>
+        {merchantDispatchAutoEnabled ? "Parcels and food · one queue" : "Parcels · one queue"}
+      </Text>
+      <View style={{ flex: 1 }} />
+      <Pressable
+        onPress={() => onlineM.mutate(false)}
+        disabled={onlineM.isPending}
+        accessibilityRole="button"
+        accessibilityLabel="Go offline"
+        hitSlop={8}
+        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center" }}
+      >
+        <Text style={{ fontSize: 12.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Go offline</Text>
+      </Pressable>
+    </View>
+  );
+
   if (showOpenOrdersList) {
     return (
-      // Board root gets the one other sanctioned green BrandHeader surface (plan §5 B1) — the tab
-      // bar below already carries Jobs/Money/Account, so the old inline "Rider" heading + Trips/Rider
-      // setup buttons move to the Account tab bridge; inner screens (rider/job, rider/become, …) keep
-      // their plain white Screen bars, unchanged.
-      <AppScreen dark banner={boardBanner}>
+      // RJM `board`: a plain white screen (no green BrandHeader — the mock draws none). The "Jobs near
+      // you" title + bell and the compact online pill live in the list header; the tab bar below
+      // already carries Jobs/Money/Account.
+      <AppScreen>
         <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
           {/* A dropped board socket while online surfaces as the standard top banner. */}
           {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
@@ -937,27 +982,26 @@ export default function RiderHome(): React.ReactElement {
             renderItem={renderJobCard}
             ListHeaderComponent={
               <>
+                {boardHeaderRow}
+                {onlinePillRow}
                 {activeJobBanner}
-                {onlineToggleCard}
                 {sentOffersSection}
-                <View>
-                  <Sub>Open orders{openQ.isFetching ? " …" : ""}</Sub>
-                  {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
-                      taken by someone else — so a card vanishing off the board reads as "someone was
-                      faster", not a glitch. Never an alarm; one line regardless of how many go at once. */}
-                  {takenNotice ? (
-                    <View
-                      accessibilityRole="text"
-                      accessibilityLiveRegion="polite"
-                      style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}
-                    >
-                      <Icon name="bike" size={15} color={tokens.color.muted} />
-                      <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-                        A nearby order was just taken by another rider. Stay online — more come through fast.
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
+                    taken by someone else — so a card vanishing off the board reads as "someone was
+                    faster", not a glitch. Never an alarm; one line regardless of how many go at once.
+                    No "Open orders" label — the mock leads straight from the pill into the cards. */}
+                {takenNotice ? (
+                  <View
+                    accessibilityRole="text"
+                    accessibilityLiveRegion="polite"
+                    style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}
+                  >
+                    <Icon name="bike" size={15} color={tokens.color.muted} />
+                    <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
+                      A nearby order was just taken by another rider. Stay online — more come through fast.
+                    </Text>
+                  </View>
+                ) : null}
               </>
             }
             ListEmptyComponent={
@@ -1209,7 +1253,7 @@ export default function RiderHome(): React.ReactElement {
                 to={o.dropoff.landmark}
                 distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
                 fare={o.proposedFare}
-                note={o.itemDesc}
+                note={`${o.itemDesc} · asking $${o.proposedFare}`}
                 actionLabel="Make an offer"
                 onAction={() => chooseOrder(o)}
               />
