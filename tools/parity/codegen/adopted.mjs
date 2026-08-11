@@ -1024,13 +1024,13 @@ export const ADOPTED = [
         state: "track_way",
         key: "RC.track_way",
         reason:
-          "R6·3 on-the-way — mock `track_way` is `Screen(pad=false)(HarareMap fill, absolute bottom sheet: RiderCard + DELIVERY-CODE card + SafetyRow)`. W-MAP: the full-bleed `HarareMap` canvas is the SAME map-anchored gap as the send-composer's FauxMap/MapSheet (Foundation-F #42) — the app draws live GPS telemetry via LiveTrackingCard inside FoodOrderLiveTrackerView, not a static map placeholder. Also W-KIT (`RiderCard`/`SafetyRow`) + W-LIVE (the masked delivery-code that only reveals after the CASH dual-confirm handshake — sensitive). Deferred to Foundation-F.",
+          "R6·3 on-the-way — mock `track_way` (RCB.track_way, r-customer-b.jsx:275) is `Screen(pad=false)(div relative full-bleed( HarareMap fill, absolute bottom sheet: RiderCard + DELIVERY-CODE card + SafetyRow ))`. The W-MAP tooling wall is now GONE (Foundation-F.c): `HarareMap`→`ComposeMap` resolves via DS_RENAME, folds to the canonical MAP kind, and a `{el:'HarareMap'}` map-canvas fragment generates cleanly — the SAME remap that region-adopted the send-composer's map. What blocks track_way is now a LIVE-VS-STATIC REALIZATION gap on a SENSITIVE screen, not a primitive gap: the mock draws a BARE full-bleed map canvas as a sibling of the sheet, but the app's FoodOrderLiveTrackerView realizes the map as the COMPOSITE `LiveTrackingCard` (map + Stepper timeline + call/GetHelp + rider identity) inside a scrolling card column — there is no bare-map sub-tree to mount a `map` region into. Rendering a generated `<ComposeMap>` region there would either REGRESS LiveTrackingCard's telemetry/stepper/call (forbidden — sensitive) or mount a structurally-leaf map beside the real one (a dead/duplicate control, forbidden). Also W-KIT (`RiderCard`/`SafetyRow` sheet body) + W-LIVE (the masked delivery-code that reveals only after the CASH dual-confirm handshake — sensitive). Adoptable once the app's tracker earns a bare full-bleed map canvas separable from LiveTrackingCard's telemetry composite — a product/structure decision, not a codegen gap.",
       },
       {
         state: "track_paused",
         key: "RC.track_paused",
         reason:
-          "R6·b1 socket-drop-mid-track — mock `track_paused` is `Screen(pad=false, banner=Banner offline)(HarareMap fill paused, absolute bottom sheet: plate chip + DELIVERY-CODE card)`. Same W-MAP `HarareMap` wall as track_way (Foundation-F #42); in-app the reconnecting state is the OfflineBanner + last-known telemetry inside the live tracker, not a static paused-map placeholder (W-LIVE). Deferred to Foundation-F.",
+          "R6·b1 socket-drop-mid-track — mock `track_paused` (RCB.track_paused) is `Screen(pad=false, banner=Banner offline)(div relative( HarareMap fill paused, absolute bottom sheet: plate chip + DELIVERY-CODE card ))`. The `HarareMap`→`ComposeMap` remap now resolves (Foundation-F.c) as for track_way; the remaining wall is the SAME live-vs-static realization gap — the app draws the reconnecting state as OfflineBanner + last-known telemetry INSIDE the composite LiveTrackingCard, not a bare paused-map canvas under a sheet — plus the sensitive W-LIVE delivery-code. Deferred with track_way; adoptable once the tracker exposes a bare map canvas region.",
       },
       {
         state: "no_rider",
@@ -1440,50 +1440,143 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── PARCEL SEND-COMPOSER cluster — the customer flagship INTERACTIVE screen (app/send.tsx).
-    // A map-anchored composer: a full-bleed map + tap-to-pin, a two-snap compose sheet, inline
-    // address search, a confirm-pin modal, item/price/phone/landmark capture and submit. The three
-    // gallery keys home_empty/home_pins/home_expanded are the SAME mock `Home` (screens.jsx:145)
-    // param'd across pins/expanded; addr_search/addr_map_confirm are its address sub-states. This is
-    // exactly the live-vs-static case the region model (Foundation-E) was built for — but the mock as
-    // AUTHORED exposes no locatable, transpilable DS-primitive region roots, so it registers DEFER-only
-    // (like LJ.otp / RC.orders), NOT as fabricated regions. Full analysis in the primary deferral.
+    // ── PARCEL SEND-COMPOSER cluster — the customer flagship INTERACTIVE screen (app/send.tsx). The
+    // FIFTH region-adopted interactive container (Foundation-F.c), and the first MAP-ANCHORED one. A
+    // map-anchored composer: a full-bleed map + tap-to-pin, a two-snap compose sheet, inline address
+    // search, a confirm-pin modal, item/price/phone/landmark capture and submit. The three gallery keys
+    // home_empty/home_pins/home_expanded are the SAME mock `Home` (screens.jsx:145) param'd across
+    // pins/expanded; addr_search/addr_map_confirm are its address sub-states.
+    //
+    // A whole-screen generated view cannot host this screen's live behaviour (geolocation + tap-to-pin,
+    // the two-snap sheet, inline AddressSearch, the confirm-pin modal, and the SENSITIVE submit —
+    // CreateOrderRequest validation + idempotency-key derivation + the accept-to-continue disclaimer
+    // gate) without regressing it, AND the app folds the mock's home_empty/pins/expanded states into one
+    // live container (W-LIVE). So it adopts PIECE-BY-PIECE via the region model, which guards a NAMED
+    // sub-tree inside the live container rather than the whole screen. TWO regions are adopted, exactly
+    // the map/sheet foundation this sub-build (Foundation-F.c) unlocked:
+    //   • map — the full-bleed map canvas. The mock draws `<K.FauxMap fill pins=…>`; the app realizes it
+    //     LIVE as `<ComposeMap>` (geolocation, tap-to-pin, drag-marker, the route line). FauxMap→ComposeMap
+    //     is the DS_RENAME remap; both fold to the canonical MAP kind (normalize.mjs), so the fragment is
+    //     congruent by construction. The container mounts `<SendMapView>` (a thin controlled wrapper) where
+    //     it used to mount `<ComposeMap>` directly; every live prop flows straight through the seam.
+    //   • footer (submit bar) — the pinned "Broadcast request" CTA the mock draws in `K.MapSheet.footer`.
+    //     This is what the generalized non-`Screen` slot locator (Foundation-F.c) unlocked: `{slot:"footer"}`
+    //     now anchors on the SHEET, not only a `<Screen>`. The mock footer is `div(hint?, Button)`; the app
+    //     mounts `<SendComposeFooterView>` in `BottomSheet.footer`, keeping the live missing-requirements
+    //     hint (shown until the form is complete, = the mock's until-pins hint) and the load-bearing submit
+    //     (onBroadcast → the disclaimer gate → the idempotent create). The out-of-area notice + ErrorText
+    //     stay live container glue beside it (pruned from the composition — not drawn by the static mock).
+    // The composition check reduces BOTH mock and container to `BOX( REGION:map, REGION:footer )` — the map
+    // canvas first, the submit sheet-footer last, in the mock's order. The address/item/price/phone/landmark
+    // form body, the confirm-pin modal and the disclaimer sheet are live glue (pruned): the mock's sheet
+    // body is built from mock-LOCAL helpers (`AddressFields`/`QtyStepper`) + repeated DS `<Field>`s the
+    // transpiler cannot inline, and the address search / confirm-pin are live supersets — see the deferrals.
     key: "LJ.home_empty",
     container: "apps/mobile/app/send.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
     mockComponent: "Home",
     uiImport: "../src/ui",
-    states: [],
-    deferred: [
+    regions: [
       {
-        state: "composer",
-        key: "LJ.home_empty",
-        reason:
-          "NOT decomposable into region fragments under the region/fragment codegen model (Foundation-E), and NOT a backend gap — a live-vs-static shell whose mock exposes no locatable, transpilable DS-primitive region roots. The mock `Home` (screens.jsx:145, param'd pins/expanded across home_empty/home_pins/home_expanded) is a full-bleed kit `K.FauxMap` under a two-snap kit `K.MapSheet`, with the compose form built from the mock-LOCAL helpers `AddressFields` (the pickup/drop rows) and `QtyStepper`, raw styled `<div>`/`<span>` (brand top bar, 'tap to drop pin' hint, 'Use my location' pill), repeated DS `<Field>`s, and a single `<Button>` 'Broadcast request' that lives in `K.MapSheet.footer`. All three region locators are tag-based and none can anchor a faithful region here: (1) `{el:tag}` needs a UNIQUE DS/kit tag heading the sub-tree — `K.FauxMap`/`K.MapSheet` are member tags whose IDIOM now collapses to `FauxMap`/`MapSheet` (Foundation-F.b), but they remain absent from the transpiler's DS remap (transpile.mjs DS_RENAME) AND from emit.mjs's uiPrims import set, and are map-anchored (W-MAP: FauxMap→ComposeMap / MapSheet→BottomSheet remaps are Foundation-F.c), so a fragment rooted at them still emits unresolved components; `AddressFields`/`QtyStepper` are mock-local functions the transpiler neither inlines nor can resolve; `Field` appears ~7× so `{el:'Field'}` anchors ALL Fields under one region name (mock reduces to N `REGION` leaves, the container mounts 1 → the composition diff diverges); and the only unique DS tags, `Dove`/`Wordmark`, are leaf glyphs inside the brand pill (the app draws them as ONE `BrandLockup`, so even that wouldn't be congruent) — the meaningful blocks (top bar, address sheet, details form, submit bar) are each rooted in a raw `<div>`, and only the FIRST `<div>` (the whole screen) is `{el:'div'}`-locatable. (2) `{map:tag}` is inapplicable — `Home` has no `.map()`. (3) `{slot}` matches only a `Screen` attribute (normalize.mjs `locateTs` + `reduceComp` fold banner/footer slots for `Screen` alone); the mock root is a plain `<div>` (no `Screen`), so the lone Broadcast `<Button>` in `K.MapSheet.footer` is never traversed by the composition walker (non-`Screen` element footer props aren't folded) and cannot anchor a submit region the way RC.menu's `<Screen footer=…>` did. The app already realizes this static shell LIVE and mock-wins-correctly: `ComposeMap` (geolocation + tap-to-pin) under a `BottomSheet` (peek/expanded snaps) with inline `AddressSearch`, an `AddressConfirmSheet` modal (= addr_search/addr_map_confirm), `SendItemsList`/`SendPhoneFields`/`SendPriceQuote`/`SendLandmarksDetails`, and full submit validation + idempotency + disclaimer gate. Region-adopting it would require EITHER re-authoring the mock with DS primitives + a `<Screen footer=…>` shell (FORBIDDEN — editing packages/design to match the app trips the reverse-drift freeze) OR a Foundation-level codegen build (FauxMap→ComposeMap / MapSheet→BottomSheet remaps + a sheet-footer scaffold, mock-local-helper inlining, a generalized non-`Screen` slot locator) — out of scope for one adoption iteration, and even then the live ComposeMap/BottomSheet/AddressSearch trees differ from the static FauxMap/MapSheet placeholders, so fragment congruence would need further modelling. Registered defer-only, not forced into invented regions (CLAUDE.md Pixel-parity: honesty over volume; never ship a dead/fabricated control).",
+        // Map-canvas region — the full-bleed compose map. Locator {el:"FauxMap"} anchors the mock's
+        // `<K.FauxMap fill>` (member-tag terminal name). The bind drops the kit placeholder props
+        // (fill/pins) and the container drives the real ComposeMap through the controlled props seam
+        // (pickup/drop/active + the change + reverse-geocode callbacks + topOffset), unchanged.
+        region: "map",
+        locator: { el: "FauxMap" },
+        componentName: "SendMapView",
+        viewFile: "apps/mobile/app/send-map.view.tsx",
+        propsParam: "props: SendMapViewProps",
+        propsType: [
+          "export type SendMapViewProps = {",
+          "  pickup: PickedPoint | null;",
+          "  drop: PickedPoint | null;",
+          "  active: ActiveSlot;",
+          "  onChangePickup: (p: PickedPoint) => void;",
+          "  onChangeDrop: (p: PickedPoint) => void;",
+          "  onReverseGeocodePickup?: (landmark: string) => void;",
+          "  onReverseGeocodeDrop?: (landmark: string) => void;",
+          "  topOffset?: number;",
+          "};",
+        ].join("\n"),
+        bind: ({ t }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "ComposeMap") return;
+            // Drop the kit FauxMap placeholder props (fill/pins) — the live map is fully controlled by
+            // the container via the props seam.
+            path.node.attributes = [t.jsxSpreadAttribute(t.identifier("props"))];
+          },
+        }),
       },
+      {
+        // Submit-footer region — the pinned "Broadcast request" bar the mock draws in `K.MapSheet.footer`
+        // (`div(hint?, Button)`). Locator {slot:"footer"} folds the sheet's footer slot (the generalized
+        // non-`Screen` slot locator, Foundation-F.c). The hint COND stays (wired to the live
+        // missing-requirements summary); the Button keeps its verbatim 'Broadcast request' label and wires
+        // onPress→onBroadcast (the disclaimer gate + idempotent create), loading, disabled.
+        region: "footer",
+        locator: { slot: "footer" },
+        componentName: "SendComposeFooterView",
+        viewFile: "apps/mobile/app/send-compose-footer.view.tsx",
+        propsParam: "{ showHint, hint, onBroadcast, busy, disabled }: SendComposeFooterViewProps",
+        propsType: [
+          "export type SendComposeFooterViewProps = {",
+          "  /** Show the missing-requirements hint above the CTA (mock: shown until the pins are set). */",
+          "  showHint: boolean;",
+          "  /** The live 'Add … to broadcast' summary of what is still missing. */",
+          "  hint: string;",
+          "  onBroadcast: () => void;",
+          "  busy?: boolean;",
+          "  disabled?: boolean;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          ConditionalExpression(path) {
+            // `!pins ? <hint> : null` → `showHint ? <hint> : null` (the free `pins` param becomes the seam).
+            path.node.test = expr("showHint");
+          },
+          JSXText(path) {
+            // The frozen hint copy → the live missing-requirements summary.
+            if (path.node.value.trim().startsWith("Add pickup")) path.replaceWith(t.jsxExpressionContainer(expr("hint")));
+          },
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "Button") return;
+            // Kit web props (onClick, the frozen disabled={!pins}) → the app Button's onPress/loading/disabled.
+            // The 'Broadcast request' label stays verbatim (kit copy).
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["onClick", "disabled"].includes(a.name.name)),
+            );
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onBroadcast"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("busy"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("disabled"))));
+          },
+        }),
+      },
+    ],
+    deferred: [
       {
         state: "pins",
         key: "LJ.home_pins",
         reason:
-          "the SAME mock `Home` at pins=true (screens.jsx:145) — the set-pin state only fills the AddressFields/price/phone leaf VALUES; it adds no new locatable region root. Identical region-model wall as LJ.home_empty; deferred with the composer.",
+          "the SAME mock `Home` at pins=true (screens.jsx:145) — the set-pin state only fills the AddressFields/price/phone leaf VALUES; it adds no new locatable region root. The map + submit-footer regions are now ADOPTED (they are pin-state-independent and cover both home_empty and home_pins); what stays deferred is the WHOLE-screen state, whose sheet body is live glue (mock-local AddressFields/QtyStepper + repeated DS Fields the transpiler cannot inline). Deferred as a whole-screen state, not a region gap.",
       },
       {
         state: "expanded",
         key: "LJ.home_expanded",
         reason:
-          "the SAME mock `Home` at pins=true/expanded=true (screens.jsx:145) — the expanded branch swaps the collapsed 'Add landmarks' button for three more DS `<Field>`s inside a raw `<div>`, adding no unique locatable region root (the extra Fields make `{el:'Field'}` still more ambiguous). Identical region-model wall as LJ.home_empty; deferred with the composer.",
+          "the SAME mock `Home` at pins=true/expanded=true (screens.jsx:145) — the expanded branch swaps the collapsed 'Add landmarks' button for three more DS `<Field>`s inside a raw `<div>`, adding no unique locatable region root (the extra Fields make `{el:'Field'}` still more ambiguous). The map + submit-footer regions are adopted and cover it; the expanded sheet-body form stays live glue. Deferred as a whole-screen state.",
       },
       {
         state: "addr_search",
         key: "LJ.addr_search",
         reason:
-          "the address-search sub-state of the send composer. The app folds it INLINE into the compose sheet as a live `AddressSearch` (classification SUPERSET — mock draws it as a standalone screen `AddrSearch`), so it has no standalone container to point a view at, and it inherits the same kit-primitive/mock-local region-model wall as the composer. Deferred with LJ.home_empty.",
+          "the address-search sub-state of the send composer. The app folds it INLINE into the compose sheet as a live `AddressSearch` (classification SUPERSET — mock draws it as a standalone screen `AddrSearch`), so it has no standalone container to point a view at. It lives in the compose sheet BODY, which stays live glue beside the two adopted regions (map + submit-footer) — the body is built from mock-local `AddressFields`/`QtyStepper` + repeated DS `<Field>`s the transpiler cannot inline, so it earns no region root of its own. Deferred with the composer's sheet body.",
       },
       {
         state: "addr_confirm",
         key: "LJ.addr_map_confirm",
         reason:
-          "the confirm-pin-on-map sub-state of the send composer — realized in-app as the `AddressConfirmSheet` MODAL opened from the compose sheet (not a routed screen), over the same FauxMap/sheet shell. Same region-model wall (kit `K.FauxMap` map canvas + no locatable DS region root); no standalone container. Deferred with LJ.home_empty.",
+          "the confirm-pin-on-map sub-state of the send composer — realized in-app as the `AddressConfirmSheet` MODAL opened from the compose sheet (not a routed screen), over the same map/sheet shell. The map canvas itself is now the ADOPTED `map` region (FauxMap→ComposeMap); the confirm-pin MODAL is a live superset with no standalone container or locatable DS region root of its own. Deferred as a live-superset modal.",
       },
     ],
   },

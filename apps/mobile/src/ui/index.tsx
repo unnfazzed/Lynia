@@ -33,6 +33,10 @@ export { MenuRow, type MenuRowItem, type MenuCategory } from "./MenuRow";
 export { EtaLine } from "./EtaLine";
 export { ShopLogo } from "./ShopLogo";
 export { FoodThumb, type FoodThumbCategory } from "./FoodThumb";
+// NOTE: the Foundation-F.c map/sheet realizations (ComposeMap / BottomSheet / MapPicker) are
+// deliberately NOT re-exported from this barrel. They import Icon/Button/Label back FROM the barrel,
+// so re-exporting them here forms a `no-circular` dependency-cruiser violation. Generated map/sheet
+// region fragments import them from their own modules instead (see tools/parity/codegen/emit.mjs).
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
