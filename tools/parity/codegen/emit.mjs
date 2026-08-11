@@ -152,6 +152,16 @@ export function emitView(spec) {
       },
     });
   }
+  // Strip comments carried over from the mock bundle (a component's own leading block comment and the
+  // NEXT declaration's leading comment, which babel attaches as this node's trailing comment) so the
+  // generated view reads clean — the file header already says it is machine output.
+  traverse(ast, {
+    enter(path) {
+      path.node.leadingComments = null;
+      path.node.trailingComments = null;
+      path.node.innerComments = null;
+    },
+  });
   let body = generate(ast.program.body.find((n) => n.type === "FunctionDeclaration"));
 
   code = assembleFile(spec, body);
