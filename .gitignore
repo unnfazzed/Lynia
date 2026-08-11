@@ -40,3 +40,7 @@ apps/api/prisma/*.db
 # Local Prisma engine binaries (fetched manually when the proxy blocks the download)
 .prisma-engines/
 .claude/worktrees/
+
+# Next 16 auto-generates these on `next dev` (agentRules) — build noise, not source
+apps/*/AGENTS.md
+apps/*/CLAUDE.md
