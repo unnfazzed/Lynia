@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/unnfazzed/Lynia/compare/v0.29.0...v0.30.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** codegen-adopt customer account cluster (LJ.notifications; defer profile/settings/history) ([cc754cd](https://github.com/unnfazzed/Lynia/commit/cc754cdbc22d6e786030ef75d0a9701acf9c0f59))
+* **parity:** codegen-adopt customer auth cluster (LJ.login, LJ.onboard, LJ.perm_loc, LJ.perm_notif) ([4753c52](https://github.com/unnfazzed/Lynia/commit/4753c52e4a32e62be29ac635409eba9e245463e6))
+* **parity:** codegen-adopt customer system/error states cluster (LJ.force_update; defer on_hold/generic_error) ([#694](https://github.com/unnfazzed/Lynia/issues/694)) ([73a1e0e](https://github.com/unnfazzed/Lynia/commit/73a1e0e5b30c59532d9c72406bd02ca9ebf09e8a))
+* **parity:** codegen-adopt food browse/discovery cluster (RC.closed_interrupt; defer RC.home/RC.search/RC.menu_closed) ([f1a2af1](https://github.com/unnfazzed/Lynia/commit/f1a2af1f0a3fcb33a09ab5e2359259c00cba3566))
+* **parity:** region-adopt food cart cluster (RC.cart#footer; defer summary/lines/eta/upsell/oos/price/min/note) ([#698](https://github.com/unnfazzed/Lynia/issues/698)) ([fe2e2a8](https://github.com/unnfazzed/Lynia/commit/fe2e2a8cc378d1f3ba5fa8a7475162fbd217e905))
+* **parity:** region-adopt food checkout cluster (RC.checkout_cash summary + footer) ([59d2b36](https://github.com/unnfazzed/Lynia/commit/59d2b360ea8e777ba95ee709b143cecb48919b45))
+
 ## [0.29.0](https://github.com/unnfazzed/Lynia/compare/v0.28.0...v0.29.0) (2026-08-11)
 
 
