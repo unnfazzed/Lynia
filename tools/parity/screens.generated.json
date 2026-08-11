@@ -1,10 +1,10 @@
 {
   "generatedFrom": "packages/design/explorations/journey/gallery-map.js + restaurants/r-gallery-data.js + gallery.jsx ADMIN",
-  "count": 244,
+  "count": 275,
   "byCategory": {
-    "customer": 102,
-    "rider": 91,
-    "merchant": 44,
+    "customer": 122,
+    "rider": 98,
+    "merchant": 48,
     "admin": 7
   },
   "screens": [
@@ -64,7 +64,7 @@
       "band": "First run",
       "src": "LJ",
       "id": "otp",
-      "title": "WhatsApp OTP",
+      "title": "SMS OTP",
       "tag": "",
       "mode": "phone"
     },
@@ -109,6 +109,26 @@
       "mode": "phone"
     },
     {
+      "key": "LJ.onboard_flag_off",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "onboard_flag_off",
+      "title": "Onboarding · food off",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.role_select_flag_off",
+      "category": "customer",
+      "band": "First run",
+      "src": "LJ",
+      "id": "role_select_flag_off",
+      "title": "Choose your role · food off",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
       "key": "RC.home",
       "category": "customer",
       "band": "Home & orders",
@@ -135,6 +155,36 @@
       "src": "RC",
       "id": "orders_empty",
       "title": "Orders · empty",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.home_flag_off",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "LJ",
+      "id": "home_flag_off",
+      "title": "Home · Food tile soon",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.order_restore",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "LJ",
+      "id": "order_restore",
+      "title": "Cold start · order running",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.stale_cache",
+      "category": "customer",
+      "band": "Home & orders",
+      "src": "LJ",
+      "id": "stale_cache",
+      "title": "Orders · saved copy",
       "tag": "BOTH",
       "mode": "phone"
     },
@@ -245,6 +295,46 @@
       "src": "LJ",
       "id": "disclaimer",
       "title": "Broadcast disclaimer",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.draft_restored",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "draft_restored",
+      "title": "Draft restored",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.addr_unavailable",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "addr_unavailable",
+      "title": "Address search down",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.map_failed",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "map_failed",
+      "title": "Map didn't load",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.loc_off",
+      "category": "customer",
+      "band": "Browse & compose",
+      "src": "LJ",
+      "id": "loc_off",
+      "title": "Location off · composer",
       "tag": "PARCEL",
       "mode": "phone"
     },
@@ -509,6 +599,16 @@
       "mode": "phone"
     },
     {
+      "key": "LJ.rate_undo",
+      "category": "customer",
+      "band": "Hand-off & close",
+      "src": "LJ",
+      "id": "rate_undo",
+      "title": "Rating sent · undo",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
       "key": "LJ.profile",
       "category": "customer",
       "band": "Account & support",
@@ -566,6 +666,66 @@
       "id": "settings",
       "title": "Settings",
       "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.settings_perms",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "settings_perms",
+      "title": "Settings · real permissions",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.settings_perms_ok",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "settings_perms_ok",
+      "title": "Settings · all granted",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.privacy",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "privacy",
+      "title": "Privacy",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.delete_account",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "delete_account",
+      "title": "Delete account",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.delete_final",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "delete_final",
+      "title": "Delete · final confirm",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.phone_masked",
+      "category": "customer",
+      "band": "Account & support",
+      "src": "LJ",
+      "id": "phone_masked",
+      "title": "Order ended · numbers masked",
+      "tag": "BOTH",
       "mode": "phone"
     },
     {
@@ -1029,6 +1189,46 @@
       "mode": "phone"
     },
     {
+      "key": "LJ.conn_reconnecting",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "conn_reconnecting",
+      "title": "Reconnecting banner",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.stale_cache_empty",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "stale_cache_empty",
+      "title": "Offline · nothing saved",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.order_restore_error",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "order_restore_error",
+      "title": "Restore failed",
+      "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "LJ.draft_discard",
+      "category": "customer",
+      "band": "Exceptions & edge",
+      "src": "LJ",
+      "id": "draft_discard",
+      "title": "Discard draft · confirm",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
       "key": "RJ.splash",
       "category": "rider",
       "band": "First run & sign in",
@@ -1064,7 +1264,7 @@
       "band": "First run & sign in",
       "src": "RJ",
       "id": "otp",
-      "title": "WhatsApp OTP",
+      "title": "SMS OTP",
       "tag": "",
       "mode": "phone"
     },
@@ -1206,6 +1406,26 @@
       "id": "notifications",
       "title": "One inbox",
       "tag": "BOTH",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.board_food_off",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "board_food_off",
+      "title": "Jobs · food dispatch off",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.board_empty_food_off",
+      "category": "rider",
+      "band": "Online & the one board",
+      "src": "RJM",
+      "id": "board_empty_food_off",
+      "title": "Food off · nothing in range",
+      "tag": "PARCEL",
       "mode": "phone"
     },
     {
@@ -1459,6 +1679,26 @@
       "mode": "phone"
     },
     {
+      "key": "RJM.pickup_photo",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJM",
+      "id": "pickup_photo",
+      "title": "Proof of pickup · capture",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.pickup_photo_preview",
+      "category": "rider",
+      "band": "The active job",
+      "src": "RJM",
+      "id": "pickup_photo_preview",
+      "title": "Proof of pickup · preview",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
       "key": "RJM.money",
       "category": "rider",
       "band": "Money",
@@ -1565,6 +1805,16 @@
       "src": "RJ",
       "id": "help",
       "title": "Help & support",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.strikes",
+      "category": "rider",
+      "band": "Account & support",
+      "src": "RJM",
+      "id": "strikes",
+      "title": "Reliability · strikes",
       "tag": "",
       "mode": "phone"
     },
@@ -1939,6 +2189,26 @@
       "mode": "phone"
     },
     {
+      "key": "RJM.pickup_photo_failed",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJM",
+      "id": "pickup_photo_failed",
+      "title": "Proof photo · upload failed",
+      "tag": "PARCEL",
+      "mode": "phone"
+    },
+    {
+      "key": "RJM.strikes_final",
+      "category": "rider",
+      "band": "Exceptions & edge",
+      "src": "RJM",
+      "id": "strikes_final",
+      "title": "One strike from a pause",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
       "key": "RM.login",
       "category": "merchant",
       "band": "Get on shift",
@@ -2129,6 +2399,26 @@
       "mode": "tablet"
     },
     {
+      "key": "RM.item_out",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "item_out",
+      "title": "Don't have an item",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.item_out_wait",
+      "category": "merchant",
+      "band": "Accept & cook",
+      "src": "RM",
+      "id": "item_out_wait",
+      "title": "New total · customer confirming",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
       "key": "RM.pickup_cash",
       "category": "merchant",
       "band": "Pickup confirm",
@@ -2205,6 +2495,26 @@
       "src": "RM",
       "id": "refund_exec",
       "title": "Refund after wallet paid",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_reveal",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_reveal",
+      "title": "Pickup code · hidden",
+      "tag": "",
+      "mode": "tablet"
+    },
+    {
+      "key": "RM.pickup_revealed",
+      "category": "merchant",
+      "band": "Pickup confirm",
+      "src": "RM",
+      "id": "pickup_revealed",
+      "title": "Pickup code · revealed",
       "tag": "",
       "mode": "tablet"
     },
