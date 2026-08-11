@@ -878,6 +878,234 @@ export const ADOPTED = [
       },
     ],
   },
+  // ── FOOD ORDER TRACKING + TERMINAL STATES cluster (app/food/order/[orderId].tsx) ──────────────────
+  // The customer's post-checkout order lifetime: wait-on-kitchen → pay-after-accept → prep countdown →
+  // rider secured → on-the-way (map) → doorstep cash handshake → delivered/rate → every terminal. All 26
+  // states live in r-customer-b.jsx (RCB.*) and are DEFER-ONLY, the same disposition as the parcel AUCTION
+  // cluster (LJ.auction_live) and the SEND-COMPOSER (LJ.home_empty): a deeply-live composite the whole-
+  // screen + region codegen model cannot host without regressing a SENSITIVE area — delivery-code rotation
+  // (KB-DELIVERY-CODE-ROTATION-SIGNAL), the tap-to-arm + 4s-undo rating (BH-06), the CASH doorstep dual-
+  // confirm handshake (R-04), the sawRider latch / rider-dropped re-find, and the payment-prompt lifecycle.
+  // FIVE structural walls recur across the cluster, each already proven a wall elsewhere in this registry:
+  //   (W-LOCAL) `OrderHead` is a MOCK-LOCAL helper (r-customer-b.jsx:10), not a kit primitive — the
+  //     transpiler neither inlines nor can import it (identical to the auction cluster's `OrderHead`, W2);
+  //     11 states lead with it.
+  //   (W-KIT) the tracking mocks compose from kit primitives with NO app-DS equivalent AND no transpiler
+  //     remap (transpile.mjs DS_RENAME + emit.mjs uiPrims) — `Ring`, `RTracker`, `RiderCard`, `CodeCard`,
+  //     `SafetyRow`, `RailRow`. The app's src/ui ships DIFFERENT primitives (RiderMini not RiderCard,
+  //     Stepper not RTracker, CodeInput not CodeCard, a safety.tsx GetHelpControl not SafetyRow, and no Ring
+  //     at all), so a generated view emits unresolved components — the SAME class as the auction cluster's
+  //     `K.OfferCard`/`K.SortChips` (W1). Authoring these as DS primitives + transpiler remaps is a
+  //     Foundation build, not one iteration.
+  //   (W-MAP) `HarareMap` is a full-bleed map canvas — the SAME map-anchored gap as the send-composer's
+  //     `FauxMap`/`MapSheet` (Foundation-F #42). track_way + track_paused are map-rooted.
+  //   (W-LIVE) live-vs-static composite with no per-mock whole-screen boundary: the container is a ~250-line
+  //     state machine whose phases are already hand-built `FoodOrder*View`s that COMBINE several mock states
+  //     into one live view (FoodOrderAwaitingPaymentView folds pay_push/pay_now/pay_wait/pay_manual/
+  //     pay_confirmed behind `paymentPromptStatus`+`forcePayScreen`; FoodOrderCancelledView folds no_rider/
+  //     refunded/generic-cancel; FoodOrderRefundPendingView folds rejected/refund-pending) and add live COND
+  //     branches (offline banner, warm-snapshot resume, sawRider/riderDropped) — there is no static per-mock
+  //     Screen to swap a generated whole-screen view into the way food-list's early-returned loading/error had.
+  //   (W-DATA) the terminal + tracking mocks draw event-timeline rows, wall-clock timestamps and refund/
+  //     reference figures the order record does NOT carry — failed_noshow's 4-row "WHAT HAPPENED" timeline,
+  //     rejected/refunded's "Refund due by <time>" + "Their reference EC-4471-RF9920 · sent back 11:26" — all
+  //     of which the app deliberately HONEST-EMPTIES (policy "Within N hours", no fabricated timeline). A
+  //     mock-faithful whole-screen view would fabricate those figures (CLAUDE.md forbids). #671 lifted the
+  //     rider-identity gate (MerchantOrderResponse.rider) so track_secured's DATA is honest now — but the
+  //     mock still renders it through the `RiderCard` kit primitive (W-KIT), so its STRUCTURE can't generate.
+  // Split into three phase entries (keyed to the three wired app-targets) purely for readability; all share
+  // the one container. Registered defer-only, not forced into invented/unresolved views (honesty over volume).
+  {
+    // Phase 1 — wait-on-kitchen + pay-after-accept. app/food/order/[orderId].tsx routes these via
+    // FoodOrderAwaitingAcceptView / FoodOrderItemApprovalView / FoodOrderAwaitingPaymentView.
+    key: "RC.pay_now",
+    container: "apps/mobile/app/food/order/[orderId].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "await_accept",
+        key: "RC.await_accept",
+        reason:
+          "R5·1 waiting-on-the-kitchen — mock `await_accept` is `Screen(OrderHead, Ring[104/180], Card(RTracker step=0))`. Hits W-LOCAL (leads with the mock-local `OrderHead`), W-KIT (`Ring` countdown + `RTracker` timeline — neither in the app DS nor the transpiler remap; the app draws this phase's countdown/timeline via its own FoodOrderAwaitingAcceptView using Stepper + a server-deadline ring), and W-LIVE (the acceptDeadlineAt ring ticks live off `now`). A generated view would emit unresolved `<Ring>`/`<RTracker>` under an unresolved `<OrderHead>`. Deferred with the cluster.",
+      },
+      {
+        state: "confirm_call",
+        key: "RC.confirm_call",
+        reason:
+          "R5·1b kitchen-calls-to-confirm — mock `confirm_call` is `Screen(OrderHead, phone-disc, Card(RTracker step=1))`. W-LOCAL (`OrderHead`) + W-KIT (`RTracker`); the phone disc is a raw div (transpilable) but the screen can't generate around the two unresolved refs, and in-app the call-confirm beat is a copy variant inside the same awaiting-accept live view, not a standalone Screen (W-LIVE). Deferred with the cluster.",
+      },
+      {
+        state: "pay_push",
+        key: "RC.pay_push",
+        reason:
+          "R5·2 the payment-moment PUSH — a lock-screen/heads-up NOTIFICATION mock (raw dark-gradient divs + `PB.Dove` + a notification card), NOT an in-app screen: it has no `Screen` root and no in-app container to point a view at (it renders on the OS lock screen, which the app does not draw). #670 made the payment-prompt lifecycle a plain order field, but that gates the in-app pay states, not this OS-surface artwork. Not rendered by the app; deferred as a non-screen.",
+      },
+      {
+        state: "pay_now",
+        key: "RC.pay_now",
+        reason:
+          "R5·3 pay-the-merchant — mock `pay_now` is `Screen(footer Button)(AppBar, Pad(Card accent, RAILS.map(RailRow), USSD-help div, manual-pay rows))`. W-KIT: the payment-rail rows are `RailRow` (a kit primitive with no app-DS equivalent — the app renders its manual-rail pay UI inside the combined FoodOrderAwaitingPaymentView, not via a RailRow list), so a generated view emits `<RailRow>` against `RAILS`. W-LIVE: pay_now is one branch of the app's SINGLE awaiting_payment view (folded with pay_wait/pay_manual/pay_confirmed behind `forcePayScreen`+`paymentPromptStatus`), not an isolable Screen. Deferred with the cluster.",
+      },
+      {
+        state: "pay_wait",
+        key: "RC.pay_wait",
+        reason:
+          "R5·4 prompt-sent-waiting — mock `pay_wait` is `Screen(footer)(centred phone-disc + copy with an inline `<b>` bold)`. Uses only Screen/Button/Icon + raw divs, BUT (a) the `<b>` inside a text run is the mixed text+element-siblings transpiler idiom gap (same as LJ.register's Verified badge — no general 'wrap mixed siblings in <Text>' lowering yet, W-IDIOM), and (b) it is the `paymentPromptStatus==='pending'` branch of the combined awaiting_payment live view, not a standalone Screen (W-LIVE). Deferred with the cluster.",
+      },
+      {
+        state: "pay_manual",
+        key: "RC.pay_manual",
+        reason:
+          "R5·5 paid-another-way (reference entry) — mock `pay_manual` is `Screen(footer)(AppBar, Pad(Card, Field×2, notice))`, which uses only resolvable prims (Screen/AppBar/Pad/Card/Field/Icon) and would TRANSPILE cleanly. The wall is purely W-LIVE: the app collects the reference LIVE inside the ONE FoodOrderAwaitingPaymentView (the `forcePayScreen`/reference-input branch), with no per-sub-state Screen boundary to swap a generated whole-screen view into without splitting that combined pay view and regressing the submit/reference flow. Adoptable once the pay sub-states earn their own routed boundaries; deferred with the cluster.",
+      },
+      {
+        state: "pay_confirmed",
+        key: "RC.pay_confirmed",
+        reason:
+          "R5·6 paid-waiting-for-merchant-confirm — mock `pay_confirmed` is `Screen(OrderHead, clock-disc, Card(3 rows), SafetyRow)`. W-LOCAL (`OrderHead`) + W-KIT (`SafetyRow` — the app uses its GetHelpControl from safety.tsx, a different tag) + W-LIVE (the `paymentPromptStatus==='confirmed'` branch of the combined pay view). Deferred with the cluster.",
+      },
+      {
+        state: "pay_open",
+        key: "RC.pay_open",
+        reason:
+          "R5·b1 still-unpaid reminder — mock `pay_open` is `Screen(footer Button)(AppBar, Pad(Card(EmptyState + ghost Button), banknote-notice))`. Prims resolve, but it is the elapsed-time reminder branch of the same awaiting_payment live view (the app gates it on `forcePayScreen`/elapsed check, not a separate Screen — W-LIVE), and reaching it re-enters the pay flow rather than a standalone route. Deferred with the cluster.",
+      },
+      {
+        state: "pay_failed",
+        key: "RC.pay_failed",
+        reason:
+          "R5·b2 rail-declined — mock `pay_failed` is `Screen(footer)(AppBar, Pad(Card(EmptyState), RAILS.slice(1).map(RailRow)))`. W-KIT (`RailRow`) + W-LIVE (a retry branch of the combined pay view). Deferred with the cluster.",
+      },
+      {
+        state: "item_removed",
+        key: "RC.item_removed",
+        reason:
+          "R5·b3 one-item-unavailable approval — mock `item_removed` is `Screen(footer: two Buttons)(AppBar, Pad(Card(struck line + Money), Card(PriceMath goods/fee/km/total)))`. The struck line + `Money` resolve, but the `PriceMath` here draws a Delivery(fee·km) row from fabricated fee/km, and in-app this is FoodOrderItemApprovalView — a live 60s-deadline approve/cancel view driven by `itemApprovalDeadlineAt` (W-LIVE) whose totals come from the real order, not the mock's frozen breakdown. Live-vs-static + fabricated fee/km (W-DATA); deferred with the cluster.",
+      },
+    ],
+  },
+  {
+    // Phase 2 — dispatch + live tracking. app/food/order/[orderId].tsx routes these via
+    // FoodOrderPreparingView / FoodOrderLiveTrackerView / FoodOrderRiderDroppedView (+ the generic
+    // trackQ order snapshot the parcel tracker shares).
+    key: "RC.track_way",
+    container: "apps/mobile/app/food/order/[orderId].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "track_prep",
+        key: "RC.track_prep",
+        reason:
+          "R6·1 prep countdown (rider not yet secured) — mock `track_prep` is `Screen(OrderHead, Ring[17/20], Card(finding-a-rider row + Skeleton, RTracker step=2))`. W-LOCAL (`OrderHead`) + W-KIT (`Ring` + `RTracker`); the app draws the preparing phase via FoodOrderPreparingView (Stepper + a live prep timer off `now`, W-LIVE). Generated view emits unresolved `<Ring>`/`<RTracker>`. Deferred with the cluster.",
+      },
+      {
+        state: "track_secured",
+        key: "RC.track_secured",
+        reason:
+          "R6·2 rider-secured — mock `track_secured` is `Screen(banner=Banner good)(OrderHead, Card(RiderCard eta/meta), Card(ready-in row + RTracker step=2), SafetyRow)`. #671 LIFTED the rider-identity backend gate — the rider (name·plate·vehicle·rating·KYC) is now a plain field on MerchantOrderResponse.rider, so the DATA is honest — but the STRUCTURE still can't generate: W-LOCAL (`OrderHead`) + W-KIT (`RiderCard`, `RTracker`, `SafetyRow` are all kit primitives absent from the app DS/transpiler remap; the app renders this via FoodOrderLiveTrackerView using RiderMini/Stepper/GetHelpControl). Structure-gated on the kit primitives, not on data; deferred with the cluster.",
+      },
+      {
+        state: "track_way",
+        key: "RC.track_way",
+        reason:
+          "R6·3 on-the-way — mock `track_way` is `Screen(pad=false)(HarareMap fill, absolute bottom sheet: RiderCard + DELIVERY-CODE card + SafetyRow)`. W-MAP: the full-bleed `HarareMap` canvas is the SAME map-anchored gap as the send-composer's FauxMap/MapSheet (Foundation-F #42) — the app draws live GPS telemetry via LiveTrackingCard inside FoodOrderLiveTrackerView, not a static map placeholder. Also W-KIT (`RiderCard`/`SafetyRow`) + W-LIVE (the masked delivery-code that only reveals after the CASH dual-confirm handshake — sensitive). Deferred to Foundation-F.",
+      },
+      {
+        state: "track_paused",
+        key: "RC.track_paused",
+        reason:
+          "R6·b1 socket-drop-mid-track — mock `track_paused` is `Screen(pad=false, banner=Banner offline)(HarareMap fill paused, absolute bottom sheet: plate chip + DELIVERY-CODE card)`. Same W-MAP `HarareMap` wall as track_way (Foundation-F #42); in-app the reconnecting state is the OfflineBanner + last-known telemetry inside the live tracker, not a static paused-map placeholder (W-LIVE). Deferred to Foundation-F.",
+      },
+      {
+        state: "no_rider",
+        key: "RC.no_rider",
+        reason:
+          "R6·b2 NO_RIDER — mock `no_rider` is `Screen(AppBar, Pad(Card(EmptyState + two Buttons), Card(RTracker step=2 failAt=2)))`. W-KIT (`RTracker` with a fail marker — no app-DS equivalent) + W-LIVE/W-DATA: in-app a no_rider cancellation is folded into FoodOrderCancelledView (or, on a paid wallet order, FoodOrderRefundPendingView), which draw the app's honest terminal, not the mock's timeline card. Deferred with the cluster.",
+      },
+      {
+        state: "rider_cancelled",
+        key: "RC.rider_cancelled",
+        reason:
+          "R6·b6 rider-cancelled-after-secured (re-finding) — mock `rider_cancelled` is `Screen(banner=Banner warn)(OrderHead, Card(looking-again row + Skeleton), Card(RTracker step=2))`. W-LOCAL (`OrderHead`) + W-KIT (`RTracker`); in-app this is the sawRider-latched re-find rendered by FoodOrderRiderDroppedView (a live view driven by the riderDropped derivation, W-LIVE). Deferred with the cluster.",
+      },
+      {
+        state: "resume",
+        key: "RC.resume",
+        reason:
+          "R7·b2 app-killed-and-reopened-mid-order — mock `resume` is `Screen(banner=Banner info)(OrderHead, Card(rider row), Card(RTracker step=5))`. W-LOCAL (`OrderHead`) + W-KIT (`RTracker`); in-app 'resume' is not a screen but the warm-snapshot paint (the FoodOrderSnapshot this container reads back on mount to warm-paint whichever live phase the order is in), so there is no standalone container to point a view at (W-LIVE). Deferred with the cluster.",
+      },
+    ],
+  },
+  {
+    // Phase 3 — doorstep hand-off + delivered/rate + terminals. app/food/order/[orderId].tsx routes these via
+    // the FoodOrderLiveTrackerView doorstep sub-states, FoodOrderDeliveredView, FoodOrderUndeliveredView,
+    // FoodOrderCancelledView and FoodOrderRefundPendingView.
+    key: "RC.delivered_rate",
+    container: "apps/mobile/app/food/order/[orderId].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "handoff",
+        key: "RC.handoff",
+        reason:
+          "R7·1 the-door (take food, then pay cash) — mock `handoff` is `Screen(footer Button)(OrderHead, Pad(Card(amount hero), Card(3 step rows), Card(masked DELIVERY CODE)))`. W-LOCAL (`OrderHead`) + W-LIVE: the masked-code-until-handshake, the 'I gave the cash' confirm and the CASH dual-confirm are the sensitive doorstep handshake inside FoodOrderLiveTrackerView, not a static Screen. Deferred with the cluster.",
+      },
+      {
+        state: "handoff_wait",
+        key: "RC.handoff_wait",
+        reason:
+          "R7·1b you-confirmed-rider-counting — mock `handoff_wait` is `Screen(OrderHead, Ring[85/120], Card(you-gave row + rider-counting row + Skeleton))`. W-LOCAL (`OrderHead`) + W-KIT (`Ring`) + W-LIVE (the post-confirm wait beat of the doorstep handshake, driven by the customer/rider cash-confirm timestamps). Deferred with the cluster.",
+      },
+      {
+        state: "handoff_code",
+        key: "RC.handoff_code",
+        reason:
+          "R7·1c both-confirmed-read-the-code — mock `handoff_code` is `Screen(banner=Banner good)(OrderHead, CodeCard code='418 302', Card(2 confirm rows))`. W-LOCAL (`OrderHead`) + W-KIT (`CodeCard` — the app reveals the delivery code via its own DeliveryCodeCard/CodeInput path, a different tag) + W-LIVE (the code only exists after the dual-confirm handshake and is fetched/rotated live — the KB-DELIVERY-CODE-ROTATION-SIGNAL sensitive path). Deferred with the cluster.",
+      },
+      {
+        state: "handoff_dispute",
+        key: "RC.handoff_dispute",
+        reason:
+          "R7·b3 you-confirmed-rider-didn't (on hold) — mock `handoff_dispute` is `Screen(footer Button)(OrderHead, Pad(Card(EmptyState), Card(WHAT'S LOGGED timeline), SafetyRow))`. W-LOCAL (`OrderHead`) + W-KIT (`SafetyRow`) + W-DATA (the 'WHAT'S LOGGED' timeline rows are fabricated timestamps the order record doesn't carry) + W-LIVE (the dispute-freeze is a live handshake outcome). Deferred with the cluster.",
+      },
+      {
+        state: "delivered_rate",
+        key: "RC.delivered_rate",
+        reason:
+          "R7·2 delivered → rate — mock `delivered_rate` is `Screen(footer 'Submit rating')(Pad(check hero, 'Delivered at 10:16', paid line, Card(food-stars + rider-stars + tag chips)))`. The centred hero already matches the app's FoodOrderDeliveredView, but three walls block the rating card: (W-DATA/#672) it draws DUAL ratings — 'How was the food?' AND 'How was Tendai M.?' — plus positive tag chips (Hot food/On time/Polite/Right order); the app ships a SINGLE tap-to-arm rating (RatingCard) and has no rider-rating write path or tag-chip backend (needs #671 rider identity + #672 dual-rating + chips). (W-CONTROL/BH-06) the mock's static 'Submit rating' footer clashes with the shipped tap-to-arm + 4s-undo model (a sensitive undo-window — the app has no submit button at all). (W-IDIOM) the chip `border: 1px solid ${i<2?…}` is a DYNAMIC template-literal border the transpiler's border-shorthand handler doesn't expand (same gap as role_select). Adoptable once the dual food+rider rating + tag chips are backed (#671/#672), the undo-window model is drawn, and the template-literal-border idiom lands. Deferred with the cluster.",
+      },
+      {
+        state: "failed_noshow",
+        key: "RC.failed_noshow",
+        reason:
+          "R7·b1 customer-no-show terminal — mock `failed_noshow` is `Screen(footer ghost)(AppBar, Pad(Card(EmptyState), Card(WHAT HAPPENED: 4 raw time-rows)))`. Prims resolve, but two walls: (W-DATA) the 4-row 'WHAT HAPPENED' timeline ('Rider arrived 10:16 / Called twice 10:18 / Waiting window ended 10:24 / Food returned 10:39') is fabricated fixture data the order record doesn't carry — the app's FoodOrderUndeliveredView honest-empties it (a single reason line from UNDELIVERED_REASON_LABEL + attempt count, no timeline), so a mock-faithful view would fabricate; and (W-LIVE) the app view leads with OrderHeader+pill and a GetHelpControl, structurally diverging from the mock's AppBar + footer-button tree. Deferred with the cluster.",
+      },
+      {
+        state: "rejected",
+        key: "RC.rejected",
+        reason:
+          "R6·b3 merchant-rejected-after-wallet-pay (refund pending) — mock `rejected` is `Screen(AppBar, Pad(Card(EmptyState), Card(raw REFUND-PENDING pill + Money + 3 rows + Button)))`. Prims resolve, but (W-DATA) the 'Refund due by Today, 12:00' row is a wall-clock the order carries no timestamp for — the app's FoodOrderRefundPendingView deliberately renders the POLICY window ('Within N hours') instead, and omits the fabricated due-time; and (W-LIVE) the app view leads with a bare EmptyState (not the mock's AppBar + EmptyState-in-Card) and uses StatusPill, structurally diverging. A mock-faithful view would fabricate the refund-due time (CLAUDE.md forbids). Deferred with the cluster.",
+      },
+      {
+        state: "refunded",
+        key: "RC.refunded",
+        reason:
+          "R6·b4 refund-landed — mock `refunded` is `Screen(AppBar, Pad(Card accent(check row, Amount/Money, 'Their reference EC-4471-RF9920' row, keep-this-reference note), Button))`. Prims resolve, but (W-DATA) the merchant's refund reference ('EC-4471-RF9920') and refund timestamp ('sent it back at 11:26') are figures the order record does not carry, and (W-LIVE) the app has NO dedicated 'refunded' route — a refunded order (`refundedAt != null`) falls through to FoodOrderCancelledView, so there is no boundary to mount a generated view at without splitting the shared cancelled-terminal view. A mock-faithful view would fabricate the refund reference/time. Deferred with the cluster.",
+      },
+      {
+        state: "cancel_sheet",
+        key: "RC.cancel_sheet",
+        reason:
+          "R6·b5 cancel-pre-pickup sheet — mock `cancel_sheet` is `Screen(pad=false)(dimmed skeleton backdrop, absolute overlay sheet: reason radios + destructive Button + ghost Button)`. (W-IDIOM) each radio option's `border: 1.5px solid ${i===0?…}` is a DYNAMIC template-literal border the transpiler can't expand (same gap as role_select); and (W-LIVE) the app realizes the post-dispatch cancel as an inline confirm state (`cancelConfirm`) inside FoodOrderLiveTrackerView, not a routed sheet screen with a reason-picker — the reason radios are a superset the app doesn't collect. Deferred with the cluster.",
+      },
+    ],
+  },
   {
     // LJ.perm_loc — first-run permission priming (app/permissions.tsx). A MULTI-STATE screen: one
     // container walks two explainer steps (location → notifications), each drawn by the mock as a bare
@@ -1300,6 +1528,145 @@ export const ADOPTED = [
         key: "LJ.auction_counter",
         reason:
           "the counter-offer review — mock `AuctionCounter` (screens.jsx:512) IS a clean single-return named component, and its counter CARD transpiles cleanly (static `border` shorthand expands, `boxShadow` token spreads, `placeItems:center`→flex-center, `borderRadius:50%`→px all lower fine). But it still (a) leads with the mock-local `<OrderHead>` and ends with the kit-composite `<K.OfferCard o={RIDERS[0]}>` ('Other offers'), both undefined refs (W1/W2); and (b) has no whole-screen container boundary — the app renders a counter as ONE `<CounterOfferCard>` (a bespoke app component, not the mock's inline primitives) interleaved in the live `orderedOffers.map` gated by `isActiveCounter`, NOT as a separate auction_counter screen (W3). Adopting the whole-screen mock would mean rebuilding the entire live auction around a static composite, regressing streaming/ranking/select-race and the F-07 decline (one round, no counter-back). Deferred with the cluster; adoptable once OfferCard is a DS primitive and the counter state earns its own boundary.",
+      },
+    ],
+  },
+  // ─────────────────────────── RIDER ONBOARDING + TOP-UP GATE (RJ / RJM) ───────────────────────────
+  // The current rider design is RJM (one app: Jobs · Money · Account). The rider FIRST-RUN/SIGN-IN band
+  // (RJ splash/onboard/login/otp/role_select/perm_loc/perm_notif) is the SHARED customer auth flow — the
+  // SAME app screens already adopted/deferred above under the LJ keys (splash is the native expo-splash;
+  // onboard→onboarding.tsx and login→phone.tsx are adopted; otp/register/role_select are deferred;
+  // permissions.tsx renders a rider-framed variant of the SAME generated PermLocView/PermNotifView via its
+  // `isRider` copy seam, so the rider permission screens are ALREADY structurally gated on the exact views
+  // the rider uses). Re-gating those same view FILES against the RJ mocks would collide on the generated
+  // header comment (`gen LJ.perm_loc` and `gen RJ.perm_loc` write the identical path), so the shared band
+  // is not double-adopted. What is rider-SPECIFIC here — the KYC band and the top-up gate — is folded into
+  // two large INTERACTIVE multi-state containers (the RiderHome board and become.tsx), with live-vs-static
+  // divergence in sensitive KYC/gate code, and is deferred honestly per state (CLAUDE.md: honesty over
+  // volume; keep KYC/gate behaviour identical). Each is a genuine wall, not laziness.
+  {
+    key: "RJ.kyc_intro",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-screens.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "intro",
+        key: "RJ.kyc_intro",
+        reason:
+          "the 'Set up as a rider' prompt is NOT a standalone screen — it is one branch (knownUnverified && !rider) of the RiderHome multi-state board container (app/rider/(tabs)/index.tsx:1063), rendered as a bare `<EmptyState icon=\"id-card\" title=\"Set up as a rider\">` with a 'Become a rider' + 'Refresh status' pair, INSIDE the container's ScrollView under the live AppScreen banner. The mock `KycIntro` draws `Pad(RiderHead, EmptyState(one Button))` as its own whole screen; the app supersets it with a Refresh-status action and hosts it as one interleaved gate state among the KYC-pending/failed/expired, no-GPS and online-gate branches (the mock's RiderHead is the app's AppScreen banner). The whole-screen codegen model gates a WHOLE-screen view (`view ≡ mock`) and cannot isolate one branch of that interactive container. The screenshot-lane target (RJ.kyc_intro → become.tsx) points at the become FORM, a different screen. Adoptable once the rider gate states are modelled as their own state-views on the board container.",
+      },
+    ],
+  },
+  {
+    key: "RJ.kyc_form",
+    container: "apps/mobile/app/rider/become.tsx",
+    mockFile: "packages/design/explorations/journey/rider-screens.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "form",
+        key: "RJ.kyc_form",
+        reason:
+          "become.tsx is a live INTERACTIVE container, not the mock's static `KycForm`. The mock draws `Pad(Heading, Sub, Card(3 Fields), Card(Field + Label + a frozen 'Photo added — retake' pill), Card(consent note), Button)`. The app hosts, in ONE screen: an ImagePicker camera/gallery capture, a downscale→presign→PUT upload chain with a slow-link 'Still uploading' state, a PhotoReviewCard preview STEP that replaces the whole form body before commit (kit photo_preview), an encrypted KYC-draft restore banner, an OS 'don't ask again' permission-blocked 'Open settings' recovery, a 'Try again' re-PUT of a failed asset, and a submitted 'pending' Card that supplants the form — none drawn by the static mock, several swapping the entire body (reviewAsset / pending). This is a sensitive KYC screen where behaviour must stay identical; a whole-screen generated view cannot host the capture/preview/upload/draft branches without regressing them, and region-adopting only the static name-fields Card would be a thin, fragile win on load-bearing PII capture. Live-vs-static superset (the live photo capture is the realization of the mock's static pill). Adoptable once the form's static sub-tree earns a boundary separable from the capture/preview interaction.",
+      },
+    ],
+  },
+  {
+    key: "RJ.kyc_pending",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-screens.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "pending",
+        key: "RJ.kyc_pending",
+        reason:
+          "folded into the RiderHome board container (index.tsx:1117-1139), not a standalone screen. The app renders TWO honest pending branches the single static mock never drew — a manual-review 'Your ID is under review · no action needed' EmptyState (kycMode==='manual', which has NO vendor browser step) and an auto 'Finish verifying your ID · Continue verification' EmptyState (retryKyc mints a fresh Didit session) — interleaved among the other gate branches under the live AppScreen banner. The mock `KycPending` is `Pad(RiderHead, EmptyState(one 'Continue in browser' Button))` as its own screen. Whole-screen codegen cannot gate one branch of the interactive container, and the app's honest manual/auto split supersets the single mock (rendering only the browser-step variant would lie to manual-mode riders). Adoptable once the board's gate states earn their own state-views.",
+      },
+    ],
+  },
+  {
+    key: "RJ.kyc_verified",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-screens.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "verified",
+        key: "RJ.kyc_verified",
+        reason:
+          "NOT drawn in the app (CLAUDE.md not-drawn⇒not-rendered): the mock `KycVerified` is a whole-screen celebration `Pad(RiderHead chip, Card accent('You're verified'), Button 'Go online')`, but the app has no verified-confirmation surface — a verified rider drops straight onto the board (the RJM.board list / the offline go-online Card), and the 'go online' affordance is the board's own toggle, not a dismissable success page. Adopting this would ADD a celebration interstitial the current one-app flow intentionally never shows. Deferred as correctly-absent; adoptable only if the product decides to add a post-verification interstitial.",
+      },
+    ],
+  },
+  {
+    key: "RJM.gate_topup",
+    container: "apps/mobile/app/rider/(tabs)/money.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "gate",
+        key: "RJM.gate_topup",
+        reason:
+          "live-vs-static — the merged one-app design intentionally does NOT render a standalone 'Top up to keep riding' gate screen. The mock draws `div(AppBar 'Top up to keep riding', Pad(Card(danger-wash wallet tile, 'Your balance is $0.00', commission copy, 'Top up now', ghost 'How commission works')))` as its own screen. The app realizes the low-balance gate in TWO honest places instead: (1) the Money tab balance hero (money.tsx:249) switches the Card to dangerWash with a 'Below the $2 floor — top up to keep riding' line + 'Top up' button — money.tsx's own comment says 'RJM.gate_topup is the empty gate'; and (2) the board's `commission_low_balance` online-gate EmptyState (index.tsx:1207) with a 'Go to Money' CTA, deliberately routing the rider to their real balance rather than deep-linking past it into a bare top-up form. Neither is a 1:1 view carrying the mock's AppBar+Card tree — both are branches of interactive multi-state containers (Money tab / RiderHome board). The gate behaviour is derived within those drawn structures (live-vs-static). Adoptable only if the product reintroduces a standalone gate screen.",
+      },
+    ],
+  },
+  // ─────────────────────────── RIDER MONEY + ACCOUNT (RJM Money·Account tabs) ───────────────────────────
+  // The current rider design is RJM (one app: Jobs · Money · Account), authored in `rider-one-app.jsx`.
+  // BOTH the Money tab (M1 `money`) and the Account tab (A1 `account`) are un-adoptable by the current
+  // codegen model for ONE root reason shared by the WHOLE `rider-one-app.jsx` family, and each carries a
+  // second, app-side live-vs-static divergence on top. Deferred honestly per CLAUDE.md (honesty over
+  // volume; wallet/money is SENSITIVE — behaviour kept identical, tests green).
+  //
+  // ROOT WALL (whole family) — the `S()` render-helper CALL-WRAPPER. Every screen in rider-one-app.jsx
+  // returns `S(<div>…</div>, { tab })`, where `S` is a mock-local helper that wraps the body in the DS
+  // `AppScreen`/SHELL (tab bar + banner + footer). The normalizer (normalize.mjs — the CI guardrail
+  // engine) cannot see through this call: its render-root readers (`rootFrom`→`jsxFrom`→`fromExpression`
+  // for whole-screen, `jsxRootNode` for regions) only recognise JSX elements/fragments/blocks/`.map`
+  // calls — a NON-`.map` CallExpression yields `[]`/null. Empirically BOTH paths throw "no JSX render
+  // found in component" / "mock component <name> has no JSX render" for `money` AND `account` (and would
+  // for board/offer_*/active_*/handoff/notifications too). So neither a whole-screen view NOR a region
+  // fragment/composition can be extracted from these mocks at all — this is a normalizer gap, not a
+  // primitive/backend gap. It is a Foundation-F (#42) prerequisite of the SAME class as the plan's
+  // "variant-switch state isolation" + "mock-local helper inlining": Foundation-F must teach the
+  // normalizer to unwrap a render-helper call (`S(jsxArg, opts)` → treat the first JSX arg as the render
+  // root) AND canonicalise the SHELL/`S()` wrapper to SCREEN (folding its `tabs`/banner/footer slots) so
+  // the mock's tab-shell matches the app's `<AppScreen>` root. Until then, no rider-one-app screen adopts.
+  {
+    key: "RJM.money",
+    container: "apps/mobile/app/rider/(tabs)/money.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RJM.money",
+        reason:
+          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'money' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('money')` throws 'no JSX render found' and every region path (`treeOfMockFragment`/`mockCompositionTree` via `jsxRootNode`) throws 'mock component money has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted from this mock until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). (2) LIVE-VS-STATIC — even once the wrapper is solved, money.tsx is a live MULTI-STATE container, not the static single-state mock: it early-returns a `SkeletonRows` loading state and an `EmptyState`+Retry error state the mock never draws, renders a live `pendingTopupBanner` recovery Card superset (an app-kill-during-top-up reconciliation surface, money.tsx:223 — not in the mock), draws the balance as a bare `<Text>{formatMoney(balance)}</Text>` where the mock draws `<Money v=\"4.60\" size={28}>` beside a fabricated '≈ 30 more jobs' estimate the app HONESTLY omits (no such projection exists), switches the hero Card accent→dangerWash with four conditional copy branches (negative/belowFloor/gettingLow/healthy) for the one static mock line, gives the ledger an honest empty-state + a 'Load older' pagination control (server caps pages at 25) the mock's fixed 4-row LEDGER never shows, and heads the screen with `<Heading>Money</Heading>` where the mock draws `AppBar title=\"Money\"`. Wallet/money is SENSITIVE — behaviour kept byte-identical. Adoptable once Foundation-F unwraps the shell AND the mock's static data-state sub-tree earns a boundary separable from the loading/error/recovery-banner branches (or the mock is redrawn to draw them).",
+      },
+    ],
+  },
+  {
+    key: "RJM.account",
+    container: "apps/mobile/app/rider/(tabs)/account.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RJM.account",
+        reason:
+          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'acct' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('account')` throws 'no JSX render found' and the region paths throw 'mock component account has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). Account is otherwise the CLOSEST-to-leaf screen in the cluster — an identity Card + a 5-row settings Card, all plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map canvas — so it becomes adoptable the moment the shell wall falls. (2) LIVE-VS-STATIC (minor) — the identity Card sits behind the live `['me']` query and early-returns a `SkeletonList` loading state the static mock never draws (the mock hardcodes 'Tendai M. · ★ 4.9 · 312 jobs · verified'; the app fills real name/rating/trips/KYC-tag with an honest '★ new' until the first rating lands), and the screen heads with `<Heading>Account</Heading>` where the mock draws `AppBar title=\"Account\"`. The settings-row list and identity structure otherwise match the mock 1:1. Adoptable once Foundation-F unwraps the shell (the loading skeleton is a normal multi-state branch the model already handles once the mock is readable).",
       },
     ],
   },

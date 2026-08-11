@@ -92,12 +92,29 @@ early-returns the normalizer can't isolate by component name — plus one compos
 order states (no per-state Screen to swap a whole-screen view into). Registered defer-only alongside the
 composer.
 
-Foundation-F is therefore the consolidated codegen build that unblocks BOTH domains:
-(a) `DS_RENAME`/uiPrims remaps `FauxMap→ComposeMap`, `MapSheet→BottomSheet`; (b) a **sheet-footer scaffold** +
-a **generalized non-`Screen` slot locator** so a submit region anchors under a plain-`<div>` root;
+A **third wall** blocks the ENTIRE rider surface: every screen in `rider-one-app.jsx` (board, offer_*, active_*,
+handoff, notifications, money, account, gate_topup) returns `S(<div>…</div>, { tab })` — a **mock-local
+render-helper** wrapping the body in the DS `AppScreen`/SHELL. `normalize.mjs` cannot see through a non-`.map`
+CallExpression, so `treeOfNamedComponent`/`treeOfMockFragment`/`mockCompositionTree` all throw "no JSX render"
+for every rider mock — no whole-screen view AND no region fragment can be extracted at all. This is a
+prerequisite for adopting ANY rider screen (even the near-leaf `account` tab).
+
+Foundation-F is therefore the consolidated codegen build that unblocks all three domains:
+(a) `DS_RENAME`/uiPrims remaps `FauxMap→ComposeMap`, `MapSheet`/`HarareMap`→`BottomSheet`; (b) a **sheet-footer
+scaffold** + a **generalized non-`Screen` slot locator** so a submit region anchors under a plain-`<div>` root;
 (c) **mock-local + member-tag (`K.*`) helper inlining/resolution** (`AddressFields`/`QtyStepper`/`OrderHead`/
 `OfferCard`/`SortChips`); (d) **variant-switch state isolation** so `Auction(variant)` early-returns map to
-per-state views without editing the mock. Strategy: **harvest-first** — keep adopting the many clusters that
+per-state views without editing the mock; (e) a **render-helper / SHELL unwrap** — teach the normalizer to take
+the first JSX argument of a wrapper call (`S(<jsx>, opts)`) as the render root, plus `SHELL`/`AppScreen`→`SCREEN`
+canonicalisation (unblocks the whole `rider-one-app.jsx` surface). (f) the transpiler-idiom cleanup
+(template-literal border / conditional shadow-spread / mixed text+element siblings) for `role_select`/`register`/
+`delivered_rate`.
+
+**Adopted vs deferred, end of harvest phase (2026-08-11):** ~12 views adopted & merged (customer auth/account/
+system-leaf + food menu/closed-interrupt/cart/checkout regions) — everything the current codegen reaches. **69
+states deferred**, every one attributable to a wall above (W-KIT primitives, map/sheet, variant-switch,
+render-helper wrapper, live-vs-static superset, or backend #670–#674). The deferrals are recorded per-state in
+`adopted.mjs`; Foundation-F converts the tooling-blocked majority to adopted in one sweep. Strategy: **harvest-first** — keep adopting the many clusters that
 don't need it (food browse/cart/checkout, rider onboarding/money/account, merchant, admin, leaf/simple-region
 screens), then do Foundation-F once and sweep the map/sheet + composite-order family (send-composer, auction,
 tracking, rider board/jobs) in one wave — alongside the transpiler-idiom cleanup (template-literal border /
