@@ -2,6 +2,7 @@ import { CUSTOMER_CANCELLABLE_STATUSES, tokens, type MerchantOrderResponse } fro
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
+import type { RiderIdentity } from "../../logic/rider-identity";
 import { handshakeState } from "../../logic/food-doorstep";
 import { Button, Card, ErrorText, Icon, OfflineBanner, Screen, SkeletonCard } from "../index";
 import { GetHelpControl, SosControl } from "../safety";
@@ -22,7 +23,7 @@ const TRACK_STATUS_LABEL: Record<string, string> = {
   en_route_dropoff: "On the way",
 };
 
-type LiveTrackerOrder = Pick<MerchantOrderResponse, "status" | "paymentMethod" | "customerCashConfirmedAt" | "riderCashConfirmedAt" | "cashHandshakeFrozenAt" | "cashHandshakeAmount" | "total" | "merchantGoodsTotal">;
+type LiveTrackerOrder = Pick<MerchantOrderResponse, "status" | "paymentMethod" | "customerCashConfirmedAt" | "riderCashConfirmedAt" | "cashHandshakeFrozenAt" | "cashHandshakeAmount" | "total" | "merchantGoodsTotal" | "rider">;
 
 /** RF-18: the "a rider is secured" (`order.riderId != null && ACTIVE.includes(order.status)`) branch of
  *  app/food/order/[orderId].tsx, extracted verbatim — once dispatched a food order rides the same
@@ -74,6 +75,25 @@ export function FoodOrderLiveTrackerView({
     riderCashConfirmedAt: order.riderCashConfirmedAt,
     cashHandshakeFrozenAt: order.cashHandshakeFrozenAt,
   });
+  // #671: the assigned rider's identity (name · plate · vehicle · rating · KYC) for the "rider
+  // secured" card, built live from the food order read. A food rider is auto-dispatched, so unlike
+  // the parcel path there is no cached offer to recover it from — the order carries it directly.
+  // `ratingAvg` arrives as a raw JSON number (Prisma Float); RiderMini expects a string.
+  const riderIdentity: RiderIdentity | null = order.rider
+    ? {
+        orderId,
+        profileId: order.rider.profileId,
+        firstName: order.rider.firstName,
+        lastName: order.rider.lastName,
+        photoUrl: order.rider.photoUrl,
+        ratingAvg: String(order.rider.ratingAvg),
+        ratingCount: order.rider.ratingCount,
+        tripsCount: order.rider.tripsCount,
+        plate: order.rider.plate,
+        vehicleInfo: order.rider.vehicleInfo,
+        kycVerified: order.rider.kycVerified,
+      }
+    : null;
   return (
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
@@ -101,7 +121,7 @@ export function FoodOrderLiveTrackerView({
             dropoff={trackData.dropoff.point}
             events={trackData.events}
             counterpartyPhone={trackData.counterpartyPhone}
-            riderIdentity={null}
+            riderIdentity={riderIdentity}
             connectionState={reachable ? "live" : "reconnecting"}
           />
         ) : (

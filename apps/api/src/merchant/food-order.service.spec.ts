@@ -757,3 +757,60 @@ describe("FoodOrderService.toResponse — A-O14 (LC-A06) null-padding omission",
     }
   });
 });
+
+describe("FoodOrderService.toResponse — #671 assigned-rider identity block", () => {
+  const riderJoin = {
+    profileId: "r1",
+    bikeReg: "AEE 4471",
+    vehicleInfo: "Red Honda Ace",
+    ratingAvg: 4.8,
+    ratingCount: 132,
+    tripsCount: 132,
+    kycStatus: "verified",
+    photoUrl: "https://cdn.lynia/r1.jpg",
+    profile: { firstName: "Tendai", lastName: "M" },
+  };
+  const assignedOrder = (rider: unknown) => ({
+    id: "o1",
+    merchantId: "m1",
+    status: "assigned",
+    merchantPhase: null,
+    merchantPaymentMethod: "wallet",
+    merchantItems: [],
+    riderId: rider ? "r1" : null,
+    dispatchAttempt: 1,
+    pickupCodeAttempts: 0,
+    noShowCallTimestamps: [],
+    merchant: { location: { contactPhone: "+263771234567" }, ownerProfile: { phone: "+263771234567" } },
+    rider,
+  });
+
+  it("maps the joined rider to the public identity block (plate=bike_reg, kycVerified from kyc_status)", async () => {
+    const { svc } = build({ order: { findFirst: async () => assignedOrder(riderJoin) } });
+    const res = await svc.getAsRider("o1", "r1");
+    expect(res.rider).toEqual({
+      profileId: "r1",
+      firstName: "Tendai",
+      lastName: "M",
+      photoUrl: "https://cdn.lynia/r1.jpg",
+      ratingAvg: 4.8,
+      ratingCount: 132,
+      tripsCount: 132,
+      vehicleInfo: "Red Honda Ace",
+      plate: "AEE 4471",
+      kycVerified: true,
+    });
+  });
+
+  it("reports kycVerified=false for a non-verified rider (pending/failed/expired)", async () => {
+    const { svc } = build({ order: { findFirst: async () => assignedOrder({ ...riderJoin, kycStatus: "pending" }) } });
+    const res = await svc.getAsRider("o1", "r1");
+    expect(res.rider?.kycVerified).toBe(false);
+  });
+
+  it("omits the rider block entirely before a rider is assigned (null join)", async () => {
+    const { svc } = build({ order: { findFirst: async () => assignedOrder(null) } });
+    const res = await svc.getAsRider("o1", "r1");
+    expect(res).not.toHaveProperty("rider");
+  });
+});
