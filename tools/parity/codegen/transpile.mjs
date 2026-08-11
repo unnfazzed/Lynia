@@ -341,6 +341,27 @@ export function transpile(src, report) {
         },
         JSXElement(path) {
           const open = path.node.openingElement;
+          // ── W1: kit-composite MEMBER tags (`K.OfferCard`, `K.SortChips`, `PB.Dove` — `K`/`PB`/`P.DSR`
+          // are the mock bundles' `window.LyniaKit`/`RParts` namespaces). The transpiler reads
+          // `open.name.name`, which is `undefined` for a JSXMemberExpression, so a member tag was left
+          // VERBATIM and a generated view emitted an unresolved `<K.OfferCard>` against an undefined `K`
+          // (the auction/composer clusters' W1 wall). Collapse `<Ns.Name>` to `<Name>` so the DS remap +
+          // passthrough below resolves it exactly like a bare tag (`PB.Dove` → `Dove` → DoveMark via
+          // DS_RENAME). `React.*` (Fragment/StrictMode) is skipped — it is a real React member the app
+          // imports, not a kit namespace, and the normalizer keeps `React.Fragment` transparent. The
+          // normalize side already reads the terminal `.name.text` off a PropertyAccessExpression, so this
+          // makes the emit side symmetric — mock and view classify a member tag the same way.
+          if (open.name.type === "JSXMemberExpression") {
+            const ns = open.name.object;
+            const terminal = open.name.property;
+            if (!(ns.type === "JSXIdentifier" && ns.name === "React") && terminal.type === "JSXIdentifier") {
+              open.name = t.jsxIdentifier(terminal.name);
+              if (path.node.closingElement && path.node.closingElement.name.type === "JSXMemberExpression") {
+                path.node.closingElement.name = t.jsxIdentifier(terminal.name);
+              }
+              R.transform++;
+            }
+          }
           if (open.name.type !== "JSXIdentifier") return;
           const tag = open.name.name;
           const flags = {};
