@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.0](https://github.com/unnfazzed/Lynia/compare/v0.28.0...v0.29.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** Foundation-E region/fragment guarding + adopt RC.menu (first interactive screen) ([7a60cf0](https://github.com/unnfazzed/Lynia/commit/7a60cf085890674ff01cb0f2302bd5477ff6321b))
+* **pay:** payment-prompt push flow for food orders ([#670](https://github.com/unnfazzed/Lynia/issues/670)) ([#687](https://github.com/unnfazzed/Lynia/issues/687)) ([67f5d3a](https://github.com/unnfazzed/Lynia/commit/67f5d3a4c035c12d6eabe3ba2e3f5e36d3923161))
+
 ## [0.28.0](https://github.com/unnfazzed/Lynia/compare/v0.27.0...v0.28.0) (2026-08-11)
 
 
