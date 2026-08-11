@@ -1,7 +1,16 @@
 # Structure-Adoption Spike — how to adopt the mocks' STRUCTURE across 275 screens, by construction
 
-**Status:** research + prototype spike. No app runtime touched. Prototype code lives in
-`tools/parity/spike/` (outside every build/typecheck/test gate, same as the rest of `tools/parity`).
+**Status:** ✅ PRODUCTIONIZED (foundation). The recommendation below is implemented and proven
+end-to-end on one real screen. The prototype still lives in `tools/parity/spike/`; the production tool
+is `tools/parity/codegen/` (transpiler + guardrail engine + CLI + `adopted.mjs` registry), and the
+**structural-snapshot guardrail** (§4) is live and CI-blocking as
+`apps/api/src/parity/structure-snapshot.spec.ts` — the 4th pixel-parity guardrail. See
+`tools/parity/codegen/README.md`. First screen proven: **`LJ.help`** — its mock transpiles to a
+faithful RN presentational component with **0 unresolved decls**, the app container
+(`apps/mobile/app/help/index.tsx`) renders the generated `help.view.tsx` keeping all its logic, and
+the guardrail passes by construction. The rest of this doc is the original spike (design + evidence),
+unchanged.
+
 **Question it answers:** the owner codes from a phone and cannot do a side-by-side visual comparison,
 so per-screen hand-alignment (Phases 3–6) has no human backstop. What method adopts the mocks'
 *structure* reliably — so the 220 customer+rider states and 55 web states can be committed to it?
