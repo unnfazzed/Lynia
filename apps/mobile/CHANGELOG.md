@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.28.0](https://github.com/unnfazzed/Lynia/compare/v0.27.0...v0.28.0) (2026-08-11)
+
+
+### Features
+
+* **discovery:** cross-restaurant dish search index ([#673](https://github.com/unnfazzed/Lynia/issues/673) part b) ([#686](https://github.com/unnfazzed/Lynia/issues/686)) ([73465c6](https://github.com/unnfazzed/Lynia/commit/73465c6041d865145b7f45810c3113eea931ba1e))
+* **discovery:** restaurant rating + prep baseline on the food list card ([#673](https://github.com/unnfazzed/Lynia/issues/673) part a) ([#684](https://github.com/unnfazzed/Lynia/issues/684)) ([cf64092](https://github.com/unnfazzed/Lynia/commit/cf640927bd25930af72436b3316de07bb1b87a0d))
+* **food:** expose assigned rider identity on food orders ([#671](https://github.com/unnfazzed/Lynia/issues/671)) ([e6a01c4](https://github.com/unnfazzed/Lynia/commit/e6a01c4170f56379043905f71e052f3f46b6df95))
+* **parity:** codegen-adopt food cluster (RC.placing; defer RC.list/menu/cart/checkout/orders data) ([4ab4bc1](https://github.com/unnfazzed/Lynia/commit/4ab4bc13631fba8899c305ce28527c4bf9ebe7f3))
+* **parity:** DS primitives (PriceMath/Banner/CoverPhoto/MenuRow) + empty-state Card + adopt RC.cart_empty ([fd1fbbe](https://github.com/unnfazzed/Lynia/commit/fd1fbbe4a073b772c2ac74c2f53c8c5c122631fe))
+* **parity:** Foundation-D primitives (EtaLine/ShopLogo/FoodThumb/Screen.footer) + adopt food data cluster ([#685](https://github.com/unnfazzed/Lynia/issues/685)) ([d15b736](https://github.com/unnfazzed/Lynia/commit/d15b7368fd159bb40dcd1ab28be5eb9683545477))
+* **parity:** mock→RN codegen + structural-snapshot guardrail (foundation, LJ.help proven E2E) ([#668](https://github.com/unnfazzed/Lynia/issues/668)) ([6c08f98](https://github.com/unnfazzed/Lynia/commit/6c08f988a5c37f59277ae2c35fe2580206b74fb4))
+* **parity:** multi-state adoption model + FlatList≡map equivalence + adopt food-list states ([#678](https://github.com/unnfazzed/Lynia/issues/678)) ([72b38fa](https://github.com/unnfazzed/Lynia/commit/72b38faba79646096e4bee1485c940cbfa9f2a2e))
+* **parity:** Screen banner slot + guardrail slot verification + adopt RC.list_error ([8443520](https://github.com/unnfazzed/Lynia/commit/8443520c1bdf4603ff023441e51011bacd187eb3))
+
+
+### Bug Fixes
+
+* **parity:** harden mock→RN codegen (display:flex→row, list-in-&lt;Text&gt;, className) + regen LJ.help ([#675](https://github.com/unnfazzed/Lynia/issues/675)) ([a2a6e6f](https://github.com/unnfazzed/Lynia/commit/a2a6e6fd61c7aa7d48ad7ccca115d12da7fbc7ad))
+
 ## [0.27.0](https://github.com/unnfazzed/Lynia/compare/v0.26.0...v0.27.0) (2026-08-11)
 
 
