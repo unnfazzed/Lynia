@@ -704,6 +704,10 @@ export default function OrderScreen(): React.ReactElement {
             <Card accent>
               <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
               <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
+              {/* Kit LJ.track_code (screens.jsx:290): the re-issue affordance lives INSIDE the accent
+                  code card, directly under the digits — not as a separate button lower down the screen.
+                  Moved here from LiveTrackingCard so the code and its re-issue read as one unit. */}
+              <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={pendingOrQueued(rotateM)} />
             </Card>
           ) : (
             // C7: assigned-or-later with no local code (e.g. a dropped select response). Don't show

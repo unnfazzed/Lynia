@@ -10,7 +10,7 @@ import { isRiderTrackingStale } from "../../logic/order-labels";
 import { selectRiderTelemetry } from "../../logic/order-tracking";
 import type { RiderIdentity } from "../../logic/rider-identity";
 import { orderKey } from "../../query/client";
-import { Button, Card, Icon, RiderMini, Stepper } from "../index";
+import { Card, Icon, RiderMini, Stepper } from "../index";
 import { LiveMap, type MapPoint } from "../LiveMap";
 
 /**
@@ -106,11 +106,21 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   // first fix; the prose `trackingHint` covers those.
   const eta = isActive && !riderStale ? liveEta({ status, rider: riderPoint, pickup: props.pickup, dropoff: props.dropoff }) : null;
 
+  // Parcel tracking (LJ.track_active / LJ.track_code) leads with a single muted "Agreed fare · rider"
+  // line then a compact CallRow, per the mock (screens.jsx:301-314) — the mock draws no RiderMini face,
+  // no ETA headline and no prose "on the move" hint on the tracking card, so those are parcel-suppressed
+  // below. Food (jobType="food") keeps its existing richer body untouched. The rider's display name is
+  // recovered from the cached RiderIdentity (SecureStore); absent in the parity harness, so it degrades
+  // to fare-only + a phone-only CallRow honestly rather than being faked.
+  const riderName = props.riderIdentity ? `${props.riderIdentity.firstName} ${props.riderIdentity.lastName}`.trim() : "";
+  const isFood = props.jobType === "food";
+
   return (
     <Card>
-      {/* Who's coming: the chosen rider's face + name + rating, cached from the offer they were
-          picked from (the assigned-order snapshot doesn't carry it). The trust anchor for tracking. */}
-      {props.riderIdentity ? (
+      {/* Who's coming: the chosen rider's face + name + rating (food tracking only). The parcel mock
+          carries rider identity in the "Agreed fare · Tendai M." line + the CallRow below, not a face
+          card — so RiderMini is parcel-suppressed (food passes riderIdentity=null anyway). */}
+      {isFood && props.riderIdentity ? (
         <View style={{ marginBottom: tokens.space.sm }}>
           <RiderMini
             profileId={props.riderIdentity.profileId || props.riderIdentity.orderId}
@@ -123,16 +133,49 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           />
         </View>
       ) : null}
-      {eta ? (
+      {isFood && eta ? (
         // The big glanceable ETA — leads the tracking card, styled as the screen's live headline.
         <View accessibilityRole="text" style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
           <Icon name="bike" size={20} color={tokens.color.accentText} />
           <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{etaHeadline(eta)}</Text>
         </View>
       ) : null}
+      {/* Kit LJ.track_active (screens.jsx:307): fare + rider name on one muted line. The rider name is
+          appended only for parcel and only when the cached identity is present (falls back to fare-only
+          in the parity harness, where SecureStore is inert — honest, not faked). */}
       <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm, fontVariant: ["tabular-nums"] }}>
-        {props.feeLabel ?? "Agreed fare"} {formatMoney(props.fare)}
+        {props.feeLabel ?? "Agreed fare"} {formatMoney(props.fare)}{!isFood && riderName ? ` · ${riderName}` : ""}
       </Text>
+      {/* Kit CallRow (screens.jsx:47-59): a compact surface row — label / name / phone with a 44px
+          round green call button — placed ABOVE the map, per the parcel tracking mock. Parcel only;
+          food keeps its own phone row lower down (unchanged). */}
+      {!isFood && props.counterpartyPhone ? (
+        <Pressable
+          onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
+          accessibilityRole="button"
+          accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: tokens.space.sm,
+            paddingVertical: tokens.space.sm,
+            paddingHorizontal: 10,
+            backgroundColor: tokens.color.surface,
+            borderRadius: tokens.radius.input,
+            minHeight: tokens.touchTargetMin,
+            marginBottom: tokens.space.sm,
+          }}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: tokens.color.muted }}>{isRiderViewer ? "Sender" : "Your rider"}</Text>
+            {riderName ? <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{riderName}</Text> : null}
+            <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{props.counterpartyPhone}</Text>
+          </View>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
+            <Icon name="phone" size={18} color={tokens.color.onAccent} />
+          </View>
+        </Pressable>
+      ) : null}
       <LiveMap
         pickup={{ lat: props.pickup.lat, lng: props.pickup.lng }}
         dropoff={{ lat: props.dropoff.lat, lng: props.dropoff.lng }}
@@ -141,7 +184,10 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
         // must not render as a full-opacity "live" position.
         connectionState={riderStale ? "reconnecting" : isActive ? connectionState : "live"}
       />
-      {telemetry?.hasRider ? (
+      {/* The parcel tracking mock draws no prose hint on the moving state — so parcel shows the line
+          ONLY when the rider's GPS has gone stale (the paused-state warning, a safety cue), and food
+          keeps the full on-the-move / waiting hint it always had. */}
+      {telemetry?.hasRider && (isFood || (riderStale && !isRiderViewer)) ? (
         <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
       ) : null}
       {/* Maps-sync (§3·2). The kit's customer row is route-sync, not a place pin: "Follow route in
@@ -184,7 +230,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
         </View>
         <Icon name="arrow-right" size={16} color={tokens.color.muted} />
       </Pressable>
-      {props.counterpartyPhone ? (
+      {isFood && props.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
             {props.viewerRole === "rider" ? "Sender phone" : "Rider phone"}: {props.counterpartyPhone}
@@ -214,9 +260,6 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           A rider viewing their own job must never see customer-voiced milestone copy or a control that
           403s ("Not your order") against their own delivery. */}
       <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} jobType={props.jobType} />
-      {isActive && !isRiderViewer && props.jobType !== "food" && props.onReissueCode ? (
-        <Button label="Re-issue delivery code" variant="ghost" onPress={props.onReissueCode} loading={props.reissuing} />
-      ) : null}
     </Card>
   );
 });
