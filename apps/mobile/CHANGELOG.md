@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/unnfazzed/Lynia/compare/v0.23.0...v0.24.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** align customer account cluster to mocks ([86f7f3c](https://github.com/unnfazzed/Lynia/commit/86f7f3c068d3e8af4e6256f00f83c3a211b1083c))
+
 ## [0.23.0](https://github.com/unnfazzed/Lynia/compare/v0.22.1...v0.23.0) (2026-08-11)
 
 
