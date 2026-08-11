@@ -554,6 +554,39 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[1]).toMatchObject({ ratingAvg: null, ratingCount: 0, prepBaselineMinutes: null });
   });
 
+  it("searchRestaurants returns matching PLACES + cross-restaurant DISHES joined to the pilot name (#673 part b)", async () => {
+    const s = svc({
+      merchant: {
+        findMany: async ({ where }: { where: { name?: unknown } }) =>
+          where?.name
+            ? // PLACES query (name match)
+              [{ id: "m1", name: "Sadza Republic", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null, foodRatingAvg: 0, foodRatingCount: 0, prepBaselineMinutes: null }]
+            : // pilots list (id + name), for the dish → restaurant-name join
+              [{ id: "m1", name: "Sadza Republic" }, { id: "m2", name: "Mbuya's Kitchen" }],
+      },
+      merchantDish: {
+        findMany: async () => [
+          { id: "d1", name: "Sadza & beef stew", priceUsd: 4.5, photoUrl: null, merchantId: "m1", description: null, isDraft: false },
+          { id: "d2", name: "Sadza & mazondo", priceUsd: 4.0, photoUrl: null, merchantId: "m2", description: null, isDraft: false },
+        ],
+      },
+    });
+    const res = await s.searchRestaurants("sadza");
+    expect(res.restaurants.map((r) => r.id)).toEqual(["m1"]);
+    expect(res.dishes).toEqual([
+      { dishId: "d1", name: "Sadza & beef stew", priceUsd: 4.5, photoUrl: null, merchantId: "m1", merchantName: "Sadza Republic" },
+      { dishId: "d2", name: "Sadza & mazondo", priceUsd: 4.0, photoUrl: null, merchantId: "m2", merchantName: "Mbuya's Kitchen" },
+    ]);
+  });
+
+  it("searchRestaurants ignores a blank / 1-char query — never dumps the corridor", async () => {
+    let queried = false;
+    const s = svc({ merchant: { findMany: async () => { queried = true; return []; } } });
+    expect(await s.searchRestaurants("  ")).toEqual({ restaurants: [], dishes: [] });
+    expect(await s.searchRestaurants("a")).toEqual({ restaurants: [], dishes: [] });
+    expect(queried).toBe(false);
+  });
+
   /** Bare merchant row shape `toListItem` needs — real rows carry more Prisma columns, but the
    *  service only ever reads these off what `findMany` hands back. */
   function merchantRow(id: string) {

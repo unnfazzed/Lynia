@@ -16,6 +16,8 @@ import type {
   RestaurantListResponse,
   RestaurantMenuDish,
   RestaurantMenuResponse,
+  RestaurantSearchDish,
+  RestaurantSearchResponse,
   SetMerchantBusyModeRequest,
   UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
@@ -49,6 +51,10 @@ const PHOTO_READ_URL_TTL_SECONDS = 60 * 60;
 // 2G/3G link while still filling a typical phone screen (mirrors LEDGER_PAGE_SIZE's "one page ≈ one
 // screenful" sizing, `wallet.service.ts`).
 const RESTAURANTS_PAGE_SIZE = 20;
+// #673 search: cap each of the PLACES / DISHES result sets, and ignore blank/1-char queries so a
+// stray keystroke never dumps the corridor (the search screen shows results only once typing).
+const RESTAURANTS_SEARCH_LIMIT = 20;
+const RESTAURANTS_SEARCH_MIN_CHARS = 2;
 
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
  *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
@@ -329,6 +335,52 @@ export class MerchantService {
       restaurants: await Promise.all(page.map((m) => this.toListItem(m))),
       nextCursor: hasMore ? page[page.length - 1]!.id : undefined,
     };
+  }
+
+  /** #673: cross-restaurant search — PLACES (restaurant name) + DISHES (menu items across the pilot
+   *  corridor). The client search screen could only filter the already-loaded restaurant list before;
+   *  this is the server dish index it flagged as missing. Too-short/blank queries return nothing (the
+   *  screen shows results only once the customer types), never the whole catalog. */
+  async searchRestaurants(rawQuery?: string): Promise<RestaurantSearchResponse> {
+    const q = (rawQuery ?? "").trim();
+    if (q.length < RESTAURANTS_SEARCH_MIN_CHARS) return { restaurants: [], dishes: [] };
+
+    // PLACES — pilot restaurants whose name matches. (Cuisine-tag substring stays a client nicety;
+    // the server index is restaurant name + the dish index below.)
+    const restaurantRows = await this.prisma.merchant.findMany({
+      where: { pilotEnabled: true, name: { contains: q, mode: "insensitive" } },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: RESTAURANTS_SEARCH_LIMIT,
+    });
+    const restaurants = await Promise.all(restaurantRows.map((m) => this.toListItem(m)));
+
+    // DISHES — non-draft dishes across pilot restaurants matching name or description. Bounded to the
+    // pilot set UP FRONT (merchantId in pilotIds) so a non-pilot merchant's dish can never leak into a
+    // customer result, and joined to the pilot name map for the "· Restaurant ·" line.
+    const pilots = await this.prisma.merchant.findMany({ where: { pilotEnabled: true }, select: { id: true, name: true } });
+    const pilotName = new Map(pilots.map((p) => [p.id, p.name] as const));
+    const dishRows = pilots.length
+      ? await this.prisma.merchantDish.findMany({
+          where: {
+            merchantId: { in: pilots.map((p) => p.id) },
+            isDraft: false,
+            OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
+          },
+          orderBy: [{ name: "asc" }, { id: "asc" }],
+          take: RESTAURANTS_SEARCH_LIMIT,
+        })
+      : [];
+    const dishes: RestaurantSearchDish[] = await Promise.all(
+      dishRows.map(async (d) => ({
+        dishId: d.id,
+        name: d.name,
+        priceUsd: Number(d.priceUsd),
+        photoUrl: await this.signPhoto(d.photoUrl),
+        merchantId: d.merchantId,
+        merchantName: pilotName.get(d.merchantId) ?? "",
+      })),
+    );
+    return { restaurants, dishes };
   }
 
   async getRestaurantMenu(merchantId: string): Promise<RestaurantMenuResponse> {

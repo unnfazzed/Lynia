@@ -26,6 +26,13 @@ export class RestaurantsController {
     return this.merchant.listRestaurants(cursor);
   }
 
+  /** #673 cross-restaurant search — PLACES (restaurant name) + DISHES (menu items corridor-wide).
+   *  Declared before `:id/*` so the static `search` segment can't be captured as an `:id`. */
+  @Get("search")
+  search(@Query("q") q?: string) {
+    return this.merchant.searchRestaurants(q);
+  }
+
   @Get(":id/menu")
   menu(@Param("id", ParseUUIDPipe) id: string) {
     return this.merchant.getRestaurantMenu(id);
