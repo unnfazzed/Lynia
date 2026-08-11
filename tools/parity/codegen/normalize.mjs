@@ -56,6 +56,7 @@ function axesOf(ts, opening) {
   const expr = init && ts.isJsxExpression(init) ? init.expression : null;
   if (!expr || !ts.isObjectLiteralExpression(expr)) return [];
   const axes = [];
+  let displayFlex = false, hasFlexDirection = false;
   for (const p of expr.properties) {
     if (!ts.isPropertyAssignment(p)) continue;
     const key = p.name.getText().replace(/['"]/g, "");
@@ -65,12 +66,17 @@ function axesOf(ts, opening) {
     if (key === "alignItems" && s) axes.push("ai:" + s);
     else if (key === "justifyContent" && s) axes.push("jc:" + s);
     else if ((key === "placeItems" || key === "placeContent") && s) { axes.push("ai:" + s); axes.push("jc:" + s); }
-    else if (key === "flexDirection" && s === "row") axes.push("row");
+    else if (key === "flexDirection") { hasFlexDirection = true; if (s === "row") axes.push("row"); }
     else if (key === "position" && s === "absolute") axes.push("absolute");
     else if (key === "flex" && n === 1) axes.push("flex1");
     else if (/^border(Top|Bottom|Left|Right)?$/.test(key) && (s || n)) axes.push("border");
     else if (/^border(Top|Bottom|Left|Right)?Width$/.test(key) && n && n > 0) axes.push("border");
+    else if (key === "display" && (s === "flex" || s === "inline-flex")) displayFlex = true;
   }
+  // CSS `display:flex` is row-by-default; the transpiler emits an explicit `flexDirection:"row"` for it
+  // (RN defaults to column). Derive the SAME row axis from the mock's bare `display:flex` so mock and
+  // view agree — without this the guardrail is blind to a mock ROW shipped as an RN COLUMN.
+  if (displayFlex && !hasFlexDirection) axes.push("row");
   return [...new Set(axes)].sort();
 }
 
@@ -84,8 +90,13 @@ function nodeOf(ts, el) {
   const name = tagName(ts, opening);
   const rawChildren = ts.isJsxSelfClosingElement(el) ? [] : el.children;
   const kids = rawChildren.filter((c) => !isBlankText(ts, c));
-  const hasElementChild = kids.some((c) => ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c) || ts.isJsxFragment(c));
-  const hasTextChild = kids.some((c) => ts.isJsxText(c) || ts.isJsxExpression(c));
+  // A `{…}` child that yields JSX elements (a `.map()`, a ternary of elements) makes this a container,
+  // not text — mirrors the transpiler's content-aware seam so `<div>{items.map(<View/>)}</div>` is a
+  // BOX on both sides, never a TEXT wrapping BOXes (which would be an RN crash the guardrail must not
+  // certify as congruent). A plain interpolation (`{label}`) yields nothing and keeps the node TEXT.
+  const exprYieldsJsx = (c) => ts.isJsxExpression(c) && c.expression && fromExpression(ts, c.expression).length > 0;
+  const hasElementChild = kids.some((c) => ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c) || ts.isJsxFragment(c) || exprYieldsJsx(c));
+  const hasTextChild = kids.some((c) => ts.isJsxText(c) || (ts.isJsxExpression(c) && !exprYieldsJsx(c)));
   const children = childrenOf(ts, rawChildren);
 
   if (TRANSPARENT.has(name.toLowerCase())) {
