@@ -201,7 +201,7 @@ function assembleFile(spec, body) {
   // The app DS primitives codegen may emit. Every kit primitive the transpiler keeps by name (or
   // remaps to) must be import-able from `src/ui` — batch 2 flagged that Skeleton/Money were missing,
   // and the mock→RN foundation adds the four kit primitives (PriceMath/Banner/CoverPhoto/MenuRow).
-  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
   // Region fragments type their data seam against the DS primitives' item types (e.g. the menu-rows

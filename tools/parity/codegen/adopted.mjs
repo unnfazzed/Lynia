@@ -39,6 +39,131 @@
  */
 export const ADOPTED = [
   {
+    // LJ.login — the phone sign-in screen (app/phone.tsx). A clean static auth form: the mock's `Login`
+    // is `Pad(Lockup, Heading, Sub, Field, Button)`. Lockup→BrandLockup (transpiler DS_RENAME); the data
+    // seam wires the phone value/handler onto the Field and the submit onto the Button. The send-failure
+    // error rides the Field's own `error` caption (structurally invisible — a leaf prop) so it stays
+    // in-flow within the mock's tree rather than as an undrawn extra line.
+    key: "LJ.login",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    component: "Login",
+    componentName: "LoginView",
+    viewFile: "apps/mobile/app/phone.view.tsx",
+    container: "apps/mobile/app/phone.tsx",
+    uiImport: "../src/ui",
+    propsParam: "{ phone, onChangePhone, onSubmit, loading, submitDisabled, error }: LoginViewProps",
+    propsType: [
+      "export type LoginViewProps = {",
+      "  phone: string;",
+      "  onChangePhone: (v: string) => void;",
+      "  onSubmit: () => void;",
+      "  loading?: boolean;",
+      "  submitDisabled?: boolean;",
+      "  error?: string;",
+      "};",
+    ].join("\n"),
+    bind: ({ t, expr }) => ({
+      JSXOpeningElement(path) {
+        const name = path.node.name.name;
+        if (name === "Field") {
+          // Kit Field props (web `onChange`, `inputMode`, the frozen `value` literal) → the app Field's
+          // `value`/`onChangeText`/`keyboardType`; add the autofill hints + placeholder the phone screen
+          // needs, and surface the send-failure error as the field's own caption.
+          path.node.attributes = path.node.attributes.filter(
+            (a) => !(a.type === "JSXAttribute" && ["value", "onChange", "inputMode"].includes(a.name.name)),
+          );
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("phone"))));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangePhone"))));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("placeholder"), t.stringLiteral("+263 77 000 0000")));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("phone-pad")));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("autoComplete"), t.stringLiteral("tel")));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("textContentType"), t.stringLiteral("telephoneNumber")));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("error"), t.jsxExpressionContainer(expr("error"))));
+        }
+        if (name === "Button") {
+          path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onSubmit"))));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("submitDisabled"))));
+        }
+      },
+    }),
+  },
+  {
+    // LJ.onboard — the first-install intro carousel (app/onboarding.tsx). The mock's `Onboarding` is a
+    // SINGLE-slide renderer parameterised by a `slide` index — the app's live carousel is exactly that,
+    // driven in-place. Mock-wins (live-vs-static): adopt the mock's one-slide tree and wire the live
+    // behaviour INTO it — the container owns the slide SET (flag-gated Food/Send vs parcels-only) and the
+    // current index, feeding this view the active slide's icon/title/body, the dot indices, the primary
+    // label ("Next"/"Get started"), and the Skip/Next handlers. `onboard_send`/`onboard_shared` are the
+    // SAME mock component at slide 1/2 and `onboard_flag_off` is its 2-slide twin — all structurally this
+    // view, covered by the container's slide state (not separate generated views).
+    key: "LJ.onboard",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    component: "Onboarding",
+    componentName: "OnboardingView",
+    viewFile: "apps/mobile/app/onboarding.view.tsx",
+    container: "apps/mobile/app/onboarding.tsx",
+    uiImport: "../src/ui",
+    propsParam: "{ icon, title, body, slide, dots, primaryLabel, onSkip, onNext }: OnboardingViewProps",
+    propsType: [
+      "export type OnboardingViewProps = {",
+      "  /** The active slide's mint-tile glyph. */",
+      "  icon: IconName;",
+      "  title: string;",
+      "  body: string;",
+      "  /** The active slide index (drives the elongated progress dot). */",
+      "  slide: number;",
+      "  /** The dot indices — length = slide count (2 flag-off, 3 joint-launch). */",
+      "  dots: number[];",
+      "  /** 'Next' on any slide but the last, 'Get started' on the last. */",
+      "  primaryLabel: string;",
+      "  onSkip: () => void;",
+      "  onNext: () => void;",
+      "};",
+    ].join("\n"),
+    hoist: ["s"],
+    bind: ({ t, expr, wrap }) => ({
+      // `s.icon`/`s.title`/`s.body` → the hoisted `icon`/`title`/`body` props (the `const s = ONBOARD[…]`
+      // line is dropped by `hoist`, since ONBOARD is a mock-only module const with no app equivalent).
+      MemberExpression(path) {
+        if (path.node.object.type === "Identifier" && path.node.object.name === "s" && !path.node.computed && path.node.property.type === "Identifier") {
+          path.replaceWith(t.identifier(path.node.property.name));
+        }
+      },
+      // The progress dots: the mock hard-codes `[0,1,2]`; the app's slide count is flag-dependent (2 or
+      // 3), so drive the map off the `dots` prop. `n === slide` still marks the active dot.
+      CallExpression(path) {
+        const callee = path.node.callee;
+        if (callee.type === "MemberExpression" && callee.property.name === "map" && callee.object.type === "ArrayExpression") {
+          callee.object = expr("dots");
+        }
+      },
+      JSXOpeningElement(path) {
+        if (path.node.name.name === "Button") {
+          // Kit web `onClick` + the `slide===2?…` literal label → the app Button's `onPress` + the
+          // container-computed `primaryLabel` (so the flag-off 2-slide set gets "Get started" on index 1).
+          path.node.attributes = path.node.attributes.filter(
+            (a) => !(a.type === "JSXAttribute" && ["onClick", "label"].includes(a.name.name)),
+          );
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("primaryLabel"))));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onNext"))));
+        }
+      },
+      // The "Skip" affordance is a bare Text in the mock; wrap it in a Pressable(onSkip) — a transparent
+      // interaction wrapper the structural guardrail sees through.
+      JSXElement(path) {
+        const open = path.node.openingElement;
+        if (open.name.name !== "Text") return;
+        const kids = path.node.children.filter((c) => !(c.type === "JSXText" && c.value.trim() === ""));
+        if (kids.length !== 1 || kids[0].type !== "JSXText" || kids[0].value.trim() !== "Skip") return;
+        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
+        path.replaceWith(wrap(path.node, "Pressable", `onPress={onSkip} accessibilityRole="button" hitSlop={8}`));
+        path.skip();
+      },
+    }),
+  },
+  {
     key: "LJ.help",
     mockFile: "packages/design/explorations/journey/screens.jsx",
     component: "Help",
@@ -439,7 +564,139 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // LJ.perm_loc — first-run permission priming (app/permissions.tsx). A MULTI-STATE screen: one
+    // container walks two explainer steps (location → notifications), each drawn by the mock as a bare
+    // `<SystemState/>` (mock `PermLoc` / `PermNotif`). Adopt BOTH steps as generated SystemState views.
+    // SystemState is a structural leaf, so its icon/title/message/primary/secondary are the DATA SEAM —
+    // hoisted to props so the container feeds the role-framed copy (the app varies the wording for riders
+    // routed through here) while the STRUCTURE stays the mock's. The container renders the right view from
+    // its existing `step` state machine and wires the OS-permission requests onto onPrimary/onSecondary.
+    key: "LJ.perm_loc",
+    container: "apps/mobile/app/permissions.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../src/ui",
+    states: [
+      {
+        state: "location",
+        key: "LJ.perm_loc",
+        component: "PermLoc",
+        componentName: "PermLocView",
+        viewFile: "apps/mobile/app/permissions-location.view.tsx",
+        propsParam: "{ icon, title, message, primary, secondary, onPrimary, onSecondary }: PermPrimeViewProps",
+        propsType: [
+          "export type PermPrimeViewProps = {",
+          "  icon: IconName;",
+          "  title: string;",
+          "  message: string;",
+          "  primary: string;",
+          "  secondary: string;",
+          "  onPrimary: () => void;",
+          "  onSecondary: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => permSystemStateBind({ t, expr }),
+      },
+      {
+        state: "notifications",
+        key: "LJ.perm_notif",
+        component: "PermNotif",
+        componentName: "PermNotifView",
+        viewFile: "apps/mobile/app/permissions-notifications.view.tsx",
+        // perm_notif is a step-2 sibling of the same SystemState structure; the app supersets the bare
+        // mock only by role-framing the copy (a data value the container owns), so it adopts cleanly as
+        // its own gated view — no structural divergence, honest per the classification.
+        propsParam: "{ icon, title, message, primary, secondary, onPrimary, onSecondary }: PermPrimeViewProps",
+        propsType: [
+          "export type PermPrimeViewProps = {",
+          "  icon: IconName;",
+          "  title: string;",
+          "  message: string;",
+          "  primary: string;",
+          "  secondary: string;",
+          "  onPrimary: () => void;",
+          "  onSecondary: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => permSystemStateBind({ t, expr }),
+      },
+    ],
+  },
+  {
+    // LJ.otp — the SMS OTP screen (app/verify.tsx). DEFER-only: a live multi-state screen the static
+    // idle-state mock can't gate as a whole-screen view. See the deferred reason.
+    key: "LJ.otp",
+    container: "apps/mobile/app/verify.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "idle",
+        key: "LJ.otp",
+        reason:
+          "live-vs-static multi-state, not a clean whole-screen form. The mock `Otp` draws ONLY the idle state (Heading, Sub, code Field, Verify, a plain 'Resend code' link, Back). The app verify.tsx interleaves, in ONE render, three further states that each have their OWN mock key — a resend-confirmation banner (LJ.otp_resent, a conditional Card above the Field), a locked/expired RECOVERY branch that swaps Verify for an info card + 'Send a fresh code' (LJ.otp_locked), and a live wall-clock cooldown that turns the resend link into a 'Resend in m:ss' countdown (LJ.otp_cooldown). Those conditionals (COND nodes the static Otp mock never drew) make the container's tree diverge from the whole-screen mock, and the codegen model gates a WHOLE-screen generated view — it cannot host the interleaved resent/locked/cooldown branches without either regressing the load-bearing OTP resend/cooldown/lockout-recovery behaviour or adding nodes the mock lacks. Adoptable once the OTP states are modelled as separate mock keys wired to their own state-views (otp_resent/otp_locked/otp_cooldown), not by forcing the live screen into the idle mock.",
+      },
+    ],
+  },
+  {
+    // LJ.register — post-OTP profile setup (app/profile/setup.tsx). DEFER-only: a transpiler-idiom gap in
+    // the mock's 'Verified' badge plus an inline draft-restored superset. See the deferred reason.
+    key: "LJ.register",
+    container: "apps/mobile/app/profile/setup.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "form",
+        key: "LJ.register",
+        reason:
+          "two walls. (1) TRANSPILER idiom: the mock's 'Verified' badge is `<span …absolute>{<Icon/> Verified}</span>` — a bare text node ' Verified' sitting as a SIBLING of an `<Icon>` element inside the absolutely-positioned badge. The content-aware seam maps that span to a View (it has an element child), leaving raw text under a View — invalid on RN — and there is no general 'wrap mixed element+text siblings in <Text>' idiom in transpile.mjs yet. (2) SUPERSET: the app draws an inline draft-restored banner ('We saved what you'd filled in…') BETWEEN the Sub and the name Field — the visible affordance of the load-bearing LC-C10 profile-draft persistence — which the static `Register` mock never drew and the whole-screen codegen model cannot host mid-tree without adding a COND node the mock lacks (or dropping the cue). The draft PERSISTENCE itself is preserved regardless (container logic). Adoptable once the transpiler learns the mixed-siblings idiom and the draft-restored cue moves to its own state/mock (LJ.draft_restored exists).",
+      },
+    ],
+  },
+  {
+    // LJ.role_select — the post-OTP role fork (app/role.tsx). DEFER-only: two transpiler-idiom gaps in the
+    // mock's inline option card. See the deferred reason. role_select_flag_off is the same structure/wall.
+    key: "LJ.role_select",
+    container: "apps/mobile/app/role.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "form",
+        key: "LJ.role_select",
+        reason:
+          "TRANSPILER idiom gaps, not a structural or backend wall. The mock `RoleSelect` renders an inline `Opt` option card whose style uses two web idioms the transpiler cannot yet lower to RN: (a) a DYNAMIC border shorthand as a TEMPLATE LITERAL — `border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--line)'}`` — which the border-shorthand handler only expands for a static string, so it survives as an invalid `border` RN style prop; and (b) a CONDITIONAL boxShadow with a SPREAD token — `boxShadow: selected ? 'none' : 'var(--shadow-card)'` — which resolves to a bare `var(--shadow-card)` residual because the StringLiteral token-resolver only substitutes non-spread tokens and the boxShadow handler only spreads a static token. Both need general idiom builds in tools/parity/codegen (template-literal border expansion + conditional shadow-spread) before RoleSelect (and its twin role_select_flag_off) can generate a clean, typechecking view. Structurally it is a plain `BOX(BRANDLOCKUP, HEADING, SUB, OPT, OPT, BUTTON)` — adoptable the moment those two idioms land.",
+      },
+    ],
+  },
 ];
+
+/**
+ * Shared data-seam for the two permission-priming SystemState views (LJ.perm_loc / LJ.perm_notif).
+ * SystemState is a structural leaf, so its icon/title/message/primary/secondary become props (hoisted
+ * from the mock's frozen literals) and the OS-permission actions wire onto onPrimary/onSecondary — the
+ * container feeds the role-framed copy while the mock's structure is preserved by construction.
+ */
+function permSystemStateBind({ t, expr }) {
+  return {
+    JSXOpeningElement(path) {
+      if (path.node.name.name !== "SystemState") return;
+      const hoist = ["icon", "title", "message", "primary", "secondary"];
+      path.node.attributes = path.node.attributes.filter(
+        (a) => !(a.type === "JSXAttribute" && hoist.includes(a.name.name)),
+      );
+      for (const k of hoist) {
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(k), t.jsxExpressionContainer(expr(k))));
+      }
+      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPrimary"), t.jsxExpressionContainer(expr("onPrimary"))));
+      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onSecondary"), t.jsxExpressionContainer(expr("onSecondary"))));
+    },
+  };
+}
 
 /**
  * Flatten the registry into per-view CHECK UNITS — the shape the transpiler + guardrail consume. A

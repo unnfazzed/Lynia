@@ -1,10 +1,18 @@
+import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { View } from "react-native";
+import { SafeAreaView } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
-import { BrandLockup, Button, ErrorText, Field, Heading, Screen, Sub } from "../src/ui";
+import { LoginView } from "./phone.view";
 
+/**
+ * Phone sign-in (customer/rider 0·3) — the CONTAINER half of the codegen seam. The presentational
+ * tree lives in `./phone.view.tsx`, GENERATED from the mock (screens.jsx `Login`) and locked to it by
+ * the structural-snapshot guardrail. This file owns everything the mock can't: the OTP request, the
+ * busy/disabled state and routing onward to /verify. The send-failure error rides the phone Field's
+ * own caption (the view wires it via the data seam) so it stays in-flow within the mock's tree.
+ */
 export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
   const [phone, setPhone] = useState("");
@@ -26,24 +34,17 @@ export default function PhoneScreen(): React.ReactElement {
   };
 
   return (
-    <Screen>
-      <View style={{ marginBottom: 24 }}>
-        <BrandLockup size={40} />
-      </View>
-      <Heading>Welcome to Lynia</Heading>
-      <Sub>We&apos;ll SMS a one-time code to this number.</Sub>
-      <Field
-        label="Phone number"
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="+263 77 000 0000"
-        keyboardType="phone-pad"
-        maxLength={20}
-        autoComplete="tel"
-        textContentType="telephoneNumber"
+    // The phone frame / safe area — the mock's AppScreen shell; the mock's own screen padding lives
+    // inside LoginView (from its `Pad` wrapper).
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <LoginView
+        phone={phone}
+        onChangePhone={setPhone}
+        onSubmit={submit}
+        loading={busy}
+        submitDisabled={phone.trim().length < 6}
+        error={error ?? undefined}
       />
-      <Button label="Send code" onPress={submit} loading={busy} disabled={phone.trim().length < 6} />
-      <ErrorText message={error} />
-    </Screen>
+    </SafeAreaView>
   );
 }

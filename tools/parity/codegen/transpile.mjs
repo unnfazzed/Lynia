@@ -34,8 +34,11 @@ const TAG = {
   section: "View", header: "View", nav: "View", ul: "View", li: "View", article: "View", main: "View",
   img: "Image",
 };
-// DS/kit primitives that must be renamed to their app-side equivalent.
-const DS_RENAME = { Top: "AppBar" };
+// DS/kit primitives that must be renamed to their app-side equivalent. The auth cluster's brand kit
+// (`Dove`/`Lockup` from the mock's LyniaSupport) maps to the app's `DoveMark`/`BrandLockup`; the
+// normalizer (normalize.mjs KIND) folds each old→new name pair to the SAME canonical kind so mock and
+// view stay congruent by construction.
+const DS_RENAME = { Top: "AppBar", Lockup: "BrandLockup", Dove: "DoveMark" };
 // `Pad` is a screen-edge-padding <div> in the kit; reproduce that as a padded View.
 const PAD_BASE = () => [
   ["padding", tokenMember("space.screen")],
@@ -92,6 +95,14 @@ function resolvePctRadius(node, width, height, t) {
 function numOf(raw) {
   const m = PX.exec(String(raw).trim());
   return m ? parseFloat(m[1]) : null;
+}
+
+/** Remove a style property (by name) from an inline style ObjectExpression, if present. */
+function dropStyleKey(styleObj, key) {
+  if (!styleObj || styleObj.type !== "ObjectExpression") return;
+  styleObj.properties = styleObj.properties.filter(
+    (p) => !(p.type === "ObjectProperty" && !p.computed && (p.key.name || p.key.value) === key),
+  );
 }
 
 /** Does a JSX expression (a `{…}` child) contain any literal JSX element? `{items.map(n => <View/>)}`,
@@ -319,6 +330,7 @@ export function transpile(src, report) {
               .map(([k, v]) => t.objectProperty(t.identifier(k), v.__token ? tokenExpr(v.__token) : v.__str != null ? t.stringLiteral(v.__str) : t.numericLiteral(v.__num)));
             if (styleObj) styleObj.properties = [...baseProps, ...styleObj.properties];
             else open.attributes.push(t.jsxAttribute(t.jsxIdentifier("style"), t.jsxExpressionContainer(t.objectExpression(baseProps))));
+            if (styleObj) dropStyleKey(styleObj, "textAlign"); // Pad → View: textAlign is TextStyle-only
             R.transform++;
             return;
           }
@@ -346,6 +358,11 @@ export function transpile(src, report) {
             const mapped = hasElementChild ? "View" : hasTextChild ? "Text" : "View";
             open.name = t.jsxIdentifier(mapped);
             if (path.node.closingElement) path.node.closingElement.name = t.jsxIdentifier(mapped);
+            // `textAlign` is a web centring idiom the mocks put on flex CONTAINERS (to centre their text
+            // children); on an RN View it is a no-op AND a TextStyle-only key that reddens typecheck. Drop
+            // it when the node becomes a View (it stays on Text). Structurally invisible either way — the
+            // normalizer never reads textAlign — so mock↔view congruence is unaffected.
+            if (mapped !== "Text" && hasObjStyle) dropStyleKey(styleAttr.value.expression, "textAlign");
             if (flags.numberOfLines && mapped === "Text")
               open.attributes.push(t.jsxAttribute(t.jsxIdentifier("numberOfLines"), t.jsxExpressionContainer(t.numericLiteral(1))));
             if (flags.spreadShadow && hasObjStyle) styleAttr.value.expression.properties.push(t.spreadElement(tokenExpr(flags.spreadShadow)));
@@ -358,6 +375,7 @@ export function transpile(src, report) {
             const mapped = TAG[tag];
             open.name = t.jsxIdentifier(mapped);
             if (path.node.closingElement) path.node.closingElement.name = t.jsxIdentifier(mapped);
+            if (mapped !== "Text" && hasObjStyle) dropStyleKey(styleAttr.value.expression, "textAlign");
             if (flags.numberOfLines && mapped === "Text")
               open.attributes.push(t.jsxAttribute(t.jsxIdentifier("numberOfLines"), t.jsxExpressionContainer(t.numericLiteral(1))));
           }
