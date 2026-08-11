@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/unnfazzed/Lynia/compare/v0.24.0...v0.25.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** align customer parcel tracking cluster to mocks ([6d12bf9](https://github.com/unnfazzed/Lynia/commit/6d12bf9507f9caa70a15e682bc1aa23b2a078ee5))
+
 ## [0.24.0](https://github.com/unnfazzed/Lynia/compare/v0.23.0...v0.24.0) (2026-08-11)
 
 
