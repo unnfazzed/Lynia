@@ -203,7 +203,40 @@ function unwrap(ts, e) {
   return e;
 }
 
-/** Pull JSX nodes out of an expression: `.map(...)`, ternaries, `&&`, arrays. */
+/**
+ * Render-helper unwrap — the rider-one-app.jsx `S(<jsx>, opts)` shell wrapper. Every screen in that
+ * family returns `S(<div>…</div>, { tab, footer, banner })`, where `S` is a mock-local helper that
+ * mounts the DS `AppScreen`/SHELL around the body (tab bar + optional banner/footer). Fold that call to
+ * the SAME canonical `SCREEN` the app's `<AppScreen>`/`<Screen>` reduces to (KIND appscreen/screen →
+ * SCREEN), with `opts.banner` (leading) and `opts.footer` (trailing) folded as the Screen's structural
+ * slots — mirroring STRUCTURAL_SLOTS/withSlots so mock and app-view trees stay congruent.
+ *
+ * Only the OUTER wrapper unwraps and ONLY when the pattern holds: the callee is a PLAIN identifier
+ * (NOT `x.map` — that stays the FlatList≡map list handling above) and the FIRST argument is a JSX
+ * element/fragment. A call like `fmt(x)` (no JSX arg) or `items.map(...)` (member callee) never matches,
+ * so no arbitrary call is unwrapped. `opts.tab`/`bg`/`dark` are chrome the app supplies elsewhere (the
+ * live `expo-router` tab bar, screen bg) — structurally invisible, so they are dropped, exactly as the
+ * emit-side transpiler drops them when it lowers `S()` to `<Screen>`.
+ */
+function renderHelperUnwrap(ts, e) {
+  if (!ts.isCallExpression(e) || !ts.isIdentifier(e.expression)) return null;
+  const first = e.arguments[0] ? unwrap(ts, e.arguments[0]) : null;
+  if (!first || !(ts.isJsxElement(first) || ts.isJsxSelfClosingElement(first) || ts.isJsxFragment(first))) return null;
+  const body = jsxFrom(ts, first);
+  const opts = e.arguments[1];
+  const leading = [], trailing = [];
+  if (opts && ts.isObjectLiteralExpression(opts)) {
+    for (const p of opts.properties) {
+      if (!ts.isPropertyAssignment(p)) continue;
+      const key = p.name.getText().replace(/['"]/g, "");
+      if (key === "banner") leading.push(...fromExpression(ts, p.initializer));
+      else if (key === "footer") trailing.push(...fromExpression(ts, p.initializer));
+    }
+  }
+  return { kind: "SCREEN", axes: [], children: [...leading, ...body, ...trailing] };
+}
+
+/** Pull JSX nodes out of an expression: `.map(...)`, render-helper `S(<jsx>,opts)`, ternaries, `&&`, arrays. */
 function fromExpression(ts, e) {
   e = unwrap(ts, e);
   if (!e) return [];
@@ -214,6 +247,9 @@ function fromExpression(ts, e) {
       return nodes.length ? [{ kind: "MAP", axes: [], children: nodes }] : [];
     }
   }
+  // Render-helper shell wrapper (`S(<jsx>, opts)` → SCREEN). Checked before the non-map-call guard below.
+  const helper = renderHelperUnwrap(ts, e);
+  if (helper) return [helper];
   if (ts.isConditionalExpression(e)) {
     const a = jsxFrom(ts, e.whenTrue);
     const b = jsxFrom(ts, e.whenFalse);
@@ -337,6 +373,14 @@ function jsxRootNode(ts, node) {
   if (!node) return null;
   if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return node;
   if (ts.isBlock(node)) { const r = returnedExpr(ts, node); return r ? jsxRootNode(ts, r) : null; }
+  // Render-helper shell wrapper (rider-one-app.jsx `S(<jsx>, opts)`): the wrapped body is the first JSX
+  // argument — return it so region locators walk the real body. The SHELL→SCREEN fold is applied by the
+  // normalized-tree path (renderHelperUnwrap); a `{slot}` locator for a helper-carried footer is a
+  // future region concern (the footer lives in `opts`, not a `<Screen footer=>` attribute here).
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.arguments[0]) {
+    const first = unwrap(ts, node.arguments[0]);
+    if (first && (ts.isJsxElement(first) || ts.isJsxSelfClosingElement(first) || ts.isJsxFragment(first))) return first;
+  }
   return null;
 }
 
