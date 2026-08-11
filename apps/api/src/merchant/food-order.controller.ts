@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@n
 import {
   ApproveMerchantOrderItemsRequest,
   PlaceMerchantOrderRequest,
+  SendPaymentPromptRequest,
   SubmitMerchantPaymentReferenceRequest,
 } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -62,6 +63,22 @@ export class FoodOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.submitPaymentReference(orderId, profileId, body.reference);
+  }
+
+  /** #670: push a mobile-money prompt to the customer's phone (RC.pay_now "Send payment prompt"). */
+  @Post("orders/:orderId/payment-prompt")
+  sendPaymentPrompt(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(SendPaymentPromptRequest)) body: SendPaymentPromptRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.foodOrders.sendPaymentPrompt(orderId, profileId, body.rail);
+  }
+
+  /** #670: poll the rail for a pending prompt and settle it (RC.pay_wait → pay_confirmed). */
+  @Post("orders/:orderId/payment-prompt/check")
+  checkPaymentPrompt(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.checkPaymentPrompt(orderId, profileId);
   }
 
   // ── C4: doorstep handshake, customer side (R-04 "food first" — always first) ───────────────────────

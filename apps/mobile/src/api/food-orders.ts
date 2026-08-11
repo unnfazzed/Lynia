@@ -1,4 +1,4 @@
-import type { MerchantOrderResponse, PlaceMerchantOrderRequest } from "@lynia/shared";
+import type { MerchantOrderResponse, PaymentPromptRail, PlaceMerchantOrderRequest } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /** D2 (checkout + kitchen-confirms). Price is always server-computed (D-35) — the client sends the
@@ -24,6 +24,16 @@ export function cancelUnpaidFoodOrder(orderId: string): Promise<MerchantOrderRes
 /** D-24 "I paid another way" manual rail — the customer's own submitted reference. */
 export function submitFoodPaymentReference(orderId: string, reference: string): Promise<MerchantOrderResponse> {
   return apiFetch(`/restaurants/orders/${orderId}/payment-reference`, { method: "POST", body: { reference } });
+}
+
+/** #670: push a mobile-money prompt to the customer's phone (RC.pay_now "Send payment prompt"). */
+export function sendFoodPaymentPrompt(orderId: string, rail: PaymentPromptRail): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/payment-prompt`, { method: "POST", body: { rail } });
+}
+
+/** #670: poll the rail to settle a pending prompt (RC.pay_wait → pay_confirmed). */
+export function checkFoodPaymentPrompt(orderId: string): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/payment-prompt/check`, { method: "POST" });
 }
 
 /** D4/C4: the customer's half of the doorstep dual-confirm handshake (R-04 "food first" — always

@@ -1002,6 +1002,23 @@ export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
 export const MerchantDebtStatus = z.enum(["open", "settled_cash", "settled_goods", "written_off"]);
 export type MerchantDebtStatus = z.infer<typeof MerchantDebtStatus>;
 
+/** #670 payment-prompt push flow: the customer's chosen mobile-money rail for a pushed payment
+ *  prompt. `manual` is deliberately excluded — that's the separate reference-entry path, not a
+ *  pushed prompt. */
+export const PaymentPromptRail = z.enum(["ecocash", "innbucks", "omari"]);
+export type PaymentPromptRail = z.infer<typeof PaymentPromptRail>;
+
+/** #670: the order's payment-prompt lifecycle — pending (prompt on the customer's phone) → confirmed
+ *  (the rail moved the money) / declined / expired. Mirrors TopUpStatus; null on the order means no
+ *  prompt was ever sent (the manual-reference path, or pre-#670 orders). */
+export const PaymentPromptStatus = z.enum(["pending", "confirmed", "declined", "expired"]);
+export type PaymentPromptStatus = z.infer<typeof PaymentPromptStatus>;
+
+/** #670: customer asks us to push a mobile-money prompt to their phone for this order (RC.pay_now's
+ *  "Send payment prompt"). */
+export const SendPaymentPromptRequest = z.object({ rail: PaymentPromptRail });
+export type SendPaymentPromptRequest = z.infer<typeof SendPaymentPromptRequest>;
+
 /** #671: the assigned rider's public identity, surfaced on a food order so the map-anchored live
  *  tracker can draw the "rider secured" card (RC.track_secured: name · plate · vehicle · rating ·
  *  KYC). Populated ONLY once a rider is assigned (`riderId != null`), else the whole block is
@@ -1060,6 +1077,13 @@ export const MerchantOrderResponse = z
     paymentRequestedAt: z.string().nullable(),
     merchantPaymentReference: z.string().nullable(),
     merchantPaymentConfirmedAt: z.string().nullable(),
+    // #670: the payment-prompt lifecycle, ALONGSIDE the manual-reference fields above. All null/omitted
+    // until a prompt is sent (RC.pay_wait/pay_confirmed render off these). `paymentPromptSentAt` is an
+    // ISO string. Additive — an old client that reads only the manual fields is unaffected.
+    paymentPromptStatus: PaymentPromptStatus.nullable().optional(),
+    paymentPromptRail: PaymentPromptRail.nullable().optional(),
+    paymentPromptRef: z.string().nullable().optional(),
+    paymentPromptSentAt: z.string().nullable().optional(),
     // C3: dispatch view. `riderId` is null until a candidate accepts (D-04 "rider secured"), at which
     // point `status`/`merchantPhase` have already moved on (assigned, merchantPhase cleared) — this
     // stays the one place a poller can see WHO, without a second round-trip to the generic order read.

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -21,6 +22,7 @@ import {
   type MerchantOrderItemView,
   type MerchantOrderResponse,
   type MerchantRejectionReasonCode,
+  type PaymentPromptRail,
   type PlaceMerchantOrderRequest,
   rejectionCopy,
   RESTAURANTS_TIMING,
@@ -29,6 +31,7 @@ import {
   toCents,
   type Waypoint,
 } from "@lynia/shared";
+import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -91,6 +94,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly debt: FoodDebtService,
     private readonly gateway: TrackingGateway,
+    // #670: the mobile-money rail seam (roadmap 2.5). Default binding is the inert StubPaymentRail —
+    // it returns `pending` and never fabricates a `confirmed`, so wiring it here can never mark an
+    // order paid without a real rail. The idempotency anchor is the order id (topUpId param).
+    @Inject(PAYMENT_RAIL) private readonly paymentRail: PaymentRail,
   ) {}
 
   /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
@@ -293,6 +300,65 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
     await this.prisma.order.update({ where: { id: orderId }, data: { merchantPaymentReference: reference } });
     this.notifyQueue(order.merchantId, orderId);
+    return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
+  /** #670: push a mobile-money prompt to the customer's phone for this order (RC.pay_now → pay_wait).
+   *  Idempotent — a re-send while a prompt is already pending or confirmed returns the current state
+   *  rather than opening a second live charge. Coexists with the manual-reference path; cash orders
+   *  settle at the door and never take a prompt. Drives the PaymentRail seam — the default stub returns
+   *  `pending`, so this never marks an order paid on its own. */
+  async sendPaymentPrompt(orderId: string, customerId: string, rail: PaymentPromptRail): Promise<MerchantOrderResponse> {
+    const order = await this.findOwnAsCustomer(orderId, customerId);
+    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
+    if (order.merchantPaymentMethod === "cash") throw new ConflictException("Cash orders are paid at the door, not by prompt");
+    // Idempotent: an in-flight (pending) or already-settled (confirmed) prompt is never re-pushed.
+    if (order.paymentPromptStatus === "pending" || order.paymentPromptStatus === "confirmed") {
+      return this.toResponse(order);
+    }
+    const profile = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { phone: true } });
+    const amount = addMoney(Number(order.merchantGoodsTotal ?? 0), Number(order.deliveryFee ?? 0));
+    const result = await this.paymentRail.initiate({ topUpId: orderId, rail, amount, phone: profile?.phone ?? "" });
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paymentPromptStatus: "pending",
+        paymentPromptRail: rail,
+        paymentPromptRef: result.providerRef ?? null,
+        paymentPromptSentAt: new Date(),
+        paymentPromptResolvedAt: null,
+      },
+    });
+    this.notifyQueue(order.merchantId, orderId);
+    return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
+  /** #670: poll the rail for a pending prompt and settle it (RC.pay_wait → pay_confirmed). On a
+   *  `confirmed` rail result the prompt's ref is written into merchantPaymentReference too, so the
+   *  merchant's existing own-statement confirm (confirmPayment) proceeds unchanged — a confirmed
+   *  prompt is just a reference the customer didn't have to type by hand. A `failed` result marks it
+   *  declined; `pending` leaves it untouched. No-op (returns current) when there is no pending prompt. */
+  async checkPaymentPrompt(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
+    const order = await this.findOwnAsCustomer(orderId, customerId);
+    if (order.paymentPromptStatus !== "pending" || !order.paymentPromptRef) return this.toResponse(order);
+    const result = await this.paymentRail.confirm(order.paymentPromptRef);
+    if (result.status === "confirmed") {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          paymentPromptStatus: "confirmed",
+          paymentPromptResolvedAt: new Date(),
+          // Never overwrite a reference the customer already typed; otherwise adopt the rail's ref.
+          merchantPaymentReference: order.merchantPaymentReference ?? order.paymentPromptRef,
+        },
+      });
+      this.notifyQueue(order.merchantId, orderId);
+    } else if (result.status === "failed") {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { paymentPromptStatus: "declined", paymentPromptResolvedAt: new Date() },
+      });
+    }
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
@@ -829,6 +895,12 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       paymentRequestedAt: order.paymentRequestedAt?.toISOString() ?? null,
       merchantPaymentReference: order.merchantPaymentReference,
       merchantPaymentConfirmedAt: order.merchantPaymentConfirmedAt?.toISOString() ?? null,
+      // #670: the payment-prompt lifecycle (null/omitted until a prompt is sent). rail/status are a
+      // controlled vocabulary the wire contract validates; stored as text on the order row.
+      paymentPromptStatus: (order.paymentPromptStatus as MerchantOrderResponse["paymentPromptStatus"]) ?? null,
+      paymentPromptRail: (order.paymentPromptRail as MerchantOrderResponse["paymentPromptRail"]) ?? null,
+      paymentPromptRef: order.paymentPromptRef,
+      paymentPromptSentAt: order.paymentPromptSentAt?.toISOString() ?? null,
       // C3: dispatch view (see MerchantOrderResponse's docstring).
       riderId: order.riderId,
       // #671: the assigned rider's public identity for the food live tracker. Populated only once a
@@ -889,6 +961,12 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   // #671: the rider-identity block is null on every poll before a rider is assigned — omit it, since
   // the consumer reads it via `??`/truthy (same A-O14 rationale as the handshake/debt fields).
   "rider",
+  // #670: the payment-prompt fields are null on every order that never used a pushed prompt (cash
+  // orders, manual-reference orders, all pre-#670 orders) — omit rather than send explicit nulls.
+  "paymentPromptStatus",
+  "paymentPromptRail",
+  "paymentPromptRef",
+  "paymentPromptSentAt",
   "cashHandshakeAmount",
   "customerCashConfirmedAt",
   "riderCashConfirmedAt",

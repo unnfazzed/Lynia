@@ -28,6 +28,7 @@
  */
 import { RESTAURANTS_DISPATCH } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { StubPaymentRail } from "../adapters/payments/stub-payment-rail";
 import { TokenService } from "../auth/token.service";
 import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
@@ -104,7 +105,7 @@ const walletOn = new WalletService({ ...MERCHANT_FLAGS_ON } as Env, prisma);
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycleOn = new OrderLifecycleService({ ...MERCHANT_FLAGS_ON } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, walletOn);
 const debt = new FoodDebtService(prisma, noopNotifications, lifecycleOn);
-const foodOrders = new FoodOrderService(prisma, tokens, noopNotifications, debt, gateway);
+const foodOrders = new FoodOrderService(prisma, tokens, noopNotifications, debt, gateway, new StubPaymentRail());
 
 // The dispatch STRATEGY is the real NearestRiderDispatchStrategy over the real Prisma — so its
 // eligibility filters (already-mid-ride, already holding another food offer, owing a merchant debt) are
