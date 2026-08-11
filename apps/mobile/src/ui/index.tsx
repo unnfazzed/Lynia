@@ -93,13 +93,18 @@ export function TestBuildBanner(): React.ReactElement | null {
   );
 }
 
-export function Screen({ children }: { children: React.ReactNode }): React.ReactElement {
+export function Screen({ children, banner }: { children: React.ReactNode; banner?: React.ReactNode }): React.ReactElement {
   return (
     // Page surface is white (`bg`), per the kit's `--surface-page: var(--bg)` and its `AppScreen`
     // default. Grey (`surface`) is reserved for sunken/sheet elements that sit ON the page, not the
     // page itself — so a white card reads against the page on its shadow, the way the kit intends.
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <TestBuildBanner />
+      {/* Banner slot — the kit's `Screen`/`AppScreen` draws its `banner` full-bleed ABOVE the body
+          (status bar → banner → scrolling body → footer). Rendered outside the 16px edge padding so
+          an offline/stale strip spans the whole width exactly as the mock's tinted band does. Optional
+          and unset for every screen that doesn't draw one, so existing call sites are unaffected. */}
+      {banner}
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
       <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
     </SafeAreaView>

@@ -164,6 +164,43 @@ export const ADOPTED = [
         componentName: "FoodListLoadingView",
         viewFile: "apps/mobile/app/food/food-list.loading.view.tsx",
       },
+      {
+        // R1·4 list_error — the cold offline/fetch-failed state (fetch settled in error with NO data,
+        // not even a stale copy). The mock wraps the whole screen in `<Screen banner={<Banner offline/>}>`
+        // — now adoptable because Foundation-C gave the DS `Screen` a `banner` slot AND taught the
+        // structural normalizer to fold that slot into the tree (so the banner is verified, not invisible).
+        // Container early-returns it (like loading); the retry button and the AppBar back are the only
+        // data seam. The Banner's `action="Retry"` mirrors the mock's decorative span verbatim (the kit's
+        // Banner has no handler either — the functional retry is the EmptyState's "Try again" button).
+        state: "error",
+        key: "RC.list_error",
+        component: "list_error",
+        componentName: "FoodListErrorView",
+        viewFile: "apps/mobile/app/food/food-list.error.view.tsx",
+        propsParam: "{ onBack, onRetry, loading }: FoodListErrorViewProps",
+        propsType: [
+          "export type FoodListErrorViewProps = {",
+          "  onBack: () => void;",
+          "  onRetry: () => void;",
+          "  loading?: boolean;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            const name = path.node.name.name;
+            if (name === "AppBar") {
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
+            }
+            if (name === "Button") {
+              // Kit Button's web `onClick={nop}` → the app Button's `onPress`; wire the container's
+              // refetch and reflect its in-flight state, preserving the screen's existing retry behavior.
+              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onRetry"))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
+            }
+          },
+        }),
+      },
     ],
     // Deferred states — recorded, not forced (CLAUDE.md "Pixel parity": honesty over volume). Each is a
     // genuine wall, not laziness; adopting anyway would ship a divergent or dishonest screen.
@@ -173,12 +210,6 @@ export const ADOPTED = [
         key: "RC.list_empty",
         reason:
           "the mock draws a 'Notify me when they open' primary action with NO backend to honor it (a permanently dead button — CLAUDE.md forbids promising an action the app can't deliver), plus a live 'Belgravia · 22:40' AppBar sub; it also collapses the app's two honest empty conditions (open-now-filtered-empty vs no-restaurants-at-all) into one. Needs a notify-when-open feature before it can adopt.",
-      },
-      {
-        state: "error",
-        key: "RC.list_error",
-        reason:
-          "the mock wraps the screen in `<Screen banner={<Banner tone=\"offline\"/>}>`, but the app's DS `Screen` primitive (src/ui/index.tsx) has NO `banner` slot — the generated view would not typecheck. This is a Foundation-A primitive gap (Screen must grow a banner slot), not app drift.",
       },
       {
         state: "data",
