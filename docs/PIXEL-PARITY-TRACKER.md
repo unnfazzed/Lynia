@@ -369,7 +369,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M1·1 | `RM login` | Phone + OTP login  (RV M0·1) | | |
+| 👁 | M1·1 | `RM login` | Phone + OTP login  (RV M0·1) | merchant login align (`docs/parity/PHASE6-merchant.md`, `tools/parity/out/phase6_merchant.png`) | |
 | ⬜ | M1·2 | `RM setup` | First login · setup  (RV M0·2) | | |
 | ⬜ | M1·3 | `RM reboot` | Tablet rebooted mid-shift  (RV M0·b1) | | |
 
@@ -377,10 +377,10 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | | |
-| ⬜ | M2·2 | `RM queue_loading` | Loading  (RV M1·2) | | |
-| ⬜ | M2·3 | `RM queue_new` | NEW ORDER · alarm  (RV M1·3) | | |
-| ⬜ | M2·4 | `RM queue_board` | Kitchen board · 3 live  (RV M1·4) | | |
+| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M2·2 | `RM queue_loading` | Loading  (RV M1·2) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M2·3 | `RM queue_new` | NEW ORDER · alarm  (RV M1·3) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M2·4 | `RM queue_board` | Kitchen board · 3 live  (RV M1·4) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M2·5 | `RM two_orders` | Two orders at once  (RV M1·b1) | | |
 | ⬜ | M2·6 | `RM offline` | Connection lost  (RV M1·b2) | | |
 | ⬜ | M2·7 | `RM offline_order` | Order arrived offline  (RV M1·b3) | | |
@@ -420,7 +420,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M5·1 | `RM catalog` | Menu · grouped by category  (RV M4·1) | | |
+| ⬜ | M5·1 | `RM catalog` | Menu · grouped by category  (RV M4·1) | gated `/menu` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M5·2 | `RM category_manage` | Categories · reorder & hide  (RV M4·2) | | |
 | ⬜ | M5·3 | `RM category_edit` | New category  (RV M4·3) | | |
 | ⬜ | M5·4 | `RM category_rename` | Edit / delete category  (RV M4·4) | | |
@@ -437,7 +437,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M6·1 | `RM shop` | Shop profile  (RV M5·1) | | |
+| ⬜ | M6·1 | `RM shop` | Shop profile  (RV M5·1) | gated `/shop` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M6·2 | `RM cash_rule` | Your cash rule  (RV M5·4) | | |
 | ⬜ | M6·3 | `RM shop_crop` | Position the banner  (RV M5·2) | | |
 | ⬜ | M6·4 | `RM shop_upload` | Uploading · compressing  (RV M5·3) | | |

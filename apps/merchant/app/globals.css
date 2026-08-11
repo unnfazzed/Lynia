@@ -23,6 +23,16 @@
   font-display: swap;
   src: url("/fonts/inter-700.woff2") format("woff2");
 }
+/* Fredoka 600 — the LyniaGo WORDMARK face only (never body/UI text), per packages/design/tokens/
+ * fonts.css. The kitchen sign-in lockup (RM.login) draws the wordmark in Fredoka, so the merchant
+ * app self-hosts it too; --font-wordmark falls back to a rounded sans if it's slow to load. */
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/fredoka-600.woff2") format("woff2");
+}
 
 :root {
   --ink: #14181b;
@@ -31,6 +41,7 @@
   --surface: #f6f7f8;
   --line: #e2e6ea;
   --accent: #00b14f;
+  --accent-700: #009d3b; /* wordmark "Go" / pressed-deep fill (mirrors packages/design colors.css) */
   --accent-text: #006630;
   --accent-wash: #e9f8ef;
   --cta-fill: #00812f;
@@ -57,6 +68,8 @@
   --radius-button: 999px;
   --radius-pill: 999px;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Wordmark-only face (mirrors packages/design typography.css --font-wordmark). */
+  --font-wordmark: "Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans);
 }
 
 * {
