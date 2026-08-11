@@ -94,7 +94,13 @@ export default function FoodCartScreen(): React.ReactElement {
   const belowMin = cart.belowMinimum;
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        // Kit RC.cart (r-customer-a.jsx:295): the "Go to checkout · $X" bar is the kit's
+        // `<Screen footer=…>` pinned bar (Foundation-D slot), not a body child.
+        <Button label={`Go to checkout · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
+      }
+    >
       {/* Kit RC.cart (r-customer-a.jsx:297): the header is the shared AppBar — 16/700 title + 11.5
           muted sub (the kitchen's name) + a rotated-chevron back, not an in-body 19px heading. */}
       <AppBar title="Your cart" sub={cart.cart.restaurantName ?? undefined} onBack={() => router.back()} />
@@ -219,8 +225,6 @@ export default function FoodCartScreen(): React.ReactElement {
         />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
-
-      <Button label={`Go to checkout · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
 
       {/* R3·2 — the note sheet. Pure UI over cart state that already exists: nothing leaves the device
           until checkout places the order. */}

@@ -30,6 +30,9 @@ export { Banner, type BannerTone } from "./Banner";
 export { CoverPhoto } from "./CoverPhoto";
 export { PriceMath } from "./PriceMath";
 export { MenuRow, type MenuRowItem, type MenuCategory } from "./MenuRow";
+export { EtaLine } from "./EtaLine";
+export { ShopLogo } from "./ShopLogo";
+export { FoodThumb, type FoodThumbCategory } from "./FoodThumb";
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
@@ -93,7 +96,7 @@ export function TestBuildBanner(): React.ReactElement | null {
   );
 }
 
-export function Screen({ children, banner }: { children: React.ReactNode; banner?: React.ReactNode }): React.ReactElement {
+export function Screen({ children, banner, footer }: { children: React.ReactNode; banner?: React.ReactNode; footer?: React.ReactNode }): React.ReactElement {
   return (
     // Page surface is white (`bg`), per the kit's `--surface-page: var(--bg)` and its `AppScreen`
     // default. Grey (`surface`) is reserved for sunken/sheet elements that sit ON the page, not the
@@ -107,6 +110,14 @@ export function Screen({ children, banner }: { children: React.ReactNode; banner
       {banner}
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
       <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
+      {/* Footer slot — the kit's `Screen`/`AppScreen` pins its `footer` BELOW the scrolling body
+          (…body → footer → tab bar). The kit's footer chrome is a hairline top border on the bg
+          surface with 8/16/12 padding — the cart "View cart" bar, the checkout pay bar, the menu
+          cart bar. Rendered outside the body's edge padding so the border spans full width. Optional
+          and unset for every screen that doesn't draw one, so existing call sites are unaffected. */}
+      {footer != null ? (
+        <View style={{ paddingTop: 8, paddingHorizontal: tokens.space.screen, paddingBottom: 12, backgroundColor: tokens.color.bg, borderTopWidth: 1, borderTopColor: tokens.color.line }}>{footer}</View>
+      ) : null}
     </SafeAreaView>
   );
 }

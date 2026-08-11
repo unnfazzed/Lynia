@@ -166,3 +166,41 @@ describe("parity structural snapshot · structural-slot verification (Screen.ban
     expect(treeStr(src)).toBe("SCREEN( BOX( TEXT ) )");
   });
 });
+
+describe("parity structural snapshot · structural-slot verification (Screen.footer · Foundation-D)", () => {
+  const treeStr = (src: string) => normalize.sexpr(normalize.treeOfViewFile(ts, src));
+  const treeOf = (src: string) => normalize.treeOfViewFile(ts, src);
+
+  it("folds a Screen's `footer` JSX slot into the tree as a TRAILING child (else it is invisible)", () => {
+    // The kit's Screen pins `footer` below the body (…body → footer), so it must normalize as the
+    // Screen's LAST child — after the body, mirroring how `banner` folds in as the first.
+    const src = `function V() {
+      return <Screen footer={<Button label="View cart" />}><View><Text>x</Text></View></Screen>;
+    }`;
+    expect(treeStr(src)).toBe("SCREEN( BOX( TEXT ), BUTTON )");
+  });
+
+  it("folds both banner (leading) and footer (trailing) around the body in order", () => {
+    const src = `function V() {
+      return <Screen banner={<Banner tone="offline" title="x" />} footer={<Button label="Go" />}><View /></Screen>;
+    }`;
+    expect(treeStr(src)).toBe("SCREEN( BANNER, BOX, BUTTON )");
+  });
+
+  it("FAILS the snapshot when the view drops a footer the mock draws (the cart/checkout pay bar)", () => {
+    const mock = `function Mock() {
+      return <Screen footer={<Button label="Go to checkout" />}><View><Text>x</Text></View></Screen>;
+    }`;
+    const viewMissingFooter = `function V() {
+      return <Screen><View><Text>x</Text></View></Screen>;
+    }`;
+    const d = normalize.diff(treeOf(mock), treeOf(viewMissingFooter));
+    expect(d).not.toBeNull();
+    expect(d).toContain("SCREEN");
+  });
+
+  it("stays a no-op for a Screen with no footer — existing call sites are unaffected", () => {
+    const src = `function V() { return <Screen><View><Text>x</Text></View></Screen>; }`;
+    expect(treeStr(src)).toBe("SCREEN( BOX( TEXT ) )");
+  });
+});
