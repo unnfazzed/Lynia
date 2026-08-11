@@ -96,10 +96,10 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C4·1 | `RC cart` | Cart  [FOOD] | | |
+| 👁 | C4·1 | `RC cart` | Cart  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | header → shared AppBar; summary → shared PriceMath. EtaLine + ADD-A-DRINK upsell omitted (un-backed at cart stage) |
 | ⛔ | C4·2 | `RC cart_note` | Note for the kitchen  [FOOD] | | |
-| ⬜ | C4·3 | `RC checkout_cash` | Checkout · CASH  [FOOD] | | |
-| ⬜ | C4·4 | `RC checkout_wallet` | Checkout · WALLET  [FOOD] | | |
+| 👁 | C4·3 | `RC checkout_cash` | Checkout · CASH  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | header → shared AppBar; cash-consequence names the full total. Live address-entry block stands in for the mock's static summary row |
+| 👁 | C4·4 | `RC checkout_wallet` | Checkout · WALLET  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | wallet-selected subtitle → provider list; verbatim note copy, ink type, lead bold |
 | ⬜ | C4·5 | `RC placing` | Placing  [FOOD] | | |
 | ⬜ | C4·6 | `LJ auction_finding` | Auction · finding  [PARCEL] | | |
 | ⬜ | C4·7 | `LJ auction_live` | Auction · offers live  [PARCEL] | | |
