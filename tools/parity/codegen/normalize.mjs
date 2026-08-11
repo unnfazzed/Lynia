@@ -26,6 +26,12 @@ const KIND = new Map(Object.entries({
   view: "BOX", section: "BOX", header: "BOX", nav: "BOX", ul: "BOX", li: "BOX", article: "BOX", main: "BOX", pad: "BOX", safeareaview: "BOX", scrollview: "BOX", keyboardavoidingview: "BOX",
   b: "TEXT", p: "TEXT", h1: "TEXT", h2: "TEXT", h3: "TEXT", a: "TEXT", label: "TEXT", text: "TEXT",
   icon: "ICON", field: "FIELD", card: "CARD", button: "BUTTON", statuspill: "STATUSPILL", emptystate: "EMPTYSTATE", stepper: "STEPPER", money: "MONEY", avatar: "AVATAR",
+  // Foundation-F.d — the food-order tracking mocks draw the step timeline as the kit `RTracker`
+  // primitive (r-customer-b.jsx), which the app realizes as its own `Stepper` (the kit's RTracker
+  // literally returns `<DSR.Stepper/>` when the DS is present). Fold both to ONE canonical STEPPER —
+  // the Lockup→BRANDLOCKUP precedent, matched by transpile.mjs DS_RENAME (`RTracker`→`Stepper`) — so a
+  // `tracker` region rooted at the mock's `RTracker` stays congruent with the app's mounted `Stepper`.
+  rtracker: "STEPPER",
   pricemath: "PRICEMATH", banner: "BANNER", coverphoto: "COVERPHOTO", menurow: "MENUROW", skeleton: "SKELETON",
   etaline: "ETALINE", shoplogo: "SHOPLOGO", foodthumb: "FOODTHUMB",
   img: "IMAGE", image: "IMAGE",

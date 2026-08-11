@@ -937,12 +937,6 @@ export const ADOPTED = [
     states: [],
     deferred: [
       {
-        state: "await_accept",
-        key: "RC.await_accept",
-        reason:
-          "R5·1 waiting-on-the-kitchen — mock `await_accept` is `Screen(OrderHead, Ring[104/180], Card(RTracker step=0))`. Hits W-LOCAL (leads with the mock-local `OrderHead`), W-KIT (`Ring` countdown + `RTracker` timeline — neither in the app DS nor the transpiler remap; the app draws this phase's countdown/timeline via its own FoodOrderAwaitingAcceptView using Stepper + a server-deadline ring), and W-LIVE (the acceptDeadlineAt ring ticks live off `now`). A generated view would emit unresolved `<Ring>`/`<RTracker>` under an unresolved `<OrderHead>`. Deferred with the cluster.",
-      },
-      {
         state: "confirm_call",
         key: "RC.confirm_call",
         reason:
@@ -1008,12 +1002,6 @@ export const ADOPTED = [
     uiImport: "../../../src/ui",
     states: [],
     deferred: [
-      {
-        state: "track_prep",
-        key: "RC.track_prep",
-        reason:
-          "R6·1 prep countdown (rider not yet secured) — mock `track_prep` is `Screen(OrderHead, Ring[17/20], Card(finding-a-rider row + Skeleton, RTracker step=2))`. W-LOCAL (`OrderHead`) + W-KIT (`Ring` + `RTracker`); the app draws the preparing phase via FoodOrderPreparingView (Stepper + a live prep timer off `now`, W-LIVE). Generated view emits unresolved `<Ring>`/`<RTracker>`. Deferred with the cluster.",
-      },
       {
         state: "track_secured",
         key: "RC.track_secured",
@@ -1115,6 +1103,122 @@ export const ADOPTED = [
         key: "RC.cancel_sheet",
         reason:
           "R6·b5 cancel-pre-pickup sheet — mock `cancel_sheet` is `Screen(pad=false)(dimmed skeleton backdrop, absolute overlay sheet: reason radios + destructive Button + ghost Button)`. (W-IDIOM) each radio option's `border: 1.5px solid ${i===0?…}` is a DYNAMIC template-literal border the transpiler can't expand (same gap as role_select); and (W-LIVE) the app realizes the post-dispatch cancel as an inline confirm state (`cancelConfirm`) inside FoodOrderLiveTrackerView, not a routed sheet screen with a reason-picker — the reason radios are a superset the app doesn't collect. Deferred with the cluster.",
+      },
+    ],
+  },
+  // ── FOOD-ORDER TRACKER REGIONS (Foundation-F.d) ───────────────────────────────────────────────────
+  // The food-order lifetime (r-customer-b.jsx) is a deeply-live composite the whole-screen model cannot
+  // host (W-LIVE): its phases are hand-built `FoodOrder*View`s that combine mock states and add live
+  // supersets (cancel footer, offline banner, warm-snapshot resume), so no per-mock Screen boundary
+  // exists for a whole-screen swap. But the region model guards a NAMED sub-tree inside the live view,
+  // which sidesteps W-LIVE — the SAME proven path as menu/cart/checkout. Two of the tracking mocks lead
+  // their live sub-branch with the kit `RTracker` step-timeline, which the app realizes as its own
+  // `Stepper` (the kit's RTracker literally returns `<DSR.Stepper/>`): Foundation-F.d folds
+  // `RTracker`→`Stepper` (transpile DS_RENAME) and to ONE canonical STEPPER (normalize KIND), so a
+  // `tracker` region rooted at the mock's RTracker stays congruent with the app's mounted Stepper. Where
+  // the app draws that Stepper as a BARE, discrete node (not buried in the LiveTrackingCard composite —
+  // that stays W-LIVE-deferred), the tracker region ADOPTS: FoodOrderAwaitingAcceptView (await_accept)
+  // and FoodOrderPreparingView (track_prep) both mount a bare `<Stepper>` exactly where their mock draws
+  // `<RTracker>`. The region owns ONLY the display timeline sub-tree; the countdown ring (hero, display
+  // but wrapped differently — see deferred), the mock-local OrderHead (W-LOCAL) and the live cancel/
+  // offline supersets stay container glue, honestly pruned from the composition. No sensitive logic is
+  // re-homed — Stepper is a pure display timeline fed the live `events`/`status`/`merchantPhase` seam.
+  {
+    key: "RC.await_accept",
+    container: "apps/mobile/src/ui/food/FoodOrderAwaitingAcceptView.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
+    mockComponent: "await_accept",
+    uiImport: "../index",
+    regions: [
+      {
+        // Tracker region — the mock's `<Card><RTracker step=0 …/></Card>` step timeline. Locator
+        // {el:"RTracker"} anchors it (the Card wrapper bubbles through in the composition, like the menu
+        // footer's Screen slot). RTracker→Stepper (DS_RENAME); the bind spreads the live Stepper seam
+        // (events/currentStatus/view/jobType/merchantPhase) the container already computed — a pure
+        // display forward, no timeline logic re-homed.
+        region: "tracker",
+        locator: { el: "RTracker" },
+        componentName: "FoodAwaitAcceptTrackerView",
+        viewFile: "apps/mobile/src/ui/food/food-await-accept-tracker.view.tsx",
+        propsParam: "props: FoodOrderTrackerViewProps",
+        propsType: [
+          "/** The live Stepper seam the container already computes for the seven-step food tracker —",
+          " *  forwarded verbatim into the mock's RTracker sub-tree (RTracker≡Stepper). */",
+          "export type FoodOrderTrackerViewProps = {",
+          "  events: { status: string; createdAt: string }[];",
+          "  currentStatus: string;",
+          "  view: \"customer\" | \"rider\";",
+          "  jobType?: \"food\" | \"parcel\";",
+          "  merchantPhase?: string | null;",
+          "};",
+        ].join("\n"),
+        bind: ({ t }) => foodTrackerBind({ t }),
+      },
+    ],
+    deferred: [
+      {
+        state: "ring",
+        key: "RC.await_accept#ring",
+        reason:
+          "the accept-countdown Ring (r-customer-b.jsx:25) is display-only, but its app realization is not a congruent leaf region: the mock draws `<Ring/>` as a direct child of a centred column, while FoodOrderAwaitingAcceptView wraps its CountdownRing in an EXTRA centring `<View>` alongside two hero-text lines (the mock centres via `textAlign`/`margin:auto`, not a wrapping box) — so a hero region would diverge by that added View, and CountdownRing lives outside the src/ui barrel (a bare-Ring region would need NON_BARREL wiring + risks the depcruise cycle). Kept as container glue (pruned from the composition); adoptable once the app's ring hero is drawn as a boxless centred sub-tree or CountdownRing earns a barrel-safe region root.",
+      },
+      {
+        state: "head",
+        key: "RC.await_accept#head",
+        reason:
+          "the mock-local `OrderHead` (r-customer-b.jsx:10, W-LOCAL) leads the screen; the transpiler neither inlines nor imports it, and the app draws this header as its own OrderHeader (name + pill) not as a discrete generated region. Kept as glue (pruned from the composition); adoptable once OrderHead is inlined in the transpiler and the app header earns a region boundary.",
+      },
+      {
+        state: "hero",
+        key: "RC.await_accept#hero",
+        reason:
+          "the 'Waiting for <Shop>' hero copy + the live cancel footer + offline banner are live supersets the static mock's centred column does not draw as a discrete sub-tree (the cancel footer is a container-owned React node, the offline banner a live-connectivity COND). Not a region; container glue, pruned from the composition.",
+      },
+    ],
+  },
+  {
+    key: "RC.track_prep",
+    container: "apps/mobile/src/ui/food/FoodOrderPreparingView.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
+    mockComponent: "track_prep",
+    uiImport: "../index",
+    regions: [
+      {
+        // Tracker region — the mock's `<Card>(finding-a-rider row + Skeleton, <RTracker step=2 …/>)</Card>`.
+        // Locator {el:"RTracker"} anchors the timeline (the finding-row + Skeleton siblings are pruned as
+        // glue in the composition — they are a live 'finding a rider' sub-state the app draws inline).
+        // RTracker→Stepper; the bind spreads the live Stepper seam the container already computed.
+        region: "tracker",
+        locator: { el: "RTracker" },
+        componentName: "FoodPrepTrackerView",
+        viewFile: "apps/mobile/src/ui/food/food-prep-tracker.view.tsx",
+        propsParam: "props: FoodOrderTrackerViewProps",
+        propsType: [
+          "/** The live Stepper seam the container already computes for the seven-step food tracker —",
+          " *  forwarded verbatim into the mock's RTracker sub-tree (RTracker≡Stepper). */",
+          "export type FoodOrderTrackerViewProps = {",
+          "  events: { status: string; createdAt: string }[];",
+          "  currentStatus: string;",
+          "  view: \"customer\" | \"rider\";",
+          "  jobType?: \"food\" | \"parcel\";",
+          "  merchantPhase?: string | null;",
+          "};",
+        ].join("\n"),
+        bind: ({ t }) => foodTrackerBind({ t }),
+      },
+    ],
+    deferred: [
+      {
+        state: "ring",
+        key: "RC.track_prep#ring",
+        reason:
+          "the prep-countdown Ring (r-customer-b.jsx:236) is display-only, but as with await_accept its app CountdownRing is wrapped in an extra centring `<View>` the boxless mock column lacks, and CountdownRing sits outside the src/ui barrel — so a hero/ring region would diverge or need NON_BARREL wiring with depcruise-cycle risk. Kept as container glue (pruned from the composition).",
+      },
+      {
+        state: "finding",
+        key: "RC.track_prep#finding",
+        reason:
+          "the 'Finding a rider' row + Skeleton (the mock's `Card` header above the RTracker) is a live dispatch-in-progress sub-state the app draws inline in FoodOrderPreparingView's own copy, not as a discrete generated region; the mock-local OrderHead (W-LOCAL) leads the screen. Both kept as glue, pruned from the composition; adoptable once the finding sub-state and OrderHead earn region boundaries.",
       },
     ],
   },
@@ -1891,6 +1995,21 @@ export const ADOPTED = [
  * from the mock's frozen literals) and the OS-permission actions wire onto onPrimary/onSecondary — the
  * container feeds the role-framed copy while the mock's structure is preserved by construction.
  */
+/**
+ * Shared data-seam for the two food-order TRACKER region views (RC.await_accept / RC.track_prep).
+ * The mock's `<RTracker>` transpiles (DS_RENAME) to the app's `<Stepper>`; drop the mock's frozen
+ * step/times literals and spread the live Stepper seam (`props`) the container already computes — a
+ * pure display forward. Stepper is a display timeline, so no order/timeline logic is re-homed.
+ */
+function foodTrackerBind({ t }) {
+  return {
+    JSXOpeningElement(path) {
+      if (path.node.name.name !== "Stepper") return;
+      path.node.attributes = [t.jsxSpreadAttribute(t.identifier("props"))];
+    },
+  };
+}
+
 function permSystemStateBind({ t, expr }) {
   return {
     JSXOpeningElement(path) {
