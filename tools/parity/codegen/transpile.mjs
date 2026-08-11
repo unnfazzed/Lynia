@@ -291,6 +291,40 @@ export function transpile(src, report) {
 
     return {
       visitor: {
+        // Render-helper shell wrapper → <Screen>. The rider-one-app.jsx family returns
+        // `S(<div>…</div>, { tab, footer, banner })`, where `S` mounts the DS AppScreen/SHELL around the
+        // body. Lower it to `<Screen banner={…} footer={…}>{body}</Screen>` so the generated view renders
+        // the app's real scaffold (Screen → SCREEN in the normalizer, matching the mock's folded SHELL),
+        // dropping the tab/bg/dark chrome the live app supplies elsewhere. Only the OUTER wrapper matches:
+        // a plain-identifier callee whose FIRST arg is JSX (never a `.map`/member call, never `nop()`).
+        // The replacement is a JSXElement, so it is not re-matched — no infinite loop — and Babel then
+        // descends into the body to transpile it normally.
+        CallExpression(path) {
+          const node = path.node;
+          if (node.callee.type !== "JSXIdentifier" && node.callee.type !== "Identifier") return;
+          const body = node.arguments[0];
+          if (!body || (body.type !== "JSXElement" && body.type !== "JSXFragment")) return;
+          const opts = node.arguments[1];
+          const attrs = [];
+          if (opts && opts.type === "ObjectExpression") {
+            for (const prop of opts.properties) {
+              if (prop.type !== "ObjectProperty" || prop.computed) continue;
+              const k = prop.key.name || prop.key.value;
+              if (k === "banner" || k === "footer") {
+                const val = prop.value.type === "JSXExpressionContainer" ? prop.value : t.jsxExpressionContainer(prop.value);
+                attrs.push(t.jsxAttribute(t.jsxIdentifier(k), val));
+              }
+            }
+          }
+          path.replaceWith(t.jsxElement(
+            t.jsxOpeningElement(t.jsxIdentifier("Screen"), attrs, false),
+            t.jsxClosingElement(t.jsxIdentifier("Screen")),
+            [body],
+            false,
+          ));
+          R.transform++;
+        },
+
         // JSX string attribute holding a token: color="var(--muted)" → color={tokens.color.muted}
         JSXAttribute(path) {
           // `className` is web-only — RN primitives have no such prop, so carrying it through is a hard

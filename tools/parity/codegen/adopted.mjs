@@ -1621,25 +1621,23 @@ export const ADOPTED = [
   },
   // ─────────────────────────── RIDER MONEY + ACCOUNT (RJM Money·Account tabs) ───────────────────────────
   // The current rider design is RJM (one app: Jobs · Money · Account), authored in `rider-one-app.jsx`.
-  // BOTH the Money tab (M1 `money`) and the Account tab (A1 `account`) are un-adoptable by the current
-  // codegen model for ONE root reason shared by the WHOLE `rider-one-app.jsx` family, and each carries a
-  // second, app-side live-vs-static divergence on top. Deferred honestly per CLAUDE.md (honesty over
-  // volume; wallet/money is SENSITIVE — behaviour kept identical, tests green).
+  // The Account tab (A1 `account`) is ADOPTED below; the Money tab (M1 `money`) stays deferred on a
+  // live-vs-static wall (not the wrapper). Deferred entries honest per CLAUDE.md (honesty over volume;
+  // wallet/money is SENSITIVE — behaviour kept identical, tests green).
   //
-  // ROOT WALL (whole family) — the `S()` render-helper CALL-WRAPPER. Every screen in rider-one-app.jsx
-  // returns `S(<div>…</div>, { tab })`, where `S` is a mock-local helper that wraps the body in the DS
-  // `AppScreen`/SHELL (tab bar + banner + footer). The normalizer (normalize.mjs — the CI guardrail
-  // engine) cannot see through this call: its render-root readers (`rootFrom`→`jsxFrom`→`fromExpression`
-  // for whole-screen, `jsxRootNode` for regions) only recognise JSX elements/fragments/blocks/`.map`
-  // calls — a NON-`.map` CallExpression yields `[]`/null. Empirically BOTH paths throw "no JSX render
-  // found in component" / "mock component <name> has no JSX render" for `money` AND `account` (and would
-  // for board/offer_*/active_*/handoff/notifications too). So neither a whole-screen view NOR a region
-  // fragment/composition can be extracted from these mocks at all — this is a normalizer gap, not a
-  // primitive/backend gap. It is a Foundation-F (#42) prerequisite of the SAME class as the plan's
-  // "variant-switch state isolation" + "mock-local helper inlining": Foundation-F must teach the
-  // normalizer to unwrap a render-helper call (`S(jsxArg, opts)` → treat the first JSX arg as the render
-  // root) AND canonicalise the SHELL/`S()` wrapper to SCREEN (folding its `tabs`/banner/footer slots) so
-  // the mock's tab-shell matches the app's `<AppScreen>` root. Until then, no rider-one-app screen adopts.
+  // ROOT WALL — SOLVED (Foundation-F.a). Every screen in rider-one-app.jsx returns `S(<div>…</div>,
+  // { tab, footer, banner })`, where `S` is a mock-local helper that wraps the body in the DS
+  // `AppScreen`/SHELL. The normalizer (normalize.mjs) used to yield `[]`/null on that non-`.map`
+  // CallExpression — "no JSX render found in component" — so nothing in the family extracted. Foundation-F.a
+  // taught the render-root readers to UNWRAP a render-helper call (`renderHelperUnwrap`: a plain-identifier
+  // callee whose FIRST arg is JSX → treat that JSX as the render root) AND canonicalise the SHELL/`S()`
+  // wrapper to SCREEN (folding `opts.banner`/`opts.footer` as Screen slots), with the emit-side transpiler
+  // lowering `S()` → `<Screen>` to match. Every rider-one-app screen now EXTRACTS. What keeps most of the
+  // family deferred is no longer the wrapper but the SECOND wall each carries: W-KIT/W-LOCAL composite tags
+  // the app realizes with different primitives (board/offer_*/active_*: JobCard/TypeTag/CashStrip/OnlinePill,
+  // Ring/RTracker/RiderCard), the map canvas (track_*: HarareMap — Foundation-F.c), the interactive board's
+  // gate branches, or a live-vs-static multi-state divergence (money, gate_topup). Account had ONLY the
+  // wrapper + a minor live-vs-static skew, so it adopts now.
   {
     key: "RJM.money",
     container: "apps/mobile/app/rider/(tabs)/money.tsx",
@@ -1651,22 +1649,128 @@ export const ADOPTED = [
         state: "data",
         key: "RJM.money",
         reason:
-          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'money' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('money')` throws 'no JSX render found' and every region path (`treeOfMockFragment`/`mockCompositionTree` via `jsxRootNode`) throws 'mock component money has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted from this mock until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). (2) LIVE-VS-STATIC — even once the wrapper is solved, money.tsx is a live MULTI-STATE container, not the static single-state mock: it early-returns a `SkeletonRows` loading state and an `EmptyState`+Retry error state the mock never draws, renders a live `pendingTopupBanner` recovery Card superset (an app-kill-during-top-up reconciliation surface, money.tsx:223 — not in the mock), draws the balance as a bare `<Text>{formatMoney(balance)}</Text>` where the mock draws `<Money v=\"4.60\" size={28}>` beside a fabricated '≈ 30 more jobs' estimate the app HONESTLY omits (no such projection exists), switches the hero Card accent→dangerWash with four conditional copy branches (negative/belowFloor/gettingLow/healthy) for the one static mock line, gives the ledger an honest empty-state + a 'Load older' pagination control (server caps pages at 25) the mock's fixed 4-row LEDGER never shows, and heads the screen with `<Heading>Money</Heading>` where the mock draws `AppBar title=\"Money\"`. Wallet/money is SENSITIVE — behaviour kept byte-identical. Adoptable once Foundation-F unwraps the shell AND the mock's static data-state sub-tree earns a boundary separable from the loading/error/recovery-banner branches (or the mock is redrawn to draw them).",
+          "LIVE-VS-STATIC multi-state + a fabricated-figure gap (the render-helper/SHELL wrapper wall is GONE — Foundation-F.a unwraps `S()`, and `treeOfNamedComponent('money')` now extracts cleanly to `SCREEN( BOX( APPBAR, BOX( CARD( TEXT, BOX(MONEY, TEXT), TEXT, BUTTON ), CASHSTRIP, … ) ) )`). What still blocks it: money.tsx is a live MULTI-STATE container, not the static single-state mock — it early-returns a `SkeletonRows` loading state and an `EmptyState`+Retry error state the mock never draws, renders a live `pendingTopupBanner` recovery Card superset (an app-kill-during-top-up reconciliation surface, money.tsx:223 — not in the mock), draws the balance as a bare `<Text>{formatMoney(balance)}</Text>` where the mock draws `<Money v=\"4.60\" size={28}>` BESIDE a fabricated '≈ 30 more jobs' estimate the app HONESTLY omits (no such projection exists — so the mock's balance hero `div(MONEY, TEXT)` cannot be adopted 1:1 without either fabricating the projection or dropping the second child and diverging), switches the hero Card accent→dangerWash with four conditional copy branches (negative/belowFloor/gettingLow/healthy) for the one static mock line, and gives the ledger an honest empty-state + a 'Load older' pagination control (server caps pages at 25) the mock's fixed 4-row LEDGER never shows. The mock ALSO draws a `CashStrip` (yours vs owed-to-a-kitchen) composite the app's Money tab does not carry as a single tag. Wallet/money is SENSITIVE — behaviour kept byte-identical. Adoptable once the mock's static data-state sub-tree earns a boundary separable from the loading/error/recovery-banner branches AND the fabricated '30 more jobs' projection is either dropped from the mock or backed by a real estimator.",
       },
     ],
   },
   {
+    // ── RJM.account — the rider Account tab (app/rider/(tabs)/account.tsx). The FIRST adopted screen of
+    // the rider-one-app.jsx family, unblocked by Foundation-F.a: the normalizer now unwraps the mock's
+    // `S(<div>…</div>, { tab:'acct' })` render-helper (folding the DS AppScreen/SHELL to SCREEN) and the
+    // transpiler lowers `S()` to `<Screen>`, so the whole-screen view extracts. The mock `account` is
+    // `Screen( div( AppBar, Pad( Card(identity row), Card(settings.map) ) ) )` — an identity Card + a
+    // 5-row settings Card, plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map. The data seam
+    // wires the live `['me']` identity (name, rating/jobs/KYC line — honest-empty '★ new' until the first
+    // rating lands) and the settings rows + their route taps; the identity Card gains a transparent
+    // Pressable(→profile/settings+sign-out) and each settings row a Pressable(→its route). The always-
+    // drawn status pill (the mock draws it) reflects the rider's REAL online/offline state, not a frozen
+    // 'online'. The container early-returns a SkeletonList loading state (glue, not gated) — the static
+    // mock draws no loading variant, so there is no separate state-view to guard for it.
     key: "RJM.account",
     container: "apps/mobile/app/rider/(tabs)/account.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
     uiImport: "../../../src/ui",
-    states: [],
-    deferred: [
+    states: [
       {
         state: "data",
         key: "RJM.account",
-        reason:
-          "TWO walls. (1) ROOT — the `S(<div>…</div>, { tab:'acct' })` render-helper wrapper: the mock's render root is a non-`.map` CallExpression the normalizer can't see through, so `treeOfNamedComponent('account')` throws 'no JSX render found' and the region paths throw 'mock component account has no JSX render' — proven empirically. No whole-screen view and no region fragment can be extracted until Foundation-F #42 adds render-helper/SHELL unwrap (shared by the entire rider-one-app.jsx family; see the family header above). Account is otherwise the CLOSEST-to-leaf screen in the cluster — an identity Card + a 5-row settings Card, all plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map canvas — so it becomes adoptable the moment the shell wall falls. (2) LIVE-VS-STATIC (minor) — the identity Card sits behind the live `['me']` query and early-returns a `SkeletonList` loading state the static mock never draws (the mock hardcodes 'Tendai M. · ★ 4.9 · 312 jobs · verified'; the app fills real name/rating/trips/KYC-tag with an honest '★ new' until the first rating lands), and the screen heads with `<Heading>Account</Heading>` where the mock draws `AppBar title=\"Account\"`. The settings-row list and identity structure otherwise match the mock 1:1. Adoptable once Foundation-F unwraps the shell (the loading skeleton is a normal multi-state branch the model already handles once the mock is readable).",
+        component: "account",
+        componentName: "RiderAccountView",
+        viewFile: "apps/mobile/app/rider/(tabs)/account.view.tsx",
+        propsParam: "{ name, identityLine, online, onIdentityPress, rows, onRowPress }: RiderAccountViewProps",
+        propsType: [
+          "/** A settings row: [icon, label, sub] — mirrors the mock's `[ic, l, s2]` tuple verbatim. */",
+          "export type RiderAccountRow = [IconName, string, string];",
+          "export type RiderAccountViewProps = {",
+          "  name: string;",
+          "  /** '★ 4.9 · 312 jobs · verified' — the rating/jobs/KYC line, honest-empty until data lands. */",
+          "  identityLine: string;",
+          "  /** Whether the rider is online now — drives the always-drawn status pill's tone + label. */",
+          "  online: boolean;",
+          "  onIdentityPress: () => void;",
+          "  rows: RiderAccountRow[];",
+          "  onRowPress: (index: number) => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr, wrap }) => {
+          // Does a (transpiled) JSX subtree contain an element with the given tag anywhere below it?
+          const hasDescendant = (node, tag) => {
+            let found = false;
+            const walk = (n) => {
+              if (found || !n || typeof n !== "object") return;
+              if (n.type === "JSXOpeningElement" && n.name && n.name.name === tag) { found = true; return; }
+              for (const k of Object.keys(n)) {
+                if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+                const v = n[k];
+                if (Array.isArray(v)) v.forEach(walk);
+                else if (v && typeof v.type === "string") walk(v);
+              }
+            };
+            walk(node);
+            return found;
+          };
+          return {
+            // The mock's frozen identity text → the live name / rating line (leaf text swaps; the
+            // structural normalizer drops text content, so these never move the tree).
+            JSXText(path) {
+              const v = path.node.value.trim();
+              if (v === "Tendai M.") path.replaceWith(t.jsxExpressionContainer(expr("name")));
+              else if (v === "★ 4.9 · 312 jobs · verified") path.replaceWith(t.jsxExpressionContainer(expr("identityLine")));
+            },
+            // `...TAB` is a mock-local module const (`{ fontVariantNumeric: "tabular-nums" }`) NOT in the
+            // extracted component — replace the spread with RN's `fontVariant:["tabular-nums"]` so the
+            // rating line keeps tabular figures without an undefined reference. A style leaf → invisible
+            // to the structural diff.
+            ObjectExpression(path) {
+              const tab = path.node.properties.filter(
+                (p) => p.type === "SpreadElement" && p.argument.type === "Identifier" && p.argument.name === "TAB",
+              );
+              if (!tab.length) return;
+              path.node.properties = path.node.properties.filter((p) => !tab.includes(p));
+              path.node.properties.push(t.objectProperty(t.identifier("fontVariant"), t.arrayExpression([t.stringLiteral("tabular-nums")])));
+            },
+            // The status pill is ALWAYS drawn (the mock draws it); wire its tone/label to the rider's real
+            // online state (honest, not the mock's frozen 'online'). Leaf props → structurally invisible.
+            JSXOpeningElement(path) {
+              if (path.node.name.name !== "StatusPill") return;
+              path.node.attributes = path.node.attributes.filter(
+                (a) => !(a.type === "JSXAttribute" && ["status", "tone", "dot"].includes(a.name.name)),
+              );
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("status"), t.jsxExpressionContainer(expr('online ? "Online" : "Offline"'))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("tone"), t.jsxExpressionContainer(expr('online ? "online" : "offline"'))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("dot"), null));
+            },
+            // Settings rows: swap the mock's frozen tuple array for the live `rows` prop, index the map,
+            // and wrap each row in a Pressable(onRowPress(i)) — a transparent interaction wrapper the
+            // guardrail sees through. The React key moves to the wrap.
+            CallExpression(path) {
+              const callee = path.node.callee;
+              if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
+              callee.object = expr("rows");
+              const arrow = path.node.arguments[0];
+              if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
+              if (arrow.params.length < 2) arrow.params.push(t.identifier("i"));
+              const row = arrow.body.type === "JSXElement" ? arrow.body : null;
+              if (!row) return;
+              const keyAttr = row.openingElement.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
+              row.openingElement.attributes = row.openingElement.attributes.filter((a) => a !== keyAttr);
+              const wrapped = wrap(row, "Pressable", `onPress={() => onRowPress(i)} accessibilityRole="button"`);
+              if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
+              arrow.body = wrapped;
+            },
+            // The identity Card (the one carrying the StatusPill) → tappable, opening the shared
+            // profile/settings screen (where session + sign-out live). Transparent Pressable, and NOT
+            // skipped, so the traversal still descends to wire the name/rating/pill inside it — the
+            // parent-Pressable guard prevents a re-wrap.
+            JSXElement(path) {
+              const open = path.node.openingElement;
+              if (open.name.name !== "Card") return;
+              if (!hasDescendant(path.node, "StatusPill")) return;
+              if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
+              path.replaceWith(wrap(path.node, "Pressable", `onPress={onIdentityPress} accessibilityRole="button" accessibilityLabel="Your profile and settings"`));
+            },
+          };
+        },
       },
     ],
   },
