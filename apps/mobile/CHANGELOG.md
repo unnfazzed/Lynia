@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.0](https://github.com/unnfazzed/Lynia/compare/v0.26.0...v0.27.0) (2026-08-11)
+
+
+### Features
+
+* **parity:** align rider offer/job cluster to mocks ([6269a13](https://github.com/unnfazzed/Lynia/commit/6269a13f8ee4d8f63d0ddb65a92ae2a60384d12f))
+* **parity:** align rider onboarding cluster to mocks ([521e1ab](https://github.com/unnfazzed/Lynia/commit/521e1abe160c84d4c12a61bcabc734c6dbfe9cdd))
+
 ## [0.26.0](https://github.com/unnfazzed/Lynia/compare/v0.25.0...v0.26.0) (2026-08-11)
 
 
