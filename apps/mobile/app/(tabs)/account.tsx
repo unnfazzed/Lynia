@@ -64,8 +64,8 @@ export default function AccountTabScreen(): React.ReactElement {
             <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>
               {me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account"}
             </Text>
-            {me?.phone ? <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{me.phone}</Text> : null}
-            <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2 }}>{role === "rider" ? "Rider" : "Customer"}</Text>
+            {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{me.phone}</Text> : null}
+            <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2 }}>{role === "rider" ? "Rider" : "Customer"}</Text>
             {me?.rider ? (
               <>
                 <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 6, fontVariant: ["tabular-nums"] }}>
@@ -74,22 +74,26 @@ export default function AccountTabScreen(): React.ReactElement {
                 <KycBadge status={me.rider.kycStatus} />
               </>
             ) : null}
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8 }}>Editing your details is coming soon.</Text>
           </Card>
         )}
 
+        {/* Mock `Profile` action card (screens.jsx L693–696): "Trip history" (primary) then "Send a
+            parcel" (ghost). Trip history routes to the standalone /history screen. */}
         <Card>
-          <Button label="Notifications" onPress={() => router.push("/notifications")} />
-          {isRider ? <Button label="Bike & documents" variant="ghost" onPress={() => router.push("/rider/documents")} /> : null}
+          <Button label="Trip history" onPress={() => router.push("/history")} />
           <Button label="Send a parcel" variant="ghost" onPress={() => router.push("/send")} />
+        </Card>
+
+        {/* Hub nav the minimal mock never drew but the shipped tab must expose so these screens aren't
+            stranded (flagged in docs/parity/PHASE3-account.md as a deviation candidate). */}
+        <Card>
+          <Button label="Notifications" variant="ghost" onPress={() => router.push("/notifications")} />
+          {isRider ? <Button label="Bike & documents" variant="ghost" onPress={() => router.push("/rider/documents")} /> : null}
           <Button
             label={isRider ? "Rider dashboard" : "Become a rider"}
             variant="ghost"
             onPress={() => router.push(isRider ? "/rider" : "/rider/become")}
           />
-        </Card>
-
-        <Card>
           <Button label="Settings" variant="ghost" onPress={() => router.push("/settings")} />
           <Button label="Help & support" variant="ghost" onPress={() => router.push("/help")} />
         </Card>

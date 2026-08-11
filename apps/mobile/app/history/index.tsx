@@ -28,7 +28,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
       <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
               {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
             </Text>
             <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>
@@ -38,7 +38,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
+            <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
             <View style={{ height: 4 }} />
             <StatusPill status={o.status} tone={orderStatusTone(o.status)} />
           </View>

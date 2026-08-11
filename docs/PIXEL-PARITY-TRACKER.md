@@ -143,12 +143,12 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C8·1 | `LJ profile` | Account | | |
-| ⬜ | C8·2 | `LJ history` | Orders · all services  [BOTH] | | |
-| ⬜ | C8·3 | `LJ notifications` | Notifications | | |
+| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
+| 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
+| 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
-| ⬜ | C8·5 | `LJ help` | Help & support | | |
-| ⬜ | C8·6 | `LJ settings` | Settings | | |
+| 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
+| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
 | ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |
