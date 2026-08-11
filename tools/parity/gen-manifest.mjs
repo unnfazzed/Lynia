@@ -4,7 +4,12 @@
  * data — never hand-typed, so a future design export can regenerate it. We eval the two plain-script
  * data files (`r-gallery-data.js` → window.RGD, `gallery-map.js` → window.GMAP) in a VM sandbox and
  * flatten window.GMAP into one row per screen. Admin pages (7) come from the fixed list in
- * gallery.jsx. Run: `node gen-manifest.mjs`.
+ * gallery.jsx.
+ *
+ * `buildManifest()` is exported (pure — reads the gallery, writes nothing) so the screen-inventory
+ * guardrail (apps/api/src/parity/screen-inventory.spec.ts) can re-run it and prove the committed
+ * screens.generated.json is not stale. Running this file directly writes the JSON:
+ *   node gen-manifest.mjs
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -14,6 +19,7 @@ import vm from "node:vm";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const JOURNEY = resolve(HERE, "../../packages/design/explorations/journey");
 const RESTAURANTS = resolve(HERE, "../../packages/design/explorations/restaurants");
+export const MANIFEST_PATH = resolve(HERE, "screens.generated.json");
 
 // Admin console pages (from gallery.jsx ADMIN array) — desktop, screenshot at 1440×900.
 const ADMIN = [
@@ -26,51 +32,75 @@ const ADMIN = [
   ["issues.html", "Issues — disputes", "/issues"],
 ];
 
-const ctx = { window: {}, location: { search: "" }, document: {} };
-vm.createContext(ctx);
-for (const f of [`${RESTAURANTS}/r-gallery-data.js`, `${JOURNEY}/gallery-map.js`]) {
-  vm.runInContext(await readFile(f, "utf8"), ctx, { filename: f });
-}
-const GMAP = ctx.window.GMAP;
-if (!GMAP) throw new Error("window.GMAP not produced — check gallery-map.js load");
-
-const rows = [];
-const seen = new Map();
-function push(row) {
-  if (seen.has(row.key)) {
-    seen.get(row.key).dupeOf = (seen.get(row.key).dupeOf || 0) + 1;
-    return;
+/**
+ * Build the screen inventory object from the live gallery data. Pure: it reads the design's gallery
+ * scripts and returns the manifest, writing nothing. `writeManifest()` (and the CLI) do the write.
+ */
+export async function buildManifest() {
+  const ctx = { window: {}, location: { search: "" }, document: {} };
+  vm.createContext(ctx);
+  for (const f of [`${RESTAURANTS}/r-gallery-data.js`, `${JOURNEY}/gallery-map.js`]) {
+    vm.runInContext(await readFile(f, "utf8"), ctx, { filename: f });
   }
-  seen.set(row.key, row);
-  rows.push(row);
-}
+  const GMAP = ctx.window.GMAP;
+  if (!GMAP) throw new Error("window.GMAP not produced — check gallery-map.js load");
 
-for (const [category, bands] of [["customer", GMAP.CUSTOMER], ["rider", GMAP.RIDER], ["merchant", GMAP.MERCHANT]]) {
-  for (const [band, , tiles] of bands || []) {
-    for (const [src, id, title, tag] of tiles || []) {
-      push({
-        key: `${src}.${id}`,
-        category,
-        band,
-        src,
-        id,
-        title,
-        tag: tag || "",
-        mode: src === "RM" ? "tablet" : "phone",
-      });
+  const rows = [];
+  const seen = new Map();
+  function push(row) {
+    if (seen.has(row.key)) {
+      seen.get(row.key).dupeOf = (seen.get(row.key).dupeOf || 0) + 1;
+      return;
+    }
+    seen.set(row.key, row);
+    rows.push(row);
+  }
+
+  for (const [category, bands] of [
+    ["customer", GMAP.CUSTOMER],
+    ["rider", GMAP.RIDER],
+    ["merchant", GMAP.MERCHANT],
+  ]) {
+    for (const [band, , tiles] of bands || []) {
+      for (const [src, id, title, tag] of tiles || []) {
+        push({
+          key: `${src}.${id}`,
+          category,
+          band,
+          src,
+          id,
+          title,
+          tag: tag || "",
+          mode: src === "RM" ? "tablet" : "phone",
+        });
+      }
     }
   }
-}
-for (const [page, title, route] of ADMIN) {
-  push({ key: `ADMIN.${page}`, category: "admin", band: "Admin console", src: "ADMIN", id: page, title, tag: "", mode: "admin", route });
+  for (const [page, title, route] of ADMIN) {
+    push({ key: `ADMIN.${page}`, category: "admin", band: "Admin console", src: "ADMIN", id: page, title, tag: "", mode: "admin", route });
+  }
+
+  return {
+    generatedFrom: "packages/design/explorations/journey/gallery-map.js + restaurants/r-gallery-data.js + gallery.jsx ADMIN",
+    count: rows.length,
+    byCategory: rows.reduce((a, r) => ((a[r.category] = (a[r.category] || 0) + 1), a), {}),
+    screens: rows,
+  };
 }
 
-const out = {
-  generatedFrom: "packages/design/explorations/journey/gallery-map.js + restaurants/r-gallery-data.js + gallery.jsx ADMIN",
-  count: rows.length,
-  byCategory: rows.reduce((a, r) => ((a[r.category] = (a[r.category] || 0) + 1), a), {}),
-  screens: rows,
-};
-const dest = resolve(HERE, "screens.generated.json");
-await writeFile(dest, JSON.stringify(out, null, 2) + "\n");
-console.log(`wrote ${dest}: ${rows.length} screens`, out.byCategory);
+/** Serialize the manifest exactly as it is committed (2-space indent + trailing newline). */
+export function serializeManifest(out) {
+  return JSON.stringify(out, null, 2) + "\n";
+}
+
+export async function writeManifest() {
+  const out = await buildManifest();
+  await writeFile(MANIFEST_PATH, serializeManifest(out));
+  return out;
+}
+
+// CLI entry — only writes when this file is run directly, never on import.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const out = await writeManifest();
+  console.log(`wrote ${MANIFEST_PATH}: ${out.count} screens`, out.byCategory);
+}
