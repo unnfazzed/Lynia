@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { AppBar, Button, Card, EmptyState, Icon, type IconName, Screen, SkeletonList, StatusPill } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Heading, Icon, type IconName, Screen, SkeletonList, StatusPill, Sub } from "../../src/ui";
 
 /**
  * Bike & documents (rider-journey A·2). The verified ID, bike registration and rider photo, each with
@@ -43,8 +43,12 @@ export default function DocumentsScreen(): React.ReactElement {
 
   return (
     <Screen>
-      {/* Kit AppBar (pushed-screen header) — title + sub live in the bar; no in-body Heading. */}
-      <AppBar title="Bike & documents" sub="What we verified to let you ride" onBack={() => router.back()} />
+      {/* Back-only AppBar chrome; the kit's bike_docs mock draws the title + sub as an in-body
+          Heading/Sub (not in the bar) — same pattern as the aligned job.tsx / become.tsx pushed screens. */}
+      <AppBar onBack={() => router.back()} />
+      <Heading>Bike &amp; documents</Heading>
+      <Sub>What we verified to let you ride.</Sub>
+
 
       {meQ.isLoading ? (
         <SkeletonList count={2} />

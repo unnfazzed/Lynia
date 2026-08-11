@@ -235,7 +235,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R2·1 | `RJ kyc_intro` | Become a rider | | |
+| 👁 | R2·1 | `RJ kyc_intro` | Become a rider | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | `become.tsx` realizes the `kyc_form` beat (name/ID + bike/photo + Didit reassurance cards); the `kyc_intro` empty-state itself is realized upstream on the rider board — intro-mock vs form-app is an inherent beat difference (deviation) |
 | ⬜ | R2·2 | `RJ kyc_form` | KYC form + consent | | |
 | ⬜ | R2·3 | `RJ photo_capture` | ID photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | ID photo · preview | | |
@@ -297,7 +297,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 |---|---|---|---|---|---|
 | 👁 | R6·1 | `RJM money` | Money tab  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | accent-bordered balance card, cash-held strip, bare ledger rows; `yours` unmodelled at tab level (deviation) |
 | ⬜ | R6·2 | `RJM gate_topup` | Gate · top up to keep riding  [BOTH] | | |
-| ⬜ | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | | |
+| 👁 | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | amount field + hint, 5/10/20 preset chips, phone field, "Pay with" rails, request CTA (via `TopUpSimulator`, test-build only); SIMULATED strip + neutral rail marks are honest test-build markers (deviation) |
 | ⬜ | R6·4 | `RJ topup_wait` | Payment prompt · wait  [BOTH] | | |
 | ⬜ | R6·5 | `RJ topup_success` | Top up · success  [BOTH] | | |
 | ⬜ | R6·6 | `RJ wallet_low` | Balance low  [BOTH] | | |
@@ -307,7 +307,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | 👁 | R7·1 | `RJM account` | Account | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | identity card (`/auth/me`) + tile rows; profile/sign-out behind a tap on the identity card |
-| ⬜ | R7·2 | `RJ bike_docs` | Bike & documents | | |
+| 👁 | R7·2 | `RJ bike_docs` | Bike & documents | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
 | ⬜ | R7·3 | `RJ history` | Job history  [BOTH] | | |
 | ⬜ | R7·4 | `RJ settings` | Settings | | |
 | ⬜ | R7·5 | `RJ help` | Help & support | | |
