@@ -248,8 +248,8 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⬜ | R3·1 | `RJM offline` | Offline  [BOTH] | | |
-| ⬜ | R3·2 | `RJM board` | Jobs · one list  [BOTH] | | |
-| ⬜ | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | | |
+| 👁 | R3·2 | `RJM board` | Jobs · one list  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | white "Jobs near you" bar + bell (green BrandHeader removed), compact online pill, primary card actions; honest inert-socket "Reconnecting" + flag-off copy |
+| 👁 | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | |
 | ⬜ | R3·4 | `RJM notifications` | One inbox  [BOTH] | | |
 | ⬜ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | | |
 | ⬜ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | | |
@@ -295,7 +295,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R6·1 | `RJM money` | Money tab  [BOTH] | | |
+| 👁 | R6·1 | `RJM money` | Money tab  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | accent-bordered balance card, cash-held strip, bare ledger rows; `yours` unmodelled at tab level (deviation) |
 | ⬜ | R6·2 | `RJM gate_topup` | Gate · top up to keep riding  [BOTH] | | |
 | ⬜ | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | | |
 | ⬜ | R6·4 | `RJ topup_wait` | Payment prompt · wait  [BOTH] | | |
@@ -306,7 +306,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R7·1 | `RJM account` | Account | | |
+| 👁 | R7·1 | `RJM account` | Account | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | identity card (`/auth/me`) + tile rows; profile/sign-out behind a tap on the identity card |
 | ⬜ | R7·2 | `RJ bike_docs` | Bike & documents | | |
 | ⬜ | R7·3 | `RJ history` | Job history  [BOTH] | | |
 | ⬜ | R7·4 | `RJ settings` | Settings | | |

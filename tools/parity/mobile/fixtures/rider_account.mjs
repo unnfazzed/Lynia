@@ -1,8 +1,31 @@
-// RJM.account — the Account tab (account.tsx). A pure static screen: one card of tile rows (Rider
-// setup & documents, Trip history, Profile & settings), each with its sub-line and chevron. No
-// network, no route params — withQuery() just supplies a client for the shared providers.
+// RJM.account — the Account tab (account.tsx). The mock's identity card (avatar · name · ★ rating ·
+// jobs · verified · online pill) is backed by GET /auth/me; below it, one card of tile rows (Bike &
+// documents, Job history, Money, Notifications, Help & support), each with its sub-line and chevron.
 import { installRouter, withQuery } from "./_harness.mjs";
 
-installRouter([]);
+const me = {
+  profileId: "0a1b2c3d-0000-4000-8000-00000000me01",
+  role: "rider",
+  firstName: "Tanaka",
+  lastName: "Moyo",
+  phone: "+263771234567",
+  email: null,
+  photoUrl: null,
+  ordersCount: 42,
+  rider: {
+    bikeReg: "ABZ 4417",
+    kycStatus: "verified",
+    kycDeclineReason: null,
+    kycAttempts: 1,
+    cancelStrikes: 0,
+    ratingAvg: 4.9,
+    ratingCount: 128,
+    tripsCount: 132,
+    isOnline: true,
+    kycMode: "auto",
+  },
+};
+
+installRouter([{ match: "/auth/me", json: me }]);
 
 export default { wrap: withQuery() };
