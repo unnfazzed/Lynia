@@ -261,8 +261,8 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | R4·1 | `RJM offer_parcel` | Parcel · name your fare  [PARCEL] | | |
 | ⬜ | R4·2 | `RJ offer_sent` | Offer sent · waiting  [PARCEL] | | |
 | ⬜ | R4·3 | `RJ picked` | Customer picked you  [PARCEL] | | |
-| ⬜ | R4·4 | `RJM offer_food` | Food · accept the job  [FOOD] | | |
-| ⬜ | R4·5 | `RR offer_cash` | Food · CASH collect  [FOOD] | | |
+| 👁 | R4·4 | `RJM offer_food` | Food · accept the job  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | one screen serves both food-offer keys; the harness fixture is a live cash-dispatch offer, so the app matches `RR offer_cash` — the `RJM offer_food` no-countdown surface is the flag-off branch (honest deviation) |
+| 👁 | R4·5 | `RR offer_cash` | Food · CASH collect  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | added the cta-fill NEW ORDER timer banner, CASH PayTag + YOU EARN row, marked COLLECT FROM/DELIVER TO legs card, and the return-leg note; COLLECT AT THE DOOR + accept/pass labels already matched |
 | ⬜ | R4·6 | `RR offer_upfront` | Food · kitchen wants upfront  [FOOD] | | |
 | ⬜ | R4·7 | `RR offer_wallet` | Food · already paid  [FOOD] | | |
 
@@ -271,13 +271,13 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⬜ | R5·1 | `RJM active_parcel` | Active · parcel  [PARCEL] | | |
-| ⬜ | R5·2 | `RJ job_assigned` | Job · assigned  [PARCEL] | | |
+| 👁 | R5·2 | `RJ job_assigned` | Job · assigned  [PARCEL] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | "Your job" + assigned pill, Agreed fare, revealed sender/recipient contacts (fixture now seeds the phones), items, stepper, "Confirm the job" verbatim; contacts render as JobDetailsCard "Call …" links vs the mock's boxed CallRows (shared-card shape, deviation) |
 | ⬜ | R5·3 | `RJ job_pickup` | En route to pickup  [PARCEL] | | |
 | ⬜ | R5·4 | `RJ job_verify` | Verify items at pickup  [PARCEL] | | |
 | ⬜ | R5·5 | `RJ job_collect` | Parcel collected  [PARCEL] | | |
 | ⬜ | R5·6 | `RJ job_dropoff` | En route to drop-off  [PARCEL] | | |
-| ⬜ | R5·7 | `RJM active_food` | Active · food  [FOOD] | | |
-| ⬜ | R5·8 | `RR nav_rest` | To the restaurant  [FOOD] | | |
+| 👁 | R5·7 | `RJM active_food` | Active · food  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | fixture re-driven to the `picked_up` CARRY state: CashHeldStrip YOURS $2.50 / OWED $13.00 (goods debt open), food stepper mid-flow, plus the added "Collect $X at the door" accent card; CTA is "Navigate to the customer" (code entry lives at the door via the map-first leg, RR.nav_cust), header "Your job" (deviations) |
+| 👁 | R5·8 | `RR nav_rest` | To the restaurant  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | now its own fixture `rider_food_nav` at `en_route_pickup` → the map-dominant `FoodNavLeg` (full map + restaurant card + CASH PayTag + Open in Maps + arrival CTA); sheet sub-copy + missing ETA are FoodNavLeg copy deviations |
 | ⬜ | R5·9 | `RR pay_merchant` | Pay the merchant  [FOOD] | | |
 | ⬜ | R5·10 | `RR pickup_confirm` | Collect · CASH job  [FOOD] | | |
 | ⬜ | R5·11 | `RR pickup_paid` | Collect · already PAID  [FOOD] | | |

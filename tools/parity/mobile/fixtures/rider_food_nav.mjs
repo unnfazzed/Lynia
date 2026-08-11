@@ -1,21 +1,21 @@
-// RJM.active_food — the rider's active FOOD job in the CARRY state. The active order
-// (GET /orders/mine/active) is a merchant order at `picked_up` — food collected and on the bike,
-// the merchant debt open — which is the stepper-card carry layout the RJM.active_food mock draws
-// (the en_route_* statuses instead go map-first via FoodNavLeg = the RR.nav_cust design). So the
-// screen renders its working carry layout: the cash-held strip with a NON-ZERO "owed to a kitchen"
-// (the $13.00 collect-and-return goods debt), the JobDetailsCard with the food Stepper mid-flow, the
-// order line-items, and the advance CTA. The food detail (GET /merchant/orders/:id/mine) carries a
-// collect-and-return CASH order with its debt open. Snapshot fares are STRINGS; food money is NUMBERS.
+// RR.nav_rest — the rider's map-first NAVIGATE-TO-THE-RESTAURANT leg. The active order
+// (GET /orders/mine/active) is a merchant CASH order at `en_route_pickup` (food not yet collected,
+// no debt open), which drives food-job.tsx's `FoodNavLeg` (leg="restaurant") — the full-bleed live
+// map with a bottom sheet carrying the restaurant name, the CASH PayTag, the call control and the
+// "Open in Maps" / "I've arrived at the restaurant" actions. This is the map-dominant state the
+// RR.nav_rest mock draws; it is a DISTINCT fixture from rider_food_job (the stepper-card carry state),
+// so the two RR.nav_rest / RJM.active_food columns no longer share one screenshot.
+// Snapshot fares are STRINGS; food money is NUMBERS.
 import { installRouter } from "./_harness.mjs";
 import { withAuthQuery } from "./_auth.mjs";
 
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1200;
 
-const ORDER_ID = "0a1b2c3d-0000-4000-8000-00000000fj01";
+const ORDER_ID = "0a1b2c3d-0000-4000-8000-00000000fn01";
 
 const order = {
   id: ORDER_ID,
-  status: "picked_up",
+  status: "en_route_pickup",
   orderType: "merchant",
   viewerRole: "rider",
   agreedFare: "2.50",
@@ -26,21 +26,20 @@ const order = {
     { description: "Full chicken", quantity: 1 },
     { description: "Peri chips", quantity: 2 },
   ],
-  rider: { profileId: "0a1b2c3d-0000-4000-8000-00000000me01", currentLat: -17.805, currentLng: 31.041, updatedAt: new Date().toISOString() },
+  rider: { profileId: "0a1b2c3d-0000-4000-8000-00000000me01", currentLat: -17.803, currentLng: 31.040, updatedAt: new Date().toISOString() },
   events: [
-    { status: "assigned", createdAt: new Date(Date.now() - 600_000).toISOString() },
-    { status: "confirmed", createdAt: new Date(Date.now() - 540_000).toISOString() },
-    { status: "en_route_pickup", createdAt: new Date(Date.now() - 420_000).toISOString() },
-    { status: "picked_up", createdAt: new Date(Date.now() - 120_000).toISOString() },
+    { status: "assigned", createdAt: new Date(Date.now() - 300_000).toISOString() },
+    { status: "confirmed", createdAt: new Date(Date.now() - 240_000).toISOString() },
+    { status: "en_route_pickup", createdAt: new Date(Date.now() - 60_000).toISOString() },
   ],
-  counterpartyPhone: "+263 71 555 0090",
+  counterpartyPhone: null,
   expiresAt: null,
 };
 
 const foodOrder = {
   id: ORDER_ID,
   merchantId: "0a1b2c3d-0000-4000-8000-00000000mr01",
-  status: "picked_up",
+  status: "en_route_pickup",
   merchantPhase: null,
   items: [
     { dishId: "0a1b2c3d-0000-4000-8000-00000000d101", name: "Full chicken", priceUsd: 9.0, quantity: 1, note: null, available: true },
@@ -74,11 +73,9 @@ const foodOrder = {
   cashHandshakeFrozenAt: null,
   noShowCallTimestamps: [],
   merchantCashRule: "collect_and_return",
-  // Carry state: the collect-and-return goods debt opened at pickup ($13.00 owed to the kitchen; the
-  // $2.50 fee is the rider's). Drives the cash-held strip's non-zero OWED-TO-A-KITCHEN column.
-  debtStatus: "open",
-  debtAmount: 13.0,
-  debtOpenedAt: new Date(Date.now() - 120_000).toISOString(),
+  debtStatus: null,
+  debtAmount: null,
+  debtOpenedAt: null,
   debtSettledAt: null,
 };
 

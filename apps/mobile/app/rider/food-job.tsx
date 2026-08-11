@@ -793,6 +793,19 @@ export default function RiderFoodJob(): React.ReactElement {
           ))}
         </Card>
 
+        {/* `rider-one-app.jsx` RJM.active_food: once the food (and the kitchen's cash duty) is on the
+            bike, an accent reminder of the door sequence rides with the carry — the strip carries the
+            figure, this carries the order of operations. Shown only while the collect-and-return debt
+            is actually open (post-pickup), so it can't precede the food it describes. */}
+        {isActive && cashOrder && foodOrder.merchantCashRule === "collect_and_return" && foodOrder.debtStatus === "open" ? (
+          <Card accent>
+            <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>Collect {formatMoney(foodOrder.cashHandshakeAmount ?? total ?? 0)} at the door</Text>
+            <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 18, marginTop: 2 }}>
+              Food first, then the cash, then the code. The kitchen&apos;s money rides back with you.
+            </Text>
+          </Card>
+        ) : null}
+
         {/* `pay_merchant` (kit RR.pay_merchant, "R2·2"): at a pay-upfront counter the rider's own cash
             goes over the counter BEFORE the code is read out, so the amount gets a screen of its own
             rather than a line inside the code card — the whole risk of this variant is handing over the
