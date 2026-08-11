@@ -541,7 +541,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Customer rates the rider after delivery; this closes the order and updates the rider's score. */
-  async rate(orderId: string, customerId: string, score: number, comment?: string): Promise<LifecycleResult> {
+  async rate(orderId: string, customerId: string, score: number, comment?: string, foodScore?: number, tags?: string[]): Promise<LifecycleResult> {
     // DS19-01: set when a low rating's reliability penalty NEWLY trips the hold below, so we can evict the
     // rider from the live-supply planes after commit — the same standing demotion markUndelivered's
     // velocity hold and cancel()'s strike limit perform (see the newlyHeld note at the rider.update below).
@@ -569,7 +569,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const lockedOrder = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true } });
       const agreedFare = lockedOrder?.agreedFare ?? order.agreedFare;
 
-      await tx.rating.create({ data: { orderId, byProfileId: customerId, score, comment: comment ?? null } });
+      // #672: `score` is the rider score (feeds rider reputation below, unchanged). `foodScore` +
+      // `tags` are the food-order feedback the delivered mock draws — persisted on the same row,
+      // deliberately NOT fed into the rider aggregate (foodScore feeds the restaurant rating, #673).
+      await tx.rating.create({
+        data: { orderId, byProfileId: customerId, score, comment: comment ?? null, foodScore: foodScore ?? null, tags: tags ?? [] },
+      });
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
 
       if (order.riderId) {

@@ -146,10 +146,22 @@ export const NotifyWhenAvailableRequest = z.object({
 });
 export type NotifyWhenAvailableRequest = z.infer<typeof NotifyWhenAvailableRequest>;
 
-/** Customer rates the rider after delivery; this also closes the order (`completed`). */
+/** #672: the delivered/rate feedback chips the food mock draws (RC.delivered_rate). A controlled
+ *  vocabulary — new tags are added here, not typed free-form — so the merchant/admin side can count
+ *  them. Order matches the mock's chip row. */
+export const FoodRatingTag = z.enum(["hot_food", "on_time", "polite", "right_order"]);
+export type FoodRatingTag = z.infer<typeof FoodRatingTag>;
+
+/** Customer rates the rider after delivery; this also closes the order (`completed`). For a food
+ *  order the same call also carries the food score + feedback tags the delivered mock draws (#672);
+ *  both are OPTIONAL so the parcel path (single rider score) is unchanged and an old client keeps
+ *  working. The rider `score` alone drives rider reputation; `foodScore` feeds the restaurant rating
+ *  aggregate (#673). */
 export const RateRequest = z.object({
   score: z.number().int().min(1).max(5),
   comment: z.string().max(500).optional(),
+  foodScore: z.number().int().min(1).max(5).optional(),
+  tags: z.array(FoodRatingTag).max(8).optional(),
 });
 export type RateRequest = z.infer<typeof RateRequest>;
 

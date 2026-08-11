@@ -63,8 +63,19 @@ component, re-check for an open alignment PR touching the same file.
   `RatingCard` tap-to-arm/undo contract used by Express). Tag taxonomy stored as a controlled
   vocabulary: `hot_food`, `on_time`, `polite`, `right_order` (labels: Hot food / On time / Polite /
   Right order).
-- **Consumer:** food delivered screen renders dual `RatingCard` + tag chip row; Express untouched.
-- **Test:** food rate submits dual+tags; Express rate still submits single; invalid tag rejected.
+- **Consumer:** food delivered screen renders dual stars + tag chip row + a "Submit rating" footer
+  (mock `RC.delivered_rate`). The mock replaces the shared card's tap-to-arm/undo auto-commit with an
+  explicit submit — a structural rebuild with low-connectivity resilience implications, so the
+  **backend contract + persistence lands here (this PR); the dual-UI pixel adoption is handed to the
+  alignment lane** per §2 (a new food-only `FoodRatingCard`, leaving the shared Express `RatingCard`
+  untouched). `rateOrder` already carries `RateRequest`, so the client sends `foodScore`+`tags` with
+  no client-fn change once the UI collects them.
+- **Test:** food rate persists `foodScore`+`tags` and the rider aggregate uses `score` alone; the
+  parcel path persists `foodScore:null`+`tags:[]`; the wire enum rejects an unknown tag.
+- **Backend delivered 2026-08-11:** `Rating.foodScore` (nullable) + `Rating.tags` (text[]) columns
+  (migration `0047_food_dual_rating`); `RateRequest` gains optional `foodScore` + `tags`
+  (`FoodRatingTag` = hot_food/on_time/polite/right_order); `rate()` persists both without touching
+  the rider reputation aggregate or its fraud/reliability logic.
 
 ### #673 — Restaurant discovery data model  ‹heaviest›
 - **Goal:** food home / list / search cards draw rating, ETA, delivery-fee, the Nearest/fee/rating
@@ -171,8 +182,8 @@ thin) → `pnpm typecheck && pnpm test` green → ready + auto-merge on green.
 | # | Feature | State | PR |
 |---|---|---|---|
 | — | Program plan doc | ✅ landed | #679 |
-| #671 | Food rider identity | 🟡 PR open (draft) | #679 |
-| #672 | Dual ratings + tags | ⬜ not started | — |
+| #671 | Food rider identity | ✅ merged | #679 |
+| #672 | Dual ratings + tags | 🟡 PR open | — |
 | #673 | Discovery data model | ⬜ not started | — |
 | #670 | Payment push flow | ⬜ not started | — |
 | #674 | Seeded parity instance | ⬜ not started | — |
