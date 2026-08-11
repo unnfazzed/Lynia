@@ -673,6 +673,134 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── CUSTOMER ACCOUNT CLUSTER ──────────────────────────────────────────────────────────────────
+    // LJ.notifications — the in-app notifications centre (app/notifications/index.tsx). The mock
+    // `Notifications({ empty })` is ONE component that draws BOTH the populated feed and the empty
+    // state, under a shared `div(Pad(Top))` header, forked by the `empty` prop — so it adopts as a
+    // SINGLE whole-screen view whose `empty` prop the container drives (the empty branch IS the
+    // LJ.notif_empty gallery screen). The mock draws the feed as `{items.map(row)}`; the app keeps its
+    // FlatList (B-O1, an existing regression test pins it) — the FIRST screen to exercise the
+    // documented `FlatList ≡ map` equivalence (normalize.mjs reduces the FlatList back to the mock's
+    // MAP), so virtualization is preserved WITHOUT the app reverting to a literal `.map`. The two live
+    // transient states the static mock never drew — a first-load skeleton and a fetch-error retry —
+    // stay as the container's own early-returns (they have no mock key to gate against), exactly as the
+    // Help/food-list containers keep their un-mocked chrome outside the gated view.
+    key: "LJ.notifications",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    component: "Notifications",
+    componentName: "NotificationsView",
+    viewFile: "apps/mobile/app/notifications/notifications.view.tsx",
+    container: "apps/mobile/app/notifications/index.tsx",
+    uiImport: "../../src/ui",
+    propsParam: "{ items, empty, onBack, onItemPress }: NotificationsViewProps",
+    propsType: [
+      "/** A feed row, shaped to mirror the mock's `{ icon, t, m, w, unread }` keys verbatim, plus the",
+      " *  `id` the FlatList keys by (B-O1). The container maps its live `NotificationRow` onto this,",
+      " *  pre-formatting the relative-time label `w` (the mock's frozen 'now'/'2 min'/'1 hr'). */",
+      "export type NotificationItem = {",
+      "  id: string;",
+      "  icon: IconName;",
+      "  t: string;",
+      "  m: string;",
+      "  w: string;",
+      "  unread?: boolean;",
+      "};",
+      "export type NotificationsViewProps = {",
+      "  items: NotificationItem[];",
+      "  /** True → the mock's empty branch; false → the mapped feed. Driven by the container's feed. */",
+      "  empty: boolean;",
+      "  onBack: () => void;",
+      "  /** Open the row's order/destination — the container resolves the index to its live feed row. */",
+      "  onItemPress: (index: number) => void;",
+      "};",
+    ].join("\n"),
+    hoist: ["items"],
+    bind: ({ t, expr, wrap }) => ({
+      JSXOpeningElement(path) {
+        if (path.node.name.name === "AppBar") {
+          // Kit `Top onBack={false}` (no back) → the app AppBar's live back handler; structurally the
+          // same APPBAR node either way (onBack is an invisible leaf prop), so this only wires behaviour.
+          path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onBack"));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
+        }
+      },
+      // The feed: the mock's `{items.map((n, i) => <div…>)}` → a FlatList over the SAME `items`, so the
+      // app keeps virtualization (B-O1) while normalize.mjs folds the FlatList back to the mock's MAP.
+      // Each row is wrapped in a transparent Pressable(onItemPress(i)) — invisible to the structural
+      // diff — so a tap opens the order the mock's static row couldn't. keyExtractor keys by `id`.
+      CallExpression(path) {
+        const callee = path.node.callee;
+        if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
+        if (!(callee.object.type === "Identifier" && callee.object.name === "items")) return;
+        const arrow = path.node.arguments[0];
+        if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
+        const row = arrow.body;
+        if (!row || row.type !== "JSXElement") return;
+        // move the React key off the row (FlatList keys via keyExtractor instead)
+        row.openingElement.attributes = row.openingElement.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "key"));
+        const wrapped = wrap(row, "Pressable", `onPress={() => onItemPress(i)} accessibilityRole="button"`);
+        const flat = expr(
+          "<FlatList data={items} keyExtractor={n => n.id} showsVerticalScrollIndicator={false} renderItem={({ item: n, index: i }) => null} ListFooterComponent={<View style={{ height: tokens.space.xxl }} />} />",
+        );
+        const renderItem = flat.openingElement.attributes.find((a) => a.name.name === "renderItem");
+        renderItem.value.expression.body = wrapped;
+        path.replaceWith(flat);
+        path.skip();
+      },
+    }),
+  },
+  {
+    // LJ.profile — the customer Account tab (app/(tabs)/account.tsx). DEFER-only: a load-bearing
+    // hub-nav superset the static Profile mock never drew. See the deferred reason.
+    key: "LJ.profile",
+    container: "apps/mobile/app/(tabs)/account.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.profile",
+        reason:
+          "SUPERSET the static `Profile` mock never drew, not a primitive/backend gap. The mock is `Pad(Heading 'Account', Sub, Card(details), Card(Button 'Trip history', Button 'Send a parcel'), Button 'Sign out')`. The app Account tab adds a SECOND action `Card` — a load-bearing hub-nav (Notifications · Bike & documents · Rider dashboard/Become a rider · Settings · Help & support) — WITHOUT which those account sub-screens are unreachable (there is no other route to Settings/Help/Notifications), plus live loading/error `COND` branches around the details card and a rider-stats block. The whole-screen codegen model gates a view ≡ the mock and cannot host the extra nav Card + the loading/error COND without adding nodes the mock lacks; dropping the nav Card to match would strand Settings/Help/Notifications. Adoptable once the hub-nav either earns its own drawn mock (a Track-3(A) composite) or a sanctioned DESIGN-DEVIATIONS entry — a user decision, not this pass's to invent.",
+      },
+    ],
+  },
+  {
+    // LJ.settings — the customer Settings screen (app/settings/index.tsx). DEFER-only: Play-required
+    // Delete/Privacy rows + an inline delete-confirm COND the base `Settings` mock never drew. See below.
+    key: "LJ.settings",
+    container: "apps/mobile/app/settings/index.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.settings",
+        reason:
+          "SUPERSET + wrong-base, not a primitive gap. The base `Settings` mock draws avatar+name, Rows(Edit profile · Notifications 'On' · Language · Payment), a spacer, Row(Sign out, danger) and the version line. The app adds two rows the mock never drew but Google Play REQUIRES be reachable from settings — 'Privacy notice' and 'Delete account' — the latter expanding into an inline two-step delete-confirm `Card` (a `COND` the static mock has no node for); those requirements have their OWN separate mock screens (LJ.privacy / LJ.delete_account / LJ.delete_final), not inline rows here. The app's Notifications row also reads the REAL OS permission ('On'/'Off'/'—'), which aligns to the `SettingsPerms` mock (LJ.settings_perms), NOT to base `Settings`'s frozen 'On'. So neither `Settings` nor `SettingsPerms` matches the app's full tree, and the whole-screen model can't host the extra rows + delete-confirm COND. Adoptable once Delete/Privacy move to their own routed screens (delete_account/delete_final/privacy) and the permission rows are modelled against SettingsPerms as a sanctioned composite.",
+      },
+    ],
+  },
+  {
+    // LJ.history — the customer Orders/trips history (app/history/index.tsx). DEFER-only: a per-row
+    // 'Send again' reorder superset + live states the static History mock never drew. See the reason.
+    key: "LJ.history",
+    container: "apps/mobile/app/history/index.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.history",
+        reason:
+          "SUPERSET + live-vs-static, not a primitive/backend gap. The mock `History` is `Pad(Heading 'Your trips' [in-body, no AppBar], Sub, TRIPS.map(Card(route, date·role·★, Money + StatusPill)))`. The app history screen (a) uses a pushed-screen `AppBar` (title+sub) instead of the mock's in-body `Heading`; (b) adds a load-bearing per-row 'Send again' reorder `Pressable` (a `COND` on `onReorder`, customer trips only) the mock's static row never drew — the repeat-order shortcut; (c) adds a stale-cache `ListHeaderComponent` banner ('Showing your last saved trips…' + Retry); and (d) interleaves live loading/empty/error states with none of a mock key. The whole-screen codegen model gates a view ≡ the mock and cannot host the per-row reorder COND, the AppBar-vs-Heading divergence, or the stale/loading/empty/error branches without regressing reorder/stale-paint or adding undrawn nodes. Adoptable once the row reorder affordance + stale/empty/error each earn their own drawn state/mock, or a sanctioned composite lands.",
+      },
+    ],
+  },
 ];
 
 /**

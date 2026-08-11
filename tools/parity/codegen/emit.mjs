@@ -197,7 +197,10 @@ function extractNamed(fileSrc, name) {
 /** Assemble the final .view.tsx: header + imports (only what the body uses) + types + component. */
 function assembleFile(spec, body) {
   const used = (name) => new RegExp(`(<${name}[\\s/>]|[^.\\w]${name}\\.)`).test(body);
-  const rnPrims = ["View", "Text", "Image", "Pressable"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  // FlatList is the RN realization of the mock's `{items.map(...)}` (normalize.mjs treats
+  // FlatList ≡ map), so a data-list bind that swaps a mapped list for a virtualized one — e.g.
+  // LJ.notifications — needs it importable here.
+  const rnPrims = ["View", "Text", "Image", "Pressable", "FlatList"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   // The app DS primitives codegen may emit. Every kit primitive the transpiler keeps by name (or
   // remaps to) must be import-able from `src/ui` — batch 2 flagged that Skeleton/Money were missing,
   // and the mock→RN foundation adds the four kit primitives (PriceMath/Banner/CoverPhoto/MenuRow).
