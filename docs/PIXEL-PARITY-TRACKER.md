@@ -448,15 +448,22 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 ## ADMIN (ui_kits/admin — pages, gallery badges A1-A7)
 
+**Admin shots are CHROME-ONLY.** With no `API_BASE_URL` the console renders its offline "API not connected"
+shell — the real chrome (sidebar, header, `Conn`, `OfflineBanner`, filter chips, KPI-card frames, empty-state
+cards) but **no populated tables / KPI values / nav badges**. The 👁 below means the offline **chrome** is
+aligned and shot; the **populated data-state of every row is still ⬜** and needs `PARITY_ADMIN_URL` on a
+seeded instance (out of offline-harness scope). Mapping + honest divergences (3 extra nav items, substrip
+metric set): `docs/parity/PHASE6-admin.md`.
+
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | A1 | `index.html Overview` | dashboard | | |
-| ⬜ | A2 | `orders.html Orders` | — monitor & detail | | |
-| ⬜ | A3 | `riders.html Riders` | — directory & profile | | |
-| ⬜ | A4 | `customers.html Customers` | — directory & profile | | |
-| ⬜ | A5 | `cash.html Cash` | & settlements (business model retired — see EXPORT-README) | | |
-| ⬜ | A6 | `kyc.html KYC` | — queue & review | | |
-| ⬜ | A7 | `issues.html Issues` | — disputes | | |
+| 👁 | A1 | `index.html Overview` | dashboard — **chrome only**; populated KPIs/needs-attention/recent-orders ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A2 | `orders.html Orders` | — monitor & detail — **chrome only**; populated orders table ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A3 | `riders.html Riders` | — directory & profile — **chrome only**; populated directory table ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A4 | `customers.html Customers` | — directory & profile — **chrome only**; populated customers table ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A5 | `cash.html Cash` | & settlements (business model retired — see EXPORT-README) — **chrome only**; app renders the current prepaid-per-ride model, populated by-rider table ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A6 | `kyc.html KYC` | — queue & review — **chrome only**; populated KYC queue ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
+| 👁 | A7 | `issues.html Issues` | — disputes — **chrome only**; populated issues table ⬜ (seeded API) | admin chrome align (`docs/parity/PHASE6-admin.md`, `tools/parity/out/phase6_admin.png`) | |
 
 ## New customer flows sheet (ui_kits/mobile/new-flows.html)
 
