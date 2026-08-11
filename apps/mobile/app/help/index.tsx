@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { supportWhatsAppUrl } from "../../src/config";
-import { AppBar, Card, Icon, type IconName, Screen } from "../../src/ui";
+import { AppBar, Card, Field, Icon, type IconName, Screen } from "../../src/ui";
 
 /**
  * Help & support hub (customer A·5 / rider A·5). A topic list plus a "Chat on WhatsApp" row — live
@@ -27,13 +27,21 @@ export default function HelpScreen(): React.ReactElement {
     void Linking.openURL(`${waUrl}?text=${encodeURIComponent(prompt)}`);
   };
 
+  // Mock `Help` (screens.jsx L794) opens with a "Search help…" field above "Browse topics". Honest,
+  // not decorative: it filters the static topic list locally (no help-search backend to fake). Empty
+  // query = the full list, exactly as the mock draws it.
+  const [query, setQuery] = React.useState("");
+  const q = query.trim().toLowerCase();
+  const topics = q ? TOPICS.filter((t) => `${t.title} ${t.sub}`.toLowerCase().includes(q)) : TOPICS;
+
   return (
     <Screen>
       {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
       <AppBar title="Help" onBack={() => router.back()} />
 
-      <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginBottom: tokens.space.sm, marginTop: tokens.space.sm }}>Browse topics</Text>
-      {TOPICS.map((t) => {
+      <Field placeholder="Search help…" value={query} onChangeText={setQuery} />
+      <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.muted, marginTop: 6, marginBottom: tokens.space.sm }}>Browse topics</Text>
+      {topics.map((t) => {
         const body = (
           <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.md }}>
             <Icon name={t.icon} size={20} color={tokens.color.accentText} />
@@ -41,7 +49,7 @@ export default function HelpScreen(): React.ReactElement {
               <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{t.title}</Text>
               <Text style={{ fontSize: 12, color: tokens.color.muted }}>{t.sub}</Text>
             </View>
-            {waUrl ? <Icon name="chevron-right" size={18} color={tokens.color.accentText} /> : null}
+            {waUrl ? <Icon name="chevron-right" size={18} color={tokens.color.muted} /> : null}
           </View>
         );
         // Only make a card tappable when it can actually do something (a support number is configured);
