@@ -7,12 +7,13 @@ import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, Icon, Money, Screen } from "../../src/ui";
+import { AppBar, Card, Icon, Money, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
 import { NoteField } from "../../src/ui/food/NoteField";
 import { PriceMath } from "../../src/ui/food/PriceMath";
+import { CartCheckoutBarView } from "./cart-checkout-bar.view";
 import { CartEmptyView } from "./cart-empty.view";
 
 interface Reconciled {
@@ -96,9 +97,13 @@ export default function FoodCartScreen(): React.ReactElement {
   return (
     <Screen
       footer={
-        // Kit RC.cart (r-customer-a.jsx:295): the "Go to checkout · $X" bar is the kit's
-        // `<Screen footer=…>` pinned bar (Foundation-D slot), not a body child.
-        <Button label={`Go to checkout · ${formatMoney(cart.total)}`} onPress={() => router.push("/food/checkout")} />
+        // Kit RC.cart#footer (r-customer-a.jsx:295): the "Go to checkout · $X" bar is the GENERATED,
+        // guarded CartCheckoutBarView region, mounted in the kit's `<Screen footer=…>` pinned slot
+        // (Foundation-D/E). The structural guardrail asserts it ≡ the mock's footer Button.
+        <CartCheckoutBarView
+          label={`Go to checkout · ${formatMoney(cart.total)}`}
+          onCheckout={() => router.push("/food/checkout")}
+        />
       }
     >
       {/* Kit RC.cart (r-customer-a.jsx:297): the header is the shared AppBar — 16/700 title + 11.5
@@ -212,9 +217,11 @@ export default function FoodCartScreen(): React.ReactElement {
         ) : null}
 
         {/* Kit RC.cart (r-customer-a.jsx:342): the summary is the shared PriceMath card — itemised
-            rows, a hairline, then a 19px Total. Delivery is the one line PriceMath's mock draws that
-            the cart honestly can't yet (the drop-off address is entered at checkout, not here), so it
-            is named in the footnote instead of shown as an invented figure. */}
+            rows, a hairline, then a 19px Total. The mock's PriceMath draws a Delivery(fee · km) line the
+            cart honestly can't yet (the drop-off address is entered at checkout, not here), so the app
+            renders the {rows,total,footnote} PriceMath variant and names delivery in the footnote instead
+            of an invented figure — the summary region is DEFERRED for this no-drop-off wall (adopted.mjs
+            RC.cart#summary), so this stays container glue rather than a guarded fragment. */}
         <PriceMath
           rows={[
             { label: "Food", value: cart.subtotal },
