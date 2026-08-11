@@ -89,6 +89,39 @@ export const ADOPTED = [
     }),
     hoist: ["topics"],
   },
+  {
+    // RC.cart_empty — the empty-cart early-return of app/food/cart.tsx. The mock draws the empty state
+    // inside a `Pad > Card` (the owner-decided empty-state wrapper), so the generated view carries that
+    // Screen > AppBar > Pad(View) > Card > EmptyState > Button tree by construction.
+    key: "RC.cart_empty",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    component: "cart_empty",
+    componentName: "CartEmptyView",
+    viewFile: "apps/mobile/app/food/cart-empty.view.tsx",
+    container: "apps/mobile/app/food/cart.tsx",
+    uiImport: "../../src/ui",
+    propsParam: "{ onBack, onBrowse }: CartEmptyViewProps",
+    propsType: [
+      "export type CartEmptyViewProps = {",
+      "  onBack: () => void;",
+      "  onBrowse: () => void;",
+      "};",
+    ].join("\n"),
+    bind: ({ t, expr }) => ({
+      JSXOpeningElement(path) {
+        const name = path.node.name.name;
+        if (name === "AppBar") {
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
+        }
+        if (name === "Button") {
+          // The kit's web Button uses `onClick={nop}`; the app Button takes `onPress`. Drop the web
+          // handler (and its `nop` reference) and wire the container's browse action.
+          path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onBrowse"))));
+        }
+      },
+    }),
+  },
 ];
 
 export function findAdopted(key) {

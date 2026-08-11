@@ -98,16 +98,27 @@ function extractNamed(fileSrc, name) {
   // Re-use extract.mjs's logic via a local import to avoid a cycle at module-eval time.
   const ast = parse(fileSrc);
   let found = null;
+  const fromFn = (params, body) =>
+    t.functionDeclaration(t.identifier(name), params, body.type === "BlockStatement" ? body : t.blockStatement([t.returnStatement(body)]));
   traverse(ast, {
     FunctionDeclaration(path) { if (path.node.id?.name === name) found = path.node; },
     VariableDeclarator(path) {
       if (path.node.id.type === "Identifier" && path.node.id.name === name) {
         const init = path.node.init;
         if (init && (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")) {
-          const bodyBlock = init.body.type === "BlockStatement" ? init.body
-            : t.blockStatement([t.returnStatement(init.body)]);
-          found = t.functionDeclaration(t.identifier(name), init.params, bodyBlock);
+          found = fromFn(init.params, init.body);
         }
+      }
+    },
+    // The restaurant/journey bundles register many screens as member assignments —
+    // `RC.cart_empty = () => (…)`, `S.help = …` — not `const`/`function` declarations. Match by the
+    // assigned PROPERTY name so those screens are extractable too (the spec's `component` is the
+    // property, e.g. "cart_empty").
+    AssignmentExpression(path) {
+      const { left, right } = path.node;
+      if (left.type === "MemberExpression" && !left.computed && left.property.type === "Identifier" && left.property.name === name
+        && right && (right.type === "ArrowFunctionExpression" || right.type === "FunctionExpression")) {
+        found = fromFn(right.params, right.body);
       }
     },
   });
@@ -119,7 +130,10 @@ function extractNamed(fileSrc, name) {
 function assembleFile(spec, body) {
   const used = (name) => new RegExp(`(<${name}[\\s/>]|[^.\\w]${name}\\.)`).test(body);
   const rnPrims = ["View", "Text", "Image", "Pressable"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
-  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  // The app DS primitives codegen may emit. Every kit primitive the transpiler keeps by name (or
+  // remaps to) must be import-able from `src/ui` — batch 2 flagged that Skeleton/Money were missing,
+  // and the mock→RN foundation adds the four kit primitives (PriceMath/Banner/CoverPhoto/MenuRow).
+  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
 

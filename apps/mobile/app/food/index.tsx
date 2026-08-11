@@ -7,7 +7,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { AppBar, Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
 
 /** R1·1..R1·5 restaurant list — five states (default / loading / empty / error / offline). */
@@ -124,9 +124,13 @@ export default function RestaurantListScreen(): React.ReactElement {
             }
           />
         ) : (
-          <EmptyState icon="utensils" title="No kitchens are open right now" message="Try again later, or see everything including closed kitchens.">
-            <Button label="Show closed kitchens too" onPress={() => setOpenOnly(false)} />
-          </EmptyState>
+          // Kit R1·3 `list_empty` (r-customer-a.jsx:130): the empty state sits inside a Card (the
+          // owner-decided empty-state wrapper), not bare on the page.
+          <Card style={{ paddingTop: 10, paddingRight: 16, paddingBottom: 18, paddingLeft: 16, marginTop: 40 }}>
+            <EmptyState icon="utensils" title="No kitchens are open right now" message="Try again later, or see everything including closed kitchens.">
+              <Button label="Show closed kitchens too" onPress={() => setOpenOnly(false)} />
+            </EmptyState>
+          </Card>
         )
       ) : feed.isFetching ? (
         <SkeletonList />

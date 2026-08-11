@@ -7,12 +7,13 @@ import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, Icon, Money, Screen } from "../../src/ui";
+import { AppBar, Button, Card, Icon, Money, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
 import { NoteField } from "../../src/ui/food/NoteField";
 import { PriceMath } from "../../src/ui/food/PriceMath";
+import { CartEmptyView } from "./cart-empty.view";
 
 interface Reconciled {
   lines: FoodCartLine[];
@@ -85,18 +86,9 @@ export default function FoodCartScreen(): React.ReactElement {
   }, [latestByDish]);
 
   if (!cart.cart.restaurantId || cart.cart.lines.length === 0) {
-    return (
-      <Screen>
-        <AppBar title="Your cart" onBack={() => router.back()} />
-        <EmptyState
-          icon="shopping-bag"
-          title="Your cart is empty"
-          message="Add something from a kitchen near you — we'll show the delivery fee before you order."
-        >
-          <Button label="Browse restaurants" onPress={() => router.replace("/food")} />
-        </EmptyState>
-      </Screen>
-    );
+    // RC.cart_empty — the presentational tree is GENERATED from the mock (cart-empty.view.tsx) and
+    // locked to it by the structural-snapshot guardrail; this container owns only the two handlers.
+    return <CartEmptyView onBack={() => router.back()} onBrowse={() => router.replace("/food")} />;
   }
 
   const belowMin = cart.belowMinimum;

@@ -26,6 +26,7 @@ const KIND = new Map(Object.entries({
   view: "BOX", section: "BOX", header: "BOX", nav: "BOX", ul: "BOX", li: "BOX", article: "BOX", main: "BOX", pad: "BOX", safeareaview: "BOX", scrollview: "BOX", keyboardavoidingview: "BOX",
   b: "TEXT", p: "TEXT", h1: "TEXT", h2: "TEXT", h3: "TEXT", a: "TEXT", label: "TEXT", text: "TEXT",
   icon: "ICON", field: "FIELD", card: "CARD", button: "BUTTON", statuspill: "STATUSPILL", emptystate: "EMPTYSTATE", stepper: "STEPPER", money: "MONEY", avatar: "AVATAR",
+  pricemath: "PRICEMATH", banner: "BANNER", coverphoto: "COVERPHOTO", menurow: "MENUROW", skeleton: "SKELETON",
   img: "IMAGE", image: "IMAGE",
   top: "APPBAR", appbar: "APPBAR",
   screen: "SCREEN", appscreen: "SCREEN",
@@ -181,6 +182,14 @@ function findNamed(ts, sf, name) {
         if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer &&
           (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) { fn = d.initializer; return; }
       }
+    }
+    // Member-assignment screens — `RC.cart_empty = () => (…)` — matched by the assigned PROPERTY name,
+    // mirroring emit.mjs's extractor so the mock and the view are found the same way.
+    if (ts.isExpressionStatement(node) && ts.isBinaryExpression(node.expression)
+      && node.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const { left, right } = node.expression;
+      if (ts.isPropertyAccessExpression(left) && left.name.text === name
+        && (ts.isArrowFunction(right) || ts.isFunctionExpression(right))) { fn = right; return; }
     }
     ts.forEachChild(node, visit);
   };
