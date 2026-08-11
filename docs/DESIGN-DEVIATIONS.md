@@ -16,8 +16,8 @@ be reported back to Design).
 
 **Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
-effect. D-10/D-11/D-12 are the Foundation-D food-cluster per-element dispositions (in-menu search
-omitted · checkout live drop-off capture · cart upsell omitted).
+effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
+non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
 
 ---
 
@@ -238,15 +238,18 @@ D-05 and D-06. None of the three have actually been sent yet; they need a design
 
 ---
 
-## D-10 · RC.menu in-menu search button omitted — APPROVED (2026-08-11)
+## D-10 · RC.menu cover search glyph — non-interactive (matches the static mock) — APPROVED (2026-08-11)
 
-**In effect.** The kit's `RC.menu` (r-customer-a.jsx:196-198) draws a search button on the cover's
-top-right corner. There is **no in-menu dish-search backend** — it would be a permanently dead
-control, which CLAUDE.md forbids ("never promise an action the app can't deliver"). Per the owner's
-Foundation-D instruction (2026-08-11) — *"the in-menu search button is a dead control → honest-disable
-or ledger-omit; a PER-ELEMENT call"* — the app **omits** it (the cover keeps only the back button + the
-DS `ShopLogo`). Everything else on the menu cover is adopted to the kit via the `CoverPhoto`/`ShopLogo`
-primitives. Restore this button (align to the mock) the moment an in-menu search feature exists.
+**In effect. Revised by Foundation-E (2026-08-11).** The kit's `RC.menu` (r-customer-a.jsx:196-198)
+draws a search glyph on the cover's top-right corner. There is **no in-menu dish-search backend**.
+Foundation-D's disposition **omitted** the glyph as a dead control. **Foundation-E supersedes that:** the
+cover is now a GENERATED, guarded region fragment (`menu-cover.view.tsx`) transpiled from the mock's
+`CoverPhoto` sub-tree verbatim, so the search glyph is **present** and structurally congruent to the
+mock — but it is **decorative / non-interactive** (no `onPress`, exactly as the static mock draws it: a
+plain `<span>` with no handler). It therefore promises no action the app can't deliver — nothing happens
+on tap because nothing is wired, matching the mock. Wire it to a real dish-search feature the moment one
+exists (that is a data-seam change, no structural drift). The back glyph, by contrast, IS wired (a
+transparent `Pressable(onBack)` in the fragment's data seam).
 
 ---
 

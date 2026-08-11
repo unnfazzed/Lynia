@@ -95,6 +95,50 @@ to a literal `.map` (which would reintroduce the unbounded-mount memory bug Flat
 `renderItem` subtree is the MAP body — `ListFooterComponent`/`ListHeaderComponent` are app-only chrome
 and are not part of the mock's `.map`, so they stay outside the node.
 
+## Region/fragment adoption — INTERACTIVE containers (Foundation-E)
+
+The whole-screen model (`view ≡ mock`) fits leaf / state / form screens but NOT interactive containers
+(food menu tabs + ItemSheet, cart steppers/notes, checkout live-map capture, orders interleaved
+sub-states): a single static generated view can't host their behaviour without regressing it. Those
+screens adopt **piece-by-piece** instead — an `adopted.mjs` entry carries a `regions[]` array, and the
+guardrail asserts **both** halves, purely by static parse (no rendering, so it gates CI):
+
+- **(a) per-region congruence** — each region is a generated FRAGMENT view of a *named sub-tree* of the
+  mock, and `fragmentView ≡ mockFragment` (the same tree-diff). A region is `{ region, locator,
+  componentName, viewFile, propsParam, propsType, bind }`; the `locator` is an **engine-agnostic
+  descriptor** interpreted twice from ONE source of truth — by Babel at gen time (`emit.mjs`
+  `locateBabel`) and by the TS compiler API at check time (`normalize.mjs` `locateTs`), so gen and
+  guard find the identical sub-tree. Three locator forms today:
+  - `{ el: "CoverPhoto" }` — the first JSX element with that tag (a sub-tree region);
+  - `{ map: "MenuRow" }` — the first `.map()` yielding that kit tag (the list region);
+  - `{ slot: "footer" }` — the `footer` attribute value of the root `Screen` (the pinned-bar region).
+  `emitView` wraps a bare expression region (a `.map()`) in `<>{…}</>` so the fragment has a JSX render,
+  then runs the same transpile + `bind` pipeline. The `bind` still only touches leaf values / adds
+  transparent `Pressable` wrappers (so a tap opens the live ItemSheet without reddening the tree).
+
+- **(b) the composition check** — parses the CONTAINER app screen and asserts it MOUNTS the region
+  fragment components in the mock's region **order + nesting**. Both the mock and the container are
+  reduced to a *region-anchor tree* (`mockCompositionTree` / `containerCompositionTree`): each region's
+  located sub-tree (mock) or mounted fragment component (container) becomes a `REGION:<name>` leaf;
+  scaffold containers (`Screen`/`View`/`div`/`ScrollView`) survive only when they contain a region;
+  every other subtree (interactive glue: tabs, ItemSheet, overlays, a backend-gated meta line) is
+  pruned; a single-child scaffold BOX collapses to its child, so incidental bleed/padding wrappers never
+  change the region SEQUENCE. `diff` on the two reduced trees catches a **missing, reordered, or
+  re-nested** region — e.g. `RC.menu` reduces on both sides to
+  `SCREEN( BOX( REGION:cover, REGION:rows ), REGION:footer )`; mount rows before cover and the diff reads
+  `root>BOX[0]: expected REGION:cover, got REGION:rows`.
+
+`expandAdopted()` flattens each region into its own check unit (tagged `region`, `isFragment:true`);
+`regionScreens()` yields the entries needing a composition check; `checkAll` runs both. `cli.mjs check`
+prints per-region congruence + the `∴ composition` line under the screen.
+
+**Proven E2E on `RC.menu`** (`app/food/[id].tsx`) — the first machine-guarded interactive screen. Its
+cover (`CoverPhoto`+back+search glyph+`ShopLogo`), dish-rows (`MenuRow` list) and cart bar
+(`Screen.footer`) are generated guarded fragments the container composes, while the category tabs,
+ItemSheet, RemindWhenOpen, 'just closed' interrupt and add-to-cart stay live glue in the container. The
+backend-gated shop-header meta line (`★ rating · km · ETA · fee`) is NOT a region — it is honest-kept as
+the API-backed cuisine-tags + priceLevel line and recorded as a non-region `deferred[]` row.
+
 ## Adding a screen
 
 1. `node tools/parity/codegen/cli.mjs gen <key>` (add an `adopted.mjs` entry first: mock file +

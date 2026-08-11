@@ -6,10 +6,18 @@ import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, CoverPhoto, EmptyState, haptic, Icon, Money, Screen, ShopLogo, SkeletonList, useToast } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, haptic, Icon, Screen, SkeletonList, useToast } from "../../src/ui";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
-import { MenuRow } from "../../src/ui/food/MenuRow";
 import { RemindWhenOpen } from "../../src/ui/food/RemindWhenOpen";
+// Foundation-E — RC.menu is the first REGION-ADOPTED interactive screen: the cover, dish-rows and cart
+// bar are GENERATED, guarded fragments of the RC.menu mock (tools/parity/codegen/adopted.mjs), and this
+// container COMPOSES them while keeping all interactive glue (tabs, ItemSheet, RemindWhenOpen, the
+// 'just closed' interrupt, add-to-cart). The structural-snapshot guardrail asserts each fragment ≡ its
+// mock sub-tree AND that this container mounts them in the mock's region order/nesting (the composition
+// check). Do NOT inline these regions back — that reintroduces the drift the region guard exists to catch.
+import { MenuCartBarView } from "./menu-cart-bar.view";
+import { MenuCoverView } from "./menu-cover.view";
+import { MenuRowsView, type MenuRowSeed } from "./menu-rows.view";
 
 /** R2·1/R2·2 menu — category tabs mirror D-29's merchant-owned category order; the kitchen's own
  *  closed/open state is derived from `hours` (D1 does not yet know the customer's own address, so no
@@ -89,43 +97,38 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     else toast.show(`Added ${dish.name}`, "success");
   };
 
+  // Data seam for the generated MenuRowsView region — map the live dishes to the kit MenuRow item
+  // shape (+ the `id` the list keys/maps back on). Honest-empty: no rating/km/eta (backend-gated).
+  const rows: MenuRowSeed[] = category
+    ? category.dishes.map((d) => ({ id: d.id, name: d.name, desc: d.description ?? undefined, price: d.priceUsd, oos: d.outOfStock, photo: d.photoUrl ?? false }))
+    : [];
+  const hasCart = cart.itemCount > 0 && cart.cart.restaurantId === restaurant.id;
+
   return (
     <Screen
       footer={
-        cart.itemCount > 0 && cart.cart.restaurantId === restaurant.id ? (
-          // Kit RC.menu (r-customer-a.jsx:182-189): the "N items · View cart" bar is the kit's
-          // `<Screen footer=…>` pinned bar (Foundation-D slot), not a body child.
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}</Text>
-              <Money v={cart.subtotal} size={16} />
-            </View>
-            <Button label="View cart" onPress={() => router.push("/food/cart")} />
-          </View>
+        // Kit RC.menu (r-customer-a.jsx:182-189): the "N items · View cart" bar is the GENERATED
+        // MenuCartBarView region, mounted in the kit's `<Screen footer=…>` pinned slot (Foundation-D/E).
+        hasCart ? (
+          <MenuCartBarView
+            itemLabel={`${cart.itemCount} item${cart.itemCount === 1 ? "" : "s"}`}
+            subtotal={cart.subtotal}
+            onViewCart={() => router.push("/food/cart")}
+          />
         ) : null
       }
     >
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Kit RC.menu (r-customer-a.jsx:191-200): a full-bleed cover band (the DS CoverPhoto
-            primitive) with the back button floating on it and the round shop logo (DS ShopLogo,
-            Foundation-D) overhanging its bottom-left corner. The cover breaks out of Screen's 16px
-            padding; photo/logo fall back to a tinted band + monogram (the customer read API's
-            coverPhotoUrl/logoUrl are an upgrade, not a dependency). The kit's cover-top-right search
-            button is omitted — there is no in-menu search backend (dead control; DESIGN-DEVIATIONS D-10). */}
+        {/* Cover region (generated MenuCoverView): full-bleed DS CoverPhoto + floating back button +
+            the round DS ShopLogo. Wrapped to break out of Screen's 16px padding; photo/logo fall back
+            to a tinted band + monogram (coverPhotoUrl/logoUrl are an upgrade, not a dependency). */}
         <View style={{ marginTop: -tokens.space.screen, marginHorizontal: -tokens.space.screen }}>
-          <CoverPhoto height={92} name={restaurant.name} photo={restaurant.coverPhotoUrl ?? false}>
-            <Pressable
-              onPress={() => router.back()}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-              style={{ position: "absolute", left: 12, top: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.bg, alignItems: "center", justifyContent: "center", ...tokens.shadow.card }}
-            >
-              <View style={{ transform: [{ rotate: "180deg" }] }}>
-                <Icon name="chevron-right" size={18} color={tokens.color.ink} />
-              </View>
-            </Pressable>
-            <ShopLogo size={52} name={restaurant.name} photo={restaurant.logoUrl ?? false} style={{ position: "absolute", left: 14, bottom: -22 }} />
-          </CoverPhoto>
+          <MenuCoverView
+            name={restaurant.name}
+            photo={restaurant.coverPhotoUrl ?? false}
+            logoPhoto={restaurant.logoUrl ?? false}
+            onBack={() => router.back()}
+          />
         </View>
 
         <View style={{ marginTop: 26, marginBottom: 10 }}>
@@ -191,15 +194,17 @@ export default function RestaurantMenuScreen(): React.ReactElement {
               <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.5, marginTop: 8, marginBottom: 2 }}>
                 {category.name.toUpperCase()}
               </Text>
-              {category.dishes.map((dish) => (
-                <MenuRow
-                  key={dish.id}
-                  dish={dish}
-                  qtyInCart={qtyInCartFor(dish.id)}
-                  disabledReason={closedReason}
-                  onPress={() => setOpenItem(dish)}
-                />
-              ))}
+              {/* Rows region (generated MenuRowsView): the dish list. Each MenuRow is wrapped in a
+                  Pressable(onDishPress) inside the fragment, so a tap opens the live ItemSheet below —
+                  the interactive glue stays here, the structure is guarded. */}
+              <MenuRowsView
+                rows={rows}
+                qtyFor={(i) => qtyInCartFor(i.id)}
+                onDishPress={(i) => {
+                  const dish = category.dishes.find((d) => d.id === i.id);
+                  if (dish) setOpenItem(dish);
+                }}
+              />
             </>
           ) : (
             <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", marginTop: 20 }}>Nothing in this category yet.</Text>

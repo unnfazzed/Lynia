@@ -257,19 +257,152 @@ export const ADOPTED = [
     ],
   },
   {
-    // RC.menu — the restaurant menu (app/food/[id].tsx). CoverPhoto + MenuRow exist (Foundation), but the
-    // DATA state is still gated: no adopted state today, so this is a defer-only registration (documentation).
+    // ── RC.menu — the restaurant menu (app/food/[id].tsx). The FIRST region-adopted INTERACTIVE
+    // container (Foundation-E). A whole-screen generated view cannot host this screen's live behaviour
+    // (category tabs, ItemSheet, RemindWhenOpen, 'just closed' interrupt, add-to-cart) without
+    // regressing it — so instead of `≡ whole-screen mock`, the screen adopts PIECE-BY-PIECE: each
+    // `regions[]` entry is a generated, guarded FRAGMENT view of a named sub-tree of the RC.menu mock,
+    // and the container COMPOSES them while keeping all interactive glue. The guardrail asserts BOTH
+    // (a) each fragment view ≡ its mock fragment, AND (b) the container mounts the fragments in the
+    // mock's region composition order/nesting (the composition check) — pieces AND assembly, statically.
     key: "RC.menu",
     container: "apps/mobile/app/food/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    mockComponent: "menu",
     uiImport: "../../src/ui",
-    states: [],
+    regions: [
+      {
+        // Cover region — the full-bleed cover band: DS CoverPhoto with the floating back button, the
+        // (decorative, static-mock) search glyph and the round DS ShopLogo overhanging its corner. The
+        // back glyph is wired to onBack via a transparent Pressable (invisible to the structural diff).
+        region: "cover",
+        locator: { el: "CoverPhoto" },
+        componentName: "MenuCoverView",
+        viewFile: "apps/mobile/app/food/menu-cover.view.tsx",
+        propsParam: "{ name, photo, logoPhoto, onBack }: MenuCoverViewProps",
+        propsType: [
+          "export type MenuCoverViewProps = {",
+          "  name: string;",
+          "  /** Cover image URI, or `false` for the kit's tinted-name fallback (honest-empty). */",
+          "  photo: string | false;",
+          "  /** Logo image URI, or `false` for the kit's accent-initial fallback (honest-empty). */",
+          "  logoPhoto: string | false;",
+          "  onBack: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr, wrap }) => ({
+          JSXOpeningElement(path) {
+            const name = path.node.name.name;
+            if (name === "CoverPhoto") {
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("name"), t.jsxExpressionContainer(expr("name"))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("photo"), t.jsxExpressionContainer(expr("photo"))));
+            }
+            if (name === "ShopLogo") {
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("name"), t.jsxExpressionContainer(expr("name"))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("photo"), t.jsxExpressionContainer(expr("logoPhoto"))));
+            }
+          },
+          // The back glyph is the absolute box with a `left` inset (the search glyph has `right`); wrap
+          // it in a Pressable(onBack). Transparent wrapper → invisible to the structural guardrail.
+          JSXElement(path) {
+            const open = path.node.openingElement;
+            if (open.name.name !== "View") return;
+            const style = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
+            const obj = style?.value?.expression;
+            if (obj?.type !== "ObjectExpression") return;
+            const keys = obj.properties.filter((p) => p.type === "ObjectProperty" && !p.computed).map((p) => p.key.name || p.key.value);
+            if (!keys.includes("left") || !keys.includes("position")) return;
+            if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
+            path.replaceWith(wrap(path.node, "Pressable", `onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"`));
+            path.skip();
+          },
+        }),
+      },
+      {
+        // Rows region — the section's dish list: `{rows.map(i => <MenuRow i qty/>)}`. Each MenuRow is
+        // wrapped in a Pressable(onDishPress) so a tap opens the live ItemSheet (kept in the container).
+        region: "rows",
+        locator: { map: "MenuRow" },
+        componentName: "MenuRowsView",
+        viewFile: "apps/mobile/app/food/menu-rows.view.tsx",
+        propsParam: "{ rows, qtyFor, onDishPress }: MenuRowsViewProps",
+        propsType: [
+          "/** A menu row's kit-item shape plus the dish `id` the list keys + maps back to. */",
+          "export type MenuRowSeed = MenuRowItem & { id: string };",
+          "export type MenuRowsViewProps = {",
+          "  rows: MenuRowSeed[];",
+          "  qtyFor: (i: MenuRowSeed) => number;",
+          "  onDishPress: (i: MenuRowSeed) => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr, wrap }) => ({
+          CallExpression(path) {
+            const callee = path.node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
+            callee.object = expr("rows");
+            const arrow = path.node.arguments[0];
+            if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
+            const row = arrow.body.type === "JSXElement" ? arrow.body : null;
+            if (!row || row.openingElement.name.name !== "MenuRow") return;
+            const open = row.openingElement;
+            // qty is the live in-cart count; drop the mock's literal and wire qtyFor(i).
+            open.attributes = open.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "qty"));
+            open.attributes.push(t.jsxAttribute(t.jsxIdentifier("qty"), t.jsxExpressionContainer(expr("qtyFor(i)"))));
+            const keyAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
+            open.attributes = open.attributes.filter((a) => a !== keyAttr);
+            const wrapped = wrap(row, "Pressable", `onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}`);
+            if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
+            arrow.body = wrapped;
+          },
+        }),
+      },
+      {
+        // Footer region — the pinned "N items · View cart" cart bar the kit draws in `<Screen footer=…>`.
+        region: "footer",
+        locator: { slot: "footer" },
+        componentName: "MenuCartBarView",
+        viewFile: "apps/mobile/app/food/menu-cart-bar.view.tsx",
+        propsParam: "{ itemLabel, subtotal, onViewCart }: MenuCartBarViewProps",
+        propsType: [
+          "export type MenuCartBarViewProps = {",
+          "  itemLabel: string;",
+          "  subtotal: number;",
+          "  onViewCart: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            const name = path.node.name.name;
+            if (name === "Button") {
+              // Kit-only props (web onClick, block, style) → drop; wire the app Button's onPress.
+              path.node.attributes = path.node.attributes.filter(
+                (a) => !(a.type === "JSXAttribute" && ["onClick", "block", "style"].includes(a.name.name)),
+              );
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onViewCart"))));
+            }
+            if (name === "Money") {
+              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr("subtotal"))));
+            }
+          },
+          // The "2 items" count line — replace the mock's literal with the live item label.
+          JSXText(path) {
+            if (path.node.value.trim() === "2 items") path.replaceWith(t.jsxExpressionContainer(expr("itemLabel")));
+          },
+        }),
+      },
+    ],
+    // The shop-header META line (`★ 4.7 (210) · 1.2 km · 25–35 min · $1.50 delivery`) is NOT a region:
+    // rating, geo-distance, ETA and delivery fee are ALL absent from the customer menu read contract
+    // (RestaurantMenuResponse) and the screen has no customer geolocation, so drawing them would ship
+    // fabricated figures (CLAUDE.md forbids). The container honest-keeps the API-backed cuisine-tags +
+    // priceLevel line instead; this stays glue (pruned from the composition check), tracked here.
     deferred: [
       {
-        state: "data",
-        key: "RC.menu",
+        state: "meta",
+        key: "RC.menu_meta",
         reason:
-          "Foundation-D CLOSED the primitive gap — ShopLogo + Screen.footer now exist, and the container ADOPTS them: the cover is the DS CoverPhoto with the DS ShopLogo overhanging it, and the '2 items · View cart' bar rides the `<Screen footer=…>` slot. The dead in-menu search button is omitted (ledgered DESIGN-DEVIATIONS D-10). What remains is NOT the primitive gap: the shop-header meta `★ 4.7 (210) · 1.2 km · 25–35 min · $1.50 delivery` is BACKEND-gated — rating, geo-distance, ETA and delivery fee are ALL absent from the customer menu read contract (RestaurantMenuResponse) and the screen has no customer geolocation, so rendering them would ship fabricated figures (honest-empty keeps the app's cuisine-tags + priceLevel line, which the API DOES back). Plus the app's live category tabs / closed-state RemindWhenOpen / 'just closed' interrupt / ItemSheet are live overlays the whole-screen codegen model cannot host in a single gated view without regressing them. Adopted at the element level (CoverPhoto/ShopLogo/footer); the whole-screen gated view is deferred by the backend-gated meta + the live overlays, not a missing primitive.",
+          "BACKEND-gated shop-header meta line (rating / km / ETA / delivery fee) — none are in RestaurantMenuResponse and the screen has no customer geolocation, so it is honest-kept as the API-backed cuisine-tags + priceLevel line rather than fabricated. Not a region; container glue, pruned from the composition check.",
       },
     ],
   },
@@ -317,7 +450,32 @@ export const ADOPTED = [
 export function expandAdopted() {
   const units = [];
   for (const e of ADOPTED) {
-    if (Array.isArray(e.states)) {
+    if (Array.isArray(e.regions)) {
+      // ── REGION-adopted INTERACTIVE container (Foundation-E) ── one check unit per region FRAGMENT,
+      // each a generated `.view.tsx` that must stay ≡ its mock sub-tree; the container's assembly of
+      // them is verified separately by the composition check (see `regionScreens()` + snapshot.mjs).
+      for (const rg of e.regions) {
+        units.push({
+          screen: e.key,
+          state: null,
+          region: rg.region,
+          isFragment: true,
+          key: `${e.key}#${rg.region}`,
+          mockFile: rg.mockFile || e.mockFile,
+          mockComponent: rg.mockComponent || e.mockComponent,
+          locator: rg.locator,
+          component: rg.component,
+          componentName: rg.componentName,
+          viewFile: rg.viewFile,
+          container: rg.container || e.container,
+          uiImport: rg.uiImport || e.uiImport,
+          propsParam: rg.propsParam,
+          propsType: rg.propsType,
+          bind: rg.bind,
+          hoist: rg.hoist,
+        });
+      }
+    } else if (Array.isArray(e.states)) {
       for (const st of e.states) {
         units.push({
           screen: e.key,
@@ -340,6 +498,22 @@ export function expandAdopted() {
     }
   }
   return units;
+}
+
+/**
+ * Region-adopted screens (Foundation-E) — the entries carrying a `regions[]`. Each needs, beyond its
+ * per-region fragment congruence, a COMPOSITION check: the container must mount the region fragment
+ * components in the mock's region order/nesting. Returns the shape snapshot.mjs consumes:
+ *   { key, container, mockFile, mockComponent, regions:[{ region, locator, componentName }] }.
+ */
+export function regionScreens() {
+  return ADOPTED.filter((e) => Array.isArray(e.regions)).map((e) => ({
+    key: e.key,
+    container: e.container,
+    mockFile: e.mockFile,
+    mockComponent: e.mockComponent,
+    regions: e.regions.map((rg) => ({ region: rg.region, locator: rg.locator, componentName: rg.componentName })),
+  }));
 }
 
 /** All (screen, state, reason) rows that are deliberately NOT adopted — for reporting/tracking. */

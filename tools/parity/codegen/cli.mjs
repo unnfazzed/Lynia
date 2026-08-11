@@ -54,11 +54,15 @@ if (cmd === "gen") {
   for (const d of deferred) if (!byScreen.has(d.screen)) byScreen.set(d.screen, []);
   let bad = 0;
   for (const [screen, rs] of byScreen) {
-    const multi = rs.length > 1 || rs.some((r) => r.state) || deferred.some((d) => d.screen === screen);
+    const isRegion = rs.some((r) => r.region);
+    const multi = rs.length > 1 || rs.some((r) => r.state) || isRegion || deferred.some((d) => d.screen === screen);
     if (multi) {
-      console.log(`\n${screen} — multi-state screen (${rs.length} adopted state${rs.length === 1 ? "" : "s"}):`);
+      const adoptedCount = rs.filter((r) => !r.composition).length;
+      const kind = isRegion ? `region-adopted interactive screen (${rs.filter((r) => r.region && !r.composition).length} region${adoptedCount === 1 ? "" : "s"} + composition)` : `multi-state screen (${adoptedCount} adopted state${adoptedCount === 1 ? "" : "s"})`;
+      console.log(`\n${screen} — ${kind}:`);
       for (const r of rs) {
-        console.log("  " + formatResult({ ...r, key: r.state ? `${r.state}` : r.key }).replace(/\n/g, "\n  "));
+        const label = r.composition ? "∴ composition" : r.region ? `region ${r.region}` : r.state ? `${r.state}` : r.key;
+        console.log("  " + formatResult({ ...r, key: label }).replace(/\n/g, "\n  "));
         if (!r.ok) bad++;
       }
       for (const d of deferred.filter((x) => x.screen === screen)) {
@@ -71,7 +75,7 @@ if (cmd === "gen") {
       }
     }
   }
-  console.log(`\n${results.length - bad}/${results.length} adopted state-views structurally congruent; ${deferred.length} state(s) deferred.`);
+  console.log(`\n${results.length - bad}/${results.length} adopted views structurally congruent (state-views + region fragments + composition checks); ${deferred.length} state(s) deferred.`);
   process.exit(bad ? 1 : 0);
 } else {
   console.log("usage: cli.mjs gen <key> [--stdout] | gen-all | check");

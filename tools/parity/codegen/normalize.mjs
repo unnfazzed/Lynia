@@ -214,6 +214,11 @@ function fromExpression(ts, e) {
   }
   if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return jsxFrom(ts, e.right);
   if (ts.isArrayLiteralExpression(e)) return e.elements.flatMap((el) => jsxFrom(ts, el));
+  // The call/conditional/binary/array shapes are all handled above; if none matched (e.g. a NON-map
+  // call like `fmt(x)` or an `||`/`??` binary), this expression yields no structural JSX. Returning []
+  // here — instead of falling back to `jsxFrom(ts, e)` — breaks the fromExpression⇄jsxFrom cycle that
+  // otherwise stack-overflows on such a node (jsxFrom routes those same kinds straight back here).
+  if (ts.isCallExpression(e) || ts.isConditionalExpression(e) || ts.isBinaryExpression(e) || ts.isArrayLiteralExpression(e)) return [];
   return jsxFrom(ts, e);
 }
 
@@ -307,6 +312,203 @@ export function treeOfViewFile(ts, fileSrc) {
   const fn = findFirstRenderer(ts, sf);
   if (!fn) throw new Error("no component with a JSX render found in view file");
   return rootFrom(ts, renderOf(ts, fn));
+}
+
+// ── Foundation-E: region/fragment guarding for INTERACTIVE container screens ───────────────────────
+//
+// A whole-screen generated view (`≡ mock`) cannot host an interactive container's behaviour (menu
+// tabs/ItemSheet, cart steppers, checkout live-capture) without regressing it. So such a screen adopts
+// PIECE-BY-PIECE: each REGION is a generated fragment view of a named sub-tree of the mock, and the
+// guardrail asserts BOTH — (a) each fragment view ≡ its mock fragment (the existing tree-diff, via
+// `treeOfMockFragment`), AND (b) the container mounts the fragments in the mock's region composition
+// order/nesting (`mockCompositionTree` vs `containerCompositionTree`, diffed the same way). Both halves
+// are pure static parse (TS compiler API) — no rendering — so they gate CI.
+
+/** Unwrap to the first real JSX node of a component render (skips parens/as/non-null). */
+function jsxRootNode(ts, node) {
+  node = unwrap(ts, node);
+  if (!node) return null;
+  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return node;
+  if (ts.isBlock(node)) { const r = returnedExpr(ts, node); return r ? jsxRootNode(ts, r) : null; }
+  return null;
+}
+
+/** Does a `.map()` callback body (or a bare JSX node) yield an element of the given kit tag? */
+function jsxYieldsTag(ts, body, tag) {
+  const want = tag.toUpperCase();
+  const nodes = ts.isBlock(body) ? (returnedExpr(ts, body) ? jsxFrom(ts, returnedExpr(ts, body)) : []) : jsxFrom(ts, body);
+  return nodes.some((n) => n && n.kind === want);
+}
+
+/** Is `e` a `X.map(cb)` whose callback yields the given kit tag? (the list-region locator). */
+function isMapYielding(ts, e, tag) {
+  return ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && e.expression.name.text === "map"
+    && (() => { const cb = e.arguments[0]; return !!cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) && jsxYieldsTag(ts, cb.body, tag); })();
+}
+
+/**
+ * Locate a region's mock sub-node inside a render root, per an engine-agnostic locator descriptor —
+ * the TS-side twin of emit.mjs's `locateBabel`, so gen and check find the SAME sub-tree.
+ *   { el }   → first descendant JSX element with that tag.
+ *   { map }  → first `.map()` call yielding that tag (returns the CallExpression).
+ *   { slot } → the named attribute's expression on the first Screen element.
+ */
+export function locateTs(ts, root, locator) {
+  let found = null;
+  const visit = (node) => {
+    if (found || !node) return;
+    if (locator.el && (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node))) {
+      const opening = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
+      if (tagName(ts, opening) === locator.el) { found = node; return; }
+    } else if (locator.map && isMapYielding(ts, node, locator.map)) {
+      found = node; return;
+    } else if (locator.slot && (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node))) {
+      const opening = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
+      if (tagName(ts, opening) === "Screen") { const e = attrExpr(ts, opening, locator.slot); if (e) { found = e; return; } }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+
+/** Normalize an arbitrary located node (element / fragment / expression) to a structural tree. */
+function normalizeLocated(ts, node) {
+  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) return nodeOf(ts, node);
+  if (ts.isJsxFragment(node)) { const ch = childrenOf(ts, node.children); return ch.length === 1 ? ch[0] : { kind: "FRAGMENT", axes: [], children: ch }; }
+  const nodes = fromExpression(ts, node);
+  if (!nodes.length) throw new Error("region locator matched a node with no structural JSX");
+  return nodes.length === 1 ? nodes[0] : { kind: "FRAGMENT", axes: [], children: nodes };
+}
+
+/** EXPECTED tree for a region: the mock component's located sub-tree, normalized to shape. */
+export function treeOfMockFragment(ts, mockSrc, mockComponent, locator) {
+  const sf = parse(ts, mockSrc);
+  const fn = findNamed(ts, sf, mockComponent);
+  if (!fn) throw new Error(`mock component ${mockComponent} not found`);
+  const root = jsxRootNode(ts, renderOf(ts, fn));
+  if (!root) throw new Error(`mock component ${mockComponent} has no JSX render`);
+  const node = locateTs(ts, root, locator);
+  if (!node) throw new Error(`region locator ${JSON.stringify(locator)} matched nothing in ${mockComponent}`);
+  return normalizeLocated(ts, node);
+}
+
+// ── Composition check ──────────────────────────────────────────────────────────────────────────────
+// Reduce a screen's JSX to its REGION ANCHORS: each region's located subtree (mock) or mounted fragment
+// component (container) becomes a `REGION:<name>` leaf; scaffold containers (Screen/View/div/ScrollView)
+// are kept ONLY when they contain a region; every other subtree (interactive glue: tabs, ItemSheet,
+// overlays, the backend-gated meta line) is pruned. A single-child scaffold BOX collapses to its child,
+// so incidental wrapper Views (bleed/padding) never change the region SEQUENCE — the check verifies
+// region ORDER + nesting + the Screen body/footer split, not incidental wrapping. The mock and the
+// container reduce by the SAME rules, so `diff` on the two reduced trees catches a missing or reordered
+// region (composition drift) statically.
+
+function scaffoldKind(name) {
+  const lc = name.toLowerCase();
+  if (lc === "screen" || lc === "appscreen") return "SCREEN";
+  if (["div", "span", "view", "section", "header", "nav", "main", "article", "ul", "li", "pad", "safeareaview", "scrollview", "keyboardavoidingview"].includes(lc)) return "BOX";
+  return null;
+}
+
+function hasAnyRegion(node) {
+  if (!node) return false;
+  if (String(node.kind).startsWith("REGION:")) return true;
+  return (node.children || []).some(hasAnyRegion);
+}
+
+function reduceComp(ts, node, opts) {
+  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
+    const opening = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
+    const name = tagName(ts, opening);
+    const rgn = opts.elementRegion(name);
+    if (rgn) return [{ kind: "REGION:" + rgn, axes: [], children: [] }];
+    const sk = scaffoldKind(name);
+    const rawChildren = ts.isJsxSelfClosingElement(node) ? [] : node.children;
+    let kids = [];
+    for (const c of rawChildren) kids.push(...reduceCompChild(ts, c, opts));
+    if (sk === "SCREEN") kids = [...kids, ...reduceSlot(ts, opening, "banner", opts, true), ...reduceSlot(ts, opening, "footer", opts, false)];
+    if (sk) {
+      if (!kids.some(hasAnyRegion)) return [];
+      return sk !== "SCREEN" && kids.length === 1 ? kids : [{ kind: sk, axes: [], children: kids }];
+    }
+    return kids.filter(hasAnyRegion); // non-scaffold: drop the wrapper, bubble regions
+  }
+  return [];
+}
+
+function reduceCompChild(ts, c, opts) {
+  if (ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c)) return reduceComp(ts, c, opts);
+  if (ts.isJsxFragment(c)) { const out = []; for (const g of c.children) out.push(...reduceCompChild(ts, g, opts)); return out; }
+  if (ts.isJsxExpression(c) && c.expression) return reduceExprComp(ts, c.expression, opts);
+  return [];
+}
+
+function reduceExprComp(ts, e, opts) {
+  e = unwrap(ts, e);
+  if (!e) return [];
+  const rgn = opts.exprRegion(e);
+  if (rgn) return [{ kind: "REGION:" + rgn, axes: [], children: [] }];
+  if (ts.isConditionalExpression(e)) return [...reduceExprComp(ts, e.whenTrue, opts), ...reduceExprComp(ts, e.whenFalse, opts)];
+  if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return reduceExprComp(ts, e.right, opts);
+  if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && e.expression.name.text === "map") {
+    const cb = e.arguments[0];
+    if (cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) return ts.isBlock(cb.body) ? (returnedExpr(ts, cb.body) ? reduceExprComp(ts, returnedExpr(ts, cb.body), opts) : []) : reduceExprComp(ts, cb.body, opts);
+  }
+  if (ts.isArrayLiteralExpression(e)) return e.elements.flatMap((el) => reduceExprComp(ts, el, opts));
+  if (ts.isJsxElement(e) || ts.isJsxSelfClosingElement(e) || ts.isJsxFragment(e)) return reduceCompChild(ts, e, opts);
+  return [];
+}
+
+function reduceSlot(ts, opening, prop, opts, leading) {
+  const e = attrExpr(ts, opening, prop);
+  if (!e) return [];
+  const reduced = reduceExprComp(ts, e, opts).filter(hasAnyRegion);
+  if (reduced.length) return reduced;
+  if (opts.slotRegion && opts.slotRegion[prop]) return [{ kind: "REGION:" + opts.slotRegion[prop], axes: [], children: [] }];
+  return [];
+}
+
+function optsFromRegions(regions, side) {
+  const slotRegion = {};
+  for (const r of regions) if (r.locator?.slot) slotRegion[r.locator.slot] = r.region;
+  if (side === "mock") {
+    return {
+      elementRegion: (name) => regions.find((r) => r.locator?.el === name)?.region ?? null,
+      exprRegion: () => null, // rebound in mockCompositionTree with the injected `ts` module
+      slotRegion,
+    };
+  }
+  return {
+    // container: every region is mounted as its generated fragment component; footer sits in the slot,
+    // matched by elementRegion inside it (so slotRegion is only a fallback and left empty here).
+    elementRegion: (name) => regions.find((r) => r.componentName === name)?.region ?? null,
+    exprRegion: () => null,
+    slotRegion: {},
+  };
+}
+
+/** Reduced region-anchor tree of the mock screen (EXPECTED composition). */
+export function mockCompositionTree(ts, mockSrc, mockComponent, regions) {
+  const sf = parse(ts, mockSrc);
+  const fn = findNamed(ts, sf, mockComponent);
+  if (!fn) throw new Error(`mock component ${mockComponent} not found`);
+  const root = jsxRootNode(ts, renderOf(ts, fn));
+  const opts = optsFromRegions(regions, "mock");
+  // exprRegion needs the raw TS expr; rebuild it to take the TS node directly.
+  opts.exprRegion = (e) => regions.find((r) => r.locator?.map && isMapYielding(ts, e, r.locator.map))?.region ?? null;
+  const out = reduceComp(ts, root, opts);
+  return out.length === 1 ? out[0] : { kind: "FRAGMENT", axes: [], children: out };
+}
+
+/** Reduced region-anchor tree of the container screen (ACTUAL composition). */
+export function containerCompositionTree(ts, containerSrc, regions) {
+  const sf = parse(ts, containerSrc);
+  const fn = findFirstRenderer(ts, sf);
+  if (!fn) throw new Error("container has no JSX render");
+  const root = jsxRootNode(ts, renderOf(ts, fn));
+  const opts = optsFromRegions(regions, "container");
+  const out = reduceComp(ts, root, opts);
+  return out.length === 1 ? out[0] : { kind: "FRAGMENT", axes: [], children: out };
 }
 
 /** Serialize a normalized node to the canonical S-expression string. */

@@ -31,14 +31,18 @@ import { describe, it, expect, beforeAll } from "vitest";
 const CODEGEN_DIR = resolve(__dirname, "../../../../tools/parity/codegen");
 const importCodegen = (file: string) => import(pathToFileURL(resolve(CODEGEN_DIR, file)).href);
 
-type SnapshotResult = { key: string; screen: string; state: string | null; ok: boolean; message: string; expected: string; actual: string | null; diff: string | null };
+type SnapshotResult = { key: string; screen: string; state: string | null; region?: string | null; composition?: boolean; ok: boolean; message: string; expected: string; actual: string | null; diff: string | null };
 
 let results: SnapshotResult[];
-let adopted: { key: string; states?: unknown[]; deferred?: unknown[] }[];
-let units: { key: string; screen: string; state: string | null; viewFile: string }[];
+let adopted: { key: string; states?: unknown[]; regions?: unknown[]; deferred?: unknown[] }[];
+let units: { key: string; screen: string; state: string | null; region?: string | null; viewFile: string }[];
 let deferred: { screen: string; state: string; key: string; reason: string }[];
+let regionScreens: { key: string; mockComponent: string; regions: { region: string; componentName: string }[] }[];
 let normalize: {
   treeOfViewFile: (ts: unknown, src: string) => unknown;
+  treeOfMockFragment: (ts: unknown, src: string, comp: string, locator: unknown) => unknown;
+  mockCompositionTree: (ts: unknown, src: string, comp: string, regions: unknown) => unknown;
+  containerCompositionTree: (ts: unknown, src: string, regions: unknown) => unknown;
   sexpr: (n: unknown) => string;
   diff: (a: unknown, b: unknown) => string | null;
 };
@@ -50,6 +54,7 @@ beforeAll(async () => {
   adopted = registry.ADOPTED;
   units = registry.expandAdopted();
   deferred = registry.deferredStates();
+  regionScreens = registry.regionScreens();
   results = snapshot.checkAll(ts);
 });
 
@@ -202,5 +207,115 @@ describe("parity structural snapshot · structural-slot verification (Screen.foo
   it("stays a no-op for a Screen with no footer — existing call sites are unaffected", () => {
     const src = `function V() { return <Screen><View><Text>x</Text></View></Screen>; }`;
     expect(treeStr(src)).toBe("SCREEN( BOX( TEXT ) )");
+  });
+});
+
+describe("parity structural snapshot · region/fragment adoption model (Foundation-E)", () => {
+  it("RC.menu is region-adopted — 3 congruent region fragments + a congruent composition check", () => {
+    // The first INTERACTIVE container adopted piece-by-piece: a whole-screen generated view can't host
+    // its live tabs/ItemSheet/RemindWhenOpen without regressing them, so each region is its own guarded
+    // fragment and the container's assembly is verified by the composition check.
+    const menuUnits = units.filter((u) => u.screen === "RC.menu");
+    expect(menuUnits.map((u) => u.region).sort()).toEqual(["cover", "footer", "rows"]);
+    for (const u of menuUnits) {
+      const r = results.find((x) => x.key === u.key);
+      expect(r, `no result for region unit ${u.key}`).toBeTruthy();
+      expect(r!.region).toBe(u.region);
+      expect(r!.ok, `region ${u.key} drifted: ${r!.message}`).toBe(true);
+    }
+    const comp = results.find((r) => r.screen === "RC.menu" && r.composition);
+    expect(comp, "no composition result for RC.menu").toBeTruthy();
+    expect(comp!.ok, `RC.menu composition drifted: ${comp!.message}`).toBe(true);
+    expect(comp!.expected).toBe("SCREEN( BOX( REGION:cover, REGION:rows ), REGION:footer )");
+  });
+
+  it("every region-adopted screen has a composition result and all region views are gated", () => {
+    for (const e of regionScreens) {
+      const comp = results.find((r) => r.screen === e.key && r.composition);
+      expect(comp, `no composition result for ${e.key}`).toBeTruthy();
+      for (const rg of e.regions) {
+        const r = results.find((x) => x.key === `${e.key}#${rg.region}`);
+        expect(r, `region ${e.key}#${rg.region} not gated`).toBeTruthy();
+      }
+    }
+  });
+
+  it("the backend-gated shop-header meta line is an honest NON-region deferral (not adopted)", () => {
+    const d = deferred.find((x) => x.screen === "RC.menu");
+    expect(d, "RC.menu meta deferral missing").toBeTruthy();
+    expect(d!.state).toBe("meta");
+    expect(d!.reason.length).toBeGreaterThan(20);
+  });
+});
+
+describe("parity structural snapshot · composition check catches missing / reordered regions", () => {
+  // A synthetic region-adopted screen: cover (element) + rows (map) in the body, bar (footer slot).
+  const regions = [
+    { region: "cover", locator: { el: "CoverPhoto" }, componentName: "CoverView" },
+    { region: "rows", locator: { map: "Row" }, componentName: "RowsView" },
+    { region: "bar", locator: { slot: "footer" }, componentName: "BarView" },
+  ];
+  const mockSrc = `
+    RC.demo = () => (
+      <Screen footer={<div><Button/></div>}>
+        <div style={{ height: "100%" }}>
+          <CoverPhoto height={90}><span>back</span></CoverPhoto>
+          <div style={{ padding: 16 }}>
+            <div>meta</div>
+            {ITEMS.map((i) => <Row key={i} i={i} />)}
+          </div>
+        </div>
+      </Screen>
+    );
+  `;
+  const mockTree = () => normalize.mockCompositionTree(ts, mockSrc, "demo", regions);
+
+  it("reduces the mock to its region anchors (scaffold + REGION leaves, glue pruned)", () => {
+    expect(normalize.sexpr(mockTree())).toBe("SCREEN( BOX( REGION:cover, REGION:rows ), REGION:bar )");
+  });
+
+  it("a container mounting the fragments in the mock's order/nesting is congruent", () => {
+    const container = `export default function C() {
+      return (
+        <Screen footer={ok ? <BarView label="x" /> : null}>
+          <ScrollView>
+            <View style={{ margin: -16 }}><CoverView name="x" /></View>
+            <View><Text>name</Text>{tabs}<RowsView rows={rows} /></View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+          {open ? <Sheet /> : null}
+        </Screen>
+      );
+    }`;
+    const c = normalize.containerCompositionTree(ts, container, regions);
+    expect(normalize.diff(mockTree(), c)).toBeNull();
+  });
+
+  it("FAILS when the container DROPS a region (the rows fragment is not mounted)", () => {
+    const container = `export default function C() {
+      return <Screen footer={<BarView />}><ScrollView><CoverView /></ScrollView></Screen>;
+    }`;
+    const c = normalize.containerCompositionTree(ts, container, regions);
+    const d = normalize.diff(mockTree(), c);
+    expect(d).not.toBeNull();
+    // The body BOX now has one child (cover) where the mock has two (cover, rows) → a child-count diff.
+    expect(d).toContain("BOX");
+  });
+
+  it("FAILS when the container REORDERS regions (rows mounted before cover)", () => {
+    const container = `export default function C() {
+      return <Screen footer={<BarView />}><ScrollView><RowsView /><CoverView /></ScrollView></Screen>;
+    }`;
+    const d = normalize.diff(mockTree(), normalize.containerCompositionTree(ts, container, regions));
+    expect(d).not.toBeNull();
+    expect(d).toContain("expected REGION:cover, got REGION:rows");
+  });
+
+  it("FAILS when a body region is mounted in the footer slot instead (assembly mistake)", () => {
+    const container = `export default function C() {
+      return <Screen footer={<RowsView />}><ScrollView><CoverView /></ScrollView></Screen>;
+    }`;
+    const d = normalize.diff(mockTree(), normalize.containerCompositionTree(ts, container, regions));
+    expect(d).not.toBeNull();
   });
 });
