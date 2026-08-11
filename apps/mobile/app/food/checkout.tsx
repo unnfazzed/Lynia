@@ -1,4 +1,4 @@
-import { isMerchantOpenNow, nextOpenDescription, normalizePhone, tokens, type MerchantPaymentMethod } from "@lynia/shared";
+import { haversineKm, isMerchantOpenNow, nextOpenDescription, normalizePhone, roundToCents, tokens, type MerchantPaymentMethod } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -20,8 +20,11 @@ import { MapPicker } from "../../src/ui/MapPicker";
 import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../../src/ui/AddressSearch";
 import { PaymentMethodRow } from "../../src/ui/food/PaymentMethodRow";
-import { PriceMath } from "../../src/ui/food/PriceMath";
 import { CheckoutPlacingView } from "./checkout-placing.view";
+// RC.checkout_cash region fragments (Foundation-E) — generated from the mock, guarded by the
+// structural-snapshot spec. The container composes them and owns the data seam (see adopted.mjs).
+import { CheckoutPlaceBarView } from "./checkout-place-bar.view";
+import { CheckoutSummaryView } from "./checkout-summary.view";
 
 /** How often the checkout screen re-checks the kitchen's own hours while the customer is filling in
  *  the form — mirrors [id].tsx's 60s "just closed while browsing" poll, so a kitchen that closes
@@ -120,6 +123,20 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   const merchantHasLocation = restaurant.location != null;
   const estimatedDeliveryFee = dropPoint ? estimateDeliveryFee(restaurant.location, { lat: dropPoint.lat, lng: dropPoint.lng }) : null;
   const total = cart.total + (estimatedDeliveryFee ?? 0);
+  // The honest drop distance the delivery fee is derived from (same haversineKm→roundToCents as
+  // estimateDeliveryFee) — feeds the kit PriceMath's per-km delivery sub-line. Null until a drop is set.
+  const dropDistanceKm =
+    dropPoint && restaurant.location ? roundToCents(haversineKm(restaurant.location, { lat: dropPoint.lat, lng: dropPoint.lng })) : null;
+  // RC.checkout_cash summary note: the kit PriceMath has no small-order-fee row, so — exactly as the
+  // design's own cart_min mock does — a small-order fee is disclosed in the note, not hidden.
+  const summaryNote = [
+    cart.smallOrderFee > 0 ? `Includes a ${formatMoney(cart.smallOrderFee)} small-order fee.` : null,
+    paymentMethod === "cash"
+      ? "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order."
+      : `Paid straight to ${restaurant.name}. LyniaGo never holds your money. The exact delivery fee is confirmed the moment you place this order.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const landmarkOk = dropLandmark.trim().length > 0;
   const phoneOk = normalizePhone(dropPhone) !== null;
@@ -163,12 +180,13 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   return (
     <Screen
       footer={
-        // Kit R4·1/R4·2 (r-customer-a.jsx:424, 469): the pay bar is the kit's `<Screen footer=…>`
-        // pinned bar (Foundation-D slot). The CTA names how the money moves, not just the figure —
-        // "pay $X cash" for CASH, "pay after they accept" for mobile money.
-        <Button
+        // RC.checkout_cash footer region (r-customer-a.jsx:424, 469): the pay bar is the kit's
+        // `<Screen footer=…>` pinned Button (Foundation-D slot), now a GENERATED, guarded fragment
+        // (checkout-place-bar.view.tsx) the container composes. The CTA names how the money moves, not
+        // just the figure — "pay $X cash" for CASH, "pay after they accept" for mobile money.
+        <CheckoutPlaceBarView
           label={paymentMethod === "cash" ? `Place order · pay ${formatMoney(total)} cash` : "Place order · pay after they accept"}
-          onPress={() => void submit()}
+          onPlace={() => void submit()}
           disabled={!canSubmit}
           loading={busy}
         />
@@ -241,25 +259,21 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             </Text>
           </PaymentMethodRow>
 
-          <PriceMath
-            rows={[
-              // Kit r-parts.jsx PriceMath labels the goods line "Food", not "Subtotal".
-              { label: "Food", value: cart.subtotal },
-              ...(cart.smallOrderFee > 0 ? [{ label: "Small-order fee", value: cart.smallOrderFee }] : []),
-              { label: "Delivery fee (estimate)", value: estimatedDeliveryFee ?? 0 },
-            ]}
-            total={total}
-            footnote={
-              // Kit RC.checkout_cash/checkout_wallet PriceMath note (r-customer-a.jsx:456, 496) —
-              // verbatim, with the wallet line naming the kitchen the money goes to. The trailing
-              // "estimate is confirmed on placing" clause is the honest add: the mock draws a
-              // confirmed delivery fee (the address is known there), the app can only estimate one
-              // from the drop pin until the order is placed.
-              paymentMethod === "cash"
-                ? "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order."
-                : `Paid straight to ${restaurant.name}. LyniaGo never holds your money. The exact delivery fee is confirmed the moment you place this order.`
-            }
-          />
+          {/* RC.checkout_cash summary region (r-customer-a.jsx:456): the kit PriceMath goods/fee/km/total
+              card, wrapped in the mock's `<Card style={{padding:14}}>`, now a GENERATED, guarded fragment
+              (checkout-summary.view.tsx). CHECKOUT has a real drop-off, so the delivery fee AND the drop
+              distance are HONEST here — the app adopts the kit PriceMath (goods/fee/km/total), retiring the
+              food {rows,...} variant. The small-order fee, which the kit PriceMath has no row for, folds
+              into the note exactly as the design's cart_min mock does — no money hidden or fabricated. */}
+          <Card style={{ padding: 14 }}>
+            <CheckoutSummaryView
+              goods={cart.subtotal}
+              fee={estimatedDeliveryFee ?? 0}
+              km={dropDistanceKm ?? 0}
+              total={total}
+              note={summaryNote}
+            />
+          </Card>
 
           <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
             <View style={{ flexDirection: "row", gap: 9 }}>
