@@ -2,10 +2,27 @@ import { tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
-import { getNotificationsFeed, type NotificationRow } from "../../src/api/notifications";
+import { SafeAreaView, View } from "react-native";
+import { getNotificationsFeed } from "../../src/api/notifications";
 import { notificationRowDestination } from "../../src/push/push";
-import { AppBar, Button, EmptyState, Icon, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, EmptyState, SkeletonList } from "../../src/ui";
+import { NotificationsView, type NotificationItem } from "./notifications.view";
+
+/**
+ * Notifications centre (customer A·3) — the CONTAINER half of the codegen seam.
+ *
+ * The presentational tree lives in `./notifications.view.tsx`, GENERATED from the mock
+ * (packages/design/explorations/journey/screens.jsx :: Notifications) and locked to it by the
+ * structural-snapshot guardrail. The mock's `Notifications({ empty })` draws BOTH the populated feed
+ * and the empty state under one shared header, forked by `empty` — so this container drives that one
+ * `empty` prop (the empty branch is the LJ.notif_empty gallery screen). The mock lays the feed out as
+ * `{items.map(row)}`; the generated view keeps the FlatList (B-O1) via the `FlatList ≡ map`
+ * equivalence, so virtualization survives without reverting to a literal `.map`.
+ *
+ * The two live transient states the static mock never drew — a first-load skeleton and a fetch-error
+ * retry — stay here as the container's own early-returns (they have no mock key to gate against),
+ * exactly as the Help container keeps its un-mocked chrome outside the gated view.
+ */
 
 /**
  * A compact relative-time label for the feed (mockup A·3: "now", "2 min", "1 hr", "Yesterday").
@@ -26,74 +43,69 @@ function fmtRelative(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** One notification: mint-wash icon tile, title, message, relative time, and an unread dot. Tapping
- *  opens the order it's about — the row's whole point (e.g. "tap to rate your rider", "tap for
- *  details") was previously a dead end with no way to reach that order from the centre itself. */
-function Row({ n, onPress }: { n: NotificationRow; onPress: () => void }): React.ReactElement {
+/** The mock's header treatment (`Pad minHeight:0 paddingBottom:0` around the Top) reused for the two
+ *  transient states the container renders itself, so the bar sits identically to the gated view. */
+function TransientHeader({ onBack }: { onBack: () => void }): React.ReactElement {
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${n.title}: ${n.message}`}
-      style={{ flexDirection: "row", gap: tokens.space.md, paddingVertical: tokens.space.md, borderBottomWidth: 1, borderBottomColor: tokens.color.line }}
-    >
-      <View
-        style={{
-          width: 38,
-          height: 38,
-          borderRadius: 19,
-          backgroundColor: tokens.color.accentWash,
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        <Icon name={n.icon} size={18} color={tokens.color.accentText} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{n.title}</Text>
-        <Text style={{ fontSize: 12.5, color: tokens.color.muted, lineHeight: 18, marginTop: 1 }}>{n.message}</Text>
-        <Text style={{ fontSize: 11, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{fmtRelative(n.at)}</Text>
-      </View>
-      {n.unread ? (
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.accent, flexShrink: 0, marginTop: 6 }} />
-      ) : null}
-    </Pressable>
+    <View style={{ padding: tokens.space.screen, paddingBottom: 0 }}>
+      <AppBar title="Notifications" onBack={onBack} />
+    </View>
   );
 }
 
 export default function NotificationsScreen(): React.ReactElement {
   const router = useRouter();
   const feedQ = useQuery({ queryKey: ["notifications"], queryFn: getNotificationsFeed });
+  const feed = feedQ.data ?? [];
+  const onBack = (): void => router.back();
+
+  if (feedQ.isLoading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <TransientHeader onBack={onBack} />
+        <View style={{ padding: tokens.space.screen, paddingTop: 4 }}>
+          <SkeletonList />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (feedQ.isError) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <TransientHeader onBack={onBack} />
+        <View style={{ padding: tokens.space.screen, paddingTop: 4 }}>
+          <EmptyState icon="wifi-off" title="Couldn't load notifications" message="Check your connection and try again.">
+            <Button label="Retry" onPress={() => void feedQ.refetch()} />
+          </EmptyState>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // The data seam: map the live feed onto the mock's `{ icon, t, m, w, unread }` row shape, keeping
+  // the `id` the FlatList keys by. onItemPress resolves the row index back to the live feed row so a
+  // tap opens the order it's about (KB-FEED-SYNTH / BH-18: notificationRowDestination owns the rules).
+  const items: NotificationItem[] = feed.map((r) => ({
+    id: r.id,
+    icon: r.icon,
+    t: r.title,
+    m: r.message,
+    w: fmtRelative(r.at),
+    unread: r.unread,
+  }));
 
   return (
-    <Screen>
-      {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
-      <AppBar title="Notifications" onBack={() => router.back()} />
-      {feedQ.isLoading ? (
-        <SkeletonList />
-      ) : feedQ.isError ? (
-        <EmptyState icon="wifi-off" title="Couldn't load notifications" message="Check your connection and try again.">
-          <Button label="Retry" onPress={() => void feedQ.refetch()} />
-        </EmptyState>
-      ) : (feedQ.data ?? []).length === 0 ? (
-        <EmptyState icon="inbox" title="No notifications yet" message="Offers, delivery updates and account news will show up here." />
-      ) : (
-        // B-O1: was a ScrollView + `.map()` over the full (server-capped 30-row) feed — FlatList
-        // windows the concurrently-mounted rows to what's on-screen, matching the food-catalog
-        // precedent (B-T3/LC-B07), for the Go-class scroll-smoothness win rather than a memory one.
-        <FlatList
-          data={feedQ.data ?? []}
-          keyExtractor={(n) => n.id}
-          renderItem={({ item }) => (
-            // KB-FEED-SYNTH / BH-18: see notificationRowDestination for the destination rules — an
-            // account-status row (no orderId) routes by `to` (customer.hold/lift → home, else rider).
-            <Row n={item} onPress={() => router.push(notificationRowDestination(item))} />
-          )}
-          showsVerticalScrollIndicator={false}
-          ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
-        />
-      )}
-    </Screen>
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <NotificationsView
+        items={items}
+        empty={feed.length === 0}
+        onBack={onBack}
+        onItemPress={(i) => {
+          const row = feed[i];
+          if (row) router.push(notificationRowDestination(row));
+        }}
+      />
+    </SafeAreaView>
   );
 }
