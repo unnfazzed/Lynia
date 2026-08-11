@@ -751,6 +751,90 @@ export const ADOPTED = [
     }),
   },
   {
+    // ── CUSTOMER SYSTEM / ERROR / EMPTY STATES CLUSTER ──────────────────────────────────────────────
+    // LJ.force_update — the hard version gate (app/force-update.tsx), mounted by the root layout in
+    // place of the whole Stack when the installed build is below either the build-time or the
+    // server-driven minimum (customer/rider S·3). The mock `ForceUpdate` is a pure `<SystemState>` leaf
+    // (brand-green tone, brand mark, one line, one action) — the SAME primitive as perm_loc/perm_notif,
+    // so it adopts as a single 0-residual whole-screen view. SystemState is a structural leaf, so its
+    // tone/mark/title/message/primary/onPrimary are the DATA SEAM (invisible to the structural diff):
+    // the mock's `brand` boolean (which the kit renders as its own Dove mark) is dropped in favour of
+    // the app's `mark` slot (the container feeds <DoveMark on="green" />), and the copy is hoisted so
+    // the container supplies the role-NEUTRAL "keep using LyniaGo" line (this gate fires before the role
+    // is resolved — a role-specific verb would be wrong for half the users) and hides the primary when
+    // no STORE_URL is configured (no dead link). Structure stays the mock's SystemState by construction.
+    key: "LJ.force_update",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    component: "ForceUpdate",
+    componentName: "ForceUpdateView",
+    viewFile: "apps/mobile/app/force-update.view.tsx",
+    container: "apps/mobile/app/force-update.tsx",
+    uiImport: "../src/ui",
+    propsParam: "{ mark, title, message, primary, onPrimary }: ForceUpdateViewProps",
+    propsType: [
+      "export type ForceUpdateViewProps = {",
+      "  /** The brand mark node the kit's `brand` boolean draws internally (app feeds <DoveMark/>). */",
+      "  mark: React.ReactNode;",
+      "  title: string;",
+      "  message: string;",
+      "  /** Hidden (undefined) when no store URL is configured — never a dead 'Update now' link. */",
+      "  primary?: string;",
+      "  onPrimary?: () => void;",
+      "};",
+    ].join("\n"),
+    bind: ({ t, expr }) => ({
+      JSXOpeningElement(path) {
+        if (path.node.name.name !== "SystemState") return;
+        // Drop the mock's frozen leaf literals + the kit-only `brand` boolean; feed the app's `mark`
+        // slot and the container-owned copy/action. `tone="green"` stays a static literal (both sides).
+        path.node.attributes = path.node.attributes.filter(
+          (a) => !(a.type === "JSXAttribute" && ["brand", "title", "message", "primary"].includes(a.name.name)),
+        );
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("mark"), t.jsxExpressionContainer(expr("mark"))));
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("title"), t.jsxExpressionContainer(expr("title"))));
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("message"), t.jsxExpressionContainer(expr("message"))));
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("primary"), t.jsxExpressionContainer(expr("primary"))));
+        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPrimary"), t.jsxExpressionContainer(expr("onPrimary"))));
+      },
+    }),
+  },
+  {
+    // LJ.on_hold — the customer account-on-hold wall (app/send.tsx → SendAccountOnHoldView). DEFER-only:
+    // a live ActiveOrderBanner superset + an EmptyState/"Refresh status" tree that diverges from the
+    // static mock's SystemState-shaped Pad. See the deferred reason.
+    key: "LJ.on_hold",
+    container: "apps/mobile/app/send.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.on_hold",
+        reason:
+          "SUPERSET + live-vs-static, not a primitive/backend gap. The mock `OnHold` is a frozen `Pad(icon-disc, title, message, CallRow 'Support', Button 'Sign out')`. The app's SendAccountOnHoldView (the accountOnHold early-return of app/send.tsx) instead renders `Screen( COND(ActiveOrderBanner | ActiveOrderCheckFailedBanner)?, EmptyState(icon,title,message, SupportCallRow, Button 'Refresh status') )` — it (a) prepends a load-bearing live `COND` restore banner because a hold blocks composing NEW orders but NOT tracking an order already in flight, so a customer held mid-delivery must keep the only route into that live order (UX review #1); and (b) uses the in-context EmptyState + a live 'Refresh status' re-poll rather than the mock's SystemState + 'Sign out'. The whole-screen codegen model gates a view ≡ the mock and cannot host the live restore COND or reconcile the EmptyState-vs-Pad divergence without regressing the mid-delivery escape hatch. Adoptable once the restore banner earns its own drawn state and the hold wall is redrawn against the app's EmptyState tree (or a sanctioned composite lands).",
+      },
+    ],
+  },
+  {
+    // LJ.generic_error — the app-wide render-crash safety net (expo-router ErrorBoundary in
+    // app/_layout.tsx). DEFER-only: an EmptyState-in-Screen tree the static mock draws as a SystemState,
+    // inside a framework boundary export that cannot become a plain codegen container. See the reason.
+    key: "LJ.generic_error",
+    container: "apps/mobile/app/_layout.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    uiImport: "../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.generic_error",
+        reason:
+          "STRUCTURAL divergence + framework-boundary container, not a primitive/backend gap. The mock `GenericError` is a pure `<SystemState icon='circle-alert' title message primary='Try again' secondary='Back home' />` leaf. The app renders this state as expo-router's auto-mounted `ErrorBoundary` export (app/_layout.tsx) — a `SafeAreaProvider(Screen(View(EmptyState icon='triangle-alert' title message, Button 'Reload'))))` — deliberately: it must wrap its OWN SafeAreaProvider (it can render ABOVE RootLayout's provider tree when the layout subtree itself threw) and offer a single expo-router `retry()` action, not the mock's two-action nav (there is no safe 'Back home' route from an arbitrary render crash). So the tree is EMPTYSTATE-in-SCREEN, not the mock's SYSTEMSTATE leaf, and the container is a framework boundary function (not a screen the codegen model can point a generated whole-screen view at without breaking the provider-wrapping crash-recovery contract). Adoptable once GenericError is redrawn against the app's EmptyState-in-Screen recovery tree (single retry, own provider) as a sanctioned composite, rather than forcing the live crash net into the static SystemState mock.",
+      },
+    ],
+  },
+  {
     // LJ.profile — the customer Account tab (app/(tabs)/account.tsx). DEFER-only: a load-bearing
     // hub-nav superset the static Profile mock never drew. See the deferred reason.
     key: "LJ.profile",
