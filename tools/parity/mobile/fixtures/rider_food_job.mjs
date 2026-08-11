@@ -3,7 +3,8 @@
 // the screen renders its working layout: the cash-held strip, the JobDetailsCard, the order line-items,
 // and the "Navigate to the restaurant" advance button. The food detail (GET /merchant/orders/:id/mine)
 // carries a collect-and-return CASH order's fields. Snapshot fares are STRINGS; food money is NUMBERS.
-import { installRouter, withQuery } from "./_harness.mjs";
+import { installRouter } from "./_harness.mjs";
+import { withAuthQuery } from "./_auth.mjs";
 
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1200;
 
@@ -76,4 +77,4 @@ installRouter([
   { match: /\/merchant\/orders\/[^/]+\/mine$/, json: foodOrder },
 ]);
 
-export default { wrap: withQuery() };
+export default { wrap: withAuthQuery() };

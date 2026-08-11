@@ -2,7 +2,8 @@
 // parcel OrderSnapshot at `assigned` (the win state, freshly picked by a customer), so job.tsx renders
 // its working job screen: the JobDetailsCard, the trip, and the first "advance" step. GET /auth/me
 // backs the bail-sheet strike count. Snapshot fares are serialised STRINGS.
-import { installRouter, withQuery } from "./_harness.mjs";
+import { installRouter } from "./_harness.mjs";
+import { withAuthQuery } from "./_auth.mjs";
 
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1200;
 
@@ -50,4 +51,4 @@ installRouter([
   { match: "/auth/me", json: me },
 ]);
 
-export default { wrap: withQuery() };
+export default { wrap: withAuthQuery() };

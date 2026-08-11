@@ -3,7 +3,8 @@
 // online dashboard renders with a few live parcels on the board. Location is absent in the parity
 // harness (expo-location is the inert shim), so the board fetches city-wide and labels each card by
 // its trip distance — exactly the loc-null fallback the screen already supports.
-import { installRouter, withQuery } from "./_harness.mjs";
+import { installRouter } from "./_harness.mjs";
+import { withAuthQuery } from "./_auth.mjs";
 
 // Give the multi-fetch board (me → seed online → open orders) time to settle before the screenshot.
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1600;
@@ -64,4 +65,4 @@ installRouter([
   },
 ]);
 
-export default { wrap: withQuery() };
+export default { wrap: withAuthQuery() };

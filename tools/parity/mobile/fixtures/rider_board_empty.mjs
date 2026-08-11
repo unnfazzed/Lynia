@@ -7,7 +7,8 @@
 // `import * as Notifications from "expo-notifications"`. The shared empty.js shim exposes only a
 // `default` export, so that namespace member is undefined and the bundle throws before mount. Renders
 // only once the shared shim provides expo-notifications' named exports — see the report.
-import { installRouter, withQuery } from "./_harness.mjs";
+import { installRouter } from "./_harness.mjs";
+import { withAuthQuery } from "./_auth.mjs";
 
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1600;
 
@@ -40,4 +41,4 @@ installRouter([
   { match: "/orders/open", json: [] },
 ]);
 
-export default { wrap: withQuery() };
+export default { wrap: withAuthQuery() };
