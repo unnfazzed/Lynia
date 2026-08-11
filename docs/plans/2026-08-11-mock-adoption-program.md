@@ -71,6 +71,27 @@ generated view(s) are congruent and the guardrail suite is green — never "eyeb
   structural guardrail treats primitive JSX-attribute *slots* (e.g. `Screen banner=`) as invisible —
   extend to verify slotted content.
 
+## Foundation-F — interactive map/sheet region codegen (deferred, high-leverage)
+The parcel **send-composer** (the flagship `Home` mock) is **not region-decomposable** under the current
+Foundation-E codegen and is registered **defer-only** (`LJ.home_empty`/`home_pins`/`home_expanded`/
+`addr_search`/`addr_map_confirm`, each with a reason in `adopted.mjs`). Root cause is a shared gap, not a
+one-off: the mock's regions root in raw `<div>`s and **kit primitives the transpiler can't resolve**
+(`FauxMap`, `MapSheet`, mock-local `AddressFields`/`QtyStepper`), and there is **no `<Screen footer>`** to
+anchor the submit region the way `RC.menu` did. The app already realizes this shell **live and
+mock-wins-correctly** (`ComposeMap` tap-to-pin under a peek/expanded `BottomSheet`, `AddressSearch` +
+`AddressConfirmSheet`, submit validation/idempotency/disclaimer gate) — so nothing is dropped; it is the
+*guardrail* that can't yet prove congruence.
+
+The **same `FauxMap`/`MapSheet`/`BottomSheet` family underlies parcel tracking and the rider board/jobs
+screens**, so this is one high-leverage build that unblocks a whole cluster family. Foundation-F =
+(a) `DS_RENAME`/uiPrims remaps `FauxMap→ComposeMap`, `MapSheet→BottomSheet`; (b) a **sheet-footer
+scaffold** + a **generalized non-`Screen` slot locator** so a submit region anchors under a plain-`<div>`
+root; (c) **mock-local helper inlining** (`AddressFields`/`QtyStepper`). Strategy: **harvest-first** — keep
+adopting the many clusters that don't need it (food, rider money/account, merchant, admin, leaf/simple-region
+screens), then do Foundation-F once and sweep the map/sheet family (send-composer, tracking, rider board/jobs)
+in one wave — alongside the transpiler-idiom cleanup (template-literal border / conditional shadow-spread /
+mixed text+element siblings) that the auth/register/role deferrals need.
+
 ## Honest velocity note
 The hard architecture is done; adoption itself is **incremental** — each screen tends to surface one
 small thing (a missing primitive capability, a backend feature, or a live-vs-static restructure). It is
