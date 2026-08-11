@@ -37,7 +37,9 @@ const me = {
 
 installRouter([
   { match: "/auth/me", json: me },
-  { match: "/orders/mine/active", json: null },
+  // `false` (not `null`): the harness coalesces a null body to `{}`, which getActiveOrder would return
+  // as a truthy empty order and crash the active-job banner. A falsy body reads as "no active job".
+  { match: "/orders/mine/active", json: false },
   { match: "/orders/open", json: [] },
 ]);
 

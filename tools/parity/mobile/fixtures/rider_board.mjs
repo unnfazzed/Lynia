@@ -53,7 +53,10 @@ const HIGH = { lat: -17.8833, lng: 30.9833 };
 
 installRouter([
   { match: "/auth/me", json: me },
-  { match: "/orders/mine/active", json: null },
+  // `false`, not `null`: the harness coalesces a null body to `{}` (body ?? {}), which getActiveOrder
+  // would return as a truthy empty order and crash the active-job banner on `status.replace`. A falsy
+  // body makes `activeQ.data` falsy, so the board reads "no active job" — the state we want.
+  { match: "/orders/mine/active", json: false },
   {
     match: "/orders/open",
     json: [
