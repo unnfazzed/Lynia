@@ -94,6 +94,25 @@ function numOf(raw) {
   return m ? parseFloat(m[1]) : null;
 }
 
+/** Does a JSX expression (a `{…}` child) contain any literal JSX element? `{items.map(n => <View/>)}`,
+ * `{cond ? <X/> : null}`, `{[<A/>, <B/>]}` → yes; `{label}`, `{n.title}`, `{fmt(t)}` → no. Used to
+ * decide whether a `div`/`span` is a container (View) or text (Text) — see the content-aware seam. */
+function exprYieldsElement(node) {
+  let found = false;
+  const walk = (n) => {
+    if (found || !n || typeof n !== "object") return;
+    if (n.type === "JSXElement" || n.type === "JSXFragment") { found = true; return; }
+    for (const k of Object.keys(n)) {
+      if (k === "type" || k === "loc" || k === "start" || k === "end" || k === "extra" || k === "leadingComments" || k === "trailingComments") continue;
+      const v = n[k];
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v.type === "string") walk(v);
+    }
+  };
+  walk(node);
+  return found;
+}
+
 export function transpile(src, report) {
   const R = report || { clean: 0, transform: 0, dropped: 0, unresolved: [] };
 
@@ -104,7 +123,7 @@ export function transpile(src, report) {
     function rewriteStyleObject(obj, flags) {
       // Context scan: geometry the unit idioms need (em → px needs fontSize; % radius → px needs
       // width/height; unitless lineHeight → px needs fontSize).
-      let fontSize = null, width = null, height = null;
+      let fontSize = null, width = null, height = null, hasFlexDirection = false;
       for (const p of obj.properties) {
         if (p.type !== "ObjectProperty" || p.computed) continue;
         const k = p.key.name || p.key.value;
@@ -112,6 +131,7 @@ export function transpile(src, report) {
         if (k === "fontSize" && v.type === "NumericLiteral") fontSize = v.value;
         if (k === "width" && v.type === "NumericLiteral") width = v.value;
         if (k === "height" && v.type === "NumericLiteral") height = v.value;
+        if (k === "flexDirection") hasFlexDirection = true;
       }
 
       const out = [];
@@ -133,7 +153,11 @@ export function transpile(src, report) {
           : null;
 
         // ── drops (web-only / no-op on native) ──
-        if (key === "display") { if (raw === "grid") flags.grid = true; R.dropped++; continue; }
+        // `display:flex` is CSS row-by-default, but RN Views default to COLUMN — so dropping it bare
+        // silently turns every mock flex ROW into a vertical stack. Record it (unless the object sets
+        // its own flexDirection) and emit `flexDirection:"row"` after the loop. `display:grid` stays a
+        // centering idiom via placeItems and is not a row.
+        if (key === "display") { if (raw === "grid") flags.grid = true; else if (raw === "flex" || raw === "inline-flex") flags.displayFlex = true; R.dropped++; continue; }
         if (key === "cursor" || key === "pointerEvents" || key === "boxSizing" || key === "transition" || key === "content" || key === "WebkitLineClamp" || key === "WebkitBoxOrient" || key === "outline") { R.dropped++; continue; }
         if (key === "boxShadow" && (raw === "none" || raw === "0")) { R.dropped++; continue; }
 
@@ -247,6 +271,10 @@ export function transpile(src, report) {
         if (key === "fontWeight" && p.value.type === "NumericLiteral") p.value = t.stringLiteral(String(p.value.value));
         out.push(p);
       }
+      // CSS `display:flex` implies `flex-direction:row`; RN defaults to column, so make the row
+      // explicit (only when the mock didn't already pin a direction). Mirrored in normalize.mjs so the
+      // guardrail models the same row axis on both sides.
+      if (flags.displayFlex && !hasFlexDirection) out.push(t.objectProperty(t.identifier("flexDirection"), t.stringLiteral("row")));
       obj.properties = out;
     }
 
@@ -254,6 +282,11 @@ export function transpile(src, report) {
       visitor: {
         // JSX string attribute holding a token: color="var(--muted)" → color={tokens.color.muted}
         JSXAttribute(path) {
+          // `className` is web-only — RN primitives have no such prop, so carrying it through is a hard
+          // typecheck error (e.g. the mock's `className="lynia-tabular"` phone number). Drop it. (The
+          // tabular-nums it conveys is not expressible from a CSS class here; a container can re-add
+          // `fontVariant:["tabular-nums"]` via the data seam if the number needs it.)
+          if (path.node.name.name === "className") { path.remove(); return; }
           const val = path.node.value;
           if (val && val.type === "StringLiteral") {
             const vt = varToken(val.value);
@@ -304,8 +337,12 @@ export function transpile(src, report) {
           // Content-aware View/Text for div & span (the #1 fidelity seam).
           if (tag === "div" || tag === "span") {
             const kids = path.node.children.filter((c) => !(c.type === "JSXText" && c.value.trim() === ""));
-            const hasElementChild = kids.some((c) => c.type === "JSXElement");
-            const hasTextChild = kids.some((c) => c.type === "JSXText" || c.type === "JSXExpressionContainer");
+            // An expression child that YIELDS elements (`{items.map(n => <View/>)}`, `{cond ? <X/> : y}`)
+            // makes this a container, not text — otherwise it becomes a `<Text>` wrapping `<View>`s,
+            // which crashes RN. Only a text/interpolation expression (`{label}`) keeps it Text. Mirrored
+            // in normalize.mjs so mock and view classify the same node the same way.
+            const hasElementChild = kids.some((c) => c.type === "JSXElement" || (c.type === "JSXExpressionContainer" && exprYieldsElement(c.expression)));
+            const hasTextChild = kids.some((c) => c.type === "JSXText" || (c.type === "JSXExpressionContainer" && !exprYieldsElement(c.expression)));
             const mapped = hasElementChild ? "View" : hasTextChild ? "Text" : "View";
             open.name = t.jsxIdentifier(mapped);
             if (path.node.closingElement) path.node.closingElement.name = t.jsxIdentifier(mapped);

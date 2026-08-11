@@ -55,7 +55,8 @@ export function HelpView({
         }}>
             <View style={{
             alignItems: "center",
-            gap: 11
+            gap: 11,
+            flexDirection: "row"
           }}>
               <Icon name={ic} size={20} color={tokens.color.accentText} />
               <View style={{
@@ -82,7 +83,8 @@ export function HelpView({
         }}>
           <View style={{
             alignItems: "center",
-            gap: 11
+            gap: 11,
+            flexDirection: "row"
           }}>
             <Icon name="phone" size={20} color={tokens.color.accentText} />
             <Text style={{
