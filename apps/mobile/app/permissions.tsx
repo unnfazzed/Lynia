@@ -1,12 +1,13 @@
-import { tokens } from "@lynia/shared";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { loadPermissionsPrimed, savePermissionsPrimed } from "../src/auth/session";
 import { requestPushRegistration } from "../src/push/push-kick";
-import { Button, Icon, type IconName, Screen } from "../src/ui";
+import { Screen } from "../src/ui";
+import { PermLocView } from "./permissions-location.view";
+import { PermNotifView } from "./permissions-notifications.view";
 
 /**
  * First-run permission priming (customer/rider 0·7 / 0·8). Two explainer steps shown BEFORE the OS
@@ -30,7 +31,6 @@ export default function PermissionsScreen(): React.ReactElement {
   const { next } = useLocalSearchParams<{ next?: string }>();
   const dest = safeNext(next);
   const [step, setStep] = useState<Step>("location");
-  const [busy, setBusy] = useState(false);
   // null = still checking the primed flag; fold into the first render so we never flash a step we're
   // about to skip.
   const [ready, setReady] = useState(false);
@@ -53,19 +53,16 @@ export default function PermissionsScreen(): React.ReactElement {
   };
 
   const primeLocation = async (): Promise<void> => {
-    setBusy(true);
     try {
       await Location.requestForegroundPermissionsAsync();
     } catch {
       /* the OS dialog can't fail us into a dead-end — advance regardless */
     } finally {
-      setBusy(false);
       setStep("notifications");
     }
   };
 
   const primeNotifications = async (): Promise<void> => {
-    setBusy(true);
     try {
       const existing = await Notifications.getPermissionsAsync();
       if (!existing.granted && existing.canAskAgain) await Notifications.requestPermissionsAsync();
@@ -75,7 +72,6 @@ export default function PermissionsScreen(): React.ReactElement {
     } catch {
       /* best-effort */
     } finally {
-      setBusy(false);
       done();
     }
   };
@@ -87,9 +83,15 @@ export default function PermissionsScreen(): React.ReactElement {
   // pickup pin", "your parcel is delivered") is wrong for half the users routed through here.
   const isRider = dest === "/rider";
 
+  // The presentational tree for each step is GENERATED from the mock's `SystemState` (screens.jsx
+  // `PermLoc` / `PermNotif`) and locked to it by the structural-snapshot guardrail. SystemState is a
+  // structural leaf, so its copy/icon/actions are the DATA SEAM: this container feeds the role-framed
+  // wording (the mock's customer copy verbatim; a rider variant for the jobs framing) and wires the OS
+  // permission requests onto onPrimary/onSecondary. `busy` folds into the SystemState primary via a
+  // no-op while the OS dialog is up (the request itself is the blocking beat).
   if (step === "location") {
     return (
-      <Prime
+      <PermLocView
         icon="navigation"
         title="Turn on location"
         message={
@@ -97,19 +99,18 @@ export default function PermissionsScreen(): React.ReactElement {
             ? "LyniaGo uses your location to show you nearby jobs and navigate you turn-by-turn to pickups and drop-offs. We only use it while you're online or on a job."
             : "LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
         }
-        primaryLabel="Allow location"
+        primary="Allow location"
         // Mock (screens.jsx `PermLoc`) secondary is "Enter address manually" — the customer's manual
         // pickup path. A rider has no pickup address to type, so that framing is wrong for them; keep
         // the neutral skip there.
-        secondaryLabel={isRider ? "Not now" : "Enter address manually"}
-        onPrimary={primeLocation}
-        onSkip={() => setStep("notifications")}
-        busy={busy}
+        secondary={isRider ? "Not now" : "Enter address manually"}
+        onPrimary={() => void primeLocation()}
+        onSecondary={() => setStep("notifications")}
       />
     );
   }
   return (
-    <Prime
+    <PermNotifView
       icon="inbox"
       title="Stay in the loop"
       message={
@@ -117,45 +118,10 @@ export default function PermissionsScreen(): React.ReactElement {
           ? "Get notified the moment a new job is posted near you, when a customer picks you, and for delivery updates."
           : "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
       }
-      primaryLabel="Turn on notifications"
-      secondaryLabel="Not now"
-      onPrimary={primeNotifications}
-      onSkip={done}
-      busy={busy}
+      primary="Turn on notifications"
+      secondary="Not now"
+      onPrimary={() => void primeNotifications()}
+      onSecondary={done}
     />
-  );
-}
-
-function Prime(props: {
-  icon: IconName;
-  title: string;
-  message: string;
-  primaryLabel: string;
-  secondaryLabel: string;
-  onPrimary: () => void;
-  onSkip: () => void;
-  busy: boolean;
-}): React.ReactElement {
-  // Mirrors the mock's `SystemState` (screens.jsx `PermLoc` renders it): a vertically-centred group —
-  // 84px surface disc + 36px text-green icon, 19px title, one 13px muted sentence (max 230), then the
-  // primary / secondary actions directly under the copy (not pinned to the screen bottom).
-  return (
-    <Screen>
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: tokens.space.lg }}>
-        <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-          <Icon name={props.icon} size={36} color={tokens.color.accentText} />
-        </View>
-        <Text style={{ fontSize: 19, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
-          {props.title}
-        </Text>
-        <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center", lineHeight: 20, maxWidth: 230, marginTop: 4 }}>
-          {props.message}
-        </Text>
-        <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>
-          <Button label={props.primaryLabel} onPress={props.onPrimary} loading={props.busy} />
-          <Button label={props.secondaryLabel} variant="ghost" onPress={props.onSkip} />
-        </View>
-      </View>
-    </Screen>
   );
 }

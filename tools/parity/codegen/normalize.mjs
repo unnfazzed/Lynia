@@ -31,6 +31,13 @@ const KIND = new Map(Object.entries({
   img: "IMAGE", image: "IMAGE",
   top: "APPBAR", appbar: "APPBAR",
   screen: "SCREEN", appscreen: "SCREEN",
+  // Auth-cluster kit primitives. The mock's brand marks (`Lockup`/`Dove` from LyniaSupport) map to the
+  // app's `BrandLockup`/`DoveMark` — fold each old→new pair to ONE canonical kind so the transpiler's
+  // DS_RENAME (transpile.mjs) stays congruent with the guardrail. `systemstate`/`heading`/`sub` share a
+  // name across mock and app (uppercase-fallback would already agree), listed explicitly for clarity.
+  lockup: "BRANDLOCKUP", brandlockup: "BRANDLOCKUP",
+  dove: "DOVEMARK", dovemark: "DOVEMARK", wordmark: "WORDMARK",
+  systemstate: "SYSTEMSTATE", heading: "HEADING", sub: "SUB", label: "LABEL",
   svg: "SVG", path: "SVG", circle: "SVG", rect: "SVG", g: "SVG", line: "SVG", polyline: "SVG", polygon: "SVG",
 }));
 const TRANSPARENT = new Set(["pressable", "touchableopacity", "touchablewithoutfeedback", "touchablehighlight", "fragment"]);
