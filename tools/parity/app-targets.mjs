@@ -60,7 +60,7 @@ export const APP_TARGETS = {
   "RJM.offer_food": { kind: "mobile", component: "app/rider/food-offer.tsx", fixture: "rider_food_offer" },
   "RR.offer_cash": { kind: "mobile", component: "app/rider/food-offer.tsx", fixture: "rider_food_offer" },
   "RJM.active_food": { kind: "mobile", component: "app/rider/food-job.tsx", fixture: "rider_food_job" },
-  "RR.nav_rest": { kind: "mobile", component: "app/rider/food-job.tsx", fixture: "rider_food_job" },
+  "RR.nav_rest": { kind: "mobile", component: "app/rider/food-job.tsx", fixture: "rider_food_nav" },
   "RJ.job_assigned": { kind: "mobile", component: "app/rider/job.tsx", fixture: "rider_parcel_job" },
   "RJ.kyc_intro": { kind: "mobile", component: "app/rider/become.tsx", fixture: "rider_kyc_intro" },
   "RJ.bike_docs": { kind: "mobile", component: "app/rider/documents.tsx", fixture: "rider_documents" },
