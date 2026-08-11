@@ -46,12 +46,80 @@ function wrap(el, wrapperTag, attrsSnippet) {
 const bindHelpers = { t, expr, attrsOf, wrap, traverse };
 
 /**
+ * Locate a FRAGMENT node inside an already-parsed mock component AST, per an engine-agnostic locator
+ * descriptor (Foundation-E). The SAME descriptor shape is interpreted on the TS AST at guardrail time
+ * (normalize.mjs `locateTs`), so a region's mock sub-tree is found identically for gen and for check.
+ *
+ *   { el: "CoverPhoto" }  → the first JSX element with that tag (a sub-tree region, e.g. the cover).
+ *   { map: "MenuRow" }    → the first `X.map(cb)` whose callback yields a <MenuRow> (the list region).
+ *   { slot: "footer" }    → the `footer` attribute value of the root Screen (the pinned-bar region).
+ */
+function locateBabel(ast, locator) {
+  let found = null;
+  const bodyYields = (cb, tag) => {
+    const b = cb.body;
+    const isEl = (n) => n && n.type === "JSXElement" && n.openingElement.name.name === tag;
+    if (isEl(b)) return true;
+    if (b.type === "BlockStatement") {
+      let ret = null;
+      b.body.forEach((s) => { if (s.type === "ReturnStatement" && s.argument) ret = s.argument; });
+      return isEl(ret);
+    }
+    return false;
+  };
+  if (locator.el) {
+    traverse(ast, { JSXElement(path) { if (!found && path.node.openingElement.name.name === locator.el) found = path.node; } });
+  } else if (locator.map) {
+    traverse(ast, {
+      CallExpression(path) {
+        if (found) return;
+        const c = path.node.callee;
+        if (c.type !== "MemberExpression" || c.property.name !== "map") return;
+        const cb = path.node.arguments[0];
+        if (!cb || (cb.type !== "ArrowFunctionExpression" && cb.type !== "FunctionExpression")) return;
+        if (bodyYields(cb, locator.map)) found = path.node;
+      },
+    });
+  } else if (locator.slot) {
+    traverse(ast, {
+      JSXOpeningElement(path) {
+        if (found) return;
+        if (path.node.name.name !== "Screen") return;
+        const a = path.node.attributes.find((x) => x.type === "JSXAttribute" && x.name.name === locator.slot);
+        if (a && a.value && a.value.type === "JSXExpressionContainer") found = a.value.expression;
+      },
+    });
+  }
+  return found;
+}
+
+/**
+ * Build a standalone `function __frag__(){ return <FRAGMENT>; }` source for a REGION unit: extract the
+ * screen's mock component, locate the region node, and wrap it (a bare expression like a `.map()` is
+ * wrapped in a `<>{…}</>` so the fragment view has a JSX render). The transpiler + bind pipeline then
+ * runs on it exactly like a whole-screen component.
+ */
+function fragmentSource(spec) {
+  const fileSrc = readFileSync(resolve(ROOT, spec.mockFile), "utf8");
+  const compSrc = extractNamed(fileSrc, spec.mockComponent);
+  const ast = parse(compSrc);
+  const node = locateBabel(ast, spec.locator);
+  if (!node) throw new Error(`region locator ${JSON.stringify(spec.locator)} matched nothing in ${spec.mockComponent}`);
+  const ret = node.type === "JSXElement" || node.type === "JSXFragment"
+    ? node
+    : t.jsxFragment(t.jsxOpeningFragment(), t.jsxClosingFragment(), [t.jsxExpressionContainer(node)]);
+  return generate(t.functionDeclaration(t.identifier("__frag__"), [], t.blockStatement([t.returnStatement(ret)])));
+}
+
+/**
  * Run the whole pipeline for one adopted-screen spec, returning:
  *   { code, report, importsUsed }  — `code` is the full .view.tsx text.
  */
 export function emitView(spec) {
-  const fileSrc = readFileSync(resolve(ROOT, spec.mockFile), "utf8");
-  const componentSrc = extractNamed(fileSrc, spec.component);
+  const srcName = spec.isFragment ? "__frag__" : spec.component;
+  const componentSrc = spec.isFragment
+    ? fragmentSource(spec)
+    : extractNamed(readFileSync(resolve(ROOT, spec.mockFile), "utf8"), spec.component);
   const report = { clean: 0, transform: 0, dropped: 0, unresolved: [] };
   let code = transpile(componentSrc, report);
 
@@ -59,7 +127,7 @@ export function emitView(spec) {
   const ast = parse(code);
   traverse(ast, {
     FunctionDeclaration(path) {
-      if (path.node.id && path.node.id.name === spec.component) {
+      if (path.node.id && path.node.id.name === srcName) {
         path.node.id.name = spec.componentName;
         if (spec.propsParam) path.node.params = [parseParam(spec.propsParam)];
         path.node.returnType = t.tsTypeAnnotation(t.tsTypeReference(t.tsQualifiedName(t.identifier("React"), t.identifier("ReactElement"))));
@@ -136,10 +204,14 @@ function assembleFile(spec, body) {
   const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
+  // Region fragments type their data seam against the DS primitives' item types (e.g. the menu-rows
+  // fragment's `rows: MenuRowItem[]`), so those types must be import-able from `src/ui` too.
+  const uiTypes = ["MenuRowItem", "MenuCategory", "FoodThumbCategory", "BannerTone"].filter((tn) => new RegExp(`\\b${tn}\\b`).test(spec.propsType || ""));
 
   const lines = [];
+  const sourceLabel = spec.isFragment ? `${spec.mockComponent} :: region ${spec.region}` : spec.component;
   lines.push(`// GENERATED — do not edit by hand. Structural-parity source of truth for ${spec.key}.`);
-  lines.push(`// Source mock: ${spec.mockFile} :: ${spec.component}`);
+  lines.push(`// Source mock: ${spec.mockFile} :: ${sourceLabel}`);
   lines.push(`// Regenerate:  node tools/parity/codegen/cli.mjs gen ${spec.key}`);
   lines.push(`// Guardrail:   apps/api/src/parity/structure-snapshot.spec.ts asserts this tree ≡ the mock's.`);
   lines.push(`//`);
@@ -147,13 +219,13 @@ function assembleFile(spec, body) {
   lines.push(`// props from the container (${spec.container}) — that is the ONLY hand-wired seam.`);
   lines.push(`import React from "react";`);
   if (rnPrims.length) lines.push(`import { ${rnPrims.join(", ")} } from "react-native";`);
+  const typeImports = [...(usesIconName ? ["type IconName"] : []), ...uiTypes.map((tn) => `type ${tn}`)];
   if (usesTokens) {
-    const ui = [...uiPrims];
-    if (usesIconName) ui.push("type IconName");
+    const ui = [...uiPrims, ...typeImports];
     lines.push(`import { tokens } from "@lynia/shared";`);
     if (ui.length) lines.push(`import { ${dedupeUi(ui).join(", ")} } from "${spec.uiImport}";`);
-  } else if (uiPrims.length) {
-    lines.push(`import { ${dedupeUi(uiPrims.concat(usesIconName ? ["type IconName"] : [])).join(", ")} } from "${spec.uiImport}";`);
+  } else if (uiPrims.length || typeImports.length) {
+    lines.push(`import { ${dedupeUi(uiPrims.concat(typeImports)).join(", ")} } from "${spec.uiImport}";`);
   }
   lines.push("");
   if (spec.propsType) { lines.push(spec.propsType); lines.push(""); }

@@ -55,8 +55,16 @@ generated view(s) are congruent and the guardrail suite is green — never "eyeb
 
 ## Status (2026-08-11)
 - Foundations complete in `main`: guardrail suite (#667), codegen + structural-snapshot (#668, #675),
-  DS primitives + empty-state Card (#676), multi-state model + `FlatList≡map` (#678).
-- **Adopted: 3** — `LJ.help`, `RC.cart_empty`, `RC.list_loading` (all congruent).
+  DS primitives + empty-state Card (#676), multi-state model + `FlatList≡map` (#678); Foundation-C
+  `Screen.banner` slot + Foundation-D `EtaLine`/`ShopLogo`/`FoodThumb`/`Screen.footer` primitives.
+- **Foundation-E — region/fragment guarding for INTERACTIVE containers.** The whole-screen model can't
+  host an interactive container's behaviour; such screens now adopt **piece-by-piece**: an `adopted.mjs`
+  entry carries `regions[]`, each a generated guarded FRAGMENT of a named mock sub-tree, and a static
+  **composition check** asserts the container mounts the fragments in the mock's region order/nesting.
+  See `tools/parity/codegen/README.md` → *Region/fragment adoption*.
+- **Adopted: 6 views across 5 screens** — `LJ.help`, `RC.cart_empty`, `RC.list_loading`, `RC.list_error`,
+  `RC.placing` (whole-screen / state), **plus `RC.menu` — the FIRST region-adopted interactive screen
+  (3 regions: cover · rows · cart bar) + a passing composition check** (all congruent).
 - Registry: 275 screens (customer 122 · rider 98 · merchant 48 · admin 7); **51 `BACKEND_GATED`**
   (issues #670–#674), the rest `PENDING` adoption.
 - Known follow-ups: give the DS `Screen` a `banner` slot (unblocks *error* states app-wide); the

@@ -85,7 +85,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header/rows aligned; filter chips, count line & hero row deviate on honest-data grounds — see doc |
 | ⬜ | C3·2 | `RC list_loading` | List loading  [FOOD] | | |
 | 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
-| 👁 | C3·4 | `RC menu` | Menu  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | cover band + overhanging shop logo + floating back button replace the plain AppBar + thumb row |
+| ✅ | C3·4 | `RC menu` | Menu  [FOOD] | **region-adopted (Foundation-E)** — first machine-guarded INTERACTIVE screen: cover / dish-rows / cart-bar are generated guarded fragments the container composes; per-region congruence + composition check green (`tools/parity/codegen/cli.mjs check`) | cover band + overhanging shop logo + floating back button; tabs/ItemSheet/RemindWhenOpen/just-closed stay live glue; backend-gated meta line honest-kept (non-region) |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
 | 👁 | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | map-behind-sheet align (`docs/parity/PHASE3-send.md`, `tools/parity/out/send_v2.png`) | |
 | ⬜ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | | |

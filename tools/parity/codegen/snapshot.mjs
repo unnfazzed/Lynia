@@ -18,36 +18,41 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { treeOfNamedComponent, treeOfViewFile, sexpr, diff } from "./normalize.mjs";
-import { expandAdopted } from "./adopted.mjs";
+import { treeOfNamedComponent, treeOfViewFile, treeOfMockFragment, mockCompositionTree, containerCompositionTree, sexpr, diff } from "./normalize.mjs";
+import { expandAdopted, regionScreens } from "./adopted.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
 
-/** Check one adopted spec → { key, ok, message, expected, actual, diff }. */
+/** Check one adopted spec → { key, ok, message, expected, actual, diff }. Handles both a whole-screen
+ *  view (`≡ named mock component`) and a REGION fragment (`≡ the mock's located sub-tree`). */
 export function checkScreen(ts, spec) {
   const mockSrc = readFileSync(resolve(ROOT, spec.mockFile), "utf8");
   let expectedTree;
   try {
-    expectedTree = treeOfNamedComponent(ts, mockSrc, spec.component);
+    expectedTree = spec.isFragment
+      ? treeOfMockFragment(ts, mockSrc, spec.mockComponent, spec.locator)
+      : treeOfNamedComponent(ts, mockSrc, spec.component);
   } catch (e) {
-    return { key: spec.key, ok: false, message: `could not read mock ${spec.component} in ${spec.mockFile}: ${e.message}`, expected: null, actual: null, diff: String(e.message) };
+    const what = spec.isFragment ? `mock fragment ${spec.mockComponent}#${spec.region}` : `mock ${spec.component}`;
+    return { key: spec.key, screen: spec.screen ?? spec.key, state: spec.state ?? null, region: spec.region ?? null, ok: false, message: `could not read ${what} in ${spec.mockFile}: ${e.message}`, expected: null, actual: null, diff: String(e.message) };
   }
 
   let viewSrc;
   try {
     viewSrc = readFileSync(resolve(ROOT, spec.viewFile), "utf8");
   } catch {
-    return { key: spec.key, ok: false, message: `generated view missing: ${spec.viewFile} (run: node tools/parity/codegen/cli.mjs gen ${spec.key})`, expected: sexpr(expectedTree), actual: null, diff: "view file not found" };
+    return { key: spec.key, screen: spec.screen ?? spec.key, state: spec.state ?? null, region: spec.region ?? null, ok: false, message: `generated view missing: ${spec.viewFile} (run: node tools/parity/codegen/cli.mjs gen ${spec.key})`, expected: sexpr(expectedTree), actual: null, diff: "view file not found" };
   }
   const actualTree = treeOfViewFile(ts, viewSrc);
 
   const d = diff(expectedTree, actualTree);
-  const label = spec.state ? `${spec.key} (${spec.screen} · ${spec.state})` : spec.key;
+  const label = spec.region ? `${spec.key} (${spec.screen} · region ${spec.region})` : spec.state ? `${spec.key} (${spec.screen} · ${spec.state})` : spec.key;
   return {
     key: spec.key,
     screen: spec.screen ?? spec.key,
     state: spec.state ?? null,
+    region: spec.region ?? null,
     ok: !d,
     message: d
       ? `structural drift on ${label} — the app view no longer matches the mock:\n  ${d}`
@@ -58,9 +63,52 @@ export function checkScreen(ts, spec) {
   };
 }
 
-/** Check every ADOPTED view — one per single-view screen, one per adopted STATE of a multi-state screen. */
+/**
+ * Composition check for a region-adopted screen: the container must MOUNT the region fragment
+ * components in the mock's region composition order/nesting. Both the mock and the container reduce to
+ * a region-anchor tree (scaffold + REGION leaves); a mismatch (missing / reordered / re-nested region)
+ * prints a readable tree-path diff. This verifies ASSEMBLY, complementing the per-region congruence.
+ */
+export function checkComposition(ts, entry) {
+  const key = `${entry.key} · composition`;
+  let expectedTree, actualTree;
+  try {
+    const mockSrc = readFileSync(resolve(ROOT, entry.mockFile), "utf8");
+    expectedTree = mockCompositionTree(ts, mockSrc, entry.mockComponent, entry.regions);
+  } catch (e) {
+    return { key, screen: entry.key, state: null, region: "∴composition", ok: false, message: `could not build mock composition for ${entry.key}: ${e.message}`, expected: null, actual: null, diff: String(e.message), composition: true };
+  }
+  try {
+    const containerSrc = readFileSync(resolve(ROOT, entry.container), "utf8");
+    actualTree = containerCompositionTree(ts, containerSrc, entry.regions);
+  } catch (e) {
+    return { key, screen: entry.key, state: null, region: "∴composition", ok: false, message: `could not build container composition for ${entry.container}: ${e.message}`, expected: sexpr(expectedTree), actual: null, diff: String(e.message), composition: true };
+  }
+  const d = diff(expectedTree, actualTree);
+  return {
+    key,
+    screen: entry.key,
+    state: null,
+    region: "∴composition",
+    ok: !d,
+    composition: true,
+    message: d
+      ? `composition drift on ${entry.key} — the container no longer mounts the region fragments in the mock's order/nesting:\n  ${d}\n    mock:      ${sexpr(expectedTree)}\n    container: ${sexpr(actualTree)}`
+      : `composition congruent (${sexpr(expectedTree)})`,
+    expected: sexpr(expectedTree),
+    actual: sexpr(actualTree),
+    diff: d,
+  };
+}
+
+/**
+ * Check every ADOPTED view — one per single-view screen, one per adopted STATE of a multi-state screen,
+ * one per REGION of a region-adopted screen — plus one COMPOSITION check per region-adopted screen.
+ */
 export function checkAll(ts) {
-  return expandAdopted().map((spec) => checkScreen(ts, spec));
+  const perView = expandAdopted().map((spec) => checkScreen(ts, spec));
+  const perComposition = regionScreens().map((entry) => checkComposition(ts, entry));
+  return [...perView, ...perComposition];
 }
 
 export function formatResult(r) {
