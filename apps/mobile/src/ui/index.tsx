@@ -24,6 +24,13 @@ export { CodeInput } from "./CodeInput";
 export { Money } from "./Money";
 export { SystemState } from "./SystemState";
 
+// Mock-faithful DS primitives (codegen targets) — the transpiler emits these by the exact kit name,
+// so they mirror the design kit's `r-parts.jsx` primitives verbatim (structure/style/tokens).
+export { Banner, type BannerTone } from "./Banner";
+export { CoverPhoto } from "./CoverPhoto";
+export { PriceMath } from "./PriceMath";
+export { MenuRow, type MenuRowItem, type MenuCategory } from "./MenuRow";
+
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
 export { Avatar } from "./Avatar";

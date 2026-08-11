@@ -184,14 +184,18 @@ export default function OrdersTabScreen(): React.ReactElement {
           // Live data arrived with no earlier orders. With a live order already pinned above, that's
           // an unremarkable "nothing before this one yet" — not the true empty state.
           activeOrder ? null : (
-            <EmptyState
-              icon="receipt"
-              title="Nothing here yet"
-              message="Parcels and food orders both land on this screen — you'll be able to reorder from here in one tap."
-            >
-              {restaurantsEnabled ? <Button label="Find food near you" onPress={() => router.push("/food")} /> : null}
-              <Button label="Send a parcel" variant={restaurantsEnabled ? "ghost" : "primary"} onPress={() => router.replace("/send")} />
-            </EmptyState>
+            // Kit R0·b1 `orders_empty` (r-customer-a.jsx:565): the empty state sits inside a Card (the
+            // owner-decided empty-state wrapper), not bare on the page.
+            <Card style={{ paddingTop: 10, paddingRight: 16, paddingBottom: 18, paddingLeft: 16, marginTop: 24 }}>
+              <EmptyState
+                icon="receipt"
+                title="Nothing here yet"
+                message="Parcels and food orders both land on this screen — you'll be able to reorder from here in one tap."
+              >
+                {restaurantsEnabled ? <Button label="Find food near you" onPress={() => router.push("/food")} /> : null}
+                <Button label="Send a parcel" variant={restaurantsEnabled ? "ghost" : "primary"} onPress={() => router.replace("/send")} />
+              </EmptyState>
+            </Card>
           )
         ) : (
           // No data and NOT fetching — an errored fetch or the offline paused state with no cache.
