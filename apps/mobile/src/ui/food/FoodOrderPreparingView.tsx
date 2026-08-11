@@ -1,8 +1,9 @@
 import { tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { OfflineBanner, Screen, Stepper } from "../index";
+import { OfflineBanner, Screen } from "../index";
 import { CountdownRing } from "./CountdownRing";
+import { FoodPrepTrackerView } from "./food-prep-tracker.view";
 import { OrderHeader } from "./FoodOrderHelpers";
 
 type PreparingOrder = Pick<MerchantOrderResponse, "prepMinutes" | "prepStartedAt" | "status" | "merchantPhase">;
@@ -41,7 +42,7 @@ export function FoodOrderPreparingView({
       </View>
       {/* merchantPhase drives the two pre-dispatch steps — without it the whole kitchen phase reads as
           "not started yet" because the order is still `requested` on the dispatch side. */}
-      <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
+      <FoodPrepTrackerView events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
     </Screen>
   );
 }

@@ -48,7 +48,13 @@ const TAG = {
 // Lockup→BrandLockup precedent — so a fragment rooted at (or containing) the map/sheet stays congruent
 // by construction. `FauxMap`/`HarareMap` both fold to `ComposeMap`: a region can override per-screen via
 // its bind (e.g. tracking wiring `LiveMap`) but the default realization is the compose map.
-const DS_RENAME = { Top: "AppBar", Lockup: "BrandLockup", Dove: "DoveMark", FauxMap: "ComposeMap", HarareMap: "ComposeMap", MapSheet: "BottomSheet" };
+//
+// Foundation-F.d — `RTracker`→`Stepper`. The food-order tracking mocks (r-customer-b.jsx) draw the
+// step timeline as the kit `RTracker`; the app realizes it as `Stepper` (the kit's RTracker returns
+// `<DSR.Stepper/>` when the DS is present). Fold the tag here AND to ONE canonical STEPPER in
+// normalize.mjs (`rtracker`→STEPPER) — so a `tracker` region rooted at the mock's RTracker resolves to
+// the app's real Stepper primitive and stays congruent by construction.
+const DS_RENAME = { Top: "AppBar", Lockup: "BrandLockup", Dove: "DoveMark", FauxMap: "ComposeMap", HarareMap: "ComposeMap", MapSheet: "BottomSheet", RTracker: "Stepper" };
 // `Pad` is a screen-edge-padding <div> in the kit; reproduce that as a padded View.
 const PAD_BASE = () => [
   ["padding", tokenMember("space.screen")],
