@@ -7,11 +7,12 @@ import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { Button, Card, EmptyState, Icon, Money, Screen } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, Money, Screen } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
 import { NoteField } from "../../src/ui/food/NoteField";
+import { PriceMath } from "../../src/ui/food/PriceMath";
 
 interface Reconciled {
   lines: FoodCartLine[];
@@ -86,7 +87,7 @@ export default function FoodCartScreen(): React.ReactElement {
   if (!cart.cart.restaurantId || cart.cart.lines.length === 0) {
     return (
       <Screen>
-        <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Your cart</Text>
+        <AppBar title="Your cart" onBack={() => router.back()} />
         <EmptyState
           icon="shopping-bag"
           title="Your cart is empty"
@@ -102,8 +103,9 @@ export default function FoodCartScreen(): React.ReactElement {
 
   return (
     <Screen>
-      <Text style={{ fontSize: 19, fontWeight: "700" }}>Your cart</Text>
-      <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 12 }}>{cart.cart.restaurantName}</Text>
+      {/* Kit RC.cart (r-customer-a.jsx:297): the header is the shared AppBar — 16/700 title + 11.5
+          muted sub (the kitchen's name) + a rotated-chevron back, not an in-body 19px heading. */}
+      <AppBar title="Your cart" sub={cart.cart.restaurantName ?? undefined} onBack={() => router.back()} />
 
       {!dismissedNotice && (reconciled.removedNames.length > 0 || reconciled.priceChanges.length > 0) ? (
         <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
@@ -211,13 +213,18 @@ export default function FoodCartScreen(): React.ReactElement {
           </Card>
         ) : null}
 
-        <Card>
-          {/* Kit r-parts.jsx PriceMath labels the goods line "Food", not "Subtotal". */}
-          <Row label="Food" value={formatMoney(cart.subtotal)} />
-          {cart.smallOrderFee > 0 ? <Row label="Small-order fee" value={formatMoney(cart.smallOrderFee)} /> : null}
-          <Row label="Total" value={formatMoney(cart.total)} bold />
-          <Text style={{ fontSize: 11.5, color: tokens.color.muted, marginTop: 6 }}>Delivery fee is added at checkout, once we know where you are.</Text>
-        </Card>
+        {/* Kit RC.cart (r-customer-a.jsx:342): the summary is the shared PriceMath card — itemised
+            rows, a hairline, then a 19px Total. Delivery is the one line PriceMath's mock draws that
+            the cart honestly can't yet (the drop-off address is entered at checkout, not here), so it
+            is named in the footnote instead of shown as an invented figure. */}
+        <PriceMath
+          rows={[
+            { label: "Food", value: cart.subtotal },
+            ...(cart.smallOrderFee > 0 ? [{ label: "Small-order fee", value: cart.smallOrderFee }] : []),
+          ]}
+          total={cart.total}
+          footnote="Delivery fee is added at checkout, once we know where you are."
+        />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
 
@@ -239,14 +246,5 @@ export default function FoodCartScreen(): React.ReactElement {
         />
       ) : null}
     </Screen>
-  );
-}
-
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }): React.ReactElement {
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
-      <Text style={{ fontSize: bold ? 14.5 : 13, fontWeight: bold ? "700" : "500", color: bold ? tokens.color.ink : tokens.color.muted }}>{label}</Text>
-      <Text style={{ fontSize: bold ? 15.5 : 13.5, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{value}</Text>
-    </View>
   );
 }

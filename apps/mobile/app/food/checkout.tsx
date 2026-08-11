@@ -14,7 +14,7 @@ import { useReachability } from "../../src/net/use-reachability";
 import { seedFoodOrder } from "../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { uuidV4FromSeed } from "../../src/util";
-import { Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonList } from "../../src/ui";
 import type { PickedPoint } from "../../src/ui/MapPicker";
 import { MapPicker } from "../../src/ui/MapPicker";
 import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
@@ -86,7 +86,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   if (cart.ready && (!cart.cart.restaurantId || cart.cart.lines.length === 0)) {
     return (
       <Screen>
-        <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Checkout</Text>
+        <AppBar title="Checkout" onBack={() => router.back()} />
         <EmptyState
           icon="shopping-bag"
           title="Your cart is empty"
@@ -101,7 +101,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   if (isLoading || !restaurant) {
     return (
       <Screen>
-        <Text style={{ fontSize: 19, fontWeight: "700", marginBottom: 14 }}>Checkout</Text>
+        <AppBar title="Checkout" onBack={() => router.back()} />
         <SkeletonList count={3} />
       </Screen>
     );
@@ -163,8 +163,9 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   return (
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
-      <Text style={{ fontSize: 19, fontWeight: "700" }}>Checkout</Text>
-      <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 12 }}>{restaurant.name}</Text>
+      {/* Kit RC.checkout_cash (r-customer-a.jsx:426): the header is the shared AppBar — 16/700
+          title + 11.5 muted sub (the kitchen's name) + a rotated-chevron back. */}
+      <AppBar title="Checkout" sub={restaurant.name} onBack={() => router.back()} />
 
       {!open ? (
         <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
@@ -212,16 +213,19 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             selected={paymentMethod === "cash"}
             onPress={() => setPaymentMethod("cash")}
           />
+          {/* Kit RC.checkout_wallet (r-customer-a.jsx:487): once mobile money is the choice the
+              subtitle becomes the provider list; unselected it states when the money moves. */}
           <PaymentMethodRow
             icon="wallet"
             title="Mobile money"
-            subtitle="Pay the restaurant after they accept"
+            subtitle={paymentMethod === "wallet" ? "EcoCash · InnBucks · O'mari" : "Pay the restaurant after they accept"}
             selected={paymentMethod === "wallet"}
             onPress={() => setPaymentMethod("wallet")}
           >
-            <Icon name="clock" size={14} color={tokens.color.accentText} />
-            <Text style={{ flex: 1, fontSize: 12, color: tokens.color.accentText, lineHeight: 16 }}>
-              You pay only after the restaurant accepts. They&apos;ll call to confirm, then request payment — no deadline, the kitchen starts once it lands.
+            {/* Kit RC.checkout_wallet (r-customer-a.jsx:491-494): clock glyph, ink copy, lead bold. */}
+            <Icon name="clock" size={15} color={tokens.color.accentText} style={{ marginTop: 1 }} />
+            <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.ink, lineHeight: 18 }}>
+              <Text style={{ fontWeight: "700" }}>You pay only after the restaurant accepts.</Text> They&apos;ll call you to confirm, then send the payment request — no deadline, the kitchen starts once it lands.
             </Text>
           </PaymentMethodRow>
 
@@ -234,9 +238,14 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             ]}
             total={total}
             footnote={
+              // Kit RC.checkout_cash/checkout_wallet PriceMath note (r-customer-a.jsx:456, 496) —
+              // verbatim, with the wallet line naming the kitchen the money goes to. The trailing
+              // "estimate is confirmed on placing" clause is the honest add: the mock draws a
+              // confirmed delivery fee (the address is known there), the app can only estimate one
+              // from the drop pin until the order is placed.
               paymentMethod === "cash"
                 ? "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order."
-                : "Paid straight to the restaurant. LyniaGo never holds your money. The exact delivery fee is confirmed the moment you place this order."
+                : `Paid straight to ${restaurant.name}. LyniaGo never holds your money. The exact delivery fee is confirmed the moment you place this order.`
             }
           />
 
@@ -244,8 +253,10 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             <View style={{ flexDirection: "row", gap: 9 }}>
               <Icon name="circle-alert" size={15} color={tokens.color.muted} />
               <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted, lineHeight: 17 }}>
+                {/* Kit RC.checkout_cash (r-customer-a.jsx:459): the cash consequence names the full
+                    figure, not a vague "amount". */}
                 {paymentMethod === "cash"
-                  ? "Free to cancel until the rider collects your food. After that the food is cooked and paid for, and cancelling costs the full amount."
+                  ? `Free to cancel until the rider collects your food. After that the food is cooked and paid for, and cancelling costs the full ${formatMoney(total)}.`
                   : "Free to cancel any time before you pay — once payment is confirmed, the kitchen has started cooking."}
               </Text>
             </View>
