@@ -532,6 +532,121 @@ export const ADOPTED = [
     ],
   },
   {
+    // ── RC.closed_interrupt — the "kitchen closes while you're browsing" interrupt (R2·b1). It is NOT a
+    // standalone screen: the app raises it as a modal OVERLAY inside the same interactive menu container
+    // (app/food/[id].tsx) the moment `hours` cross open→closed mid-browse (the `justClosed` state). So it
+    // adopts the SAME way RC.menu did — PIECE-BY-PIECE (Foundation-E), not as a whole-screen view: one
+    // generated, guarded FRAGMENT of the mock's overlay Card, composed by the container. This is the SECOND
+    // region-adopted mock keyed to `app/food/[id].tsx` (RC.menu is the first); the composition check runs
+    // per-entry — `optsFromRegions` anchors ONLY this entry's region, so it prunes the RC.menu cover/rows/
+    // footer regions (and vice-versa), and the two checks stay independent on the one container.
+    //
+    // The mock draws the interrupt over a DIMMED SKELETON placeholder of the menu; the app draws it over
+    // the LIVE menu (mock-wins: the skeleton is the design's stand-in for "the menu you were browsing", the
+    // app shows the actual one). That backdrop is not a region and is pruned from the composition, so no
+    // deviation is needed. Both mock and container reduce to `SCREEN( REGION:interrupt )`.
+    key: "RC.closed_interrupt",
+    container: "apps/mobile/app/food/[id].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    mockComponent: "closed_interrupt",
+    uiImport: "../../src/ui",
+    regions: [
+      {
+        // Interrupt region — the centred modal Card: a highlight clock-tile, headline, body line and two
+        // named ways forward (see-open / keep-cart). Locator {el:"Card"} anchors the mock's single Card;
+        // the app mounts <ClosedInterruptView/> inside its transparent dim-overlay Pressable (invisible to
+        // the composition walker, which bubbles a non-scaffold wrapper's region). No backend gate, no
+        // fabricated control — both actions are honest (navigate to the open list · dismiss keeping cart).
+        region: "interrupt",
+        locator: { el: "Card" },
+        componentName: "ClosedInterruptView",
+        viewFile: "apps/mobile/app/food/closed-interrupt.view.tsx",
+        propsParam: "{ title, body, onSeeOpen, onDismiss }: ClosedInterruptViewProps",
+        propsType: [
+          "export type ClosedInterruptViewProps = {",
+          "  /** '<Shop> just closed' — the live restaurant name drives the headline. */",
+          "  title: string;",
+          "  /** The reassurance line (cart kept, nothing ordered). */",
+          "  body: string;",
+          "  /** 'See places still open' → the browse list. */",
+          "  onSeeOpen: () => void;",
+          "  /** 'Keep my cart for tomorrow' → dismiss the interrupt. */",
+          "  onDismiss: () => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          // The headline + body are the DATA SEAM: the restaurant name and (honest) reassurance copy come
+          // from the container. The structural guardrail ignores text, so these are leaf swaps.
+          JSXText(path) {
+            const v = path.node.value.trim();
+            if (v === "Sadza Republic just closed") path.replaceWith(t.jsxExpressionContainer(expr("title")));
+            else if (v.startsWith("They stopped taking orders")) path.replaceWith(t.jsxExpressionContainer(expr("body")));
+          },
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "Button") return;
+            // Kit Button's web `onClick={nop}` → the app Button's `onPress`; route by the mock label.
+            const label = path.node.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "label");
+            const lv = label && label.value && label.value.value;
+            path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+            const handler = lv === "See places still open" ? "onSeeOpen" : "onDismiss";
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr(handler))));
+          },
+        }),
+      },
+    ],
+  },
+  {
+    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx). DEFER-only: a kit-COMPOSITE member-tag
+    // screen (Foundation-F #42) atop a live-vs-static multi-state divergence. See the deferred reason.
+    key: "RC.home",
+    container: "apps/mobile/app/(tabs)/home.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.home",
+        reason:
+          "KIT-COMPOSITE member-tag wall (Foundation-F #42) + live-vs-static, not a primitive/backend gap. The mock `RC.home` is `<Screen><HomeBody/></Screen>` where HomeBody is a single opaque DS composite `<AppHome address live restaurants .../>` (destructured from `P.DSR.AppHome`). The transpiler cannot inline AppHome — its whole tree (BrandHeader → ServiceTiles → LiveOrderCard(s) → 'restaurants near you' RestaurantCards) lives INSIDE the DS component, not as JSX in the mock file — so a generated whole-screen view emits an unresolved `<AppHome/>`, and region locators can't anchor sub-trees that root inside an opaque composite (same class as the send-composer's FauxMap/MapSheet regions). The app ALSO supersets: home is a live container that switches, in ONE tree, a first-load skeleton, an active-order LiveOrderCard, an active-order-check-FAILED banner and a reorder rail before the restaurants rail (a horizontal 'See all →' scroll, not the mock's vertical list) — none of which the static AppHome composite draws. Adoptable once AppHome's members are authored as locatable DS primitive regions (Foundation-F remaps + region roots), OR the composite earns per-state boundaries — a Foundation build, not one iteration.",
+      },
+    ],
+  },
+  {
+    // ── RC.search — restaurant/dish search (app/food/search.tsx). DEFER-only: the same RestRow backend
+    // gate as RC.list#data, PLUS a dish-index the API lacks, PLUS a live-vs-static multi-state superset.
+    key: "RC.search",
+    container: "apps/mobile/app/food/search.tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RC.search",
+        reason:
+          "THREE walls, none a missing primitive. (1) BACKEND gate — the mock's PLACES section is `<RestRow r={REST[0]}/>`, whose meta line draws `★ rating (n) · km · eta min` + `$fee delivery`; rating, geo-distance (km), per-restaurant ETA and delivery fee are ALL absent from the `RestaurantListItem` wire contract and the app has no customer geolocation (issue #673 / task #24 — the SAME gate that defers RC.list#data). The app's shared RestaurantRow already honest-empties this (cuisine tags + an open/closing-now line instead of the fabricated rating/km/eta), so its meta STRUCTURE diverges from the mock's RestRow by design; rendering the mock's rating/km/eta nodes would ship fabricated figures (CLAUDE.md forbids). (2) DISH INDEX — the mock's second `DISHES` section lists cross-restaurant dish matches (`Sadza & beef stew · Sadza Republic · $4.50`), which needs a cross-restaurant menu/dish search index the C1 customer read API does not expose; the app search runs client-side over the already-fetched restaurant list (name + cuisine only) and honestly omits the DISHES section rather than fake it. (3) LIVE-vs-STATIC multi-state — the static mock draws only the populated 'sadza' result; the app screen interleaves an empty-query hint, a 'still searching more kitchens…' pagination line, the results list and a no-matches EmptyState, none of which the one frozen mock draws. Adoptable once the customer read API carries rating/distance/fee + a cross-restaurant dish index, and the search states earn their own mock keys.",
+      },
+    ],
+  },
+  {
+    // ── RC.menu_closed — the closed-restaurant menu (a state of app/food/[id].tsx). DEFER-only: a
+    // live-vs-static structural divergence within the already-region-adopted interactive menu container.
+    key: "RC.menu_closed",
+    container: "apps/mobile/app/food/[id].tsx",
+    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "closed",
+        key: "RC.menu_closed",
+        reason:
+          "LIVE-vs-STATIC structural divergence inside an already-region-adopted INTERACTIVE container, plus a backend-gated meta line — not a missing primitive. The static mock frames the closed state as its OWN whole `<Screen banner={<Banner warn 'is closed'/>} footer={<Button 'Remind me when they open'/>}>` with a dimmed CoverPhoto + shop-meta + an all-OOS MenuRow list. The app realizes the SAME closed state LIVE inside the shared menu container (app/food/[id].tsx, already region-adopted for RC.menu): it derives open/closed from `hours` and, when closed, renders an INLINE notice Card (clock icon + `nextOpenDescription` copy + the working `RemindWhenOpen` control) BETWEEN the shop-meta and the category tabs — NOT as the mock's Screen `banner` + pinned `footer` button. Mock-wins can't losslessly restructure this without regressing the live open/closed derivation, the category tabs and the real reopen-reminder toggle (which, unlike RC.list's dead 'Notify me', IS backed by `useReopenReminder`). The mock's shop-meta also draws `4.0 km` (geo-distance — the RC.menu#meta backend gate). A separate whole-screen or banner/footer-region view is not expressible over the live menu container without either a Foundation build (banner/footer region roots for the closed variant) or regressing the interactive glue. Adoptable once the closed variant earns banner/footer region boundaries against the app's inline-notice tree.",
+      },
+    ],
+  },
+  {
     // RC.cart — the food cart (app/food/cart.tsx). cart_empty is adopted (above); the DATA state defers.
     key: "RC.cart",
     container: "apps/mobile/app/food/cart.tsx",
@@ -930,6 +1045,62 @@ export const ADOPTED = [
         key: "LJ.addr_map_confirm",
         reason:
           "the confirm-pin-on-map sub-state of the send composer — realized in-app as the `AddressConfirmSheet` MODAL opened from the compose sheet (not a routed screen), over the same FauxMap/sheet shell. Same region-model wall (kit `K.FauxMap` map canvas + no locatable DS region root); no standalone container. Deferred with LJ.home_empty.",
+      },
+    ],
+  },
+  {
+    // ── PARCEL AUCTION / OFFERS cluster — the customer reviewing ranked rider bids on a broadcast
+    //    parcel (app/order/[id].tsx). The four gallery keys are the mock `Auction` (screens.jsx:210,
+    //    variant=finding|live|expired) + `AuctionCounter` (screens.jsx:512). This is a list+card
+    //    composite (NOT map-dependent — no Foundation-F FauxMap gap in the auction states themselves),
+    //    but it registers DEFER-only, like the send composer / RC.orders / LJ.otp: a deeply-live
+    //    composite container the whole-screen + region codegen model cannot host without regressing a
+    //    SENSITIVE area (best-match offer RANKING, accept-offer idempotency + agreed-price, counter-offer
+    //    accept/decline F-07, select-race 409 recovery, rebroadcast). Three structural walls run through
+    //    the whole cluster: (W1) KIT-COMPOSITE member tags — the mocks author the offer cards + sort
+    //    chips as `K.OfferCard`/`K.SortChips` (K = window.LyniaKit), JSXMemberExpression tags the
+    //    transpiler leaves verbatim (transpile.mjs reads `open.name.name`, undefined for a member tag, so
+    //    no DS_RENAME + no import) and the region locators can't anchor (`{el}` matches
+    //    `openingElement.name.name`, also undefined for `K.SortChips`); there is NO app OfferCard/SortChips
+    //    DS primitive to import (the app draws each bid inline as `Card(RiderMini, Money, Button)` and the
+    //    sort chips inline as `Pressable(Text)`), so a generated view emits `<K.OfferCard>` against an
+    //    undefined `K` and neither typechecks nor composes. (W2) `OrderHead` is a mock-local helper
+    //    (screens.jsx:31) the transpiler neither inlines nor can import — every auction mock leads with it.
+    //    (W3) LIVE-VS-STATIC composite with no whole-screen boundary — the app's `open_for_offers` render
+    //    is NOT an early-return Screen; it is a `<View>` interleaved inside ONE `<Screen><ScrollView>`
+    //    alongside the active-tracking / delivered / completed / expired / cancelled terminal states, so
+    //    there is no per-state Screen to swap a generated whole-screen view into (unlike food-list's
+    //    early-returned loading/error). Full per-state analysis below.
+    key: "LJ.auction_live",
+    container: "apps/mobile/app/order/[id].tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
+    mockComponent: "Auction",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "LJ.auction_live",
+        reason:
+          "the populated offers list — mock `Auction` default return (screens.jsx:265) `Pad(OrderHead, headerRow[muted '3 riders bidding' + tabular timer], askingLine, K.SortChips, K.OfferCard recommended, K.OfferCard, K.OfferCard)`. Hits all three cluster walls at once: (W1) the sort chips + three offer cards are `K.SortChips`/`K.OfferCard` kit-composite member tags with no app DS primitive and no transpiler/locator handling — the generated view emits `<K.OfferCard o={RIDERS[0]}>` against an undefined `K`/`RIDERS`; (W2) it leads with the mock-local `<OrderHead>`; (W3) in-app the live offers list is a `<View>` inside the composite order Screen, gating `<AuctionClock/>` (the 1s countdown header extracted per PERF20-02), an `orderedOffers.map` that mixes `<CounterOfferCard>` and inline `<Card>` per `isActiveCounter`, `BidEntrance` animations, a `>1`-gated sort-chip row, a select-race notice and a one-primary-CTA rule — not a whole-screen swap. The region model can't rescue it either: the mock's three offer cards are LITERAL siblings with NO `.map()` for `{map:}` to find, and the root is a `<Pad>` (not a `<Screen>`) so `{slot:}` can't fold a footer. Also note `Auction` is a variant-SWITCH function (finding/race/expired/noriders/live) so extractComponent pulls all five returns into one view and normalize.mjs's `returnedExpr` reads only the LAST (live) top-level return. Adoptable once OfferCard/SortChips are authored as DS primitives (or the transpiler learns kit-composite→app-component remaps) and the live auction earns per-state boundaries — a Foundation build, not one iteration in a sensitive area.",
+      },
+      {
+        state: "loading",
+        key: "LJ.auction_finding",
+        reason:
+          "the waiting-for-bids state — mock `Auction` variant=\"finding\" (screens.jsx:211), an EARLY return inside `if (variant===\"finding\")`. Not isolable by the codegen model: normalize.mjs reads only the LAST top-level return of a component (the live variant), so a finding-only view cannot be extracted by component NAME without splitting `Auction` into a named per-variant component in packages/design — FORBIDDEN (reverse-drift freeze). In-app it is the live-but-empty `SkeletonCard + Sub('No offers yet — riders nearby have been pinged. Hang tight.')` sub-branch INSIDE the open_for_offers composite (W3), not an early-return Screen, and it still leads with the mock-local `OrderHead` (W2) and draws the `askingLine` price context. Deferred with the cluster; adoptable once the Auction variants are modelled as separate named mocks and the finding state earns its own boundary.",
+      },
+      {
+        state: "expired",
+        key: "LJ.auction_expired",
+        reason:
+          "the window-closed terminal — mock `Auction` variant=\"expired\" (screens.jsx:242) `Pad(OrderHead[expired,offline], EmptyState(Button 'Nudge price & re-broadcast', Button ghost 'Edit order'))`. Same variant-branch non-isolability as auction_finding (an `if` early return the normalizer can't select by name), and the mock-local `OrderHead` wall (W2). In-app it is one of THREE honest `expiredTerminalKind` EmptyState conditionals (had-offers / no-supply / default — the app deliberately supersets the single mock EmptyState with cold-start-safe copy driven by `hadOffers`/`expiryNoSupply`) rendered inside the composite Screen (W3), not a whole-screen swap. Deferred with the cluster.",
+      },
+      {
+        state: "counter",
+        key: "LJ.auction_counter",
+        reason:
+          "the counter-offer review — mock `AuctionCounter` (screens.jsx:512) IS a clean single-return named component, and its counter CARD transpiles cleanly (static `border` shorthand expands, `boxShadow` token spreads, `placeItems:center`→flex-center, `borderRadius:50%`→px all lower fine). But it still (a) leads with the mock-local `<OrderHead>` and ends with the kit-composite `<K.OfferCard o={RIDERS[0]}>` ('Other offers'), both undefined refs (W1/W2); and (b) has no whole-screen container boundary — the app renders a counter as ONE `<CounterOfferCard>` (a bespoke app component, not the mock's inline primitives) interleaved in the live `orderedOffers.map` gated by `isActiveCounter`, NOT as a separate auction_counter screen (W3). Adopting the whole-screen mock would mean rebuilding the entire live auction around a static composite, regressing streaming/ranking/select-race and the F-07 decline (one round, no counter-back). Deferred with the cluster; adoptable once OfferCard is a DS primitive and the counter state earns its own boundary.",
       },
     ],
   },

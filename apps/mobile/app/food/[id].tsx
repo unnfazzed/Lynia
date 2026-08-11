@@ -15,6 +15,7 @@ import { RemindWhenOpen } from "../../src/ui/food/RemindWhenOpen";
 // 'just closed' interrupt, add-to-cart). The structural-snapshot guardrail asserts each fragment ≡ its
 // mock sub-tree AND that this container mounts them in the mock's region order/nesting (the composition
 // check). Do NOT inline these regions back — that reintroduces the drift the region guard exists to catch.
+import { ClosedInterruptView } from "./closed-interrupt.view";
 import { MenuCartBarView } from "./menu-cart-bar.view";
 import { MenuCoverView } from "./menu-cover.view";
 import { MenuRowsView, type MenuRowSeed } from "./menu-rows.view";
@@ -220,29 +221,17 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           onPress={() => setJustClosed(false)}
           style={{ position: "absolute", inset: 0, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "center", padding: 18 }}
         >
-          {/* Kit R2·b1 `closed_interrupt` (r-customer-a.jsx:280-288): a highlight icon tile above the
-              headline, and two named ways forward rather than a generic dismiss. */}
-          <Card>
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 12,
-                backgroundColor: tokens.color.highlightWash,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 10,
-              }}
-            >
-              <Icon name="clock" size={21} color={tokens.color.highlightInk} />
-            </View>
-            <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>{restaurant.name} just closed</Text>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19, marginTop: 5 }}>
-              They stopped taking orders. Your cart is saved — nothing was ordered.
-            </Text>
-            <Button label="See places still open" onPress={() => router.push("/food")} />
-            <Button label="Keep my cart for tomorrow" variant="ghost" onPress={() => setJustClosed(false)} />
-          </Card>
+          {/* Kit R2·b1 `closed_interrupt` (r-customer-a.jsx:276-291): the modal Card is the GENERATED,
+              guarded ClosedInterruptView fragment (tools/parity/codegen/adopted.mjs → RC.closed_interrupt),
+              mounted here inside the dim-overlay Pressable. The structural-snapshot guardrail asserts the
+              fragment ≡ the mock Card AND that this container composes it in the mock's region order — a
+              SECOND region check on this menu container, independent of RC.menu's. Do NOT inline it back. */}
+          <ClosedInterruptView
+            title={`${restaurant.name} just closed`}
+            body="They stopped taking orders. Your cart is saved — nothing was ordered."
+            onSeeOpen={() => router.push("/food")}
+            onDismiss={() => setJustClosed(false)}
+          />
         </Pressable>
       ) : null}
 
