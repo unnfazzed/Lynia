@@ -1,10 +1,11 @@
 import { tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
-import { BrandLockup, Button, Heading, Icon, type IconName, Screen, Sub } from "../src/ui";
+import { RoleSelectView } from "./role.view";
+import { RoleSelectFlagOffView } from "./role-flag-off.view";
 
 /**
  * Post-OTP role fork (RIDER-JOURNEY-AUDIT R0-4): sign-in is identical to the customer up to here, so
@@ -13,10 +14,14 @@ import { BrandLockup, Button, Heading, Icon, type IconName, Screen, Sub } from "
  * The choice is persisted (saveRolePreference), so verify.tsx sends existing users straight home
  * instead of re-prompting every launch.
  *
- * The customer option's copy follows `restaurantsEnabled` (journey 0·5, screens.jsx role_select):
- * flag-on it reads the joint-launch "Use LyniaGo — order food, send parcels"; flag-off it must keep
- * the parcels-only wording — the §1 escape hatch hides the whole vertical, and an unflagged mention
- * of food here would leak it (same fail-safe-off contract as the home Food tile).
+ * The presentational tree is the codegen-adopted `RoleSelectView` (mock screens.jsx `RoleSelect`) with
+ * its food-off twin `RoleSelectFlagOffView` (mock screens-shipped.jsx `RoleSelectFlagOff`). The mocks
+ * draw two different screens per the food flag — a `Lockup` brand mark + joint-launch copy when food is
+ * on, a `Dove`+`Wordmark` mark + parcels-only copy when it is off (journey 0·5) — so the container picks
+ * the view by `restaurantsEnabled` rather than swapping copy inside one tree. The flag-off wording keeps
+ * food hidden: the §1 escape hatch hides the whole vertical, and an unflagged mention of food here would
+ * leak it (same fail-safe-off contract as the home Food tile). This screen owns all logic (the live role
+ * selection, saveRolePreference, the permission-priming route); the views take only leaf props.
  */
 export default function RoleScreen(): React.ReactElement {
   const router = useRouter();
@@ -33,85 +38,20 @@ export default function RoleScreen(): React.ReactElement {
     router.replace(`/permissions?next=${dest}`);
   };
 
+  const viewProps = {
+    customerSelected: role === "customer",
+    riderSelected: role === "rider",
+    onSelectCustomer: () => setRole("customer"),
+    onSelectRider: () => setRole("rider"),
+    continueLabel: role === "rider" ? "Continue as a rider" : "Continue as a customer",
+    onContinue: () => go(role),
+  };
+
   return (
-    <Screen>
-      {/* The mock (screens.jsx `RoleSelect`) opens with the brand lockup above the heading. */}
-      <View style={{ marginBottom: tokens.space.xl }}>
-        <BrandLockup size={40} />
-      </View>
-      <Heading>How do you want to start?</Heading>
-      <Sub>It&apos;s one account — pick how you&apos;ll use LyniaGo now, and switch anytime.</Sub>
-
-      <RoleOption
-        icon={restaurantsEnabled ? "shopping-bag" : "package"}
-        title={restaurantsEnabled ? "Use LyniaGo" : "Send a parcel"}
-        desc={
-          restaurantsEnabled
-            ? "Order food, send parcels, more services soon."
-            : "Post a delivery and let nearby riders bid."
-        }
-        selected={role === "customer"}
-        onPress={() => setRole("customer")}
-      />
-      <RoleOption
-        icon="bike"
-        title="Earn as a rider"
-        desc="Deliver parcels near you and get paid in cash."
-        selected={role === "rider"}
-        onPress={() => setRole("rider")}
-      />
-
-      <Button label={role === "rider" ? "Continue as a rider" : "Continue as a customer"} onPress={() => go(role)} />
-    </Screen>
-  );
-}
-
-function RoleOption(props: {
-  icon: IconName;
-  title: string;
-  desc: string;
-  selected: boolean;
-  onPress: () => void;
-}): React.ReactElement {
-  const { selected } = props;
-  return (
-    <Pressable
-      onPress={props.onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`${props.title}. ${props.desc}`}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: tokens.space.md,
-        minHeight: tokens.touchTargetPrimary,
-        padding: tokens.space.lg,
-        borderRadius: tokens.radius.card,
-        borderWidth: 1.5,
-        // Selected chip state: mint wash + green text-border; the bright accent fill stays for the
-        // icon tile only (non-text fill), never white text on bright accent.
-        borderColor: selected ? tokens.color.accentText : tokens.color.line,
-        backgroundColor: selected ? tokens.color.accentWash : tokens.color.bg,
-        marginBottom: tokens.space.md,
-      }}
-    >
-      <View
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 23,
-          backgroundColor: selected ? tokens.color.accent : tokens.color.surface,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Icon name={props.icon} size={22} color={selected ? tokens.color.onAccent : tokens.color.accentText} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{props.title}</Text>
-        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: 1 }}>{props.desc}</Text>
-      </View>
-      <Icon name={selected ? "check" : "chevron-right"} size={20} color={selected ? tokens.color.accentText : tokens.color.muted} />
-    </Pressable>
+    // The phone frame / safe area — the mock's AppScreen shell; the mock's own screen padding lives
+    // inside the view (from its `Pad` wrapper), mirroring phone.tsx.
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      {restaurantsEnabled ? <RoleSelectView {...viewProps} /> : <RoleSelectFlagOffView {...viewProps} />}
+    </SafeAreaView>
   );
 }

@@ -60,12 +60,12 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 | ⬜ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | | |
 | 👁 | C1·5 | `LJ login` | Phone login | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | 👁 | C1·6 | `LJ otp` | SMS OTP | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
-| 👁 | C1·7 | `LJ role_select` | Choose your role | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| ✅ | C1·7 | `LJ role_select` | Choose your role | codegen-adopted (Foundation-F.e — template-literal border + conditional shadow-spread idioms); `app/role.view.tsx` ≡ mock, guardrails green | |
 | 👁 | C1·8 | `LJ register` | Profile registration | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | 👁 | C1·9 | `LJ perm_loc` | Permission · location | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | ⬜ | C1·10 | `LJ perm_notif` | Permission · notifications | | |
 | ⬜ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | | |
-| ⬜ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | | |
+| ✅ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | codegen-adopted (Foundation-F.e); `app/role-flag-off.view.tsx` ≡ mock (Dove+Wordmark mark + verbatim food-safe copy), guardrails green | |
 
 ### C2 · Home & orders
 

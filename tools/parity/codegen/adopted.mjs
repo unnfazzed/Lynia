@@ -37,6 +37,52 @@
  * …), passing each its data seam — composition, not a rewrite: the queries, pagination and FlatList
  * virtualization stay exactly as they were.
  */
+/**
+ * Shared data seam for the role fork (LJ.role_select + its food-off twin role_select_flag_off). The
+ * mock's inline `Opt` cards are STATIC (a frozen `selected={true/false}`, a web `onClick={noop}` on the
+ * Button); wire each option to its LIVE `selected` state and a transparent `Pressable` tap handler —
+ * distinguished by the rider option's `icon="bike"` — and swap the Button's frozen `onClick`/`label` for
+ * the container's `onContinue` + dynamic `continueLabel`. Structure-neutral: the Pressable wrap is
+ * transparent to the guardrail and the `Opt` call stays an opaque OPT leaf, so mock↔view congruence holds
+ * by construction; only leaf values / an interaction wrapper change. The frozen option COPY (titles,
+ * descriptions) is kept verbatim from each mock — the flag-on and flag-off views carry their own drawn
+ * copy, the container picking the view by `restaurantsEnabled`.
+ */
+function roleSelectBind({ t, expr, wrap }) {
+  return {
+    // The mock's nested `Opt` presentational component keeps its destructured param — untyped in the
+    // .jsx, but implicit-any in the generated .tsx. Annotate it with the emitted `RoleOptionData` type
+    // (icon/title/desc/selected) so the view typechecks under strict mode; the param stays structurally
+    // opaque (the Opt call is an OPT leaf), so this is a leaf-level seam, not a tree change.
+    VariableDeclarator(path) {
+      if (path.node.id.type !== "Identifier" || path.node.id.name !== "Opt") return;
+      const init = path.node.init;
+      if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
+      const param = init.params[0];
+      if (param && !param.typeAnnotation) param.typeAnnotation = t.tsTypeAnnotation(t.tsTypeReference(t.identifier("RoleOptionData")));
+    },
+    JSXElement(path) {
+      const open = path.node.openingElement;
+      if (open.name.name !== "Opt") return;
+      if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
+      const iconAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "icon");
+      const isRider = !!iconAttr && iconAttr.value?.type === "StringLiteral" && iconAttr.value.value === "bike";
+      open.attributes = open.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "selected"));
+      open.attributes.push(t.jsxAttribute(t.jsxIdentifier("selected"), t.jsxExpressionContainer(expr(isRider ? "riderSelected" : "customerSelected"))));
+      const handler = isRider ? "onSelectRider" : "onSelectCustomer";
+      const wrapped = wrap(path.node, "Pressable", `onPress={${handler}} accessibilityRole="radio"`);
+      path.replaceWith(wrapped);
+      path.skip();
+    },
+    JSXOpeningElement(path) {
+      if (path.node.name.name !== "Button") return;
+      path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && ["onClick", "label"].includes(a.name.name)));
+      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("continueLabel"))));
+      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onContinue"))));
+    },
+  };
+}
+
 export const ADOPTED = [
   {
     // LJ.login — the phone sign-in screen (app/phone.tsx). A clean static auth form: the mock's `Login`
@@ -958,7 +1004,7 @@ export const ADOPTED = [
         state: "pay_wait",
         key: "RC.pay_wait",
         reason:
-          "R5·4 prompt-sent-waiting — mock `pay_wait` is `Screen(footer)(centred phone-disc + copy with an inline `<b>` bold)`. Uses only Screen/Button/Icon + raw divs, BUT (a) the `<b>` inside a text run is the mixed text+element-siblings transpiler idiom gap (same as LJ.register's Verified badge — no general 'wrap mixed siblings in <Text>' lowering yet, W-IDIOM), and (b) it is the `paymentPromptStatus==='pending'` branch of the combined awaiting_payment live view, not a standalone Screen (W-LIVE). Deferred with the cluster.",
+          "R5·4 prompt-sent-waiting — mock `pay_wait` is `Screen(footer)(centred phone-disc + copy with an inline `<b>` bold)`. The mixed text+element-siblings idiom (the inline `<b>` in a text run) is now BUILT (Foundation-F.e wraps mixed element+text siblings in `<Text>`), so the residual wall is purely W-LIVE: it is the `paymentPromptStatus==='pending'` branch of the combined awaiting_payment live view, not a standalone Screen — a sensitive payment flow with no per-sub-state boundary. Deferred with the cluster (app re-architecture / live-superset).",
       },
       {
         state: "pay_manual",
@@ -1078,7 +1124,7 @@ export const ADOPTED = [
         state: "delivered_rate",
         key: "RC.delivered_rate",
         reason:
-          "R7·2 delivered → rate — mock `delivered_rate` is `Screen(footer 'Submit rating')(Pad(check hero, 'Delivered at 10:16', paid line, Card(food-stars + rider-stars + tag chips)))`. The centred hero already matches the app's FoodOrderDeliveredView, but three walls block the rating card: (W-DATA/#672) it draws DUAL ratings — 'How was the food?' AND 'How was Tendai M.?' — plus positive tag chips (Hot food/On time/Polite/Right order); the app ships a SINGLE tap-to-arm rating (RatingCard) and has no rider-rating write path or tag-chip backend (needs #671 rider identity + #672 dual-rating + chips). (W-CONTROL/BH-06) the mock's static 'Submit rating' footer clashes with the shipped tap-to-arm + 4s-undo model (a sensitive undo-window — the app has no submit button at all). (W-IDIOM) the chip `border: 1px solid ${i<2?…}` is a DYNAMIC template-literal border the transpiler's border-shorthand handler doesn't expand (same gap as role_select). Adoptable once the dual food+rider rating + tag chips are backed (#671/#672), the undo-window model is drawn, and the template-literal-border idiom lands. Deferred with the cluster.",
+          "R7·2 delivered → rate — mock `delivered_rate` is `Screen(footer 'Submit rating')(Pad(check hero, 'Delivered at 10:16', paid line, Card(food-stars + rider-stars + tag chips)))`. The centred hero already matches the app's FoodOrderDeliveredView, but three walls block the rating card: (W-DATA/#672) it draws DUAL ratings — 'How was the food?' AND 'How was Tendai M.?' — plus positive tag chips (Hot food/On time/Polite/Right order); the app ships a SINGLE tap-to-arm rating (RatingCard) and has no rider-rating write path or tag-chip backend (needs #671 rider identity + #672 dual-rating + chips). (W-CONTROL/BH-06) the mock's static 'Submit rating' footer clashes with the shipped tap-to-arm + 4s-undo model (a sensitive undo-window — the app has no submit button at all). The template-literal-border idiom that also blocked the chips is now BUILT (Foundation-F.e — it adopted role_select), so the residual walls are purely BACKEND + CONTROL: #672 dual food+rider rating + tag chips, #671 rider identity, and the undo-window model being drawn. Adoptable once those land. Deferred with the cluster (backend-gated #671/#672).",
       },
       {
         state: "failed_noshow",
@@ -1102,7 +1148,7 @@ export const ADOPTED = [
         state: "cancel_sheet",
         key: "RC.cancel_sheet",
         reason:
-          "R6·b5 cancel-pre-pickup sheet — mock `cancel_sheet` is `Screen(pad=false)(dimmed skeleton backdrop, absolute overlay sheet: reason radios + destructive Button + ghost Button)`. (W-IDIOM) each radio option's `border: 1.5px solid ${i===0?…}` is a DYNAMIC template-literal border the transpiler can't expand (same gap as role_select); and (W-LIVE) the app realizes the post-dispatch cancel as an inline confirm state (`cancelConfirm`) inside FoodOrderLiveTrackerView, not a routed sheet screen with a reason-picker — the reason radios are a superset the app doesn't collect. Deferred with the cluster.",
+          "R6·b5 cancel-pre-pickup sheet — mock `cancel_sheet` is `Screen(pad=false)(dimmed skeleton backdrop, absolute overlay sheet: reason radios + destructive Button + ghost Button)`. The template-literal-border idiom (each radio's `border: 1.5px solid ${i===0?…}`) is now BUILT (Foundation-F.e), so the residual wall is purely W-LIVE + superset: the app realizes the post-dispatch cancel as an inline confirm state (`cancelConfirm`) inside FoodOrderLiveTrackerView, not a routed sheet screen with a reason-picker — the reason radios are a superset the app doesn't collect (a sensitive live cancel flow, not a codegen gap). Deferred with the cluster (app re-architecture / live-superset).",
       },
     ],
   },
@@ -1310,24 +1356,74 @@ export const ADOPTED = [
         state: "form",
         key: "LJ.register",
         reason:
-          "two walls. (1) TRANSPILER idiom: the mock's 'Verified' badge is `<span …absolute>{<Icon/> Verified}</span>` — a bare text node ' Verified' sitting as a SIBLING of an `<Icon>` element inside the absolutely-positioned badge. The content-aware seam maps that span to a View (it has an element child), leaving raw text under a View — invalid on RN — and there is no general 'wrap mixed element+text siblings in <Text>' idiom in transpile.mjs yet. (2) SUPERSET: the app draws an inline draft-restored banner ('We saved what you'd filled in…') BETWEEN the Sub and the name Field — the visible affordance of the load-bearing LC-C10 profile-draft persistence — which the static `Register` mock never drew and the whole-screen codegen model cannot host mid-tree without adding a COND node the mock lacks (or dropping the cue). The draft PERSISTENCE itself is preserved regardless (container logic). Adoptable once the transpiler learns the mixed-siblings idiom and the draft-restored cue moves to its own state/mock (LJ.draft_restored exists).",
+          "UNDESIGNED-SUPERSET (the transpiler wall is now GONE). The mixed element+text-siblings idiom — the mock's 'Verified' badge `<span …absolute>{<Icon/> Verified}</span>` (a bare ' Verified' text run sibling of an `<Icon>`) — is now BUILT (Foundation-F.e wraps mixed siblings in `<Text>`, and the app already renders the badge as BOX(ICON, TEXT), so it would match). What still blocks adoption is a genuine UNDESIGNED SUPERSET: the app draws an inline draft-restored banner ('We saved what you'd filled in…') BETWEEN the Sub and the name Field — the visible affordance of the load-bearing LC-C10 profile-draft persistence — which NO mock draws (the existing LJ.draft_restored is the parcel-send composer's ComposerState draft, a different screen; there is no profile-setup draft-restored mock). The whole-screen codegen model cannot host that mid-tree COND without adding a node no mock has, and dropping the cue to match `Register` would strand a UX-review affordance. The draft PERSISTENCE itself is preserved regardless (container logic). Adoptable once a profile-setup draft-restored state earns its own drawn mock (then it wires as a separate state-view); the transpiler idiom is no longer the wall.",
       },
     ],
   },
   {
-    // LJ.role_select — the post-OTP role fork (app/role.tsx). DEFER-only: two transpiler-idiom gaps in the
-    // mock's inline option card. See the deferred reason. role_select_flag_off is the same structure/wall.
+    // LJ.role_select — the post-OTP role fork (app/role.tsx). ADOPTED (Foundation-F.e): the two web idioms
+    // in the mock's inline `Opt` card — a DYNAMIC template-literal `border` and a CONDITIONAL spread-token
+    // `boxShadow` — now lower to RN (transpile.mjs template-literal-border + conditional-shadow-spread), so
+    // `RoleSelect` generates a clean, typechecking whole-screen view. Structurally `Pad(Lockup, Heading,
+    // Sub, Opt, Opt, Button)` → `BOX(BRANDLOCKUP, HEADING, SUB, OPT, OPT, BUTTON)`; the nested `Opt` is an
+    // opaque sub-component on both sides (uppercase-fallback OPT), so structure holds by construction and
+    // the idioms only make the view valid RN. The container keeps ALL logic (role state, saveRolePreference,
+    // permission-priming route); the data seam wires each option's live `selected` + tap handler (a
+    // transparent Pressable wrap) and the Button's dynamic label/onPress. `role_select_flag_off` is the
+    // food-off twin — SAME structure but a `div(Dove, Wordmark)` brand mark (vs `Lockup`) and its own frozen
+    // copy — adopted as a second state so the flag-off screen aligns to its OWN mock (brand mark + verbatim
+    // copy), the container switching views on `restaurantsEnabled`.
     key: "LJ.role_select",
     container: "apps/mobile/app/role.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
     uiImport: "../src/ui",
-    states: [],
-    deferred: [
+    states: [
       {
         state: "form",
         key: "LJ.role_select",
-        reason:
-          "TRANSPILER idiom gaps, not a structural or backend wall. The mock `RoleSelect` renders an inline `Opt` option card whose style uses two web idioms the transpiler cannot yet lower to RN: (a) a DYNAMIC border shorthand as a TEMPLATE LITERAL — `border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--line)'}`` — which the border-shorthand handler only expands for a static string, so it survives as an invalid `border` RN style prop; and (b) a CONDITIONAL boxShadow with a SPREAD token — `boxShadow: selected ? 'none' : 'var(--shadow-card)'` — which resolves to a bare `var(--shadow-card)` residual because the StringLiteral token-resolver only substitutes non-spread tokens and the boxShadow handler only spreads a static token. Both need general idiom builds in tools/parity/codegen (template-literal border expansion + conditional shadow-spread) before RoleSelect (and its twin role_select_flag_off) can generate a clean, typechecking view. Structurally it is a plain `BOX(BRANDLOCKUP, HEADING, SUB, OPT, OPT, BUTTON)` — adoptable the moment those two idioms land.",
+        component: "RoleSelect",
+        componentName: "RoleSelectView",
+        viewFile: "apps/mobile/app/role.view.tsx",
+        propsParam: "{ customerSelected, riderSelected, onSelectCustomer, onSelectRider, continueLabel, onContinue }: RoleSelectViewProps",
+        propsType: [
+          "export type RoleSelectViewProps = {",
+          "  /** The customer option's live selected state (drives its mint-wash + check). */",
+          "  customerSelected: boolean;",
+          "  /** The rider option's live selected state. */",
+          "  riderSelected: boolean;",
+          "  onSelectCustomer: () => void;",
+          "  onSelectRider: () => void;",
+          "  /** 'Continue as a customer' / 'Continue as a rider', per the live selection. */",
+          "  continueLabel: string;",
+          "  onContinue: () => void;",
+          "};",
+          "",
+          "/** The nested Opt option card's props (mock `Opt` param), typed so the view compiles strict. */",
+          "type RoleOptionData = { icon: IconName; title: string; desc: string; selected: boolean };",
+        ].join("\n"),
+        bind: roleSelectBind,
+      },
+      {
+        state: "flag_off",
+        key: "LJ.role_select_flag_off",
+        mockFile: "packages/design/explorations/journey/screens-shipped.jsx",
+        component: "RoleSelectFlagOff",
+        componentName: "RoleSelectFlagOffView",
+        viewFile: "apps/mobile/app/role-flag-off.view.tsx",
+        propsParam: "{ customerSelected, riderSelected, onSelectCustomer, onSelectRider, continueLabel, onContinue }: RoleSelectViewProps",
+        propsType: [
+          "export type RoleSelectViewProps = {",
+          "  customerSelected: boolean;",
+          "  riderSelected: boolean;",
+          "  onSelectCustomer: () => void;",
+          "  onSelectRider: () => void;",
+          "  continueLabel: string;",
+          "  onContinue: () => void;",
+          "};",
+          "",
+          "type RoleOptionData = { icon: IconName; title: string; desc: string; selected: boolean };",
+        ].join("\n"),
+        bind: roleSelectBind,
       },
     ],
   },

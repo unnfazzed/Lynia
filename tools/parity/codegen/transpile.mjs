@@ -209,7 +209,51 @@ export function transpile(src, report) {
           const vt = varToken(raw || "");
           if (vt && vt.spread) { flags.spreadShadow = vt.spread; R.transform++; continue; }
           if (vt && vt.token) { flags.spreadShadow = vt.token; R.transform++; continue; }
+          // ── CONDITIONAL boxShadow with spread tokens: `sel ? 'none' : 'var(--shadow-card)'` → an RN
+          // shadow spread per branch — `...(sel ? {} : tokens.shadow.card)`. The StringLiteral resolver
+          // only substitutes NON-spread tokens and the token path above only spreads a STATIC token, so a
+          // conditional shadow otherwise survived as a raw `var(--shadow-card)` residual (the role_select
+          // wall). Lower each branch: `none`/`0`→ no shadow (`{}`), a `var(--shadow-*)` → its `tokens.shadow.*`
+          // object; a bare `{}` on the no-shadow branch keeps the RN style object shape valid. The result
+          // is spread into the style after the loop (flags.spreadShadowExpr), like the static token spread.
+          if (vnode.type === "ConditionalExpression") {
+            const branch = (b) => {
+              if (b.type === "StringLiteral") {
+                if (b.value === "none" || b.value === "0") return t.objectExpression([]);
+                const bt = varToken(b.value);
+                if (bt && (bt.spread || bt.token)) return tokenExpr(bt.spread || bt.token);
+              }
+              return null;
+            };
+            const cons = branch(vnode.consequent);
+            const alt = branch(vnode.alternate);
+            if (cons && alt) {
+              flags.spreadShadowExpr = t.conditionalExpression(vnode.test, cons, alt);
+              R.transform++; continue;
+            }
+          }
           R.unresolved.push(`boxShadow: ${String(raw).slice(0, 34)}… (non-token shadow)`); out.push(p); continue;
+        }
+
+        // ── border shorthand as a TEMPLATE LITERAL: `1.5px solid ${colorExpr}` → borderWidth/Style/Color
+        // ── The static handler below only lowers a plain-STRING border; a border whose colour is dynamic
+        // (`border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--line)'}``) is a TemplateLiteral, so
+        // it survived as an invalid `border` RN style prop (the role_select / delivered_rate-chip wall).
+        // Lower it the same way — the width/style come from the leading static quasi, the colour is the
+        // sole interpolated expression; its `var()` branches are resolved in place by the StringLiteral
+        // visitor (it recurses every ternary branch), so `borderColor` ends up a clean token/ternary.
+        if (/^border(Top|Bottom|Left|Right)?$/.test(key) && vnode.type === "TemplateLiteral"
+            && vnode.expressions.length === 1 && vnode.quasis.length === 2) {
+          const lead = vnode.quasis[0].value.cooked ?? vnode.quasis[0].value.raw;
+          const tail = (vnode.quasis[1].value.cooked ?? vnode.quasis[1].value.raw).trim();
+          const m = /^(\d+(?:\.\d+)?)px\s+(solid|dashed|dotted)\s+$/.exec(lead);
+          if (m && tail === "") {
+            const side = key === "border" ? "" : key.replace("border", "");
+            push(side ? `border${side}Width` : "borderWidth", t.numericLiteral(parseFloat(m[1])));
+            if (!side) push("borderStyle", t.stringLiteral(m[2]));
+            push(side ? `border${side}Color` : "borderColor", vnode.expressions[0]);
+            R.transform++; continue;
+          }
         }
 
         // ── border shorthand "1px solid <color>" → borderWidth/Style/Color ──
@@ -436,7 +480,30 @@ export function transpile(src, report) {
             if (mapped !== "Text" && hasObjStyle) dropStyleKey(styleAttr.value.expression, "textAlign");
             if (flags.numberOfLines && mapped === "Text")
               open.attributes.push(t.jsxAttribute(t.jsxIdentifier("numberOfLines"), t.jsxExpressionContainer(t.numericLiteral(1))));
+            // ── MIXED element+text siblings under a container → wrap each bare-text run in <Text> ──
+            // A div/span that becomes a View (it has an element child) but ALSO carries a bare text
+            // sibling (the register 'Verified' badge: `<span absolute><Icon/> Verified</span>`, or a
+            // `{label}` text interpolation) would leave raw text directly under a View — invalid on RN (a
+            // View may not host a bare string). Wrap each non-blank text run / text-interpolation in a
+            // `<Text>`, leaving the element children in place, so the icon+label row renders legally. When
+            // the node is a Text (no element child) RN hosts the text natively, so this fires only for the
+            // View/container case. General idiom (not register-specific): any mixed element+text container.
+            if (mapped === "View" && hasElementChild && hasTextChild) {
+              path.node.children = path.node.children.map((c) => {
+                const bareText = c.type === "JSXText" && c.value.trim() !== "";
+                const textExpr = c.type === "JSXExpressionContainer" && !exprYieldsElement(c.expression);
+                if (!bareText && !textExpr) return c;
+                return t.jsxElement(
+                  t.jsxOpeningElement(t.jsxIdentifier("Text"), [], false),
+                  t.jsxClosingElement(t.jsxIdentifier("Text")),
+                  [c],
+                  false,
+                );
+              });
+              R.transform++;
+            }
             if (flags.spreadShadow && hasObjStyle) styleAttr.value.expression.properties.push(t.spreadElement(tokenExpr(flags.spreadShadow)));
+            if (flags.spreadShadowExpr && hasObjStyle) styleAttr.value.expression.properties.push(t.spreadElement(flags.spreadShadowExpr));
             if (flags.grid) flags.__gridNoted = true;
             return;
           }
@@ -451,6 +518,7 @@ export function transpile(src, report) {
               open.attributes.push(t.jsxAttribute(t.jsxIdentifier("numberOfLines"), t.jsxExpressionContainer(t.numericLiteral(1))));
           }
           if (flags.spreadShadow && hasObjStyle) styleAttr.value.expression.properties.push(t.spreadElement(tokenExpr(flags.spreadShadow)));
+          if (flags.spreadShadowExpr && hasObjStyle) styleAttr.value.expression.properties.push(t.spreadElement(flags.spreadShadowExpr));
         },
 
         // ── recursive var() resolution EVERYWHERE — ternary/logical branches, consts, etc. ──
