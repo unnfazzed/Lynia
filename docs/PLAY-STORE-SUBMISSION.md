@@ -267,6 +267,44 @@
 > are all untouched and remain the gate to any production rollout. Nor does a FINISHED submission
 > prove the binary *runs* — `MOB-BOOT-01` was found on a green build, so the device smoke in
 > `docs/QA-DEVICE-CHECKLIST.md` is still the real exit test.
+>
+> **Status (2026-08-12, late — v0.31.0 shipped to the internal track; API + mobile both green, second
+> clean first-attempt run in a row).** A deploy of everything that had landed since the v0.30.0 run,
+> at `main` = `6f5eaae` (release-please `chore(main): release 0.31.0`, carrying the RC.home live-order
+> cards and the cold-start flag-off flash fix). CI run 31614169660 green on that exact sha before
+> anything was dispatched.
+> ① **API** (`release.yml` run 31614169614, #567) — staging gate passed, `prisma migrate deploy`
+> reported **no pending migrations** (50 found), revision `lynia-api-01146-gus` deployed with
+> `--no-traffic` then canaried **10% → 50% → 100%** with every health gate passing; promoted
+> 15:58:24 UTC, previous revision `lynia-api-01142-qof` left intact as the rollback target.
+> Independently verified through the LB: `GET https://lyniago.lyniafinance.com/healthz` → 200
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> ② **Admin console** — **deliberately not deployed.** Nothing under `apps/admin/**`,
+> `apps/merchant/**` or `packages/shared/**` changed since `96a55d3`, so `deploy-admin.yml`'s path
+> filter would not have fired and a dispatch would have shipped a byte-identical image. Recording the
+> skip rather than the click.
+> ③ **Mobile** (`mobile-release.yml` run #19 = 31614444306, **profile `preview`** per the §8-step-3
+> rule — production stays unarmed): EAS build `8fcf3bcf-e511-476c-9769-e4606065158b` **FINISHED**
+> (15:50:53 → 15:59:49 UTC, ~9 min), v0.31.0 **versionCode 11** (auto-incremented from 10), raw
+> `.aab` **31.34 MiB** before Play's per-device split; submission
+> `5b2fff8e-3a7d-41ac-916b-08d5ad605d34` **FINISHED**, track `internal`, `releaseStatus COMPLETED`,
+> no error.
+>
+> **The fingerprint held again, across another minor.** This build's runtimeVersion is
+> `0132a2cf489cedbd85a573cbc829aac28066b0ee` — **byte-identical** to the 0.30.0 and 2026-08-10
+> builds, now across 0.22.0 → 0.30.0 → 0.31.0. `REL-01`'s fix keeps holding on real version bumps,
+> so this binary shares an OTA runtime with its predecessors. The pre-dispatch guard from
+> `CLAUDE.md` was run rather than assumed: `pnpm install --frozen-lockfile` locally, clean on
+> pnpm 10.33.0, and `pnpm-lock.yaml`/`eas.json` were confirmed unmoved since the last green build —
+> so builder and runner computed the same fingerprint, and `CONFIGURE_EXPO_UPDATES` was never at risk.
+>
+> **What this run does NOT establish** — unchanged from the v0.30.0 entry, and worth repeating rather
+> than letting two clean runs imply progress that did not happen. It is still the **internal** track;
+> `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design. §8 step 2 is untouched:
+> the closed test, its mandatory ~14-day clock, and production access remain the gate to any
+> production rollout, and nothing in this run started that clock. A FINISHED submission still does not
+> prove the binary *runs* — `MOB-BOOT-01` was found on a green build — so the real exit test remains
+> the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
 ---
 
