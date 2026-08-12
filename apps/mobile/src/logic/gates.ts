@@ -181,7 +181,9 @@ export function isAccountOnHold(err: GateError | null | undefined): boolean {
 /** Copy for the customer account-on-hold blocking screen (S·2). */
 export const ACCOUNT_ON_HOLD_COPY: GateCopy = {
   title: "Your account is on hold",
-  message: "We've paused your account while we review recent activity. You can't send parcels right now — contact support if you think this is a mistake.",
+  // Verbatim from the mock (screens.jsx `OnHold`, LJ.on_hold) — the drawn wording gives the wait a
+  // shape ("usually takes 24 hours") and names the affordance the screen actually offers (a call).
+  message: "We've paused your account while we review recent activity. This usually takes 24 hours — call us if you think it's a mistake.",
 };
 
 /**

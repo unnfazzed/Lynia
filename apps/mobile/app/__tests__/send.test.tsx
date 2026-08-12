@@ -175,7 +175,8 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
     expect(
       tree.root.findAll(
-        (n) => n.props.children === "We've paused your account while we review recent activity. You can't send parcels right now — contact support if you think this is a mistake.",
+        // The mock's wording (screens.jsx `OnHold`, LJ.on_hold), verbatim.
+        (n) => n.props.children === "We've paused your account while we review recent activity. This usually takes 24 hours — call us if you think it's a mistake.",
       ).length,
     ).toBeGreaterThan(0);
     // SupportCallRow's phone-call affordance
