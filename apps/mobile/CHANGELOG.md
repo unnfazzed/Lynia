@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.0](https://github.com/unnfazzed/Lynia/compare/v0.31.0...v0.32.0) (2026-08-12)
+
+
+### Features
+
+* **home:** remove the Send again rail — AppHome contract, owner decision D-13 ([d97e051](https://github.com/unnfazzed/Lynia/commit/d97e051fd70558630ae5bbde2cc50dfe1c9f76c5))
+* **send:** remove on-device draft from the send-parcel flow ([7143de4](https://github.com/unnfazzed/Lynia/commit/7143de41a99d396958212274ff5eaab5fcafa6bf))
+
+
+### Bug Fixes
+
+* **nav:** food-lane P0s — live-order back-stack, push routing, placing guard ([6fbbe56](https://github.com/unnfazzed/Lynia/commit/6fbbe5621d0310cc2060c96c74eb71bbf39da1a0))
+
 ## [0.31.0](https://github.com/unnfazzed/Lynia/compare/v0.30.0...v0.31.0) (2026-08-12)
 
 
