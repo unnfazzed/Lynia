@@ -2685,6 +2685,72 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.handoff — the delivery-code HAND-OFF (src/ui/rider/DeliveryOtp.tsx, the doorstep Card mounted
+    // inside the active-job screens app/rider/job.tsx:976 + app/rider/food-job.tsx:851). This is the MOST
+    // SENSITIVE rider screen — the delivery-confirmation money/handoff path (DeliveryOtp → confirmDelivery,
+    // the 3-wrong-tries lockout, the KB-DELIVERY-CODE-ROTATION-SIGNAL reconcile). The mock `handoff`
+    // (rider-one-app.jsx J8) is
+    //   S( div( AppBar 'Delivery code'·'Ask the customer to read it out',
+    //        Pad( Card( div(6 code cells [4,1,9,2,•,•]),
+    //                   div('Same code on parcels and food. Three wrong tries and the job locks…') ) ) ),
+    //      { footer: Button 'Confirm delivery' } )
+    //
+    // ADOPTED: NOTHING. This is the CORRECT and expected outcome for this screen (task #48 HARD RULE:
+    // "STRONGLY prefer deferring over any risk to the delivery-confirm path"; CLAUDE.md Pixel parity:
+    // honesty over volume). The whole screen IS the code-entry mechanism — there is NO display-only
+    // sub-tree that separates WITHOUT touching the code-entry field, the attempt counter, the lock, or the
+    // confirm mutation. Every child of the mock's one Card is a sensitive-path node:
+    //
+    //   • the 6 code cells ARE the code-entry field. In the app they are `<CodeInput length={6}
+    //     value={code} onChangeText={onChangeCode} error={otpTries>0} disabled={otpLocked} />` — the live
+    //     delivery-code entry, wired to the container's code state and the 3-try lock. Restructuring the
+    //     cells' presentation IS restructuring the code-entry field. Forbidden by the HARD RULE.
+    //   • the single static copy line describes the 3-try lock ("Three wrong tries and the job locks").
+    //     In the app that region is NOT a static line — it is the CONDITIONAL attempt/lock messaging driven
+    //     by `otpTries`/`otpLocked` (the lockout logic itself). Adopting a static line as a region would
+    //     either collide with that lock-driven messaging or ADD lock copy the app conditionally owns —
+    //     both touch the lock.
+    //   • the footer 'Confirm delivery' is the `confirmDelivery(orderId, code)` mutation (deliverM). It
+    //     rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps
+    //     S() to its body) — the same treatment active_food#footer / active_parcel#footer got. In fact
+    //     active_food#footer ('Enter the delivery code') already deferred noting it is "realized in-app as
+    //     the conditional doorstep cards" — i.e. THIS DeliveryOtp.
+    //
+    // NO-CONTAINER-BOUNDARY (live-vs-static). Beyond "the whole card is the mechanism", the region-codegen
+    // model has nothing to anchor to here: DeliveryOtp is a plain `<Card>` FRAGMENT (no Screen/AppScreen
+    // root), not a routed screen, so no region can root at SCREEN(REGION:x) on it. Its enclosing containers
+    // ARE routed screens — job.tsx / food-job.tsx — but those are RJM.active_parcel / RJM.active_food,
+    // whose AppBar reads 'Active job', NOT the mock's dedicated 'Delivery code' header. The app never
+    // navigates to a standalone delivery-code screen; it keys the code inline in a conditional doorstep
+    // branch of the active-job screen. So the mock's whole-screen S(AppBar 'Delivery code', …) has no app
+    // container whose composition it can match — a standalone mock screen realized as an inline Card inside
+    // a different screen (the same live-vs-static / no-boundary shape as RJM.gate_topup and RC.handoff).
+    //
+    // SENSITIVE-PATH PRESERVATION: byte-identical by NOT TOUCHING. DeliveryOtp.tsx is unchanged (0 +/− on
+    // the code state, the CodeInput, the attempt counter, otpLocked, and the Confirm button). All sensitive
+    // logic stays in the containers untouched: `otpTries` + `reconcileOtpAttempts` (the delivery-code
+    // rotation reconcile), `deliverM` = `confirmDelivery(orderId, code.trim())`, and the terminal-error
+    // `setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS)` lockout at the 3rd wrong try. RJM.handoff stays PENDING in
+    // parity-status.mjs (screen-inventory guardrail already satisfied); this entry records the disposition
+    // honestly in the ledger, mirroring RJM.money / RJM.gate_topup. Adoptable only if the product draws a
+    // standalone delivery-code screen (so the mock's AppBar+Card tree gains an app container), AND a
+    // presentational code-cell/copy sub-tree is expressible without touching the code-entry field or the
+    // lockout — i.e. never at display-only cost while the whole card is the code-entry mechanism.
+    key: "RJM.handoff",
+    container: "apps/mobile/src/ui/rider/DeliveryOtp.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../index",
+    states: [],
+    deferred: [
+      {
+        state: "handoff",
+        key: "RJM.handoff",
+        reason:
+          "MOST SENSITIVE rider screen — the delivery-confirmation money/handoff path (DeliveryOtp → confirmDelivery, the 3-wrong-tries lockout, the delivery-code rotation reconcile). Adopted NOTHING (the correct, expected outcome). The whole screen IS the code-entry mechanism: the mock's one Card has only two children — the 6 code cells (= the app's `<CodeInput>`, the live delivery-code ENTRY field wired to the code state + the lock) and a single static line describing the 3-try lock (in the app: the CONDITIONAL otpTries/otpLocked messaging, i.e. the lockout logic) — plus a footer 'Confirm delivery' = the confirmDelivery mutation. No display-only sub-tree separates WITHOUT touching the code-entry field, the attempt counter, the lock, or the confirm mutation (task #48 HARD RULE; CLAUDE.md honesty over volume). NO CONTAINER BOUNDARY either: DeliveryOtp is a `<Card>` FRAGMENT (no Screen root) mounted inside job.tsx/food-job.tsx, whose AppBar reads 'Active job' (RJM.active_parcel/active_food) — the app has no standalone 'Delivery code' screen the mock's `S(AppBar 'Delivery code', Pad(Card))` can anchor to (live-vs-static, same shape as gate_topup / RC.handoff; the footer rides S(…,{footer}) opts region locators don't reach, as active_food#footer already noted for 'Enter the delivery code' — this very DeliveryOtp). DeliveryOtp.tsx is byte-identical (untouched). Adoptable only if the product draws a standalone delivery-code screen AND a code-cell/copy sub-tree becomes expressible without touching the code-entry/lock/confirmDelivery path.",
+      },
+    ],
+  },
 ];
 
 /**
