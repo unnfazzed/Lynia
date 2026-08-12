@@ -2276,59 +2276,97 @@ export const ADOPTED = [
   },
   {
     // ── RJM.offer_food — the rider's incoming FOOD-DISPATCH OFFER (app/rider/food-offer.tsx), the
-    // accept-offer decision screen. DEFERRED this pass on a LIVE-VS-STATIC VARIANT wall that is
-    // money-safety-critical on the accept path — the exact class already sanctioned for RC.checkout#payment,
-    // elevated here because the dropped content differentiates the rider's own-cash RISK at the moment they
-    // accept. This is HIGH-RISK accept/dispatch code (acceptFoodDispatch / declineFoodDispatch); per CLAUDE.md
-    // "honesty over volume" and the sensitive-path rule, a clean deferral with a precise reason is correct —
-    // no accept/decline/offer-poll logic is touched, so the screen stays byte-identical.
+    // accept-offer decision screen. ADOPTED this pass (region `offer`), unblocked by the owner's product-
+    // rule clarification (2026-08-12): riders NEVER pay cash upfront — cash is collected from the customer
+    // AFTER delivery, or the customer pre-pays via mobile money. The old `cash_upfront` branch (a danger-
+    // wash "THIS KITCHEN ASKS YOU TO PAY FIRST · front $X" card + an "Accept · front $X" money-commitment
+    // label) therefore drew a flow that DOES NOT EXIST — incorrect UI to remove, not money-safety copy to
+    // preserve. With cash_upfront gone the screen is the mock's cash-collect case plus the customer-prepaid
+    // (`wallet`) case, and the RJM mock's single-variant offer card is CORRECT to adopt.
     //
-    // THE WALL (why it can't be restructured to the RJM mock without a regression):
-    //   The RJM `offer_food` mock (rider-one-app.jsx J4) draws ONE static variant — the cash-collect /
-    //   "money at the door" case: `S( div( AppBar 'Food job'·sub, Pad( Card( div(TypeTag food · Money),
-    //   'Your fare is fixed…' copy, div('MONEY AT THE DOOR' · 'Collect $15.50 for the kitchen' · 'Nothing
-    //   from your pocket…') ) ) ), { footer: div( Button 'Accept this job', ghost 'Not this one' ) } )`.
-    //   The LIVE screen is a THREE-way money-variant decision driven by REAL backend fields
-    //   (`merchantPaymentMethod` / `merchantCashRule` → `foodOfferVariant`, food-rider-job.ts:29):
-    //     • cash_collect — the mock's case (collect at the door, keep the fee),
-    //     • cash_upfront — the rider FRONTS THEIR OWN CASH: a danger-wash card ("THIS KITCHEN ASKS YOU TO
-    //       PAY FIRST" · "Only accept if you're carrying $X — arriving short strands you at the counter")
-    //       AND a variant-aware accept label "Accept · front $15.50" so the tap is never a blind accept on
-    //       the rider's own money (food-offer.tsx:148-159, 200-211),
-    //     • wallet — customer already paid: an accent card ("No money from your pocket").
-    //   A single static fragment generated from the ONE cash_collect mock cannot guard the cash_upfront and
-    //   wallet variants: restructuring to it would DROP the cash_upfront danger warning and the money-
-    //   commitment accept label — load-bearing money-safety copy on a rider's own-cash decision. CLAUDE.md
-    //   "not drawn ⇒ not rendered" governs COSMETIC extras (confetti, invented headings), NOT a live money-
-    //   risk differentiation the backend actually drives; dropping it would ship a money-safety REGRESSION on
-    //   the accept path (forbidden), and there is no drawn +/− control in the single-variant mock to wire the
-    //   other two variants INTO (the live-vs-static "wire behaviour into the drawn elements" rule has no
-    //   target for them). The mock also deliberately draws NO offer-window countdown ("No countdown: if it's
-    //   gone, it's gone", J4 comment) and no Leg card / LiveMap, while the live screen shows the 60s window
-    //   (RESTAURANTS_DISPATCH.offerWindowMs) and the pickup→drop route + map before an accept — the countdown/
-    //   map are display-only and NOT the blocker, but they compound the single-variant mismatch. The app is
-    //   currently aligned (screenshot lane, docs/parity/PHASE5-riderjobs.md) to the SIBLING current mock
-    //   `RR.offer_cash`, which draws exactly this multi-variant offer chrome; RJM.offer_food is the no-
-    //   countdown flag branch of the same screen.
-    //   PRESERVED (untouched, byte-identical): the `getFoodDispatchOffer` 3s poll (`offerQ`), the
-    //   `acceptFoodDispatch(offer.orderId)` / `declineFoodDispatch(offer.orderId)` mutations (`acceptM` /
-    //   `declineM`), `foodOfferVariant` and all its copy, the offline/flag-off/loading/expired EmptyState
-    //   branches, `pendingOrQueued` gating and `ErrorText` — this entry adopts NOTHING and touches no app
-    //   code (its regression guard is the unchanged food-offer.tsx itself). Adoptable once the offer card
-    //   earns a variant-neutral drawn structure (or per-variant region boundaries) so the cash_upfront own-
-    //   cash warning + money-commitment accept label survive — i.e. the mock draws the variant switch the
-    //   live money paths require, rather than a single cash_collect still.
+    // The mock `offer_food` (rider-one-app.jsx J4) is
+    //   S( div( AppBar 'Food job'·sub, Pad( Card( div(TypeTag food · Money), 'Your fare is fixed…' copy,
+    //        div('MONEY AT THE DOOR' · 'Collect $15.50 for the kitchen' · 'Nothing from your pocket…') ) ) ),
+    //      { footer: div( Button 'Accept this job', ghost 'Not this one' ) } )
+    // The offer CARD is the region adopted here (locator {el:"Card"} → RiderFoodOfferCardView), reducing on
+    // both sides to CARD( BOX[ai:center,row](TYPETAG, BOX[flex1], MONEY), TEXT, BOX(TEXT, BOX(MONEY), TEXT) ).
+    // `TypeTag` is a new tokens-only DS primitive (src/ui/rider/TypeTag.tsx) the generated view imports from
+    // its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), mirroring JobCard.
+    //
+    // TWO seams only, both leaf-level (structurally invisible): the header Money `v` → the rider's fixed
+    // delivery `fare`, and the tile Money `v` → the `collectAmount` (the kitchen's money collected at the
+    // door). The mock's tile amount line is `<div>Collect <Money/> for the kitchen</div>` — a div whose only
+    // ELEMENT child is Money (normalizes to BOX(MONEY)); RN's transpiler wraps the bare "Collect"/"for the
+    // kitchen" words in <Text> siblings (BOX(TEXT,MONEY,TEXT)), so the bind collapses that inner box back to
+    // the lone <Money> to match the mock, the eyebrow ("MONEY AT THE DOOR") + note carrying the copy. The
+    // mock copy (eyebrow, fare line, note, both button labels) is kept VERBATIM in the generated view.
+    //
+    // The footer accept/decline pair lives in the render-helper `S(…,{footer})` opts, which the region
+    // locators do not reach (jsxRootNode unwraps S() to its body; the footer slot is a future region
+    // concern — normalize.mjs) — so the pinned Button pair stays container glue in `<Screen footer=…>`,
+    // pruned from the composition (which reduces on both sides to SCREEN(REGION:offer)). The `wallet`
+    // (customer-prepaid) card is the honest container glue for the one case the single-variant mock does
+    // not draw (same Card anatomy, wallet copy) — also pruned from the composition.
+    //
+    // SENSITIVE-PATH PRESERVATION (byte-identical): the `getFoodDispatchOffer` 3s poll (`offerQ`), the
+    // `acceptFoodDispatch(offer.orderId)` / `declineFoodDispatch(offer.orderId)` mutations (`acceptM` /
+    // `declineM`) and their onSuccess nav/invalidations, `foodOfferVariant`, `pendingOrQueued` gating and
+    // the flag-off/loading/expired EmptyState early-returns are all unchanged — only the presentational
+    // tree is restructured and the dead cash_upfront variant removed. `food-rider-job.ts` `foodOfferVariant`
+    // still computes `cash_upfront`; the screen collapses that (impossible) value into the collect case.
     key: "RJM.offer_food",
     container: "apps/mobile/app/rider/food-offer.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "offer_food",
     uiImport: "../../src/ui",
-    states: [],
-    deferred: [
+    regions: [
       {
-        state: "offer",
-        key: "RJM.offer_food",
-        reason:
-          "LIVE-VS-STATIC VARIANT wall, money-safety-critical on the accept path (same class as RC.checkout#payment). The RJM `offer_food` mock draws ONE static variant — the cash-collect 'MONEY AT THE DOOR' case — but the live accept-offer screen (app/rider/food-offer.tsx) is a THREE-way money-variant decision driven by real backend fields (merchantPaymentMethod / merchantCashRule → foodOfferVariant): cash_collect (the mock's case), cash_upfront (the rider FRONTS THEIR OWN CASH — a danger-wash 'THIS KITCHEN ASKS YOU TO PAY FIRST' warning + a money-commitment accept label 'Accept · front $X' so the tap is never a blind accept on the rider's own money), and wallet (customer already paid). A single static fragment generated from the one cash_collect mock cannot guard the cash_upfront/wallet variants; restructuring to it would DROP the cash_upfront own-cash danger warning and the variant-aware accept label — a money-safety regression on the accept path (CLAUDE.md not-drawn⇒not-rendered governs cosmetic extras, not a live money-risk differentiation the backend drives). There is no +/- control in the single-variant mock to wire the other two variants INTO. The mock also deliberately draws no offer-window countdown and no Leg/map (display-only, not the blocker, but compounding). HIGH-RISK accept/dispatch: acceptFoodDispatch / declineFoodDispatch / the getFoodDispatchOffer poll are untouched and byte-identical (this entry adopts nothing). The app is currently aligned (screenshot lane, docs/parity/PHASE5-riderjobs.md) to the sibling current mock RR.offer_cash, which draws this multi-variant offer chrome; RJM.offer_food is the no-countdown flag branch. Adoptable once the offer card earns a variant-neutral drawn structure (or per-variant region boundaries) so the cash_upfront own-cash warning + money-commitment accept label survive.",
+        region: "offer",
+        locator: { el: "Card" },
+        componentName: "RiderFoodOfferCardView",
+        viewFile: "apps/mobile/app/rider/food-offer-card.view.tsx",
+        propsParam: "{ fare, collectAmount }: RiderFoodOfferCardViewProps",
+        propsType: [
+          "export type RiderFoodOfferCardViewProps = {",
+          "  /** The rider's fixed delivery fare (the mock header Money). */",
+          "  fare: string | number | null | undefined;",
+          "  /** The kitchen's money collected at the door and handed back after the drop (the tile Money). */",
+          "  collectAmount: string | number | null | undefined;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => {
+          let moneyIdx = 0;
+          const TEXT_ONLY = new Set(["fontSize", "fontWeight", "letterSpacing", "lineHeight", "color", "textAlign", "fontVariant"]);
+          return {
+            // The tile amount line `<div>Collect <Money/> for the kitchen</div>` becomes a View whose bare
+            // words RN wrapped in <Text>; collapse it to the lone <Money> so the box matches the mock's
+            // BOX(MONEY), and drop the text-only style keys the div carried (invalid on an RN View). The
+            // header row (TypeTag/spacer/Money) is untouched — it wraps a Money but carries no <Text>.
+            JSXElement(path) {
+              const open = path.node.openingElement;
+              if (open.name.name !== "View") return;
+              const elKids = path.node.children.filter((c) => c.type === "JSXElement" || c.type === "JSXSelfClosingElement");
+              const money = elKids.find((c) => c.openingElement && c.openingElement.name.name === "Money");
+              const hasText = elKids.some((c) => c.openingElement && c.openingElement.name.name === "Text");
+              if (!money || !hasText) return;
+              path.node.children = [money];
+              const styleAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
+              const obj = styleAttr && styleAttr.value && styleAttr.value.expression;
+              if (obj && obj.type === "ObjectExpression") {
+                obj.properties = obj.properties.filter((p) => !(p.type === "ObjectProperty" && !p.computed && TEXT_ONLY.has(p.key.name || p.key.value)));
+              }
+            },
+            // The two frozen Money literals → the data seam: the FIRST (header, size 20) is the fare, the
+            // SECOND (tile, size 13.5) is the collectAmount. Document order is stable.
+            JSXOpeningElement(path) {
+              if (path.node.name.name !== "Money") return;
+              moneyIdx += 1;
+              const which = moneyIdx === 1 ? "fare" : "collectAmount";
+              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
+              path.node.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr(which))));
+            },
+          };
+        },
       },
     ],
   },
