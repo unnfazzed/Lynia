@@ -302,6 +302,29 @@ describe("food order screen — phase branching", () => {
     expect(mockCancelUnpaid).toHaveBeenCalledWith("order-1");
   });
 
+  // P1 (navigation review 2026-08-12): the pay screen is a sub-screen the customer forces open from the
+  // "still waiting · Pay now" overview. Its AppBar back must un-force (return to that overview), NOT pop
+  // the whole order off the stack and eject the customer from a live, unpaid order.
+  it("pay screen back un-forces to the order overview instead of leaving the order", async () => {
+    mockGetFoodOrder.mockResolvedValue({
+      ...BASE_ORDER,
+      merchantPhase: "awaiting_payment",
+      paymentMethod: "wallet",
+      paymentRequestedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+    });
+    const tree = await render();
+    press(tree, /Pay now/);
+    await settle();
+    expect(has(tree, /PAY EXACTLY/)).toBe(true); // forced pay screen is showing
+    const bar = tree.root.findAll((n) => n.props.title === "Pay Sadza Republic")[0];
+    if (!bar) throw new Error("pay-screen AppBar not found");
+    act(() => bar.props.onBack());
+    // Returned to the in-order overview; the order was NOT popped/replaced away.
+    expect(has(tree, /is still waiting/)).toBe(true);
+    expect(has(tree, /PAY EXACTLY/)).toBe(false);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
   it("shows the cancelled terminal with the merchant's own rejection copy", async () => {
     mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, status: "cancelled", merchantPhase: null, rejectionReason: "out_of_ingredient" });
     const tree = await render();

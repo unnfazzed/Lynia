@@ -523,7 +523,12 @@ export default function FoodOrderScreen(): React.ReactElement {
         onReferenceChange={setReferenceInput}
         onSubmitReference={() => void submitReference()}
         onCancelFree={() => void cancelUnpaid()}
-        onBack={() => router.back()}
+        // P1 (navigation review): the pay screen's back must stay INSIDE the live order. When the
+        // customer forced it open from the "still waiting · Pay now" overview, back returns to that
+        // overview (un-force) rather than popping the whole order off the stack and ejecting them from
+        // a live, unpaid order. (Reached directly — payment already requested — there is no in-order
+        // overview to return to, so it falls back to a plain pop.)
+        onBack={() => (forcePayScreen ? setForcePayScreen(false) : router.back())}
         cancelFooter={CancelFooter}
       />
     );
