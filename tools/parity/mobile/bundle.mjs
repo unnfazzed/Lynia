@@ -106,11 +106,18 @@ export function aliasMap() {
  * @returns {Promise<string>} the IIFE bundle source
  */
 export async function bundleScreen(o) {
+  // The FIXTURE is imported before the screen on purpose: ESM evaluates imports in source order, and
+  // some app modules read their configuration at module-init time (src/config.ts reads
+  // process.env.EXPO_PUBLIC_STORE_URL once). A fixture that stages such config must therefore run
+  // before the screen's module graph initializes — which is also what _harness.mjs already promises
+  // ("run at import, before the entry mounts the screen"). The jest rendered-conformance guardrail
+  // requires its fixture first for the same reason; keeping the two lanes in the same order is what
+  // stops them staging a screen differently.
   const entry = `
     import * as React from "react";
     import { createRoot } from "react-dom/client";
-    import Screen from ${JSON.stringify(o.component)};
     ${o.fixture ? `import * as Fixture from ${JSON.stringify(o.fixture)};` : `const Fixture = {};`}
+    import Screen from ${JSON.stringify(o.component)};
     function Root() {
       const props = (Fixture.default && Fixture.default.props) || Fixture.props || {};
       const el = React.createElement(Screen, props);
