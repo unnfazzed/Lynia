@@ -64,20 +64,64 @@ describe("onboarding carousel slides follow restaurantsEnabled", () => {
     expect(last).toContain("Get started");
   });
 
-  it("flag off: the parcels-only slides render, with no food mention on any slide", () => {
+  // The flag-off set is drawn by its own mock (screens-shipped.jsx `OnboardFlagOff`, LJ.onboard_flag_off):
+  // TWO dots, opening on the banknote "Name your price to send" slide with its copy verbatim.
+  it("flag off: the mock's two parcels-only slides render, with no food mention on either", () => {
     mockFlags = { ...mockFlags, restaurantsEnabled: false };
     const tree = renderOnboarding();
     const slides: string[] = [rendered(tree)];
+    expect(slides[0]).toContain("Name your price to send");
+    expect(slides[0]).toContain("Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.");
+    // Two slides ⇒ the first is not the last, so it still reads "Next".
+    expect(slides[0]).toContain("Next");
     press(tree, "Next");
     slides.push(rendered(tree));
-    press(tree, "Next");
-    slides.push(rendered(tree));
-    expect(slides[0]).toContain("Send a parcel");
-    expect(slides[1]).toContain("Name your price");
-    expect(slides[2]).toContain("Earn as a rider");
+    expect(slides[1]).toContain("Earn as a rider");
+    expect(slides[1]).toContain("Get started");
     for (const slide of slides) {
       expect(slide).not.toContain("kitchens");
       expect(slide).not.toContain("restaurants");
     }
+  });
+
+  // Each slide is its own gallery screen; the parity lane mounts one directly through `initialSlide`.
+  it("initialSlide opens the carousel on that slide (LJ.onboard_send / LJ.onboard_shared)", () => {
+    mockFlags = { ...mockFlags, restaurantsEnabled: true };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <OnboardingScreen initialSlide={1} />
+        </SafeAreaProvider>,
+      );
+    });
+    expect(rendered(tree)).toContain("Name your price to send");
+    act(() => {
+      tree = renderer.create(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <OnboardingScreen initialSlide={2} />
+        </SafeAreaProvider>,
+      );
+    });
+    const last = rendered(tree);
+    expect(last).toContain("One app, one code");
+    expect(last).toContain("Get started");
+  });
+
+  // A flags fetch resolving mid-carousel shrinks the set from 3 to 2: the index must clamp into it
+  // rather than stranding past the end.
+  it("clamps a stranded index when the slide set shrinks under it", () => {
+    mockFlags = { ...mockFlags, restaurantsEnabled: false };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <OnboardingScreen initialSlide={2} />
+        </SafeAreaProvider>,
+      );
+    });
+    const out = rendered(tree);
+    expect(out).toContain("Earn as a rider");
+    expect(out).toContain("Get started");
   });
 });

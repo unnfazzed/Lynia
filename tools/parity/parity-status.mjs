@@ -32,12 +32,6 @@
  */
 export const PARITY_STATUS = {
   // ── LJ ──────────────────────────────────────────────────────────
-  "LJ.splash": { status: "PENDING" }, // Splash
-  "LJ.onboard_send": { status: "PENDING" }, // Onboarding · send
-  "LJ.onboard_shared": { status: "PENDING" }, // Onboarding · one app
-  "LJ.perm_notif": { status: "PENDING" }, // Permission · notifications
-  "LJ.onboard_flag_off": { status: "PENDING" }, // Onboarding · food off
-  "LJ.role_select_flag_off": { status: "PENDING" }, // Choose your role · food off
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
   "LJ.order_restore": { status: "PENDING" }, // Cold start · order running
   "LJ.stale_cache": { status: "PENDING" }, // Orders · saved copy
@@ -85,9 +79,6 @@ export const PARITY_STATUS = {
   "LJ.cancelled": { status: "PENDING" }, // Cancelled
   "LJ.undelivered": { status: "PENDING" }, // Not delivered
   "LJ.track_dark": { status: "PENDING" }, // Rider went dark
-  "LJ.otp_cooldown": { status: "PENDING" }, // OTP · resend cooldown
-  "LJ.otp_resent": { status: "PENDING" }, // OTP · code re-sent
-  "LJ.otp_locked": { status: "PENDING" }, // OTP · expired / locked
   "LJ.offline": { status: "PENDING" }, // Offline banner
   "LJ.on_hold": { status: "PENDING" }, // Account on hold
   "LJ.no_gps": { status: "PENDING" }, // Location off / no GPS

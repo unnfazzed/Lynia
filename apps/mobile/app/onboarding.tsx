@@ -7,13 +7,15 @@ import { useFeatureFlags } from "../src/net/use-feature-flags";
 import { type IconName } from "../src/ui";
 import { OnboardingView } from "./onboarding.view";
 
-// First-install intro carousel (customer/rider 0·2) — three skippable slides shown once, before auth.
+// First-install intro carousel (customer/rider 0·2) — skippable slides shown once, before auth.
 // Two slide sets, chosen by `restaurantsEnabled` (fails open — restaurants is launched, same
 // contract as the home Food tile): the joint-launch set is the journey mockup verbatim (screens.jsx
 // `ONBOARD` — Food, Send, then the promise both share) and is also the boot default, so no parcels-
-// only frame flashes before the flags fetch resolves; the parcels-only set survives as the §1 kill-
-// switch copy for a server-flagged-off launch. Both sets are the same length so a mid-carousel
-// resolve can never strand the index.
+// only frame flashes before the flags fetch resolves; the parcels-only set is the §1 kill-switch
+// copy for a server-flagged-off launch and is drawn by its OWN mock (screens-shipped.jsx
+// `OnboardFlagOff`, LJ.onboard_flag_off): a TWO-dot carousel opening on the banknote "Name your
+// price to send" slide — so the flag-off set is two slides, not three, and the index is clamped
+// below in case the flags fetch resolves mid-carousel.
 type Slide = { icon: IconName; title: string; subtitle: string };
 const SEND_FOOD_SLIDES: Slide[] = [
   {
@@ -32,16 +34,14 @@ const SEND_FOOD_SLIDES: Slide[] = [
     subtitle: "Same riders, same delivery code at the door, cash if that's how you pay. More services soon.",
   },
 ];
+// The food-off set. Slide 1 is the `OnboardFlagOff` mock verbatim (banknote glyph, the same
+// name-your-price copy the joint-launch set carries); the mock draws TWO dots, so the set is two
+// slides long and the rider slide closes it.
 const PARCEL_SLIDES: Slide[] = [
   {
-    icon: "package",
-    title: "Send a parcel",
-    subtitle: "Book a rider to pick up your parcel and drop it anywhere across town.",
-  },
-  {
     icon: "banknote",
-    title: "Name your price",
-    subtitle: "Say what you'll pay to send your parcel — no fixed tariffs, no haggling in the street.",
+    title: "Name your price to send",
+    subtitle: "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.",
   },
   {
     icon: "bike",
@@ -50,15 +50,26 @@ const PARCEL_SLIDES: Slide[] = [
   },
 ];
 
-export default function OnboardingScreen(): React.ReactElement {
+/**
+ * `initialSlide` is the carousel's starting index — 0 in the app (a first install always opens on
+ * slide 1). It exists so a single frozen slide can be mounted directly: each slide is its own gallery
+ * screen (LJ.onboard / LJ.onboard_send / LJ.onboard_shared) and the parity lane stages them through
+ * this seam (tools/parity/mobile/fixtures/onboard_*.mjs). Expo-router passes no props, so the default
+ * is what ships.
+ */
+export type OnboardingScreenProps = { initialSlide?: number };
+
+export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(initialSlide);
   const slides = restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES;
-  // Clamp the lookup so the index can never resolve to `undefined` (noUncheckedIndexedAccess): the
-  // carousel only ever advances within bounds, but the fallback keeps the type honest.
-  const slide = slides[index] ?? slides[0]!;
-  const last = index === slides.length - 1;
+  // The two sets differ in length (3 joint-launch, 2 food-off), so a flags fetch resolving mid-
+  // carousel could otherwise strand the index past the end: clamp it into the live set. The `?? [0]!`
+  // fallback additionally keeps the lookup honest under noUncheckedIndexedAccess.
+  const active = Math.max(0, Math.min(index, slides.length - 1));
+  const slide = slides[active] ?? slides[0]!;
+  const last = active === slides.length - 1;
 
   // "Skip" and the final "Get started" both land in the same place: mark onboarding seen (best-effort)
   // and hand off to the phone/auth screen. The carousel never shows again on this install.
@@ -68,7 +79,7 @@ export default function OnboardingScreen(): React.ReactElement {
   };
   const next = (): void => {
     if (last) finish();
-    else setIndex((i) => i + 1);
+    else setIndex(active + 1);
   };
 
   return (
@@ -80,7 +91,7 @@ export default function OnboardingScreen(): React.ReactElement {
         icon={slide.icon}
         title={slide.title}
         body={slide.subtitle}
-        slide={index}
+        slide={active}
         dots={slides.map((_, n) => n)}
         primaryLabel={last ? "Get started" : "Next"}
         onSkip={finish}
