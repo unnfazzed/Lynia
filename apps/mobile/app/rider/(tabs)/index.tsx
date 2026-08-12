@@ -29,12 +29,13 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
 import { RiderBoardListView, type RiderBoardJob } from "./board-list.view";
 import { RiderBoardEmptyView } from "./board-empty.view";
+import { RiderOfferParcelCardView } from "./offer-parcel-card.view";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
 import { parseNum } from "../../../src/util";
@@ -800,84 +801,43 @@ export default function RiderHome(): React.ReactElement {
     ? "Parcels show up here the moment they're posted near you; a food offer arrives full-screen when it's your turn. Jobs that get taken simply leave the list."
     : "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list.";
 
-  const selectedCard = selected ? (
-    <Card accent>
-      <Text style={{ fontWeight: "700", marginBottom: 2 }}>
-        {selected.pickup.landmark} → {selected.dropoff.landmark}
-      </Text>
-      <Text style={{ fontSize: 13, color: tokens.color.muted, marginBottom: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-        {selected.itemDesc} · asking ${selected.proposedFare}
-      </Text>
-      {/* Segmented accept-or-counter (3·1): take the asking price in one tap, OR counter with
-          your own fare. One offer per order either way. */}
-      <View
-        accessibilityRole="tablist"
-        style={{
-          flexDirection: "row",
-          gap: 4,
-          padding: 4,
-          backgroundColor: tokens.color.surface,
-          borderRadius: tokens.radius.pill,
-          marginBottom: tokens.space.md,
-        }}
-      >
-        {(
-          [
-            { key: "accept" as const, label: `Accept $${selected.proposedFare}` },
-            { key: "counter" as const, label: "Offer a different price" },
-          ]
-        ).map((seg) => {
-          const on = offerMode === seg.key;
-          return (
-            <Pressable
-              key={seg.key}
-              onPress={() => {
-                setOfferMode(seg.key);
-                // Accept = the customer's price, exactly; switching back re-seeds it.
-                if (seg.key === "accept") setFare(selected.proposedFare);
-              }}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: on }}
-              style={{
-                flex: 1,
-                minHeight: tokens.touchTargetMin,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: tokens.radius.pill,
-                backgroundColor: on ? tokens.color.bg : "transparent",
-                ...(on ? tokens.shadow.card : null),
-              }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-                {seg.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {offerMode === "counter" ? (
-        <Field
-          label="Your fare (USD)"
-          value={fare}
-          onChangeText={setFare}
-          keyboardType="decimal-pad"
-          hint="Ask for more if the trip's worth it — the customer accepts or declines."
-        />
-      ) : null}
-      <Field label="ETA to pickup (min)" value={eta} onChangeText={setEta} keyboardType="number-pad" maxLength={3} />
+  // RJM `offer_parcel`: the parcel offer-compose card, restructured to the mock's Card (TypeTag ·
+  // "Sender asking" · Money, then the "Your fare (USD)" + "You'll be there in" fields). The mock draws ONE
+  // always-visible fare field and derives accept-vs-counter from its VALUE — exactly as `makeOffer` already
+  // does (`fareNum === Number(proposedFare) ? "accept" : "counter"`) — so the old segmented accept/counter
+  // tablist is retired (not-drawn⇒not-rendered); it never fed `makeOffer`, so removing it changes no money
+  // logic. `offerMode` state + its bid-draft persistence are byte-identical (still set by chooseOrder /
+  // draft-restore, still saved); only the toggle is gone and the fare field is always shown (seeded with
+  // the asking price by chooseOrder, so a one-tap "Send offer" still submits the asking price → "accept").
+  // The card is the codegen-adopted, guardrail-locked region (RJM.offer_parcel#offer → offer-parcel-card.view).
+  const offerParcelFareHint = "Ask for more if the trip's worth it — the customer accepts or declines. One offer per job.";
+  const offerParcelCard = selected ? (
+    <RiderOfferParcelCardView
+      proposedFare={selected.proposedFare}
+      fare={fare}
+      onChangeFare={setFare}
+      fareHint={offerParcelFareHint}
+      eta={eta}
+      onChangeEta={setEta}
+    />
+  ) : null;
+  // The mock's `S(…,{footer})` Send + ghost "Skip this job" pair — container glue (pruned from the
+  // composition; the region locator does not reach the S() opts). The AGREED-PRICE submit is byte-identical:
+  // `canOffer && offerM.mutate({ fare, fareNum, etaNum })`. "Skip this job" keeps the old Cancel's
+  // `setSelected(null)` + in-flight guard (BH-12: a tap while the send is in flight must NOT abort it — on
+  // success the offer still lands and would reappear unannounced as a "Your offers" card for a bid the rider
+  // believed they'd skipped). Only the ghost's label changed (mock copy "Skip this job"); the handler is the
+  // old Cancel's, unchanged.
+  const offerParcelFooter = selected ? (
+    <>
       <Button
-        label={offerSlow ? "Still sending — hang on" : offerMode === "accept" ? `Accept $${selected.proposedFare}` : "Send my price"}
+        label={offerSlow ? "Still sending — hang on" : "Send offer"}
         onPress={() => canOffer && offerM.mutate({ fare, fareNum: fareNum!, etaNum: etaNum! })}
         loading={pendingOrQueued(offerM)}
         disabled={!canOffer}
       />
-      {/* BH-12: disabled while the offer send is in flight — mirrors BailSheet/UndeliveredSheet's
-          dismiss guard. Without this, a tap here didn't abort the in-flight makeOffer call: on
-          success the offer still landed and later reappeared unannounced as a "Your offers" card
-          for a bid the rider believed they'd cancelled; on failure the resulting ErrorText rendered
-          on an already-dismissed screen with no visible context. */}
-      <Button label="Cancel" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
-    </Card>
+      <Button label="Skip this job" variant="ghost" onPress={() => setSelected(null)} disabled={offerM.isPending} />
+    </>
   ) : null;
 
   // Unconditional trailing content — must render regardless of meQ/knownUnverified/locDenied/gate
@@ -1034,7 +994,8 @@ export default function RiderHome(): React.ReactElement {
             }
             ListFooterComponent={
               <>
-                {selectedCard}
+                {offerParcelCard}
+                {offerParcelFooter}
                 {trailingFooterContent}
               </>
             }
@@ -1282,7 +1243,20 @@ export default function RiderHome(): React.ReactElement {
           </View>
         ) : null}
 
-        {selectedCard}
+        {/* RJM offer_parcel#offer — mounted INLINE here (not via the const) so the composition guardrail,
+            which reduces THIS final return, sees the region element. Same card the FlatList branch shows;
+            the footer glue follows it. */}
+        {selected ? (
+          <RiderOfferParcelCardView
+            proposedFare={selected.proposedFare}
+            fare={fare}
+            onChangeFare={setFare}
+            fareHint={offerParcelFareHint}
+            eta={eta}
+            onChangeEta={setEta}
+          />
+        ) : null}
+        {offerParcelFooter}
           </>
         )}
           </>
