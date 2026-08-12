@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.31.0](https://github.com/unnfazzed/Lynia/compare/v0.30.0...v0.31.0) (2026-08-12)
+
+
+### Features
+
+* **home:** one live-order card per running job — align RC.home to the design mock ([befb559](https://github.com/unnfazzed/Lynia/commit/befb559543190568cec50afd845e897c5b692ee1))
+* **parity:** Foundation-F.a render-helper/SHELL unwrap + adopt rider account ([cea3583](https://github.com/unnfazzed/Lynia/commit/cea3583cd264023b6877eec4eff027440d0b9967))
+* **parity:** Foundation-F.c — map/sheet region codegen + adopt send-composer ([#704](https://github.com/unnfazzed/Lynia/issues/704)) ([85f85c5](https://github.com/unnfazzed/Lynia/commit/85f85c58e7cbb87c4a29749bbc4296cbd11dba20))
+* **parity:** Foundation-F.d region-adopt live composites (RC.await_accept, RC.track_prep) ([#705](https://github.com/unnfazzed/Lynia/issues/705)) ([1957168](https://github.com/unnfazzed/Lynia/commit/1957168387ad5a3f00e4a16ac8e62088d622fd9c))
+* **parity:** Foundation-F.e transpiler idioms + final sweep (LJ.role_select, LJ.role_select_flag_off) ([#706](https://github.com/unnfazzed/Lynia/issues/706)) ([378c430](https://github.com/unnfazzed/Lynia/commit/378c4309bfaa56f6090b70daace830c861efdac2))
+* **parity:** rider RJM realignment — adopt active_food ([#714](https://github.com/unnfazzed/Lynia/issues/714)) ([49a6fa6](https://github.com/unnfazzed/Lynia/commit/49a6fa63971125b0b8542de2140279d8263c9131))
+* **parity:** rider RJM realignment — adopt active_parcel cash_strip ([36c7910](https://github.com/unnfazzed/Lynia/commit/36c7910b6aeb07f44c44926a05a8cb37ac175e46))
+* **parity:** rider RJM realignment — adopt board empty + offline states ([#710](https://github.com/unnfazzed/Lynia/issues/710)) ([118d29a](https://github.com/unnfazzed/Lynia/commit/118d29a46a131b81112dde4ea59c773aa637303f))
+* **parity:** rider RJM realignment — adopt offer_food (remove non-existent cash-upfront variant) ([#712](https://github.com/unnfazzed/Lynia/issues/712)) ([cb6364c](https://github.com/unnfazzed/Lynia/commit/cb6364ce1d324264f3a5f8e677c11eec32e3d4de))
+* **parity:** rider RJM realignment — adopt offer_parcel ([#713](https://github.com/unnfazzed/Lynia/issues/713)) ([c20a380](https://github.com/unnfazzed/Lynia/commit/c20a3803171651912b285975df13ca15e8a417fc))
+* **parity:** rider RJM realignment — plan + adopt board list (RJM.board#list) ([#709](https://github.com/unnfazzed/Lynia/issues/709)) ([7ae6f52](https://github.com/unnfazzed/Lynia/commit/7ae6f5246dc21e32a8c7fb3c86095fbd5192a2fb))
+
+
+### Bug Fixes
+
+* **mobile:** stop the old flag-off UI flashing on every cold start ([#720](https://github.com/unnfazzed/Lynia/issues/720)) ([b44ce57](https://github.com/unnfazzed/Lynia/commit/b44ce578a3c765940ef6a8af39612d30505dec0b))
+
 ## [0.30.0](https://github.com/unnfazzed/Lynia/compare/v0.29.0...v0.30.0) (2026-08-11)
 
 
