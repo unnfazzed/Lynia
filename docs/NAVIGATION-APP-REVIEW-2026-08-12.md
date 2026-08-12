@@ -166,3 +166,45 @@ navigation assertions — that's finding **P1-tests**).
    `profile/setup` ID hard-gate; offer-withdraw endpoint.
 
 Per the standing policy each PR merges on green; items in (6) wait for explicit owner approval.
+
+---
+
+## 8. Execution log & the PR-3 parity split (added 2026-08-12, Opus 4.8 execution)
+
+Fixes are shipping PR-by-PR, each with regression tests, merge-on-green:
+
+- **PR-1 (#733, merged)** — the three food-lane P0s (NAV-P0-1/2/3).
+- **PR-2 (#737, merged)** — `replace→push` hygiene (NAV-P1-1, NAV-P2-1, NAV-P2-2).
+- **PR-3 (this PR)** — the **mock-aligned** subset of the dead-end fixes only: `pay_now` back
+  un-forces the sub-screen instead of ejecting the order (NAV-P1-2); `item_removed` decision
+  buttons pinned in the footer as the mock draws them (NAV-P1-3).
+
+**Why PR-3 is a subset — a parity boundary the review surfaced.** The remaining "dead-end exit"
+items divide by whether the *design mock* already draws the affordance:
+
+- **Mock-aligned (safe to ship, APP-DIVERGENCE)** — the mock draws it, the app mis-implements it.
+  Shipped in PR-3 above. `await_accept`'s cancel is borderline (the mock draws *no* cancel there;
+  the app added one and it can fall below the fold) — deferred with the (B) items so we don't
+  entrench an app-only control without a decision.
+- **(B) Requires adding an affordance the mock does NOT draw** — these are **owner decisions**, per
+  §4's `APP-AHEAD`/`DESIGN-GAP` rule (the standing "not drawn ⇒ not rendered" instruction), and are
+  **not shipped silently**:
+  - **`profile/setup` escape** — a brand-new account is trapped: the only action is a National-ID-
+    gated "Continue", and boot re-pins them here every launch. Recommended: add a ghost **"Sign
+    out"** (matches `on_hold`/`settings`), and — separately — decide whether the **National ID must
+    stay mandatory** at signup (the harder product call).
+  - **`send` on-hold wall** — a held customer with no active order has no drawn exit and (via some
+    entries) hardware-back quits. Recommended: a **"Back home"** on the wall.
+  - **food order not-found** — a stale/bad order id is a Retry-only loop. Recommended: **"Back to
+    restaurants"**.
+  - **`delivered_rate`** — no skip/home until the customer rates (the exit only renders on
+    `completed`, which rating itself triggers). Recommended: always render an exit on `delivered`
+    (the mock's Submit is a pinned, deferrable footer).
+  - **`track_prep` / `ready_for_pickup` (no-rider hold) / `rider_dropped`** — indefinite/again
+    states with zero interactive nodes. Recommended: add **Get help** (+, for the unbounded holds, a
+    product call on whether the customer may cancel).
+
+Each (B) item is a one-to-few-line addition; they are batched here for a single yes/no because they
+share the same rule (adding un-drawn nav chrome). On approval they ship as PR-3b with tests. The
+other standing owner decisions from §7(6) — drawn back on the send composer, role-switch rows, the
+one-live-order server guard, the offer-withdraw endpoint — are unchanged and still pending.

@@ -34,7 +34,24 @@ export function FoodOrderItemApprovalView({
   const kept = order.items.filter((it) => it.available !== false);
   const revisedGoodsTotal = kept.reduce((sum, it) => sum + it.priceUsd * it.quantity, 0);
   return (
-    <Screen>
+    // Kit RCB.item_removed (r-customer-b.jsx:173-178) pins BOTH decision buttons in the Screen footer
+    // slot over a scrolling body. The app previously rendered them as the last children of the
+    // non-scrolling body, so a many-item order pushed the accept/cancel buttons off-screen with no way
+    // to scroll to them — under a 60s auto-cancel deadline, an unreachable CTA silently loses the order.
+    <Screen
+      footer={
+        <View style={{ gap: tokens.space.sm }}>
+          <ErrorText message={error} />
+          <Button
+            label={`Yes — send it without ${unavailable[0]?.name ?? "it"}`}
+            onPress={() => onApprove(true)}
+            disabled={busy}
+            loading={busy}
+          />
+          <Button variant="ghost" label="Cancel the whole order" onPress={() => onApprove(false)} disabled={busy} />
+        </View>
+      }
+    >
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel="One item unavailable" pillTone="neutral" />
       <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginBottom: 8 }}>
@@ -50,14 +67,6 @@ export function FoodOrderItemApprovalView({
         </View>
       </Card>
       <PriceMath rows={kept.map((it) => ({ label: `${it.quantity}× ${it.name}`, value: it.priceUsd * it.quantity }))} total={revisedGoodsTotal} />
-      <ErrorText message={error} />
-      <Button
-        label={`Yes — send it without ${unavailable[0]?.name ?? "it"}`}
-        onPress={() => onApprove(true)}
-        disabled={busy}
-        loading={busy}
-      />
-      <Button variant="ghost" label="Cancel the whole order" onPress={() => onApprove(false)} disabled={busy} />
     </Screen>
   );
 }
