@@ -2485,6 +2485,112 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.active_food — the rider's ACTIVE FOOD JOB (app/rider/food-job.tsx). SENSITIVE screen
+    // (advance / pickup-code / doorstep dual-confirm / delivery-code / drop). The mock `active_food`
+    // (rider-one-app.jsx J7) is
+    //   S( div( AppBar 'Active job'·sub, CashStrip(yours·owed),
+    //        Pad( Card( div(TypeTag food · spacer · 'Navigate'), Stepper FOOD_STEPS ),
+    //             Card accent( 'Collect $15.50 at the door' · 'Food first, then the cash…' ) ) ),
+    //      { tab:"jobs", footer: Button 'Enter the delivery code' } )
+    //
+    // ONLY the CashStrip is region-adopted (display-only, no accept/advance/confirm logic touched). The
+    // three richer pieces DEFER — each a genuine wall, recorded honestly (CLAUDE.md "Pixel parity":
+    // honesty over volume; a clean deferral is the right outcome when adoption isn't safe):
+    //
+    //   • tracker Card (TypeTag·Navigate + Stepper) — the app's Stepper is BURIED inside JobDetailsCard,
+    //     which FUSES a LiveMap (src/ui/rider/JobDetailsCard.tsx:99 + :124) into one memoized composite
+    //     alongside the fare / phones / items / note. The mock's tracker Card draws a clean
+    //     Card(TypeTag+Navigate+Stepper) with NO map. Separating the Stepper region would mean un-fusing
+    //     the live-map composite (extracting the Stepper out of JobDetailsCard into the container's main
+    //     render) — the map-fused-composite deferral case (like food track_way); the map region does not
+    //     cleanly separate, so it is deferred rather than forced. (Also: the composition walker sees
+    //     JobDetailsCard as an opaque leaf, so its internal Stepper is invisible to a `tracker` region.)
+    //   • accent cash card ("Collect $X at the door") — display-only and the app DOES draw it
+    //     (food-job.tsx:800-807), but it is NOT ADDRESSABLE by the locator engine: `active_food` draws
+    //     TWO sibling <Card>s and locators anchor FIRST-by-tag (normalize.mjs `locateTs` / emit.mjs
+    //     `locateBabel`), so `{el:"Card"}` resolves to the tracker Card (deferred above), never the
+    //     second (accent) Card. There is no attribute/index locator to disambiguate a sibling Card
+    //     without extending the locator engine. Adoptable once the locator engine grows sibling
+    //     disambiguation (or the tracker Card is itself adopted, freeing first-Card for the accent one).
+    //   • footer "Enter the delivery code" — the DELIVERY-CODE seam (DeliveryOtp → confirmDelivery), the
+    //     most sensitive path on the screen, realized in-app as the conditional doorstep cards. It rides
+    //     in the mock's `S(…,{footer})` opts, which region locators do not reach (jsxRootNode unwraps
+    //     S() to its body; a helper-carried footer is a future region concern) — the same treatment
+    //     offer_food/offer_parcel's footers got. Container glue, pruned from the composition.
+    //
+    // The CashStrip region (locator {el:"CashStrip"} → RiderActiveFoodCashStripView) reduces on both
+    // sides to a single opaque CASHSTRIP leaf — the same shape RC.await_accept#tracker's `<RTracker>`→
+    // STEPPER leaf takes. `CashStrip` is a new tokens-only DS primitive (src/ui/rider/CashStrip.tsx, a
+    // thin wrapper over the shipped CashHeldStrip so pixels are unchanged) the generated view imports
+    // from its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), mirroring JobCard /
+    // TypeTag. Both mock and container reduce to SCREEN(REGION:cash_strip): the tracker/accent Cards and
+    // the AppBar are non-region glue (pruned), and the footer sits in opts (not reached).
+    //
+    // SENSITIVE-PATH PRESERVATION (byte-identical, nothing re-homed): the CashStrip carries NO handler —
+    // it is a pure `yours`/`owed` display, wired to the SAME expressions the app already passed
+    // CashHeldStrip (`foodOrder.deliveryFee ?? 0` / the open-debt amount). Every mutation — `advanceM`
+    // (advanceStatus), `confirmPickupM` (confirmFoodPickup), `dropM` (dropFoodDispatch), `deliverM`
+    // (confirmDelivery), the cash-handshake confirm/dispute, the pickup-code + delivery-code gates and
+    // their attempt reconciles, the FOOD_DROPPABLE / RIDER_FOOD_NEXT gating order — is UNTOUCHED. The
+    // container still mounts `<CashHeldStrip>` on its delivered terminal branch (a different render, not
+    // the main active screen the composition reduces); only the main-render strip is the adopted region.
+    key: "RJM.active_food",
+    container: "apps/mobile/app/rider/food-job.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "active_food",
+    uiImport: "../../src/ui",
+    regions: [
+      {
+        region: "cash_strip",
+        locator: { el: "CashStrip" },
+        componentName: "RiderActiveFoodCashStripView",
+        viewFile: "apps/mobile/app/rider/active-food-cash-strip.view.tsx",
+        propsParam: "{ yours, owed }: RiderActiveFoodCashStripViewProps",
+        propsType: [
+          "export type RiderActiveFoodCashStripViewProps = {",
+          "  /** What the rider keeps (the delivery fee) — the accent 'YOURS' tile. */",
+          "  yours: number;",
+          "  /** The kitchen's money still riding back on an open collect-and-return debt (0 otherwise) —",
+          "   *  the 'OWED TO A KITCHEN' tile, danger-washed while owing. */",
+          "  owed: number;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "CashStrip") return;
+            // Swap the mock's frozen "2.40"/"15.50" string literals for the live numeric seam the app
+            // already computes. Structurally invisible: CashStrip is an opaque leaf either way.
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["yours", "owed"].includes(a.name.name)),
+            );
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("yours"), t.jsxExpressionContainer(expr("yours"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("owed"), t.jsxExpressionContainer(expr("owed"))));
+          },
+        }),
+      },
+    ],
+    deferred: [
+      {
+        state: "tracker",
+        key: "RJM.active_food#tracker",
+        reason:
+          "the mock's tracker Card is a clean Card(TypeTag+Navigate+Stepper) with no map, but the app's Stepper is BURIED inside JobDetailsCard, which fuses a LiveMap (JobDetailsCard.tsx) into one memoized composite alongside fare/phones/items/note. Separating a Stepper region would mean un-fusing that live-map composite (the map-fused-composite deferral case, like food track_way) — the map does not cleanly separate. JobDetailsCard is also an opaque leaf to the composition walker, so its internal Stepper is invisible to a region. Adoptable once the Stepper is drawn as a discrete, map-free node in the main render.",
+      },
+      {
+        state: "cash_card",
+        key: "RJM.active_food#cash_card",
+        reason:
+          "the accent 'Collect $X at the door' card is display-only and the app draws it (food-job.tsx), but it is NOT ADDRESSABLE: active_food draws TWO sibling <Card>s and the locator engine anchors FIRST-by-tag (locateTs / locateBabel), so {el:'Card'} resolves to the tracker Card (deferred), never the second (accent) Card. No attribute/index locator disambiguates a sibling Card without extending the engine. Adoptable once the locator engine grows sibling disambiguation, or the tracker Card is adopted (freeing first-Card for the accent one).",
+      },
+      {
+        state: "footer",
+        key: "RJM.active_food#footer",
+        reason:
+          "the footer 'Enter the delivery code' is the DELIVERY-CODE seam (DeliveryOtp → confirmDelivery), the most sensitive path on the screen, realized in-app as the conditional doorstep cards. It rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps S() to its body; a helper-carried footer is a future region concern) — the same treatment offer_food/offer_parcel footers got. Container glue, pruned from the composition.",
+      },
+    ],
+  },
 ];
 
 /**

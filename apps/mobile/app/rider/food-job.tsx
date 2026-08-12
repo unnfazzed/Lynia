@@ -33,6 +33,7 @@ import { FoodNavLeg } from "../../src/ui/rider/FoodNavLeg";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
 import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
 import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
+import { RiderActiveFoodCashStripView } from "./active-food-cash-strip.view";
 import { BailSheet } from "../../src/ui/rider/BailSheet";
 import { CancelBlockedCard } from "../../src/ui/rider/CancelBlockedCard";
 import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
@@ -762,7 +763,10 @@ export default function RiderFoodJob(): React.ReactElement {
 
         {isActive ? (
           <View style={{ marginBottom: tokens.space.md }}>
-            <CashHeldStrip yours={foodOrder.deliveryFee ?? 0} owed={foodOrder.debtStatus === "open" ? (foodOrder.debtAmount ?? 0) : 0} />
+            {/* RJM active_food CashStrip (rider-one-app.jsx J7) — the codegen-adopted, guardrail-locked
+                "yours vs owed to a kitchen" split (RJM.active_food#cash_strip → active-food-cash-strip.view.tsx).
+                Same live seam the app already passed CashHeldStrip; pixels unchanged (CashStrip wraps it). */}
+            <RiderActiveFoodCashStripView yours={foodOrder.deliveryFee ?? 0} owed={foodOrder.debtStatus === "open" ? (foodOrder.debtAmount ?? 0) : 0} />
           </View>
         ) : null}
 
