@@ -4,7 +4,8 @@ import React from "react";
 import { Text, View } from "react-native";
 import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
 import { SupportCallRow } from "../../src/ui/safety";
-import { Button, Card, Heading, Icon, isTestBuild, Screen, Sub } from "../../src/ui";
+import { Button, Card, Heading, Icon, Screen, Sub } from "../../src/ui";
+import { usePaymentSimulation } from "../../src/ui/payment-simulation";
 import { TopUpSimulator } from "../../src/ui/rider/TopUpSimulator";
 
 /**
@@ -23,22 +24,29 @@ import { TopUpSimulator } from "../../src/ui/rider/TopUpSimulator";
  * pointing at the ALREADY-WORKING admin manual-credit path (`POST /admin/riders/:id/wallet-credit` →
  * `WalletService.creditManual`), instead of a self-serve form that could never succeed.
  *
- * ─── TEST BUILD ONLY: the kit's top-up flow, as a labelled walkthrough ────────────────────────────
- * None of the above changes. The rail still doesn't exist, and a real release build renders exactly the
- * "call support" screen below — that is still the product's behaviour. What `isTestBuild()` adds is a
- * walkable mock-up of the four screens the kit specifies (`rider-screens-wallet.jsx`: amount → wait →
- * approved/declined) so internal testers can review the flow before the rail lands. It makes no network
- * call, moves no money, and stamps a SIMULATED strip on every step including the terminals — see
- * `src/ui/rider/TopUpSimulator.tsx` for the full reasoning. `isTestBuild()` is false in any EAS release
- * (app.config.ts only sets `extra.testBuild` from the android-test-apk workflow's env), so the
- * simulator cannot ship to a rider.
+ * ─── THE KIT'S TOP-UP FLOW, SHIPPED AS A LABELLED PREVIEW ─────────────────────────────────────────
+ * None of the above changes. The rail still doesn't exist and still moves no money. What the preview
+ * adds is a walkable rendering of the four screens the kit specifies (`rider-screens-wallet.jsx`:
+ * amount → wait → approved/declined) so the flow is reviewable before the rail lands.
+ *
+ * It was QA-APK-only until 2026-08-12, when the owner asked for it in the shipping build ahead of
+ * launch. It is now opened by `usePaymentSimulation()` — the QA APK OR the `paymentSimulationEnabled`
+ * server flag, which is ON by default and retractable in ~1 minute with no app update. Everything that
+ * made it safe is unchanged and is now unconditional rather than build-gated: no network call, no
+ * `TopUp` row, no ledger write, a PREVIEW strip on every step including the terminals, and no path
+ * that resolves itself into a success.
+ *
+ * The support-call card below stays the honest fallback whenever the gate is shut — and, because it is
+ * the ONLY way a balance actually moves today, the preview keeps its own route to it rather than
+ * burying it (see `TopUpSimulator`'s amount step).
  */
 export default function TopUpScreen(): React.ReactElement {
   const router = useRouter();
   const { config } = useWalletConfig();
   const { wallet } = useWallet();
+  const simulationEnabled = usePaymentSimulation();
 
-  if (isTestBuild()) {
+  if (simulationEnabled) {
     return (
       <Screen>
         <Heading>Top up</Heading>

@@ -545,6 +545,29 @@ export const MerchantFeatureFlagsResponse = z
   .strict();
 export type MerchantFeatureFlagsResponse = z.infer<typeof MerchantFeatureFlagsResponse>;
 
+/** `GET /app/preview-flags` — kill switches for surfaces that ship *drawn but unbacked*: a designed
+ *  screen whose integration does not exist yet, shipped so the journey is walkable and reviewable
+ *  ahead of the real rail. Served publicly for the same reason as the version gate and the merchant
+ *  flags — read at cold start, before sign-in.
+ *
+ *  **Why this is a SECOND endpoint and not three more fields on {@link MerchantFeatureFlagsResponse}:**
+ *  that schema is `.strict()`, and the binaries already on the internal track (v0.30.0, v0.31.0) carry
+ *  their own copy of it. Adding a field there would make every one of those installs fail `safeParse`
+ *  and silently fall back to `DEFAULT_FEATURE_FLAGS` — quietly disarming the Restaurants kill switch on
+ *  handsets we cannot update without a store release. A new endpoint is inert to old binaries: they
+ *  never call it. Put future flags of this class here; leave the strict one frozen. */
+export const PreviewFlagsResponse = z
+  .object({
+    /** Master switch for the walkthroughs of the unbuilt mobile-money rail — the rider top-up flow
+     *  (`RJ.topup_*`) and the customer food-checkout prompt/decline pair (`R5·4` / `R5·b2`). ON ships
+     *  them; OFF collapses both back to the honest fallbacks (call-support for top-up, manual
+     *  reference-entry for checkout) with no app update. Every screen it reveals is labelled PREVIEW
+     *  and states that no money moved — the flag controls visibility, never truthfulness. */
+    paymentSimulationEnabled: z.boolean(),
+  })
+  .strict();
+export type PreviewFlagsResponse = z.infer<typeof PreviewFlagsResponse>;
+
 // ---------------------------------------------------------------------------
 // Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
 // ---------------------------------------------------------------------------

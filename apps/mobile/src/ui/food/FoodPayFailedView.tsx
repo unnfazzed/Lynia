@@ -17,10 +17,10 @@ const RAILS = ["EcoCash", "InnBucks", "O'mari"] as const;
  * cause, offer the other rails, and keep a single retry.
  *
  * ⚠️ THE PAYMENT RAIL DOES NOT EXIST — there is no decline callback in this codebase any more than
- * there is a prompt-send endpoint. This screen is reachable ONLY from the QA test build's simulated
- * transition and carries {@link SimulatedPathNotice} above its hero saying exactly that. It states a
- * FAILURE, never a success, so the worst it can do is send a tester to the manual rail — which is the
- * real path regardless.
+ * there is a prompt-send endpoint. This screen is reachable only through the preview transition gated
+ * by `usePaymentSimulation()` and carries {@link SimulatedPathNotice} above its hero saying exactly
+ * that. It states a FAILURE, never a success, so the worst it can do is send someone to the manual
+ * rail — which is the real path regardless.
  */
 export function FoodPayFailedView({
   restaurantName,

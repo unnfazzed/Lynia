@@ -3,13 +3,14 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
-import { Button, Card, Field, Icon, isTestBuild, Sub } from "../index";
+import { Button, Card, Field, Icon, Sub } from "../index";
+import { SupportCallRow } from "../safety";
 import { CountdownRing, formatCountdown } from "../food/CountdownRing";
 
 /**
  * The kit's self-serve top-up flow (`explorations/journey/rider-screens-wallet.jsx` — `TopupAmount`,
- * `TopupWait`, `TopupSuccess`, `TopupDeclined`), rebuilt as an explicitly-labelled WALKTHROUGH for the
- * QA test build only.
+ * `TopupWait`, `TopupSuccess`, `TopupDeclined`), rebuilt as an explicitly-labelled PREVIEW: shipped to
+ * riders behind a server kill switch, because the rail it draws does not exist yet.
  *
  * ─── WHY THIS IS A SIMULATION AND NOT THE REAL SCREEN ─────────────────────────────────────────────
  * There is no payment-rail integration. `POST /wallet/topups` exists and really does open a `TopUp`
@@ -19,16 +20,20 @@ import { CountdownRing, formatCountdown } from "../food/CountdownRing";
  * `app/wallet/top-up.tsx` was rewritten to remove, and nothing here is allowed to bring it back.
  *
  * So this component:
- *   - is rendered ONLY when `isTestBuild()` (see app/wallet/top-up.tsx) — a real release build never
- *     mounts it and keeps the honest "call support to top up" screen;
+ *   - is rendered only when `usePaymentSimulation()` is open (see app/wallet/top-up.tsx) — the QA APK
+ *     or the `paymentSimulationEnabled` server flag. Shut the flag and the honest "call support to top
+ *     up" screen is what riders get, with no app update;
  *   - makes NO network call at all. It does not create a `TopUp` row (which would only ever expire and
  *     would also leave a durable `PendingTopup` marker for the Money tab to report on), does not read
  *     or invalidate the wallet, and writes nothing to the device;
- *   - carries a permanent SIMULATED strip on every single step, including the terminals;
+ *   - carries a permanent PREVIEW strip on every single step, including the terminals;
  *   - never asserts money moved. The "approved" step is phrased as what the real screen WOULD show and
  *     restates the rider's unchanged real balance next to it. The rider drives the outcome explicitly —
  *     nothing auto-resolves into a success, because a success that arrives on its own is exactly the
- *     thing a tester would screenshot and believe.
+ *     thing a rider would screenshot and believe;
+ *   - keeps the REAL top-up route on the amount step. Calling support is the only way a balance
+ *     actually moves today, so a preview that replaced that screen without carrying its one working
+ *     action forward would leave riders further from their money than before it shipped.
  *
  * Delete this component the day a rail integration lands and calls `creditFromTopup`; the layout is the
  * kit's, so the real screen is this minus the strips, plus `createTopup`/`getTopup`.
@@ -48,17 +53,16 @@ const QUICK_AMOUNTS = [5, 10, 20];
  *
  * Deliberately identical in treatment and headline grammar to `src/ui/food/SimulatedPathNotice` (the
  * customer checkout's marker for the same class of designed-but-unbacked screen) so the two read as one
- * system: danger wash, danger border, "SIMULATED — <what> (test build)". It is NOT that component
- * because that one's body copy ends "the only real way to pay is still the manual rail below" — true on
- * a checkout screen, false here, where the real path is a phone call to support and there is no rail
- * below. Same warning, accurate second sentence. Worth folding into one component with a `detail` slot
- * once both lanes have landed — see the report.
+ * system: danger wash, danger border, "PREVIEW — <what>". It is NOT that component because that one's
+ * body copy ends "the only real way to pay is still the manual rail below" — true on a checkout screen,
+ * false here, where the real path is a phone call to support and there is no rail below. Same warning,
+ * accurate second sentence. Worth folding into one component with a `detail` slot — see the report.
  *
- * Self-gates on `isTestBuild()` as belt-and-braces: the only caller is already test-build-only
- * (app/wallet/top-up.tsx), so a future refactor that loses that branch loses the flow, not the warning.
+ * ⚠️ UNCONDITIONAL BY DESIGN. This used to self-gate on `isTestBuild()` as belt-and-braces, which
+ * became a trap the moment the flow shipped wider: relaxing the entry gate alone would have rendered
+ * the fabricated screens with their warning silently off. The gate belongs on the door, not the sign.
  */
-function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement | null {
-  if (!isTestBuild()) return null;
+function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement {
   return (
     <View
       accessibilityRole="alert"
@@ -77,10 +81,10 @@ function SimulatedStrip({ detail }: { detail?: string }): React.ReactElement | n
       <Icon name="triangle-alert" size={17} color={tokens.color.dangerInk} style={{ marginTop: 1 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.dangerInk }}>
-          SIMULATED — no payment request was sent (test build)
+          PREVIEW — no payment request was sent
         </Text>
         <Text style={{ fontSize: 12, color: tokens.color.dangerInk, lineHeight: 17, marginTop: 3 }}>
-          {detail ?? "This is a UI walkthrough of the top-up flow. No rail is connected, no money moves, and your balance is untouched."}
+          {detail ?? "This is a preview of the top-up flow. No rail is connected, no money moves, and your balance is untouched."}
         </Text>
       </View>
     </View>
@@ -208,7 +212,7 @@ export function TopUpSimulator({
         </Card>
 
         <Button label="Back to Money" onPress={onExit} />
-        <Button label="Run the walkthrough again" variant="ghost" onPress={() => setStep("amount")} />
+        <Button label="Run the preview again" variant="ghost" onPress={() => setStep("amount")} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     );
@@ -251,7 +255,7 @@ export function TopUpSimulator({
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <SimulatedStrip detail="This is a UI walkthrough of the top-up flow. No rail is connected, no money moves, and your balance is untouched. A real release build shows the “call support to top up” screen instead — that is still the shipped behaviour." />
+      <SimulatedStrip detail="This is a preview of the top-up flow. No rail is connected, no money moves, and your balance is untouched. To actually add balance today, call support — the button is at the bottom of this screen." />
       <Sub>Add to your commission balance. This money can only be spent on commission.</Sub>
 
       <Field
@@ -379,8 +383,25 @@ export function TopUpSimulator({
         }}
       />
       <Text style={{ fontSize: 11.5, color: tokens.color.muted, textAlign: "center", lineHeight: 17, marginTop: 6 }}>
-        Tapping this sends nothing. It opens the next screen in the walkthrough.
+        Tapping this sends nothing. It opens the next screen in the preview.
       </Text>
+
+      {/* THE ONE REAL ACTION ON THIS SCREEN. Everything above is a preview of a rail that does not
+          exist; support crediting your balance by hand is how a top-up actually happens today. It has
+          to survive the preview, or shipping the preview would have taken riders further from their
+          money — so it is carried forward from the fallback screen rather than replaced by it. */}
+      <View style={{ marginTop: tokens.space.xl }}>
+        <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, letterSpacing: 0.3, marginBottom: 6 }}>
+          TO TOP UP FOR REAL
+        </Text>
+        <Card style={{ backgroundColor: tokens.color.surface }}>
+          <SupportCallRow label="Top up" name="LyniaGo support" />
+        </Card>
+        <Text style={{ fontSize: 11.5, color: tokens.color.muted, lineHeight: 17, marginTop: 6 }}>
+          Tell support how much you&apos;d like to add. They confirm your payment and credit your balance
+          directly — no money moves until they do.
+        </Text>
+      </View>
       <View style={{ height: tokens.space.xxl }} />
     </ScrollView>
   );

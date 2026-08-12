@@ -11,9 +11,11 @@ import { SimulatedPathNotice } from "./SimulatedPathNotice";
  *
  * ⚠️ THE PAYMENT RAIL DOES NOT EXIST. There is no prompt-send endpoint in this codebase (see
  * ManualPayRail / FoodOrderAwaitingPaymentView: the shipped path is USSD + "submit my reference",
- * matched by the merchant against their own statement). This screen is therefore reachable ONLY from
- * the QA test build's simulated transition, and it paints {@link SimulatedPathNotice} above its own
- * hero saying so in as many words.
+ * matched by the merchant against their own statement). This screen is therefore reachable only
+ * through the preview transition gated by `usePaymentSimulation()` — the QA APK plus a server kill
+ * switch — and it paints {@link SimulatedPathNotice} above its own hero saying so in as many words.
+ * That notice is unconditional: there is no build or flag state in which this screen renders without
+ * it.
  *
  * It is a WAIT state and nothing more: it never asserts that money moved, and there is deliberately
  * no simulated success anywhere — the only way this order can become "paid" is still the customer
@@ -34,8 +36,8 @@ export function FoodPayWaitView({
   reachable: boolean;
   /** Back to the real, working path: the manual rail + reference form. */
   onEnterReference: () => void;
-  /** Test build only: walk on to R5·b2 (declined). Undefined in a real release, where this whole
-   *  screen is unreachable anyway. */
+  /** Walk on to R5·b2 (declined). Undefined when the caller has no decline preview to offer; the
+   *  screen is already unreachable unless the preview gate is open. */
   onSimulateDecline?: () => void;
 }): React.ReactElement {
   return (
@@ -80,7 +82,7 @@ export function FoodPayWaitView({
           </Text>
         </View>
         {onSimulateDecline ? (
-          <Button label="SIMULATE: the rail declined" variant="ghost" onPress={onSimulateDecline} />
+          <Button label="Preview: what a declined payment looks like" variant="ghost" onPress={onSimulateDecline} />
         ) : null}
       </ScrollView>
       <Button label="I paid another way · enter my reference" variant="ghost" onPress={onEnterReference} />
