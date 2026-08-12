@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type IORedis from "ioredis";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, EARNED_ORDER_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, OrderStatus, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache, type MicroCacheL2 } from "../common/micro-cache";
@@ -680,13 +680,13 @@ export class OrdersService implements OnModuleDestroy {
    *  history, not a reason to keep shipping twice the rows every screen open needs today. */
   async historyForUser(userId: string) {
     const orders = await this.prisma.order.findMany({
-      // Only `completed` orders belong in the Orders/Trips history lists — drafts and in-flight
-      // orders, plus cancelled/expired/undelivered AND delivered-but-not-yet-rated, are excluded.
-      // Filtering in SQL (not client-side after the fact) keeps the `take: 50` cap meaningful: 50
-      // completed rows, not 50 recent-of-any-status of which only a handful are completed. (Earnings
-      // still credits a `delivered` trip — see earningsSummary / EARNED_ORDER_STATUSES — so a rider's
-      // earnings count can lead their Trips list until the customer rates the last delivery.)
-      where: { AND: [{ OR: [{ customerId: userId }, { riderId: userId }] }, { status: OrderStatus.COMPLETED }] },
+      // Only completed trips belong in the Orders/Trips history lists — a `delivered` trip counts as
+      // completed even before the customer rates it (COMPLETED_ORDER_STATUSES); drafts and in-flight
+      // orders, plus cancelled/expired/undelivered, are excluded. Filtering in SQL (not client-side
+      // after the fact) keeps the `take: 50` cap meaningful: 50 completed rows, not 50 recent-of-any-
+      // status of which only a handful are completed. Same set `earningsSummary` credits, so the
+      // Trips list and the earnings trip-count never disagree.
+      where: { AND: [{ OR: [{ customerId: userId }, { riderId: userId }] }, { status: { in: COMPLETED_ORDER_STATUSES } }] },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -749,7 +749,7 @@ export class OrdersService implements OnModuleDestroy {
    *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either. */
   async earningsSummary(riderId: string): Promise<{ total: string; count: number }> {
     const agg = await this.prisma.order.aggregate({
-      where: { riderId, status: { in: EARNED_ORDER_STATUSES } },
+      where: { riderId, status: { in: COMPLETED_ORDER_STATUSES } },
       _sum: { agreedFare: true },
       _count: { _all: true },
     });
