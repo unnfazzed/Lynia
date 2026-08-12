@@ -67,14 +67,15 @@ export const TERMINAL_STATUSES: OrderStatus[] = [
   OrderStatus.UNDELIVERED,
 ];
 
-/** Statuses that count as a successfully-completed order — the set the Orders (customer) and Trips
- *  (rider) history lists show, and the same set `earningsSummary` aggregates a rider's completed-trip
- *  count over. `delivered` is included alongside `completed` because the hand-off already succeeded —
- *  the customer's rating is all that still moves `delivered → completed`, so dropping `delivered`
- *  would hide a real delivery from the rider's trips (and undercount it against their earnings total).
- *  Everything NOT here — drafts/in-flight (`requested`…`en_route_dropoff`), `cancelled`, `expired`,
- *  `undelivered` — is excluded from those history lists. */
-export const COMPLETED_ORDER_STATUSES: OrderStatus[] = [OrderStatus.DELIVERED, OrderStatus.COMPLETED];
+/** Statuses in which the rider has EARNED the fare — the hand-off succeeded, and only the customer's
+ *  rating still moves `delivered → completed`. This is the set `earningsSummary` aggregates a rider's
+ *  earnings total + trip count over: `delivered` is included because the fare is already earned, so
+ *  dropping it would undercount pay for every delivered-but-not-yet-rated trip.
+ *
+ *  NOTE: this is deliberately WIDER than what the Orders/Trips history lists show — those show only
+ *  `completed` orders (OrderStatus.COMPLETED). Earnings must still credit a `delivered` trip even
+ *  though it isn't listed yet, so the two sets are intentionally different. */
+export const EARNED_ORDER_STATUSES: OrderStatus[] = [OrderStatus.DELIVERED, OrderStatus.COMPLETED];
 
 /** Statuses during which a rider counts as "on an active ride" (ET2 one_active_ride index). */
 export const ACTIVE_RIDE_STATUSES: OrderStatus[] = [
