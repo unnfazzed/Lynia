@@ -22,7 +22,7 @@ The RJM registry (`window.RJM` in `rider-one-app.jsx`) is: `board`, `board_empty
 | `offer_food` | `app/rider/food-offer.tsx` | ⏳ later — **touches accept-offer** |
 | `offer_parcel` | `index.tsx` compose card (`selectedCard`) + `SentOfferCard` | ⏳ later — **touches agreed-price (auction)** |
 | `active_food` | `app/rider/food-job.tsx` | ⏳ later — **touches advance/confirm** |
-| `active_parcel` | `app/rider/job.tsx` | ⏳ later — **touches advance/confirm/assignment** |
+| `active_parcel` | `app/rider/job.tsx` | ✅ **ADOPTED** (region `cash_strip`) — tracker + footer deferred |
 | `handoff` | `src/ui/rider/DeliveryOtp.tsx` (in food-job/job) | ⏳ later — **touches delivery-code** |
 | `money` | `app/rider/(tabs)/money.tsx` | ⛔ deferred (live-vs-static multi-state + fabricated "≈30 more jobs" figure) — SENSITIVE wallet |
 | `gate_topup` | realized in `money.tsx` + board gate branch | ⛔ deferred (live-vs-static: no standalone gate screen by design) |
