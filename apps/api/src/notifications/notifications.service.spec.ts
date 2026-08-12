@@ -83,8 +83,8 @@ describe("NotificationsService — order-status notices", () => {
     // per-order role (`to`) so the client routes by order relationship, not global session role (Fix 3).
     expect(push.sendEach).toHaveBeenCalledOnce();
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "assigned", to: "rider" } }),
-      expect.objectContaining({ token: "r2", data: { orderId: "o1", status: "assigned", to: "rider" } }),
+      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "assigned", to: "rider", orderType: "parcel" } }),
+      expect.objectContaining({ token: "r2", data: { orderId: "o1", status: "assigned", to: "rider", orderType: "parcel" } }),
     ]);
   });
 
@@ -129,10 +129,10 @@ describe("NotificationsService — order-status notices", () => {
       select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "cancelled", to: "customer" } }),
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "cancelled", to: "customer", orderType: "parcel" } }),
     ]);
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "cancelled", to: "rider" } }),
+      expect.objectContaining({ token: "r1", data: { orderId: "o1", status: "cancelled", to: "rider", orderType: "parcel" } }),
     ]);
   });
 
@@ -149,7 +149,7 @@ describe("NotificationsService — order-status notices", () => {
       select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered", to: "customer" } }),
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered", to: "customer", orderType: "parcel" } }),
     ]);
   });
 
@@ -180,7 +180,8 @@ describe("NotificationsService — order-status notices", () => {
       select: { token: true, profileId: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "c1", title: "Your rider is at the door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer" } }),
+      // P0-2: the food order stamps orderType:"merchant" so the tap opens /food/order/:id, not the parcel tracker.
+      expect.objectContaining({ token: "c1", title: "Your rider is at the door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer", orderType: "merchant" } }),
     ]);
   });
 

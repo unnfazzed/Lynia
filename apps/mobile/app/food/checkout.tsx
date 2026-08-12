@@ -1,13 +1,14 @@
 import { haversineKm, isMerchantOpenNow, nextOpenDescription, normalizePhone, roundToCents, tokens, type MerchantPaymentMethod } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { placeFoodOrder } from "../../src/api/food-orders";
 import type { ResolvedPlace } from "../../src/api/places";
 import { useFoodCart } from "../../src/food/cart-context";
-import { estimateDeliveryFee } from "../../src/logic/food-checkout";
+import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
+import { usePlacingGuard } from "../../src/logic/use-placing-guard";
 import { loadMyPickupPhone, saveMyPickupPhone } from "../../src/logic/saved-recipients";
 import { formatMoney } from "../../src/logic/money";
 import { useReachability } from "../../src/net/use-reachability";
@@ -87,6 +88,32 @@ export default function FoodCheckoutScreen(): React.ReactElement {
     [dropLandmarkTouched],
   );
 
+  // P0-3: the placing beat's own copy promises "Don't close the app. If this fails, nothing is
+  // ordered and nothing is paid." — enforce it. While the place mutation is in flight, swallow the
+  // Android hardware-back press and disable the iOS swipe-back gesture so the screen can't be popped
+  // out from under the request (which otherwise dropped the customer onto the just-cleared cart).
+  usePlacingGuard(busy);
+
+  // Defence in depth for the same race: if the screen still unmounts before placeFoodOrder resolves
+  // (iOS gesture timing, a forced unmount), don't navigate the now-global router or setState here.
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  // Hoisted above the early returns below so the hook count is stable across the empty/loading/placing
+  // branches (React requires every render to call the same hooks in the same order).
+  const idempotencyKey = useMemo(
+    () =>
+      uuidV4FromSeed(
+        `food-order|${cart.cart.restaurantId}|${JSON.stringify(cart.cart.lines)}|${cart.cart.orderNote}|${dropPoint?.lat},${dropPoint?.lng}|${paymentMethod}`,
+      ),
+    [cart.cart.restaurantId, cart.cart.lines, cart.cart.orderNote, dropPoint?.lat, dropPoint?.lng, paymentMethod],
+  );
+
   if (cart.ready && (!cart.cart.restaurantId || cart.cart.lines.length === 0)) {
     return (
       <Screen>
@@ -143,14 +170,6 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   const phoneError = dropPhone.trim().length > 0 && !phoneOk ? "That doesn't look like a phone number" : undefined;
   const canSubmit = !!dropPoint && landmarkOk && phoneOk && open && merchantHasLocation && reachable && !busy;
 
-  const idempotencyKey = useMemo(
-    () =>
-      uuidV4FromSeed(
-        `food-order|${cart.cart.restaurantId}|${JSON.stringify(cart.cart.lines)}|${cart.cart.orderNote}|${dropPoint?.lat},${dropPoint?.lng}|${paymentMethod}`,
-      ),
-    [cart.cart.restaurantId, cart.cart.lines, cart.cart.orderNote, dropPoint?.lat, dropPoint?.lng, paymentMethod],
-  );
-
   const submit = async (): Promise<void> => {
     setError(null);
     if (!canSubmit || !dropPoint) {
@@ -171,11 +190,15 @@ export default function FoodCheckoutScreen(): React.ReactElement {
       void saveMyPickupPhone(dropPhone.trim());
       seedFoodOrder(queryClient, order);
       cart.clear();
-      router.replace(`/food/order/${order.id}`);
+      if (!mountedRef.current) return;
+      // P0-1: reset the food stack to its root before showing the order, so Android back from a live
+      // order returns to a browsable screen, never the just-cleared cart (see goToPlacedFoodOrder).
+      goToPlacedFoodOrder(router, order.id);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof ApiError ? err.message : "Couldn't place your order — try again.");
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   };
 

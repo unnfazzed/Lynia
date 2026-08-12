@@ -151,14 +151,21 @@ const RIDER_BOARD_STATUSES = new Set(["completed"]);
  */
 export function pushDestination(data: unknown, isRider: boolean): string | null {
   if (typeof data !== "object" || data === null) return null;
-  const { orderId, status, kind, to } = data as {
+  const { orderId, status, kind, to, orderType } = data as {
     orderId?: unknown;
     status?: unknown;
     kind?: unknown;
     to?: unknown;
+    orderType?: unknown;
   };
   // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
   const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
+  // P0-2: a food (merchant) order's customer-facing tracker is /food/order/:id, NOT the parcel-voiced
+  // /order/:id — and a food "assigned" ("Rider secured") push would otherwise route the customer to
+  // /rider/job. The server now stamps `orderType`; when it's absent (older in-flight pushes) this is
+  // false and routing falls back to the prior /order/:id behaviour.
+  const merchant = orderType === "merchant";
+  const customerOrderScreen = (id: string): string => (merchant ? `/food/order/${id}` : `/order/${id}`);
   if (kind === "broadcast") return "/rider";
   // D5: a food-dispatch offer push (`food-dispatch.service.ts` `tick()`) lands the rider on the offer
   // intake screen, which reads the live offer straight off the poll-fallback GET rather than trusting
@@ -180,18 +187,23 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
   // on that push (unlike the rider-standing pushes, which stay unstamped); honor it before falling back
   // to "/rider" so a customer with no rider profile doesn't land on the rider-onboarding screen.
   if (kind === "account") {
-    if (typeof orderId === "string" && orderId !== "") return `/order/${orderId}`;
+    if (typeof orderId === "string" && orderId !== "") return customerOrderScreen(orderId);
     return to === "customer" ? "/home" : "/rider";
   }
   if (typeof orderId !== "string" || orderId === "") return null;
   // SOS to the counterparty: route the rider to their own job screen; the customer keeps the tracker.
-  if (kind === "sos") return toRider ? "/rider/job" : `/order/${orderId}`;
-  // Rider-bail rebroadcast: the orderId is the fresh clone — follow it to the new auction.
+  if (kind === "sos") return toRider ? "/rider/job" : customerOrderScreen(orderId);
+  // Rider-bail rebroadcast is a parcel-auction concept; the orderId is the fresh clone — follow it.
   if (kind === "rebroadcast") return `/order/${orderId}`;
+  // A food order destined for the CUSTOMER always opens the food tracker, whatever the status — the
+  // food-voiced statuses (assigned "Rider secured", requested "re-dispatching", awaiting_payment
+  // "pay now", cancelled, en_route_dropoff) must not fall through to the parcel status routing below,
+  // which would send "assigned" to /rider/job and everything else to /order/:id.
+  if (merchant && !toRider) return `/food/order/${orderId}`;
   if (typeof status === "string" && RIDER_JOB_SCREEN_STATUSES.has(status)) return "/rider/job";
   if (typeof status === "string" && RIDER_BOARD_STATUSES.has(status)) return "/rider";
-  if (status === "cancelled") return toRider ? "/rider/job" : `/order/${orderId}`;
-  return `/order/${orderId}`;
+  if (status === "cancelled") return toRider ? "/rider/job" : customerOrderScreen(orderId);
+  return customerOrderScreen(orderId);
 }
 
 /**

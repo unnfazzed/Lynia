@@ -415,7 +415,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       void this.notifications.notifyProfiles([fresh.customerId], {
         title: "Rider secured",
         body: "A rider is on the way to collect your order from the kitchen.",
-        data: { orderId, status: "assigned" },
+        // to+orderType so the tap opens the food tracker: "assigned" alone routes to /rider/job (the
+        // parcel rider's job screen) — a dead end for a food customer. Additive on the wire.
+        data: { orderId, status: "assigned", to: "customer", orderType: "merchant" },
       });
     }
     return { orderId, status: "assigned" };
@@ -526,7 +528,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       void this.notifications.notifyProfiles([fresh.customerId], {
         title: "Finding you a new rider",
         body: "Your rider had to drop off — we're re-dispatching your order now, nothing charged.",
-        data: { orderId, status: "requested" },
+        // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
+        data: { orderId, status: "requested", to: "customer", orderType: "merchant" },
       });
     }
     return { orderId, status: "requested" };
@@ -561,7 +564,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       void this.notifications.notifyProfiles([order.customerId], {
         title: "Your order was cancelled",
         body: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
-        data: { orderId, status: "cancelled" },
+        // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
+        data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
       });
     }
     return { orderId, status: "cancelled" };

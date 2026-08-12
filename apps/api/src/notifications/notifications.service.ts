@@ -134,7 +134,10 @@ export class NotificationsService {
         await this.send([id], {
           title: notice.title,
           body: notice.body,
-          data: { orderId, status, to: aud, ...data },
+          // Stamp the order type so the client opens the right tracker on tap: a food (merchant) order
+          // must land on /food/order/:id, not the parcel-voiced /order/:id. Additive on the wire —
+          // older clients ignore it and fall back to /order/:id (the prior, food-mis-routing behaviour).
+          data: { orderId, status, to: aud, orderType: order.orderType, ...data },
           collapseKey: `order:${orderId}:${status}`,
         });
       }
