@@ -91,3 +91,42 @@ The RJM registry (`window.RJM` in `rider-one-app.jsx`) is: `board`, `board_empty
 ## Guardrail state after this pass
 - `node tools/parity/codegen/cli.mjs check` → **36/36** structurally congruent (was 34/34): `RJM.board_empty` adds `region empty` (`CARD(EMPTYSTATE(BUTTON))`) + `∴ composition` (`SCREEN(REGION:empty)`). The prior 34 (incl. `RJM.board`'s `SCREEN(REGION:list)`) stay congruent — unchanged. `RJM.offline` is recorded as a DEFERRED entry (wallet-read gap; see §3).
 - No `packages/design/**` edits. No `docs/DESIGN-DEVIATIONS.md` entry needed (nothing diverges from the mock — the empty-board message is a container-owned leaf, structurally invisible).
+
+---
+
+## Final disposition — task #48 complete (2026-08-12)
+
+Baseline held at **44/44 structurally congruent** throughout; every sensitive mutation kept
+byte-identical and covered by a regression test. Adoptions landed one screen/region per PR
+(#709–#716), each merged on green.
+
+### Adopted (7 rider RJM surfaces)
+
+| Screen | Kind | View | Sensitive path preserved (byte-identical) |
+|---|---|---|---|
+| `RJM.account` | whole-screen state-view | `RJM.account` | — (Account tab, no mutation) |
+| `RJM.board` | region `list` | `RiderBoardListView` | accept/assignment board — list is display-only |
+| `RJM.board_empty` | region `empty` | `RiderBoardEmptyView` | container-owned empty leaf |
+| `RJM.offer_food` | region `offer` | `RiderFoodOfferCardView` | `acceptFoodDispatch` / `declineFoodDispatch` |
+| `RJM.offer_parcel` | region `offer` | `RiderOfferParcelCardView` | `makeOffer` (agreed-price/auction bid) |
+| `RJM.active_food` | region `cash_strip` | `RiderActiveFoodCashStripView` | `advanceStatus` / `confirmPickup` / `confirmDelivery` |
+| `RJM.active_parcel` | region `cash_strip` | `RiderActiveParcelCashStripView` | `advanceStatus` / `deliverM` / `cancelM` / `undeliverM` / `confirmItems` |
+
+The two active-job screens adopt only their presentational **CashStrip** region; the sensitive
+Stepper/CTA/delivery-code sub-trees stay in the container untouched.
+
+### Deferred (registry-only in `adopted.mjs`, adopt nothing — each an honest structural wall)
+
+| Key(s) | Reason |
+|---|---|
+| `RJM.handoff` | The whole screen **is** the delivery-code mechanism — the 6 cells are the live `CodeInput` wired to the 3-try lock, the copy is the `otpTries`/`otpLocked` lockout messaging, the footer is `confirmDelivery`. No display sub-tree separates. `DeliveryOtp.tsx` byte-identical. |
+| `RJM.money` | Live-vs-static multi-state container (loading/error/pending-topup branches the mock never draws) + a fabricated "≈30 more jobs" projection the app honestly omits. Sensitive wallet. |
+| `RJM.offline` | The mock's second card is a live commission-balance tile the board never reads (`Me.rider` has no balance field; no `useWallet` on the board). Rendering it needs a new wallet read or a fabricated figure — both forbidden. |
+| `RJM.gate_topup` | The one-app design intentionally renders no standalone top-up gate; the low-balance gate lives in the Money hero + the board's `commission_low_balance` EmptyState (live-vs-static). |
+| `RJM.active_food#tracker`,`#cash_card`,`#footer` / `RJM.active_parcel#tracker`,`#footer` | Map-fused tracker regions and the delivery-code footer (`confirmDelivery` in `S(…,{footer})`) that region locators do not reach. |
+| `RJ.kyc_intro`/`kyc_form`/`kyc_pending`/`kyc_verified` | Onboarding gate branches interleaved in the RiderHome multi-state board container, not standalone screens (`kyc_verified` is correctly-absent — the one-app flow shows no post-verification interstitial). |
+| `LJ.auction_live`/`auction_finding`/`auction_expired`/`auction_counter` | The customer parcel-auction is a 1220-line god-container (`app/order/[id].tsx`): every offer card's "Choose this rider" button **is** `selectM.mutate` (accept), no per-state Screen boundary, and the live COND supersets the static mock (counter-offer swap, bid animation, 409 select-race guard). Inseparable from bid-accept. Already deferred in `5b0e7e5`; verified sound. |
+
+**Guardrails green on `main`:** token-conformance, screen-inventory (all deferred keys `PENDING`), and
+reverse-drift freeze all pass. No `packages/design/**` edits; no `docs/DESIGN-DEVIATIONS.md` entry
+needed (nothing diverges from a mock — every deferral is a structural/data wall, not a look change).
