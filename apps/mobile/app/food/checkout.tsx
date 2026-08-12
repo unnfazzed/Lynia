@@ -162,7 +162,9 @@ export default function FoodCheckoutScreen(): React.ReactElement {
       const order = await placeFoodOrder(cart.cart.restaurantId as string, {
         items: cart.cart.lines.map((l) => ({ dishId: l.dishId, quantity: l.quantity, note: l.note || undefined })),
         note: cart.cart.orderNote || undefined,
-        dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: dropPhone.trim() },
+        // Canonical E.164 (dropPhone is gated on normalizePhone above; the ?? is a defensive fallback)
+        // so the stored/dialled number doesn't depend on the customer's punctuation (local 0-form, +263).
+        dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: normalizePhone(dropPhone) ?? dropPhone.trim() },
         paymentMethod,
         idempotencyKey,
       });

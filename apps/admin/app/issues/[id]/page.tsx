@@ -1,4 +1,4 @@
-import { tokens, ISSUE_TYPE_LABELS, type IssueResolution } from "@lynia/shared";
+import { formatPhoneLocal, tokens, ISSUE_TYPE_LABELS, type IssueResolution } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
 import type { IssueDetail } from "../../lib/adminTypes";
 import { KeyValue } from "../../components/KeyValue";
@@ -135,7 +135,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                   value: (
                     <span>
                       {i.rider}
-                      {i.riderPhone ? <span className="mono mut"> {i.riderPhone}</span> : null} ·{" "}
+                      {i.riderPhone ? <span className="mono mut"> {formatPhoneLocal(i.riderPhone)}</span> : null} ·{" "}
                       <a href="/riders" style={{ color: tokens.color.accentText }}>profile</a>
                     </span>
                   ),
@@ -145,7 +145,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                   value: (
                     <span>
                       {i.customer}
-                      {i.customerPhone ? <span className="mono mut"> {i.customerPhone}</span> : null} ·{" "}
+                      {i.customerPhone ? <span className="mono mut"> {formatPhoneLocal(i.customerPhone)}</span> : null} ·{" "}
                       <a href="/customers" style={{ color: tokens.color.accentText }}>profile</a>
                     </span>
                   ),

@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { adminFetch, adminFetchResult } from "../../lib/api";
 import type { RiderDetail, TripRow, WalletView, WalletLedgerEntry } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -219,7 +219,7 @@ export default async function RiderProfilePage({
             <div className="block-title">Details</div>
             <KeyValue
               rows={[
-                { label: "Phone", value: <span className="mono">{r.phone}</span> },
+                { label: "Phone", value: <span className="mono">{formatPhoneLocal(r.phone)}</span> },
                 { label: "Bike reg", value: <span className="mono">{r.bike}</span> },
                 { label: "Joined", value: r.joined },
                 {

@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../../lib/api";
 import type { KycReview } from "../../../lib/adminTypes";
 import { KeyValue } from "../../../components/KeyValue";
@@ -137,7 +137,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                 {r.duplicateIdAccounts
                   .map(
                     (a) =>
-                      `${a.name || "(no name)"} · ${a.phone} · ${a.role}${
+                      `${a.name || "(no name)"} · ${formatPhoneLocal(a.phone)} · ${a.role}${
                         a.accountStatus ? ` (${a.accountStatus})` : ""
                       }`,
                   )
@@ -242,7 +242,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <KeyValue
               rows={[
                 { label: "Full name", value: r.name },
-                { label: "Phone", value: <span className="mono">{r.phone}</span> },
+                { label: "Phone", value: <span className="mono">{formatPhoneLocal(r.phone)}</span> },
                 { label: "National ID", value: <span className="mono">{r.idNumber ?? "—"}</span> },
                 { label: "Bike reg", value: <span className="mono">{r.bike}</span> },
                 { label: "Attempt", value: <span className="num">{r.attempt} of 2</span> },

@@ -1,3 +1,4 @@
+import { formatPhoneLocal } from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { DataTable, type Column } from "../components/DataTable";
@@ -86,7 +87,7 @@ export default async function RidersPage({
   // KYC · Trips / rating · Strikes · Status — standing is the row's verdict, so it reads last.
   const directoryColumns: Column<Rider>[] = [
     { key: "name", header: "Rider", cell: riderName },
-    { key: "phone", header: "Phone", className: "mono", cell: (r) => r.phone },
+    { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
     { key: "bike", header: "Bike", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
     { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} · ${ratingTxt(r)}` },
@@ -96,7 +97,7 @@ export default async function RidersPage({
 
   const kycColumns: Column<Rider>[] = [
     { key: "name", header: "Rider", cell: riderName },
-    { key: "phone", header: "Phone", className: "mono", cell: (r) => r.phone },
+    { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
     // Kit's KYC queue names this column "Bike reg" (kyc.html), matching the review screen's KeyValue.
     { key: "bike", header: "Bike reg", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
