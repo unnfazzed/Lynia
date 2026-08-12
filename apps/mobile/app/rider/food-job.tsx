@@ -409,7 +409,10 @@ export default function RiderFoodJob(): React.ReactElement {
 
   // ── Cancelled-while-active handback (24h reopen window — same activeForRider fallback a
   //    collected-then-cancelled parcel already gets; `collectedAt`/`counterpartyPhone` are generic). ──
-  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
+  // `"loading"` sentinel, mirroring rider/job.tsx: an empty Set asserts "nothing acknowledged", so the
+  // not-yet-read state would re-show the full-screen cancelled terminal for an order this rider already
+  // handed back, then swap it out once the read lands.
+  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string> | "loading">("loading");
   useEffect(() => {
     let alive = true;
     void loadAcknowledgedHandbacks().then((ids) => {
@@ -425,7 +428,11 @@ export default function RiderFoodJob(): React.ReactElement {
   // screens (and the loading/redirect states above) never read it. Gating the interval on reaching that
   // branch (rather than ticking for the order's whole lifetime) stops the once/sec re-render once the
   // job has nothing left for a clock to drive.
-  const needsClock = order != null && !deliveredFood && !undeliveredFood && !(order.status === "cancelled" && !ackedHandbacks.has(order.id));
+  // A cancelled order this rider has NOT already handed back — the full-screen terminal at the render
+  // branch below. False while `ackedHandbacks` is still loading: unknown is not "unacknowledged", and
+  // the guard beside that branch holds the screen on a skeleton until the read settles.
+  const handbackPending = order != null && order.status === "cancelled" && ackedHandbacks !== "loading" && !ackedHandbacks.has(order.id);
+  const needsClock = order != null && !deliveredFood && !undeliveredFood && !handbackPending;
   useEffect(() => {
     if (!needsClock) return;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -597,7 +604,17 @@ export default function RiderFoodJob(): React.ReactElement {
     );
   }
 
-  if (order && order.status === "cancelled" && !ackedHandbacks.has(order.id)) {
+  // Hold on the skeleton rather than guess which of the two cancelled-order screens applies (the
+  // hand-back terminal, or falling through to "no job") while the acknowledged-list read is in flight.
+  if (order && order.status === "cancelled" && ackedHandbacks === "loading") {
+    return (
+      <Screen>
+        <SkeletonList />
+      </Screen>
+    );
+  }
+
+  if (handbackPending && order) {
     // activeForRider's own R8 handback fallback only ever surfaces a cancelled order once
     // `collectedAt` is set (see orders.service.ts) — a pre-pickup food cancel drops straight to null
     // on the next poll instead, so reaching this branch at all means the food (and possibly cash) was

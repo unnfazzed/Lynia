@@ -133,7 +133,11 @@ export default function RiderJob(): React.ReactElement {
   // R8 follow-up: order ids the rider has already handed back (tapped "Back to board" on). A cancelled
   // order stays reopenable for 24h, so without this its snapshot keeps re-showing the hand-back prompt
   // on every reopen. Loaded once from the device; a fresh WS cancel is never suppressed (only reopens).
-  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
+  // `"loading"` sentinel for the same reason `persistedTerminal` above has one: an empty Set is a
+  // positive claim ("this rider has acknowledged nothing"), so treating the not-yet-read state as one
+  // re-shows the full-screen hand-back terminal for an order the rider already handed back, then
+  // replaces it with "No active job" once the read lands — two different screens in a row.
+  const [ackedHandbacks, setAckedHandbacks] = useState<Set<string> | "loading">("loading");
   useEffect(() => {
     let alive = true;
     void loadAcknowledgedHandbacks().then((ids) => {
@@ -687,7 +691,7 @@ export default function RiderJob(): React.ReactElement {
   // rebroadcast path instead, never landing here as "collected").
   const handback =
     cancelledJob ??
-    (order && order.status === "cancelled" && !ackedHandbacks.has(order.id)
+    (order && order.status === "cancelled" && ackedHandbacks !== "loading" && !ackedHandbacks.has(order.id)
       ? { collected: true, snapshot: order, cancelledBy: order.cancelledBy === "customer" ? ("customer" as const) : ("admin" as const) }
       : null);
   if (handback) {
@@ -849,8 +853,11 @@ export default function RiderJob(): React.ReactElement {
   // there's nothing to act on, so show the calm empty terminal rather than the collect/deliver flow.
   // First wait for the durable terminal marker to load — otherwise a delivered/undelivered order whose
   // in-memory state was lost to an app kill would flash "No active job" for a frame before the
-  // promotion effect above catches up.
-  if ((!order || order.status === "cancelled") && persistedTerminal === "loading") {
+  // promotion effect above catches up. `ackedHandbacks` joins it for the mirror-image reason: until
+  // that read lands the `handback` derivation above cannot tell an already-acknowledged cancel from a
+  // fresh one, and guessing either way paints a screen the next frame contradicts. A fresh WS cancel
+  // (`cancelledJob`) resolves `handback` before reaching here, so it is never delayed by this.
+  if ((!order || order.status === "cancelled") && (persistedTerminal === "loading" || ackedHandbacks === "loading")) {
     return (
       <Screen>
         <SkeletonList />

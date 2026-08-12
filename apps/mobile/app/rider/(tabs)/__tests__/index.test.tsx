@@ -113,8 +113,11 @@ function openOrderFixture(id: string): OpenOrder {
   };
 }
 
-function renderScreen(): renderer.ReactTestRenderer {
+function renderScreen(seed?: (qc: QueryClient) => void): renderer.ReactTestRenderer {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // Lets a test start from a WARM cache — the real cold-start shape, since ["me"] is both persisted
+  // across launches (src/query/persist.ts) and pre-seeded by useBootstrap.
+  seed?.(qc);
   let tree!: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(
@@ -473,5 +476,52 @@ describe("rider board (RJM.offer_parcel: the agreed-price makeOffer seam must su
     // The compose card is gone and no bid was submitted.
     expect(activeTree.root.findAll((n) => n.props.label === "Send offer").length).toBe(0);
     expect(mockMakeOffer).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MOB-BOOT-02 (sibling of the feature-flag boot flash): `online` was seeded with a flat `false` and
+ * reconciled from the server's `rider.isOnline` in a PASSIVE effect. With `["me"]` already warm —
+ * which is the normal cold start, since it is persisted across launches and pre-seeded by
+ * useBootstrap — `meQ.isLoading` is false on the first render, so the loading skeleton does not cover
+ * the gap: the RJM `offline` presentation ("Go online to see and bid on nearby orders", no board)
+ * committed and painted before the effect could flip it. A rider relaunching mid-shift watched their
+ * own board blink through Offline. Seeding the state from the warm cache closes the gap at the source.
+ */
+describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-02)", () => {
+  const OFFLINE_COPY = "Go online to see and bid on nearby orders.";
+
+  function offlineCopyHits(tree: renderer.ReactTestRenderer): number {
+    return tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes(OFFLINE_COPY)).length;
+  }
+
+  it("renders online from the FIRST frame when a warm ['me'] already says the rider is on shift", async () => {
+    const me = meFixture({ isOnline: true });
+    mockGetMe.mockResolvedValue(me);
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], me));
+
+    // Asserted BEFORE any settle(): this is the first committed frame, the one the rider actually saw
+    // flash. Pre-fix, `online` was false here and the offline card rendered.
+    expect(offlineCopyHits(activeTree)).toBe(0);
+
+    await settle();
+    await settle();
+    expect(offlineCopyHits(activeTree)).toBe(0);
+  });
+
+  it("still renders offline from a warm ['me'] that says the rider is off shift — the seed reads the cache, it doesn't assume online", async () => {
+    const me = meFixture({ isOnline: false });
+    mockGetMe.mockResolvedValue(me);
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], me));
+    await settle();
+    await settle();
+
+    expect(offlineCopyHits(activeTree)).toBeGreaterThan(0);
   });
 });

@@ -39,6 +39,7 @@ export function FoodOrderLiveTrackerView({
   busy,
   trackData,
   deliveryCode,
+  codeRestored,
   confirmCashBusy,
   onConfirmCash,
   onRevealCode,
@@ -55,6 +56,9 @@ export function FoodOrderLiveTrackerView({
   busy: boolean;
   trackData: OrderSnapshot | undefined;
   deliveryCode: string | null;
+  /** Whether the on-device code restore has settled. False means "not read yet", which must not be
+   *  presented as "no code yet" — see the hint choice below. */
+  codeRestored: boolean;
   confirmCashBusy: boolean;
   onConfirmCash: () => void;
   onRevealCode: () => void;
@@ -151,7 +155,15 @@ export function FoodOrderLiveTrackerView({
               code={deliveryCode}
               masked
               unavailableHint={
-                cash === "frozen" ? "This order is on hold — support is looking into it." : "Appears once you and your rider both confirm the cash."
+                // While the device restore is still in flight the honest line is "fetching", not a
+                // claim about eligibility: a customer who already earned this code would otherwise be
+                // told it appears only after the cash confirms — a statement their own screen
+                // contradicts a moment later. Same wording the at-door branch below already uses.
+                !codeRestored
+                  ? "Fetching your code…"
+                  : cash === "frozen"
+                    ? "This order is on hold — support is looking into it."
+                    : "Appears once you and your rider both confirm the cash."
               }
               onReveal={onRevealCode}
             />
