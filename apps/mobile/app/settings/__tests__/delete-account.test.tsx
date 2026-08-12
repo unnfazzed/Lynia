@@ -1,14 +1,17 @@
 /**
  * In-app account deletion (Google Play policy: any app offering account creation must offer account
- * deletion from inside the app; CDPA right to erasure). `DELETE /auth/me` has existed server-side
- * since LR8, but nothing in the app ever called it — this suite pins the three behaviours that make
- * the flow safe to ship:
+ * deletion from inside the app; CDPA right to erasure), as the design draws it — TWO screens
+ * (screens-shipped.jsx `DeleteAccount` → `DeleteFinal`, LJ.delete_account / LJ.delete_final) rather
+ * than an inline card in the settings list. This suite pins both the mocks' drawn copy and the
+ * behaviours that make the flow safe to ship:
  *
- *  1. it is TWO-tap — an accidental brush of a row in a settings list must not erase an account;
+ *  1. reaching the destructive call takes an explicit second SCREEN plus the acknowledgement tick —
+ *     an accidental brush of a settings row must not erase an account;
  *  2. a successful deletion signs the user out, rather than leaving a token for a profile that no
  *     longer exists to fail on the next poll;
- *  3. the API's 409s (live delivery / standing restriction) surface verbatim and the session is kept,
- *     because the user's next action differs per case and they still have an account.
+ *  3. the API's 409s (live delivery / standing restriction) surface verbatim and the session is kept;
+ *  4. the mock's mint "No delivery is running" strip carries the LIVE answer — a running delivery
+ *     turns it into the blocking reason and disables "Continue to delete".
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -18,18 +21,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // these initialisers otherwise would).
 const mockSignOut = jest.fn(async () => undefined);
 const mockDeleteAccount = jest.fn(async () => undefined);
+const mockActiveOrder = jest.fn(async (): Promise<unknown> => null);
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: jest.fn() }) }));
-jest.mock("expo-notifications", () => ({ getPermissionsAsync: jest.fn(async () => ({ granted: true })) }));
 jest.mock("../../../src/auth/auth-context", () => ({
   useAuth: () => ({ session: { role: "customer" }, signOut: mockSignOut }),
 }));
 jest.mock("../../../src/api/auth", () => ({
-  getMe: jest.fn(async () => ({ firstName: "Tendai", lastName: "M", phone: "+263771234567", role: "customer" })),
   deleteAccount: () => mockDeleteAccount(),
 }));
+jest.mock("../../../src/api/orders", () => ({
+  getActiveCustomerOrder: () => mockActiveOrder(),
+}));
 
-import SettingsScreen from "../index";
+import DeleteAccountScreen, { type DeleteAccountScreenProps } from "../delete-account";
 
 /** Walk up from a rendered label to the nearest ancestor carrying an onPress, and fire it. */
 function press(tree: renderer.ReactTestRenderer, label: string | RegExp): void {
@@ -43,6 +48,13 @@ function press(tree: renderer.ReactTestRenderer, label: string | RegExp): void {
   act(() => p!.props.onPress());
 }
 
+/** True when any node's props carry `label`/`children` matching — and, for a Button, is enabled. */
+function enabled(tree: renderer.ReactTestRenderer, label: string): boolean {
+  const node = tree.root.findAll((n) => n.props.label === label)[0];
+  if (!node) throw new Error(`no button labelled ${label}`);
+  return node.props.disabled !== true;
+}
+
 function has(tree: renderer.ReactTestRenderer, text: string | RegExp): boolean {
   return tree.root.findAll((n) =>
     typeof n.props.children === "string" &&
@@ -51,31 +63,9 @@ function has(tree: renderer.ReactTestRenderer, text: string | RegExp): boolean {
 }
 
 /**
- * Async because the screen has two effects that resolve promises on mount (the `me` query and the OS
- * notification-permission read). Flushing them inside `act` here keeps their state updates out of the
- * assertions — otherwise every test emits an "update not wrapped in act" warning for a permission
- * read it never cared about.
- */
-async function render(): Promise<renderer.ReactTestRenderer> {
-  // retry:false so a rejected mutation settles in one tick instead of backing off through retries.
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  let tree!: renderer.ReactTestRenderer;
-  await act(async () => {
-    tree = renderer.create(
-      <QueryClientProvider client={client}>
-        <SettingsScreen />
-      </QueryClientProvider>,
-    );
-  });
-  await settle();
-  return tree;
-}
-
-/**
  * Flush a settled promise all the way into a re-render. A microtask tick is not enough: React Query
  * batches subscriber notifications through its notifyManager, which schedules on a TIMER — so the
- * component re-renders a macrotask after the promise resolves, and asserting before that both misses
- * the new output and trips React's act warning.
+ * component re-renders a macrotask after the promise resolves.
  */
 async function settle(): Promise<void> {
   await act(async () => {
@@ -83,40 +73,73 @@ async function settle(): Promise<void> {
   });
 }
 
+async function render(props: DeleteAccountScreenProps = {}): Promise<renderer.ReactTestRenderer> {
+  // retry:false so a rejected mutation settles in one tick instead of backing off through retries.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  let tree!: renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = renderer.create(
+      <QueryClientProvider client={client}>
+        <DeleteAccountScreen {...props} />
+      </QueryClientProvider>,
+    );
+  });
+  await settle();
+  return tree;
+}
+
 beforeEach(() => {
   mockSignOut.mockClear();
   mockDeleteAccount.mockClear();
   mockDeleteAccount.mockResolvedValue(undefined);
+  mockActiveOrder.mockResolvedValue(null);
 });
 
-describe("settings — delete account", () => {
-  it("does not delete on the first tap; it asks first", async () => {
+describe("delete account — the explainer screen (LJ.delete_account)", () => {
+  it("draws the mock's explainer and the clear-to-continue strip, and deletes nothing", async () => {
     const tree = await render();
-    press(tree, "Delete account");
-    expect(mockDeleteAccount).not.toHaveBeenCalled();
     expect(has(tree, "Delete your account?")).toBe(true);
-  });
-
-  it("tells the user what deletion actually does before they confirm", async () => {
-    const tree = await render();
-    press(tree, "Delete account");
-    // Play requires the disclosure to be honest about what survives, not just what is removed.
-    expect(has(tree, /removes your name, phone number, ID and photos/i)).toBe(true);
-    expect(has(tree, /anonymised financial entry/i)).toBe(true);
-  });
-
-  it("backing out keeps the account and fires nothing", async () => {
-    const tree = await render();
-    press(tree, "Delete account");
-    press(tree, "Keep my account");
+    expect(has(tree, /Your profile, saved places, notifications and order history will be permanently deleted/)).toBe(true);
+    expect(has(tree, "No delivery is running — you're clear to continue. (A live order blocks deletion until it ends.)")).toBe(true);
     expect(mockDeleteAccount).not.toHaveBeenCalled();
-    expect(has(tree, "Delete your account?")).toBe(false);
   });
 
-  it("deletes and signs out on the explicit second tap", async () => {
+  it("a running delivery blocks the step and says so in the same strip", async () => {
+    mockActiveOrder.mockResolvedValue({ id: "0a1b2c3d-0000-4000-8000-000000000001" });
     const tree = await render();
-    press(tree, "Delete account");
-    press(tree, "Yes, delete my account");
+    expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
+    expect(enabled(tree, "Continue to delete")).toBe(false);
+  });
+
+  it("continuing lands on the final step, still without deleting", async () => {
+    const tree = await render();
+    press(tree, "Continue to delete");
+    expect(has(tree, "This is the final step")).toBe(true);
+    expect(mockDeleteAccount).not.toHaveBeenCalled();
+  });
+});
+
+describe("delete account — the final step (LJ.delete_final)", () => {
+  it("draws the mock's 30-day grace copy and the acknowledgement tick", async () => {
+    const tree = await render({ initialStep: "final" });
+    // The grace paragraph interpolates a bold "30 days", so it renders as a child ARRAY rather than
+    // one string — assert against the serialised tree.
+    const out = JSON.stringify(tree.toJSON());
+    expect(out).toContain("Your account closes now and is permanently deleted after");
+    expect(out).toContain("30 days");
+    expect(has(tree, "I understand my history and saved places will be gone")).toBe(true);
+  });
+
+  it("the delete button is gated on the tick", async () => {
+    const tree = await render({ initialStep: "final" });
+    expect(enabled(tree, "Delete my account")).toBe(false);
+    press(tree, "I understand my history and saved places will be gone");
+    expect(enabled(tree, "Delete my account")).toBe(true);
+  });
+
+  it("deletes and signs out once acknowledged", async () => {
+    const tree = await render({ initialStep: "final", initialAcknowledged: true });
+    press(tree, "Delete my account");
     await settle();
     expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
@@ -125,9 +148,8 @@ describe("settings — delete account", () => {
   it("surfaces the API's refusal verbatim and keeps the user signed in", async () => {
     // The 409 the server raises when a delivery is in flight — erasing would strand the other party.
     mockDeleteAccount.mockRejectedValue(new Error("Finish or cancel your active delivery before deleting your account"));
-    const tree = await render();
-    press(tree, "Delete account");
-    press(tree, "Yes, delete my account");
+    const tree = await render({ initialStep: "final", initialAcknowledged: true });
+    press(tree, "Delete my account");
     await settle();
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(has(tree, /Finish or cancel your active delivery/i)).toBe(true);

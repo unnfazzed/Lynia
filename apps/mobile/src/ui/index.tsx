@@ -220,9 +220,14 @@ export function Button(props: {
   // `pendingOrQueued`.
   loading?: boolean | "queued";
   variant?: "primary" | "ghost";
+  // Destructive actions. The mocks draw them as the SAME button with the danger colour swapped in
+  // (screens-shipped.jsx `DeleteFinal`: a primary filled `--danger`; `DeleteAccount`: a ghost whose
+  // label is `--danger-ink`) — so this is a tone on the one primitive, not a second button.
+  tone?: "accent" | "danger";
 }): React.ReactElement {
   const primary = (props.variant ?? "primary") === "primary";
-  const textColor = primary ? tokens.color.onAccent : tokens.color.accentText;
+  const danger = props.tone === "danger";
+  const textColor = primary ? tokens.color.onAccent : danger ? tokens.color.dangerInk : tokens.color.accentText;
   return (
     <Pressable
       onPress={props.onPress}
@@ -232,7 +237,19 @@ export function Button(props: {
         // white-on-green sunlight legibility — and presses to the darker `ctaPressed`; the brand
         // `accent` green stays reserved for non-text fills. Ghost is the outline pill with green text.
         // Ghost press feedback is the mint wash — `surface` is invisible against a Screen background.
-        backgroundColor: primary ? (pressed ? tokens.color.ctaPressed : tokens.color.cta) : pressed ? tokens.color.accentWash : "transparent",
+        backgroundColor: primary
+          ? danger
+            ? pressed
+              ? tokens.color.dangerInk
+              : tokens.color.danger
+            : pressed
+              ? tokens.color.ctaPressed
+              : tokens.color.cta
+          : pressed
+            ? danger
+              ? tokens.color.dangerWash
+              : tokens.color.accentWash
+            : "transparent",
         borderWidth: primary ? 0 : 1,
         borderColor: tokens.color.line,
         opacity: props.disabled ? 0.5 : 1,

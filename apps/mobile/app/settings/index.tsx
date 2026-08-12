@@ -1,15 +1,13 @@
 import { formatPhoneLocal, tokens } from "@lynia/shared";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import React from "react";
 import { AppState, Linking, Pressable, Text, View } from "react-native";
-import { deleteAccount, getMe } from "../../src/api/auth";
+import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
-import { PRIVACY_URL } from "../../src/config";
-import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, ErrorText, Icon, type IconName, Screen } from "../../src/ui";
+import { AppBar, Icon, type IconName, Screen } from "../../src/ui";
 
 /**
  * Settings (customer + rider A·6 / A·4). A lean row list — profile, notifications, language, payment
@@ -76,22 +74,6 @@ export default function SettingsScreen(): React.ReactElement {
     };
   }, []);
 
-  // Two-step account deletion (Play policy + CDPA right to erasure). Step one reveals the confirm
-  // card; the destructive call only ever fires from the card's explicit second tap — the same
-  // "no destructive single tap" pattern the matched-order cancel uses (app/order/[id].tsx).
-  const [deleteConfirm, setDeleteConfirm] = React.useState(false);
-  const deleteM = useMutation({
-    mutationFn: deleteAccount,
-    // The account no longer exists, so the local session is now a stale token pointing at an
-    // anonymised profile. Sign out to clear it (and every cached body keyed to it) rather than
-    // leaving the app to discover the account is gone via a 401 on the next poll.
-    onSuccess: () => void signOut(),
-  });
-  // The API's 409s ("finish your active delivery", "account under a standing restriction") are
-  // already user-facing copy, so they surface verbatim — the user's next action differs per case and
-  // a generic "couldn't delete" would hide which one they're in.
-  const deleteError = deleteM.error instanceof Error ? deleteM.error.message : null;
-
   return (
     <Screen>
       {/* Kit AppBar (pushed-screen header) — title lives in the bar; no in-body Heading. */}
@@ -123,31 +105,17 @@ export default function SettingsScreen(): React.ReactElement {
       />
       <Row icon="map-pin" label="Language" value="English" />
       <Row icon="banknote" label="Payment" value="Cash" />
-      <Row icon="shield" label="Privacy notice" onPress={() => void Linking.openURL(PRIVACY_URL)} />
+      {/* Privacy is a DRAWN in-app screen (LJ.privacy) — it explains what we collect, what others see
+          and how long we keep it, and carries the route into deletion. The hosted notice stays the
+          store-listing artefact; the app no longer bounces the user out to it. */}
+      <Row icon="shield" label="Privacy notice" onPress={() => router.push("/settings/privacy")} />
       <View style={{ height: tokens.space.md }} />
       <Row icon="x" label="Sign out" danger onPress={() => void signOut()} />
 
-      {deleteConfirm ? (
-        <Card style={{ borderColor: tokens.color.danger }}>
-          <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>
-            Delete your account?
-          </Text>
-          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-            This removes your name, phone number, ID and photos, your saved addresses, and the GPS
-            trail on your deliveries. Your past deliveries stay on record as an anonymised financial
-            entry. This can&apos;t be undone, and you&apos;ll be signed out of every device.
-          </Text>
-          <ErrorText message={deleteError} />
-          <Button
-            label="Yes, delete my account"
-            onPress={() => deleteM.mutate()}
-            loading={pendingOrQueued(deleteM)}
-          />
-          <Button label="Keep my account" variant="ghost" onPress={() => { setDeleteConfirm(false); deleteM.reset(); }} />
-        </Card>
-      ) : (
-        <Row icon="trash" label="Delete account" danger onPress={() => setDeleteConfirm(true)} />
-      )}
+      {/* Deletion is its own two-screen flow (LJ.delete_account → LJ.delete_final): irreversible, so
+          the explainer + the live "is a delivery running?" check + the acknowledgement tick live on
+          their own screens rather than in an inline card here. */}
+      <Row icon="trash" label="Delete account" danger onPress={() => router.push("/settings/delete-account")} />
 
       <Text style={{ fontSize: 11, color: tokens.color.muted, textAlign: "center", marginTop: tokens.space.lg }}>LyniaGo v{version}</Text>
     </Screen>
