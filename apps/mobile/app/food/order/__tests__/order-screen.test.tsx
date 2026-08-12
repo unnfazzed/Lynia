@@ -255,7 +255,8 @@ describe("food order screen — phase branching", () => {
     });
     const tree = await render();
     expect(has(tree, /merchant number/i)).toBe(true);
-    expect(has(tree, "+263771182400")).toBe(true);
+    // Displayed in the local trunk-0 form customers actually use for EcoCash — no +263 prefix.
+    expect(has(tree, "0771182400")).toBe(true);
   });
 
   it("submits the customer's own reference via the manual pay screen", async () => {

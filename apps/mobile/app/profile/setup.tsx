@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, normalizeNationalId, tokens } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
@@ -86,7 +86,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName, lastName, idNumber: idNumber.trim() });
+      await updateProfile({ firstName, lastName, idNumber: normalizeNationalId(idNumber) });
       // The draft has served its purpose — wipe the stored national ID immediately rather than leaving
       // it in the keystore any longer than needed (mirrors become.tsx clearing the KYC draft on submit).
       void clearProfileDraft();
@@ -127,7 +127,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
       <View>
         <Field
           label="Phone number"
-          value={phone}
+          value={formatPhoneLocal(phone)}
           onChangeText={() => {}}
           editable={false}
           keyboardType="phone-pad"
@@ -139,12 +139,13 @@ export default function ProfileSetupScreen(): React.ReactElement {
         </View>
       </View>
       {/* National ID stored on the account record (0·6). Default (text) keyboard:
-          Zimbabwean IDs are alphanumeric (e.g. "63-123456-A-42"), so a number pad would block them. */}
+          Zimbabwean IDs are alphanumeric (e.g. "63123456A42"), so a number pad would block them.
+          Placeholder is dash-free — customers enter the ID plain; spaces/dashes are normalised on save. */}
       <Field
         label="National ID number"
         value={idNumber}
         onChangeText={setIdNumber}
-        placeholder="63-123456-A-42"
+        placeholder="63123456A42"
         maxLength={40}
         hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
       />

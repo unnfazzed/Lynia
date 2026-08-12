@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
@@ -60,7 +60,7 @@ export function FoodPayWaitView({
           <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>Check your phone</Text>
           <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 290, lineHeight: 20 }}>
             Approve the mobile-money prompt on your handset to pay {restaurantName}
-            {merchantPaymentPhone ? ` on ${merchantPaymentPhone}` : ""}.
+            {merchantPaymentPhone ? ` on ${formatPhoneLocal(merchantPaymentPhone)}` : ""}.
           </Text>
           {/* Kit R5·4 (r-customer-b.jsx:122): the amount + rail line, accent-text and tabular. */}
           <Text

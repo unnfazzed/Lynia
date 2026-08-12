@@ -1,4 +1,4 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, tokens, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, formatPhoneLocal, tokens, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -651,7 +651,7 @@ export default function RiderFoodJob(): React.ReactElement {
                 style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm }}
               >
                 <Icon name="phone" size={16} color={tokens.color.accentText} />
-                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer · {order.counterpartyPhone}</Text>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer · {formatPhoneLocal(order.counterpartyPhone)}</Text>
               </Pressable>
             ) : null}
           </Card>

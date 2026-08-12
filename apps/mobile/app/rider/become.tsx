@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { normalizeNationalId, tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
@@ -210,7 +210,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: idNumber.trim() });
+      await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: normalizeNationalId(idNumber) });
       const res = await becomeRider({ bikeReg: bikeReg.trim(), photoUrl: photoKey });
       // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
       // rather than leaving it in the keystore any longer than needed.
@@ -288,9 +288,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
             <Card>
               <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
               <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
-              {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63-123456 A 12"),
-                  so a number-pad would make the letter suffix untypeable and block KYC submission. */}
-              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} maxLength={40} />
+              {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63123456A12"),
+                  so a number-pad would make the letter suffix untypeable and block KYC submission.
+                  Placeholder is dash-free; spaces/dashes are normalised out on submit. */}
+              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} placeholder="63123456A42" maxLength={40} />
             </Card>
             <Card>
               <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />

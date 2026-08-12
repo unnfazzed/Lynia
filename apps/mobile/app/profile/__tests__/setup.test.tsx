@@ -124,7 +124,9 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     });
     await settle();
 
-    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo", idNumber: "63-123456-A-42" });
+    // The ID is normalised on submit — dashes/spaces stripped, letters upper-cased — so the account
+    // record and the server's duplicate-ID hash agree however the customer punctuated it.
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42" });
     expect(secureStore["lynia.profileDraft.v1"]).toBeUndefined();
   });
 });

@@ -34,7 +34,7 @@ export function LoginView({
     <BrandLockup />
     <Heading>Welcome to Lynia</Heading>
     <Sub>We'll SMS a one-time code to this number.</Sub>
-    <Field label="Phone number" value={phone} onChangeText={onChangePhone} placeholder="+263 77 000 0000" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" error={error} />
+    <Field label="Phone number" value={phone} onChangeText={onChangePhone} placeholder="0771234567" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" error={error} />
     <Button label="Send code" onPress={onSubmit} loading={loading} disabled={submitDisabled} />
   </View>;
 }

@@ -1,4 +1,4 @@
-import { TOPUP_WINDOW_MS, tokens, type TopupRail } from "@lynia/shared";
+import { formatPhoneLocal, TOPUP_WINDOW_MS, tokens, type TopupRail } from "@lynia/shared";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
@@ -135,7 +135,7 @@ export function TopUpSimulator({
           </Text>
           <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", lineHeight: 21, marginTop: 6, maxWidth: 280 }}>
             In the real flow you&apos;d approve the {railName} prompt on{" "}
-            <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{phone}</Text>, and your
+            <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(phone)}</Text>, and your
             balance would be credited the moment it cleared.
           </Text>
           <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
@@ -303,7 +303,7 @@ export function TopUpSimulator({
         label="Phone number"
         value={phone}
         onChangeText={setPhone}
-        placeholder="077 234 5678"
+        placeholder="0771234567"
         keyboardType="phone-pad"
         maxLength={20}
         autoComplete="tel"

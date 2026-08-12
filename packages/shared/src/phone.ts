@@ -61,3 +61,31 @@ export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTR
   }
   return e164;
 }
+
+/**
+ * Format a phone number for DISPLAY in the local trunk-0 form the launch market actually reads and
+ * dials — `"+263778831938"` → `"0778831938"` — so customers never see the `+263` country code in a
+ * placeholder or a rendered number. Identity/storage stays E.164 (that's what `normalizePhone` mints
+ * and what `tel:` links dial); this is a presentation layer on top of it.
+ *
+ * Rules:
+ *  - Canonicalize the input first (so any spelling — spaced, trunk-0, international — maps the same),
+ *    then swap the country code for a single trunk `0`. `"+263778831938"`/`"0778831938"`/
+ *    `"263 77 883 1938"` all render `"0778831938"`.
+ *  - A number that canonicalizes to a DIFFERENT country (a genuine foreign `+…` number) keeps its
+ *    international form — there is no local trunk form to show and dropping the `+` would misdial.
+ *  - Anything that isn't a plausible phone number (short codes like `"999"`, half-typed input, empty)
+ *    is returned trimmed and unchanged rather than mangled — display is never allowed to drop text.
+ */
+export function formatPhoneLocal(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  const e164 = normalizePhone(trimmed, countryCode);
+  if (!e164) return trimmed;
+  const digits = e164.slice(1); // drop the leading '+'
+  if (digits.startsWith(countryCode)) {
+    return "0" + digits.slice(countryCode.length);
+  }
+  // Foreign number — no local trunk form; keep it diallable in international shape.
+  return e164;
+}

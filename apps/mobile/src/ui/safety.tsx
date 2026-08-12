@@ -1,4 +1,4 @@
-import { SOS_POLICY, tokens } from "@lynia/shared";
+import { formatPhoneLocal, SOS_POLICY, tokens } from "@lynia/shared";
 import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
 import * as Location from "expo-location";
@@ -355,7 +355,7 @@ export function SupportCallRow({
     <Pressable
       onPress={() => void Linking.openURL(uri)}
       accessibilityRole="button"
-      accessibilityLabel={`Call ${name} on ${phone}`}
+      accessibilityLabel={`Call ${name} on ${formatPhoneLocal(phone)}`}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -372,7 +372,7 @@ export function SupportCallRow({
         <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={{ fontSize: tokens.font.size.label, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{phone}</Text>
+        <Text style={{ fontSize: tokens.font.size.label, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(phone)}</Text>
       </View>
       <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
         <Icon name="phone" size={18} color={tokens.color.onAccent} />
