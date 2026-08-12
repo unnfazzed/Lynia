@@ -1,4 +1,4 @@
-import { RESTAURANTS_DISPATCH, tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
@@ -6,47 +6,26 @@ import { ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from "../../src/api/food-rider";
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
-import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
-import { Button, Card, EmptyState, ErrorText, haptic, Icon, Screen, SkeletonList } from "../../src/ui";
-import { LiveMap } from "../../src/ui/LiveMap";
-
-/** Kit `r-rider.jsx` PayTag — the CASH / WALLET pill on the offer header. */
-function PayTag({ method }: { method: "cash" | "wallet" }): React.ReactElement {
-  const cash = method === "cash";
-  return (
-    <View style={{ alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: tokens.radius.pill, backgroundColor: cash ? tokens.color.highlightWash : tokens.color.accentWash }}>
-      <Text style={{ fontSize: 12.5, fontWeight: "800", letterSpacing: 0.5, color: cash ? tokens.color.highlightInk : tokens.color.accentText }}>{cash ? "CASH" : "WALLET"}</Text>
-    </View>
-  );
-}
-
-/** Kit `r-rider.jsx` Leg — one end of the trip as a marked row: pickup is a filled dot, the drop a
- *  square, each under its COLLECT FROM / DELIVER TO eyebrow. */
-function Leg({ role, name, meta }: { role: "pickup" | "drop"; name: string; meta?: string | null }): React.ReactElement {
-  const pickup = role === "pickup";
-  return (
-    <View style={{ flexDirection: "row", gap: 10, paddingVertical: 9 }}>
-      <View style={{ width: 24, alignItems: "center", paddingTop: 2 }}>
-        <View style={{ width: 11, height: 11, borderRadius: pickup ? 6 : 3, backgroundColor: pickup ? tokens.color.ink : tokens.color.accent }} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 12, fontWeight: "700", letterSpacing: 0.6, color: tokens.color.muted }}>{pickup ? "COLLECT FROM" : "DELIVER TO"}</Text>
-        <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>{name}</Text>
-        {meta ? <Text style={{ fontSize: 12, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{meta}</Text> : null}
-      </View>
-    </View>
-  );
-}
+import { AppBar, Button, Card, EmptyState, ErrorText, haptic, Icon, Money, Screen, SkeletonList } from "../../src/ui";
+import { TypeTag } from "../../src/ui/rider/TypeTag";
+import { RiderFoodOfferCardView } from "./food-offer-card.view";
 
 /**
- * D5/C5: the rider's incoming food-dispatch offer (N-08's 60s window). Entered from the board's
- * `food:offer` socket push, a `food_offer` notification tap, or a cold reopen — in every case this
- * screen's own source of truth is the poll-fallback GET (`dispatch/offer`), never the payload that
- * happened to trigger the navigation, so a stale/lost push can never show a dead offer. Polls every
- * 3s while mounted so an offer taken by someone else (or timed out) is caught even with no live
- * socket on this screen (see the board's own socket teardown note — it doesn't survive the navigate).
+ * D5/C5: the rider's incoming food-dispatch offer. Entered from the board's `food:offer` socket push,
+ * a `food_offer` notification tap, or a cold reopen — in every case this screen's own source of truth
+ * is the poll-fallback GET (`dispatch/offer`), never the payload that happened to trigger the
+ * navigation, so a stale/lost push can never show a dead offer. Polls every 3s while mounted so an
+ * offer taken by someone else (or timed out) is caught even with no live socket on this screen.
+ *
+ * Aligned to the RJM `offer_food` mock (rider-one-app.jsx J4): AppBar + one offer Card + a pinned
+ * `Screen.footer` accept/decline pair. The offer Card is a codegen-adopted, guardrail-locked region
+ * (RJM.offer_food#offer → food-offer-card.view.tsx). The mock draws the CASH-COLLECT case — the rider
+ * collects the kitchen's money at the door and hands it back after the drop; nothing from the rider's
+ * own pocket. Riders NEVER front their own cash (product rule, owner 2026-08-12): cash is collected
+ * from the customer AFTER delivery, or the customer pre-pays via mobile money (the `wallet` case). The
+ * old `cash_upfront` "front your own cash" danger card drew a flow that does not exist and is removed.
  */
 export default function FoodOffer(): React.ReactElement {
   const router = useRouter();
@@ -96,120 +75,58 @@ export default function FoodOffer(): React.ReactElement {
     );
   }
 
-  const variant = foodOfferVariant(offer);
-  const now = Date.now();
-  const expiresMs = new Date(offer.expiresAt).getTime();
-  const remaining = Number.isFinite(expiresMs) ? Math.max(0, expiresMs - now) : 0;
-  const total = offer.merchantGoodsTotal != null && offer.deliveryFee != null ? offer.merchantGoodsTotal + offer.deliveryFee : null;
+  // `cash_upfront` cannot occur (riders never front their own cash); it collapses into the standard
+  // collect case. `wallet` is the customer-prepaid case (already paid via mobile money — collect
+  // nothing). Everything else renders the cash-collect card. The accept/decline mutations below are
+  // called identically for every variant.
+  const isWallet = foodOfferVariant(offer) === "wallet";
   const pending = acceptM.isPending || declineM.isPending;
-  // Kit `r-rider.jsx` OfferHead: the live 60s window as a linear bar + a raw seconds read-out.
-  const secs = Math.max(0, Math.ceil(remaining / 1000));
-  const pct = RESTAURANTS_DISPATCH.offerWindowMs > 0 ? Math.min(100, Math.max(0, (remaining / RESTAURANTS_DISPATCH.offerWindowMs) * 100)) : 0;
-  const payMethod: "cash" | "wallet" = variant === "wallet" ? "wallet" : "cash";
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        // RJM offer_food footer (rider-one-app.jsx J4): the pinned accept + ghost decline pair, copy
+        // verbatim. Wired to the UNCHANGED food-dispatch accept/decline mutations.
+        <View style={{ gap: tokens.space.sm }}>
+          <Button label="Accept this job" onPress={() => acceptM.mutate(offer.orderId)} loading={pendingOrQueued(acceptM)} disabled={pending} />
+          <Button label="Not this one" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={pendingOrQueued(declineM)} disabled={pending} />
+        </View>
+      }
+    >
+      {/* RJM offer_food AppBar (rider-one-app.jsx J4): "Food job" + a "pickup → drop-off" sub. */}
+      <AppBar title="Food job" sub={`${offer.pickup.landmark} → ${offer.dropoff.landmark}`} onBack={() => router.replace("/rider")} />
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Kit `r-rider.jsx` OfferHead ("NEW ORDER"): a cta-fill banner carrying the live 60s window
-            as a linear bar — the offer's defining chrome. Screen owns the 16px gutter, so this reads
-            as a banner block rather than the kit's full-bleed band. */}
-        <View style={{ backgroundColor: tokens.color.cta, borderRadius: tokens.radius.card, paddingHorizontal: tokens.space.md, paddingTop: 10, paddingBottom: 12, marginBottom: tokens.space.md }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <Icon name="timer" size={17} color={tokens.color.onAccent} />
-            <Text style={{ fontSize: 13.5, fontWeight: "800", letterSpacing: 0.4, color: tokens.color.onAccent }}>NEW ORDER</Text>
-            <View style={{ flex: 1 }} />
-            <Text style={{ fontSize: 16, fontWeight: "800", color: tokens.color.onAccent, fontVariant: ["tabular-nums"] }}>{secs}s</Text>
-          </View>
-          <View style={{ height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.3)", overflow: "hidden" }}>
-            <View style={{ height: "100%", width: `${pct}%`, backgroundColor: tokens.color.onAccent, borderRadius: 3 }} />
-          </View>
-        </View>
-
-        {/* Kit `r-rider.jsx` offer_cash: the pay-method chip and the rider's own take, side by side. */}
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: tokens.space.sm }}>
-          <PayTag method={payMethod} />
-          <View style={{ flex: 1, alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>YOU EARN</Text>
-            <Text style={{ fontSize: 22, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(offer.deliveryFee ?? 0)}</Text>
-          </View>
-        </View>
-
-        {variant === "cash_collect" && total != null ? (
-          // `r-rider.jsx` offer_cash: a label, then the amount at full size, then what happens to it.
-          // The kitchen's money reads in the highlight wash — green would say "this is yours".
-          <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", letterSpacing: 0.4, color: tokens.color.highlightInk }}>COLLECT AT THE DOOR</Text>
-            <Text style={{ fontSize: 32, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(total)}</Text>
-            <Text style={{ fontSize: 12, color: tokens.color.highlightInk, lineHeight: 18, marginTop: 2 }}>
-              Nothing from your pocket. Hand over the food, take the cash, then ride {formatMoney(offer.merchantGoodsTotal ?? 0)} back to the
-              kitchen — the {formatMoney(offer.deliveryFee ?? 0)} is yours.
+        {isWallet ? (
+          // Customer pre-paid via mobile money — collect nothing. The RJM offer_food mock draws only
+          // the cash-collect case, so this prepaid card is honest container glue (pruned from the
+          // composition check): same Card anatomy, wallet copy.
+          <Card style={{ padding: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <TypeTag food />
+              <View style={{ flex: 1 }} />
+              <Money v={offer.deliveryFee ?? 0} size={20} />
+            </View>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 20 }}>
+              Your fare is fixed for food jobs. No bidding.
             </Text>
-          </Card>
-        ) : variant === "cash_upfront" && total != null ? (
-          // Same label → amount → consequence anatomy as the collect card (kit offer_upfront). Kept in
-          // the danger wash rather than the kit's highlight: this is the one offer where the rider's
-          // OWN cash is at risk.
-          <Card style={{ backgroundColor: tokens.color.dangerWash, borderColor: "transparent" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", letterSpacing: 0.4, color: tokens.color.dangerInk }}>THIS KITCHEN ASKS YOU TO PAY FIRST</Text>
-            <Text style={{ fontSize: 32, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(total)}</Text>
-            <Text style={{ fontSize: 12, color: tokens.color.dangerInk, lineHeight: 18, marginTop: 2 }}>
-              Only accept if you&apos;re carrying {formatMoney(total)} — nobody checks a balance, but arriving short strands you at the
-              counter. You&apos;re paid back at the door.
-            </Text>
-          </Card>
-        ) : variant === "wallet" ? (
-          // `r-rider.jsx` offer_wallet: no float at risk changes the decision, so it gets a card and a
-          // tick, not a footnote.
-          <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent" }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-              <Icon name="circle-check" size={20} color={tokens.color.accentText} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>No money from your pocket</Text>
-                <Text style={{ fontSize: 12, color: tokens.color.accentText, lineHeight: 18 }}>
-                  The customer already paid the restaurant. Just collect and deliver.
-                </Text>
+            <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: tokens.color.accentWash }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                <Icon name="circle-check" size={20} color={tokens.color.accentText} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>No money from your pocket</Text>
+                  <Text style={{ fontSize: 12, color: tokens.color.accentText, lineHeight: 18 }}>
+                    The customer already paid the restaurant. Just collect and deliver.
+                  </Text>
+                </View>
               </View>
             </View>
           </Card>
         ) : (
-          <Text style={{ fontSize: 14, color: tokens.color.muted }}>{offer.itemDesc}</Text>
+          // RJM offer_food#offer — the codegen-adopted, guardrail-locked cash-collect card. `fare` is
+          // the rider's fixed delivery fee; `collectAmount` is the kitchen's money collected at the
+          // door and handed back after the drop.
+          <RiderFoodOfferCardView fare={offer.deliveryFee} collectAmount={offer.merchantGoodsTotal} />
         )}
-
-        {/* Kit `r-rider.jsx` offer_cash Leg card: the two ends of the trip as marked rows. */}
-        <Card>
-          <Leg role="pickup" name={offer.pickup.landmark} meta={null} />
-          <View style={{ height: 1, backgroundColor: tokens.color.line, marginLeft: 24 }} />
-          <Leg role="drop" name={offer.dropoff.landmark} meta={offer.distanceKm != null ? `${offer.distanceKm.toFixed(1)} km from the restaurant` : null} />
-        </Card>
-
-        <LiveMap pickup={{ lat: offer.pickup.point.lat, lng: offer.pickup.point.lng }} dropoff={{ lat: offer.dropoff.point.lat, lng: offer.dropoff.point.lng }} rider={null} />
-
-        {/* Kit `r-rider.jsx` offer_cash: the return-to-kitchen duty stated on the offer, not discovered
-            at the door. (The kit's "~9 min" ETA isn't computed here — omitted rather than faked.) */}
-        {variant === "cash_collect" ? (
-          <View style={{ flexDirection: "row", gap: tokens.space.sm, marginTop: tokens.space.sm }}>
-            <Icon name="refresh-cw" size={14} color={tokens.color.muted} />
-            <Text style={{ flex: 1, fontSize: 12, color: tokens.color.muted, lineHeight: 18 }}>
-              After the drop: return leg to the kitchen · no new offers until they confirm the cash
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Kit accept labels (`r-rider.jsx` offer_cash / offer_upfront / offer_wallet): the button
-            repeats the money commitment being accepted, so the tap is never a blind "Accept". */}
-        <Button
-          label={
-            variant === "cash_collect" && total != null
-              ? "Accept · collect at the door"
-              : variant === "cash_upfront" && total != null
-                ? `Accept · front ${formatMoney(total)}`
-                : "Accept"
-          }
-          onPress={() => acceptM.mutate(offer.orderId)}
-          loading={pendingOrQueued(acceptM)}
-          disabled={pending}
-        />
-        <Button label="Pass" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={pendingOrQueued(declineM)} disabled={pending} />
         <ErrorText
           message={
             acceptM.error instanceof ApiError
