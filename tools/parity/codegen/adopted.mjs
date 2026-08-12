@@ -2083,6 +2083,92 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.board — the rider job BOARD list (app/rider/(tabs)/index.tsx `RiderHome`). The FIRST
+    // region-adoption of the rider-one-app.jsx (RJM) family. The mock `board` is
+    //   S( div( AppBar "Jobs near you"·bell, OnlinePill, Pad( JOBS.map(j => <JobCard {...j}/>) ) ), {tab:"jobs"} )
+    // — an AppBar, a compact online-status pill, then ONE tagged job-card list. Only the LIST is
+    // region-adopted here (display structure, no accept-logic): the mock's `JobCard` composite is the
+    // app's own `src/ui/rider/JobCard` (imported from its OWN module, NOT the src/ui barrel, to avoid
+    // the `no-circular` depcruise violation — see emit.mjs NON_BARREL), which already mirrors the mock's
+    // TypeTag + km + Money + route-line + note + action anatomy. `JobCard` normalizes to an opaque leaf
+    // (JOBCARD), so the region reduces to MAP(JOBCARD) on both sides.
+    //
+    // WHY this needed two composition-path guardrail fixes (normalize.mjs), NOT app-logic changes:
+    //   (1) the RJM mocks return `S(<div>…</div>, opts)`, a render-helper shell; `jsxRootNode` unwraps
+    //       it to the bare `<div>` so locators walk the body, which left the mock COMPOSITION SCREEN-less
+    //       while the app roots at `<AppScreen>` (SCREEN). `mockCompositionTree` now folds the S() shell
+    //       to SCREEN (mirroring the normalized-tree path's renderHelperUnwrap), so both sides root at
+    //       SCREEN(REGION:list). (2) `RiderHome` DEFINES a helper component (ActiveJobCheckFailedBanner)
+    //       above its default export, which `findFirstRenderer` picked as "the container"; the composition
+    //       check now uses `findContainerRenderer` (prefer the default export). Both fixes touch only the
+    //       parity engine, are inert for the existing 32 (their default export already IS the first
+    //       renderer; none use the S() shell in a region), and change NO app behaviour.
+    //
+    // SENSITIVE-AREA PRESERVATION: the board list carries NO accept/agreed-price/assignment logic — a
+    // parcel card's action is `chooseOrder(o)`, which opens the OFFER-COMPOSE card (the auction seam);
+    // that handler is preserved BYTE-IDENTICAL and passed in as the row's `onAction`. The virtualized
+    // happy-path list (the `showOpenOrdersList` early-return FlatList, B-O1b) is UNTOUCHED — the region
+    // view mounts in the container's fallback/main branch (the one the composition check reduces, i.e.
+    // the LAST return), where the mock's plain `.map` is the faithful, non-nested realization (a plain
+    // map, not a FlatList, since it renders inside the main ScrollView — no nested-VirtualizedList).
+    key: "RJM.board",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "board",
+    uiImport: "../../../src/ui",
+    regions: [
+      {
+        region: "list",
+        locator: { map: "JobCard" },
+        componentName: "RiderBoardListView",
+        viewFile: "apps/mobile/app/rider/(tabs)/board-list.view.tsx",
+        propsParam: "{ jobs }: RiderBoardListViewProps",
+        propsType: [
+          "/** One board row's data seam — the app `JobCard`'s props verbatim, plus the stable order `id`",
+          " *  the list keys by and the `onAction` the container wires (a parcel card → the offer-compose",
+          " *  seam `chooseOrder`, preserved byte-identical). The mock's `JobCard` composite folds to the",
+          " *  app's `src/ui/rider/JobCard`, which carries the same TypeTag/route/note/action anatomy. */",
+          "export type RiderBoardJob = {",
+          "  id: string;",
+          '  jobType: "parcel" | "food";',
+          "  from: string;",
+          "  to: string;",
+          "  distanceLabel: string;",
+          "  fare: string;",
+          "  note: string;",
+          "  actionLabel: string;",
+          "  onAction: () => void;",
+          "};",
+          "export type RiderBoardListViewProps = {",
+          "  jobs: RiderBoardJob[];",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          // Swap the mock's frozen `JOBS` array for the live `jobs` prop, key each row by its stable
+          // order id (the mock keyed by array index — `ranked` reorders, so id is the correct key), and
+          // drop the now-unused index param. The `{...j}` spread stays: each `jobs` item already carries
+          // exactly the app JobCard's props (+ id/onAction), so the row is `<JobCard {...j}/>` — a JOBCARD
+          // leaf either way, structurally invisible to the diff. No structural edit; pure data seam.
+          CallExpression(path) {
+            const callee = path.node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
+            if (!(callee.object.type === "Identifier" && callee.object.name === "JOBS")) return;
+            callee.object = expr("jobs");
+            const arrow = path.node.arguments[0];
+            if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
+            const row = arrow.body.type === "JSXElement" ? arrow.body : null;
+            if (!row || row.openingElement.name.name !== "JobCard") return;
+            if (arrow.params.length >= 2) arrow.params = arrow.params.slice(0, 1);
+            row.openingElement.attributes = row.openingElement.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && a.name.name === "key"),
+            );
+            row.openingElement.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("key"), t.jsxExpressionContainer(expr("j.id"))));
+          },
+        }),
+      },
+    ],
+  },
 ];
 
 /**
