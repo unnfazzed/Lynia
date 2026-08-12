@@ -1,0 +1,448 @@
+{
+  "key": "RC.cart",
+  "src": "RC",
+  "id": "cart",
+  "mode": "phone",
+  "component": "app/food/cart.tsx",
+  "fixture": "food_cart",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 35,
+    "text": 33,
+    "image": 9,
+    "input": 0
+  },
+  "texts": [
+    "Your cart",
+    "Sadza Republic",
+    "Arrives in 30–40 min · 10:11–10:21",
+    "Confirmed the moment the kitchen accepts.",
+    "1",
+    "Half roast huku",
+    "Leg portion please, not breast. No chilli.",
+    "$6.00",
+    "1",
+    "Sadza & beef stew",
+    "$4.50",
+    "1",
+    "Muriwo une dovi",
+    "$2.50",
+    "NOTE FOR THE WHOLE ORDER",
+    "Pack the sadza separately from the stew.",
+    "Add more items",
+    "ADD A DRINK?",
+    "M",
+    "Mazoe orange 500ml",
+    "$1.50",
+    "S",
+    "Still water 500ml",
+    "$0.80",
+    "Food",
+    "$13.00",
+    "Delivery",
+    "3.1 km · $0.80/km, rounded to $0.50",
+    "$2.50",
+    "Total",
+    "$15.50",
+    "LyniaGo sets the delivery fee by distance. The restaurant sets the food price. Nothing else is added — no service fee, no tip expected.",
+    "Go to checkout · $15.50"
+  ],
+  "textPaths": [
+    "0.0.1.0",
+    "0.0.1.1",
+    "0.1.0.1.0",
+    "0.1.0.1.1",
+    "0.1.1.0.0",
+    "0.1.1.0.1.0",
+    "0.1.1.0.1.1.1",
+    "0.1.1.0.2",
+    "0.1.1.1.0",
+    "0.1.1.1.1.0",
+    "0.1.1.1.2",
+    "0.1.1.2.0",
+    "0.1.1.2.1.0",
+    "0.1.1.2.2",
+    "0.1.1.3.1.0",
+    "0.1.1.3.1.1",
+    "0.1.1.4.1",
+    "0.1.2",
+    "0.1.3.0.0.0",
+    "0.1.3.0.1",
+    "0.1.3.0.2.0",
+    "0.1.3.1.0.0",
+    "0.1.3.1.1",
+    "0.1.3.1.2.0",
+    "0.1.4.0.0.0",
+    "0.1.4.0.1",
+    "0.1.4.1.0.0",
+    "0.1.4.1.0.1",
+    "0.1.4.1.1",
+    "0.1.4.2.0",
+    "0.1.4.2.1",
+    "0.1.4.3",
+    "1.0"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      14,
+      15
+    ],
+    [
+      26,
+      27
+    ],
+    [
+      29,
+      30
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your cart"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Arrives in 30–40 min · 10:11–10:21"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Confirmed the moment the kitchen accepts."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Half roast huku"
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "image"
+                              },
+                              {
+                                "role": "text",
+                                "text": "Leg portion please, not breast. No chilli."
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$6.00"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Sadza & beef stew"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$4.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Muriwo une dovi"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$2.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "NOTE FOR THE WHOLE ORDER"
+                          },
+                          {
+                            "role": "text",
+                            "text": "Pack the sadza separately from the stew."
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Add more items"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "ADD A DRINK?"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "M"
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "Mazoe orange 500ml"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "$1.50"
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "image"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "S"
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "Still water 500ml"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "$0.80"
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "image"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Food"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$13.00"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Delivery"
+                          },
+                          {
+                            "role": "text",
+                            "text": "3.1 km · $0.80/km, rounded to $0.50"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$2.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Total"
+                      },
+                      {
+                        "role": "text",
+                        "text": "$15.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "LyniaGo sets the delivery fee by distance. The restaurant sets the food price. Nothing else is added — no service fee, no tip expected."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Go to checkout · $15.50"
+          }
+        ]
+      }
+    ]
+  }
+}

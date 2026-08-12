@@ -1,0 +1,113 @@
+{
+  "key": "RJM.board_empty",
+  "src": "RJM",
+  "id": "board_empty",
+  "mode": "phone",
+  "component": "app/rider/(tabs)/index.tsx",
+  "fixture": "rider_board_empty",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: JobsMoneyAccount"
+  ],
+  "roleCounts": {
+    "container": 6,
+    "text": 7,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Jobs near you",
+    "online",
+    "Parcels and food · one queue",
+    "Go offline",
+    "Nothing in range yet",
+    "You'll see parcels and food orders here the moment they're posted near you. Jobs that get taken simply leave the list.",
+    "Refresh"
+  ],
+  "textPaths": [
+    "0.0",
+    "1.0",
+    "1.1",
+    "1.2",
+    "2.1",
+    "2.2",
+    "2.3.0"
+  ],
+  "groups": [
+    [
+      1,
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Jobs near you"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "online"
+          },
+          {
+            "role": "text",
+            "text": "Parcels and food · one queue"
+          },
+          {
+            "role": "text",
+            "text": "Go offline"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Nothing in range yet"
+          },
+          {
+            "role": "text",
+            "text": "You'll see parcels and food orders here the moment they're posted near you. Jobs that get taken simply leave the list."
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Refresh"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

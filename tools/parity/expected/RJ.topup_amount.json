@@ -1,0 +1,277 @@
+{
+  "key": "RJ.topup_amount",
+  "src": "RJ",
+  "id": "topup_amount",
+  "mode": "phone",
+  "component": "app/wallet/top-up.tsx",
+  "fixture": "rider_topup",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 18,
+    "text": 19,
+    "image": 3,
+    "input": 2
+  },
+  "texts": [
+    "\\u2039",
+    "Wallet",
+    "Top up",
+    "Add to your commission balance. This money can only be spent on commission.",
+    "Amount (USD)",
+    "Minimum top-up is $5.00",
+    "$5.00",
+    "$10.00",
+    "$20.00",
+    "Phone number",
+    "This number gets the payment prompt — change it if you're paying from another line.",
+    "Pay with",
+    "EcoCash",
+    "Approve on your phone",
+    "InnBucks",
+    "Approve on your phone",
+    "O'mari",
+    "Approve on your phone",
+    "Request $10.00 via EcoCash"
+  ],
+  "textPaths": [
+    "0.0",
+    "0.1",
+    "1",
+    "2",
+    "3.0",
+    "3.2.0",
+    "4.0",
+    "4.1",
+    "4.2",
+    "5.0",
+    "5.2.0",
+    "6",
+    "7.0.1.0",
+    "7.0.1.1",
+    "7.1.1.0",
+    "7.1.1.1",
+    "7.2.1.0",
+    "7.2.1.1",
+    "8.0"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      6,
+      7,
+      8
+    ],
+    [
+      12,
+      13
+    ],
+    [
+      14,
+      15
+    ],
+    [
+      16,
+      17
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "\\u2039"
+          },
+          {
+            "role": "text",
+            "text": "Wallet"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Top up"
+      },
+      {
+        "role": "text",
+        "text": "Add to your commission balance. This money can only be spent on commission."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Amount (USD)"
+          },
+          {
+            "role": "input",
+            "text": "10.00"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Minimum top-up is $5.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "$5.00"
+          },
+          {
+            "role": "text",
+            "text": "$10.00"
+          },
+          {
+            "role": "text",
+            "text": "$20.00"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Phone number"
+          },
+          {
+            "role": "input",
+            "text": "077 234 5678"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "This number gets the payment prompt — change it if you're paying from another line."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Pay with"
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "EcoCash"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "EcoCash"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Approve on your phone"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "InnBucks"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "InnBucks"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Approve on your phone"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "O'mari"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "O'mari"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Approve on your phone"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Request $10.00 via EcoCash"
+          }
+        ]
+      }
+    ]
+  }
+}

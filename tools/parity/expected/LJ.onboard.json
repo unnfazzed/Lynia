@@ -1,0 +1,93 @@
+{
+  "key": "LJ.onboard",
+  "src": "LJ",
+  "id": "onboard",
+  "mode": "phone",
+  "component": "app/onboarding.tsx",
+  "fixture": "onboard_food",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 5,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "LyniaGo",
+    "Skip",
+    "Food from kitchens near you",
+    "Order from restaurants in your corridor — you see the arrival window before you pay.",
+    "Next"
+  ],
+  "textPaths": [
+    "0.0.1",
+    "0.1",
+    "1.1",
+    "1.2",
+    "2"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "LyniaGo"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Skip"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Food from kitchens near you"
+          },
+          {
+            "role": "text",
+            "text": "Order from restaurants in your corridor — you see the arrival window before you pay."
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Next"
+      }
+    ]
+  }
+}

@@ -1,0 +1,607 @@
+{
+  "key": "RC.list",
+  "src": "RC",
+  "id": "list",
+  "mode": "phone",
+  "component": "app/food/index.tsx",
+  "fixture": "food_list",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 39,
+    "text": 49,
+    "image": 8,
+    "input": 0
+  },
+  "texts": [
+    "FOOD · DELIVER TO",
+    "12 Lanark Rd, Belgravia",
+    "Open now",
+    "Nearest",
+    "Under $2 fee",
+    "Top rated",
+    "5 places deliver to Belgravia · 25–45 min",
+    "25–35 min",
+    "Sadza Republic",
+    "Zimbabwean · Grills",
+    "★",
+    "4.7",
+    "(210)",
+    "1.2 km",
+    "25–35 min",
+    "$1.50 delivery",
+    "Huku House",
+    "Chicken · Chips",
+    "★",
+    "4.5",
+    "(96)",
+    "2.4 km",
+    "30–40 min",
+    "$2.00 delivery",
+    "Café Msasa",
+    "Closes 21:00",
+    "Breakfast · Coffee",
+    "★",
+    "4.8",
+    "(44)",
+    "3.1 km",
+    "35–45 min",
+    "$2.50 delivery",
+    "Kombi Grill",
+    "Closed",
+    "Braai · Takeaway",
+    "★",
+    "4.4",
+    "(158)",
+    "4.0 km",
+    "Opens 11:00",
+    "M",
+    "Mbuya's Kitchen",
+    "Closed",
+    "Home cooking",
+    "★",
+    "new",
+    "5.2 km",
+    "Opens tomorrow 09:00"
+  ],
+  "textPaths": [
+    "0.0.1.0",
+    "0.0.1.1.0",
+    "0.1.0",
+    "0.1.1",
+    "0.1.2",
+    "0.1.3",
+    "1.0",
+    "1.1.0.1",
+    "1.1.1.0.0",
+    "1.1.1.1",
+    "1.1.1.2.0.0",
+    "1.1.1.2.0.1",
+    "1.1.1.2.0.2",
+    "1.1.1.2.1",
+    "1.1.1.2.2",
+    "1.1.1.3",
+    "1.2.1.0.0",
+    "1.2.1.1",
+    "1.2.1.2.0.0",
+    "1.2.1.2.0.1",
+    "1.2.1.2.0.2",
+    "1.2.1.2.1",
+    "1.2.1.2.2",
+    "1.2.1.3",
+    "1.3.1.0.0",
+    "1.3.1.0.1",
+    "1.3.1.1",
+    "1.3.1.2.0.0",
+    "1.3.1.2.0.1",
+    "1.3.1.2.0.2",
+    "1.3.1.2.1",
+    "1.3.1.2.2",
+    "1.3.1.3",
+    "1.4.1.0.0",
+    "1.4.1.0.1",
+    "1.4.1.1",
+    "1.4.1.2.0.0",
+    "1.4.1.2.0.1",
+    "1.4.1.2.0.2",
+    "1.4.1.2.1",
+    "1.4.1.2.2",
+    "1.5.0.0",
+    "1.5.1.0.0",
+    "1.5.1.0.1",
+    "1.5.1.1",
+    "1.5.1.2.0.0",
+    "1.5.1.2.0.1",
+    "1.5.1.2.1",
+    "1.5.1.2.2"
+  ],
+  "groups": [
+    [
+      2,
+      3,
+      4,
+      5
+    ],
+    [
+      13,
+      14
+    ],
+    [
+      10,
+      11,
+      12
+    ],
+    [
+      21,
+      22
+    ],
+    [
+      18,
+      19,
+      20
+    ],
+    [
+      24,
+      25
+    ],
+    [
+      30,
+      31
+    ],
+    [
+      27,
+      28,
+      29
+    ],
+    [
+      33,
+      34
+    ],
+    [
+      39,
+      40
+    ],
+    [
+      36,
+      37,
+      38
+    ],
+    [
+      42,
+      43
+    ],
+    [
+      47,
+      48
+    ],
+    [
+      45,
+      46
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "FOOD · DELIVER TO"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "12 Lanark Rd, Belgravia"
+                      },
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Open now"
+              },
+              {
+                "role": "text",
+                "text": "Nearest"
+              },
+              {
+                "role": "text",
+                "text": "Under $2 fee"
+              },
+              {
+                "role": "text",
+                "text": "Top rated"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "5 places deliver to Belgravia · 25–45 min"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image",
+                        "text": "photo — Sadza Republic"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "25–35 min"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Sadza Republic"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Zimbabwean · Grills"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★"
+                          },
+                          {
+                            "role": "text",
+                            "text": "4.7"
+                          },
+                          {
+                            "role": "text",
+                            "text": "(210)"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "1.2 km"
+                      },
+                      {
+                        "role": "text",
+                        "text": "25–35 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "$1.50 delivery"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "photo — Huku House"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Huku House"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Chicken · Chips"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★"
+                          },
+                          {
+                            "role": "text",
+                            "text": "4.5"
+                          },
+                          {
+                            "role": "text",
+                            "text": "(96)"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "2.4 km"
+                      },
+                      {
+                        "role": "text",
+                        "text": "30–40 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.00 delivery"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "photo — Café Msasa"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Café Msasa"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Closes 21:00"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Breakfast · Coffee"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★"
+                          },
+                          {
+                            "role": "text",
+                            "text": "4.8"
+                          },
+                          {
+                            "role": "text",
+                            "text": "(44)"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "3.1 km"
+                      },
+                      {
+                        "role": "text",
+                        "text": "35–45 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.50 delivery"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image",
+                    "text": "photo — Kombi Grill"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Kombi Grill"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Closed"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Braai · Takeaway"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★"
+                          },
+                          {
+                            "role": "text",
+                            "text": "4.4"
+                          },
+                          {
+                            "role": "text",
+                            "text": "(158)"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "4.0 km"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Opens 11:00"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "M"
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Mbuya's Kitchen"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Closed"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Home cooking"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★"
+                          },
+                          {
+                            "role": "text",
+                            "text": "new"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "5.2 km"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Opens tomorrow 09:00"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

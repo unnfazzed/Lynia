@@ -1,0 +1,68 @@
+{
+  "key": "LJ.force_update",
+  "src": "LJ",
+  "id": "force_update",
+  "mode": "phone",
+  "component": "app/force-update.tsx",
+  "fixture": "force_update",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 3,
+    "text": 3,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Time to update",
+    "A new version of LyniaGo is ready with the latest fixes. Update to keep sending.",
+    "Update now"
+  ],
+  "textPaths": [
+    "1",
+    "2",
+    "3.0"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Time to update"
+      },
+      {
+        "role": "text",
+        "text": "A new version of LyniaGo is ready with the latest fixes. Update to keep sending."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Update now"
+          }
+        ]
+      }
+    ]
+  }
+}

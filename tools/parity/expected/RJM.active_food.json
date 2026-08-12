@@ -1,0 +1,408 @@
+{
+  "key": "RJM.active_food",
+  "src": "RJM",
+  "id": "active_food",
+  "mode": "phone",
+  "component": "app/rider/food-job.tsx",
+  "fixture": "rider_food_job",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: JobsMoneyAccount"
+  ],
+  "roleCounts": {
+    "container": 34,
+    "text": 29,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Active job",
+    "Food · Sadza Republic → Belgravia",
+    "YOURS",
+    "$2.40",
+    "OWED TO A KITCHEN",
+    "$15.50",
+    "FOOD",
+    "Navigate",
+    "✓",
+    "Job accepted",
+    "18:02",
+    "✓",
+    "At the restaurant",
+    "18:11",
+    "✓",
+    "Food collected",
+    "18:16",
+    "4",
+    "On the way",
+    "just now · live",
+    "5",
+    "Delivered",
+    "6",
+    "Cash returned",
+    "7",
+    "Job closed",
+    "Collect $15.50 at the door",
+    "Food first, then the cash, then the code. The kitchen's money rides back with you.",
+    "Enter the delivery code"
+  ],
+  "textPaths": [
+    "0.0.0",
+    "0.0.1",
+    "0.1.0.0",
+    "0.1.0.1",
+    "0.1.1.0",
+    "0.1.1.1",
+    "0.2.0.0.0.1",
+    "0.2.0.0.1",
+    "0.2.0.1.0.0.0",
+    "0.2.0.1.0.1.0",
+    "0.2.0.1.0.1.1",
+    "0.2.0.1.1.0.0",
+    "0.2.0.1.1.1.0",
+    "0.2.0.1.1.1.1",
+    "0.2.0.1.2.0.0",
+    "0.2.0.1.2.1.0",
+    "0.2.0.1.2.1.1",
+    "0.2.0.1.3.0.0",
+    "0.2.0.1.3.1.0",
+    "0.2.0.1.3.1.1",
+    "0.2.0.1.4.0.0",
+    "0.2.0.1.4.1.0",
+    "0.2.0.1.5.0.0",
+    "0.2.0.1.5.1.0",
+    "0.2.0.1.6.0.0",
+    "0.2.0.1.6.1.0",
+    "0.2.1.0",
+    "0.2.1.1",
+    "1.0"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      12,
+      13
+    ],
+    [
+      15,
+      16
+    ],
+    [
+      18,
+      19
+    ],
+    [
+      26,
+      27
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Active job"
+              },
+              {
+                "role": "text",
+                "text": "Food · Sadza Republic → Belgravia"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "YOURS"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.40"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "OWED TO A KITCHEN"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$15.50"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image"
+                          },
+                          {
+                            "role": "text",
+                            "text": "FOOD"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "Navigate"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "✓"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "Job accepted"
+                              },
+                              {
+                                "role": "text",
+                                "text": "18:02"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "✓"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "At the restaurant"
+                              },
+                              {
+                                "role": "text",
+                                "text": "18:11"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "✓"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "Food collected"
+                              },
+                              {
+                                "role": "text",
+                                "text": "18:16"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "4"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "On the way"
+                              },
+                              {
+                                "role": "text",
+                                "text": "just now · live"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "5"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "Delivered"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "6"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "Cash returned"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "7"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "Job closed"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Collect $15.50 at the door"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Food first, then the cash, then the code. The kitchen's money rides back with you."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Enter the delivery code"
+          }
+        ]
+      }
+    ]
+  }
+}

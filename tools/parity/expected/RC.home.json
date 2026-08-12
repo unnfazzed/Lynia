@@ -1,0 +1,546 @@
+{
+  "key": "RC.home",
+  "src": "RC",
+  "id": "home",
+  "mode": "phone",
+  "component": "app/(tabs)/home.tsx",
+  "fixture": "food_home",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: HomeOrdersAccount"
+  ],
+  "roleCounts": {
+    "container": 43,
+    "text": 27,
+    "image": 14,
+    "input": 0
+  },
+  "texts": [
+    "DELIVER TO",
+    "12 Lanark Rd, Belgravia",
+    "Search food, or send a parcel",
+    "Send",
+    "Parcel",
+    "Food",
+    "Restaurants",
+    "Pharmacy",
+    "Soon",
+    "Sadza Republic · 6 min away",
+    "Cash at the door · $15.50",
+    "Parcel to Msasa · rider 4 min away",
+    "Delivery code 4192 · $3.36",
+    "Restaurants near you",
+    "See all →",
+    "25–35 min",
+    "Sadza Republic",
+    "★ 4.7",
+    "$1.50 delivery",
+    "30–40 min",
+    "Huku House",
+    "★ 4.5",
+    "$2.00 delivery",
+    "35–45 min",
+    "Café Msasa",
+    "★ 4.8",
+    "$2.50 delivery"
+  ],
+  "textPaths": [
+    "0.0.0.0",
+    "0.0.0.1.0",
+    "0.1.1",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.1.1.0",
+    "1.1.1.1",
+    "1.2.1.0",
+    "1.2.1.1",
+    "2.0.1.0",
+    "2.0.1.1",
+    "2.1.1.0",
+    "2.1.1.1",
+    "3.0.0",
+    "3.0.1",
+    "3.1.0.0.1",
+    "3.1.0.1.0",
+    "3.1.0.1.1.0",
+    "3.1.0.1.1.1",
+    "3.1.1.0.1",
+    "3.1.1.1.0",
+    "3.1.1.1.1.0",
+    "3.1.1.1.1.1",
+    "3.1.2.0.1",
+    "3.1.2.1.0",
+    "3.1.2.1.1.0",
+    "3.1.2.1.1.1"
+  ],
+  "groups": [
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      13,
+      14
+    ],
+    [
+      17,
+      18
+    ],
+    [
+      21,
+      22
+    ],
+    [
+      25,
+      26
+    ]
+  ],
+  "note": "Wired to app/(tabs)/home.tsx via the food_home fixture (two live orders + the venues rail). The four live-card strings are the reason this lane exists: the app once collapsed both jobs into one generic \"Delivery in progress\" card, which no static check could see.",
+  "dynamic": [
+    {
+      "mock": "12 Lanark Rd, Belgravia",
+      "match": "^[A-Za-z0-9][A-Za-z0-9 ,.'-]{2,59}$",
+      "reason": "The mock draws a fixed sample address; the app derives the deliver-to label from the device location (a geolocated place name, \"Harare\" with no permission/fix). Live behaviour inside the drawn structure — the ELEMENT must exist and carry a place label, which is what the regex asserts.",
+      "ref": "CLAUDE.md - live-vs-static: the mock STRUCTURE wins, the live behaviour is derived inside it"
+    }
+  ],
+  "extra": [
+    {
+      "text": "Open now",
+      "reason": "src/ui/home/RestaurantCard.tsx renders an open/closed line where the mock draws a delivery-window badge. CLAUDE.md names \"Open now\" badges explicitly among the cosmetic extras the mocks never drew; it is tracked for removal together with the missing badge, not sanctioned.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    }
+  ],
+  "undrawn": [
+    {
+      "mock": "25–35 min",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "30–40 min",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "35–45 min",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "★ 4.7",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "★ 4.5",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "★ 4.8",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "$1.50 delivery",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "$2.00 delivery",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    },
+    {
+      "mock": "$2.50 delivery",
+      "reason": "The mock's venue card carries a delivery-window badge, a rating and a delivery fee; the customer restaurant read API (Lane C1) returns none of the three, so the app card renders an honest degraded card instead of invented numbers. Tracked as a parity defect against the API, not an approved deviation.",
+      "ref": "docs/KNOWN_BUGS.md#PXR-01"
+    }
+  ],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "DELIVER TO"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "12 Lanark Rd, Belgravia"
+                      },
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "Search food, or send a parcel"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Send"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Parcel"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Food"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Restaurants"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Pharmacy"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Soon"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic · 6 min away"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Cash at the door · $15.50"
+                  }
+                ]
+              },
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Parcel to Msasa · rider 4 min away"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Delivery code 4192 · $3.36"
+                  }
+                ]
+              },
+              {
+                "role": "image"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Restaurants near you"
+              },
+              {
+                "role": "text",
+                "text": "See all →"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image",
+                            "text": "photo — Sadza Republic"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "25–35 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Sadza Republic"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★ 4.7"
+                          },
+                          {
+                            "role": "text",
+                            "text": "$1.50 delivery"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image",
+                            "text": "photo — Huku House"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "30–40 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Huku House"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★ 4.5"
+                          },
+                          {
+                            "role": "text",
+                            "text": "$2.00 delivery"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image",
+                            "text": "photo — Café Msasa"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "35–45 min"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Café Msasa"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "★ 4.8"
+                          },
+                          {
+                            "role": "text",
+                            "text": "$2.50 delivery"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

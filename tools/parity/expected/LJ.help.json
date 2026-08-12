@@ -1,0 +1,177 @@
+{
+  "key": "LJ.help",
+  "src": "LJ",
+  "id": "help",
+  "mode": "phone",
+  "component": "app/help/index.tsx",
+  "fixture": "help",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 11,
+    "text": 9,
+    "image": 8,
+    "input": 1
+  },
+  "texts": [
+    "Help",
+    "Browse topics",
+    "A delivery problem",
+    "Late, damaged or wrong drop-off",
+    "Payments & fares",
+    "How pricing and cash work",
+    "My account",
+    "Verification, phone number, safety",
+    "Chat with us on WhatsApp"
+  ],
+  "textPaths": [
+    "0.0",
+    "1.1",
+    "1.2.1.0",
+    "1.2.1.1",
+    "1.3.1.0",
+    "1.3.1.1",
+    "1.4.1.0",
+    "1.4.1.1",
+    "1.5.1"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Help"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "input",
+                "text": "Search help…"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Browse topics"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "A delivery problem"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Late, damaged or wrong drop-off"
+                  }
+                ]
+              },
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Payments & fares"
+                  },
+                  {
+                    "role": "text",
+                    "text": "How pricing and cash work"
+                  }
+                ]
+              },
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "My account"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Verification, phone number, safety"
+                  }
+                ]
+              },
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "Chat with us on WhatsApp"
+              },
+              {
+                "role": "image"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

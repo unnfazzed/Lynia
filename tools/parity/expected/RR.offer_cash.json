@@ -1,0 +1,325 @@
+{
+  "key": "RR.offer_cash",
+  "src": "RR",
+  "id": "offer_cash",
+  "mode": "phone",
+  "component": "app/rider/food-offer.tsx",
+  "fixture": "rider_food_offer",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 22,
+    "text": 22,
+    "image": 8,
+    "input": 0
+  },
+  "texts": [
+    "NEW ORDER",
+    "47s",
+    "CASH",
+    "YOU EARN",
+    "$2.50",
+    "COLLECT AT THE DOOR",
+    "$15.50",
+    "Nothing from your pocket. Hand over the food, take the cash, then ride $13.00 back to the kitchen — the $2.50 is yours.",
+    "COLLECT FROM",
+    "Sadza Republic",
+    "Fife Ave · 1.4 km away · ready in 12 min",
+    "DELIVER TO",
+    "12 Lanark Rd, Belgravia",
+    "3.1 km from the restaurant",
+    "R",
+    "•",
+    "Leaflet",
+    "|",
+    "© OpenStreetMap contributors",
+    "After the drop: return leg to the kitchen · ~9 min · no new offers until they confirm the cash",
+    "Accept · collect at the door",
+    "Pass"
+  ],
+  "textPaths": [
+    "0.1",
+    "0.2",
+    "1.0.0.1",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.1.0",
+    "1.1.1",
+    "1.1.2",
+    "1.2.0.0",
+    "1.2.0.1",
+    "1.2.0.2",
+    "1.2.1.0",
+    "1.2.1.1",
+    "1.2.1.2",
+    "1.3.0.2.0.0",
+    "1.3.0.2.1.0",
+    "1.3.1.0.1",
+    "1.3.1.1",
+    "1.3.1.2",
+    "1.4.1",
+    "2.0",
+    "2.1"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6,
+      7
+    ],
+    [
+      8,
+      9,
+      10
+    ],
+    [
+      11,
+      12,
+      13
+    ],
+    [
+      17,
+      18
+    ],
+    [
+      20,
+      21
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "NEW ORDER"
+          },
+          {
+            "role": "text",
+            "text": "47s"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "CASH"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "YOU EARN"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.50"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "COLLECT AT THE DOOR"
+              },
+              {
+                "role": "text",
+                "text": "$15.50"
+              },
+              {
+                "role": "text",
+                "text": "Nothing from your pocket. Hand over the food, take the cash, then ride $13.00 back to the kitchen — the $2.50 is yours."
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "COLLECT FROM"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Fife Ave · 1.4 km away · ready in 12 min"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "DELIVER TO"
+                  },
+                  {
+                    "role": "text",
+                    "text": "12 Lanark Rd, Belgravia"
+                  },
+                  {
+                    "role": "text",
+                    "text": "3.1 km from the restaurant"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "R"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "•"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Leaflet"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "|"
+                  },
+                  {
+                    "role": "text",
+                    "text": "© OpenStreetMap contributors"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "After the drop: return leg to the kitchen · ~9 min · no new offers until they confirm the cash"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Accept · collect at the door"
+          },
+          {
+            "role": "text",
+            "text": "Pass"
+          }
+        ]
+      }
+    ]
+  }
+}

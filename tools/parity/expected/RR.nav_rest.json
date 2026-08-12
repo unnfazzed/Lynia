@@ -1,0 +1,226 @@
+{
+  "key": "RR.nav_rest",
+  "src": "RR",
+  "id": "nav_rest",
+  "mode": "phone",
+  "component": "app/rider/food-job.tsx",
+  "fixture": "rider_food_nav",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 17,
+    "text": 9,
+    "image": 17,
+    "input": 0
+  },
+  "texts": [
+    "R",
+    "•",
+    "Leaflet",
+    "|",
+    "© OpenStreetMap contributors",
+    "Sadza Republic · 4 min",
+    "Food ready in 12 min · nothing to pay here",
+    "CASH",
+    "Open in Maps"
+  ],
+  "textPaths": [
+    "0.0.2.0.0",
+    "0.0.2.1.0",
+    "0.1.0.1",
+    "0.1.1",
+    "0.1.2",
+    "1.0.0.0",
+    "1.0.0.1",
+    "1.0.1.1",
+    "1.1.0"
+  ],
+  "groups": [
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "R"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "•"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Leaflet"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "|"
+              },
+              {
+                "role": "text",
+                "text": "© OpenStreetMap contributors"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic · 4 min"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Food ready in 12 min · nothing to pay here"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "CASH"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Open in Maps"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

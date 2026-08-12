@@ -1,0 +1,217 @@
+{
+  "key": "RC.search",
+  "src": "RC",
+  "id": "search",
+  "mode": "phone",
+  "component": "app/food/search.tsx",
+  "fixture": "food_search",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 12,
+    "text": 15,
+    "image": 7,
+    "input": 0
+  },
+  "texts": [
+    "sadza",
+    "PLACES",
+    "Sadza Republic",
+    "Zimbabwean · Grills",
+    "★",
+    "4.7",
+    "(210)",
+    "1.2 km",
+    "25–35 min",
+    "$1.50 delivery",
+    "DISHES",
+    "Sadza & beef stew",
+    "Sadza Republic · $4.50",
+    "Sadza & mazondo",
+    "Mbuya's Kitchen · $4.00"
+  ],
+  "textPaths": [
+    "0.1",
+    "1",
+    "2.1.0.0",
+    "2.1.1",
+    "2.1.2.0.0",
+    "2.1.2.0.1",
+    "2.1.2.0.2",
+    "2.1.2.1",
+    "2.1.2.2",
+    "2.1.3",
+    "3",
+    "4.1.0",
+    "4.1.1",
+    "5.1.0",
+    "5.1.1"
+  ],
+  "groups": [
+    [
+      7,
+      8
+    ],
+    [
+      4,
+      5,
+      6
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      13,
+      14
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "sadza"
+          },
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "PLACES"
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image",
+                "text": "photo — Sadza Republic"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Zimbabwean · Grills"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "★"
+                      },
+                      {
+                        "role": "text",
+                        "text": "4.7"
+                      },
+                      {
+                        "role": "text",
+                        "text": "(210)"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "1.2 km"
+                  },
+                  {
+                    "role": "text",
+                    "text": "25–35 min"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "$1.50 delivery"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "DISHES"
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Sadza & beef stew"
+              },
+              {
+                "role": "text",
+                "text": "Sadza Republic · $4.50"
+              }
+            ]
+          },
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Sadza & mazondo"
+              },
+              {
+                "role": "text",
+                "text": "Mbuya's Kitchen · $4.00"
+              }
+            ]
+          },
+          {
+            "role": "image"
+          }
+        ]
+      }
+    ]
+  }
+}

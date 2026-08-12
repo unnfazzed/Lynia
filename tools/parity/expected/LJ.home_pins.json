@@ -1,0 +1,387 @@
+{
+  "key": "LJ.home_pins",
+  "src": "LJ",
+  "id": "home_pins",
+  "mode": "phone",
+  "component": "app/send.tsx",
+  "fixture": "send_pins",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 31,
+    "text": 24,
+    "image": 9,
+    "input": 5
+  },
+  "texts": [
+    "A",
+    "B",
+    "LyniaGo",
+    "Use my location",
+    "PICKUP",
+    "Eastgate Mall, CBD",
+    "DROP-OFF",
+    "14 Glenara Ave, Avenues",
+    "Search an address, or tap the map to drop a pin.",
+    "What are you sending?",
+    "Qty",
+    "−",
+    "1",
+    "+",
+    "Add another item",
+    "Note for the rider (optional)",
+    "Your price (USD)",
+    "Suggested $3.36 · 3.1 km · riders here usually accept around $2.96.",
+    "Your phone (sender)",
+    "Shared with your rider only during the delivery.",
+    "Recipient phone",
+    "So the rider can reach them at drop-off.",
+    "Add landmarks & declared value (optional)",
+    "Broadcast request"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "0.2.0",
+    "1.0.1",
+    "2.1",
+    "3.0.0.0.0.0.0",
+    "3.0.0.0.0.0.1",
+    "3.0.0.0.1.0.0",
+    "3.0.0.0.1.0.1",
+    "3.0.0.1.1",
+    "3.0.1",
+    "3.0.2.1.0",
+    "3.0.2.1.1.0",
+    "3.0.2.1.1.1",
+    "3.0.2.1.1.2",
+    "3.0.3.1",
+    "3.0.4.0",
+    "3.0.5.0",
+    "3.0.5.2.0",
+    "3.0.6.0",
+    "3.0.6.2.0",
+    "3.0.7.0",
+    "3.0.7.2.0",
+    "3.0.8.0",
+    "3.1.0"
+  ],
+  "groups": [
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      11,
+      12,
+      13
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "A"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "B"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "LyniaGo"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "Use my location"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "PICKUP"
+                              },
+                              {
+                                "role": "text",
+                                "text": "Eastgate Mall, CBD"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "DROP-OFF"
+                              },
+                              {
+                                "role": "text",
+                                "text": "14 Glenara Ave, Avenues"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Search an address, or tap the map to drop a pin."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "What are you sending?"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "input",
+                        "text": "Documents envelope"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Qty"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "−"
+                          },
+                          {
+                            "role": "text",
+                            "text": "1"
+                          },
+                          {
+                            "role": "text",
+                            "text": "+"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Add another item"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Note for the rider (optional)"
+                  },
+                  {
+                    "role": "input",
+                    "text": "Ask for Rita at the pharmacy counter; keep it upright."
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your price (USD)"
+                  },
+                  {
+                    "role": "input",
+                    "text": "3.00"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Suggested $3.36 · 3.1 km · riders here usually accept around $2.96."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your phone (sender)"
+                  },
+                  {
+                    "role": "input",
+                    "text": "+263 77 000 0000"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Shared with your rider only during the delivery."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Recipient phone"
+                  },
+                  {
+                    "role": "input",
+                    "text": "+263 77 000 0000"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "So the rider can reach them at drop-off."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Add landmarks & declared value (optional)"
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Broadcast request"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
