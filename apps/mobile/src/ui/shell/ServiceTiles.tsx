@@ -25,6 +25,10 @@ export const SERVICES: ServiceTile[] = [
  * uses, rather than disappearing outright — so the grid never reflows and support can flip the
  * switch back without a release. `SERVICES` itself never gets a flag import; callers derive the
  * list to render from the fetched flag, keeping this pure and easy to unit test.
+ *
+ * Reachable only from a live server `false` since 2026-08-12 — `useFeatureFlags` defaults
+ * `restaurantsEnabled` to true (restaurants is launched), so the "Soon" tile is no longer painted
+ * as a cold-start frame before the flags fetch resolves.
  */
 export function getServiceTiles(restaurantsEnabled: boolean): ServiceTile[] {
   if (restaurantsEnabled) return SERVICES;

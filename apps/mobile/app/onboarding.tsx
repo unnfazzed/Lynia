@@ -8,12 +8,12 @@ import { type IconName } from "../src/ui";
 import { OnboardingView } from "./onboarding.view";
 
 // First-install intro carousel (customer/rider 0·2) — three skippable slides shown once, before auth.
-// Two slide sets, chosen by `restaurantsEnabled` (fail-safe-off, same contract as the home Food
-// tile): the joint-launch set is the journey mockup verbatim (screens.jsx `ONBOARD` — Food, Send,
-// then the promise both share); the parcels-only set survives as the §1 escape-hatch copy, since an
-// unflagged food mention on this pre-auth screen would leak the vertical while it is dark. The flags
-// fetch resolves ~instantly against a live API; until then the parcels set renders, and both sets are
-// the same length so a mid-carousel resolve can never strand the index.
+// Two slide sets, chosen by `restaurantsEnabled` (fails open — restaurants is launched, same
+// contract as the home Food tile): the joint-launch set is the journey mockup verbatim (screens.jsx
+// `ONBOARD` — Food, Send, then the promise both share) and is also the boot default, so no parcels-
+// only frame flashes before the flags fetch resolves; the parcels-only set survives as the §1 kill-
+// switch copy for a server-flagged-off launch. Both sets are the same length so a mid-carousel
+// resolve can never strand the index.
 type Slide = { icon: IconName; title: string; subtitle: string };
 const SEND_FOOD_SLIDES: Slide[] = [
   {

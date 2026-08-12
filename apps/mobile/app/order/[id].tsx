@@ -59,6 +59,13 @@ export default function OrderScreen(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const toast = useToast();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  // Whether the SecureStore restore below has SETTLED — distinct from "there is no code". Without it
+  // `deliveryCode === null` conflates "not read yet" with "none held", and the C7 branch treats the
+  // first as the second: a customer who DOES hold a code gets the alarming "your hand-off code isn't
+  // showing" card with its primary re-issue CTA for the length of the keychain read, then a swap to
+  // the real digits. Not hypothetical — home.tsx pre-seeds `orderKey(id)`, so tapping the live-order
+  // card mounts this screen with `order` already present and skips the loading skeleton entirely.
+  const [codeRestored, setCodeRestored] = useState(false);
   // The highest server-side delivery-code attempt count seen while THIS local code has been current. A
   // rotation (re-issue) resets the server counter to 0, so a later snapshot whose count has dropped below
   // this reveals the local code is stale — see reconcileDeliveryCode. null until loaded / no code held.
@@ -117,7 +124,14 @@ export default function OrderScreen(): React.ReactElement {
       if (c) setDeliveryCode(c);
       setCodeAttemptsSeen(hw);
       setCodeRotatedAtSeen(rotAt);
-    });
+      setCodeRestored(true);
+    })
+      // The loaders all swallow their own native failures, so this is belt-and-braces: `codeRestored`
+      // gates the code card, and stranding it false would hide the re-issue escape hatch entirely.
+      // Settling it on rejection degrades to "no code held", which the C7 branch can recover from.
+      .catch(() => {
+        if (alive) setCodeRestored(true);
+      });
     return () => {
       alive = false;
     };
@@ -709,7 +723,7 @@ export default function OrderScreen(): React.ReactElement {
                   Moved here from LiveTrackingCard so the code and its re-issue read as one unit. */}
               <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={pendingOrQueued(rotateM)} />
             </Card>
-          ) : (
+          ) : !codeRestored ? null : ( // keychain read still in flight — say nothing rather than assert the code is missing
             // C7: assigned-or-later with no local code (e.g. a dropped select response). Don't show
             // nothing — prompt a re-issue via the existing rotate mutation instead of leaving the
             // customer with no code and no explanation.

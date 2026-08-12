@@ -7,7 +7,7 @@ import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../../src/api/client";
-import { getMe } from "../../../src/api/auth";
+import { getMe, type Me } from "../../../src/api/auth";
 import { makeOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
@@ -92,7 +92,14 @@ export default function RiderHome(): React.ReactElement {
   // dispatch-specific flag, not the whole-vertical one, so the board's copy doesn't promise food jobs
   // before dispatch itself is live; this stays a no-op read until that feed exists.
   const { merchantDispatchAutoEnabled } = useFeatureFlags();
-  const [online, setOnlineState] = useState(false);
+  // Seeded from an already-warm `["me"]` (persisted across launches — src/query/persist.ts — and
+  // pre-seeded by useBootstrap), not a flat `false`. The reconcile effect below already promotes a
+  // server-side `isOnline`, but it is a PASSIVE effect: with the cache warm, `meQ.isLoading` is false
+  // on the first render, so the offline presentation ("Go online to see and bid on nearby orders", no
+  // board) commits and paints before the effect can flip it. A rider relaunching mid-shift saw their
+  // own board blink through Offline. A cold cache still renders the meQ.isLoading skeleton instead, so
+  // this only ever fires when the answer is already known.
+  const [online, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.isOnline === true);
   // Set once the rider explicitly toggles this session (a successful onlineM), so the server-reconcile
   // below never overrides a deliberate go-offline by re-seeding from a stale `is_online`.
   const userToggledRef = useRef(false);

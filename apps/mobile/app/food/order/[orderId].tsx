@@ -137,6 +137,11 @@ export default function FoodOrderScreen(): React.ReactElement {
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
   const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
+  // Whether the restore above has SETTLED (mirrors app/order/[id].tsx's own `codeRestored`): a plain
+  // `null` conflates "not read yet" with "no code held", and DeliveryCodeCard renders the second as
+  // `unavailableHint` + an inert press-and-hold. A customer who already earned their code would be
+  // told it "appears once you and your rider both confirm the cash" until the keychain read lands.
+  const [codeRestored, setCodeRestored] = useState(false);
   useEffect(() => {
     if (!orderId) return;
     let alive = true;
@@ -145,7 +150,13 @@ export default function FoodOrderScreen(): React.ReactElement {
       setDeliveryCode(c);
       setCodeAttemptsSeen(hw);
       setCodeRotatedAtSeen(rotAt);
-    });
+      setCodeRestored(true);
+    })
+      // Belt-and-braces, mirroring app/order/[id].tsx: `codeRestored` also gates the code-fetch effect
+      // below, so stranding it false on a rejected read would mean no restore AND no fetch.
+      .catch(() => {
+        if (alive) setCodeRestored(true);
+      });
     return () => {
       alive = false;
     };
@@ -208,9 +219,12 @@ export default function FoodOrderScreen(): React.ReactElement {
   // reaches `en_route_dropoff`. WALLET is eligible immediately; CASH only once both handshake confirms
   // land (server-enforced — rotateDeliveryCode 409s otherwise, this effect just avoids firing that).
   // Fires at most once per code (guarded on `deliveryCode` already being set) and never while offline.
+  // Also waits for `codeRestored`: the restore effect above is async, so on a cold mount already at
+  // `en_route_dropoff` this would otherwise see a not-yet-restored `null`, decide no code exists and
+  // re-issue one the customer already holds — racing the restore to set state, and burning a rotation.
   const codeFetchInFlight = useRef(false);
   useEffect(() => {
-    if (!order || order.status !== "en_route_dropoff" || deliveryCode || !reachable || codeFetchInFlight.current) return;
+    if (!order || order.status !== "en_route_dropoff" || !codeRestored || deliveryCode || !reachable || codeFetchInFlight.current) return;
     const eligible = codeEligible({
       paymentMethod: order.paymentMethod,
       customerCashConfirmedAt: order.customerCashConfirmedAt,
@@ -230,7 +244,7 @@ export default function FoodOrderScreen(): React.ReactElement {
       .finally(() => {
         codeFetchInFlight.current = false;
       });
-  }, [order, deliveryCode, reachable, orderId]);
+  }, [order, codeRestored, deliveryCode, reachable, orderId]);
 
   // D4/R-04: the customer's half of the CASH doorstep handshake — "I gave $X". The rider's own
   // confirm/dispute is the rider app's job (D5), not this screen's.
@@ -549,6 +563,7 @@ export default function FoodOrderScreen(): React.ReactElement {
         busy={busy}
         trackData={trackQ.data}
         deliveryCode={deliveryCode}
+        codeRestored={codeRestored}
         confirmCashBusy={confirmCashBusy}
         onConfirmCash={() => void confirmCash()}
         onRevealCode={() => void saveCodeRevealedAt(orderId, new Date().toISOString())}

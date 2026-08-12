@@ -47,6 +47,9 @@ export default function FoodOffer(): React.ReactElement {
     onSuccess: () => router.replace("/rider"),
   });
 
+  // Reachable only from a live server `false` (the kill switch actually pulled) — NOT a boot state.
+  // `useFeatureFlags` defaults `restaurantsEnabled` true because the vertical is launched, so this
+  // screen never renders as a cold-start frame ahead of the flags fetch (MOB-BOOT-02).
   if (!restaurantsEnabled) {
     return (
       <Screen>
