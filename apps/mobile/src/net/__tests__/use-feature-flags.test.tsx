@@ -11,17 +11,32 @@ function fetchReturning(status: number, body: unknown): typeof fetch {
   })) as unknown as typeof fetch;
 }
 
-describe("fetchFeatureFlags (fail-safe-OFF by design)", () => {
+describe("fetchFeatureFlags (per-flag fail direction: launched fails open, unlaunched fails safe-off)", () => {
+  it("boot default renders the launched Restaurants layout — no flag-off flash frame at cold start", () => {
+    // Regression pin for the 2026-08-12 fix: the pre-fetch default painted restaurantsEnabled:false
+    // ("Soon" tile / parcels-only onboarding) for ~250ms + one RTT on every launch. Restaurants is
+    // fully launched, so the default — which is also the first rendered frame — must be the live UI.
+    expect(DEFAULT_FEATURE_FLAGS.restaurantsEnabled).toBe(true);
+    // Unlaunched verticals keep fail-safe-off: never reveal something not ready to show.
+    expect(DEFAULT_FEATURE_FLAGS.merchantDispatchAutoEnabled).toBe(false);
+    expect(DEFAULT_FEATURE_FLAGS.merchantWalletEnabled).toBe(false);
+  });
+
   it("returns the server flags on a valid response", async () => {
     const flags = { restaurantsEnabled: true, merchantDispatchAutoEnabled: false, merchantWalletEnabled: true };
     await expect(fetchFeatureFlags(fetchReturning(200, flags))).resolves.toEqual(flags);
   });
 
-  it("fails safe-off (all false) on a non-200 — a broken endpoint must never reveal an unready vertical", async () => {
+  it("a server false still kills the launched vertical — the kill switch mechanism is unchanged", async () => {
+    const killed = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false };
+    await expect(fetchFeatureFlags(fetchReturning(200, killed))).resolves.toEqual(killed);
+  });
+
+  it("falls back to the per-flag defaults on a non-200 — restaurants stays live, unlaunched flags stay off", async () => {
     await expect(fetchFeatureFlags(fetchReturning(500, {}))).resolves.toEqual(DEFAULT_FEATURE_FLAGS);
   });
 
-  it("fails safe-off on a wire-shape mismatch (strict contract: stray/missing fields reject)", async () => {
+  it("falls back to the per-flag defaults on a wire-shape mismatch (strict contract: stray/missing fields reject)", async () => {
     await expect(fetchFeatureFlags(fetchReturning(200, { restaurantsEnabled: true }))).resolves.toEqual(DEFAULT_FEATURE_FLAGS);
     await expect(
       fetchFeatureFlags(
@@ -30,7 +45,7 @@ describe("fetchFeatureFlags (fail-safe-OFF by design)", () => {
     ).resolves.toEqual(DEFAULT_FEATURE_FLAGS);
   });
 
-  it("fails safe-off when the network throws (offline cold start still boots, food tile stays hidden)", async () => {
+  it("falls back to the per-flag defaults when the network throws (offline cold start boots the launched layout)", async () => {
     const throwing = (async () => {
       throw new TypeError("Network request failed");
     }) as unknown as typeof fetch;

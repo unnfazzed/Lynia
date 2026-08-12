@@ -18,9 +18,10 @@ import { RoleSelectFlagOffView } from "./role-flag-off.view";
  * its food-off twin `RoleSelectFlagOffView` (mock screens-shipped.jsx `RoleSelectFlagOff`). The mocks
  * draw two different screens per the food flag — a `Lockup` brand mark + joint-launch copy when food is
  * on, a `Dove`+`Wordmark` mark + parcels-only copy when it is off (journey 0·5) — so the container picks
- * the view by `restaurantsEnabled` rather than swapping copy inside one tree. The flag-off wording keeps
- * food hidden: the §1 escape hatch hides the whole vertical, and an unflagged mention of food here would
- * leak it (same fail-safe-off contract as the home Food tile). This screen owns all logic (the live role
+ * the view by `restaurantsEnabled` rather than swapping copy inside one tree. The flag now fails open
+ * (restaurants is launched — same contract as the home Food tile), so the joint-launch view is also the
+ * boot default and no flag-off frame flashes; the flag-off twin remains reachable only when the server
+ * kill switch actually reports the vertical dark. This screen owns all logic (the live role
  * selection, saveRolePreference, the permission-priming route); the views take only leaf props.
  */
 export default function RoleScreen(): React.ReactElement {

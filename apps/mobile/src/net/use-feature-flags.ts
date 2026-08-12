@@ -9,15 +9,22 @@ import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
  * `GET /app/feature-flags` at cold start so the Food tile/rail can hide instantly if the founder
  * flips `RESTAURANTS_ENABLED` off, without an app-store resubmission.
  *
- * FAIL-SAFE-OFF by design (mirrors the server's own fail-safe-OFF philosophy): any network error,
- * timeout, non-200, or wire-shape mismatch resolves to every flag `false` — an unreachable flags
- * endpoint must degrade to Express-only, never accidentally reveal a half-built vertical. This is
- * the opposite failure direction from `use-server-version-gate`'s fail-OPEN (a broken gate must
- * never block the app); here a broken gate must never unlock something not ready to show. Plain
- * fetch (not the api client): this can run pre-auth and must stay dependency-free of session/RUM.
+ * Fail direction is PER FLAG, matching each vertical's launch state (owner decision 2026-08-12):
+ *
+ * - `restaurantsEnabled` FAILS OPEN. Restaurants is fully launched, so the pre-fetch boot frame and
+ *   any network error / timeout / non-200 / wire-shape mismatch resolve to the live layout. Before
+ *   this, the fail-safe-off default painted the flag-off UI ("Soon" tile, parcels-only onboarding,
+ *   no rail) for ~250ms + one RTT on EVERY cold start before flipping — a visible flash of retired
+ *   design on each launch. The flag is still a working kill switch: a server `false` hides the
+ *   vertical as soon as the fetch resolves; only the default changed, not the mechanism.
+ * - The unlaunched flags (`merchantDispatchAutoEnabled`, `merchantWalletEnabled`) keep the original
+ *   FAIL-SAFE-OFF contract: a broken gate must never unlock something not ready to show.
+ *
+ * Plain fetch (not the api client): this can run pre-auth and must stay dependency-free of
+ * session/RUM.
  */
 export const DEFAULT_FEATURE_FLAGS: MerchantFeatureFlagsResponse = {
-  restaurantsEnabled: false,
+  restaurantsEnabled: true,
   merchantDispatchAutoEnabled: false,
   merchantWalletEnabled: false,
 };
@@ -34,7 +41,7 @@ export async function fetchFeatureFlags(
     const parsed = MerchantFeatureFlagsResponse.safeParse(await res.json());
     return parsed.success ? parsed.data : DEFAULT_FEATURE_FLAGS;
   } catch {
-    return DEFAULT_FEATURE_FLAGS; // offline / timeout / bad JSON — fail safe-off
+    return DEFAULT_FEATURE_FLAGS; // offline / timeout / bad JSON — per-flag defaults (see above)
   } finally {
     clearTimeout(timer);
   }
@@ -43,8 +50,8 @@ export async function fetchFeatureFlags(
 /** Cold-boot request prioritization (B-O7): deferred a beat behind mount so this fetch doesn't
  *  contend for the first available connection slot with the first-paint-critical `/app/bootstrap`
  *  aggregate — this hook is called from several screens that mount at or near cold-boot (home,
- *  orders), same rationale as `useServerMinVersion`. Harmless where the default (fail-safe-off)
- *  already governs the render for a quarter second regardless of network speed. */
+ *  orders), same rationale as `useServerMinVersion`. Harmless because the defaults already render
+ *  the correct launched layout — the fetch only matters when a kill switch has been flipped. */
 const BOOT_FEATURE_FLAGS_DELAY_MS = 250;
 
 /** The feature flags, defaulting closed until the fetch resolves. Checked once per cold start —
