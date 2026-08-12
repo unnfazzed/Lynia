@@ -845,7 +845,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     await this.notifications.notifyProfiles([order.customerId], {
       title: "Your order was cancelled",
       body: rejectionCopy(reason),
-      data: { orderId, status: "cancelled" },
+      // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
+      data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
     });
   }
 
@@ -856,7 +857,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     await this.notifications.notifyProfiles([customerId], {
       title,
       body,
-      data: { orderId, status: "awaiting_payment", to: "customer", kind: "food_pay_now" },
+      data: { orderId, status: "awaiting_payment", to: "customer", kind: "food_pay_now", orderType: "merchant" },
     });
   }
 

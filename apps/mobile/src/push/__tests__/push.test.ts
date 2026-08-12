@@ -111,6 +111,44 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "account", to: "customer" }, true)).toBe("/home");
   });
 
+  // P0-2 (navigation review 2026-08-12): a food (merchant) order's customer-facing tracker is
+  // /food/order/:id, not the parcel-voiced /order/:id. The server now stamps orderType:"merchant";
+  // before this, every food status push opened the parcel screen — and the "Rider secured" (`assigned`)
+  // push even sent the customer to /rider/job (the parcel rider's job screen), a dead end.
+  it("routes a food order's customer-facing status pushes to the food tracker, whatever the status", () => {
+    for (const status of ["requested", "awaiting_payment", "en_route_dropoff", "cancelled"]) {
+      expect(pushDestination({ orderId: "o1", status, to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+    }
+  });
+
+  it("routes a food 'Rider secured' (assigned) push to the food tracker for the customer, NOT /rider/job", () => {
+    // The customer-targeted food `assigned` push carries to:"customer" + orderType:"merchant".
+    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+    // Even for a dual-role account currently in rider mode — `to` is per-push authoritative.
+    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, true)).toBe("/food/order/o1");
+  });
+
+  it("routes a food pay-now (kind:food_pay_now) push to the food tracker", () => {
+    expect(pushDestination({ orderId: "o1", status: "awaiting_payment", to: "customer", kind: "food_pay_now", orderType: "merchant" }, false)).toBe(
+      "/food/order/o1",
+    );
+  });
+
+  it("routes SOS on a food order to the food tracker for the customer, and to /rider/job for the rider", () => {
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "rider", orderType: "merchant" }, true)).toBe("/rider/job");
+  });
+
+  it("keeps the rider on /rider/job for a merchant order pushed to the rider (only the customer gets the food tracker)", () => {
+    expect(pushDestination({ orderId: "o1", status: "assigned", to: "rider", orderType: "merchant" }, true)).toBe("/rider/job");
+  });
+
+  it("falls back to /order/:id for a food status push with no orderType (older in-flight push)", () => {
+    // Backward-compat: before the server stamped orderType, food status pushes routed to the parcel
+    // screen; that fallback is preserved for pushes already in flight at deploy time.
+    expect(pushDestination({ orderId: "o1", status: "cancelled", to: "customer" }, false)).toBe("/order/o1");
+  });
+
   it("returns null for a payload with no orderId and no routable kind", () => {
     expect(pushDestination({ kind: "offer" }, false)).toBeNull();
   });

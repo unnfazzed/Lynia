@@ -1,4 +1,4 @@
-import { canCancelFreely, estimateDeliveryFee, isStillUnpaidReminderDue, STILL_UNPAID_REMINDER_MS } from "../food-checkout";
+import { canCancelFreely, estimateDeliveryFee, goToPlacedFoodOrder, isStillUnpaidReminderDue, STILL_UNPAID_REMINDER_MS } from "../food-checkout";
 
 describe("estimateDeliveryFee", () => {
   it("returns null when the merchant has no location yet", () => {
@@ -52,5 +52,21 @@ describe("isStillUnpaidReminderDue", () => {
   it("is due once the N-22 window has fully elapsed", () => {
     const requestedAt = new Date(now - STILL_UNPAID_REMINDER_MS).toISOString();
     expect(isStillUnpaidReminderDue(requestedAt, now)).toBe(true);
+  });
+});
+
+describe("goToPlacedFoodOrder (P0-1: never strand a placed order on the emptied cart)", () => {
+  it("resets the food stack to its root, THEN pushes the order — never a bare replace", () => {
+    const calls: string[] = [];
+    const router = {
+      dismissAll: jest.fn(() => calls.push("dismissAll")),
+      push: jest.fn((href: string) => calls.push(`push:${href}`)),
+    };
+    goToPlacedFoodOrder(router, "fo-1");
+    // dismissAll pops the food stack (list/menu/cart/checkout) to its first route, so back from the
+    // live order lands on a browsable screen — not the cart checkout just cleared one line earlier.
+    expect(calls).toEqual(["dismissAll", "push:/food/order/fo-1"]);
+    expect(router.dismissAll).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith("/food/order/fo-1");
   });
 });
