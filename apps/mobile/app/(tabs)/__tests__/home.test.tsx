@@ -15,7 +15,6 @@ import { orderKey } from "../../../src/query/client";
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
 
 const mockGetActiveCustomerOrders = jest.fn();
-const mockUseHistoryFeed = jest.fn();
 
 // In-memory SecureStore (jest-expo has no built-in behavior for it) — the failed-check banner's
 // evidence gate (useActiveOrderCheckGate) reads the persisted order hint through it.
@@ -52,10 +51,6 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
-}));
-jest.mock("../../../src/query/use-history-feed", () => ({
-  useHistoryFeed: () => mockUseHistoryFeed(),
-  invalidateCustomerOrderHistory: jest.fn(),
 }));
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
@@ -120,7 +115,6 @@ afterEach(() => {
 describe("(tabs)/home.tsx — Home tab states", () => {
   it("loading: shows a skeleton, not a blank gap, while the first fetch is in flight", async () => {
     mockGetActiveCustomerOrders.mockReturnValue(new Promise(() => {})); // never resolves
-    mockUseHistoryFeed.mockReturnValue({ rows: null, isFetching: true, isError: false, hasLiveData: false, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     const loading = activeTree.root.findAll((n) => n.props.accessibilityLabel === "Loading");
     expect(loading.length).toBeGreaterThan(0);
@@ -128,7 +122,6 @@ describe("(tabs)/home.tsx — Home tab states", () => {
 
   it("default: an active parcel renders the mock-grammar LiveOrderCard, not the reorder rail", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     // home.prompt.md grammar: who/where + status (no rider fix on this fixture, so no minutes).
@@ -147,7 +140,6 @@ describe("(tabs)/home.tsx — Home tab states", () => {
       }),
       activeOrderFixture({ id: "order-1", status: "en_route_dropoff" }),
     ]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     // Food card: restaurant headline + design payment/total meta.
@@ -157,19 +149,20 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, /Parcel to Office · /)).toBe(true);
   });
 
-  it("empty: no active order and no trip history renders neither card nor rail (tiles only)", async () => {
+  it("empty: no active order renders neither card nor a send-again rail (tiles only)", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     expect(has(activeTree, /Parcel to /)).toBe(false);
+    // Owner decision 2026-08-12, per the design AppHome contract ("no order-again / send-again
+    // rails"): the rail must never come back — reordering lives on the trip-history screen.
+    expect(has(activeTree, /Send again/)).toBe(false);
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
   it("error + persisted order hint: the active-order check failing surfaces UX20-01's banner instead of silently showing the reorder rail", async () => {
     mockSecureStore["lynia.activeOrderHint"] = "order-1";
     mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(true);
@@ -179,7 +172,6 @@ describe("(tabs)/home.tsx — Home tab states", () => {
   // NOT camp a danger banner over the home — the query self-heals via its own poll/reconnect refetch.
   it("error with no order hint: stays quiet instead of camping the banner over the home", async () => {
     mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
@@ -190,7 +182,6 @@ describe("(tabs)/home.tsx — Home tab states", () => {
   it("success with null clears a stale persisted order hint", async () => {
     mockSecureStore["lynia.activeOrderHint"] = "order-done";
     mockGetActiveCustomerOrders.mockResolvedValue([]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
     activeTree = renderHome();
     await settle();
     expect(mockSecureStore["lynia.activeOrderHint"]).toBeUndefined();
@@ -208,7 +199,6 @@ describe("(tabs)/home.tsx — LC-B05: blurred write-back must not clobber live t
 
   it("does not overwrite a fresher socket-applied rider position once home is blurred beneath /order/[id]", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([orderFixture()]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     act(() => {
@@ -254,7 +244,6 @@ describe("(tabs)/home.tsx — LC-B05: blurred write-back must not clobber live t
 describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant fetch while fresh", () => {
   it("does not refetch on refocus when the active-order cache is still within the staleness window", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
 
     activeTree = renderHome();
     await settle();
@@ -270,7 +259,6 @@ describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant
 
   it("still refetches on refocus once the cached entry is old enough to count as stale", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
-    mockUseHistoryFeed.mockReturnValue({ rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() });
 
     activeTree = renderHome();
     await settle();

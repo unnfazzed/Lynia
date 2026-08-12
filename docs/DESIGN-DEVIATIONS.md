@@ -280,3 +280,19 @@ owner's Foundation-D instruction (2026-08-11) — *"the 'Add a drink?' upsell �
 — the app **omits** the rail. The `FoodThumb` primitive exists (Foundation-D) and backs the menu-row
 thumbnails; the upsell rail returns the moment an upsell backend exists. The cart's checkout bar now
 rides the Foundation-D `<Screen footer=…>` slot.
+
+---
+
+## D-13 · Home "Send again" (ReorderRail) removed — APPROVED (2026-08-12)
+
+**In effect.** The design sources conflict on the home's empty state:
+`components/home/home.prompt.md` specs a **ReorderRail** ("order-again circles… hidden while a live
+order shows"), while the newer canonical `components/home/AppHome.jsx` — the component the gallery's
+`RC.home` renders — is explicit the other way: *"No order-again / send-again rails: the live cards
+are the only thing above the venues."* No gallery screen draws a send-again rail on home. Per the
+owner's instruction (2026-08-12, this session — *"remove the send again rails"*), the app follows
+the AppHome contract: home renders BrandHeader → service tiles → live-order card(s) → "Restaurants
+near you", nothing else. The app-side `ReorderRail` component and its `reorderRailItems` helper are
+deleted; re-ordering remains available from the trip-history screen's own "Send again" action. If a
+future design export resolves the conflict in `home.prompt.md`'s favour, this entry is the pointer
+to revisit.
