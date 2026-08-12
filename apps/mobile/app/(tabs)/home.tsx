@@ -5,17 +5,10 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
 import { loadDeliveryCode } from "../../src/auth/device-state";
-import {
-  liveOrderCardModel,
-  type ReorderRailItem,
-  reorderRailItems,
-  restaurantCardStatus,
-} from "../../src/logic/home-feed";
-import { buildRebroadcastParams } from "../../src/logic/order-draft";
+import { liveOrderCardModel, restaurantCardStatus } from "../../src/logic/home-feed";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateIfStale, orderKey } from "../../src/query/client";
-import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import {
@@ -24,7 +17,6 @@ import {
   BrandHeader,
   getServiceTiles,
   LiveOrderCard,
-  ReorderRail,
   RestaurantCard,
   ServiceTiles,
   SkeletonRows,
@@ -161,10 +153,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
     queryFn: getActiveCustomerOrders,
     refetchInterval: homeFocused ? 30_000 : false,
   });
-  const historyFeed = useHistoryFeed();
   useForegroundRefetch(() => {
     invalidateIfStale(qc, ACTIVE_ORDERS_KEY);
-    invalidateCustomerOrderHistory(qc);
   });
   const activeOrders = activeOrdersQ.data ?? [];
   const deliveryCodes = useDeliveryCodes(activeOrders);
@@ -199,15 +189,6 @@ export default function LauncherHomeScreen(): React.ReactElement {
     else if (id === "food") router.push("/food");
   };
 
-  const onReorder = (item: ReorderRailItem): void => {
-    const row = (historyFeed.rows ?? []).find((r) => r.id === item.id);
-    if (!row) return;
-    router.push({
-      pathname: "/send",
-      params: buildRebroadcastParams({ pickup: row.pickup, dropoff: row.dropoff, itemDesc: row.itemDesc, proposedFare: row.proposedFare, note: row.note }),
-    });
-  };
-
   return (
     <AppScreen
       dark
@@ -225,9 +206,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
         <View style={{ paddingHorizontal: 10 }}>
           <ServiceTiles services={services} onService={onService} />
         </View>
-        {activeOrdersQ.isLoading || (historyFeed.rows === null && historyFeed.isFetching) ? (
-          // Genuine first load (BOTH feeds this screen paints from) — a skeleton beats a blank gap
-          // between the tiles and the restaurants rail, mirroring the Orders tab's own loading rule.
+        {activeOrdersQ.isLoading ? (
+          // Genuine first load — a skeleton beats a blank gap between the tiles and the restaurants
+          // rail, mirroring the Orders tab's own loading rule.
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
             <SkeletonRows count={2} />
           </View>
@@ -257,9 +238,10 @@ export default function LauncherHomeScreen(): React.ReactElement {
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
             <ActiveOrderCheckFailedBanner onRetry={() => void activeOrdersQ.refetch()} retrying={activeOrdersQ.isFetching} />
           </View>
-        ) : (
-          <ReorderRail items={reorderRailItems(historyFeed.rows ?? [])} onItem={onReorder} />
-        )}
+        ) : null}
+        {/* No order-again / send-again rail here — the design AppHome is explicit ("the live cards
+            are the only thing above the venues"; owner decision 2026-08-12 resolving the conflict
+            with home.prompt.md's ReorderRail spec). Reordering lives on the trip-history screen. */}
         <RestaurantsRail />
       </ScrollView>
     </AppScreen>

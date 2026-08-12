@@ -1,9 +1,9 @@
 // Pure content-selection helpers for the launcher home screen (plan §5 Lane A2: LiveOrderCard /
-// "Send again" rail / "Restaurants near you" rail) — no React, unit-testable in isolation, mirrors
-// order-labels.ts / order-tracking.ts.
+// "Restaurants near you" rail) — no React, unit-testable in isolation, mirrors order-labels.ts /
+// order-tracking.ts. (The "Send again" rail was removed 2026-08-12 per the design AppHome contract:
+// "no order-again / send-again rails" — owner decision resolving home.prompt.md's conflicting spec.)
 import type { MerchantHours } from "@lynia/shared";
 import { isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
-import type { OrderHistoryRow } from "../api/orders";
 import { liveEta } from "./eta";
 import { formatMoney } from "./money";
 
@@ -126,29 +126,6 @@ export function liveOrderCardModel(order: LiveOrderLike, statusLabel: string, de
     steps: LIVE_ORDER_STEP_COUNT,
     route: `/order/${order.id}`,
   };
-}
-
-export interface ReorderRailItem {
-  id: string;
-  name: string;
-  price: string;
-}
-
-/**
- * "Send again" rail items (plan §5 A2) — the customer's own most-recently sent parcels, newest
- * first (the history API already orders by `createdAt desc`), capped so the rail is a bounded
- * shelf rather than the customer's whole history. Hidden by the caller while a live order shows
- * (`home.prompt.md`: "Hidden while a live order shows — the card takes its slot").
- */
-export function reorderRailItems(rows: OrderHistoryRow[], limit = 10): ReorderRailItem[] {
-  return rows
-    .filter((r) => r.role === "customer")
-    .slice(0, limit)
-    .map((r) => ({
-      id: r.id,
-      name: r.dropoff.landmark || r.itemDesc || "Parcel",
-      price: formatMoney(r.agreedFare ?? r.proposedFare),
-    }));
 }
 
 export interface RestaurantCardStatus {

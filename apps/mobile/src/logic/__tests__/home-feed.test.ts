@@ -1,11 +1,9 @@
 import type { MerchantHours } from "@lynia/shared";
-import type { OrderHistoryRow } from "../../api/orders";
 import {
   LIVE_ORDER_STEP_COUNT,
   liveOrderCardModel,
   type LiveOrderLike,
   liveOrderStepIndex,
-  reorderRailItems,
   restaurantCardStatus,
 } from "../home-feed";
 
@@ -103,51 +101,6 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
 
   it("food card without a merchant name keeps the honest generic headline", () => {
     expect(liveOrderCardModel(food({ merchantName: null }), "x", null).title).toMatch(/^Restaurant order · /);
-  });
-});
-
-function historyRow(overrides: Partial<OrderHistoryRow>): OrderHistoryRow {
-  return {
-    id: "o1",
-    orderType: "parcel",
-    merchantName: null,
-    role: "customer",
-    pickup: { point: { lat: 0, lng: 0 }, landmark: "Eastgate" },
-    dropoff: { point: { lat: 0, lng: 0 }, landmark: "Avenues" },
-    itemDesc: "Documents",
-    note: null,
-    proposedFare: "3.00",
-    agreedFare: null,
-    status: "completed",
-    createdAt: "2026-07-01T00:00:00Z",
-    rating: null,
-    counterpartyName: null,
-    ...overrides,
-  };
-}
-
-describe("reorderRailItems", () => {
-  it("keeps only the customer's own sent trips", () => {
-    const rows = [historyRow({ id: "a", role: "customer" }), historyRow({ id: "b", role: "rider" })];
-    expect(reorderRailItems(rows).map((i) => i.id)).toEqual(["a"]);
-  });
-
-  it("caps at the given limit, preserving the input (newest-first) order", () => {
-    const rows = Array.from({ length: 15 }, (_, i) => historyRow({ id: `o${i}` }));
-    const items = reorderRailItems(rows, 10);
-    expect(items).toHaveLength(10);
-    expect(items[0]!.id).toBe("o0");
-  });
-
-  it("names the item from the drop-off landmark, formats the price, and falls back to itemDesc", () => {
-    const rows = [historyRow({ id: "a", dropoff: { point: { lat: 0, lng: 0 }, landmark: "" }, itemDesc: "A parcel" })];
-    const items = reorderRailItems(rows);
-    expect(items[0]).toEqual({ id: "a", name: "A parcel", price: "$3.00" });
-  });
-
-  it("prefers the agreed fare over the proposed fare", () => {
-    const rows = [historyRow({ id: "a", agreedFare: "4.25" })];
-    expect(reorderRailItems(rows)[0]!.price).toBe("$4.25");
   });
 });
 
