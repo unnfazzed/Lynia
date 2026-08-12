@@ -2,6 +2,7 @@ import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
+import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import React from "react";
 import { AppState, Linking, Pressable, Text, View } from "react-native";
@@ -47,6 +48,65 @@ function Row(props: { icon: IconName; label: string; value?: string; danger?: bo
   );
 }
 
+/**
+ * A permission row (mock screens-shipped.jsx `SettingsPerms`, SH11): icon · label · the REAL value
+ * read off the phone · chevron, with the consequence of a denied permission spelled out underneath.
+ * The value is never hardcoded — a settings screen that claims "On" while the OS says otherwise is
+ * the exact lie this section exists to remove.
+ */
+function PermissionRow(props: {
+  icon: IconName;
+  label: string;
+  value: string;
+  warn?: boolean;
+  consequence?: string;
+  onPress: () => void;
+}): React.ReactElement {
+  return (
+    <View style={{ borderBottomWidth: 1, borderBottomColor: tokens.color.line }}>
+      <Pressable
+        onPress={props.onPress}
+        accessibilityRole="button"
+        accessibilityLabel={props.label}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          paddingVertical: 13,
+          minHeight: tokens.touchTargetMin,
+          opacity: pressed ? 0.6 : 1,
+        })}
+      >
+        <Icon name={props.icon} size={19} color={tokens.color.accentText} />
+        <Text style={{ flex: 1, fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{props.label}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+          {props.warn ? <Icon name="triangle-alert" size={14} color={tokens.color.dangerInk} /> : null}
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: props.warn ? "700" : "400",
+              color: props.warn ? tokens.color.dangerInk : tokens.color.muted,
+            }}
+          >
+            {props.value}
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={17} color={tokens.color.muted} />
+      </Pressable>
+      {props.consequence ? (
+        <View style={{ flexDirection: "row", gap: 8, paddingBottom: 12, paddingLeft: 31 }}>
+          <Text style={{ flex: 1, fontSize: 12, color: tokens.color.muted, lineHeight: 17 }}>
+            {props.consequence}{" "}
+            <Text style={{ fontWeight: "700", color: tokens.color.accentText }} onPress={props.onPress}>
+              Open system settings
+            </Text>
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export default function SettingsScreen(): React.ReactElement {
   const router = useRouter();
   const { session, signOut } = useAuth();
@@ -59,11 +119,25 @@ export default function SettingsScreen(): React.ReactElement {
   // denied it). Re-read on foreground so returning from OS settings updates the row. Tapping opens the
   // OS app settings — the only place the permission can actually be changed.
   const [notifsOn, setNotifsOn] = React.useState<boolean | null>(null);
+  // Location is read the same way — the mock's permissions section draws BOTH rows from the phone
+  // ("While using" / "Ask every time"), so neither may be a constant.
+  const [locationValue, setLocationValue] = React.useState<string | null>(null);
   React.useEffect(() => {
     let cancelled = false;
-    const read = (): void => void Notifications.getPermissionsAsync().then((p) => {
-      if (!cancelled) setNotifsOn(p.granted);
-    }).catch(() => undefined);
+    const read = (): void => {
+      void Notifications.getPermissionsAsync()
+        .then((p) => {
+          if (!cancelled) setNotifsOn(p.granted);
+        })
+        .catch(() => undefined);
+      void Location.getForegroundPermissionsAsync()
+        .then((p) => {
+          if (cancelled) return;
+          // The mock's two drawn values, plus the honest third the OS can also report (denied for good).
+          setLocationValue(p.granted ? "While using" : p.canAskAgain ? "Ask every time" : "Off");
+        })
+        .catch(() => undefined);
+    };
     read();
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") read();
@@ -97,12 +171,29 @@ export default function SettingsScreen(): React.ReactElement {
         value={isRider ? undefined : "Coming soon"}
         onPress={isRider ? () => router.push("/rider/documents") : undefined}
       />
-      <Row
-        icon="phone"
-        label="Notifications"
-        value={notifsOn === null ? "—" : notifsOn ? "On" : "Off"}
+      {/* PERMISSIONS — the SH11 section (LJ.settings_perms / LJ.settings_perms_ok). Both rows read the
+          phone's real state and tap through to OS settings, the only place either can be changed. */}
+      <Text style={{ fontSize: 11, fontWeight: "700", letterSpacing: 0.44, color: tokens.color.muted, marginTop: 10, marginBottom: 2 }}>
+        PERMISSIONS — READ FROM YOUR PHONE
+      </Text>
+      <PermissionRow
+        icon="navigation"
+        label="Location"
+        value={locationValue ?? "—"}
         onPress={() => void Linking.openSettings()}
       />
+      <PermissionRow
+        icon="bell"
+        label="Notifications"
+        value={notifsOn === null ? "—" : notifsOn ? "On" : "Off"}
+        warn={notifsOn === false}
+        consequence={notifsOn === false ? "You won't hear when a rider offers or when your parcel arrives." : undefined}
+        onPress={() => void Linking.openSettings()}
+      />
+      <Text style={{ fontSize: 11.5, color: tokens.color.muted, lineHeight: 17, marginTop: 8, marginBottom: 12 }}>
+        These show your phone&apos;s real settings — LyniaGo re-checks them every time you come back to
+        the app. Changing one opens Android settings.
+      </Text>
       <Row icon="map-pin" label="Language" value="English" />
       <Row icon="banknote" label="Payment" value="Cash" />
       {/* Privacy is a DRAWN in-app screen (LJ.privacy) — it explains what we collect, what others see

@@ -63,6 +63,8 @@ export const APP_TARGETS = {
   "LJ.delete_final": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_final" },
   "LJ.help": { kind: "mobile", component: "app/help/index.tsx", fixture: "help" },
   "LJ.settings": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings" },
+  "LJ.settings_perms": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms" },
+  "LJ.settings_perms_ok": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms_ok" },
   "LJ.history": { kind: "mobile", component: "app/history/index.tsx", fixture: "history" },
 
   // ─────────────────────────── MOBILE — rider (RJM / RJ / RR) ───────────────────────────

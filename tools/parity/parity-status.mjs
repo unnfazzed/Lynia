@@ -55,8 +55,6 @@ export const PARITY_STATUS = {
   }, // Delivered · rate the rider
   "LJ.completed": { status: "PENDING" }, // Completed
   "LJ.rate_undo": { status: "PENDING" }, // Rating sent · undo
-  "LJ.settings_perms": { status: "PENDING" }, // Settings · real permissions
-  "LJ.settings_perms_ok": { status: "PENDING" }, // Settings · all granted
   "LJ.phone_masked": { status: "PENDING" }, // Order ended · numbers masked
   "LJ.sos_idle": { status: "PENDING" }, // SOS · live-trip control
   "LJ.sos_confirm": { status: "PENDING" }, // SOS · confirm

@@ -5,7 +5,15 @@ const HARARE = { coords: { latitude: -17.8292, longitude: 31.0522, accuracy: 5, 
 export const Accuracy = { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 };
 export const ActivityType = { Other: 1, AutomotiveNavigation: 2, Fitness: 3, OtherNavigation: 4 };
 export async function requestForegroundPermissionsAsync() { return { status: "granted", granted: true, canAskAgain: true }; }
-export async function getForegroundPermissionsAsync() { return { status: "granted", granted: true, canAskAgain: true }; }
+// Overridable per fixture for the screens that DRAW a non-granted location state (LJ.settings_perms
+// draws "Ask every time", LJ.loc_off draws the composer with location off): set
+// `window.__PARITY_PERMISSIONS = { location: "denied" | "never" }` at fixture top level.
+function locationPermission() {
+  const p = (typeof window !== "undefined" && window.__PARITY_PERMISSIONS) || {};
+  const status = p.location || "granted";
+  return { status, granted: status === "granted", canAskAgain: status !== "never" };
+}
+export async function getForegroundPermissionsAsync() { return locationPermission(); }
 export async function requestBackgroundPermissionsAsync() { return { status: "granted", granted: true, canAskAgain: true }; }
 export async function getBackgroundPermissionsAsync() { return { status: "granted", granted: true, canAskAgain: true }; }
 export async function getCurrentPositionAsync() { return HARARE; }
