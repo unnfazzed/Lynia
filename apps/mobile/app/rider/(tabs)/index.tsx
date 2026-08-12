@@ -33,6 +33,7 @@ import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, Field, hap
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
+import { RiderBoardListView, type RiderBoardJob } from "./board-list.view";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
 import { parseNum } from "../../../src/util";
@@ -661,6 +662,26 @@ export default function RiderHome(): React.ReactElement {
     [chooseOrder],
   );
 
+  // RJM.board `list` region (mock→RN codegen): the SAME open-orders rows the FlatList branch renders,
+  // shaped as the adopted `RiderBoardListView`'s data seam. Purely presentational — `jobType`/copy are
+  // display, and `onAction` forwards the UNCHANGED `chooseOrder` (the offer-compose seam). Kept stable
+  // (deps: ranked + chooseOrder) so the fallback list doesn't churn on unrelated board re-renders.
+  const rankedJobs = useMemo<RiderBoardJob[]>(
+    () =>
+      ranked.map(({ o, km }) => ({
+        id: o.id,
+        jobType: "parcel" as const,
+        from: o.pickup.landmark,
+        to: o.dropoff.landmark,
+        distanceLabel: km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`,
+        fare: o.proposedFare,
+        note: `${o.itemDesc} · asking $${o.proposedFare}`,
+        actionLabel: "Make an offer",
+        onAction: () => chooseOrder(o),
+      })),
+    [ranked, chooseOrder],
+  );
+
   // B-O1b: the ScrollView + `.map()` board screen (same shape B-O1 fixed for history/notifications
   // and B-T3 fixed for the restaurant catalog) mounted every JobCard concurrently regardless of how
   // many open orders were nearby. `showOpenOrdersList` is exactly the condition the inline
@@ -1245,19 +1266,10 @@ export default function RiderHome(): React.ReactElement {
                 </Text>
               </View>
             ) : null}
-            {ranked.map(({ o, km }) => (
-              <JobCard
-                key={o.id}
-                jobType="parcel"
-                from={o.pickup.landmark}
-                to={o.dropoff.landmark}
-                distanceLabel={km != null ? `${km.toFixed(1)} km away` : `${o.distanceKm ?? "?"} km trip`}
-                fare={o.proposedFare}
-                note={`${o.itemDesc} · asking $${o.proposedFare}`}
-                actionLabel="Make an offer"
-                onAction={() => chooseOrder(o)}
-              />
-            ))}
+            {/* RJM.board `list` region — the adopted `RiderBoardListView` (board-list.view.tsx), mounted
+                here in the main/fallback branch (the one the composition guardrail reduces). The
+                virtualized happy-path list stays the `showOpenOrdersList` FlatList above, untouched. */}
+            <RiderBoardListView jobs={rankedJobs} />
             {openQ.isError ? (
               <EmptyState icon="wifi-off" title="Couldn't load nearby orders" message="Check your connection and try again.">
                 <Button label="Retry" onPress={() => void openQ.refetch()} />

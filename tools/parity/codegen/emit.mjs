@@ -223,7 +223,7 @@ function assembleFile(spec, body) {
   // `ComposeMap`/`BottomSheet` are the Foundation-F.c map/sheet realizations (`FauxMap`→`ComposeMap`,
   // `MapSheet`→`BottomSheet` via DS_RENAME); both are re-exported from `src/ui` so a map/sheet region
   // fragment imports them from the one DS specifier like every other primitive.
-  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark", "ComposeMap", "BottomSheet"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark", "ComposeMap", "BottomSheet", "JobCard"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
   // Region fragments type their data seam against the DS primitives' item types (e.g. the menu-rows
@@ -248,7 +248,7 @@ function assembleFile(spec, body) {
   // Map/sheet realizations import from their OWN modules, NOT the `src/ui` barrel: the barrel
   // (index.tsx) re-exporting a component that imports Icon/Button/Label back FROM the barrel forms a
   // `no-circular` dependency-cruiser violation. Everything else stays on the one barrel specifier.
-  const NON_BARREL = { ComposeMap: "/ComposeMap", ActiveSlot: "/ComposeMap", BottomSheet: "/BottomSheet", PickedPoint: "/MapPicker" };
+  const NON_BARREL = { ComposeMap: "/ComposeMap", ActiveSlot: "/ComposeMap", BottomSheet: "/BottomSheet", PickedPoint: "/MapPicker", JobCard: "/rider/JobCard" };
   const baseName = (tok) => tok.replace(/^type\s+/, "");
   const allUi = dedupeUi([...uiPrims, ...typeImports]);
   if (allUi.length) {

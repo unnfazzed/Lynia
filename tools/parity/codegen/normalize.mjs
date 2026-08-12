@@ -348,6 +348,37 @@ function findFirstRenderer(ts, sf) {
   return fn;
 }
 
+/**
+ * Find the CONTAINER screen's renderer for the composition check. A route container is the
+ * `export default` component; but a container may DEFINE a small helper component with its own JSX
+ * render ABOVE that export (e.g. the rider board's `ActiveJobCheckFailedBanner`, index.tsx:67), and
+ * `findFirstRenderer` would then reduce that helper — the wrong function — instead of the screen. So
+ * prefer the DEFAULT-exported component (`export default function X`, `export default () => …`, or
+ * `export default Name` resolved to its definition) whose render is JSX, and only fall back to the
+ * first renderer for view-style containers that export their component BY NAME (the food-order region
+ * views FoodOrderAwaitingAcceptView / FoodOrderPreparingView have no default export). Containers whose
+ * default export already IS their first renderer (menu / cart / checkout / send) are unaffected.
+ */
+function findContainerRenderer(ts, sf) {
+  let def = null;
+  const isRenderer = (n) => n && (ts.isFunctionDeclaration(n) || ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && jsxFrom(ts, renderOf(ts, n)).length > 0;
+  const visit = (node) => {
+    if (def) return;
+    // `export default function X() {…}`
+    if (ts.isFunctionDeclaration(node) && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+      && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) && isRenderer(node)) { def = node; return; }
+    // `export default <arrow|fnExpr>` or `export default Name` (resolve the identifier to its declaration)
+    if (ts.isExportAssignment(node) && !node.isExportEquals && node.expression) {
+      const e = unwrap(ts, node.expression);
+      if (isRenderer(e)) { def = e; return; }
+      if (ts.isIdentifier(e)) { const decl = findNamed(ts, sf, e.text); if (isRenderer(decl)) { def = decl; return; } }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return def || findFirstRenderer(ts, sf);
+}
+
 function rootFrom(ts, render) {
   const nodes = jsxFrom(ts, render);
   if (!nodes.length) throw new Error("no JSX render found in component");
@@ -565,23 +596,40 @@ function optsFromRegions(regions, side) {
   };
 }
 
+/** Is `e` a render-helper shell call — `S(<jsx>, opts)` — the same guard `renderHelperUnwrap` uses?
+ *  (plain-identifier callee, first arg a JSX element/fragment). Never a `.map`/member call. */
+function isRenderHelperCall(ts, e) {
+  if (!e || !ts.isCallExpression(e) || !ts.isIdentifier(e.expression)) return false;
+  const first = e.arguments[0] ? unwrap(ts, e.arguments[0]) : null;
+  return !!first && (ts.isJsxElement(first) || ts.isJsxSelfClosingElement(first) || ts.isJsxFragment(first));
+}
+
 /** Reduced region-anchor tree of the mock screen (EXPECTED composition). */
 export function mockCompositionTree(ts, mockSrc, mockComponent, regions) {
   const sf = parse(ts, mockSrc);
   const fn = findNamed(ts, sf, mockComponent);
   if (!fn) throw new Error(`mock component ${mockComponent} not found`);
-  const root = jsxRootNode(ts, renderOf(ts, fn));
+  const render = renderOf(ts, fn);
+  const root = jsxRootNode(ts, render);
   const opts = optsFromRegions(regions, "mock");
   // exprRegion needs the raw TS expr; rebuild it to take the TS node directly.
   opts.exprRegion = (e) => regions.find((r) => r.locator?.map && isMapYielding(ts, e, r.locator.map))?.region ?? null;
-  const out = reduceComp(ts, root, opts);
+  let out = reduceComp(ts, root, opts);
+  // Render-helper shell (`S(<jsx>, opts)` → SCREEN). `jsxRootNode` unwraps the S() call to its inner
+  // `<div>` body so region locators walk the real body; but the normalized-tree path ALSO folds that
+  // shell to the canonical SCREEN (renderHelperUnwrap), which is what the app container's `<AppScreen>`
+  // reduces to. Mirror that fold here so an S()-wrapped mock's composition roots at SCREEN like the app
+  // — otherwise the mock (bare `BOX`/collapsed) and the AppScreen-rooted container would never match.
+  // (A `{slot}` region carried in `opts.footer`/`opts.banner` rather than a `<Screen footer=>` attribute
+  // remains a future concern — today's S()-wrapped region locators are all `{map}`/`{el}` on the body.)
+  if (isRenderHelperCall(ts, render)) out = [{ kind: "SCREEN", axes: [], children: out.filter(hasAnyRegion) }];
   return out.length === 1 ? out[0] : { kind: "FRAGMENT", axes: [], children: out };
 }
 
 /** Reduced region-anchor tree of the container screen (ACTUAL composition). */
 export function containerCompositionTree(ts, containerSrc, regions) {
   const sf = parse(ts, containerSrc);
-  const fn = findFirstRenderer(ts, sf);
+  const fn = findContainerRenderer(ts, sf);
   if (!fn) throw new Error("container has no JSX render");
   const root = jsxRootNode(ts, renderOf(ts, fn));
   const opts = optsFromRegions(regions, "container");
