@@ -110,8 +110,8 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
-    const btn = activeTree.root.findAll((n) => n.props.label === "Send a parcel")[0];
-    expect(btn).toBeTruthy();
+    const [btn] = activeTree.root.findAll((n) => n.props.label === "Send a parcel");
+    if (!btn) throw new Error("empty-state 'Send a parcel' button not found");
     act(() => btn.props.onPress());
     expect(mockPush).toHaveBeenCalledWith("/send");
     expect(mockReplace).not.toHaveBeenCalledWith("/send");
