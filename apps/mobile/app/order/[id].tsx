@@ -125,7 +125,13 @@ export default function OrderScreen(): React.ReactElement {
       setCodeAttemptsSeen(hw);
       setCodeRotatedAtSeen(rotAt);
       setCodeRestored(true);
-    });
+    })
+      // The loaders all swallow their own native failures, so this is belt-and-braces: `codeRestored`
+      // gates the code card, and stranding it false would hide the re-issue escape hatch entirely.
+      // Settling it on rejection degrades to "no code held", which the C7 branch can recover from.
+      .catch(() => {
+        if (alive) setCodeRestored(true);
+      });
     return () => {
       alive = false;
     };

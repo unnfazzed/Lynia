@@ -78,8 +78,17 @@ export async function saveDeliveryCode(orderId: string, code: string): Promise<v
     /* best-effort */
   }
 }
+/** The stored hand-off code, or null when none is held OR the keychain read fails. Catching (rather
+ *  than rejecting) matches every sibling loader below, and matters to the callers' restore effects:
+ *  they `Promise.all` this with those siblings and flip a "restore settled" flag in `.then`, so an
+ *  unguarded rejection would strand that flag false and leave the code card — including its re-issue
+ *  escape hatch — permanently unrendered. Null degrades to "no code held", which is recoverable. */
 export async function loadDeliveryCode(orderId: string): Promise<string | null> {
-  return SecureStore.getItemAsync(codeKey(orderId));
+  try {
+    return await SecureStore.getItemAsync(codeKey(orderId));
+  } catch {
+    return null;
+  }
 }
 
 /** Persist the high-water mark of server-side delivery-code attempts seen while the stored code is current

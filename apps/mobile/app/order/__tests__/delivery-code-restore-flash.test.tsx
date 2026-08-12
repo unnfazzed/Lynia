@@ -25,10 +25,12 @@ const mockRotateDeliveryCode = jest.fn();
 
 /** Held open until the test releases it, so the "restore in flight" window is deterministic. */
 let releaseCodeRead: ((value: string | null) => void) | null = null;
+let rejectCodeRead: ((err: Error) => void) | null = null;
 const mockGetItemAsync = jest.fn(async (key: string) => {
   if (key.startsWith(CODE_KEY_PREFIX)) {
-    return new Promise<string | null>((resolve) => {
+    return new Promise<string | null>((resolve, reject) => {
       releaseCodeRead = resolve;
+      rejectCodeRead = reject;
     });
   }
   return null;
@@ -128,6 +130,7 @@ const MISSING_CODE_COPY = "hand-off code isn't showing";
 
 beforeEach(() => {
   releaseCodeRead = null;
+  rejectCodeRead = null;
   mockGetOrder.mockReset();
   mockRotateDeliveryCode.mockReset();
   mockGetItemAsync.mockClear();
@@ -176,5 +179,22 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     });
 
     expect(textHits(tree, MISSING_CODE_COPY)).toBeGreaterThan(0);
+  });
+
+  it("falls back to the re-issue prompt when the keychain read REJECTS — a gate that never opens would hide the only recovery", async () => {
+    // The risk the `codeRestored` gate introduces: if the restore never settles, the card never
+    // renders at all, which is strictly worse than the false "isn't showing" it replaced — the
+    // customer would have no code AND no way to ask for one. `loadDeliveryCode` swallows native
+    // failures and the effect also catches, so a rejection degrades to the recoverable prompt.
+    mockGetOrder.mockResolvedValue(assignedOrder());
+
+    const tree = await render();
+    await act(async () => {
+      rejectCodeRead?.(new Error("keychain unavailable"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(textHits(tree, MISSING_CODE_COPY)).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.label === "Re-issue delivery code" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
   });
 });

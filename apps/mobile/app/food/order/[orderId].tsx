@@ -151,7 +151,12 @@ export default function FoodOrderScreen(): React.ReactElement {
       setCodeAttemptsSeen(hw);
       setCodeRotatedAtSeen(rotAt);
       setCodeRestored(true);
-    });
+    })
+      // Belt-and-braces, mirroring app/order/[id].tsx: `codeRestored` also gates the code-fetch effect
+      // below, so stranding it false on a rejected read would mean no restore AND no fetch.
+      .catch(() => {
+        if (alive) setCodeRestored(true);
+      });
     return () => {
       alive = false;
     };
