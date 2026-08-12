@@ -495,6 +495,21 @@ export const ClientMetricEvent = z.enum([
   "board_glass",
   /** client-measured REST round-trip (skew-free: start + end both client `Date.now()`). */
   "apifetch",
+  /**
+   * Cold start, first half: JS bundle evaluation began → the native splash is released and the first
+   * React frame is visible. Covers module evaluation (the whole eager startup graph) plus the font
+   * gate. Skew-free — both ends are the client's own monotonic clock, measured from Metro's
+   * `__BUNDLE_START_TIME__`. It deliberately EXCLUDES native process start (zygote → JS bundle load),
+   * which JS cannot see; a device stopwatch will always read a little higher than this.
+   */
+  "boot_paint",
+  /**
+   * Cold start, second half: same origin → the boot route decision resolves and the app leaves the
+   * splash for a real screen. `boot_home - boot_paint` is the cost of the device-local boot reads
+   * (keychain session/role/onboarding + the cold-start notification), which is the segment the
+   * prewarm exists to collapse.
+   */
+  "boot_home",
 ]);
 export type ClientMetricEvent = z.infer<typeof ClientMetricEvent>;
 

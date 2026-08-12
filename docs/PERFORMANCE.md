@@ -49,6 +49,8 @@ Query + Socket.IO):
 | **Conditional GETs (ETag / If-None-Match / 304)** | `apps/mobile/src/api/client.ts` (+ tests) | The client remembers the last ETag+body per GET path and revalidates. An unchanged poll — order snapshot (15s), offers (15s), home active-order (30s), `me` during KYC-pending (5s) — now costs ~0.2 KB of headers instead of the full body. Memory-only; scrubbed on **both** sign-out paths (S1 shared devices). |
 | **Query-cache persistence — warm boot** | `apps/mobile/src/query/persist.ts`, `app/_layout.tsx` (+ tests) | Allowlisted queries (`me`, `history`, `earnings`, `wallet`, `notifications`) persist to one app-private expo-file-system JSON file (throttled 3s) and hydrate on launch: cold start on a slow/dead link paints last-known data instantly and revalidates behind it. **Live marketplace state (`order`, `offers`, `activeJob`, `activeCustomerOrder`, `openOrders`) is deliberately never persisted** — a stale "rider arriving" render misleads. Purged on sign-out alongside `queryClient.clear()`. Max age 24h; busted per app version. |
 | **Order-draft keychain writes debounced (500 ms trailing + unmount flush)** | `apps/mobile/app/home.tsx` | The compose form saved the full draft to SecureStore on **every keystroke** in landmark/note/item fields — serialized keychain round-trips on the typing path. One write per quiet half-second now; nothing lost on navigate-away. |
+| **Cold-boot prewarm — the launch stops being one serial chain** | `apps/mobile/src/boot/prewarm.ts`, `app/_layout.tsx`, `app/index.tsx`, `src/auth/auth-context.tsx`, `src/ui/fonts.ts` (+ tests) | `RootLayout` returned `null` until the fonts settled, which left the whole provider tree **unmounted** — so the keychain session read, the query-cache restore and `GET /app/bootstrap` could not *start* until fonts finished, and `app/index.tsx` then began three more device reads only once it mounted. All four device reads and the font load now start at module evaluation and overlap the JS work that used to precede them; the native splash still covers the screen until fonts register, so nothing unstyled is visible. See `MOB-BOOT-03`. |
+| **PostHog off the startup path** | `apps/mobile/src/telemetry/analytics.tsx` (+ test) | The SDK was key-gated at *render* but imported at *evaluation*, so 307 KB across 108 modules ran on every launch whether analytics was configured or not. Now required lazily behind `InteractionManager.runAfterInteractions`: no key ⇒ never evaluated, key ⇒ evaluated after the first frame. Boot graph 1,837 → 1,713 modules, 3.32 → 3.00 MB minified. |
 
 Existing strengths this builds on (verified during the audit, unchanged): 15s request timeout
 budget; reachability-driven `onlineManager` pausing + `/health` recovery probe with backoff;
@@ -115,12 +117,53 @@ completed the verification pass):
   push-registration timing vs first paint; KYC 5s→mode-aware poll and dead `events[].lat/lng`
   were self-verified and shipped in the main wave-2 PR (PERF19-03/04).
 
+## Cold start
+
+Launch was, until `MOB-BOOT-03` (2026-08-12), the one thing the client RUM taxonomy never recorded —
+`position_glass`, `offer_glass`, `board_glass`, `apifetch` and nothing else. So when the owner reported
+an ~8 s splash-to-home on the internal-track build there was no fleet number to attribute it to a phase,
+and no way to prove or defend a fix. Two events now split it at the moment the user first sees the app:
+
+| Event | Histogram | Measures |
+|---|---|---|
+| `boot_paint` | `client_boot_paint_ms` | JS bundle evaluation began → native splash released, first React frame visible. This is **module evaluation plus the font gate**. |
+| `boot_home` | `client_boot_home_ms` | Same origin → the boot route resolved and a real screen replaced the splash. `boot_home − boot_paint` is the **device-read segment** (keychain session/role/onboarding + the cold-start notification). |
+
+Read them as a pair: a high `boot_paint` means the startup module graph is the problem, a wide
+`boot_home − boot_paint` gap means the device reads are. Both are measured from Metro's
+`__BUNDLE_START_TIME__`, which is stamped with `nativePerformanceNow()` on some runtimes and
+`Date.now()` on others — `bootElapsedMs` validates the reading and falls back to a module-load origin
+rather than subtracting one clock from the other, so a nonsense sample is never reported as a latency.
+Both **exclude native process start** (zygote → bundle load), which JS cannot observe: a device
+stopwatch will always read a little higher than `boot_home`, and that difference is the native half.
+
+**What the startup graph costs, and how to re-measure it.** The bundle is the other half of cold start,
+and it is measurable without a device: `npx expo export --platform android --no-bytecode -s`, then walk
+the Metro module graph from the entry — cutting expo-router's route-context edges (routes are lazy;
+verified in 4.0.22's source) and re-rooting at every `_layout.tsx` (layouts are **not** lazy — expo-router
+loads all of them while building the route tree). Careful with deferred `require`s: Metro puts them in
+the dependency array too, so a naive walk reports PostHog as eager when it is not.
+
+| | Modules evaluated at boot | Minified JS | Share of bundle |
+|---|---|---|---|
+| Before `MOB-BOOT-03` | 1,837 of 2,099 | 3.32 MB | 87.5% of modules |
+| After | 1,713 of 2,100 | 3.00 MB | 81.6% of modules |
+
+Total bundle size is unchanged (3.97 MB minified / 6.41 MB Hermes bytecode) — the deferred code still
+ships, it just no longer runs at launch. The two largest remaining items are **Sentry** (676 KB / 317
+modules, ~233 KB of it browser-only code that cannot execute on RN) and **zod via the `@lynia/shared`
+barrel** (202 KB / 41 modules, to read design tokens); both are deliberate non-fixes with their reasons
+recorded as `MOB-BOOT-03-SIB-1` and `-SIB-2` in `docs/KNOWN_BUGS.md`. Neither should be attempted
+without reading those entries first — the Sentry one specifically cannot be covered by a test.
+
 ## How to verify
 
 - **Client RUM** (`apps/mobile/src/telemetry/rum.ts` → `/client-metrics`): watch `apifetch`
   p50/p95 by role before/after rollout — 304s shrink transfer time, so the poll-heavy screens'
   `apifetch` distribution should drop. `position_glass`/`offer_glass`/`board_glass` are the
-  glass-to-glass latency signals.
+  glass-to-glass latency signals, and `boot_paint`/`boot_home` are cold start (see above). Note that
+  the boot events only start arriving once a **new build is installed** — telemetry cannot reach an
+  already-installed binary, so `main` being green says nothing about the launch time in the field.
 - **API side** (OTel → Cloud Trace / Managed Prometheus, `docs/OBSERVABILITY.md`): `getSnapshot`
   handler latency; DB QPS attributable to `nearbyRiders`; response byte counts at the LB.
 - **On-device sanity** (`/qa` or a dev build): airplane-mode cold start paints history/profile

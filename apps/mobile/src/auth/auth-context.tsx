@@ -3,7 +3,8 @@ import { logout } from "../api/auth";
 import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
 import { clearPersistedQueries } from "../query/persist";
-import { clearDeviceState, clearSession, loadSession, saveSession, type Session } from "./session";
+import { prewarmBootReads } from "../boot/prewarm";
+import { clearDeviceState, clearSession, saveSession, type Session } from "./session";
 
 interface AuthState {
   session: Session | null;
@@ -42,13 +43,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         void clearPersistedQueries();
       },
     });
-    void loadSession()
-      .then((s) => {
+    // The keychain read was STARTED at module evaluation (src/boot/prewarm.ts), not here — by the time
+    // this effect runs it is usually already settled, where it used to begin only after the font gate
+    // released the first render. Same read, same failure semantics (prewarm resolves null rather than
+    // rejecting, so a keychain that can't decrypt means "no session" and the user re-authenticates
+    // instead of the app hanging on the splash); only the moment it starts moved.
+    void prewarmBootReads()
+      .session.then((s) => {
         ref.current = s;
         setSession(s);
       })
-      // loadSession already swallows keychain errors, but a defensive .catch guarantees the splash is
-      // released even if the read rejects unexpectedly — a failed read is treated as "no session".
+      // Defensive: prewarm already swallows keychain errors, but this guarantees `loading` is released
+      // even if the promise rejects unexpectedly — the splash must never be able to stick.
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

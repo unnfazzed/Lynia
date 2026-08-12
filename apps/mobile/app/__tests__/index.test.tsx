@@ -34,7 +34,14 @@ let resolveRolePref!: (v: string | null) => void;
 jest.mock("../../src/auth/session", () => ({
   loadOnboardingSeen: () => new Promise((res) => (resolveOnboarding = res)),
   loadRolePreference: () => new Promise((res) => (resolveRolePref = res)),
+  // The boot reads are now started together by src/boot/prewarm.ts, so the session read is part of
+  // this screen's dependency graph even though `Index` itself takes the session from useAuth.
+  loadSession: () => Promise.resolve(null),
 }));
+
+// The RUM buffer is dormant until start(), so enqueueBoot is already a no-op here — mocked anyway so a
+// boot-routing test never depends on telemetry internals.
+jest.mock("../../src/telemetry/rum", () => ({ enqueueBoot: jest.fn() }));
 
 let resolveColdStart!: (v: { notification: { request: { content: { data: unknown } } } } | null) => void;
 const mockConsumeColdStart = jest.fn(() => new Promise((res) => (resolveColdStart = res)));
@@ -45,6 +52,7 @@ jest.mock("../../src/push/push", () => ({
   consumeColdStartResponse: () => mockConsumeColdStart(),
 }));
 
+import { __resetBootReads } from "../../src/boot/prewarm";
 import Index from "../index";
 
 async function flush(): Promise<void> {
@@ -59,6 +67,10 @@ describe("app/index.tsx boot routing", () => {
     mockRedirect.mockClear();
     mockConsumeColdStart.mockClear();
     mockSession = null;
+    // The boot reads are memoized for the life of the process (one launch, one read). Forget them
+    // between cases so each test drives a FRESH set of deferred promises — without this, case 2 would
+    // inherit case 1's already-resolved values and assert nothing.
+    __resetBootReads();
   });
 
   it("holds the splash (no Redirect) until the cold-start check resolves, even after onboarding/role are ready", async () => {

@@ -9,6 +9,7 @@ import { View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { SessionGate } from "../src/auth/session-gate";
+import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
@@ -17,10 +18,10 @@ import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery }
 import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
-import { start as startRum } from "../src/telemetry/rum";
+import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
-import { useAppFonts } from "../src/ui/fonts";
+import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
 import ForceUpdateScreen from "./force-update";
 
 // Crash reporting (roadmap 1.1 / LR20) — first thing at module load so native + JS handlers are armed
@@ -30,6 +31,13 @@ initSentry();
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Start the fonts and every device-local boot read NOW, at module evaluation, so the native side works
+// on them while the JS thread finishes evaluating the startup graph. Previously all of this began only
+// after the first render committed, which itself waited on the fonts — one serial chain where nothing
+// actually depended on anything. See src/boot/prewarm.ts for the full shape of that bug.
+prewarmFonts();
+prewarmBootReads();
 
 /** Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider. */
 function PushSync(): null {
@@ -138,13 +146,23 @@ function RootLayout(): React.ReactElement | null {
   // Pause React Query's refetchInterval polling while backgrounded (see wireFocusManager).
   useEffect(() => wireFocusManager(), []);
 
-  // Drop the splash once fonts resolve (loaded or errored) — the tree renders on the same pass.
+  // Drop the splash once fonts resolve (loaded or errored), and record the first half of the cold
+  // start: bundle evaluation started → the user can actually see the app. Everything before this
+  // instant is module evaluation plus the font gate.
   useEffect(() => {
-    if (fontsReady) SplashScreen.hideAsync().catch(() => {});
+    if (!fontsReady) return;
+    SplashScreen.hideAsync().catch(() => {});
+    enqueueBoot("boot_paint");
   }, [fontsReady]);
 
-  if (!fontsReady) return null; // splash still covers the screen
-
+  // NOTE: this deliberately does NOT `return null` while the fonts load, which is what it did until the
+  // cold-start work. Returning null unmounted the whole provider tree, so the session read, the
+  // query-cache restore and the boot aggregate could not START until the fonts had finished — the
+  // serialization prewarm.ts documents. The tree now mounts immediately and does that work DURING the
+  // font load; the native splash (held above, dropped in the effect) is what covers the screen
+  // meanwhile, so nothing unstyled is ever visible. A `<Text>` that commits before its family
+  // registers is self-healing by construction: `fontsReady` flipping re-renders the tree and the
+  // patched Text picks up the same family names (see src/ui/fonts.ts).
   return (
     <SafeAreaProvider>
       {/* AnalyticsProvider is a no-op passthrough until the founder provisions PostHog (see
