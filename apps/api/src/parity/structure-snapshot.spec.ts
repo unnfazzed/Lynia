@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -226,7 +227,9 @@ describe("parity structural snapshot · region/fragment adoption model (Foundati
     const comp = results.find((r) => r.screen === "RC.menu" && r.composition);
     expect(comp, "no composition result for RC.menu").toBeTruthy();
     expect(comp!.ok, `RC.menu composition drifted: ${comp!.message}`).toBe(true);
-    expect(comp!.expected).toBe("SCREEN( BOX( REGION:cover, REGION:rows ), REGION:footer )");
+    // Scaffold boxes are TRANSPARENT to the composition reduce (2026-08-12): the check owns
+    // region ORDER + the Screen banner/body/footer split, never incidental wrapper nesting.
+    expect(comp!.expected).toBe("SCREEN( REGION:cover, REGION:rows, REGION:footer )");
   });
 
   it("every region-adopted screen has a composition result and all region views are gated", () => {
@@ -234,6 +237,10 @@ describe("parity structural snapshot · region/fragment adoption model (Foundati
       const comp = results.find((r) => r.screen === e.key && r.composition);
       expect(comp, `no composition result for ${e.key}`).toBeTruthy();
       for (const rg of e.regions) {
+        // A `compositionOnly` region (an app TWIN of a DS composite member, mounted directly) is
+        // asserted by the composition check alone — it has no generated fragment view unit.
+        const rawRegions = (adopted.find((a) => a.key === e.key)?.regions ?? []) as { region: string; compositionOnly?: boolean }[];
+        if (rawRegions.find((x) => x.region === rg.region)?.compositionOnly) continue;
         const r = results.find((x) => x.key === `${e.key}#${rg.region}`);
         expect(r, `region ${e.key}#${rg.region} not gated`).toBeTruthy();
       }
@@ -271,7 +278,7 @@ describe("parity structural snapshot · composition check catches missing / reor
   const mockTree = () => normalize.mockCompositionTree(ts, mockSrc, "demo", regions);
 
   it("reduces the mock to its region anchors (scaffold + REGION leaves, glue pruned)", () => {
-    expect(normalize.sexpr(mockTree())).toBe("SCREEN( BOX( REGION:cover, REGION:rows ), REGION:bar )");
+    expect(normalize.sexpr(mockTree())).toBe("SCREEN( REGION:cover, REGION:rows, REGION:bar )");
   });
 
   it("a container mounting the fragments in the mock's order/nesting is congruent", () => {
@@ -299,7 +306,7 @@ describe("parity structural snapshot · composition check catches missing / reor
     const d = normalize.diff(mockTree(), c);
     expect(d).not.toBeNull();
     // The body BOX now has one child (cover) where the mock has two (cover, rows) → a child-count diff.
-    expect(d).toContain("BOX");
+    expect(d).toContain("SCREEN");
   });
 
   it("FAILS when the container REORDERS regions (rows mounted before cover)", () => {
@@ -317,5 +324,42 @@ describe("parity structural snapshot · composition check catches missing / reor
     }`;
     const d = normalize.diff(mockTree(), normalize.containerCompositionTree(ts, container, regions));
     expect(d).not.toBeNull();
+  });
+});
+
+describe("parity structural snapshot · deferral teeth (owner instruction 2026-08-12)", () => {
+  // Deferrals stopped being a free prose escape: this is the mechanism by which a screen's structural
+  // check could be silently skipped while every guardrail stayed green (the RC.home drift shipped
+  // through exactly this hole). Two teeth:
+  //   1. RATCHET — the total deferral count must EQUAL the committed baseline
+  //      (tools/parity/codegen/deferral-baseline.json). Adopting a state lowers it (update the file —
+  //      visible, welcome); ADDING a deferral forces an explicit, reviewable baseline bump.
+  //   2. PROVENANCE — every deferral must be traceable: its reason carries an explicit reference
+  //      (deviations ledger / tracker / classification doc / issue or task number), or its screen is
+  //      registered in docs/parity/ADOPTION-CLASSIFICATION.md, the per-screen classification of record.
+  //      A drive-by one-liner with no anchor fails.
+  const REF =
+    /(docs\/DESIGN-DEVIATIONS\.md|docs\/parity\/ADOPTION-CLASSIFICATION\.md|docs\/PIXEL-PARITY-TRACKER\.md|docs\/KNOWN_BUGS\.md|#\d+|task #\d+|issue)/i;
+
+  it("deferral count matches the committed baseline exactly (ratchet toward zero)", () => {
+    const baseline = JSON.parse(readFileSync(resolve(CODEGEN_DIR, "deferral-baseline.json"), "utf8"));
+    expect(deferred.length).toBe(baseline.count);
+  });
+
+  it("every deferral is traceable — an explicit reference or a registered screen", () => {
+    const classification = readFileSync(resolve(CODEGEN_DIR, "../../../docs/parity/ADOPTION-CLASSIFICATION.md"), "utf8");
+    const tracker = readFileSync(resolve(CODEGEN_DIR, "../../../docs/PIXEL-PARITY-TRACKER.md"), "utf8");
+    const registered = (screenKey: string): boolean => {
+      // `RC.pay_now` is registered as "RC.pay_now" (classification) or "`RC pay_now`" (tracker rows).
+      const trackerForm = "`" + screenKey.replace(".", " ") + "`";
+      return classification.includes(screenKey) || tracker.includes(trackerForm);
+    };
+    const offenders = deferred.filter((d) => {
+      const reason = d.reason || "";
+      if (reason.trim().length < 50) return true; // a real reason, not a shrug
+      if (REF.test(reason)) return false;
+      return !registered(d.screen) && !(d.key && registered(d.key));
+    });
+    expect(offenders.map((o) => `${o.screen} · ${o.state}`).join("\n")).toBe("");
   });
 });

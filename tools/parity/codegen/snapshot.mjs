@@ -20,6 +20,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { treeOfNamedComponent, treeOfViewFile, treeOfMockFragment, mockCompositionTree, containerCompositionTree, sexpr, diff } from "./normalize.mjs";
 import { expandAdopted, regionScreens } from "./adopted.mjs";
+import { makeResolver } from "./composites.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
@@ -74,13 +75,17 @@ export function checkComposition(ts, entry) {
   let expectedTree, actualTree;
   try {
     const mockSrc = readFileSync(resolve(ROOT, entry.mockFile), "utf8");
-    expectedTree = mockCompositionTree(ts, mockSrc, entry.mockComponent, entry.regions);
+    // Mock-side resolver: local helpers + DS-manifest composites, so regions can anchor inside an
+    // `<AppHome/>`-style composite (the wall that kept RC.home's class deferred).
+    expectedTree = mockCompositionTree(ts, mockSrc, entry.mockComponent, entry.regions, makeResolver(ts, { designManifest: true }));
   } catch (e) {
     return { key, screen: entry.key, state: null, region: "∴composition", ok: false, message: `could not build mock composition for ${entry.key}: ${e.message}`, expected: null, actual: null, diff: String(e.message), composition: true };
   }
   try {
     const containerSrc = readFileSync(resolve(ROOT, entry.container), "utf8");
-    actualTree = containerCompositionTree(ts, containerSrc, entry.regions);
+    // Container-side resolver: LOCAL helpers only (an app screen's own sub-components, e.g. home.tsx's
+    // RestaurantsRail) — imported RN components stay opaque and match regions by componentName.
+    actualTree = containerCompositionTree(ts, containerSrc, entry.regions, makeResolver(ts, { designManifest: false }));
   } catch (e) {
     return { key, screen: entry.key, state: null, region: "∴composition", ok: false, message: `could not build container composition for ${entry.container}: ${e.message}`, expected: sexpr(expectedTree), actual: null, diff: String(e.message), composition: true };
   }
