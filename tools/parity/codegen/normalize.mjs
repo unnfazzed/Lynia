@@ -385,6 +385,15 @@ function rootFrom(ts, render) {
   return nodes.length === 1 ? nodes[0] : { kind: "FRAGMENT", axes: [], children: nodes };
 }
 
+/** Exported lookups for composites.mjs (the DS-composite resolver) — same matching rules the
+ *  guardrail itself uses, so a resolved composite is found exactly like a checked component. */
+export function findNamedComponent(ts, sf, name) {
+  return findNamed(ts, sf, name);
+}
+export function renderOfComponent(ts, fn) {
+  return renderOf(ts, fn);
+}
+
 /** Normalized tree of a NAMED component inside a (mock) source file. */
 export function treeOfNamedComponent(ts, fileSrc, name) {
   const sf = parse(ts, fileSrc);
@@ -531,9 +540,45 @@ function reduceComp(ts, node, opts) {
     // reference folds it too. A `<Screen>` still folds its `footer` here identically to before (menu /
     // cart / checkout), and an element with no such attribute is untouched.
     for (const prop of opts.slotProps || []) kids = [...kids, ...reduceSlot(ts, opening, prop, opts)];
-    if (sk) {
+    if (sk === "SCREEN") {
+      // A Screen's structural slots are part of its layout stack (status bar → BANNER → body → FOOTER):
+      // fold them ALWAYS, banner leading and footer trailing — the app realizes a mock's in-body
+      // header (e.g. AppHome's BrandHeader) as `<AppScreen banner={…}>`, and without this fold the
+      // region it carries would be invisible on the container side. Slots already folded via
+      // opts.slotProps above are not folded twice.
+      const slotProps = opts.slotProps || [];
+      const banner = slotProps.includes("banner") ? [] : reduceSlot(ts, opening, "banner", opts);
+      const footer = slotProps.includes("footer") ? [] : reduceSlot(ts, opening, "footer", opts);
+      kids = [...banner, ...kids, ...footer];
       if (!kids.some(hasAnyRegion)) return [];
-      return sk !== "SCREEN" && kids.length === 1 ? kids : [{ kind: sk, axes: [], children: kids }];
+      return [{ kind: "SCREEN", axes: [], children: kids }];
+    }
+    if (sk) {
+      // Non-SCREEN scaffolds are TRANSPARENT to the composition check: the check verifies region
+      // ORDER and the Screen banner/body/footer split, never incidental box nesting — a mock that
+      // wraps its regions in one padded div and an app that reaches the same visual stack through a
+      // ScrollView + wrapper Views must reduce identically. (Region-bearing kids only, as before.)
+      return kids.filter(hasAnyRegion);
+    }
+    // Non-scaffold, non-region element: if it is a RESOLVABLE COMPOSITE (a local helper like the
+    // mock's HomeBody, or a DS component like AppHome registered in the design manifest), step INTO
+    // its render and keep reducing — this is what lets a region locator/composition anchor sub-trees
+    // that root inside a composite, the exact wall that kept RC.home's class deferred. Recursion is
+    // guarded by a name stack (a self-recursive composite reduces once, then prunes).
+    if (opts.resolve && !(opts._stack || (opts._stack = new Set())).has(name)) {
+      const render = opts.resolve(name, node.getSourceFile());
+      if (render) {
+        const root = jsxRootNode(ts, render);
+        if (root) {
+          opts._stack.add(name);
+          try {
+            const out = reduceCompChild(ts, root, opts);
+            if (out.length) return out;
+          } finally {
+            opts._stack.delete(name);
+          }
+        }
+      }
     }
     return kids.filter(hasAnyRegion); // non-scaffold: drop the wrapper, bubble regions (incl. a slot's)
   }
@@ -604,14 +649,17 @@ function isRenderHelperCall(ts, e) {
   return !!first && (ts.isJsxElement(first) || ts.isJsxSelfClosingElement(first) || ts.isJsxFragment(first));
 }
 
-/** Reduced region-anchor tree of the mock screen (EXPECTED composition). */
-export function mockCompositionTree(ts, mockSrc, mockComponent, regions) {
+/** Reduced region-anchor tree of the mock screen (EXPECTED composition). `resolve` (optional) is a
+ *  composites.mjs resolver — it lets the reduce walk step INTO local helpers and DS composites, so
+ *  regions may anchor on sub-trees the mock reaches through an `<AppHome/>`-style opaque call. */
+export function mockCompositionTree(ts, mockSrc, mockComponent, regions, resolve = null) {
   const sf = parse(ts, mockSrc);
   const fn = findNamed(ts, sf, mockComponent);
   if (!fn) throw new Error(`mock component ${mockComponent} not found`);
   const render = renderOf(ts, fn);
   const root = jsxRootNode(ts, render);
   const opts = optsFromRegions(regions, "mock");
+  opts.resolve = resolve;
   // exprRegion needs the raw TS expr; rebuild it to take the TS node directly.
   opts.exprRegion = (e) => regions.find((r) => r.locator?.map && isMapYielding(ts, e, r.locator.map))?.region ?? null;
   let out = reduceComp(ts, root, opts);
@@ -626,13 +674,16 @@ export function mockCompositionTree(ts, mockSrc, mockComponent, regions) {
   return out.length === 1 ? out[0] : { kind: "FRAGMENT", axes: [], children: out };
 }
 
-/** Reduced region-anchor tree of the container screen (ACTUAL composition). */
-export function containerCompositionTree(ts, containerSrc, regions) {
+/** Reduced region-anchor tree of the container screen (ACTUAL composition). `resolve` (optional)
+ *  lets the walk step into the container's LOCAL helper components (e.g. home.tsx's RestaurantsRail)
+ *  so regions they mount are visible to the composition check. */
+export function containerCompositionTree(ts, containerSrc, regions, resolve = null) {
   const sf = parse(ts, containerSrc);
   const fn = findContainerRenderer(ts, sf);
   if (!fn) throw new Error("container has no JSX render");
   const root = jsxRootNode(ts, renderOf(ts, fn));
   const opts = optsFromRegions(regions, "container");
+  opts.resolve = resolve;
   const out = reduceComp(ts, root, opts);
   return out.length === 1 ? out[0] : { kind: "FRAGMENT", axes: [], children: out };
 }

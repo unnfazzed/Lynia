@@ -758,19 +758,34 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx). DEFER-only: a kit-COMPOSITE member-tag
-    // screen (Foundation-F #42) atop a live-vs-static multi-state divergence. See the deferred reason.
+    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx), REGION-adopted through the composite
+    // resolver (composites.mjs): the mock chain `RC.home → HomeBody → <AppHome/>` is walked INTO the
+    // DS component (packages/design/components/home/AppHome.jsx), so regions anchor on the composite's
+    // internal tree — the former "KIT-COMPOSITE member-tag wall" deferral is retired (owner instruction
+    // 2026-08-12: guardrails verify structure first; the wall was the hole that let home drift ship).
+    // The app mounts same-named TWINS of the composite's members (BrandHeader / ServiceTiles /
+    // LiveOrderCard / RestaurantCard from src/ui), so the COMPOSITION check gates assembly: banner
+    // header → tiles → one live card per running job → restaurants rail, in mock order. The members'
+    // INTERNAL congruence (DS component ≡ app twin) is the referenced deferral below, adopted next.
     key: "RC.home",
     container: "apps/mobile/app/(tabs)/home.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
+    // The registry member itself (`RC.home = () => <Screen…><HomeBody live ride/></Screen>`): the walk
+    // roots at the Screen and the resolver steps through HomeBody → AppHome into the DS tree.
+    mockComponent: "home",
     uiImport: "../../src/ui",
-    states: [],
+    regions: [
+      { region: "header", locator: { el: "BrandHeader" }, componentName: "BrandHeader", compositionOnly: true },
+      { region: "tiles", locator: { el: "ServiceTiles" }, componentName: "ServiceTiles", compositionOnly: true },
+      { region: "livecards", locator: { map: "LiveOrderCard" }, componentName: "LiveOrderCard", compositionOnly: true },
+      { region: "venues", locator: { map: "RestaurantCard" }, componentName: "RestaurantCard", compositionOnly: true },
+    ],
     deferred: [
       {
-        state: "data",
+        state: "twin-internals",
         key: "RC.home",
         reason:
-          "KIT-COMPOSITE member-tag wall (Foundation-F #42) + live-vs-static, not a primitive/backend gap. The mock `RC.home` is `<Screen><HomeBody/></Screen>` where HomeBody is a single opaque DS composite `<AppHome address live restaurants .../>` (destructured from `P.DSR.AppHome`). The transpiler cannot inline AppHome — its whole tree (BrandHeader → ServiceTiles → LiveOrderCard(s) → 'restaurants near you' RestaurantCards) lives INSIDE the DS component, not as JSX in the mock file — so a generated whole-screen view emits an unresolved `<AppHome/>`, and region locators can't anchor sub-trees that root inside an opaque composite (same class as the send-composer's FauxMap/MapSheet regions). The app ALSO supersets: home is a live container that switches, in ONE tree, a first-load skeleton, an active-order LiveOrderCard, an active-order-check-FAILED banner and a reorder rail before the restaurants rail (a horizontal 'See all →' scroll, not the mock's vertical list) — none of which the static AppHome composite draws. Adoptable once AppHome's members are authored as locatable DS primitive regions (Foundation-F remaps + region roots), OR the composite earns per-state boundaries — a Foundation build, not one iteration.",
+          "Composition is GATED (four regions, mock order/nesting, via the composite resolver). The four members' INTERNAL trees (DS AppHome members ≡ app twins BrandHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds (e.g. the app LiveOrderCard inlines Card styling to avoid a barrel cycle) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
       },
     ],
   },
@@ -2805,6 +2820,10 @@ export function expandAdopted() {
       // each a generated `.view.tsx` that must stay ≡ its mock sub-tree; the container's assembly of
       // them is verified separately by the composition check (see `regionScreens()` + snapshot.mjs).
       for (const rg of e.regions) {
+        // A `compositionOnly` region is asserted by the COMPOSITION check alone (its component is an
+        // app-side TWIN of a DS composite mounted directly — no generated fragment view to diff yet;
+        // the internal twin congruence is tracked as a referenced deferral until adopted).
+        if (rg.compositionOnly) continue;
         units.push({
           screen: e.key,
           state: null,

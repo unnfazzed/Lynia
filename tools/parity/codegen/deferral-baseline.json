@@ -1,0 +1,4 @@
+{
+  "//": "Structural-snapshot deferral RATCHET (owner instruction 2026-08-12: deferrals stopped being free). The spec asserts deferredStates().length EQUALS this count — adopting a state means lowering it (visible, welcome); ADDING a deferral means raising it, which this file makes an explicit, reviewable act instead of a silent prose escape. Target: 0.",
+  "count": 76
+}
