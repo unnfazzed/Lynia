@@ -2274,6 +2274,64 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.offer_food — the rider's incoming FOOD-DISPATCH OFFER (app/rider/food-offer.tsx), the
+    // accept-offer decision screen. DEFERRED this pass on a LIVE-VS-STATIC VARIANT wall that is
+    // money-safety-critical on the accept path — the exact class already sanctioned for RC.checkout#payment,
+    // elevated here because the dropped content differentiates the rider's own-cash RISK at the moment they
+    // accept. This is HIGH-RISK accept/dispatch code (acceptFoodDispatch / declineFoodDispatch); per CLAUDE.md
+    // "honesty over volume" and the sensitive-path rule, a clean deferral with a precise reason is correct —
+    // no accept/decline/offer-poll logic is touched, so the screen stays byte-identical.
+    //
+    // THE WALL (why it can't be restructured to the RJM mock without a regression):
+    //   The RJM `offer_food` mock (rider-one-app.jsx J4) draws ONE static variant — the cash-collect /
+    //   "money at the door" case: `S( div( AppBar 'Food job'·sub, Pad( Card( div(TypeTag food · Money),
+    //   'Your fare is fixed…' copy, div('MONEY AT THE DOOR' · 'Collect $15.50 for the kitchen' · 'Nothing
+    //   from your pocket…') ) ) ), { footer: div( Button 'Accept this job', ghost 'Not this one' ) } )`.
+    //   The LIVE screen is a THREE-way money-variant decision driven by REAL backend fields
+    //   (`merchantPaymentMethod` / `merchantCashRule` → `foodOfferVariant`, food-rider-job.ts:29):
+    //     • cash_collect — the mock's case (collect at the door, keep the fee),
+    //     • cash_upfront — the rider FRONTS THEIR OWN CASH: a danger-wash card ("THIS KITCHEN ASKS YOU TO
+    //       PAY FIRST" · "Only accept if you're carrying $X — arriving short strands you at the counter")
+    //       AND a variant-aware accept label "Accept · front $15.50" so the tap is never a blind accept on
+    //       the rider's own money (food-offer.tsx:148-159, 200-211),
+    //     • wallet — customer already paid: an accent card ("No money from your pocket").
+    //   A single static fragment generated from the ONE cash_collect mock cannot guard the cash_upfront and
+    //   wallet variants: restructuring to it would DROP the cash_upfront danger warning and the money-
+    //   commitment accept label — load-bearing money-safety copy on a rider's own-cash decision. CLAUDE.md
+    //   "not drawn ⇒ not rendered" governs COSMETIC extras (confetti, invented headings), NOT a live money-
+    //   risk differentiation the backend actually drives; dropping it would ship a money-safety REGRESSION on
+    //   the accept path (forbidden), and there is no drawn +/− control in the single-variant mock to wire the
+    //   other two variants INTO (the live-vs-static "wire behaviour into the drawn elements" rule has no
+    //   target for them). The mock also deliberately draws NO offer-window countdown ("No countdown: if it's
+    //   gone, it's gone", J4 comment) and no Leg card / LiveMap, while the live screen shows the 60s window
+    //   (RESTAURANTS_DISPATCH.offerWindowMs) and the pickup→drop route + map before an accept — the countdown/
+    //   map are display-only and NOT the blocker, but they compound the single-variant mismatch. The app is
+    //   currently aligned (screenshot lane, docs/parity/PHASE5-riderjobs.md) to the SIBLING current mock
+    //   `RR.offer_cash`, which draws exactly this multi-variant offer chrome; RJM.offer_food is the no-
+    //   countdown flag branch of the same screen.
+    //   PRESERVED (untouched, byte-identical): the `getFoodDispatchOffer` 3s poll (`offerQ`), the
+    //   `acceptFoodDispatch(offer.orderId)` / `declineFoodDispatch(offer.orderId)` mutations (`acceptM` /
+    //   `declineM`), `foodOfferVariant` and all its copy, the offline/flag-off/loading/expired EmptyState
+    //   branches, `pendingOrQueued` gating and `ErrorText` — this entry adopts NOTHING and touches no app
+    //   code (its regression guard is the unchanged food-offer.tsx itself). Adoptable once the offer card
+    //   earns a variant-neutral drawn structure (or per-variant region boundaries) so the cash_upfront own-
+    //   cash warning + money-commitment accept label survive — i.e. the mock draws the variant switch the
+    //   live money paths require, rather than a single cash_collect still.
+    key: "RJM.offer_food",
+    container: "apps/mobile/app/rider/food-offer.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "offer",
+        key: "RJM.offer_food",
+        reason:
+          "LIVE-VS-STATIC VARIANT wall, money-safety-critical on the accept path (same class as RC.checkout#payment). The RJM `offer_food` mock draws ONE static variant — the cash-collect 'MONEY AT THE DOOR' case — but the live accept-offer screen (app/rider/food-offer.tsx) is a THREE-way money-variant decision driven by real backend fields (merchantPaymentMethod / merchantCashRule → foodOfferVariant): cash_collect (the mock's case), cash_upfront (the rider FRONTS THEIR OWN CASH — a danger-wash 'THIS KITCHEN ASKS YOU TO PAY FIRST' warning + a money-commitment accept label 'Accept · front $X' so the tap is never a blind accept on the rider's own money), and wallet (customer already paid). A single static fragment generated from the one cash_collect mock cannot guard the cash_upfront/wallet variants; restructuring to it would DROP the cash_upfront own-cash danger warning and the variant-aware accept label — a money-safety regression on the accept path (CLAUDE.md not-drawn⇒not-rendered governs cosmetic extras, not a live money-risk differentiation the backend drives). There is no +/- control in the single-variant mock to wire the other two variants INTO. The mock also deliberately draws no offer-window countdown and no Leg/map (display-only, not the blocker, but compounding). HIGH-RISK accept/dispatch: acceptFoodDispatch / declineFoodDispatch / the getFoodDispatchOffer poll are untouched and byte-identical (this entry adopts nothing). The app is currently aligned (screenshot lane, docs/parity/PHASE5-riderjobs.md) to the sibling current mock RR.offer_cash, which draws this multi-variant offer chrome; RJM.offer_food is the no-countdown flag branch. Adoptable once the offer card earns a variant-neutral drawn structure (or per-variant region boundaries) so the cash_upfront own-cash warning + money-commitment accept label survive.",
+      },
+    ],
+  },
 ];
 
 /**
