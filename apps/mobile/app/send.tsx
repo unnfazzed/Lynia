@@ -9,16 +9,12 @@ import { acceptDisclaimer, createOrder, getActiveCustomerOrder, type OrderSnapsh
 import { loadDisclaimerAccepted, saveDisclaimerAccepted } from "../src/auth/session";
 import { isAccountOnHold, isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import {
-  clearDraft,
   DISCLAIMER_POLICY_VERSION,
   draftFromParams,
   emptyItem,
-  type FormDraft,
   type ItemRow,
-  loadDraft,
   MAX_ITEMS,
   type RebroadcastParams,
-  saveDraft,
 } from "../src/logic/order-draft";
 import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
@@ -62,8 +58,8 @@ export default function HomeScreen(): React.ReactElement {
   const { height: screenH } = useWindowDimensions();
   const SHEET_PEEK = 0.58;
   const SHEET_EXPANDED = 0.88;
-  // C5: re-broadcast params from the order screen (rb…). Read once at mount and prefer them over any
-  // stored draft — the customer explicitly asked to re-send THIS order.
+  // C5: re-broadcast params from the order screen (rb…). Read once at mount to prefill the form when
+  // the customer explicitly asked to re-send THIS order.
   const rbParams = useLocalSearchParams<RebroadcastParams>();
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
@@ -184,13 +180,10 @@ export default function HomeScreen(): React.ReactElement {
   const [pickupLandmarkFromMap, setPickupLandmarkFromMap] = useState(false);
   const [dropLandmarkFromMap, setDropLandmarkFromMap] = useState(false);
 
-  // "Draft restored" chip — shown when a draft is rehydrated on mount, dismissed on clear/submit.
-  const [draftRestored, setDraftRestored] = useState(false);
-  // Gate persistence until the initial load has run, so we don't clobber the stored draft with empties.
-  const hydrated = useRef(false);
-  // Idempotency nonce: persisted with the draft so the derived create-order key survives an app kill
-  // (see uuidV4FromSeed). Seeded fresh; replaced by the restored draft's nonce on hydrate; rotated
-  // after a successful create so the next order can't dedupe against the last one.
+  // Idempotency nonce: derives the create-order key (see uuidV4FromSeed) so a double-tap / timeout
+  // retry of the SAME order within this session dedupes server-side. Seeded fresh per screen mount and
+  // rotated after a successful create so the next order can't dedupe against the last one. No longer
+  // persisted — the send flow keeps no on-device draft, so a killed-and-relaunched app starts afresh.
   const [idempotencyNonce, setIdempotencyNonce] = useState<string>(() => randomUuidV4());
 
   // "Add details (optional)" collapsible — secondary fields (landmarks, declared value) live here
@@ -219,17 +212,14 @@ export default function HomeScreen(): React.ReactElement {
   // away to see the map is a handle drag, not a bespoke in-form toggle. The footer CTA stays pinned in
   // both snaps.
 
-  // Rehydrate the draft once on mount.
+  // Prefill the form once on mount from a re-broadcast / "send again" (rb… params) — the only prefill
+  // path left. There is no stored draft to fall back on: the send flow keeps nothing on-device, so a
+  // plain home entry (or a killed-and-relaunched app) opens a blank form.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      // A re-broadcast (rb… params) wins over the stored draft; otherwise fall back to the last draft.
-      const draft = draftFromParams(rbParams) ?? (await loadDraft());
-      if (cancelled) {
-        hydrated.current = true;
-        return;
-      }
-      if (draft) {
+      const draft = draftFromParams(rbParams);
+      if (!cancelled && draft) {
         setPickupPoint(draft.pickupPoint);
         setPickupLandmark(draft.pickupLandmark);
         setDropPoint(draft.dropPoint);
@@ -238,64 +228,20 @@ export default function HomeScreen(): React.ReactElement {
         setNote(draft.note ?? "");
         setDeclaredValue(draft.declaredValue);
         setProposedFare(draft.proposedFare);
-        // Restored landmarks are user-owned text (not live from the map): treat them as typed.
+        // Prefilled landmarks are user-owned text (not live from the map): treat them as typed.
         if (draft.pickupLandmark) setPickupLandmarkTouched(true);
         if (draft.dropLandmark) setDropLandmarkTouched(true);
-        // Reuse the restored draft's nonce so a retry of a killed-mid-send order derives the SAME
-        // idempotency key. A re-broadcast (rbParams) or an old draft without one keeps the fresh nonce.
-        if (draft.idempotencyNonce) setIdempotencyNonce(draft.idempotencyNonce);
-        setDraftRestored(true);
       }
-      // Prefill the sender's OWN pickup phone (not third-party PII, so not in the PII-free draft) — a
-      // repeat send / re-broadcast shouldn't make them re-type their own number every time. Only when
-      // the field is still empty, so a restored/edited value always wins.
+      // Prefill the sender's OWN pickup phone (their own number, not third-party PII) — a repeat send /
+      // re-broadcast shouldn't make them re-type it. Only when the field is still empty, so an edited
+      // value always wins.
       const myPhone = await loadMyPickupPhone();
       if (!cancelled && myPhone) setPickupPhone((p) => p || myPhone);
-      hydrated.current = true;
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // Persist the draft (PII-free) whenever a persisted field changes, after initial hydration.
-  // DEBOUNCED: landmark/note/item edits change these deps once per KEYSTROKE, and each save is a
-  // SecureStore keychain round-trip — slow, serialized, and sitting right on the typing path (typed
-  // fast, the writes queue up behind the input). One trailing write after a quiet half-second keeps
-  // the draft just as durable without making the keyboard wait on the keychain.
-  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingDraft = useRef<FormDraft | null>(null);
-  useEffect(() => {
-    if (!hydrated.current) return;
-    pendingDraft.current = {
-      pickupPoint,
-      pickupLandmark,
-      dropPoint,
-      dropLandmark,
-      items,
-      note,
-      declaredValue,
-      proposedFare,
-      idempotencyNonce,
-    };
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => {
-      draftTimer.current = null;
-      const d = pendingDraft.current;
-      pendingDraft.current = null;
-      if (d) void saveDraft(d);
-    }, 500);
-  }, [pickupPoint, pickupLandmark, dropPoint, dropLandmark, items, note, declaredValue, proposedFare, idempotencyNonce]);
-  // Flush any pending debounced draft on unmount so navigating away right after typing loses nothing.
-  useEffect(
-    () => () => {
-      if (draftTimer.current) clearTimeout(draftTimer.current);
-      const d = pendingDraft.current;
-      pendingDraft.current = null;
-      if (d) void saveDraft(d);
-    },
-    [],
-  );
 
   // Moving either pin is the fix for an out-of-area result — drop the state so it doesn't linger over
   // a now-valid route. Only fires on a real pin change (not on the submit that set it).
@@ -378,23 +324,6 @@ export default function HomeScreen(): React.ReactElement {
     },
     [confirming?.slot],
   );
-
-  const clearForm = useCallback((): void => {
-    setPickupPoint(null);
-    setPickupLandmark("");
-    setDropPoint(null);
-    setDropLandmark("");
-    setItems([emptyItem()]);
-    setNote("");
-    setDeclaredValue("");
-    setProposedFare("");
-    setPickupLandmarkTouched(false);
-    setDropLandmarkTouched(false);
-    setPickupLandmarkFromMap(false);
-    setDropLandmarkFromMap(false);
-    setDraftRestored(false);
-    void clearDraft();
-  }, []);
 
   const fare = parseNum(proposedFare);
   const coordsOk = pickupPoint != null && dropPoint != null;
@@ -499,30 +428,6 @@ export default function HomeScreen(): React.ReactElement {
       pickup: pickupPoint.placeId ? { ...parsed.data.pickup, placeId: pickupPoint.placeId } : parsed.data.pickup,
       dropoff: dropPoint.placeId ? { ...parsed.data.dropoff, placeId: dropPoint.placeId } : parsed.data.dropoff,
     };
-    // Flush the debounced draft save synchronously BEFORE firing the request (LC-C06). The persisted
-    // draft's `idempotencyNonce` is what a killed-and-relaunched app recomputes its dedup key from — if a
-    // field was edited within the trailing 500ms debounce window and the request goes out (and the app is
-    // then killed before the 15s request timeout even elapses), the on-disk draft still reflects the
-    // PRE-edit content. A manual resubmit after relaunch would then derive a DIFFERENT idempotencyKey than
-    // the one actually sent, missing the server's dedup and opening a second live auction for the same
-    // parcel. Cancelling the pending timer and writing the exact content about to be submitted closes the
-    // window instead of merely narrowing it.
-    if (draftTimer.current) {
-      clearTimeout(draftTimer.current);
-      draftTimer.current = null;
-    }
-    pendingDraft.current = null;
-    await saveDraft({
-      pickupPoint,
-      pickupLandmark,
-      dropPoint,
-      dropLandmark,
-      items,
-      note,
-      declaredValue,
-      proposedFare,
-      idempotencyNonce,
-    });
     setBusy(true);
     try {
       const order = await createOrder(payload);
@@ -554,11 +459,8 @@ export default function HomeScreen(): React.ReactElement {
         // create response, before the first 15s snapshot refetch.
         ridersNearby: order.ridersNearby ?? null,
       });
-      // Draft fulfilled — wipe it so the next visit starts clean, and rotate the nonce so a later order
-      // with identical content can't dedupe against this one.
-      setDraftRestored(false);
+      // Rotate the nonce so a later order with identical content can't dedupe against this one.
       setIdempotencyNonce(randomUuidV4());
-      void clearDraft();
       router.push(`/order/${order.id}`);
     } catch (e) {
       // The server is the authority on coverage: a service-corridor 4xx becomes the out-of-area state
@@ -703,39 +605,6 @@ export default function HomeScreen(): React.ReactElement {
             <ActiveOrderBanner order={activeOrder} />
           ) : activeOrderCheckFailed ? (
             <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
-          ) : null}
-
-          {draftRestored ? (
-            <View
-              accessibilityRole="text"
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                alignSelf: "flex-start",
-                backgroundColor: tokens.color.bg,
-                borderRadius: tokens.radius.pill,
-                paddingLeft: 10,
-                paddingRight: 4,
-                paddingVertical: 4,
-                marginBottom: tokens.space.sm,
-                ...tokens.shadow.card,
-              }}
-            >
-              <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>Draft restored</Text>
-              <Pressable
-                onPress={clearForm}
-                accessibilityRole="button"
-                accessibilityLabel="Clear the restored draft"
-                style={({ pressed }) => ({
-                  minHeight: tokens.touchTargetMin,
-                  justifyContent: "center",
-                  paddingHorizontal: tokens.space.sm,
-                  opacity: pressed ? 0.6 : 1,
-                })}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted }}>Clear</Text>
-              </Pressable>
-            </View>
           ) : null}
         </View>
 

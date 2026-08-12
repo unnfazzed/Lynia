@@ -1,20 +1,10 @@
 /**
- * LC-C06 (customer order journey audit — create step): the compose screen persists a PII-free draft
- * (debounced 500ms after the last field edit) whose `idempotencyNonce`, combined with the live field
- * values, derives the create-order idempotency key the server dedupes on. Before this fix, `submit()`
- * fired the request straight off in-memory state WITHOUT flushing that debounced write first — so an
- * edit made just before tapping "Broadcast request" could still be sitting in the pending debounce timer
- * when the request went out. If the app was then killed before the timer fired (well within the 15s
- * request timeout), the on-disk draft reflected the PRE-edit content. A manual resubmit after relaunch
- * would recompute a DIFFERENT idempotencyKey than the one actually sent (same nonce, different content
- * hash), missing the server's dedup and opening a second live auction for what the customer intended as
- * one order.
- *
- * This test drives the real `send.tsx` screen (mocking only the native-map/API/storage edges, per the
- * pattern in `food/order/__tests__/order-screen.test.tsx` and `(tabs)/__tests__/home.test.tsx`) and
- * asserts that by the time `createOrder` fires, the mocked SecureStore has ALREADY been written with a
- * draft matching the exact price in the request — i.e. the flush happens synchronously as part of
- * submit(), not on some later debounce tick that a kill right after send would never see.
+ * send.tsx compose-screen tests. The send flow keeps NO on-device draft: attempting to send a parcel
+ * and relaunching starts afresh on a blank form (there is no "Draft restored" chip and nothing is
+ * stashed under the old `lynia.orderDraft` key). These tests drive the real screen (mocking only the
+ * native-map/API/storage edges, per the pattern in `food/order/__tests__/order-screen.test.tsx` and
+ * `(tabs)/__tests__/home.test.tsx`) and cover the on-hold wall, the compose/submit path, and the
+ * no-draft guarantee.
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -542,12 +532,12 @@ describe("send.tsx — map-anchored top bar (pixel parity: single action)", () =
   });
 });
 
-describe("send.tsx — draft flush before submit (LC-C06)", () => {
-  it("persists the on-disk draft with the submitted price BEFORE the create-order request fires, even mid-debounce", async () => {
+describe("send.tsx — no on-device draft (start afresh)", () => {
+  it("never writes a compose draft to storage while filling in the form", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
     mockGetMe.mockResolvedValue({ onHold: false });
-    // createOrder never resolves in this test — standing in for "the app could be killed at any moment
-    // after this, before any response is processed," the exact adversarial window the fix targets.
+    // createOrder never resolves — the app could be killed at any moment after this; there must be no
+    // stashed draft for a relaunch to restore.
     mockCreateOrder.mockReturnValue(new Promise(() => {}));
 
     activeTree = renderSend();
@@ -559,28 +549,45 @@ describe("send.tsx — draft flush before submit (LC-C06)", () => {
     setFieldByAccessibilityLabel(tree, "Your phone (sender)", "0771234567");
     setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
     setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
-    // The price edit that lands INSIDE the 500ms debounce window — the draft on disk at this point
-    // still reflects whatever (or nothing) was there before this keystroke.
     setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
 
-    // Confirm the pre-fix assumption: the debounced write has NOT landed yet (it's still pending on
-    // its 500ms timer) at the moment we're about to tap Send — this is what makes the window real.
+    // Let any (hypothetical) debounce window elapse.
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 600));
     expect(secureStore["lynia.orderDraft"]).toBeUndefined();
 
     pressByText(tree, "Broadcast request");
     await settle();
 
-    // createOrder was actually called (canSubmit gated it correctly) …
+    // The order still fired with the typed values (draft removal doesn't touch submit) …
     expect(mockCreateOrder).toHaveBeenCalledTimes(1);
-    const submittedPrice = mockCreateOrder.mock.calls[0]?.[0]?.proposedFare;
-    expect(submittedPrice).toBe(7.5);
+    expect(mockCreateOrder.mock.calls[0]?.[0]?.proposedFare).toBe(7.5);
+    // … and nothing was ever persisted under the old draft key.
+    expect(secureStore["lynia.orderDraft"]).toBeUndefined();
+  });
 
-    // … and by now (before createOrder's never-resolving promise has settled) the on-disk draft has
-    // ALREADY been flushed with that same price — not left at whatever the 500ms debounce last wrote,
-    // and not still pending in the timer for an app-kill to lose.
-    expect(mockSetItemAsync).toHaveBeenCalled();
-    const persisted = JSON.parse(secureStore["lynia.orderDraft"] ?? "null");
-    expect(persisted).not.toBeNull();
-    expect(persisted.proposedFare).toBe("7.50");
+  it("opens a blank form on a fresh mount even if a legacy draft is still in storage", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+    // A draft left behind by an older app version must be ignored, not restored.
+    secureStore["lynia.orderDraft"] = JSON.stringify({
+      pickupPoint: PICKUP,
+      pickupLandmark: "Old Pickup",
+      dropPoint: DROPOFF,
+      dropLandmark: "Old Drop",
+      items: [{ description: "Old parcel", quantity: 1 }],
+      note: "",
+      declaredValue: "",
+      proposedFare: "9.99",
+    });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    // None of the stale draft's content is on screen, and there's no "Draft restored" chip.
+    expect(tree.root.findAll((n) => n.props.children === "Draft restored").length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.value === "Old Pickup").length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.value === "9.99").length).toBe(0);
   });
 });

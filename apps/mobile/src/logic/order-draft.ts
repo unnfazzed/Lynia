@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import type { PickedPoint } from "../ui/MapPicker";
 
 // One compose row of "what are you sending?" — mirrors the contract's OrderItem.
@@ -11,9 +10,11 @@ export const emptyItem = (): ItemRow => ({ description: "", quantity: 1 });
 export const MAX_ITEMS = 10;
 export const MAX_QTY = 99;
 
-// The form draft persisted between visits. PII (the two contact phone numbers) is DELIBERATELY
-// excluded — a courier app must not stash a third party's phone in on-device storage. Everything
-// here is the sender's own routing/pricing intent, which is safe to restore.
+// The compose-form's restorable field shape. NOT persisted between visits anymore — the send flow no
+// longer stashes a draft, so a killed-and-relaunched app opens a blank form (start afresh). This shape
+// survives only as the in-memory prefill the re-broadcast / "send again" path builds from an existing
+// order (see draftFromParams below). PII (the two contact phone numbers) is DELIBERATELY excluded — a
+// courier app must not carry a third party's phone through routing state.
 export interface FormDraft {
   pickupPoint: PickedPoint | null;
   pickupLandmark: string;
@@ -23,59 +24,16 @@ export interface FormDraft {
   note: string;
   declaredValue: string;
   proposedFare: string;
-  // Persisted so the create-order idempotency key survives an app kill: a random nonce (rotated only
-  // after a successful create) that, combined with the order's content, derives a stable dedup key —
-  // a kill-and-relaunch retry of the same draft reuses it, so the server dedupes instead of opening a
-  // second live auction. Not PII (a random token, no phone/identity). Optional for older drafts.
-  idempotencyNonce?: string;
 }
 
 // The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this
 // string when the disclaimer copy/terms change and the accept-to-continue gate re-shows.
 export const DISCLAIMER_POLICY_VERSION = "2026-07-01";
 
-// Reuse the same on-device primitive the auth session uses (expo-secure-store); a single key.
-export const DRAFT_KEY = "lynia.orderDraft";
-// All three are best-effort: a SecureStore reject (native read/write failure) must never reject —
-// otherwise a failed read would leave `hydrated` unset and silently disable draft saving for the
-// whole session. A draft is a convenience, never load-bearing.
-export async function loadDraft(): Promise<FormDraft | null> {
-  try {
-    const raw = await SecureStore.getItemAsync(DRAFT_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw) as FormDraft & { itemDescription?: string };
-    // Pre-line-items drafts stored a single `itemDescription` string — hydrate it as one row.
-    // Rows are re-clamped to the contract caps in case a stale/foreign draft slips through.
-    const rows = Array.isArray(d.items) ? d.items : [{ description: d.itemDescription ?? "", quantity: 1 }];
-    d.items = rows.slice(0, MAX_ITEMS).map((r) => ({
-      description: (typeof r?.description === "string" ? r.description : "").slice(0, 140),
-      quantity: Math.min(MAX_QTY, Math.max(1, Math.round(Number(r?.quantity) || 1))),
-    }));
-    if (d.items.length === 0) d.items = [emptyItem()];
-    return d;
-  } catch {
-    return null;
-  }
-}
-export async function saveDraft(draft: FormDraft): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    /* best-effort */
-  }
-}
-export async function clearDraft(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(DRAFT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
-
 // C5: a re-broadcast from the order screen carries THAT order's route/landmarks/items/price in as
 // route params (`rb…`), so we can prefill the compose form instead of dumping the user on a blank one.
-// Reuses the FormDraft shape the draft-restore path already consumes. Returns null when the params
-// aren't a valid re-broadcast (normal home entry) so we fall back to the stored draft.
+// Builds the in-memory FormDraft the compose screen hydrates from. Returns null when the params aren't
+// a valid re-broadcast (normal home entry) so the screen opens a blank form.
 export type RebroadcastParams = Partial<Record<
   "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare" | "rbNote",
   string | string[]
