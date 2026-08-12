@@ -120,6 +120,55 @@ export function setActiveRole(role: Role): void {
   activeRole = role;
 }
 
+// ---------------------------------------------------------------------------
+// Cold start. Until these two events existed, launch was the ONE thing the fleet never measured
+// (`ClientMetricEvent` was three glass latencies and `apifetch`), so an 8-second cold start reported
+// by the owner could not be attributed to a phase, and no fix to it could be proven or defended
+// against regression. See docs/PERFORMANCE.md → "Cold start".
+// ---------------------------------------------------------------------------
+
+/** Fallback clock origin: when THIS module was evaluated. Later than the true bundle start (rum.ts
+ *  sits a few levels into the startup graph), so it under-reports — only used when the preferred
+ *  `__BUNDLE_START_TIME__` origin below is unusable. */
+const MODULE_LOADED_AT = Date.now();
+
+/** Metro stamps `__BUNDLE_START_TIME__` at the very top of the bundle, before a single module factory
+ *  runs — the only origin that includes the module-evaluation cost this instrumentation exists to
+ *  watch. It uses `nativePerformanceNow()` when available and `Date.now()` otherwise, and the two are
+ *  different clocks, so mixing them silently yields garbage. Rather than guess which one produced it,
+ *  compute the `performance.now()` reading and accept it only if it lands in a plausible range;
+ *  a `Date.now()`-based origin makes that difference wildly negative and falls through to the
+ *  module-load origin instead. Exported for unit tests. */
+export function bootElapsedMs(
+  now = globalThis.performance?.now?.(),
+  bundleStart = (globalThis as { __BUNDLE_START_TIME__?: number }).__BUNDLE_START_TIME__,
+  wallNow = Date.now(),
+  wallOrigin = MODULE_LOADED_AT,
+): number {
+  if (typeof now === "number" && typeof bundleStart === "number") {
+    const elapsed = Math.round(now - bundleStart);
+    if (elapsed >= 0 && elapsed <= GLASS_CAP_MS) return elapsed;
+  }
+  // Clamped to the contract's `ms` bounds (0..60s) — a device clock stepped mid-boot (NTP sync on a
+  // fresh handset) must not produce a sample the server rejects for the whole batch.
+  return Math.min(Math.max(Math.round(wallNow - wallOrigin), 0), GLASS_CAP_MS);
+}
+
+/** Boot events are once-per-process by definition; a remount (Fast Refresh, an ErrorBoundary retry)
+ *  must not enqueue a second, meaningless sample against the same origin. */
+const bootEventsSent = new Set<ClientMetricEvent>();
+
+/**
+ * Record a cold-start milestone, measured from bundle start. No-op before `start()` (dormant-safe,
+ * like every other enqueue here) and no-op on a repeat of the same milestone. Filed under the app's
+ * current role so a rider's launch isn't misattributed to "customer".
+ */
+export function enqueueBoot(event: "boot_paint" | "boot_home"): void {
+  if (bootEventsSent.has(event)) return;
+  bootEventsSent.add(event);
+  enqueue(event, bootElapsedMs(), activeRole);
+}
+
 /** Enqueue a skew-free `apifetch` round-trip under whatever role the app is currently acting as.
  *  Sampled 1-in-`APIFETCH_SAMPLE_RATE` (a no-op before `start()`, matching `enqueue`'s dormant-safe
  *  contract — the counter only advances once armed, so cadence is stable app-launch to app-launch). */
@@ -204,4 +253,7 @@ export function stop(): void {
   buffer = [];
   dropped = 0;
   apifetchCounter = 0;
+  // The boot milestones are once-per-PROCESS, but a test that stops and restarts the buffer is
+  // simulating a fresh process — leaving them latched would silently no-op the next case.
+  bootEventsSent.clear();
 }

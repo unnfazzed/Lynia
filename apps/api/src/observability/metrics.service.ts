@@ -32,6 +32,11 @@ type HistogramName =
   | "client_offer_glass_latency_ms"
   | "client_board_glass_latency_ms"
   | "client_apifetch_latency_ms"
+  // Cold start, split at the moment the first frame is visible: `paint` covers JS bundle evaluation
+  // plus the font gate, `home` adds the device-local boot reads. Same wide client buckets — these are
+  // whole-launch durations (seconds, not milliseconds) and the gap between the two IS the signal.
+  | "client_boot_paint_ms"
+  | "client_boot_home_ms"
   // Top-up rail confirmation lag (initiatedAt → confirmed). MUCH wider buckets than the request
   // metrics — a mobile-money confirm is minutes, and a late confirm on an expired intent is hours.
   | "topup_confirm_lag_ms";
@@ -134,6 +139,8 @@ const CLIENT_EVENT_HISTOGRAM: Record<ClientMetricEvent, HistogramName> = {
   offer_glass: "client_offer_glass_latency_ms",
   board_glass: "client_board_glass_latency_ms",
   apifetch: "client_apifetch_latency_ms",
+  boot_paint: "client_boot_paint_ms",
+  boot_home: "client_boot_home_ms",
 };
 
 /**

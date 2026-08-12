@@ -3,7 +3,7 @@
 // source the subsetting script reads from). Regenerate via `node scripts/subset-fonts.mjs`; the
 // safe Unicode ranges are pinned in scripts/font-safe-ranges.mjs and enforced by
 // scripts/check-font-charset.mjs on every `pnpm lint`.
-import { useFonts } from "expo-font";
+import { loadAsync, useFonts } from "expo-font";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput } from "react-native";
 
@@ -31,6 +31,25 @@ export const appFontMap = {
  * well under a second even on a low-end handset, so anything past this is a stall, not slowness.
  */
 export const FONT_LOAD_TIMEOUT_MS = 4000;
+
+/**
+ * Start the font load without waiting for a render to ask for it.
+ *
+ * `useFonts` kicks `loadAsync` from an EFFECT, so the TTFs only started registering after the first
+ * React commit — i.e. after the entire eager startup graph had finished evaluating, with the JS thread
+ * having been busy the whole time. Calling this at module scope from `app/_layout.tsx` instead overlaps
+ * the (native, off-thread) registration with that evaluation, which is dead time otherwise.
+ *
+ * Safe to call twice: expo-font's `loadAsync` short-circuits an already-loaded family and otherwise
+ * hands back the SAME in-flight promise from its internal `loadPromises` map — so `useFonts` joins this
+ * load rather than starting a second one, and the gate below still observes the real outcome.
+ *
+ * Deliberately swallows the rejection: the contract already degrades to the system font on failure, and
+ * `useAppFonts` — not this — owns reporting that to the render gate (including the timeout below).
+ */
+export function prewarmFonts(): void {
+  void loadAsync(appFontMap).catch(() => undefined);
+}
 
 /**
  * Loads the self-hosted fonts. Returns [loaded, error] — `_layout.tsx` gates BOTH the first render
