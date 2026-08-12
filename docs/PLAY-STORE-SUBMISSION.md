@@ -248,8 +248,8 @@
 > Independently verified serving through the LB: `GET /healthz` → 200
 > `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. ② **Admin console**
 > (`deploy-admin.yml` run 31591977498) — boot smoke green (public asset 200, gated route fails closed
-> 401), IAP invoker granted, promoted 100% at 11:31:55 UTC. ③ **Mobile** (`mobile-release.yml` run
-> 31591974997, **profile `preview`** per the §8-step-3 rule — production remains unarmed): EAS build
+> 401), IAP invoker granted, promoted 100% at 11:31:55 UTC. ③ **Mobile** (`mobile-release.yml` run #18
+> = 31591984928, **profile `preview`** per the §8-step-3 rule — production remains unarmed): EAS build
 > `fe622d6b-44e7-41d5-9e35-65185d4ef637` **FINISHED** (~12 min), submission
 > `d8f43de1-a16a-4797-b162-20b9a28e2bcf` **FINISHED**, track `internal`. First dispatch since
 > 2026-08-10 to go build→submit clean on the first attempt with zero retries.
