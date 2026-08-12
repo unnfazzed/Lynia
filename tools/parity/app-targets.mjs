@@ -32,13 +32,24 @@ export const APP_TARGETS = {
   "RC.delivered_rate": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_delivered_rate" },
 
   // ─────────────────────── MOBILE — customer · send + auth + account (LJ) ───────────────────────
-  // LJ.splash is the native expo-splash-screen (no RN component) — it has no mobile target.
+  // The RN splash (app/index.tsx's boot state) is the drawn `Splash` mock; its tree lives in
+  // app/splash.view.tsx, which is what the lane mounts — the native expo-splash-screen frame before
+  // JS starts is the same picture and has no component to render.
+  "LJ.splash": { kind: "mobile", component: "app/splash.view.tsx", fixture: "splash" },
   "LJ.force_update": { kind: "mobile", component: "app/force-update.tsx", fixture: "force_update" },
   "LJ.login": { kind: "mobile", component: "app/phone.tsx", fixture: "auth_phone" },
   "LJ.otp": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp" },
+  "LJ.otp_cooldown": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp_cooldown" },
+  "LJ.otp_resent": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp_resent" },
+  "LJ.otp_locked": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp_locked" },
   "LJ.onboard": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_food" },
+  "LJ.onboard_send": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_send" },
+  "LJ.onboard_shared": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_shared" },
+  "LJ.onboard_flag_off": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_flag_off" },
   "LJ.role_select": { kind: "mobile", component: "app/role.tsx", fixture: "auth_role" },
+  "LJ.role_select_flag_off": { kind: "mobile", component: "app/role.tsx", fixture: "auth_role_flag_off" },
   "LJ.perm_loc": { kind: "mobile", component: "app/permissions.tsx", fixture: "auth_perms_loc" },
+  "LJ.perm_notif": { kind: "mobile", component: "app/permissions.tsx", fixture: "auth_perms_notif" },
   "LJ.register": { kind: "mobile", component: "app/profile/setup.tsx", fixture: "auth_register" },
   "LJ.home_empty": { kind: "mobile", component: "app/send.tsx", fixture: "send_empty" },
   "LJ.home_pins": { kind: "mobile", component: "app/send.tsx", fixture: "send_pins" },
@@ -46,8 +57,14 @@ export const APP_TARGETS = {
   "LJ.track_code": { kind: "mobile", component: "app/order/[id].tsx", fixture: "parcel_track_code" },
   "LJ.profile": { kind: "mobile", component: "app/(tabs)/account.tsx", fixture: "account_home" },
   "LJ.notifications": { kind: "mobile", component: "app/notifications/index.tsx", fixture: "notifications" },
+  "LJ.notif_empty": { kind: "mobile", component: "app/notifications/index.tsx", fixture: "notifications_empty" },
+  "LJ.privacy": { kind: "mobile", component: "app/settings/privacy.tsx", fixture: "privacy" },
+  "LJ.delete_account": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_account" },
+  "LJ.delete_final": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_final" },
   "LJ.help": { kind: "mobile", component: "app/help/index.tsx", fixture: "help" },
   "LJ.settings": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings" },
+  "LJ.settings_perms": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms" },
+  "LJ.settings_perms_ok": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms_ok" },
   "LJ.history": { kind: "mobile", component: "app/history/index.tsx", fixture: "history" },
 
   // ─────────────────────────── MOBILE — rider (RJM / RJ / RR) ───────────────────────────

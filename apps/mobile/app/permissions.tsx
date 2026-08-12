@@ -26,11 +26,19 @@ function safeNext(raw: string | string[] | undefined): "/home" | "/rider" {
   return v === "/rider" ? "/rider" : "/home";
 }
 
-export default function PermissionsScreen(): React.ReactElement {
+/**
+ * `initialStep` is the explainer the screen opens on — "location" in the app (priming always starts
+ * at step 1). It exists so step 2 can be mounted directly: each step is its own gallery screen
+ * (LJ.perm_loc / LJ.perm_notif) and the parity lane stages them through this seam
+ * (tools/parity/mobile/fixtures/auth_perms_*.mjs). Expo-router passes no props, so the default ships.
+ */
+export type PermissionsScreenProps = { initialStep?: Step };
+
+export default function PermissionsScreen({ initialStep = "location" }: PermissionsScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
   const dest = safeNext(next);
-  const [step, setStep] = useState<Step>("location");
+  const [step, setStep] = useState<Step>(initialStep);
   // null = still checking the primed flag; fold into the first render so we never flash a step we're
   // about to skip.
   const [ready, setReady] = useState(false);
@@ -111,7 +119,8 @@ export default function PermissionsScreen(): React.ReactElement {
   }
   return (
     <PermNotifView
-      icon="inbox"
+      // The mock (screens.jsx `PermNotif`) draws the phone glyph, not an inbox.
+      icon="phone"
       title="Stay in the loop"
       message={
         isRider

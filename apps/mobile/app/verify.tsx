@@ -9,7 +9,28 @@ import { loadRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
 import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
 
-export default function VerifyScreen(): React.ReactElement {
+/**
+ * The three seed props stage the OTP screen's non-idle states, each of which is its own gallery
+ * screen: LJ.otp_cooldown (a countdown running), LJ.otp_resent (the fresh-code banner + countdown)
+ * and LJ.otp_locked (the expired/locked recovery branch). In the app all three are reached by living
+ * through the flow — the defaults below ARE the app's behaviour (a full cooldown on arrival, no
+ * banner, not locked) — so this seam only lets the parity lane mount one frozen state directly
+ * (tools/parity/mobile/fixtures/auth_otp*.mjs). Expo-router passes no props.
+ */
+export type VerifyScreenProps = {
+  /** Seconds left on the resend cooldown at mount (default: the full RESEND_COOLDOWN_S). */
+  initialCooldownS?: number;
+  /** Seed the "A fresh code is on its way" confirmation banner. */
+  initialResent?: boolean;
+  /** Seed the expired/locked recovery branch (info card + "Send a fresh code"). */
+  initialLocked?: boolean;
+};
+
+export default function VerifyScreen({
+  initialCooldownS = RESEND_COOLDOWN_S,
+  initialResent = false,
+  initialLocked = false,
+}: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { signIn } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; devCode?: string }>();
@@ -24,15 +45,15 @@ export default function VerifyScreen(): React.ReactElement {
   // Anchored to an absolute deadline (not a decrementing counter): reading the code means backgrounding
   // to WhatsApp, which pauses JS timers — so a relative countdown would freeze and block "Resend" for
   // longer than the real 60s. We derive the remaining seconds from the wall clock instead.
-  const [cooldownEndsAt, setCooldownEndsAt] = useState<number>(() => Date.now() + RESEND_COOLDOWN_S * 1000);
-  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+  const [cooldownEndsAt, setCooldownEndsAt] = useState<number>(() => Date.now() + initialCooldownS * 1000);
+  const [cooldown, setCooldown] = useState(initialCooldownS);
   const [resending, setResending] = useState(false);
-  const [resent, setResent] = useState(false);
+  const [resent, setResent] = useState(initialResent);
   // Expiry / lockout recovery (A0-1 / R0-1): the entered code expired (TTL) or the record is locked
   // (too many wrong tries). We stop offering "Verify" on a code the server will never accept and
   // promote "Send a fresh code" instead — a resend mints a new code AND resets attempts server-side,
   // so recovery is a single tap and never a dead end.
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState(initialLocked);
 
   useEffect(() => {
     const tick = (): void => setCooldown(Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000)));
@@ -163,7 +184,11 @@ export default function VerifyScreen(): React.ReactElement {
         // now that the OTP is delivered over SMS (Bird) rather than WhatsApp.
         autoComplete="sms-otp"
         textContentType="oneTimeCode"
-        hint="SMS can take a minute on a busy network."
+        // Drawn in the IDLE mock only (screens.jsx `Otp`). The cooldown / resent / locked mocks
+        // (screens-safety.jsx `OtpState`) draw the field with no hint under it — the countdown row,
+        // the banner and the lockout card are the guidance in those states — so it is not rendered
+        // there. Not drawn ⇒ not rendered.
+        hint={cooldown > 0 || locked ? undefined : "SMS can take a minute on a busy network."}
         error={locked ? "That code has expired." : undefined}
       />
 

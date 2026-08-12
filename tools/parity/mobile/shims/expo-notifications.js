@@ -2,9 +2,18 @@
 // Notifications`) and call setNotificationHandler / channel setup at module top level, which the
 // generic Proxy shim can't satisfy for namespace members. A static screenshot has no notifications,
 // so every method is a no-op and the async queries resolve to empty/granted.
+// A screen may DRAW the denied state (LJ.settings_perms: "Notifications Off" + its consequence line),
+// so the answer is overridable per fixture — set `window.__PARITY_PERMISSIONS = { notifications:
+// "denied" }` at fixture top level. Default stays granted.
+function permission(kind) {
+  const p = (typeof window !== "undefined" && window.__PARITY_PERMISSIONS) || {};
+  const status = p[kind] || "granted";
+  return { status, granted: status === "granted", canAskAgain: status !== "never" };
+}
+
 export function setNotificationHandler() {}
 export async function setNotificationChannelAsync() {}
-export async function getPermissionsAsync() { return { status: "granted", granted: true }; }
+export async function getPermissionsAsync() { return permission("notifications"); }
 export async function requestPermissionsAsync() { return { status: "granted", granted: true }; }
 export async function getExpoPushTokenAsync() { return { data: "" }; }
 export async function getDevicePushTokenAsync() { return { data: "" }; }
