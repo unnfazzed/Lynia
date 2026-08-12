@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
 import type { OrderDetail } from "../../lib/adminTypes";
 import { FollowUpNoteButton } from "./FollowUpNoteButton";
@@ -286,7 +286,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                   label: "Customer",
                   value: (
                     <span>
-                      {o.customer} <span className="mono mut">{o.customerPhone ?? "+263 ·· ··· ····"}</span>
+                      {o.customer} <span className="mono mut">{o.customerPhone ? formatPhoneLocal(o.customerPhone) : "0·· ··· ····"}</span>
                     </span>
                   ),
                 },
@@ -294,7 +294,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                   label: "Rider",
                   value: o.rider ? (
                     <span>
-                      {o.rider} <span className="mono mut">{o.riderPhone}</span>
+                      {o.rider} <span className="mono mut">{o.riderPhone ? formatPhoneLocal(o.riderPhone) : o.riderPhone}</span>
                     </span>
                   ) : (
                     "— none assigned"

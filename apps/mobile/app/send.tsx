@@ -402,8 +402,11 @@ export default function HomeScreen(): React.ReactElement {
       return;
     }
     const candidate = {
-      pickup: { point: { lat: pickupPoint.lat, lng: pickupPoint.lng }, landmark: pickupLandmark.trim(), contactPhone: pickupPhone.trim() },
-      dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: dropPhone.trim() },
+      // Send the canonical E.164 form (both phones are gated on normalizePhone above, so the ?? is
+      // only a defensive fallback) — the number is stored/dialled server-side, so it must not depend
+      // on however the customer happened to punctuate it (local 0-form, spaces, +263).
+      pickup: { point: { lat: pickupPoint.lat, lng: pickupPoint.lng }, landmark: pickupLandmark.trim(), contactPhone: normalizePhone(pickupPhone) ?? pickupPhone.trim() },
+      dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: normalizePhone(dropPhone) ?? dropPhone.trim() },
       // Line-items are the payload (the contract accepts either shape; `items` alone is the new
       // clients' path — the server derives the itemDesc summary).
       items: items.map((it) => ({ description: it.description.trim(), quantity: it.quantity })),
