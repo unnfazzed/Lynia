@@ -2169,6 +2169,111 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.board_empty — the "online, nothing in range yet" empty state of the SAME board container
+    // (app/rider/(tabs)/index.tsx `RiderHome`). DISPLAY-ONLY: it carries no accept/assignment/online-
+    // toggle logic — its only action is the ghost "Refresh", wired to `openQ.refetch()` BYTE-IDENTICAL.
+    // The mock `board_empty` is
+    //   S( div( AppBar "Jobs near you", OnlinePill, Pad( Card( EmptyState icon="inbox" … · ghost "Refresh" ) ) ), {tab:"jobs"} )
+    // — the same AppBar + online pill as `board`, then the empty state wrapped in a padded Card. The
+    // AppBar + pill are already region-adopted structure the board container draws (RJM.board), so only
+    // the CARD-wrapped empty state is region-adopted here (locator {el:"Card"} → CARD(EMPTYSTATE(BUTTON))).
+    // The structural WIN over the pre-adoption app is the Card WRAPPER: the app's `boardEmptyState` drew
+    // a bare `<EmptyState>` with NO Card around it; the adopted view restores the mock's `Card(padding:16)`
+    // wrapper. icon/title stay the mock's verbatim literals ("inbox" / "Nothing in range yet"); the
+    // MESSAGE is wired as a data-seam prop so the container keeps its flag-honest copy (parcels-only when
+    // food-dispatch is flag-off, parcels+food-offer when on) — the same live-vs-static leaf-copy treatment
+    // RJM.account used for its identity line. The structural normalizer drops text, so the wired message is
+    // invisible to the diff; the tree is CARD(EMPTYSTATE(BUTTON)) on both sides.
+    //
+    // SEPARATE entry (not a second region on RJM.board): `board_empty` is its OWN mock component, and the
+    // composition check keys every region to the screen-level `mockComponent`, so it must own its screen
+    // key. Its composition reduces — independently of RJM.board's — to SCREEN(REGION:empty): the container
+    // mounts <RiderBoardEmptyView/> INLINE in the board's fallback ScrollView (the last return, the one the
+    // composition walker reduces), where `ranked.length === 0` draws the empty state. RJM.board's own
+    // composition (anchored on RiderBoardListView) is unaffected — RiderBoardEmptyView is not one of its
+    // region components, so it is pruned there, and vice-versa.
+    key: "RJM.board_empty",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "board_empty",
+    uiImport: "../../../src/ui",
+    regions: [
+      {
+        region: "empty",
+        locator: { el: "Card" },
+        componentName: "RiderBoardEmptyView",
+        viewFile: "apps/mobile/app/rider/(tabs)/board-empty.view.tsx",
+        propsParam: "{ message, onRefresh, refreshing }: RiderBoardEmptyViewProps",
+        propsType: [
+          "export type RiderBoardEmptyViewProps = {",
+          "  /** The flag-honest empty-board copy (parcels-only vs parcels + food-offer) the container",
+          "   *  computes — wired as a leaf so the mock's Card+EmptyState STRUCTURE is adopted while the",
+          "   *  live copy stays container-owned (structurally invisible; the normalizer drops text). */",
+          "  message: string;",
+          '  /** The ghost "Refresh" action — the container\'s `openQ.refetch()`, preserved byte-identical. */',
+          "  onRefresh: () => void;",
+          "  /** Reflects the open-orders re-fetch in flight (openQ.isFetching). */",
+          "  refreshing?: boolean;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            const name = path.node.name.name;
+            if (name === "EmptyState") {
+              // Drop the mock's frozen message literal; wire the container's flag-honest copy. icon/title
+              // stay the mock's verbatim literals.
+              path.node.attributes = path.node.attributes.filter(
+                (a) => !(a.type === "JSXAttribute" && a.name.name === "message"),
+              );
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("message"), t.jsxExpressionContainer(expr("message"))));
+            }
+            if (name === "Button") {
+              // Kit web `onClick={nop}` → the app Button's `onPress`; wire the container's board refetch
+              // and reflect its in-flight state, preserving the existing Refresh behavior byte-identical.
+              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onRefresh"))));
+              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("refreshing"))));
+            }
+          },
+        }),
+      },
+    ],
+  },
+  {
+    // ── RJM.offline — the rider board's OFFLINE screen (J3), still DEFERRED this pass (adopted alongside
+    // board_empty, which was safe; offline was not). The mock `offline` draws TWO cards:
+    //   S( div( AppBar "Jobs", Pad(
+    //        Card center( power-circle · "You're offline" · one-queue copy · "Go online" ),
+    //        Card( wallet tile · "Commission balance" · Money "4.60" · "Top up" ) ) ), {tab:"jobs"} )
+    // The go-online Card is safe to restructure (the app's `onlineToggleCard` → the mock's centred
+    // power-circle Card; `onlineM.mutate(true)` preserved). What blocks a CLEAN adoption is the SECOND
+    // card: the mock draws a live COMMISSION-BALANCE tile ($ + "Top up"), but the board container
+    // (app/rider/(tabs)/index.tsx) reads NO wallet/commission balance — `getMe`'s `Me.rider` carries no
+    // balance field (auth.ts:48-65) and the board mounts no `useWallet` query (only the Money tab does).
+    // Rendering the drawn card would require EITHER adding a new wallet read to this sensitive board
+    // screen (beyond a display-only pass — new data-fetching on the accept/assignment surface) OR
+    // fabricating the "$4.60"/dropping the drawn card (both forbidden: CLAUDE.md no-fabricated-figures /
+    // not-drawn⇒not-rendered cuts the other way when the mock DOES draw it). There is also a live-vs-
+    // static skew: the app's `onlineToggleCard` is an always-shown toggle (online→"Go offline",
+    // offline→"Go online"), not an offline-only branch, and it is mounted via a hoisted-const identifier
+    // rather than inline, so the offline presentation is not a cleanly-isolable region. Adoptable once
+    // the board legitimately carries the commission balance (a wallet read wired here, or surfaced on
+    // `Me.rider`) so the mock's second card can be wired to real data — or the offline mock is re-split.
+    key: "RJM.offline",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "offline",
+        key: "RJM.offline",
+        reason:
+          "the mock's offline screen draws a live COMMISSION-BALANCE card ($ tile + 'Top up') alongside the go-online card, but the board container (index.tsx) reads no wallet/commission balance — Me.rider (auth.ts) has no balance field and the board mounts no useWallet query (only the Money tab does). Rendering the drawn card would need a NEW wallet read on this sensitive accept/assignment board (beyond a display-only pass) or a fabricated figure / a dropped drawn card (both forbidden). The go-online card itself is safely restructurable, but the app's onlineToggleCard is an always-shown toggle mounted via a hoisted-const identifier (not an inline, offline-only region), a live-vs-static skew too. Adoptable once the board legitimately carries the commission balance so the second card wires to real data, or the offline mock is re-split.",
+      },
+    ],
+  },
 ];
 
 /**

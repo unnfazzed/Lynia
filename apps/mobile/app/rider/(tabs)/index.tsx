@@ -34,6 +34,7 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
 import { RiderBoardListView, type RiderBoardJob } from "./board-list.view";
+import { RiderBoardEmptyView } from "./board-empty.view";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
 import { parseNum } from "../../../src/util";
@@ -792,20 +793,12 @@ export default function RiderHome(): React.ReactElement {
   // RJM `board_empty`: the board carries PARCELS; "Jobs that get taken simply leave the list" states
   // the board's own no-countdown rule out loud, so a card vanishing never reads as a glitch. Food is
   // not on the board — it arrives as a full-screen offer — so the flag-ON copy names where each shows
-  // up instead of implying a merged queue here.
-  const boardEmptyState = (
-    <EmptyState
-      icon="inbox"
-      title="Nothing in range yet"
-      message={
-        merchantDispatchAutoEnabled
-          ? "Parcels show up here the moment they're posted near you; a food offer arrives full-screen when it's your turn. Jobs that get taken simply leave the list."
-          : "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list."
-      }
-    >
-      <Button label="Refresh" variant="ghost" onPress={() => void openQ.refetch()} loading={openQ.isFetching} />
-    </EmptyState>
-  );
+  // up instead of implying a merged queue here. This message is a data-seam LEAF fed to the adopted
+  // `RiderBoardEmptyView` (RJM.board_empty#empty) — the mock's Card+EmptyState structure is adopted,
+  // the flag-honest copy stays container-owned (structurally invisible; the normalizer drops text).
+  const boardEmptyMessage = merchantDispatchAutoEnabled
+    ? "Parcels show up here the moment they're posted near you; a food offer arrives full-screen when it's your turn. Jobs that get taken simply leave the list."
+    : "You'll see parcels here the moment they're posted near you. Jobs that get taken simply leave the list.";
 
   const selectedCard = selected ? (
     <Card accent>
@@ -1036,7 +1029,7 @@ export default function RiderHome(): React.ReactElement {
                 // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
                 <SkeletonList />
               ) : (
-                boardEmptyState
+                <RiderBoardEmptyView message={boardEmptyMessage} onRefresh={() => void openQ.refetch()} refreshing={openQ.isFetching} />
               )
             }
             ListFooterComponent={
@@ -1280,7 +1273,11 @@ export default function RiderHome(): React.ReactElement {
               // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
               <SkeletonList />
             ) : ranked.length === 0 ? (
-              boardEmptyState
+              // RJM.board_empty#empty — the adopted `RiderBoardEmptyView` (board-empty.view.tsx),
+              // mounted INLINE here in the fallback ScrollView (the last return, the one the composition
+              // guardrail reduces) so the empty region is visible to the composition check. The Refresh
+              // action forwards `openQ.refetch()` byte-identical; the copy is the flag-honest leaf above.
+              <RiderBoardEmptyView message={boardEmptyMessage} onRefresh={() => void openQ.refetch()} refreshing={openQ.isFetching} />
             ) : null}
           </View>
         ) : null}

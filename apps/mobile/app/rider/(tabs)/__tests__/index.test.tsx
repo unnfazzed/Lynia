@@ -23,6 +23,7 @@ const mockGetMe = jest.fn<Promise<Me>, []>();
 const mockGetActiveOrder = jest.fn();
 const mockGetOpenOrders = jest.fn<Promise<OpenOrder[]>, unknown[]>();
 const mockUseRiderBoard = jest.fn();
+const mockSetOnline = jest.fn(async (online: boolean, _loc?: unknown) => ({ online }));
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -55,7 +56,7 @@ jest.mock("../../../../src/api/offers", () => ({ makeOffer: jest.fn() }));
 jest.mock("../../../../src/api/riders", () => ({
   retryKyc: jest.fn(),
   sendHeartbeat: jest.fn(async () => ({ online: true })),
-  setOnline: jest.fn(async (online: boolean) => ({ online })),
+  setOnline: (online: boolean, loc?: unknown) => mockSetOnline(online, loc),
 }));
 jest.mock("../../../../src/auth/session", () => ({
   loadAcknowledgedHandbacks: async () => [],
@@ -318,4 +319,62 @@ describe("rider board (A-O4: activeJob self-heal poll must stop once offline con
     },
     15000,
   );
+});
+
+/**
+ * RJM.board_empty / RJM offline realignment (parity task #48, display-only pass). The empty-board state
+ * was restructured to the mock's `Card(EmptyState(ghost "Refresh"))` (RiderBoardEmptyView) and the
+ * offline toggle card kept its handler; this pins that NEITHER wiring regressed — the Refresh action
+ * still forwards `openQ.refetch()` (re-fetches the open-orders board) and the online toggle still calls
+ * `onlineM.mutate` (→ setOnline). A change that dropped a row or mis-wired either action would fail here.
+ */
+describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring must survive the realignment)", () => {
+  it("online + verified + empty board: tapping the empty-state Refresh re-fetches the open-orders board (openQ.refetch)", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]); // empty board → RiderBoardEmptyView renders
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    // The adopted empty view's ghost "Refresh" — the only action, wired to openQ.refetch().
+    const refresh = activeTree.root.findAll(
+      (n) => n.props.label === "Refresh" && typeof n.props.onPress === "function",
+    );
+    expect(refresh.length).toBeGreaterThan(0);
+
+    const callsBefore = mockGetOpenOrders.mock.calls.length;
+    act(() => {
+      (refresh[0]!.props as { onPress: () => void }).onPress();
+    });
+    await settle();
+
+    // Refresh re-runs the open-orders query (getOpenOrders is what openQ.refetch re-invokes).
+    expect(mockGetOpenOrders.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it("offline: the online toggle's 'Go online' still calls onlineM.mutate (setOnline(true))", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const goOnline = activeTree.root.findAll(
+      (n) => n.props.label === "Go online" && typeof n.props.onPress === "function",
+    );
+    expect(goOnline.length).toBeGreaterThan(0);
+
+    mockSetOnline.mockClear();
+    act(() => {
+      (goOnline[0]!.props as { onPress: () => void }).onPress();
+    });
+    await settle();
+
+    expect(mockSetOnline).toHaveBeenCalledTimes(1);
+    expect(mockSetOnline.mock.calls[0]![0]).toBe(true);
+  });
 });

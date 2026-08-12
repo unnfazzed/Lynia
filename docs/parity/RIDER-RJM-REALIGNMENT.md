@@ -17,8 +17,8 @@ The RJM registry (`window.RJM` in `rider-one-app.jsx`) is: `board`, `board_empty
 | `board` (job list) | `app/rider/(tabs)/index.tsx` `RiderHome` | ✅ **ADOPTED this pass** (region `list`) |
 | `account` | `app/rider/(tabs)/account.tsx` + `account.view.tsx` | ✅ adopted (prior) |
 | `notifications` | `app/notifications/index.tsx` (shared, `LJ.notifications`) | ✅ adopted (prior, shared surface) |
-| `board_empty` | `index.tsx` `boardEmptyState` | ⏳ next — display-only |
-| `offline` | `index.tsx` offline branch | ⏳ next — display-only |
+| `board_empty` | `index.tsx` `boardEmptyState` | ✅ **ADOPTED this pass** (region `empty`) |
+| `offline` | `index.tsx` offline branch | ⛔ deferred — commission-balance card needs a wallet read the board lacks |
 | `offer_food` | `app/rider/food-offer.tsx` | ⏳ later — **touches accept-offer** |
 | `offer_parcel` | `index.tsx` compose card (`selectedCard`) + `SentOfferCard` | ⏳ later — **touches agreed-price (auction)** |
 | `active_food` | `app/rider/food-job.tsx` | ⏳ later — **touches advance/confirm** |
@@ -43,17 +43,19 @@ The RJM registry (`window.RJM` in `rider-one-app.jsx`) is: `board`, `board_empty
 - **Adopted as:** `RJM.board` region `list` → `board-list.view.tsx` (`RiderBoardListView`), `JobCard` imported from its OWN module (`src/ui/rider/JobCard`), not the `src/ui` barrel (avoids the `no-circular` depcruise violation; `emit.mjs` `NON_BARREL`).
 - **Regression test:** `app/rider/(tabs)/__tests__/board-list.view.test.tsx` — one card per job in order; empty list draws no cards; tapping a row fires THAT job's `onAction` exactly once (never a sibling's); a FOOD row carries its accept action verbatim.
 
-### 2. `board_empty` — RISK: display-only
-- **App:** `index.tsx` `boardEmptyState` (rendered in both the FlatList `ListEmptyComponent` and the main-branch fallback).
-- **Diff:** RJM `board_empty` is `S( div( AppBar, OnlinePill, Pad( Card( EmptyState icon="inbox" "Nothing in range yet" … · ghost "Refresh" ) ) ) )`. The app's empty state is an `EmptyState` — align the icon/title/message/ghost-Refresh copy + the Card wrapper to the mock.
-- **Preserve:** the Refresh action = `openQ.refetch()` (unchanged). No sensitive path.
-- **Approach:** a region on the empty-state sub-tree, OR fold into the board container as a second region. Display-only; safe increment after the list.
+### 2. `board_empty` — ✅ DONE this pass · RISK: display-only
+- **App:** `index.tsx` — the empty state (rendered in both the FlatList `ListEmptyComponent` and the main-branch fallback).
+- **Diff resolved:** RJM `board_empty` is `S( div( AppBar, OnlinePill, Pad( Card( EmptyState icon="inbox" "Nothing in range yet" … · ghost "Refresh" ) ) ) )`. The app's empty state was a **bare `EmptyState`** with no Card; the adopted `RiderBoardEmptyView` (region `empty`, locator `{el:"Card"}`) restores the mock's `Card(padding:16)` wrapper — the structural win. icon/title stay the mock's verbatim literals; the **message is a data-seam leaf** so the container keeps its flag-honest copy (parcels-only flag-off / parcels+food-offer flag-on) — the same live-vs-static leaf treatment `RJM.account` used for its identity line (the normalizer drops text, so the wired copy is invisible to the diff).
+- **Live logic preserved (byte-identical):** the ghost Refresh forwards `openQ.refetch()` unchanged; `refreshing` reflects `openQ.isFetching`. No accept/assignment/online-toggle path is touched.
+- **Adopted as:** `RJM.board_empty` region `empty` → `board-empty.view.tsx` (`RiderBoardEmptyView`). A SEPARATE entry (not a second region on `RJM.board`) because `board_empty` is its own mock component and the composition check keys every region to the screen-level `mockComponent`. The container mounts `<RiderBoardEmptyView/>` **inline** in the fallback ScrollView (the last return the composition walker reduces) so the empty region is visible; `RJM.board`'s own `SCREEN(REGION:list)` composition is unaffected (RiderBoardEmptyView is pruned there, and vice-versa).
+- **Regression test:** `board-empty.view.test.tsx` (Card wrapper present · message renders · Refresh fires `onRefresh` once) + two container assertions in `index.test.tsx` (the empty-state Refresh re-fetches the open-orders board; the offline toggle still calls `setOnline(true)`).
 
-### 3. `offline` — RISK: display-only (touches the online TOGGLE, not money)
-- **App:** `index.tsx` offline branch (`onlineToggleCard` + commission-balance strip).
-- **Diff:** RJM `offline` is `S( div( AppBar "Jobs", Pad( Card( power-circle, "You're offline", one-queue copy, "Go online" ), Card( wallet tile · "Commission balance" · Money · "Top up" ) ) ) )`. The app draws a `StatusPill` + go-online Button + copy; restructure to the mock's centred power-circle Card + the commission-balance Card.
-- **Preserve:** `onlineM.mutate(true)` (go-online), the balance read, the Top-up nav — all unchanged. The online toggle is behaviour-load-bearing but not a money mutation; keep its handler byte-identical.
-- **Risk note:** shares the container with the online-gate branches (`commission_low_balance`, KYC gates); restructure only the offline presentation, leave the gate branches.
+### 3. `offline` — ⛔ DEFERRED this pass · RISK: needs a wallet read the board lacks
+- **App:** `index.tsx` offline branch (`onlineToggleCard`).
+- **Diff:** RJM `offline` is `S( div( AppBar "Jobs", Pad( Card( power-circle, "You're offline", one-queue copy, "Go online" ), Card( wallet tile · "Commission balance" · Money · "Top up" ) ) ) )` — **two** cards.
+- **Why deferred (honest, recorded in `adopted.mjs` `RJM.offline`):** the go-online Card is safely restructurable, but the mock's **second card is a live commission-balance tile** (`$` + "Top up"). The board container reads **no** wallet/commission balance — `Me.rider` (auth.ts) has no balance field and the board mounts no `useWallet` query (only the Money tab does). Rendering the drawn card would need either a **new wallet read on this sensitive accept/assignment board** (beyond a display-only pass) or a fabricated figure / a dropped drawn card (both forbidden by CLAUDE.md). There is also a live-vs-static skew: `onlineToggleCard` is an **always-shown** toggle (online→"Go offline", offline→"Go online") mounted via a hoisted-const identifier, not an inline offline-only region.
+- **Preserve when adopted:** `onlineM.mutate(true)`, the balance read, the Top-up nav — all byte-identical.
+- **Adoptable once** the board legitimately carries the commission balance (a wallet read wired here, or surfaced on `Me.rider`) so the mock's second card wires to real data — or the offline mock is re-split.
 
 ### 4. `offer_food` — RISK: **HIGH — accept-offer**
 - **App:** `app/rider/food-offer.tsx`.
@@ -87,5 +89,5 @@ The RJM registry (`window.RJM` in `rider-one-app.jsx`) is: `board`, `board_empty
 ---
 
 ## Guardrail state after this pass
-- `node tools/parity/codegen/cli.mjs check` → **34/34** structurally congruent (was 32/32): `RJM.board` adds `region list` (`MAP(JOBCARD)`) + `∴ composition` (`SCREEN(REGION:list)`). The prior 32 stay congruent.
-- No `packages/design/**` edits. No `docs/DESIGN-DEVIATIONS.md` entry needed (nothing diverges from the mock).
+- `node tools/parity/codegen/cli.mjs check` → **36/36** structurally congruent (was 34/34): `RJM.board_empty` adds `region empty` (`CARD(EMPTYSTATE(BUTTON))`) + `∴ composition` (`SCREEN(REGION:empty)`). The prior 34 (incl. `RJM.board`'s `SCREEN(REGION:list)`) stay congruent — unchanged. `RJM.offline` is recorded as a DEFERRED entry (wallet-read gap; see §3).
+- No `packages/design/**` edits. No `docs/DESIGN-DEVIATIONS.md` entry needed (nothing diverges from the mock — the empty-board message is a container-owned leaf, structurally invisible).
