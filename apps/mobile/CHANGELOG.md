@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/unnfazzed/Lynia/compare/v0.32.0...v0.32.1) (2026-08-12)
+
+
+### Performance Improvements
+
+* **mobile:** cut the cold-start graph, unbraid the boot gates, measure launch ([#735](https://github.com/unnfazzed/Lynia/issues/735)) ([bd2eb75](https://github.com/unnfazzed/Lynia/commit/bd2eb75d59cc734aeec3fb3f996d71f2c5148923))
+
 ## [0.32.0](https://github.com/unnfazzed/Lynia/compare/v0.31.0...v0.32.0) (2026-08-12)
 
 
