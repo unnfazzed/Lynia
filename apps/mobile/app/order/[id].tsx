@@ -6,6 +6,7 @@ import { AccessibilityInfo, Linking, Pressable, ScrollView, Text, View } from "r
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { formatMoney } from "../../src/logic/money";
+import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { SORT_MODES, type SortMode, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { orderOffers } from "../../src/logic/order-offers";
@@ -594,7 +595,7 @@ export default function OrderScreen(): React.ReactElement {
               <Sub>Showing your last saved update — we&apos;ll refresh the moment you&apos;re back online.</Sub>
             </Card>
             <Button label="Retry now" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
-            <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
+            <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
           </ScrollView>
         </Screen>
       );
@@ -603,7 +604,7 @@ export default function OrderScreen(): React.ReactElement {
       <Screen>
         <Heading>{notFound ? "Order not found" : forbidden ? "This order isn't available to you" : "Couldn't load this order"}</Heading>
         {notFound || forbidden ? null : <Button label="Retry" onPress={() => void orderQ.refetch()} />}
-        <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
+        <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
       </Screen>
     );
   }
@@ -1224,7 +1225,7 @@ export default function OrderScreen(): React.ReactElement {
         {(order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || order.status === "cancelled") && order.rider != null ? (
           <ReportControl orderId={orderId} counterpartyNoun={isRiderViewer ? "sender" : "rider"} />
         ) : null}
-        <Button label="Back home" variant="ghost" onPress={() => router.replace("/home")} />
+        <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
         <ErrorText message={mutationError} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>

@@ -123,7 +123,9 @@ export default function HistoryScreen(): React.ReactElement {
       ) : hasLiveData ? (
         // Live data arrived and it's empty — a genuine "no trips".
         <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
-          <Button label="Send a parcel" onPress={() => router.replace("/send")} />
+          {/* push, not replace: keep this screen beneath so back returns here (and the tab shell
+              stays reachable), instead of swapping the pushed screen out of the stack. */}
+          <Button label="Send a parcel" onPress={() => router.push("/send")} />
         </EmptyState>
       ) : (
         // No data and NOT fetching — an errored fetch or the offline paused state with no cache. Offer a

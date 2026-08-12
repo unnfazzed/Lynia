@@ -15,6 +15,8 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 
 const mockGetActiveCustomerOrders = jest.fn();
 const mockUseHistoryFeed = jest.fn();
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
 
 // In-memory SecureStore (jest-expo has no built-in behavior for it) — the failed-check banner's
 // evidence gate (useActiveOrderCheckGate) reads the persisted order hint through it.
@@ -30,7 +32,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
     React_.useEffect(cb, []);
@@ -98,6 +100,21 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     activeTree = renderOrders();
     await settle();
     expect(has(activeTree, /Nothing here yet/)).toBe(true);
+  });
+
+  // P1 (navigation review 2026-08-12): from a tab root, router.replace('/send') swaps out the whole
+  // (tabs) group — the tab bar vanishes and Android hardware-back exits the app from a screen that
+  // draws no back. The empty-state CTA must push so the tab shell stays beneath.
+  it("empty-state 'Send a parcel' routes via push, NOT replace (keeps the tab shell reachable)", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    activeTree = renderOrders();
+    await settle();
+    const [btn] = activeTree.root.findAll((n) => n.props.label === "Send a parcel");
+    if (!btn) throw new Error("empty-state 'Send a parcel' button not found");
+    act(() => btn.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/send");
+    expect(mockReplace).not.toHaveBeenCalledWith("/send");
   });
 
   it("error (history): a fetch error with no cache shows the retry state, per useHistoryFeed's own contract", async () => {
