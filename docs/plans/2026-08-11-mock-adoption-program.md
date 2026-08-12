@@ -53,23 +53,28 @@ generated view(s) are congruent and the guardrail suite is green — never "eyeb
 - Mocks are the source of truth; **never edit `packages/design/` to match the app**; deviations only via
   `docs/DESIGN-DEVIATIONS.md`; never align to retired screens.
 
-## Status (2026-08-11)
-- Foundations complete in `main`: guardrail suite (#667), codegen + structural-snapshot (#668, #675),
-  DS primitives + empty-state Card (#676), multi-state model + `FlatList≡map` (#678); Foundation-C
-  `Screen.banner` slot + Foundation-D `EtaLine`/`ShopLogo`/`FoodThumb`/`Screen.footer` primitives.
-- **Foundation-E — region/fragment guarding for INTERACTIVE containers.** The whole-screen model can't
-  host an interactive container's behaviour; such screens now adopt **piece-by-piece**: an `adopted.mjs`
-  entry carries `regions[]`, each a generated guarded FRAGMENT of a named mock sub-tree, and a static
-  **composition check** asserts the container mounts the fragments in the mock's region order/nesting.
-  See `tools/parity/codegen/README.md` → *Region/fragment adoption*.
-- **Adopted: 6 views across 5 screens** — `LJ.help`, `RC.cart_empty`, `RC.list_loading`, `RC.list_error`,
-  `RC.placing` (whole-screen / state), **plus `RC.menu` — the FIRST region-adopted interactive screen
-  (3 regions: cover · rows · cart bar) + a passing composition check** (all congruent).
-- Registry: 275 screens (customer 122 · rider 98 · merchant 48 · admin 7); **51 `BACKEND_GATED`**
-  (issues #670–#674), the rest `PENDING` adoption.
-- Known follow-ups: give the DS `Screen` a `banner` slot (unblocks *error* states app-wide); the
-  structural guardrail treats primitive JSX-attribute *slots* (e.g. `Screen banner=`) as invisible —
-  extend to verify slotted content.
+## Status — FINAL (2026-08-12): Foundation-F complete, codegen adoption at ceiling
+- Foundations A–E complete in `main` (guardrail suite #667; codegen + structural-snapshot #668/#675;
+  DS primitives #676; multi-state + `FlatList≡map` #678; Foundation-C/D slots; Foundation-E region model).
+- **Foundation-F complete (this run): a → e**, each a no-regression PR merged on green —
+  **a** render-helper/SHELL unwrap (#701), **b** W-KIT member-tag idiom + reclassification (#703),
+  **c** map/sheet remaps + non-`Screen` slot locator + adopt send-composer (#704, + a depcruise
+  barrel-cycle fix), **d** `RTracker→Stepper` region-adopt food-order trackers (#705), **e** transpiler
+  idioms (template-literal border / conditional shadow-spread / mixed text+element siblings) + adopt
+  role-select (#706).
+- **Adopted: 32 views, guardrail-proven congruent** (`cli.mjs check` = 32/32) — customer auth
+  (login/onboard/perm/role), account (help/notifications), system leaf (force_update), and the food
+  interactive containers by region (menu · closed-interrupt · cart-bar · checkout summary+place-bar ·
+  order trackers await/prep), the parcel **send-composer** (map + submit-footer regions), and rider
+  **account**. The prior set stayed congruent across every tooling change.
+- **Merchant (47 RM) + admin (7)** are web (Next/direct-DOM), already built to the mocks in Phase 6 and
+  enforced by token-conformance + screen-inventory; the mobile codegen does not apply. Open item: seeded
+  parity instance for offline-screenshot *verification* (#674, infra).
+- **69 mobile states remain deferred, none a codegen gap** — bucketed in `adopted.mjs` and
+  `docs/PIXEL-PARITY-TRACKER.md`: (a) backend-gated #670–#674 (other session), (b) sensitive **app
+  re-architecture** (rider RJM realignment off the superseded `r-rider` kit; parcel-auction inline-bid
+  ranking restructure), (c) undesigned supersets. The codegen tooling can reach no further without
+  backend data or a sensitive app-side rewrite — those are separate, deliberately-scoped efforts.
 
 ## Foundation-F — interactive map/sheet region codegen (deferred, high-leverage)
 The parcel **send-composer** (the flagship `Home` mock) is **not region-decomposable** under the current

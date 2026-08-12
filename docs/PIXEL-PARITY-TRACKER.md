@@ -36,6 +36,36 @@ screen; the handoff sheet is `ui_kits/mobile/shipped-states.html` (SH1–SH12).
 
 Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · admin 7 · safety sheet 20.
 
+## Foundation-F codegen adoption — final status (2026-08-12)
+
+The mobile **structural-snapshot codegen** adoption (`docs/plans/2026-08-11-mock-adoption-program.md`)
+ran to its ceiling. **32 mobile views are guardrail-proven congruent** to their mocks
+(`node tools/parity/codegen/cli.mjs check` = 32/32; the structural-snapshot spec asserts each tree ≡
+the mock's). Foundation tooling built across a→e: render-helper/SHELL unwrap, W-KIT member-tag
+resolution, map/sheet remaps + non-`Screen` slot locator, `RTracker→Stepper`, and the transpiler
+idioms (template-literal border / conditional shadow-spread / mixed text+element siblings).
+
+**Merchant (47 RM) + admin (7)** are **web** (Next/direct-DOM), already built to the mocks in Phase 6
+and enforced by the **token-conformance + screen-inventory** guardrails — the mobile codegen does not
+apply to them; the only open item is a seeded parity instance for *offline-screenshot verification*
+(#674, infra — not a structure gate).
+
+**69 mobile states remain deferred, each with a precise recorded reason** in
+`tools/parity/codegen/adopted.mjs`, in three buckets — none is a codegen gap:
+- **Backend-gated (#670–#674)** — `RC.pay_*` (payment-prompt flow #670), `RC.track_secured`
+  (rider identity #671), `RC.delivered_rate` (dual food+rider ratings/chips #672), discovery
+  ratings/ETA/geo (#673). Owned by the backend session (`apps/api`); adopt when those land.
+- **App re-architecture (sensitive, not codegen)** — the rider board/offer/active screens are aligned
+  to the **superseded `r-rider` kit** and need realigning to the current **RJM** mocks; the parcel
+  **auction** draws bids inline and needs its ranking/select container restructured. Both touch
+  sensitive accept-offer / agreed-price / order-assignment code, so they are a deliberate, separately
+  scoped, regression-tested effort — **not** an autonomous codegen sweep.
+- **Undesigned superset** — live affordances no static mock draws (profile-draft-restored banner,
+  account hub-nav, `on_hold` restore, `generic_error`). Need an upstream mock or descope.
+
+Guardrail suite (token-conformance · screen-inventory · reverse-drift freeze · structural-snapshot)
+is green on `main`; the adopted set is congruent-by-construction and cannot silently regress.
+
 > **Lane wiring ≠ sign-off.** Phase 2 of the screenshot lane (PR for `claude/phase-2-multi-agent`) wired
 > the app side of **47 screens** — the primary populated state of every top-level app route across all
 > four surfaces — so an alignment reviewer can now generate a real side-by-side for them
