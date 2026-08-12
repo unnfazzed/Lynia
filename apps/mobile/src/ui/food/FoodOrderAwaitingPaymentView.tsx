@@ -4,7 +4,8 @@ import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
-import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, isTestBuild, OfflineBanner, Screen, Stepper } from "../index";
+import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
+import { usePaymentSimulation } from "../payment-simulation";
 import { Money } from "../Money";
 import { FoodPayFailedView } from "./FoodPayFailedView";
 import { FoodPayWaitView } from "./FoodPayWaitView";
@@ -66,17 +67,19 @@ export function FoodOrderAwaitingPaymentView({
   //
   // There is no prompt-send endpoint and no decline callback anywhere in this codebase: the shipped
   // payment path is the manual rail below (dial USSD → submit your reference → the merchant matches it
-  // against their own statement). Those two designed screens still have to be walkable for internal
-  // testing, so the transition into them is SIMULATED — and simulation is confined to the QA APK by
-  // `isTestBuild()` (false in every real release, so `simulateRail` is permanently null there and the
-  // entry button never renders).
+  // against their own statement). Those two designed screens are walkable so the journey can be
+  // reviewed ahead of the real rail, and the transition into them is a PREVIEW — opened by
+  // `usePaymentSimulation()`, which is the QA APK plus a server kill switch that is ON by default and
+  // retractable in ~1 minute without an app update (owner instruction 2026-08-12: ship what we can
+  // ahead of launch).
   //
-  // Non-negotiable: there is NO simulated success. `payPhase` can only reach "wait" and "failed" —
-  // both of which state that no money moved — and the sole route to a paid order stays the real
-  // reference submission. A screen that claimed money moved when nothing was sent is the exact defect
-  // this programme exists to fix.
+  // Non-negotiable, and unchanged by shipping it wider: there is NO simulated success. `payPhase` can
+  // only reach "wait" and "failed" — both of which state that no money moved — and the sole route to a
+  // paid order stays the real reference submission. A screen that claimed money moved when nothing was
+  // sent is the exact defect this programme exists to fix. Note the entry below is a *dead end by
+  // construction*: every exit from both preview screens lands back on the reference form.
   const [payPhase, setPayPhase] = useState<"form" | "wait" | "failed">("form");
-  const simulateRail = isTestBuild();
+  const simulateRail = usePaymentSimulation();
   if (simulateRail && payPhase === "wait") {
     return (
       <FoodPayWaitView
@@ -213,10 +216,13 @@ export function FoodOrderAwaitingPaymentView({
         />
         <ErrorText message={error} />
         <Button label="Submit my reference" onPress={onSubmitReference} disabled={busy || !referenceInput.trim()} loading={busy} />
-        {/* QA APK only (see the payPhase comment above): the door into R5·4/R5·b2. Labelled for what it
-            is — no rail prompt is sent, because no such endpoint exists. Never rendered in a release. */}
+        {/* The door into R5·4/R5·b2 (see the payPhase comment above). Labelled for exactly what it is:
+            no rail prompt is sent, because no such endpoint exists. It sits BELOW the real "Submit my
+            reference" action so the working path is always the first one a customer reaches, and it
+            says "Preview" in the label itself — a customer who taps it has been told before the tap,
+            and told again by the notice at the top of the screen it opens. */}
         {simulateRail ? (
-          <Button label="SIMULATE: send payment prompt (test build)" variant="ghost" onPress={() => setPayPhase("wait")} />
+          <Button label="Preview: paying by prompt (not connected yet)" variant="ghost" onPress={() => setPayPhase("wait")} />
         ) : null}
         {/* The pay screen is the other long wait the tracker had gone missing on — restore it below the
             pay actions so the kitchen-confirm/payment phase stays legible while the money is in flight. */}

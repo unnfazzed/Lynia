@@ -1,20 +1,25 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { Icon, isTestBuild } from "../index";
+import { Icon } from "../index";
 
 /**
- * The mandatory, unmissable marker for any screen a QA tester reached through a SIMULATED transition.
+ * The mandatory, unmissable marker for any screen reached through a SIMULATED transition.
  *
  * Why this exists: the mobile-money PAYMENT RAIL DOES NOT EXIST in this codebase. There is no
  * prompt-send endpoint and no decline callback — the only real payment path is the manual rail
  * (ManualPayRail + "submit my reference", which the merchant matches against their own statement).
  * The R5·4 "check your phone" wait and the R5·b2 "declined" screens are therefore designed-but-unbacked:
- * they can be WALKED in the QA APK so the journey is testable, and they must never be mistaken for a
- * real money event.
+ * they are WALKABLE so the journey can be reviewed, and they must never be mistaken for a real money
+ * event.
+ *
+ * ⚠️ THIS COMPONENT IS UNCONDITIONAL BY DESIGN. It used to self-gate on `isTestBuild()`, back when the
+ * screens it marks were QA-APK-only. Both are now shipped behind a server flag
+ * (`usePaymentSimulation`), and re-introducing ANY gate here would mean a build or a flag state in
+ * which the fabricated screens render with the warning switched off. The gate belongs on the door, not
+ * on the sign. If this ever renders, it renders.
  *
  * Rules this component enforces at the call site:
- *  - it renders NOTHING outside the QA test build ({@link isTestBuild}), so a real release can't leak it;
  *  - every simulated screen paints it ABOVE its own hero, so it's read first, not found later;
  *  - it states plainly that nothing was sent and nothing was charged.
  *
@@ -26,8 +31,7 @@ export function SimulatedPathNotice({
   what,
 }: {
   what: string;
-}): React.ReactElement | null {
-  if (!isTestBuild()) return null;
+}): React.ReactElement {
   return (
     <View
       accessibilityRole="alert"
@@ -44,10 +48,10 @@ export function SimulatedPathNotice({
     >
       <Icon name="triangle-alert" size={17} color={tokens.color.dangerInk} style={{ marginTop: 1 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.dangerInk }}>SIMULATED — {what} (test build)</Text>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.dangerInk }}>PREVIEW — {what}</Text>
         <Text style={{ fontSize: 12, color: tokens.color.dangerInk, marginTop: 3, lineHeight: 17 }}>
-          Nothing was charged and nothing was sent to any rail. This screen exists so the journey can be walked end to end — the
-          only real way to pay is still the manual rail below.
+          Paying by prompt isn&apos;t connected yet. Nothing was charged and nothing was sent to any rail — this is a preview of how
+          it will work. The only real way to pay is still the manual rail below.
         </Text>
       </View>
     </View>
