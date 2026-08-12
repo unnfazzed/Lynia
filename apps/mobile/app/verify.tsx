@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { AppState, Pressable, Text, View } from "react-native";
@@ -124,7 +124,7 @@ export default function VerifyScreen(): React.ReactElement {
       <Heading>Check your messages</Heading>
       {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
           don't claim one was. Real users still see the "we sent a code" copy. */}
-      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone || "your phone"} by SMS.`}</Sub>
+      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone ? formatPhoneLocal(phone) : "your phone"} by SMS.`}</Sub>
 
       {/* Calm confirmation after a resend, announced to screen readers. */}
       {resent && !locked ? (

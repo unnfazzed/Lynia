@@ -1,4 +1,4 @@
-import { PRESENCE_ESCALATION_MS, tokens } from "@lynia/shared";
+import { formatPhoneLocal, PRESENCE_ESCALATION_MS, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
@@ -202,7 +202,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 11, fontWeight: "600", color: tokens.color.muted }}>{isRiderViewer ? "Sender" : "Your rider"}</Text>
             {riderName ? <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{riderName}</Text> : null}
-            <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{props.counterpartyPhone}</Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(props.counterpartyPhone)}</Text>
           </View>
           <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
             <Icon name="phone" size={18} color={tokens.color.onAccent} />
@@ -266,7 +266,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
       {isFood && props.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
-            {props.viewerRole === "rider" ? "Sender phone" : "Rider phone"}: {props.counterpartyPhone}
+            {props.viewerRole === "rider" ? "Sender phone" : "Rider phone"}: {formatPhoneLocal(props.counterpartyPhone)}
           </Text>
           {/* The number is only ever revealed while the delivery is live — assigned through the
               hand-off (PHONE_REVEAL_STATUSES), NOT once the order is completed. A trust feature only

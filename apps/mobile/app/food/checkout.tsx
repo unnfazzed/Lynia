@@ -228,7 +228,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             label="Contact phone"
             value={dropPhone}
             onChangeText={setDropPhone}
-            placeholder="+263..."
+            placeholder="0771234567"
             keyboardType="phone-pad"
             maxLength={20}
             error={phoneError}

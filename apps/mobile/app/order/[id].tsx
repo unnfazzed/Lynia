@@ -1,4 +1,4 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, formatPhoneLocal, OFFER_WINDOW_MS, tokens } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1134,7 +1134,7 @@ export default function OrderScreen(): React.ReactElement {
                 >
                   <Icon name="phone" size={16} color={tokens.color.accentText} />
                   <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                    {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${order.counterpartyPhone}` : ""}
+                    {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${formatPhoneLocal(order.counterpartyPhone)}` : ""}
                   </Text>
                 </Pressable>
               ) : null}

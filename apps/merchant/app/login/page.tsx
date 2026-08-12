@@ -91,7 +91,7 @@ export default function LoginPage() {
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="+263 77 000 0000"
+              placeholder="0771234567"
               style={inputStyle}
             />
             {error && <div style={errorStyle}>{error}</div>}

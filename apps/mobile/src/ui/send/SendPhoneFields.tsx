@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Recipient } from "../../logic/saved-recipients";
@@ -35,7 +35,7 @@ export function SendPhoneFields({
         label="Your phone (sender)"
         value={pickupPhone}
         onChangeText={onChangePickupPhone}
-        placeholder="+263..."
+        placeholder="0771234567"
         keyboardType="phone-pad"
         maxLength={20}
         error={pickupPhoneError}
@@ -48,9 +48,9 @@ export function SendPhoneFields({
           {recipients.map((r) => (
             <Pressable
               key={r.phone}
-              onPress={() => onChangeDropPhone(r.phone)}
+              onPress={() => onChangeDropPhone(formatPhoneLocal(r.phone))}
               accessibilityRole="button"
-              accessibilityLabel={`Use recipient ${r.name || r.phone}`}
+              accessibilityLabel={`Use recipient ${r.name || formatPhoneLocal(r.phone)}`}
               style={({ pressed }) => ({
                 minHeight: tokens.touchTargetMin,
                 justifyContent: "center",
@@ -62,7 +62,7 @@ export function SendPhoneFields({
               })}
             >
               <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
-                {r.name ? `${r.name} · ${r.phone}` : r.phone}
+                {r.name ? `${r.name} · ${formatPhoneLocal(r.phone)}` : formatPhoneLocal(r.phone)}
               </Text>
             </Pressable>
           ))}
@@ -73,7 +73,7 @@ export function SendPhoneFields({
         label="Recipient phone"
         value={dropPhone}
         onChangeText={onChangeDropPhone}
-        placeholder="+263..."
+        placeholder="0771234567"
         keyboardType="phone-pad"
         maxLength={20}
         error={dropPhoneError}

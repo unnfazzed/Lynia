@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
@@ -64,7 +64,7 @@ export default function AccountTabScreen(): React.ReactElement {
             <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink }}>
               {me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account"}
             </Text>
-            {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{me.phone}</Text> : null}
+            {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(me.phone)}</Text> : null}
             <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 2 }}>{role === "rider" ? "Rider" : "Customer"}</Text>
             {me?.rider ? (
               <>

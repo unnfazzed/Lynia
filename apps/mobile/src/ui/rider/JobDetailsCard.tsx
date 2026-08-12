@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
@@ -34,7 +34,7 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
       <Text style={{ fontSize: 14, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>Agreed fare {formatMoney(order.agreedFare ?? order.proposedFare)}</Text>
       {order.counterpartyPhone ? (
         <>
-          <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {order.counterpartyPhone}</Text>
+          <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>Customer phone: {formatPhoneLocal(order.counterpartyPhone)}</Text>
           {/* The number is only ever revealed while the delivery is live — assigned through the
               hand-off (PHONE_REVEAL_STATUSES), NOT once the order is completed. A trust feature only
               matters if the rider can perceive it, so say so. */}

@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -105,7 +105,7 @@ export default function SettingsScreen(): React.ReactElement {
           <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
             {me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account"}
           </Text>
-          {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{me.phone}</Text> : null}
+          {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(me.phone)}</Text> : null}
         </View>
       </View>
 

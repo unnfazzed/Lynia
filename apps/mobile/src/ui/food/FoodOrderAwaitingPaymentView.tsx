@@ -1,4 +1,4 @@
-import { tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { formatPhoneLocal, tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
@@ -198,7 +198,7 @@ export function FoodOrderAwaitingPaymentView({
         {order.merchantPaymentPhone ? (
           <ManualPayRail
             rows={[
-              { label: "Merchant number", value: order.merchantPaymentPhone },
+              { label: "Merchant number", value: formatPhoneLocal(order.merchantPaymentPhone) },
               { label: "Exact amount", value: formatMoney(amount) },
               { label: "Reference", value: order.id.slice(0, 8).toUpperCase() },
             ]}
