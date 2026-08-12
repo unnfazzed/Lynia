@@ -649,6 +649,26 @@ export class OrdersService implements OnModuleDestroy {
     return order ? this.getSnapshot(order.id, customerId) : null;
   }
 
+  /** EVERY live order the customer is running, newest-updated first — the home screen renders one
+   *  LiveOrderCard per running job (design `AppHome`: "one LiveOrderCard per running job, rides and
+   *  food alike, newest first"), so unlike {@link activeForCustomer} this must not collapse a food
+   *  order + a parcel running side-by-side into a single row. Food orders additionally count while
+   *  still with the kitchen (`requested` + a merchantPhase — no dispatch status yet), since a meal
+   *  being prepared is a running job to the customer even before a rider exists. Capped at 10: the
+   *  home rail is a glanceable stack, not a history. */
+  async activeOrdersForCustomer(customerId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        customerId,
+        OR: [{ status: { in: CUSTOMER_ACTIVE_STATUSES } }, { orderType: "merchant", status: "requested" }],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: { id: true },
+    });
+    return Promise.all(orders.map((o) => this.getSnapshot(o.id, customerId)));
+  }
+
   /** A caller's order history across both roles (any order where they're the customer or the rider),
    *  newest first — feeds the trip-history screen AND the earnings screen (both share this one cached
    *  fetch client-side). Redacts contactPhone like listOpen and never carries a counterparty phone; only
@@ -742,6 +762,9 @@ export class OrdersService implements OnModuleDestroy {
         id: true,
         status: true,
         orderType: true,
+        merchantPhase: true,
+        merchantPaymentMethod: true,
+        merchant: { select: { name: true } },
         agreedFare: true,
         proposedFare: true,
         customerId: true,
@@ -873,6 +896,14 @@ export class OrdersService implements OnModuleDestroy {
       // one — e.g. so the board/rider job screen can route to the food-specific active-job UI instead
       // of rendering the parcel flow against merchant-order fields that don't exist on this shape.
       orderType: order.orderType,
+      // RC.home / RC.orders alignment: a food job's customer-recognizable headline is the RESTAURANT
+      // (its pickup/dropoff landmarks are the kitchen/customer address), and the design's home card
+      // meta is payment + total ("Cash at the door · $15.50"). All three are null on parcel orders,
+      // additive for old clients. merchantPhase drives the food 7-step progress strip's two
+      // pre-dispatch steps (see mobile foodCustomerStepIndex).
+      merchantName: order.merchant?.name ?? null,
+      merchantPhase: order.merchantPhase ?? null,
+      merchantPaymentMethod: order.merchantPaymentMethod ?? null,
       // Which party is looking — derived from the same customer/rider check that gates this snapshot
       // above (never a new auth path). Lets the tracking screen voice customer-only copy correctly for
       // a rider viewing their own trip (rating card, cancel-blame line, counterparty-phone label).

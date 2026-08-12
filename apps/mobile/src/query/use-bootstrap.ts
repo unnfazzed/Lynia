@@ -14,7 +14,12 @@ import type { Session } from "../auth/session";
 export function seedQueryCacheFromBootstrap(qc: QueryClient, b: BootstrapResponse): void {
   qc.setQueryData(["me"], b.me);
   if (b.me.role === "rider") qc.setQueryData(["activeJob"], b.activeOrder);
-  else qc.setQueryData(["activeCustomerOrder"], b.activeOrder);
+  else {
+    qc.setQueryData(["activeCustomerOrder"], b.activeOrder);
+    // RC.home multi-card: seed the full live list too when the API ships it (older deploys don't —
+    // the home screen then just fetches its own list, exactly like every other unseeded key).
+    if (b.activeOrders) qc.setQueryData(["activeCustomerOrders"], b.activeOrders);
+  }
 }
 
 /**

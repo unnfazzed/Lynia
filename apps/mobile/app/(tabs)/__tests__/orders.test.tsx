@@ -1,7 +1,7 @@
 /**
  * A4 (five-states + retirement sweep) — the Orders tab's own states. `useHistoryFeed` already
  * carries a documented five-state contract (loading/empty/error/offline paint), exercised here via
- * a mock so this test focuses on the gap A4 closes: the tab's OWN `["activeCustomerOrder"]` query
+ * a mock so this test focuses on the gap A4 closes: the tab's OWN `["activeCustomerOrders"]` query
  * (for the pinned live-order card) had no error state — an error there silently fell through to the
  * earlier list with zero indication a live order might exist, the same UX20-01 dead-end send.tsx's
  * compose screen already fixed for its own copy of this exact query.
@@ -13,7 +13,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
 
-const mockGetActiveCustomerOrder = jest.fn();
+const mockGetActiveCustomerOrders = jest.fn();
 const mockUseHistoryFeed = jest.fn();
 
 // In-memory SecureStore (jest-expo has no built-in behavior for it) — the failed-check banner's
@@ -37,7 +37,7 @@ jest.mock("expo-router", () => ({
   },
 }));
 jest.mock("../../../src/api/orders", () => ({
-  getActiveCustomerOrder: (...args: unknown[]) => mockGetActiveCustomerOrder(...args),
+  getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
 }));
 jest.mock("../../../src/query/use-history-feed", () => ({
   useHistoryFeed: () => mockUseHistoryFeed(),
@@ -93,7 +93,7 @@ afterEach(() => {
 
 describe("(tabs)/orders.tsx — Orders tab states", () => {
   it("empty: no history and no active order shows the cross-service empty state", async () => {
-    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
@@ -101,7 +101,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
   });
 
   it("error (history): a fetch error with no cache shows the retry state, per useHistoryFeed's own contract", async () => {
-    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
     mockUseHistoryFeed.mockReturnValue({ rows: null, isFetching: false, isError: true, hasLiveData: false, showingStale: false, refetch: jest.fn() });
     activeTree = renderOrders();
     await settle();
@@ -110,7 +110,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
 
   it("error (active-order check) + persisted order hint: surfaces UX20-01's banner rather than silently falling through to the list", async () => {
     mockSecureStore["lynia.activeOrderHint"] = "order-1";
-    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
@@ -120,7 +120,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
   // UX-2026-08-05: without local evidence an order may be in flight, a failed background check must
   // NOT camp a danger banner over the tab — the query self-heals via its own poll/reconnect refetch.
   it("error (active-order check) with no order hint: stays quiet instead of camping the banner", async () => {
-    mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
+    mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
@@ -128,7 +128,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
   });
 
   it("default: an active order pins the compact live-order card above the earlier list", async () => {
-    mockGetActiveCustomerOrder.mockResolvedValue({
+    mockGetActiveCustomerOrders.mockResolvedValue([{
       id: "order-1",
       status: "en_route_pickup",
       orderType: "parcel",
@@ -136,7 +136,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
       proposedFare: "12.00",
       pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
       dropoff: { point: { lat: 0, lng: 0 }, landmark: "Office" },
-    });
+    }]);
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
@@ -144,5 +144,28 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     expect(has(activeTree, /Home/)).toBe(true);
     expect(has(activeTree, /Heading to pickup/)).toBe(true);
     expect(has(activeTree, /\$12\.00/)).toBe(true);
+  });
+
+  it("pins EVERY live order (a food job and a parcel side-by-side), the food one titled by its restaurant", async () => {
+    const parcel = {
+      id: "order-1",
+      status: "en_route_pickup",
+      orderType: "parcel",
+      agreedFare: null,
+      proposedFare: "12.00",
+      pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
+      dropoff: { point: { lat: 0, lng: 0 }, landmark: "Office" },
+    };
+    mockGetActiveCustomerOrders.mockResolvedValue([
+      { ...parcel, id: "order-food", orderType: "merchant", merchantName: "Sadza Republic", status: "picked_up", agreedFare: "15.50" },
+      parcel,
+    ]);
+    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    activeTree = renderOrders();
+    await settle();
+    // Kit RC.orders: a food job's headline is the RESTAURANT, not its kitchen/customer landmarks.
+    expect(has(activeTree, /Sadza Republic/)).toBe(true);
+    // The parcel keeps its own pinned card — two running jobs never collapse to one row.
+    expect(has(activeTree, /Home → Office/)).toBe(true);
   });
 });

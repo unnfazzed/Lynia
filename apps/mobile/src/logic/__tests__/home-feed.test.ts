@@ -2,7 +2,8 @@ import type { MerchantHours } from "@lynia/shared";
 import type { OrderHistoryRow } from "../../api/orders";
 import {
   LIVE_ORDER_STEP_COUNT,
-  liveOrderCardCopy,
+  liveOrderCardModel,
+  type LiveOrderLike,
   liveOrderStepIndex,
   reorderRailItems,
   restaurantCardStatus,
@@ -30,26 +31,78 @@ describe("liveOrderStepIndex", () => {
   });
 });
 
-describe("liveOrderCardCopy", () => {
-  const order = {
-    pickup: { landmark: "Eastgate" },
-    dropoff: { landmark: "Avenues" },
+describe("liveOrderCardModel (RC.home per-service card copy)", () => {
+  const PICKUP = { lat: -17.83, lng: 31.05 };
+  const DROPOFF = { lat: -17.82, lng: 31.06 };
+  const parcel = (overrides: Partial<LiveOrderLike> = {}): LiveOrderLike => ({
+    id: "o-parcel",
+    status: "en_route_dropoff",
+    pickup: { point: PICKUP, landmark: "Eastgate" },
+    dropoff: { point: DROPOFF, landmark: "Msasa" },
+    rider: null,
     agreedFare: null,
-    proposedFare: "5.5",
-  };
+    proposedFare: "3.36",
+    ...overrides,
+  });
+  const food = (overrides: Partial<LiveOrderLike> = {}): LiveOrderLike => ({
+    ...parcel({ id: "o-food", orderType: "merchant", merchantName: "Sadza Republic", merchantPaymentMethod: "cash", agreedFare: "15.50" }),
+    ...overrides,
+  });
+  // A rider standing on the target point computes to the floor "1 min away" — deterministic without
+  // replaying eta.ts's haversine/speed math here.
+  const riderAtDropoff = { currentLat: DROPOFF.lat, currentLng: DROPOFF.lng };
 
-  it("titles with the status label", () => {
-    expect(liveOrderCardCopy(order, "Heading to pickup").title).toBe("Delivery in progress · Heading to pickup");
+  it("parcel card: 'Parcel to {dropoff} · rider N min away', delivery code + total meta, bike icon (mock grammar)", () => {
+    const m = liveOrderCardModel(parcel({ rider: riderAtDropoff }), "On the way to drop-off", "4192");
+    expect(m.title).toBe("Parcel to Msasa · rider 1 min away");
+    expect(m.meta).toBe("Delivery code 4192 · $3.36");
+    expect(m.icon).toBe("bike");
+    expect(m.step).toBe(4);
+    expect(m.steps).toBe(LIVE_ORDER_STEP_COUNT);
+    expect(m.route).toBe("/order/o-parcel");
   });
 
-  it("meta reads pickup → drop-off · fare, preferring the agreed fare over proposed", () => {
-    expect(liveOrderCardCopy(order, "x").meta).toBe("Eastgate → Avenues · $5.50");
-    expect(liveOrderCardCopy({ ...order, agreedFare: "6" }, "x").meta).toBe("Eastgate → Avenues · $6.00");
+  it("parcel card falls back to the status label without a rider fix, and to the bare fare without a stored code", () => {
+    const m = liveOrderCardModel(parcel({ status: "open_for_offers" }), "Finding riders", null);
+    expect(m.title).toBe("Parcel to Msasa · Finding riders");
+    expect(m.meta).toBe("$3.36");
+    // Pre-assignment renders every progress segment unlit.
+    expect(m.step).toBe(-1);
   });
 
-  it("falls back to generic landmark copy when a landmark is missing", () => {
-    const noLandmarks = { ...order, pickup: { landmark: null }, dropoff: { landmark: "" } };
-    expect(liveOrderCardCopy(noLandmarks, "x").meta).toBe("Pickup → Drop-off · $5.50");
+  it("food card: '{Restaurant} · N min away', payment + total meta, utensils icon, food tracker route", () => {
+    const m = liveOrderCardModel(food({ status: "picked_up", rider: riderAtDropoff }), "Parcel collected", null);
+    expect(m.title).toBe("Sadza Republic · 1 min away");
+    expect(m.meta).toBe("Cash at the door · $15.50");
+    expect(m.icon).toBe("utensils");
+    expect(m.step).toBe(4);
+    expect(m.steps).toBe(7);
+    expect(m.route).toBe("/food/order/o-food");
+  });
+
+  it("food card never shows kitchen-leg minutes as a doorstep promise — pre-pickup it reads the step label", () => {
+    // Rider en route to the RESTAURANT: minutes would be to the kitchen, not the customer.
+    const m = liveOrderCardModel(food({ status: "en_route_pickup", rider: riderAtDropoff }), "Heading to pickup", null);
+    expect(m.title).toBe("Sadza Republic · Rider at the restaurant");
+    expect(m.step).toBe(3);
+  });
+
+  it("food card while still with the kitchen: step label from merchantPhase, no rider needed", () => {
+    const placed = liveOrderCardModel(food({ status: "requested", merchantPhase: "awaiting_accept" }), "Getting ready", null);
+    expect(placed.title).toBe("Sadza Republic · Order placed");
+    expect(placed.step).toBe(0);
+    const preparing = liveOrderCardModel(food({ status: "requested", merchantPhase: "preparing" }), "Getting ready", null);
+    expect(preparing.title).toBe("Sadza Republic · Restaurant accepted");
+    expect(preparing.step).toBe(1);
+  });
+
+  it("food meta reads 'Paid' on the wallet rail and the bare total with no method recorded yet", () => {
+    expect(liveOrderCardModel(food({ merchantPaymentMethod: "wallet" }), "x", null).meta).toBe("Paid · $15.50");
+    expect(liveOrderCardModel(food({ merchantPaymentMethod: null }), "x", null).meta).toBe("$15.50");
+  });
+
+  it("food card without a merchant name keeps the honest generic headline", () => {
+    expect(liveOrderCardModel(food({ merchantName: null }), "x", null).title).toMatch(/^Restaurant order · /);
   });
 });
 

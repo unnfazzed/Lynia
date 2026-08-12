@@ -1051,6 +1051,11 @@ live order is fixed; a customer deliberately sending two separate parcels back-t
 multi-order use, and the older order stays reachable via Trip History even though it drops off the home
 screen's one proactive recovery banner. Left undocumented as an OPEN item (it's not a defect, just a
 UI-scope observation) — see the report for detail.
+**RESOLVED 2026-08-12** (RC.home pixel-parity alignment): the home and Orders tabs now read the new
+`GET /orders/mine/active-orders` list and render one card per running job (food and parcels alike, the
+design `AppHome` contract), so a second live order no longer drops off the home screen.
+`activeForCustomer` / `mine/active-order` keep their single-row semantics for send.tsx's restore banner
+and older clients.
 
 ---
 

@@ -35,6 +35,13 @@ export interface OrderSnapshot {
   // getOrder) — absent on an older API, in which case the caller should treat it as "parcel" (the
   // historical-only shape this endpoint ever served before food orders shared it).
   orderType?: "parcel" | "merchant";
+  // RC.home / RC.orders alignment — the food-order card fields, all null on parcels and absent on an
+  // older API. `merchantName` is a food job's customer-recognizable headline (its landmarks are the
+  // kitchen/customer address); `merchantPhase` drives the food card's two pre-dispatch progress steps;
+  // `merchantPaymentMethod` drives the design's payment+total meta ("Cash at the door · $15.50").
+  merchantName?: string | null;
+  merchantPhase?: string | null;
+  merchantPaymentMethod?: "cash" | "wallet" | null;
   // Which party is viewing this order — the server derives it from the same party check that gates the
   // snapshot. Lets the tracking screen flip customer-voiced/customer-gated UI (rating card, cancel-blame
   // copy, counterparty-phone label) for a rider viewing their own trip. Optional for older APIs that
@@ -148,6 +155,13 @@ export function getActiveOrder(): Promise<OrderSnapshot | null> {
  *  them to their tracking screen on a cold start instead of a blank compose form. */
 export function getActiveCustomerOrder(): Promise<OrderSnapshot | null> {
   return apiFetch<OrderSnapshot | null>("/orders/mine/active-order");
+}
+
+/** EVERY live order the signed-in customer is running, newest first — the home screen draws one
+ *  live-order card per running job (RC.home: food and parcels alike), so it needs the full set,
+ *  not the single most-recent row `getActiveCustomerOrder` serves (kept for restore paths). */
+export function getActiveCustomerOrders(): Promise<OrderSnapshot[]> {
+  return apiFetch<OrderSnapshot[]>("/orders/mine/active-orders");
 }
 
 // A past/present order as it appears in the trip-history list — summary only, no phones (§5d).

@@ -26,8 +26,9 @@ const NM = join(PARITY, "node_modules");
 const SHIMS = join(HERE, "shims");
 
 // Native-only modules with no bearing on a static screenshot → the generic empty shim.
+// (expo-secure-store gets a real in-memory shim instead — fixtures seed device state through it.)
 const EMPTY_MODULES = [
-  "expo-secure-store", "expo-linking", "expo-image-picker",
+  "expo-linking", "expo-image-picker",
   "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
   "expo-splash-screen", "expo-updates", "expo-asset", "expo-file-system",
   "expo-haptics", "posthog-react-native",
@@ -81,6 +82,7 @@ export function aliasMap() {
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
     "@sentry/react-native": join(SHIMS, "sentry.js"),
+    "expo-secure-store": join(SHIMS, "expo-secure-store.js"),
     "@lynia/shared": join(SHARED_SRC, "index.ts"),
     "@lynia/shared/fixtures": join(SHARED_SRC, "fixtures.ts"),
   };

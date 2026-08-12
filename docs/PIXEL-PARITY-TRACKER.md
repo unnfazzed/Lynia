@@ -101,8 +101,8 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C2·1 | `RC home` | Home · service tiles  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | |
-| 👁 | C2·2 | `RC orders` | Orders · all services  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | compact accent live-order card replaces the stepper LiveOrderCard per the mock |
+| 👁 | C2·1 | `RC home` | Home · service tiles  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`); live-order card stack aligned to the mock's two-job state — one card per running job, food+parcel per-service copy (`tools/parity/out/home_vs.png`) | |
+| 👁 | C2·2 | `RC orders` | Orders · all services  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`); every live order now pins (not just the newest), food rows titled by restaurant | compact accent live-order card replaces the stepper LiveOrderCard per the mock |
 | ⬜ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | | |
 | ⬜ | C2·4 | `LJ home_flag_off` | Home · Food tile soon  [BOTH] | | |
 | ⬜ | C2·5 | `LJ order_restore` | Cold start · order running  [BOTH] | | |

@@ -29,6 +29,8 @@ export function LiveOrderCard({
     <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? "button" : undefined} accessibilityLabel={title}>
       {/* Mirrors `Card`'s styling inline rather than importing it from `../index` — that barrel
           re-exports this very component, and importing it back would be a circular dependency. */}
+      {/* No own margin — the design's AppHome stacks these in an 8px-gap grid ("one LiveOrderCard
+          per running job"), so the home screen's container owns the spacing between cards. */}
       <View
         style={{
           backgroundColor: tokens.color.bg,
@@ -36,7 +38,6 @@ export function LiveOrderCard({
           borderColor: tokens.color.accent,
           borderRadius: tokens.radius.card,
           padding: 12,
-          marginBottom: tokens.space.md,
           ...tokens.shadow.card,
         }}
       >
