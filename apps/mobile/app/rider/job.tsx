@@ -39,7 +39,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
 import { AppBar, Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
-import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
+import { RiderActiveParcelCashStripView } from "./active-parcel-cash-strip.view";
 import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
@@ -901,7 +901,11 @@ export default function RiderJob(): React.ReactElement {
             job's collect-and-return money isn't wired to the rider screen until Lane D5. */}
         {isActive ? (
           <View style={{ marginBottom: tokens.space.md }}>
-            <CashHeldStrip yours={Number(order.agreedFare ?? order.proposedFare)} owed={0} />
+            {/* RJM active_parcel CashStrip (rider-one-app.jsx J6) — the codegen-adopted, guardrail-locked
+                "yours vs owed to a kitchen" split (RJM.active_parcel#cash_strip → active-parcel-cash-strip.view.tsx).
+                Same live seam the app already passed CashHeldStrip; pixels unchanged (CashStrip wraps it).
+                Parcel cash is always all "yours" (owed 0 — nothing collected-and-returned). */}
+            <RiderActiveParcelCashStripView yours={Number(order.agreedFare ?? order.proposedFare)} owed={0} />
           </View>
         ) : null}
 

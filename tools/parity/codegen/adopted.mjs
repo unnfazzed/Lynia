@@ -2591,6 +2591,100 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.active_parcel — the rider's ACTIVE PARCEL JOB (app/rider/job.tsx). The MOST entangled active
+    // screen (advance / deliver / cancel / undeliver / confirmItems / sender-rating / delivery-code
+    // rotation / self-heal poll). The mock `active_parcel` (rider-one-app.jsx J6) is
+    //   S( div( AppBar 'Active job'·sub·back=false, CashStrip(yours),
+    //        Pad( Card( div(TypeTag · spacer · 'Navigate'), Stepper PARCEL_STEPS ) ) ),
+    //      { tab:"jobs", footer: Button "I've arrived at the drop-off" } )
+    //
+    // ONLY the CashStrip is region-adopted (display-only, no advance/deliver/cancel/confirm logic
+    // touched) — the SAME shape as RJM.active_food#cash_strip. The two richer pieces DEFER, each a genuine
+    // wall recorded honestly (CLAUDE.md "Pixel parity": honesty over volume; a clean deferral is the right
+    // outcome when adoption isn't safe):
+    //
+    //   • tracker Card (TypeTag·Navigate + Stepper) — IDENTICAL wall to active_food's tracker. The app's
+    //     status timeline is drawn by JobDetailsCard (job.tsx:950), which FUSES a LiveMap into one
+    //     memoized composite alongside fare/phones/items/note; the mock's tracker Card draws a clean
+    //     Card(TypeTag+Navigate+Stepper) with NO map. Separating a Stepper region would mean un-fusing the
+    //     live-map composite (the map-fused-composite deferral case) — the map does not cleanly separate,
+    //     and JobDetailsCard is an opaque leaf to the composition walker, so its internal timeline is
+    //     invisible to a region. Adoptable once the timeline is drawn as a discrete, map-free node.
+    //   • footer "I've arrived at the drop-off" — the ADVANCE seam (advanceM → advanceStatus, realized in
+    //     the main render as the `next.label` Button + the DeliveryOtp / can't-complete controls). It
+    //     rides in the mock's `S(…,{footer})` opts, which region locators do not reach (jsxRootNode
+    //     unwraps S() to its body; a helper-carried footer is a future region concern) — the same
+    //     treatment offer_food/offer_parcel/active_food footers got. Container glue, pruned from the
+    //     composition. NOTE: active_parcel draws only ONE Card (the tracker), so unlike active_food there
+    //     is no second-sibling `<Card>` cash-card deferral here.
+    //
+    // The CashStrip region (locator {el:"CashStrip"} → RiderActiveParcelCashStripView) reduces on both
+    // sides to a single opaque CASHSTRIP leaf. `CashStrip` is the shared tokens-only DS primitive
+    // (src/ui/rider/CashStrip.tsx, a thin wrapper over the shipped CashHeldStrip so pixels are unchanged)
+    // the generated view imports from its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser
+    // cycle). Both mock and container reduce to SCREEN(REGION:cash_strip): the tracker Card and the AppBar
+    // are non-region glue (pruned), and the footer sits in opts (not reached).
+    //
+    // SENSITIVE-PATH PRESERVATION (byte-identical, nothing re-homed): the CashStrip carries NO handler —
+    // it is a pure `yours`/`owed` display, wired to the SAME expression the app already passed
+    // CashHeldStrip on this screen (`Number(order.agreedFare ?? order.proposedFare)` / `owed={0}` — parcel
+    // cash is always all "yours"). Every mutation — `advanceM` (advanceStatus), `deliverM`
+    // (confirmDelivery + code), `cancelM` (cancelOrder), `undeliverM` (markUndelivered), `confirmItems`
+    // (confirmAndCollect), `senderRateM` (rateSender), the delivery-code rotation / OTP-attempt reconcile
+    // and the ACTIVE/NEXT/RIDER_CANCELLABLE gating order — is UNTOUCHED. This is the ONLY CashHeldStrip
+    // mount in job.tsx, so the swap replaces it outright (via the CashStrip wrapper the view imports); the
+    // offline-resume error branch draws a fare/route Card, not the strip.
+    key: "RJM.active_parcel",
+    container: "apps/mobile/app/rider/job.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "active_parcel",
+    uiImport: "../../src/ui",
+    regions: [
+      {
+        region: "cash_strip",
+        locator: { el: "CashStrip" },
+        componentName: "RiderActiveParcelCashStripView",
+        viewFile: "apps/mobile/app/rider/active-parcel-cash-strip.view.tsx",
+        propsParam: "{ yours, owed }: RiderActiveParcelCashStripViewProps",
+        propsType: [
+          "export type RiderActiveParcelCashStripViewProps = {",
+          "  /** What the rider keeps — the accent 'YOURS' tile. On a parcel this is the whole agreed fare. */",
+          "  yours: number;",
+          "  /** Kitchen money still owed — always 0 on a parcel (nothing is collected-and-returned), so the",
+          "   *  'OWED TO A KITCHEN' tile stays the muted zero state. Kept for parity with the shared strip. */",
+          "  owed: number;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            if (path.node.name.name !== "CashStrip") return;
+            // Swap the mock's frozen "3.00" string literal for the live numeric seam the app already
+            // computes. Structurally invisible: CashStrip is an opaque leaf either way.
+            path.node.attributes = path.node.attributes.filter(
+              (a) => !(a.type === "JSXAttribute" && ["yours", "owed"].includes(a.name.name)),
+            );
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("yours"), t.jsxExpressionContainer(expr("yours"))));
+            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("owed"), t.jsxExpressionContainer(expr("owed"))));
+          },
+        }),
+      },
+    ],
+    deferred: [
+      {
+        state: "tracker",
+        key: "RJM.active_parcel#tracker",
+        reason:
+          "the mock's tracker Card is a clean Card(TypeTag+Navigate+Stepper) with no map, but the app's status timeline is drawn by JobDetailsCard (job.tsx), which fuses a LiveMap into one memoized composite alongside fare/phones/items/note. Separating a Stepper region would mean un-fusing that live-map composite (the map-fused-composite deferral case, like active_food's tracker) — the map does not cleanly separate. JobDetailsCard is also an opaque leaf to the composition walker, so its internal timeline is invisible to a region. Adoptable once the timeline is drawn as a discrete, map-free node in the main render.",
+      },
+      {
+        state: "footer",
+        key: "RJM.active_parcel#footer",
+        reason:
+          "the footer \"I've arrived at the drop-off\" is the ADVANCE seam (advanceM → advanceStatus), realized in-app as the main-render next.label Button plus the DeliveryOtp / can't-complete-delivery controls. It rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps S() to its body; a helper-carried footer is a future region concern) — the same treatment offer_food/offer_parcel/active_food footers got. Container glue, pruned from the composition.",
+      },
+    ],
+  },
 ];
 
 /**
