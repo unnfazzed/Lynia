@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.33.0](https://github.com/unnfazzed/Lynia/compare/v0.32.1...v0.33.0) (2026-08-12)
+
+
+### Features
+
+* **payments:** ship the top-up and food-checkout previews behind a server kill switch ([da70866](https://github.com/unnfazzed/Lynia/commit/da7086646030c3549bac490d69c56e2fde126553))
+
+
+### Bug Fixes
+
+* **nav:** mock-aligned dead-end fixes — pay-screen back, item-approval footer ([13015f9](https://github.com/unnfazzed/Lynia/commit/13015f9aeeb0009af01ccb133f7d06040ff83b07))
+
 ## [0.32.1](https://github.com/unnfazzed/Lynia/compare/v0.32.0...v0.32.1) (2026-08-12)
 
 
