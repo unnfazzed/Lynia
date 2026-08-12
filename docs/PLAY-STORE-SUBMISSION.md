@@ -240,6 +240,33 @@
 > the OTA and QA-APK lanes, release builds refused without it). The statement above still holds for
 > **the currently-installed binary** — telemetry only reaches devices in a NEW build, so the next
 > store release is what actually closes this, and the closed test should not start before it.
+>
+> **Status (2026-08-12 — v0.30.0 shipped to the internal track; all three production lanes green in
+> one pass, no failure class).** A full deploy-everything run at `main` = `96a55d3`:
+> ① **API** (`release.yml` run 31591975827) — image promoted from the green staging build, migrations
+> applied, no-traffic revision, canary 10% → 50% → 100% with every gate passing; promoted 11:37:34 UTC.
+> Independently verified serving through the LB: `GET /healthz` → 200
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. ② **Admin console**
+> (`deploy-admin.yml` run 31591977498) — boot smoke green (public asset 200, gated route fails closed
+> 401), IAP invoker granted, promoted 100% at 11:31:55 UTC. ③ **Mobile** (`mobile-release.yml` run #18
+> = 31591984928, **profile `preview`** per the §8-step-3 rule — production remains unarmed): EAS build
+> `fe622d6b-44e7-41d5-9e35-65185d4ef637` **FINISHED** (~12 min), submission
+> `d8f43de1-a16a-4797-b162-20b9a28e2bcf` **FINISHED**, track `internal`. First dispatch since
+> 2026-08-10 to go build→submit clean on the first attempt with zero retries.
+>
+> **The load-bearing detail: the fingerprint held across a version jump.** This build's
+> runtimeVersion is `0132a2cf489cedbd85a573cbc829aac28066b0ee` — **byte-identical** to the 2026-08-10
+> builds, across 0.22.0 → 0.30.0. That is `REL-01`'s fix (`fingerprint.config.js` `sourceSkips:
+> ["ExpoConfigVersions"]`) demonstrated on a real multi-minor bump, not just asserted: version fields
+> genuinely do not feed the hash, so this binary and its predecessors share one OTA runtime and the
+> lane stays usable for JS-only hotfixes.
+>
+> **What this run does NOT establish.** It is the **internal** track, exactly as before — the app is
+> still not public and `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design.
+> Nothing here advances §8 step 2: the closed test, its mandatory ~14-day clock, and production access
+> are all untouched and remain the gate to any production rollout. Nor does a FINISHED submission
+> prove the binary *runs* — `MOB-BOOT-01` was found on a green build, so the device smoke in
+> `docs/QA-DEVICE-CHECKLIST.md` is still the real exit test.
 
 ---
 
