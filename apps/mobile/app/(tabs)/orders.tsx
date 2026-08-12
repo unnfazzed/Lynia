@@ -209,7 +209,10 @@ export default function OrdersTabScreen(): React.ReactElement {
                 message="Parcels and food orders both land on this screen — you'll be able to reorder from here in one tap."
               >
                 {restaurantsEnabled ? <Button label="Find food near you" onPress={() => router.push("/food")} /> : null}
-                <Button label="Send a parcel" variant={restaurantsEnabled ? "ghost" : "primary"} onPress={() => router.replace("/send")} />
+                {/* push, not replace: from a tab root, router.replace('/send') swaps out the whole
+                    (tabs) group — the tab bar vanishes and Android back exits the app from a screen
+                    that draws no back. push keeps the tab shell beneath so back returns to Orders. */}
+                <Button label="Send a parcel" variant={restaurantsEnabled ? "ghost" : "primary"} onPress={() => router.push("/send")} />
               </EmptyState>
             </Card>
           )

@@ -248,9 +248,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
   return (
     <Screen>
-      {/* Back-only AppBar chrome: the KYC flow keeps its in-body Heading (kit KYC layout); the bar
-          replaces the retired bottom ghost "Back", same replace-to-dashboard destination. */}
-      <AppBar onBack={() => router.replace("/rider")} />
+      {/* Back-only AppBar chrome: the KYC flow keeps its in-body Heading (kit KYC layout). Return to
+          the actual referrer (customer Account, /profile, or the board — KYC is always pushed) so the
+          drawn chevron and Android hardware-back land in the SAME place; a bare replace('/rider') sent
+          a customer who tapped "Become a rider" from their Account straight to the rider board instead.
+          Falls back to /rider only when there's no history to pop (e.g. an unexpected cold-start entry). */}
+      <AppBar onBack={() => (router.canGoBack() ? router.back() : router.replace("/rider"))} />
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Heading>Become a rider</Heading>
         <Sub>Verify your ID and register your bike to start accepting deliveries.</Sub>
