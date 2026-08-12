@@ -73,6 +73,9 @@ jest.mock("../../../../src/net/use-feature-flags", () => ({
 }));
 
 import RiderHome from "../index";
+import { makeOffer } from "../../../../src/api/offers";
+
+const mockMakeOffer = makeOffer as jest.MockedFunction<typeof makeOffer>;
 
 function meFixture(overrides: Partial<NonNullable<Me["rider"]>> = {}): Me {
   return {
@@ -376,5 +379,99 @@ describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring m
 
     expect(mockSetOnline).toHaveBeenCalledTimes(1);
     expect(mockSetOnline.mock.calls[0]![0]).toBe(true);
+  });
+});
+
+/**
+ * RJM.offer_parcel realignment (parity task #48). The parcel offer-compose card was restructured to the
+ * RJM mock's Card (TypeTag · "Sender asking" · Money, then one always-shown "Your fare (USD)" field and a
+ * "You'll be there in" field), retiring the old segmented accept/counter tablist — a presentation-only
+ * change. This pins that the SENSITIVE agreed-price seam survived byte-identical: (1) "Send offer" still
+ * calls `makeOffer(orderId, { type, offeredFare, etaMinutes })` with the same arg shape (default one-tap =
+ * the asking price → an "accept" bid); (2) the one-offer-per-job rule still removes a bid order from the
+ * board so it can't be offered on twice; (3) the ghost "Skip this job" still dismisses the card WITHOUT
+ * submitting an offer. A change that mis-wired the mutation, dropped the one-offer filter, or turned Skip
+ * into a submit would fail here.
+ */
+describe("rider board (RJM.offer_parcel: the agreed-price makeOffer seam must survive the realignment)", () => {
+  async function openComposeForFirstRow(): Promise<renderer.ReactTestRenderer> {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    const orders = Array.from({ length: 3 }, (_, i) => openOrderFixture(`order-${i}`));
+    mockGetOpenOrders.mockResolvedValue(orders);
+
+    const tree = renderScreen();
+    await settle();
+    await settle();
+
+    const actionButtons = tree.root.findAll(
+      (n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function",
+    );
+    expect(actionButtons.length).toBeGreaterThan(0);
+    act(() => {
+      (actionButtons[0]!.props as { onPress: () => void }).onPress();
+    });
+    return tree;
+  }
+
+  it("tapping 'Send offer' calls makeOffer with the agreed-price arg shape (orderId + type/offeredFare/etaMinutes)", async () => {
+    mockMakeOffer.mockResolvedValue(undefined as never);
+    activeTree = await openComposeForFirstRow();
+
+    const send = activeTree.root.findAll(
+      (n) => n.props.label === "Send offer" && typeof n.props.onPress === "function",
+    );
+    expect(send.length).toBe(1);
+    act(() => {
+      (send[0]!.props as { onPress: () => void }).onPress();
+    });
+    await settle();
+
+    // Default one-tap = the sender's asking price ($5.00), so the bid is an "accept" of the asking price.
+    expect(mockMakeOffer).toHaveBeenCalledTimes(1);
+    expect(mockMakeOffer.mock.calls[0]![0]).toBe("order-0");
+    expect(mockMakeOffer.mock.calls[0]![1]).toEqual(
+      expect.objectContaining({ type: "accept", offeredFare: 5, etaMinutes: expect.any(Number) }),
+    );
+  });
+
+  it("the one-offer-per-job rule still removes a bid order from the board (no second offer possible)", async () => {
+    mockMakeOffer.mockResolvedValue(undefined as never);
+    activeTree = await openComposeForFirstRow();
+
+    const idsBefore = activeTree.root.findAllByType(FlatList)[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id);
+    expect(idsBefore).toContain("order-0");
+
+    const send = activeTree.root.findAll(
+      (n) => n.props.label === "Send offer" && typeof n.props.onPress === "function",
+    )[0]!;
+    act(() => {
+      (send.props as { onPress: () => void }).onPress();
+    });
+    await settle();
+
+    // Having bid on order-0, it leaves the board (bidIds filters `ranked`) — there is no row to bid on again.
+    const idsAfter = activeTree.root.findAllByType(FlatList)[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id);
+    expect(idsAfter).not.toContain("order-0");
+  });
+
+  it("the ghost 'Skip this job' dismisses the compose card WITHOUT calling makeOffer", async () => {
+    mockMakeOffer.mockResolvedValue(undefined as never);
+    activeTree = await openComposeForFirstRow();
+
+    expect(activeTree.root.findAll((n) => n.props.label === "Send offer").length).toBe(1);
+
+    const skip = activeTree.root.findAll(
+      (n) => n.props.label === "Skip this job" && typeof n.props.onPress === "function",
+    );
+    expect(skip.length).toBe(1);
+    act(() => {
+      (skip[0]!.props as { onPress: () => void }).onPress();
+    });
+    await settle();
+
+    // The compose card is gone and no bid was submitted.
+    expect(activeTree.root.findAll((n) => n.props.label === "Send offer").length).toBe(0);
+    expect(mockMakeOffer).not.toHaveBeenCalled();
   });
 });

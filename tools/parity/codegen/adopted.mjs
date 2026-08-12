@@ -2370,6 +2370,121 @@ export const ADOPTED = [
       },
     ],
   },
+  {
+    // ── RJM.offer_parcel — the rider's PARCEL offer-compose card (app/rider/(tabs)/index.tsx `RiderHome`:
+    // the `selected` compose card + its Send/Skip footer). ADOPTED this pass (region `offer`). This is the
+    // AGREED-PRICE / auction seam — the rider names a fare and an ETA and `makeOffer` submits the bid — so
+    // the adoption is presentational ONLY: the mock's Card element TREE is adopted; every money/assignment
+    // handler is forwarded UNCHANGED. The mock `offer_parcel` (rider-one-app.jsx J5) is
+    //   S( div( AppBar 'Parcel job'·sub, Pad( Card(
+    //        div( TypeTag · spacer · 'Sender asking' · Money ),
+    //        Field 'Your fare (USD)', Field "You'll be there in" ) ) ),
+    //      { footer: div( Button 'Send offer', ghost 'Skip this job' ) } )
+    // The offer CARD is the region adopted here (locator {el:"Card"} → RiderOfferParcelCardView), reducing on
+    // both sides to CARD( BOX[ai:center,row](TYPETAG, BOX[flex1], TEXT, MONEY), FIELD, FIELD ). `TypeTag` is
+    // the shared tokens-only DS primitive (src/ui/rider/TypeTag) the generated view imports from its OWN
+    // module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), reused verbatim from offer_food.
+    //
+    // LIVE-vs-STATIC (owner 2026-08-11): the mock draws a routed screen (AppBar 'Parcel job' + an
+    // 'Eastgate → Avenues · 3.1 km' route sub, then the Card); the app realizes the SAME compose step as an
+    // INLINE card on the board — there is no routed offer screen; the rider taps a board row, `chooseOrder`
+    // opens the compose card in place. So the mock's Card TREE is adopted and kept in the board container;
+    // the AppBar/route sub is not realized (the inline card has no AppBar), and the footer Send/Skip pair —
+    // carried in the mock's `S(…,{footer})` opts, which the region locators do not reach (jsxRootNode unwraps
+    // S() to its body) — stays container glue in the board's ScrollView/FlatList footer, pruned from the
+    // composition (which reduces on both sides to SCREEN(REGION:offer)). This is the SAME container that
+    // already region-adopts RJM.board (list) + RJM.board_empty (empty); each composition check anchors ONLY
+    // its own region component and prunes the others, so the three stay independent on the one container
+    // (the RC.menu + RC.closed_interrupt precedent).
+    //
+    // NOT-DRAWN⇒NOT-RENDERED — and why it changes NO money logic: the pre-adoption app card drew (a) two
+    // header Text lines (route + itemDesc) and (b) a segmented "Accept $X / Offer a different price" tablist
+    // that conditionally HID the fare field. The mock draws NEITHER — it draws ONE always-visible "Your fare
+    // (USD)" field and derives accept-vs-counter from the fare VALUE, exactly as `makeOffer`'s mutationFn
+    // already does (`fareNum === Number(proposedFare) ? "accept" : "counter"`). The tablist never fed
+    // `makeOffer` (which reads the fare, not `offerMode`), so it is an IA affordance the mock retired, not an
+    // agreed-price gate; removing it is presentation-only. `offerMode` state + its bid-draft persistence are
+    // kept BYTE-IDENTICAL (still set by `chooseOrder`/draft-restore, still saved) — only the toggle that
+    // rendered it is gone, and the fare field is now always shown (seeded with the asking price by
+    // `chooseOrder`, as before, so the default one-tap "Send offer" still submits fare == asking → "accept").
+    //
+    // TWO leaf seams (structurally invisible): the header Money `v` → the sender's `proposedFare`, and the
+    // two Fields' value/onChangeText/keyboardType → the live `fare`/`eta` compose state. The fare field's
+    // mock hint ("Riders here usually get $2.96 on this distance…") names a market figure the app does NOT
+    // model, so it is wired as a container-owned `fareHint` leaf (honest copy) rather than shipping the
+    // fabricated $2.96 — the same live-vs-static leaf treatment board_empty's message used (the normalizer
+    // drops text, so the swap is invisible to the diff). The ETA field's hint ("Be honest — arriving late is
+    // what loses you the next job.") is honest and kept VERBATIM.
+    //
+    // SENSITIVE-PATH PRESERVATION (byte-identical): `offerM`/`makeOffer(selected.id, { type, offeredFare,
+    // etaMinutes })`, the accept-vs-counter type derivation, the `fare`/`eta`/`offerMode` compose state, the
+    // `canOffer` gate, `recordSentOffer` + the one-offer-per-job rule (`bidIds` filtering `ranked`), the
+    // idempotency-409 reconciliation and the closed-window handling are ALL unchanged — the container
+    // forwards the existing handlers into the new tree. The Send button keeps its exact
+    // `canOffer && offerM.mutate({ fare, fareNum, etaNum })` onPress; the ghost "Skip this job" keeps the old
+    // Cancel's `setSelected(null)` + in-flight guard (label is mock copy verbatim, handler identical).
+    key: "RJM.offer_parcel",
+    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    mockComponent: "offer_parcel",
+    uiImport: "../../../src/ui",
+    regions: [
+      {
+        region: "offer",
+        locator: { el: "Card" },
+        componentName: "RiderOfferParcelCardView",
+        viewFile: "apps/mobile/app/rider/(tabs)/offer-parcel-card.view.tsx",
+        propsParam: "{ proposedFare, fare, onChangeFare, fareHint, eta, onChangeEta }: RiderOfferParcelCardViewProps",
+        propsType: [
+          "export type RiderOfferParcelCardViewProps = {",
+          "  /** The sender's asking price (the mock header Money). */",
+          "  proposedFare: string | number | null | undefined;",
+          "  /** The rider's fare bid — the always-shown \"Your fare (USD)\" field (seeded with the asking price). */",
+          "  fare: string;",
+          "  onChangeFare: (v: string) => void;",
+          "  /** Honest fare hint — the mock's \"$2.96 usual\" market figure is not modelled, so the container",
+          "   *  feeds its own copy (structurally invisible; the normalizer drops text). */",
+          "  fareHint?: string;",
+          "  /** The rider's ETA-to-pickup in minutes — the \"You'll be there in\" field. */",
+          "  eta: string;",
+          "  onChangeEta: (v: string) => void;",
+          "};",
+        ].join("\n"),
+        bind: ({ t, expr }) => ({
+          JSXOpeningElement(path) {
+            const name = path.node.name.name;
+            if (name === "Money") {
+              // The lone header Money (the "Sender asking" figure) → the live proposedFare.
+              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
+              path.node.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr("proposedFare"))));
+            }
+            if (name === "Field") {
+              const labelAttr = path.node.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "label");
+              const label = labelAttr && labelAttr.value && labelAttr.value.type === "StringLiteral" ? labelAttr.value.value : "";
+              const isFare = label === "Your fare (USD)";
+              // Drop the kit's web props (value/onChange/inputMode); on the fare field also drop the mock's
+              // fabricated-figure hint (re-wired as the honest `fareHint` leaf below). The ETA field keeps
+              // its honest mock hint verbatim.
+              path.node.attributes = path.node.attributes.filter(
+                (a) => !(a.type === "JSXAttribute" && (["value", "onChange", "inputMode"].includes(a.name.name) || (isFare && a.name.name === "hint"))),
+              );
+              if (isFare) {
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("fare"))));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangeFare"))));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("decimal-pad")));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("hint"), t.jsxExpressionContainer(expr("fareHint"))));
+              } else {
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("eta"))));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangeEta"))));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("number-pad")));
+                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("maxLength"), t.jsxExpressionContainer(expr("3"))));
+              }
+            }
+          },
+        }),
+      },
+    ],
+  },
 ];
 
 /**

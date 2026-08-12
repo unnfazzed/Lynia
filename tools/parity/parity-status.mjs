@@ -203,7 +203,7 @@ export const PARITY_STATUS = {
   "RJM.board_empty_food_off": { status: "PENDING" }, // Food off · nothing in range
   "RJM.offer_parcel": {
     status: "PENDING",
-    reason: "SUPERSET — structure adopts; the app renders a live dispatch countdown timer where the RJM still draws a no-countdown offer. The live countdown is the honest realization; keep or ledger. See docs/parity/ADOPTION-CLASSIFICATION.md",
+    reason: "STRUCTURALLY ADOPTED via mock→RN codegen (RJM.offer_parcel#offer → app/rider/(tabs)/offer-parcel-card.view.tsx, guardrail-locked in adopted.mjs). Screenshot-lane wiring stays deferred: the offer-compose card is an INLINE state of the board (index.tsx), opened by tapping a job row (chooseOrder sets `selected`), not a standalone route — there is no separate screen to target (the board itself is wired as RJM.board). Wireable once a fixture can drive the board into its `selected` compose state.",
   }, // Parcel · name your fare
   "RJM.active_parcel": { status: "PENDING" }, // Active · parcel
   "RJM.handoff": { status: "PENDING" }, // Delivery code
