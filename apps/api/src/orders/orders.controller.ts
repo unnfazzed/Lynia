@@ -92,6 +92,14 @@ export class OrdersController {
     return this.orders.activeForCustomer(customerId);
   }
 
+  /** ALL of the caller's live orders as a customer, newest-updated first — the home screen draws one
+   *  live-order card per running job (food and parcels alike), so it needs the full set, not the
+   *  single most-recent row `mine/active-order` serves (which stays for restore paths/old clients). */
+  @Get("mine/active-orders")
+  activeOrders(@CurrentUser() customerId: string) {
+    return this.orders.activeOrdersForCustomer(customerId);
+  }
+
   /** The caller's order history across both roles (newest first). */
   @Get("history")
   history(@CurrentUser() userId: string) {

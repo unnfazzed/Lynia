@@ -40,6 +40,22 @@ describe("seedQueryCacheFromBootstrap", () => {
     expect(qc.getQueryData(["activeJob"])).toBeUndefined();
   });
 
+  it("seeds ['activeCustomerOrders'] (RC.home multi-card) when the API ships the list — and skips it on an older API", () => {
+    const qc = new QueryClient();
+    seedQueryCacheFromBootstrap(qc, {
+      minSupportedVersion: "0.0.0",
+      me: customerMe,
+      activeOrder: { id: "ord-1" } as never,
+      activeOrders: [{ id: "ord-food" }, { id: "ord-1" }] as never,
+    });
+    expect(qc.getQueryData(["activeCustomerOrders"])).toEqual([{ id: "ord-food" }, { id: "ord-1" }]);
+
+    // Older API mid-rollout: no list field → the home screen fetches its own list, nothing seeded.
+    const qcOld = new QueryClient();
+    seedQueryCacheFromBootstrap(qcOld, { minSupportedVersion: "0.0.0", me: customerMe, activeOrder: null });
+    expect(qcOld.getQueryData(["activeCustomerOrders"])).toBeUndefined();
+  });
+
   it("seeds ['activeJob'] for a rider and leaves the customer key untouched", () => {
     const qc = new QueryClient();
     seedQueryCacheFromBootstrap(qc, { minSupportedVersion: "0.0.0", me: riderMe, activeOrder: null });

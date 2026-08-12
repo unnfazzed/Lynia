@@ -47,6 +47,7 @@ describe("shouldPersistQuery — the persistence allowlist", () => {
     [["offers", "ord-1"]],
     [["activeJob"]],
     [["activeCustomerOrder"]],
+    [["activeCustomerOrders"]],
     [["openOrders"]],
   ])("NEVER persists live marketplace state %j — a stale render there misleads", (key) => {
     expect(shouldPersistQuery(asQuery(key, "success"))).toBe(false);

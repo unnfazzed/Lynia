@@ -35,17 +35,26 @@ export class AppBootstrapController {
 
   @Get("bootstrap")
   async bootstrap(@CurrentUser() profileId: string) {
-    const [me, riderActive, customerActive] = await Promise.all([
+    const [me, riderActive, customerActiveList] = await Promise.all([
       this.auth.getProfile(profileId),
       this.orders.activeForRider(profileId),
-      this.orders.activeForCustomer(profileId),
+      this.orders.activeOrdersForCustomer(profileId),
     ]);
     return {
       minSupportedVersion: this.env.MIN_SUPPORTED_APP_VERSION,
       me,
       // Role-appropriate active order/job, in the same snapshot shape the /orders/mine endpoints
       // serve — the client seeds ["activeJob"] or ["activeCustomerOrder"] from it by `me.role`.
-      activeOrder: me.role === "rider" ? riderActive : customerActive,
+      // The customer value is derived from the list read so the aggregate stays one findMany, not a
+      // findMany + a redundant findFirst. `activeForCustomer` equivalence: same customer scope, same
+      // newest-updatedAt order; the one row class the LIST adds beyond CUSTOMER_ACTIVE_STATUSES is a
+      // food order still with the kitchen (status `requested`), which the find() skips — so old
+      // clients (and send.tsx's parcel restore) keep the exact rows they always got.
+      activeOrder: me.role === "rider" ? riderActive : (customerActiveList.find((o) => o.status !== "requested") ?? null),
+      // RC.home multi-card alignment: every live customer order, newest first, in the same snapshot
+      // shape as /orders/mine/active-orders — the client seeds ["activeCustomerOrders"] from it.
+      // Additive: old clients keep reading `activeOrder`.
+      activeOrders: me.role === "rider" ? [] : customerActiveList,
     };
   }
 }

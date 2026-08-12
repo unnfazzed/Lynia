@@ -3,11 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { getActiveCustomerOrder, type OrderSnapshot } from "../../src/api/orders";
+import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
+import { loadDeliveryCode } from "../../src/auth/device-state";
 import {
-  liveOrderCardCopy,
-  liveOrderStepIndex,
-  LIVE_ORDER_STEP_COUNT,
+  liveOrderCardModel,
   type ReorderRailItem,
   reorderRailItems,
   restaurantCardStatus,
@@ -34,7 +33,34 @@ import {
 } from "../../src/ui";
 
 const RESTAURANT_RAIL_LIMIT = 10;
-const ACTIVE_ORDER_KEY = ["activeCustomerOrder"] as const;
+const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
+
+/**
+ * The customer's own delivery code per live PARCEL order, from the same per-order SecureStore the
+ * tracking screen reads — the design's parcel home card leads its meta with it ("Delivery code
+ * 4192 · $3.36"). Best-effort and read-only: an order whose code was never stored on THIS device
+ * (or a store failure) just renders the fare alone.
+ */
+function useDeliveryCodes(orders: OrderSnapshot[]): Record<string, string | null> {
+  const [codes, setCodes] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let alive = true;
+    for (const o of orders) {
+      if (o.orderType === "merchant" || o.id in codes) continue;
+      void loadDeliveryCode(o.id)
+        .then((code) => {
+          if (alive) setCodes((prev) => (o.id in prev ? prev : { ...prev, [o.id]: code }));
+        })
+        .catch(() => {
+          if (alive) setCodes((prev) => (o.id in prev ? prev : { ...prev, [o.id]: null }));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [orders, codes]);
+  return codes;
+}
 
 /**
  * "Restaurants near you" (plan §5 A2), live data from the Lane C1 customer read API (already
@@ -114,10 +140,11 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
 
-  // Restore path, mirroring `send.tsx`'s own ActiveOrderBanner query: gated to poll only while this
+  // Live-orders read, mirroring the old single-order query's rules: gated to poll only while this
   // screen is the visible route (PERF20-01's rule), refreshed on focus + app foreground so a status
-  // change that happened elsewhere/backgrounded isn't stale on return. Same `["activeCustomerOrder"]`
-  // key `send.tsx` reads, so the two screens share one cache entry instead of double-fetching.
+  // change that happened elsewhere/backgrounded isn't stale on return. Now the LIST endpoint —
+  // RC.home draws one LiveOrderCard per running job (food and parcels alike), so the single
+  // most-recent row `mine/active-order` serves (kept for send.tsx's restore banner) is not enough.
   // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — a customer
   // lingering on/returning to Home shouldn't pay a round trip for data `useBootstrap` (or the last
   // 30s poll) already seeded fresh; a genuinely stale entry still refetches immediately.
@@ -125,34 +152,45 @@ export default function LauncherHomeScreen(): React.ReactElement {
   useFocusEffect(
     useCallback(() => {
       setHomeFocused(true);
-      invalidateIfStale(qc, ACTIVE_ORDER_KEY);
+      invalidateIfStale(qc, ACTIVE_ORDERS_KEY);
       return () => setHomeFocused(false);
     }, [qc]),
   );
-  const activeOrderQ = useQuery({
-    queryKey: ACTIVE_ORDER_KEY,
-    queryFn: getActiveCustomerOrder,
+  const activeOrdersQ = useQuery({
+    queryKey: ACTIVE_ORDERS_KEY,
+    queryFn: getActiveCustomerOrders,
     refetchInterval: homeFocused ? 30_000 : false,
   });
   const historyFeed = useHistoryFeed();
   useForegroundRefetch(() => {
-    invalidateIfStale(qc, ACTIVE_ORDER_KEY);
+    invalidateIfStale(qc, ACTIVE_ORDERS_KEY);
     invalidateCustomerOrderHistory(qc);
   });
-  const activeOrder = activeOrderQ.data ?? null;
+  const activeOrders = activeOrdersQ.data ?? [];
+  const deliveryCodes = useDeliveryCodes(activeOrders);
   // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
-  // be in flight — see useActiveOrderCheckGate's rationale.
-  const activeOrderCheckFailed = useActiveOrderCheckGate(activeOrderQ);
+  // be in flight — see useActiveOrderCheckGate's rationale. The gate stores one hint id; the newest
+  // live order carries that role for the list.
+  const activeOrderCheckFailed = useActiveOrderCheckGate({
+    isError: activeOrdersQ.isError,
+    isSuccess: activeOrdersQ.isSuccess,
+    data: activeOrders[0] ?? null,
+  });
   // Only seed orderKey(id) while THIS screen is the visible route. When home is blurred beneath
   // /order/[id] (the customer is looking at the live tracking screen), use-order-socket.ts owns that
   // same cache entry and merges live position/status pushes into it with an anti-rollback guard
   // (lastPositionRef/reconcileAfterRefetch) — a raw full-object setQueryData from here, triggered by
-  // an unrelated foreground/focus refetch of activeOrderQ, would blindly replace that entry and could
+  // an unrelated foreground/focus refetch of activeOrdersQ, would blindly replace that entry and could
   // roll the rider's pin backward on the map. Gating on homeFocused means this write only ever seeds
   // the cache for a subsequent navigation TO /order/[id], never clobbers it while already there.
+  // Parcels only: the food tracker reads its own `MerchantOrderResponse`-shaped cache (use-food-order),
+  // which this generic snapshot must not be written into.
   useEffect(() => {
-    if (homeFocused && activeOrder) qc.setQueryData<OrderSnapshot>(orderKey(activeOrder.id), activeOrder);
-  }, [homeFocused, activeOrder, qc]);
+    if (!homeFocused) return;
+    for (const o of activeOrders) {
+      if (o.orderType !== "merchant") qc.setQueryData<OrderSnapshot>(orderKey(o.id), o);
+    }
+  }, [homeFocused, activeOrders, qc]);
 
   const onService = (id: string): void => {
     if (id === "express") router.push("/send");
@@ -187,27 +225,37 @@ export default function LauncherHomeScreen(): React.ReactElement {
         <View style={{ paddingHorizontal: 10 }}>
           <ServiceTiles services={services} onService={onService} />
         </View>
-        {activeOrderQ.isLoading || (historyFeed.rows === null && historyFeed.isFetching) ? (
+        {activeOrdersQ.isLoading || (historyFeed.rows === null && historyFeed.isFetching) ? (
           // Genuine first load (BOTH feeds this screen paints from) — a skeleton beats a blank gap
           // between the tiles and the restaurants rail, mirroring the Orders tab's own loading rule.
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
             <SkeletonRows count={2} />
           </View>
-        ) : activeOrder ? (
-          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
-            <LiveOrderCard
-              {...liveOrderCardCopy(activeOrder, statusPillLabel(activeOrder.status))}
-              step={liveOrderStepIndex(activeOrder.status)}
-              steps={LIVE_ORDER_STEP_COUNT}
-              onPress={() => router.push(`/order/${activeOrder.id}`)}
-            />
+        ) : activeOrders.length > 0 ? (
+          // One card per running job, newest first, stacked in the design AppHome's 8px-gap grid —
+          // a food order and a parcel running side-by-side each keep their own card (RC.home).
+          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm, gap: tokens.space.sm }}>
+            {activeOrders.map((o) => {
+              const card = liveOrderCardModel(o, statusPillLabel(o.status), deliveryCodes[o.id] ?? null);
+              return (
+                <LiveOrderCard
+                  key={o.id}
+                  icon={card.icon}
+                  title={card.title}
+                  meta={card.meta}
+                  step={card.step}
+                  steps={card.steps}
+                  onPress={() => router.push(card.route)}
+                />
+              );
+            })}
           </View>
         ) : activeOrderCheckFailed ? (
           // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
           // hits an error on this exact check must see a way back to it, not a silently-empty rail —
           // evidence-gated (UX-2026-08-05) so an inconsequential flaky-link failure stays quiet.
           <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
-            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
+            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrdersQ.refetch()} retrying={activeOrdersQ.isFetching} />
           </View>
         ) : (
           <ReorderRail items={reorderRailItems(historyFeed.rows ?? [])} onItem={onReorder} />

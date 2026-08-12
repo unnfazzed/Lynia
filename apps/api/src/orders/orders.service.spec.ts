@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, type CreateOrderRequest, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -629,6 +629,20 @@ describe("OrdersService.getSnapshot", () => {
   it("hides phones outside the reveal window", async () => {
     const snap = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "cust-1");
     expect(snap.counterpartyPhone).toBeNull();
+  });
+
+  it("carries the food-order card fields (merchantName / merchantPhase / merchantPaymentMethod)", async () => {
+    const snap = await svc(
+      row({ orderType: "merchant", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash", merchant: { name: "Sadza Republic" } }),
+    ).getSnapshot("ord-1", "cust-1");
+    expect(snap).toMatchObject({ merchantName: "Sadza Republic", merchantPhase: "preparing", merchantPaymentMethod: "cash" });
+  });
+
+  it("nulls the food-order card fields on a parcel snapshot (additive for old clients)", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(snap.merchantName).toBeNull();
+    expect(snap.merchantPhase).toBeNull();
+    expect(snap.merchantPaymentMethod).toBeNull();
   });
 
   it("hides the counterparty phone once the order is `completed` (F-09 — the party-to-party window closes at completion)", async () => {
@@ -1348,6 +1362,58 @@ describe("OrdersService.activeForCustomer (cold-start restore, UX review #1)", (
     expect(whereStatus).toContain("delivered");
     expect(whereStatus).not.toContain("completed");
     expect(whereStatus).not.toContain("cancelled");
+  });
+});
+
+describe("OrdersService.activeOrdersForCustomer (RC.home — one live card per running job)", () => {
+  const snapRow = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    status: "assigned",
+    agreedFare: null,
+    proposedFare: 2.5,
+    customerId: "cust-1",
+    riderId: null,
+    createdAt: new Date("2026-08-12T00:00:00Z"),
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    customer: { phone: "+263771111111" },
+    rider: null,
+    events: [],
+    ...extra,
+  });
+
+  it("returns EVERY live order newest-updated first — a food job and a parcel never collapse to one row", async () => {
+    let capturedWhere: unknown;
+    const rows: Record<string, unknown> = {
+      "o-food": snapRow("o-food", { orderType: "merchant", status: "picked_up", merchant: { name: "Sadza Republic" }, merchantPaymentMethod: "cash" }),
+      "o-parcel": snapRow("o-parcel", { status: "en_route_dropoff" }),
+    };
+    const prisma = {
+      order: {
+        findMany: async (args: { where: unknown }) => {
+          capturedWhere = args.where;
+          return [{ id: "o-food" }, { id: "o-parcel" }];
+        },
+        findUnique: async (args: { where: { id: string } }) => rows[args.where.id],
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const res = await svc.activeOrdersForCustomer("cust-1");
+    expect(res.map((o) => o.id)).toEqual(["o-food", "o-parcel"]);
+    expect(res[0]).toMatchObject({ merchantName: "Sadza Republic", merchantPaymentMethod: "cash", orderType: "merchant" });
+    expect(res[1]).toMatchObject({ id: "o-parcel", merchantName: null });
+    // The scope is the customer-active set PLUS kitchen-phase food orders (`requested` + merchant):
+    // a meal being prepared is a running job to the customer even before a rider exists.
+    expect(capturedWhere).toMatchObject({
+      customerId: "cust-1",
+      OR: [{ status: { in: CUSTOMER_ACTIVE_STATUSES } }, { orderType: "merchant", status: "requested" }],
+    });
+  });
+
+  it("returns an empty list when nothing is live", async () => {
+    const prisma = { order: { findMany: async () => [] } };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    expect(await svc.activeOrdersForCustomer("cust-1")).toEqual([]);
   });
 });
 

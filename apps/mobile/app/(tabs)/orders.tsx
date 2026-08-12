@@ -3,14 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { getActiveCustomerOrder, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
+import { getActiveCustomerOrders, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
 import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { ActiveOrderCheckFailedBanner, AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, useActiveOrderCheckGate } from "../../src/ui";
 
-const ACTIVE_ORDER_KEY = ["activeCustomerOrder"] as const;
+const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
 // The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome (fixed
 // in the standalone /history screen) — same fix, independent copy per home-feed.ts's own convention
@@ -72,9 +72,10 @@ function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): 
 // fare. Not the home tab's stepper LiveOrderCard: the mock draws no progress strip here.
 function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void }): React.ReactElement {
   const isFood = o.orderType === "merchant";
-  // The generic OrderSnapshot carries no merchant name, so a food job reads as "Restaurant order";
-  // a parcel reads as its route (matching the EARLIER OrderRow anatomy).
-  const title = isFood ? "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
+  // Kit RC.orders draws the RESTAURANT as a food job's headline ("Sadza Republic") — the snapshot
+  // carries `merchantName` for exactly this; a parcel reads as its route (matching the EARLIER
+  // OrderRow anatomy).
+  const title = isFood ? o.merchantName || "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
   const fare = o.agreedFare ?? o.proposedFare;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open live order ${title}`} style={{ marginBottom: tokens.space.md }}>
@@ -109,35 +110,42 @@ export default function OrdersTabScreen(): React.ReactElement {
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
 
-  // Mirrors `(tabs)/home.tsx`'s own active-order query: focus-gated polling, same
-  // `["activeCustomerOrder"]` cache entry both screens (and `send.tsx`'s restore banner) share.
+  // Mirrors `(tabs)/home.tsx`'s own live-orders query: focus-gated polling, same
+  // `["activeCustomerOrders"]` cache entry both screens share. The LIST endpoint — one pinned card
+  // per running job (a food order and a parcel running side-by-side both pin), matching home's
+  // one-card-per-job rule; `send.tsx`'s restore banner keeps its own single-order key.
   const [focused, setFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
-      void qc.invalidateQueries({ queryKey: ACTIVE_ORDER_KEY });
+      void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
       return () => setFocused(false);
     }, [qc]),
   );
-  const activeOrderQ = useQuery({
-    queryKey: ACTIVE_ORDER_KEY,
-    queryFn: getActiveCustomerOrder,
+  const activeOrdersQ = useQuery({
+    queryKey: ACTIVE_ORDERS_KEY,
+    queryFn: getActiveCustomerOrders,
     refetchInterval: focused ? 30_000 : false,
   });
-  const activeOrder = activeOrderQ.data ?? null;
+  const activeOrders = activeOrdersQ.data ?? [];
   // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
   // be in flight — see useActiveOrderCheckGate's rationale.
-  const activeOrderCheckFailed = useActiveOrderCheckGate(activeOrderQ);
+  const activeOrderCheckFailed = useActiveOrderCheckGate({
+    isError: activeOrdersQ.isError,
+    isSuccess: activeOrdersQ.isSuccess,
+    data: activeOrders[0] ?? null,
+  });
 
   const { rows, showingStale, isFetching, isError, hasLiveData, refetch } = useHistoryFeed();
   useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: ACTIVE_ORDER_KEY });
+    void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
     invalidateCustomerOrderHistory(qc);
   });
 
-  // The live order also appears in the same history feed (its status hasn't reached a terminal one
-  // yet) — excluded from "earlier" so it isn't shown twice.
-  const earlier = (rows ?? []).filter((r) => r.id !== activeOrder?.id);
+  // Live orders also appear in the same history feed (their status hasn't reached a terminal one
+  // yet) — excluded from "earlier" so they aren't shown twice.
+  const liveIds = new Set(activeOrders.map((o) => o.id));
+  const earlier = (rows ?? []).filter((r) => !liveIds.has(r.id));
 
   return (
     <AppScreen>
@@ -149,14 +157,22 @@ export default function OrdersTabScreen(): React.ReactElement {
         {/* Kit RC.orders: the screen title is 19px/700, not the 24px shared Heading. */}
         <Text style={{ fontSize: 19, fontWeight: "700", color: tokens.color.ink, marginBottom: 10 }}>Your orders</Text>
 
-        {activeOrder ? (
-          <ActiveOrderCard o={activeOrder} onPress={() => router.push(`/order/${activeOrder.id}`)} />
+        {activeOrders.length > 0 ? (
+          activeOrders.map((o) => (
+            <ActiveOrderCard
+              key={o.id}
+              o={o}
+              // A food job opens the food live tracker (its screen reads the MerchantOrderResponse
+              // feed); a parcel opens the generic tracking screen.
+              onPress={() => router.push(o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`)}
+            />
+          ))
         ) : activeOrderCheckFailed ? (
           // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
           // hits an error on this exact check must see a way back to it, not just the earlier list —
           // evidence-gated (UX-2026-08-05) so an inconsequential flaky-link failure stays quiet.
           <View style={{ marginBottom: tokens.space.md }}>
-            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
+            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrdersQ.refetch()} retrying={activeOrdersQ.isFetching} />
           </View>
         ) : null}
 
@@ -183,7 +199,7 @@ export default function OrdersTabScreen(): React.ReactElement {
         ) : hasLiveData ? (
           // Live data arrived with no earlier orders. With a live order already pinned above, that's
           // an unremarkable "nothing before this one yet" — not the true empty state.
-          activeOrder ? null : (
+          activeOrders.length > 0 ? null : (
             // Kit R0·b1 `orders_empty` (r-customer-a.jsx:565): the empty state sits inside a Card (the
             // owner-decided empty-state wrapper), not bare on the page.
             <Card style={{ paddingTop: 10, paddingRight: 16, paddingBottom: 18, paddingLeft: 16, marginTop: 24 }}>

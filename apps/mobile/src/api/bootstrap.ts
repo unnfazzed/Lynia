@@ -12,6 +12,10 @@ export interface BootstrapResponse {
   minSupportedVersion: string;
   me: Me;
   activeOrder: OrderSnapshot | null;
+  /** RC.home multi-card: EVERY live customer order, newest first (same shape as
+   *  /orders/mine/active-orders). Optional — an older API mid-rollout won't send it, in which case
+   *  the home screen's own list query fetches as usual (seed nothing, never a failure mode). */
+  activeOrders?: OrderSnapshot[];
 }
 
 /**
