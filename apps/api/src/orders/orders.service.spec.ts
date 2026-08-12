@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, EARNED_ORDER_STATUSES, OFFER_WINDOW_MS, OrderStatus, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -1133,27 +1133,27 @@ describe("OrdersService.historyForUser", () => {
     let args: { where: unknown; orderBy: unknown; take: unknown } | undefined;
     await svc([row()], (a) => (args = a)).historyForUser("cust-1");
     expect(args!.where).toEqual({
-      AND: [{ OR: [{ customerId: "cust-1" }, { riderId: "cust-1" }] }, { status: { in: COMPLETED_ORDER_STATUSES } }],
+      AND: [{ OR: [{ customerId: "cust-1" }, { riderId: "cust-1" }] }, { status: OrderStatus.COMPLETED }],
     });
     expect(args!.orderBy).toEqual({ createdAt: "desc" });
     expect(args!.take).toBe(50);
   });
 
-  it("scopes to completed/delivered orders only — drafts/in-flight, cancelled, expired and undelivered never reach the Orders/Trips list", async () => {
+  it("scopes to `completed` orders only — drafts/in-flight, cancelled, expired, undelivered AND delivered-but-unrated never reach the Orders/Trips list", async () => {
     // The customer Orders tab and the rider Trips list read this feed; both must show only
-    // successfully-completed orders. The status filter is applied in SQL so the 50-row cap counts
-    // completed rows, and both `completed` and `delivered` pass (a delivered-but-unrated trip is a
-    // real delivery — see COMPLETED_ORDER_STATUSES).
-    let args: { where: { AND: [unknown, { status: { in: string[] } }] } } | undefined;
+    // `completed` orders. The status filter is applied in SQL so the 50-row cap counts completed
+    // rows. `delivered` is intentionally excluded here (it still counts toward earnings — see
+    // EARNED_ORDER_STATUSES — but a trip is only LISTED once the customer's rating completes it).
+    let args: { where: { AND: [unknown, { status: string }] } } | undefined;
     await svc([row()], (a) => (args = a as typeof args)).historyForUser("cust-1");
-    const statuses = args!.where.AND[1].status.in;
-    expect(statuses).toEqual(COMPLETED_ORDER_STATUSES);
-    expect(statuses).toContain("completed");
-    expect(statuses).toContain("delivered");
-    expect(statuses).not.toContain("cancelled");
-    expect(statuses).not.toContain("expired");
-    expect(statuses).not.toContain("undelivered");
-    expect(statuses).not.toContain("requested");
+    const status = args!.where.AND[1].status;
+    expect(status).toBe(OrderStatus.COMPLETED);
+    expect(status).toBe("completed");
+    expect(status).not.toBe("delivered");
+    expect(status).not.toBe("cancelled");
+    expect(status).not.toBe("expired");
+    expect(status).not.toBe("undelivered");
+    expect(status).not.toBe("requested");
   });
 
   it("serializes fares, redacts contactPhone, and names the counterparty by viewpoint", async () => {
@@ -1219,7 +1219,7 @@ describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum 
     // A rider with well over 50 lifetime deliveries — the aggregate must reflect all of them, not a page.
     await svc({ _sum: { agreedFare: new Prisma.Decimal("6234.50") }, _count: { _all: 187 } }, (a) => (args = a)).earningsSummary("r1");
     expect(args).toMatchObject({
-      where: { riderId: "r1", status: { in: COMPLETED_ORDER_STATUSES } },
+      where: { riderId: "r1", status: { in: EARNED_ORDER_STATUSES } },
       _sum: { agreedFare: true },
       _count: { _all: true },
     });
