@@ -525,3 +525,67 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
     expect(offlineCopyHits(activeTree)).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Owner instruction, 2026-08-12 (device photo of the rider board): the board must NOT raise an error
+ * card for a background poll the rider never triggered. UX20-01's `ActiveJobCheckFailedBanner` did
+ * exactly that — it rendered on bare `activeQ.isError`, so any flaky link camped a red
+ * "Couldn't check for an active job" + Retry card at the top of the board, re-erroring every 8s. The
+ * photo caught it on the KYC gate, where an unverified rider cannot have an assigned job at all.
+ *
+ * This pins the removal on both render paths (the verified/online FlatList branch and the gated
+ * ScrollView branch), and pins that nothing else regressed with it: a SUCCESSFUL check still renders
+ * the "You have an active job" way-back card, which is the safety net UX20-01 actually cared about.
+ */
+describe("rider board (owner 2026-08-12: a failing background active-job check must raise no error card)", () => {
+  const FAILED_CHECK_COPY = "Couldn't check for an active job";
+  function failedCheckHits(tree: renderer.ReactTestRenderer): number {
+    return tree.root.findAll((n) => {
+      const c = n.props.children;
+      const flat = Array.isArray(c) ? c.join("") : typeof c === "string" ? c : "";
+      // The copy renders through `&apos;`, which RN resolves to a real "'" in the committed tree.
+      return flat.includes(FAILED_CHECK_COPY);
+    }).length;
+  }
+
+  it("verified + online, active-job check errors: renders the board with no error card", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockRejectedValue(new Error("network down"));
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(failedCheckHits(activeTree)).toBe(0);
+    // The board itself is unaffected — the failed background check must not swallow the job list.
+    expect(activeTree.root.findAllByType(FlatList)).toHaveLength(1);
+  });
+
+  it("KYC-gated rider (the state in the photo), active-job check errors: renders no error card over the gate", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
+    mockGetActiveOrder.mockRejectedValue(new Error("network down"));
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(failedCheckHits(activeTree)).toBe(0);
+  });
+
+  it("a SUCCESSFUL check still renders the way-back card — only the error card was removed", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(activeJobFixture());
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const openJob = activeTree.root.findAll(
+      (n) => n.props.label === "Open job" && typeof n.props.onPress === "function",
+    );
+    expect(openJob.length).toBeGreaterThan(0);
+  });
+});

@@ -62,25 +62,14 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 // SentOffer moved to src/logic/rider-bid-draft.ts (buildSentOfferEntry) so its construction — using
 // the SENT fare/eta, never live form state — is unit-testable without mounting this screen.
 
-/**
- * UX20-01: mirrors the customer home screen's ActiveOrderCheckFailedBanner — a rider with a genuine
- * assigned job who hits a query error on this check would otherwise see the ordinary online/board UI
- * with zero indication their active-job check failed and zero way back to /rider/job.
- */
-function ActiveJobCheckFailedBanner({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }): React.ReactElement {
-  return (
-    <Card style={{ borderColor: tokens.color.danger }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: 2 }}>
-        <Icon name="wifi-off" size={18} color={tokens.color.danger} />
-        <Text style={{ fontWeight: "700", color: tokens.color.ink }}>Couldn&apos;t check for an active job</Text>
-      </View>
-      <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>
-        If you have an assigned delivery, retry to find your way back to it.
-      </Text>
-      <Button label="Retry" variant="ghost" onPress={onRetry} loading={retrying} />
-    </Card>
-  );
-}
+// UX20-01's rider-side banner ("Couldn't check for an active job" + Retry, rendered on bare
+// `activeQ.isError`) is REMOVED — owner instruction, 2026-08-12, from a device photo of the board:
+// error cards belong to actions the rider took, not to a background poll. The check runs every 8s
+// (and on focus/foreground/socket-reconnect) against a query the rider never asked for, so any flaky
+// link camped a red card at the top of the board — including on the KYC gate, where an unverified
+// rider CANNOT have an assigned job and the card was pure noise, which is exactly what the photo
+// caught. The way back is not lost: `activeJobBanner` re-renders itself the moment a fetch succeeds,
+// and the poll self-heals. Do not reintroduce a bare-`isError` banner here; see KNOWN_BUGS UX20-01.
 
 export default function RiderHome(): React.ReactElement {
   const router = useRouter();
@@ -723,8 +712,6 @@ export default function RiderHome(): React.ReactElement {
       {/* Ghost: the accent-bordered card already carries the emphasis — one primary per state. */}
       <Button label="Open job" variant="ghost" onPress={() => pushOnce(router, pathname, "/rider/job")} />
     </Card>
-  ) : activeQ.isError ? (
-    <ActiveJobCheckFailedBanner onRetry={() => void activeQ.refetch()} retrying={activeQ.isFetching} />
   ) : null;
 
   const onlineToggleCard = (
