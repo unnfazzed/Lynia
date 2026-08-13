@@ -215,7 +215,11 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
   });
 
-  it("shows the active-order check failure banner (with retry) when held, the query errors, and a persisted hint says an order may be in flight", async () => {
+  // Owner instruction 2026-08-12: a background poll the customer never triggered must NOT raise an
+  // error card — not over the compose home, and not over the on-hold wall. This used to be
+  // evidence-gated (UX-2026-08-05); now it never renders, so a leftover hint from a pre-removal build
+  // can't resurrect it. The on-hold wall itself is unaffected.
+  it("raises no active-order check banner when held and the query errors, even with a leftover hint", async () => {
     secureStore["lynia.activeOrderHint"] = "order-1";
     mockGetActiveCustomerOrder.mockRejectedValue(new Error("network down"));
     mockGetMe.mockResolvedValue({ onHold: true });
@@ -224,12 +228,9 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     await settle();
     const tree = activeTree!;
 
-    expect(tree.root.findAll((n) => n.props.children === "Couldn't check for an active order").length).toBeGreaterThan(0);
-
-    mockGetActiveCustomerOrder.mockClear();
-    pressByText(tree, "Retry");
-    await settle();
-    expect(mockGetActiveCustomerOrder).toHaveBeenCalled();
+    expect(tree.root.findAll((n) => n.props.children === "Couldn't check for an active order").length).toBe(0);
+    // The wall the customer actually needs is still there.
+    expect(tree.root.findAll((n) => n.props.children === "Your account is on hold").length).toBeGreaterThan(0);
   });
 
   // UX-2026-08-05: with no local evidence of an order in flight, the failed background check stays

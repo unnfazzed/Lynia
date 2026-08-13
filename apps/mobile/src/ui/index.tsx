@@ -10,7 +10,6 @@ export { Icon, type IconName } from "./Icon";
 export { BrandLockup, DoveMark, Wordmark } from "./Brand";
 export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
-export { ActiveOrderCheckFailedBanner, useActiveOrderCheckGate } from "./ActiveOrderCheckFailedBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
@@ -42,7 +41,7 @@ export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./hap
 export { Avatar } from "./Avatar";
 export { RiderMini } from "./RiderMini";
 export { Celebrate } from "./Celebrate";
-export { ToastProvider, useToast, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
+export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 
 /**
  * LR20 exit test, reachable only from the test-build banner's long-press. A release build needs SOME
@@ -407,10 +406,12 @@ export function StatusPill({
 // spread into any money/numeric Text style so digit columns align.
 export const tabular = { fontVariant: ["tabular-nums"] as const };
 
-export function ErrorText({ message }: { message?: string | null }): React.ReactElement | null {
-  if (!message) return null;
-  return <Text style={{ color: tokens.color.danger, fontSize: tokens.font.size.body, marginTop: tokens.space.sm }}>{message}</Text>;
-}
+// `ErrorText` (a persistent red line under the button) is DELETED — owner instruction 2026-08-12:
+// "error cards must just display once and go — which is when an action is attempted and there is an
+// error." Every former call site now raises the same curated copy through `useActionError` /
+// `useActionErrorEffect` (src/ui/Toast.tsx), which speaks once for 4s and clears itself. Inline
+// validation is unaffected: `Field`'s own `error` prop still draws a persistent caption under the
+// offending input, because that message must stay readable while the user fixes the field.
 
 // ── §5c journey stepper ───────────────────────────────────────────────────────
 // One timeline seen from two sides (CONCEPT §5c): the customer and rider labels are paired so a step

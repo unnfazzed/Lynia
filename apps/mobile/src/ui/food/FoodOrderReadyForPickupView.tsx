@@ -1,7 +1,7 @@
 import { tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { ErrorText, Icon, OfflineBanner, Screen, Stepper } from "../index";
+import { Icon, OfflineBanner, Screen, Stepper } from "../index";
 import { OrderHeader } from "./FoodOrderHelpers";
 
 type ReadyForPickupOrder = Pick<MerchantOrderResponse, "noRiderHoldAt" | "status" | "merchantPhase">;
@@ -13,12 +13,10 @@ export function FoodOrderReadyForPickupView({
   order,
   restaurantName,
   reachable,
-  error,
 }: {
   order: ReadyForPickupOrder;
   restaurantName: string;
   reachable: boolean;
-  error: string | null;
 }): React.ReactElement {
   const onHold = order.noRiderHoldAt != null;
   return (
@@ -39,7 +37,6 @@ export function FoodOrderReadyForPickupView({
         </Text>
       </View>
       <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
-      <ErrorText message={error} />
     </Screen>
   );
 }

@@ -30,7 +30,7 @@ import { orderKey } from "../../../src/query/client";
 import { useFoodOrder } from "../../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../../src/query/use-restaurants";
 import { useOrderSocket } from "../../../src/realtime/use-order-socket";
-import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, Stepper, useToast } from "../../../src/ui";
+import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, Stepper, useActionError, useToast } from "../../../src/ui";
 import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
 import { FoodOrderAwaitingPaymentView } from "../../../src/ui/food/FoodOrderAwaitingPaymentView";
 import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
@@ -75,7 +75,9 @@ export default function FoodOrderScreen(): React.ReactElement {
     };
   }, []);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   const [referenceInput, setReferenceInput] = useState("");
   // Tapping "Pay now" from the still-unpaid reminder (R5·b1) jumps straight to the manual-rail pay
   // screen, bypassing the reminder gate — otherwise the elapsed-time check would just show it again.
@@ -486,7 +488,6 @@ export default function FoodOrderScreen(): React.ReactElement {
         restaurantName={restaurantName}
         reachable={reachable}
         now={now}
-        error={error}
         cancelFooter={CancelFooter}
       />
     );
@@ -500,7 +501,6 @@ export default function FoodOrderScreen(): React.ReactElement {
         restaurantName={restaurantName}
         reachable={reachable}
         now={now}
-        error={error}
         busy={busy}
         onApprove={(approve) => void approveItems(approve)}
       />
@@ -515,7 +515,6 @@ export default function FoodOrderScreen(): React.ReactElement {
         restaurantName={restaurantName}
         reachable={reachable}
         now={now}
-        error={error}
         busy={busy}
         forcePayScreen={forcePayScreen}
         onForcePay={() => setForcePayScreen(true)}
@@ -543,12 +542,12 @@ export default function FoodOrderScreen(): React.ReactElement {
   // Same server state as a first-time search, so it branches on the session latch above. Named
   // explicitly rather than letting the tracker silently rewind a step with no explanation.
   if (riderDropped) {
-    return <FoodOrderRiderDroppedView order={order} restaurantName={restaurantName} reachable={reachable} error={error} />;
+    return <FoodOrderRiderDroppedView order={order} restaurantName={restaurantName} reachable={reachable} />;
   }
 
   // ── ready_for_pickup: extracted to FoodOrderReadyForPickupView (RF-18) ──────────────────────────
   if (order.merchantPhase === "ready_for_pickup") {
-    return <FoodOrderReadyForPickupView order={order} restaurantName={restaurantName} reachable={reachable} error={error} />;
+    return <FoodOrderReadyForPickupView order={order} restaurantName={restaurantName} reachable={reachable} />;
   }
 
   // ── live tracker: a rider is secured (D-04) — the order rides the generic assigned→…→en_route_dropoff
@@ -564,7 +563,6 @@ export default function FoodOrderScreen(): React.ReactElement {
         restaurantName={restaurantName}
         reachable={reachable}
         now={now}
-        error={error}
         busy={busy}
         trackData={trackQ.data}
         deliveryCode={deliveryCode}
@@ -606,7 +604,6 @@ export default function FoodOrderScreen(): React.ReactElement {
         order={order}
         restaurantName={restaurantName}
         reachable={reachable}
-        error={error}
         events={trackQ.data?.events}
         rateBusy={rateBusy}
         onRate={(n) => void rateFood(n)}

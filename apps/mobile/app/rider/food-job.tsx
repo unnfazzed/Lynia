@@ -27,7 +27,7 @@ import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useActionError, useToast } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { FoodNavLeg } from "../../src/ui/rider/FoodNavLeg";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
@@ -70,7 +70,9 @@ export default function RiderFoodJob(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const toast = useToast();
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
 
   // A-O9: the job socket (below) resyncs `activeJob` on connect/connect_error/order:status already —
   // same fallback discipline as job.tsx's `jobPollFallback` (the parcel sibling) — so only fall back to
@@ -544,7 +546,6 @@ export default function RiderFoodJob(): React.ReactElement {
             variant={cashCollect && stillOwed ? "ghost" : "primary"}
             onPress={() => router.replace("/rider")}
           />
-          <ErrorText message={error} />
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
       </Screen>
@@ -934,7 +935,6 @@ export default function RiderFoodJob(): React.ReactElement {
 
         {isActive ? <GetHelpControl orderId={order.id} /> : null}
         <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
-        <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>

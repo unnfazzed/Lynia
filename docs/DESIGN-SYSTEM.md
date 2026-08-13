@@ -156,3 +156,56 @@ to git history.
 `packages/design/tokens/*.css` and `packages/shared/src/design-tokens.ts` are two faces of one system. When a token
 changes, update both (CSS var + TS key) and reflect it in `docs/DESIGN.md`. The apps import only from
 `@lynia/shared`; a future web surface can `@import "@lynia/design/styles.css"` directly.
+
+## Error surfaces — the four kinds, and which one you're allowed to build
+
+Owner instruction, 2026-08-12 (from a device photo of the rider board, then generalised): **"I don't
+want error cards that confuse customers or riders or get in the way of app use. Error cards must just
+display once and go — which is when an action is attempted and there is an error."**
+
+That rule sorts every failure surface in the app into four kinds. Three are legitimate; the fourth is
+banned and has been removed.
+
+| Kind | What it is | Treatment | Primitive |
+|---|---|---|---|
+| **Action error** | The user tapped something and it failed | Speaks **once**, auto-dismisses after 4s, never persists | `useActionError()` / `useActionErrorEffect()` |
+| **Field validation** | The value in *this* input is wrong | Stays inline until fixed — it must be readable while you correct it | `Field`'s own `error` prop |
+| **Content-slot state** | You opened a screen and its data didn't load | Calm `EmptyState` + Retry, **in the content area**, never red | `EmptyState` (default `accent` tone) |
+| **Connection status** | Network/socket is down | Calm strip, self-clears on reconnect — a state, not an error | `OfflineBanner` |
+| ~~**Background-poll error card**~~ | A poll the user never triggered failed | **BANNED — do not build this** | *(none — deleted)* |
+
+**Why the fourth kind is banned.** It fires on work the user didn't ask for, on a timer, so it
+re-raises indefinitely on a flaky link and camps over a screen that is otherwise working. Two shipped
+instances proved it in the field and both are gone: the rider board's `ActiveJobCheckFailedBanner`
+(photographed stacked over the KYC gate, where an unverified rider *cannot* have an assigned job) and
+the customer's `ActiveOrderCheckFailedBanner` (Home/Orders/Send). Note that the second one had already
+been narrowed once, in 2026-08-05, by gating it behind persisted evidence — that refinement was not
+enough, because the category itself is the problem, not its hit rate. The queries behind both self-heal
+on their own poll plus reconnect/foreground refetch, so a failed check simply shows nothing and the
+real card returns when the data does.
+
+**`ErrorText` is deleted.** It rendered a persistent red line under a button that nothing cleared but a
+later success — the same get-in-the-way problem in miniature. Every former call site now raises the
+*same curated copy* through `useActionError`, so the screen-specific wording each `onError` computes
+("That request's window just closed — someone else may already have it.") is preserved exactly; only
+the delivery changed.
+
+**If you are adding a failure surface, the test is: did the user just tap something?** If yes, it's an
+action error — toast it. If no, it belongs in the content slot or it doesn't exist.
+
+**Implementation note for action errors.** `useActionError` returns a `(message: string | null) => void`
+with the same shape as the `setError` setters it replaced, so call sites read unchanged and a
+`setError(null)` "clear" is a harmless no-op. It raises **unconditionally per call** — deliberately.
+A `useState`-backed version silently swallows a second failure carrying identical copy (React bails out
+when the value is unchanged, so the effect never re-runs), which is precisely the retry the user most
+needs to hear about. For failures derived from a mutation's own `error` object rather than held in
+state, use `useActionErrorEffect(mutation.error)`: it keys on the Error **object**, and React Query
+mints a fresh one per attempt, so identical-copy retries still speak. Both are pinned by
+`src/ui/__tests__/action-error.test.tsx`. Being hooks, they must be declared above a screen's early
+returns — the old `<ErrorText>` was plain JSX and could sit anywhere in the render body.
+
+**The design kit never drew a persistent error line or a toast** — `packages/design/components/feedback/`
+carries only `EmptyState`, `OfflineBanner`, `Skeleton`/`SkeletonList` and `SystemState`. `ErrorText` and
+both check-failed banners were app inventions, so removing them needs no `docs/DESIGN-DEVIATIONS.md`
+entry; "not drawn ⇒ not rendered" argues for their removal. The kit's `Field` error caption is drawn and
+is kept.

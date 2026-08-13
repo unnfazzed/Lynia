@@ -29,7 +29,7 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, BrandHeader, Button, Card, EmptyState, ErrorText, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub } from "../../../src/ui";
+import { AppScreen, BrandHeader, Button, Card, EmptyState, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
@@ -98,7 +98,9 @@ export default function RiderHome(): React.ReactElement {
   // board socket + heartbeat with no warning — a rider could go browse as a customer and lose track of
   // an accepted job, or go effectively deaf to new broadcasts while still marked online server-side.
   const [confirmSwitch, setConfirmSwitch] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   // BH-03: a calm (non-error) status line — distinct from `error` — for feedback that isn't a
   // failure, e.g. "Continue verification" in manual KYC mode where there's no browser step to open.
   const [info, setInfo] = useState<string | null>(null);
@@ -870,7 +872,6 @@ export default function RiderHome(): React.ReactElement {
           onPress={() => (online || activeJob ? setConfirmSwitch(true) : router.replace("/home"))}
         />
       )}
-      <ErrorText message={error} />
       {info ? <Sub>{info}</Sub> : null}
       <View style={{ height: tokens.space.xxl }} />
     </>

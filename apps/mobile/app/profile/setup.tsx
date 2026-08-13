@@ -7,7 +7,7 @@ import { ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference } from "../../src/auth/session";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
-import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../../src/ui";
+import { Button, Field, Heading, Icon, Screen, Sub, useActionError } from "../../src/ui";
 
 /**
  * The mock (screens.jsx `Register`) draws a single "Full name" field; the account record and the
@@ -44,7 +44,9 @@ export default function ProfileSetupScreen(): React.ReactElement {
   const [fullName, setFullName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   const [draftRestored, setDraftRestored] = useState(false);
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
   const hydrated = useRef(false);
@@ -150,7 +152,6 @@ export default function ProfileSetupScreen(): React.ReactElement {
         hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
       />
       <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
-      <ErrorText message={error} />
     </Screen>
   );
 }

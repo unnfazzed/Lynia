@@ -19,7 +19,8 @@ import {
 } from "../logic/safety";
 import { pendingOrQueued } from "../query/client";
 import { randomUuidV4, uuidV4FromSeed } from "../util";
-import { Button, ErrorText, Field, haptic, Icon } from "./index";
+import { Button, Field, haptic, Icon } from "./index";
+import { useActionErrorEffect } from "./Toast";
 
 /**
  * Trust & safety surfaces shared across the customer order screen and the rider job screen (both roles):
@@ -156,6 +157,9 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
     mutationFn: () => raiseIssue(orderId, { type: type!, description: desc.trim(), idempotencyKey }),
     onSuccess: () => setDone(true),
   });
+  // Spoken once as an auto-dismissing toast rather than a red line camped inside the sheet (owner
+  // instruction 2026-08-12). Keyed on the Error object so a second failed send still speaks.
+  useActionErrorEffect(m.error);
 
   function close(): void {
     setOpen(false);
@@ -191,7 +195,6 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
               placeholder="Add any detail that helps us understand what happened"
               maxLength={ISSUE_DESCRIPTION_MAX}
             />
-            <ErrorText message={m.isError ? errText(m.error) : null} />
             <Button
               label="Send to our team"
               onPress={() => m.mutate()}
@@ -224,6 +227,7 @@ export function ReportControl({
     mutationFn: () => reportUser(orderId, { reason: reason!, note: note.trim() || undefined, block }),
     onSuccess: () => setDone(true),
   });
+  useActionErrorEffect(m.error);
 
   function close(): void {
     setOpen(false);
@@ -324,7 +328,6 @@ export function ReportControl({
                 </Text>
               </View>
             </Pressable>
-            <ErrorText message={m.isError ? errText(m.error) : null} />
             <Button label="Send report" onPress={() => m.mutate()} loading={pendingOrQueued(m)} disabled={!canSubmitReport(reason, note)} />
           </>
         )}

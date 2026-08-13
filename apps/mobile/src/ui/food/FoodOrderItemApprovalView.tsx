@@ -1,7 +1,7 @@
 import { RESTAURANTS_TIMING, tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { Button, Card, ErrorText, Icon, OfflineBanner, Screen } from "../index";
+import { Button, Card, Icon, OfflineBanner, Screen } from "../index";
 import { formatCountdown } from "./CountdownRing";
 import { OrderHeader } from "./FoodOrderHelpers";
 import { PriceMath } from "./PriceMath";
@@ -15,7 +15,6 @@ export function FoodOrderItemApprovalView({
   restaurantName,
   reachable,
   now,
-  error,
   busy,
   onApprove,
 }: {
@@ -23,7 +22,6 @@ export function FoodOrderItemApprovalView({
   restaurantName: string;
   reachable: boolean;
   now: number;
-  error: string | null;
   busy: boolean;
   onApprove: (approve: boolean) => void;
 }): React.ReactElement {
@@ -41,7 +39,6 @@ export function FoodOrderItemApprovalView({
     <Screen
       footer={
         <View style={{ gap: tokens.space.sm }}>
-          <ErrorText message={error} />
           <Button
             label={`Yes — send it without ${unavailable[0]?.name ?? "it"}`}
             onPress={() => onApprove(true)}

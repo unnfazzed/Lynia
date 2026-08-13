@@ -5,7 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { ACCOUNT_ON_HOLD_COPY } from "../../logic/gates";
 import { formatMoney } from "../../logic/money";
-import { ActiveOrderCheckFailedBanner, Button, EmptyState, Icon, Screen, statusPillLabel } from "../index";
+import { Button, EmptyState, Icon, Screen, statusPillLabel } from "../index";
 import { SupportCallRow } from "../safety";
 
 /**
@@ -56,18 +56,10 @@ export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.Re
  */
 export function SendAccountOnHoldView({
   activeOrder,
-  activeOrderCheckFailed,
-  activeOrderIsFetching,
-  onRetryActiveOrder,
   meIsFetching,
   onRefreshStatus,
 }: {
   activeOrder: OrderSnapshot | null;
-  /** The already-gated decision from send.tsx's useActiveOrderCheckGate — NOT the raw query
-   *  `isError` (hooks can't run below send.tsx's early return, and the gate must not drift). */
-  activeOrderCheckFailed: boolean;
-  activeOrderIsFetching: boolean;
-  onRetryActiveOrder: () => void;
   meIsFetching: boolean;
   onRefreshStatus: () => void;
 }): React.ReactElement {
@@ -77,11 +69,7 @@ export function SendAccountOnHoldView({
           already in flight (getSnapshot/cancel/rating all still work for a held customer). So a customer
           put on hold mid-delivery keeps a way into that live order — the only nav entry point on this
           headerless screen — rather than being locked out of it entirely by the wall below. */}
-      {activeOrder ? (
-        <ActiveOrderBanner order={activeOrder} />
-      ) : activeOrderCheckFailed ? (
-        <ActiveOrderCheckFailedBanner onRetry={onRetryActiveOrder} retrying={activeOrderIsFetching} />
-      ) : null}
+      {activeOrder ? <ActiveOrderBanner order={activeOrder} /> : null}
       <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>
         <SupportCallRow />
         <Button label="Refresh status" variant="ghost" onPress={onRefreshStatus} loading={meIsFetching} />

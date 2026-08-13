@@ -17,6 +17,9 @@ export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
+  // Stays `useState`, deliberately: this screen's failure rides the phone Field's OWN caption (see the
+  // header note + phone.view.tsx's data seam), i.e. inline field validation, which the owner's
+  // 2026-08-12 rule explicitly keeps in place — the message must stay readable while you fix the number.
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (): Promise<void> => {
