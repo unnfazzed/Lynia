@@ -1,14 +1,11 @@
 import { formatPhoneLocal, tokens, type MerchantOrderResponse } from "@lynia/shared";
-import React, { useState } from "react";
+import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
 import { AppBar, Button, Card, EmptyState, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
-import { usePaymentSimulation } from "../payment-simulation";
 import { Money } from "../Money";
-import { FoodPayFailedView } from "./FoodPayFailedView";
-import { FoodPayWaitView } from "./FoodPayWaitView";
 import { ManualPayRail } from "./ManualPayRail";
 import { OrderHeader, Row } from "./FoodOrderHelpers";
 
@@ -61,46 +58,20 @@ export function FoodOrderAwaitingPaymentView({
 }): React.ReactElement {
   const amount = order.total ?? order.merchantGoodsTotal ?? 0;
 
-  // R5·4/R5·b2 — the rail prompt wait and its decline, WHICH THIS BACKEND CANNOT DO.
+  // R5·4 ("check your phone") and R5·b2 ("declined") are NOT built, deliberately.
   //
-  // There is no prompt-send endpoint and no decline callback anywhere in this codebase: the shipped
-  // payment path is the manual rail below (dial USSD → submit your reference → the merchant matches it
-  // against their own statement). Those two designed screens are walkable so the journey can be
-  // reviewed ahead of the real rail, and the transition into them is a PREVIEW — opened by
-  // `usePaymentSimulation()`, which is the QA APK plus a server kill switch that is ON by default and
-  // retractable in ~1 minute without an app update (owner instruction 2026-08-12: ship what we can
-  // ahead of launch).
+  // They are the two screens of a prompt-push rail, and this backend has no such thing: there is no
+  // prompt-send endpoint and no decline callback — `food-order.controller.ts` exposes
+  // `POST orders/:orderId/payment-reference` and nothing that could ask a rail for money. They briefly
+  // shipped as a walkable mock reached by a fake button; that button was removed on 2026-08-13 when the
+  // rest of the payment work was wired for real, because unlike the rider top-up (which has a complete
+  // server API waiting on a rail) this lane has no endpoint to be a client OF. Wiring it would have
+  // meant inventing the API shape for a rail nobody has built — a guess that would need rewriting the
+  // day a real one lands.
   //
-  // Non-negotiable, and unchanged by shipping it wider: there is NO simulated success. `payPhase` can
-  // only reach "wait" and "failed" — both of which state that no money moved — and the sole route to a
-  // paid order stays the real reference submission. A screen that claimed money moved when nothing was
-  // sent is the exact defect this programme exists to fix. Note the entry below is a *dead end by
-  // construction*: every exit from both preview screens lands back on the reference form.
-  const [payPhase, setPayPhase] = useState<"form" | "wait" | "failed">("form");
-  const simulateRail = usePaymentSimulation();
-  if (simulateRail && payPhase === "wait") {
-    return (
-      <FoodPayWaitView
-        restaurantName={restaurantName}
-        amount={amount}
-        merchantPaymentPhone={order.merchantPaymentPhone}
-        reachable={reachable}
-        onEnterReference={() => setPayPhase("form")}
-        onSimulateDecline={() => setPayPhase("failed")}
-      />
-    );
-  }
-  if (simulateRail && payPhase === "failed") {
-    return (
-      <FoodPayFailedView
-        restaurantName={restaurantName}
-        amount={amount}
-        reachable={reachable}
-        onTryAgain={() => setPayPhase("wait")}
-        onPayManually={() => setPayPhase("form")}
-      />
-    );
-  }
+  // The shipped path below is the whole path, and it genuinely works end to end: dial the USSD, submit
+  // the reference, the merchant matches it against their own statement. Rebuild R5·4/R5·b2 (they are in
+  // git history, at the commit that removed them) once a prompt-send endpoint exists to drive them.
 
   // R5·6: paid, waiting for the restaurant's own confirm.
   if (order.merchantPaymentReference && !order.merchantPaymentConfirmedAt) {
@@ -210,15 +181,6 @@ export function FoodOrderAwaitingPaymentView({
           hint="Copy it from the confirmation SMS — not a screenshot."
         />
         <Button label="Submit my reference" onPress={onSubmitReference} disabled={busy || !referenceInput.trim()} loading={busy} />
-        {/* The door into R5·4/R5·b2 (see the payPhase comment above). It sits BELOW the real "Submit my
-            reference" action so the working path is always the first one a customer reaches. Since
-            2026-08-12 the label no longer says it is a preview, and the screens behind it no longer
-            carry a marker — the owner removed both, accepting the risk — so nothing on the customer's
-            side distinguishes this from a working rail. `PAYMENT_SIMULATION_ENABLED` is the only thing
-            that can take it back. */}
-        {simulateRail ? (
-          <Button label="Pay by prompt" variant="ghost" onPress={() => setPayPhase("wait")} />
-        ) : null}
         {/* The pay screen is the other long wait the tracker had gone missing on — restore it below the
             pay actions so the kitchen-confirm/payment phase stays legible while the money is in flight. */}
         <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />

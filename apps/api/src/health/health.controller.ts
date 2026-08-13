@@ -1,5 +1,5 @@
 import { Controller, Get, Header, Inject, ServiceUnavailableException } from "@nestjs/common";
-import type { MerchantFeatureFlagsResponse, PreviewFlagsResponse, VersionGateResponse } from "@lynia/shared";
+import type { MerchantFeatureFlagsResponse, VersionGateResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
@@ -53,18 +53,5 @@ export class HealthController {
       merchantDispatchAutoEnabled: this.env.MERCHANT_DISPATCH_AUTO_ENABLED === "true",
       merchantWalletEnabled: this.env.MERCHANT_WALLET_ENABLED === "true",
     };
-  }
-
-  // Kill switches for drawn-but-unbacked surfaces — today, the two payment walkthroughs that stand in
-  // for the mobile-money rail nobody has built yet (rider top-up, food-checkout prompt/decline).
-  // Deliberately NOT merged into `app/feature-flags`: that response is `.strict()` and the binaries
-  // already on the internal track parse it with their own bundled copy, so a fourth field would make
-  // them reject the body and fall back to defaults — disarming the Restaurants kill switch on installs
-  // we cannot reach without a store release. Same cheap-static-read, same public-before-sign-in
-  // reasoning, same 60s convergence as the flags above.
-  @Get("app/preview-flags")
-  @Header("Cache-Control", "public, max-age=60")
-  previewFlags(): PreviewFlagsResponse {
-    return { paymentSimulationEnabled: this.env.PAYMENT_SIMULATION_ENABLED === "true" };
   }
 }

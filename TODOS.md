@@ -102,11 +102,7 @@ starts from reasoning, not archaeology.
 ### Post-launch flag cleanup (the Piranha pass)
 
 - **What:** Delete `RESTAURANTS_ENABLED` / `MERCHANT_*` kill switches, the golden-matrix
-  flags-off legs, and dead flag branches once Restaurants is permanently live. Also
-  `PAYMENT_SIMULATION_ENABLED` — but that one has a *different* trigger: it dies with the payment
-  previews it gates, on the day a real rail calls `WalletService.creditFromTopup`, NOT on a calendar.
-  Deleting the flag means deleting `TopUpSimulator`, the `R5·4`/`R5·b2` preview transition and
-  `GET /app/preview-flags` with it (`docs/PAYMENT-RAIL-OUTSTANDING.md` §5).
+  flags-off legs, and dead flag branches once Restaurants is permanently live.
 - **Why:** Stale flags are dead branches with security edges; the repo's own precedent is that
   kill switches persist forever unless scheduled for removal (eng review outside-voice #11).
 - **Pros:** Keeps `env.ts` and the test matrix honest; removes untested code paths.

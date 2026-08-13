@@ -335,19 +335,25 @@ export async function clearSenderRatingPending(): Promise<void> {
 // manually watching the balance. Read + cleared by the Money tab, which reconciles the marker to a
 // terminal outcome. Single slot — a rider has one top-up attempt in flight at a time.
 //
-// NO WRITER TODAY. The `savePendingTopup` half was removed as dead code: it never had a caller in any
-// commit, because the self-serve rail it belonged to was never integrated (`WalletService
-// .creditFromTopup` has no callers either, and `app/wallet/top-up.tsx` was rewritten to a "call
-// support" screen). Still true after 2026-08-12: the kit's top-up screens now ship to riders as a
-// labelled PREVIEW (`src/ui/rider/TopUpSimulator.tsx`), but it makes no network call and opens no
-// `TopUp` intent, so it deliberately writes no marker here — there is nothing to reconcile when
-// nothing was ever requested. The read/clear half is kept deliberately: it is the landing point for
-// the rail integration, and it costs nothing until then. See `docs/PAYMENT-RAIL-OUTSTANDING.md`.
+// WRITTEN BY `src/ui/rider/TopUpFlow.tsx` the instant an intent is created, and cleared when it
+// reaches a terminal state. The writer was dead code for a long stretch — the self-serve rail was never
+// integrated, so nothing opened an intent to mark — and was deleted; it is back now that the top-up
+// screen is a real client of `POST /wallet/topups`. Note the marker records that an intent EXISTS, not
+// that money moved: the Money tab resolves it against the server's own status
+// (`reconcilePendingTopup`), which is still the only authority on whether a balance changed.
 const PENDING_TOPUP_KEY = "lynia.pendingTopup";
 export interface PendingTopup {
   topupId: string;
 }
 
+export async function savePendingTopup(v: PendingTopup): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PENDING_TOPUP_KEY, JSON.stringify(v));
+  } catch {
+    /* best-effort — a keychain write failure must never block the top-up itself. The cost is losing
+       the app-kill recovery path for this one attempt, not the attempt. */
+  }
+}
 export async function loadPendingTopup(): Promise<PendingTopup | null> {
   try {
     const raw = await SecureStore.getItemAsync(PENDING_TOPUP_KEY);
