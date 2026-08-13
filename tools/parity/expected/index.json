@@ -41,6 +41,7 @@
     "RC.list",
     "RC.menu",
     "RC.orders",
+    "RC.orders_empty",
     "RC.pay_now",
     "RC.search",
     "RC.track_way",
