@@ -73,7 +73,7 @@ const config: ExpoConfig = {
   // (first Mobile Release dispatch failed exactly here — run 30852221217).
   owner: "lyniago",
   scheme: "lynia",
-  version: "0.34.0", // x-release-please-version
+  version: "0.35.0", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
   // config), so an OTA bundle can only ever land on a binary it was actually built against —
   // a JS update can't brick an older native install. Native changes shift the fingerprint and
