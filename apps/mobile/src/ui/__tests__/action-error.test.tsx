@@ -10,7 +10,7 @@
  * failure is mute) — which would be worse than the persistent line it replaced, because the user would
  * be left with no feedback at all on the attempt they're most anxious about.
  */
-import React, { useEffect } from "react";
+import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";

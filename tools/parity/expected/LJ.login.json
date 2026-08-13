@@ -1,0 +1,84 @@
+{
+  "key": "LJ.login",
+  "src": "LJ",
+  "id": "login",
+  "mode": "phone",
+  "component": "app/phone.tsx",
+  "fixture": "auth_phone",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 3,
+    "text": 5,
+    "image": 1,
+    "input": 1
+  },
+  "texts": [
+    "LyniaGo",
+    "Welcome to Lynia",
+    "We'll SMS a one-time code to this number.",
+    "Phone number",
+    "Send code"
+  ],
+  "textPaths": [
+    "0.1",
+    "1",
+    "2",
+    "3.0",
+    "4"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "LyniaGo"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Welcome to Lynia"
+      },
+      {
+        "role": "text",
+        "text": "We'll SMS a one-time code to this number."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Phone number"
+          },
+          {
+            "role": "input",
+            "text": "+263 77 245 1180"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Send code"
+      }
+    ]
+  }
+}

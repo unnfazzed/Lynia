@@ -1,0 +1,143 @@
+{
+  "key": "LJ.role_select_flag_off",
+  "src": "LJ",
+  "id": "role_select_flag_off",
+  "mode": "phone",
+  "component": "app/role.tsx",
+  "fixture": "auth_role_flag_off",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 8,
+    "text": 8,
+    "image": 5,
+    "input": 0
+  },
+  "texts": [
+    "LyniaGo",
+    "How do you want to start?",
+    "It's one account — pick how you'll use LyniaGo now, and switch anytime.",
+    "Use LyniaGo",
+    "Send parcels across Harare — more services soon.",
+    "Earn as a rider",
+    "Deliver parcels near you and get paid in cash.",
+    "Continue as a customer"
+  ],
+  "textPaths": [
+    "0.1",
+    "1",
+    "2",
+    "3.1.0",
+    "3.1.1",
+    "4.1.0",
+    "4.1.1",
+    "5"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "LyniaGo"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "How do you want to start?"
+      },
+      {
+        "role": "text",
+        "text": "It's one account — pick how you'll use LyniaGo now, and switch anytime."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Use LyniaGo"
+              },
+              {
+                "role": "text",
+                "text": "Send parcels across Harare — more services soon."
+              }
+            ]
+          },
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Earn as a rider"
+              },
+              {
+                "role": "text",
+                "text": "Deliver parcels near you and get paid in cash."
+              }
+            ]
+          },
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Continue as a customer"
+      }
+    ]
+  }
+}

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
-import { ApiError } from "../../src/api/client";
 import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from "../../src/api/food-rider";
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";

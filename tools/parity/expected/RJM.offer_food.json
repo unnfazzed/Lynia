@@ -1,0 +1,157 @@
+{
+  "key": "RJM.offer_food",
+  "src": "RJM",
+  "id": "offer_food",
+  "mode": "phone",
+  "component": "app/rider/food-offer.tsx",
+  "fixture": "rider_food_offer",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 10,
+    "text": 10,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Food job",
+    "Sadza Republic → Belgravia",
+    "FOOD",
+    "$2.40",
+    "Your fare is fixed for food jobs — $1.50 base + $0.60/km over 2.4 km. No bidding.",
+    "MONEY AT THE DOOR",
+    "Collect $15.50 for the kitchen",
+    "Nothing from your pocket. You hand this back at the restaurant after the drop.",
+    "Accept this job",
+    "Not this one"
+  ],
+  "textPaths": [
+    "0.0.1.0",
+    "0.0.1.1",
+    "0.1.0.0.1",
+    "0.1.0.1",
+    "0.1.1",
+    "0.1.2.0",
+    "0.1.2.1",
+    "0.1.2.2",
+    "1.0",
+    "1.1"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      5,
+      6,
+      7
+    ],
+    [
+      8,
+      9
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Food job"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic → Belgravia"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "FOOD"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.40"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Your fare is fixed for food jobs — $1.50 base + $0.60/km over 2.4 km. No bidding."
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "MONEY AT THE DOOR"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Collect $15.50 for the kitchen"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Nothing from your pocket. You hand this back at the restaurant after the drop."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Accept this job"
+          },
+          {
+            "role": "text",
+            "text": "Not this one"
+          }
+        ]
+      }
+    ]
+  }
+}

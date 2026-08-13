@@ -1,0 +1,255 @@
+{
+ "key": "LJ.settings_perms",
+ "src": "LJ",
+ "id": "settings_perms",
+ "mode": "phone",
+ "component": "app/settings/index.tsx",
+ "fixture": "settings_perms",
+ "generator": "tools/parity/extract-expected.mjs",
+ "chromeDropped": [
+  "status-bar: 09:413G84%"
+ ],
+ "roleCounts": {
+  "container": 13,
+  "text": 15,
+  "image": 10,
+  "input": 0
+ },
+ "texts": [
+  "Settings",
+  "Chipo M.",
+  "+263 77 245 1180",
+  "PERMISSIONS — READ FROM YOUR PHONE",
+  "Location",
+  "Ask every time",
+  "Notifications",
+  "Off",
+  "You won't hear when a rider offers or when your parcel arrives. Open system settings",
+  "These show your phone's real settings — LyniaGo re-checks them every time you come back to the app. Changing one opens Android settings.",
+  "Language",
+  "English",
+  "Payment",
+  "Cash",
+  "LyniaGo v1.0.0"
+ ],
+ "textPaths": [
+  "0.0",
+  "1.0.1.0",
+  "1.0.1.1",
+  "1.1",
+  "1.2.1",
+  "1.2.2",
+  "1.3.0.1",
+  "1.3.0.2.1",
+  "1.3.1.0",
+  "1.4",
+  "1.5.1",
+  "1.5.2",
+  "1.6.1",
+  "1.6.2",
+  "1.7"
+ ],
+ "groups": [
+  [
+   1,
+   2
+  ],
+  [
+   4,
+   5
+  ],
+  [
+   10,
+   11
+  ],
+  [
+   12,
+   13
+  ]
+ ],
+ "note": "",
+ "dynamic": [],
+ "extra": [
+  {
+   "text": "Edit profile",
+   "reason": "The base LJ.settings mock (screens.jsx Settings) draws an 'Edit profile' row; the SH11 settings_perms shipped-state focuses its gallery tile on the permissions section and omits it, but the real app settings screen is the union of both mocks.",
+   "ref": "packages/design/explorations/journey/screens.jsx :: Settings"
+  },
+  {
+   "text": "Coming soon",
+   "reason": "Honest degraded value on the Edit-profile row: profile editing is not built yet, so the row shows 'Coming soon' rather than navigating nowhere. Drift from the base mock (which draws the row valueless); tracked, not sanctioned.",
+   "ref": "docs/KNOWN_BUGS.md#PXR-05"
+  },
+  {
+   "text": "Privacy notice",
+   "reason": "Entry row to the SH7 Privacy screen this lane built — the mock draws Privacy as a destination screen (screens-shipped.jsx Privacy), reached from settings; the settings_perms shipped-state omits the reachability row.",
+   "ref": "packages/design/explorations/journey/screens-shipped.jsx :: Privacy"
+  },
+  {
+   "text": "Sign out",
+   "reason": "The base LJ.settings mock draws a 'Sign out' danger row at the bottom of the settings list; the focused SH11 permissions shipped-state omits it, but the real settings screen keeps it.",
+   "ref": "packages/design/explorations/journey/screens.jsx :: Settings"
+  },
+  {
+   "text": "Delete account",
+   "reason": "Entry row to the DeleteAccount screen this lane built — the mock draws DeleteAccount as a destination (screens-shipped.jsx DeleteAccount); the settings_perms shipped-state omits the reachability row.",
+   "ref": "packages/design/explorations/journey/screens-shipped.jsx :: DeleteAccount"
+  }
+ ],
+ "undrawn": [],
+ "tree": {
+  "role": "container",
+  "children": [
+   {
+    "role": "container",
+    "children": [
+     {
+      "role": "text",
+      "text": "Settings"
+     }
+    ]
+   },
+   {
+    "role": "container",
+    "children": [
+     {
+      "role": "container",
+      "children": [
+       {
+        "role": "container",
+        "children": [
+         {
+          "role": "image"
+         }
+        ]
+       },
+       {
+        "role": "container",
+        "children": [
+         {
+          "role": "text",
+          "text": "Chipo M."
+         },
+         {
+          "role": "text",
+          "text": "+263 77 245 1180"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "text",
+      "text": "PERMISSIONS — READ FROM YOUR PHONE"
+     },
+     {
+      "role": "container",
+      "children": [
+       {
+        "role": "image"
+       },
+       {
+        "role": "text",
+        "text": "Location"
+       },
+       {
+        "role": "text",
+        "text": "Ask every time"
+       },
+       {
+        "role": "image"
+       }
+      ]
+     },
+     {
+      "role": "container",
+      "children": [
+       {
+        "role": "container",
+        "children": [
+         {
+          "role": "image"
+         },
+         {
+          "role": "text",
+          "text": "Notifications"
+         },
+         {
+          "role": "container",
+          "children": [
+           {
+            "role": "image"
+           },
+           {
+            "role": "text",
+            "text": "Off"
+           }
+          ]
+         },
+         {
+          "role": "image"
+         }
+        ]
+       },
+       {
+        "role": "container",
+        "children": [
+         {
+          "role": "text",
+          "text": "You won't hear when a rider offers or when your parcel arrives. Open system settings"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "text",
+      "text": "These show your phone's real settings — LyniaGo re-checks them every time you come back to the app. Changing one opens Android settings."
+     },
+     {
+      "role": "container",
+      "children": [
+       {
+        "role": "image"
+       },
+       {
+        "role": "text",
+        "text": "Language"
+       },
+       {
+        "role": "text",
+        "text": "English"
+       },
+       {
+        "role": "image"
+       }
+      ]
+     },
+     {
+      "role": "container",
+      "children": [
+       {
+        "role": "image"
+       },
+       {
+        "role": "text",
+        "text": "Payment"
+       },
+       {
+        "role": "text",
+        "text": "Cash"
+       },
+       {
+        "role": "image"
+       }
+      ]
+     },
+     {
+      "role": "text",
+      "text": "LyniaGo v1.0.0"
+     }
+    ]
+   }
+  ]
+ }
+}

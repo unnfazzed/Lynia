@@ -1,0 +1,118 @@
+{
+  "key": "LJ.delete_final",
+  "src": "LJ",
+  "id": "delete_final",
+  "mode": "phone",
+  "component": "app/settings/delete-account.tsx",
+  "fixture": "delete_final",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 8,
+    "text": 6,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Delete account",
+    "This is the final step",
+    "Your account closes now and is permanently deleted after 30 days. Sign back in within 30 days and the deletion is cancelled — after that, nothing can be recovered.",
+    "I understand my history and saved places will be gone",
+    "Delete my account",
+    "Keep my account"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.0",
+    "1.0.1",
+    "1.0.2.1",
+    "1.1",
+    "1.2"
+  ],
+  "groups": [
+    [
+      4,
+      5
+    ],
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Delete account"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "This is the final step"
+              },
+              {
+                "role": "text",
+                "text": "Your account closes now and is permanently deleted after 30 days. Sign back in within 30 days and the deletion is cancelled — after that, nothing can be recovered."
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "I understand my history and saved places will be gone"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Delete my account"
+          },
+          {
+            "role": "text",
+            "text": "Keep my account"
+          }
+        ]
+      }
+    ]
+  }
+}

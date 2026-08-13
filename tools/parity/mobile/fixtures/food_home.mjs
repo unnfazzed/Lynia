@@ -10,11 +10,16 @@ const open = { open: "00:00", close: "23:59" };
 const HOURS = { mon: open, tue: open, wed: open, thu: open, fri: open, sat: open, sun: open };
 const LOC = { lat: -17.8292, lng: 31.0522 };
 
+// The rail's venues are the THREE the mock draws, in the mock's order (r-customer-a.jsx RC.home →
+// RC_HOME_VENUES: Sadza Republic, Huku House, Café Msasa). A fixture's job is to stage the mock's
+// drawn state, so the sample data is the mock's sample data — otherwise a rendered-conformance run
+// reports fixture bookkeeping as parity drift. `coverPhotoUrl` is set because the mock draws a photo
+// band; without one the card falls back to its tinted initial (a different element entirely).
 function restaurant(i, name, tags, price) {
   return {
     id: `0a1b2c3d-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`,
     name,
-    coverPhotoUrl: null,
+    coverPhotoUrl: `https://parity.local/venue-${i}.jpg`,
     logoUrl: null,
     cuisineTags: tags,
     priceLevel: price,
@@ -90,10 +95,9 @@ installRouter([
     match: "/restaurants",
     json: {
       restaurants: [
-        restaurant(1, "Gava's Kitchen", ["Zimbabwean", "Grills"], 2),
-        restaurant(2, "Nando's Avondale", ["Chicken", "Portuguese"], 3),
-        restaurant(3, "Pizza Inn", ["Pizza", "Fast food"], 1),
-        restaurant(4, "Chicken Slice", ["Chicken", "Fast food"], 1),
+        restaurant(1, "Sadza Republic", ["Zimbabwean", "Grills"], 2),
+        restaurant(2, "Huku House", ["Chicken", "Grills"], 2),
+        restaurant(3, "Café Msasa", ["Café", "Breakfast"], 2),
       ],
     },
   },

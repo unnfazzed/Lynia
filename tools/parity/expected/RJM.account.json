@@ -1,0 +1,255 @@
+{
+  "key": "RJM.account",
+  "src": "RJM",
+  "id": "account",
+  "mode": "phone",
+  "component": "app/rider/(tabs)/account.tsx",
+  "fixture": "rider_account",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: JobsMoneyAccount"
+  ],
+  "roleCounts": {
+    "container": 17,
+    "text": 14,
+    "image": 11,
+    "input": 0
+  },
+  "texts": [
+    "Account",
+    "Tendai M.",
+    "★ 4.9 · 312 jobs · verified",
+    "online",
+    "Bike & documents",
+    "Verified · expires Mar 2027",
+    "Job history",
+    "Parcels and food in one list",
+    "Money",
+    "Balance, cash held, commission",
+    "Notifications",
+    "One inbox for both services",
+    "Help & support",
+    "Call the safety line"
+  ],
+  "textPaths": [
+    "0.0",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.0.2",
+    "1.1.0.1.0",
+    "1.1.0.1.1",
+    "1.1.1.1.0",
+    "1.1.1.1.1",
+    "1.1.2.1.0",
+    "1.1.2.1.1",
+    "1.1.3.1.0",
+    "1.1.3.1.1",
+    "1.1.4.1.0",
+    "1.1.4.1.1"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      12,
+      13
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Account"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Tendai M."
+                  },
+                  {
+                    "role": "text",
+                    "text": "★ 4.9 · 312 jobs · verified"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "online"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Bike & documents"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Verified · expires Mar 2027"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Job history"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Parcels and food in one list"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Money"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Balance, cash held, commission"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Notifications"
+                      },
+                      {
+                        "role": "text",
+                        "text": "One inbox for both services"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Help & support"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Call the safety line"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

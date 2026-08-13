@@ -1,0 +1,317 @@
+{
+  "key": "RJM.board",
+  "src": "RJM",
+  "id": "board",
+  "mode": "phone",
+  "component": "app/rider/(tabs)/index.tsx",
+  "fixture": "rider_board",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: JobsMoneyAccount"
+  ],
+  "roleCounts": {
+    "container": 17,
+    "text": 25,
+    "image": 4,
+    "input": 0
+  },
+  "texts": [
+    "Jobs near you",
+    "online",
+    "Parcels and food · one queue",
+    "Go offline",
+    "FOOD",
+    "2.4 km",
+    "$2.40",
+    "Sadza Republic · Belgravia",
+    "12 Lanark Rd, Belgravia",
+    "Collect $15.50 for the kitchen",
+    "Accept this job",
+    "PARCEL",
+    "3.1 km",
+    "$3.00",
+    "Eastgate Mall, CBD",
+    "14 Glenara Ave, Avenues",
+    "Documents envelope · asking $3.00",
+    "Make an offer",
+    "FOOD",
+    "1.8 km",
+    "$2.00",
+    "Huku House · Avondale",
+    "8 Fife Ave, Avenues",
+    "Already paid in the app · collect nothing",
+    "Accept this job"
+  ],
+  "textPaths": [
+    "0.0.0",
+    "1.0",
+    "1.1",
+    "1.2",
+    "2.0.0.0.1",
+    "2.0.0.1",
+    "2.0.0.2",
+    "2.0.1.0",
+    "2.0.1.1",
+    "2.0.2",
+    "2.0.3",
+    "2.1.0.0.1",
+    "2.1.0.1",
+    "2.1.0.2",
+    "2.1.1.0",
+    "2.1.1.1",
+    "2.1.2",
+    "2.1.3",
+    "2.2.0.0.1",
+    "2.2.0.1",
+    "2.2.0.2",
+    "2.2.1.0",
+    "2.2.1.1",
+    "2.2.2",
+    "2.2.3"
+  ],
+  "groups": [
+    [
+      1,
+      2,
+      3
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      16,
+      17
+    ],
+    [
+      12,
+      13
+    ],
+    [
+      14,
+      15
+    ],
+    [
+      23,
+      24
+    ],
+    [
+      19,
+      20
+    ],
+    [
+      21,
+      22
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Jobs near you"
+              }
+            ]
+          },
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "online"
+          },
+          {
+            "role": "text",
+            "text": "Parcels and food · one queue"
+          },
+          {
+            "role": "text",
+            "text": "Go offline"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "FOOD"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "2.4 km"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.40"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic · Belgravia"
+                  },
+                  {
+                    "role": "text",
+                    "text": "12 Lanark Rd, Belgravia"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Collect $15.50 for the kitchen"
+              },
+              {
+                "role": "text",
+                "text": "Accept this job"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "PARCEL"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "3.1 km"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$3.00"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Eastgate Mall, CBD"
+                  },
+                  {
+                    "role": "text",
+                    "text": "14 Glenara Ave, Avenues"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Documents envelope · asking $3.00"
+              },
+              {
+                "role": "text",
+                "text": "Make an offer"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "FOOD"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "1.8 km"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$2.00"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Huku House · Avondale"
+                  },
+                  {
+                    "role": "text",
+                    "text": "8 Fife Ave, Avenues"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Already paid in the app · collect nothing"
+              },
+              {
+                "role": "text",
+                "text": "Accept this job"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

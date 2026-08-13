@@ -1,0 +1,375 @@
+{
+  "key": "LJ.home_empty",
+  "src": "LJ",
+  "id": "home_empty",
+  "mode": "phone",
+  "component": "app/send.tsx",
+  "fixture": "send_empty",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 28,
+    "text": 24,
+    "image": 9,
+    "input": 5
+  },
+  "texts": [
+    "LyniaGo",
+    "Tap the map to drop your pickup pin",
+    "Use my location",
+    "PICKUP",
+    "Set pickup location",
+    "DROP-OFF",
+    "Where to?",
+    "Search an address, or tap the map to drop a pin.",
+    "What are you sending?",
+    "Qty",
+    "−",
+    "1",
+    "+",
+    "Add another item",
+    "Note for the rider (optional)",
+    "Your price (USD)",
+    "We'll suggest a fair price once your pins are set.",
+    "Your phone (sender)",
+    "Shared with your rider only during the delivery.",
+    "Recipient phone",
+    "So the rider can reach them at drop-off.",
+    "Add landmarks & declared value (optional)",
+    "Add pickup & drop-off pins, an item, a price and both phones to broadcast.",
+    "Broadcast request"
+  ],
+  "textPaths": [
+    "1.0.1",
+    "2",
+    "3.1",
+    "4.0.0.0.0.0.0",
+    "4.0.0.0.0.0.1",
+    "4.0.0.0.1.0.0",
+    "4.0.0.0.1.0.1",
+    "4.0.0.1.1",
+    "4.0.1",
+    "4.0.2.1.0",
+    "4.0.2.1.1.0",
+    "4.0.2.1.1.1",
+    "4.0.2.1.1.2",
+    "4.0.3.1",
+    "4.0.4.0",
+    "4.0.5.0",
+    "4.0.5.2.0",
+    "4.0.6.0",
+    "4.0.6.2.0",
+    "4.0.7.0",
+    "4.0.7.2.0",
+    "4.0.8.0",
+    "4.1.0",
+    "4.1.1"
+  ],
+  "groups": [
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      10,
+      11,
+      12
+    ],
+    [
+      22,
+      23
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "image"
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "LyniaGo"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Tap the map to drop your pickup pin"
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          },
+          {
+            "role": "text",
+            "text": "Use my location"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "PICKUP"
+                              },
+                              {
+                                "role": "text",
+                                "text": "Set pickup location"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "container",
+                            "children": [
+                              {
+                                "role": "text",
+                                "text": "DROP-OFF"
+                              },
+                              {
+                                "role": "text",
+                                "text": "Where to?"
+                              }
+                            ]
+                          },
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Search an address, or tap the map to drop a pin."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "What are you sending?"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "input",
+                        "text": "Documents envelope"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Qty"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "−"
+                          },
+                          {
+                            "role": "text",
+                            "text": "1"
+                          },
+                          {
+                            "role": "text",
+                            "text": "+"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Add another item"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Note for the rider (optional)"
+                  },
+                  {
+                    "role": "input",
+                    "text": "Ask for Rita at the pharmacy counter; keep it upright."
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your price (USD)"
+                  },
+                  {
+                    "role": "input"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "We'll suggest a fair price once your pins are set."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your phone (sender)"
+                  },
+                  {
+                    "role": "input",
+                    "text": "+263 77 000 0000"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Shared with your rider only during the delivery."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Recipient phone"
+                  },
+                  {
+                    "role": "input",
+                    "text": "+263 77 000 0000"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "So the rider can reach them at drop-off."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Add landmarks & declared value (optional)"
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Add pickup & drop-off pins, an item, a price and both phones to broadcast."
+              },
+              {
+                "role": "text",
+                "text": "Broadcast request"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

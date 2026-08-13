@@ -1,0 +1,291 @@
+{
+  "key": "RC.track_way",
+  "src": "RC",
+  "id": "track_way",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_track_way",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 22,
+    "text": 14,
+    "image": 20,
+    "input": 0
+  },
+  "texts": [
+    "R",
+    "•",
+    "Leaflet",
+    "| © OpenStreetMap contributors",
+    "Tendai M. · 6 min away",
+    "AEE 4471",
+    "red Honda",
+    "Picked up 4 min ago · pay $15.50 cash at the door",
+    "DELIVERY CODE",
+    "••• •••",
+    "Appears at the door, once you and Tendai both confirm the cash.",
+    "Get help",
+    "Share trip",
+    "SOS"
+  ],
+  "textPaths": [
+    "0.0.2.0.0",
+    "0.0.2.1.0",
+    "0.1.0.1",
+    "0.1.1",
+    "1.0.1.0",
+    "1.0.1.1.0",
+    "1.0.1.1.1",
+    "1.0.1.2",
+    "1.1.0",
+    "1.1.1",
+    "1.1.2",
+    "1.2.0.1",
+    "1.2.1.1",
+    "1.2.2.1"
+  ],
+  "groups": [
+    [
+      5,
+      6
+    ],
+    [
+      8,
+      9,
+      10
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "R"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "•"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Leaflet"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "| © OpenStreetMap contributors"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Tendai M. · 6 min away"
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "AEE 4471"
+                      },
+                      {
+                        "role": "text",
+                        "text": "red Honda"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "Picked up 4 min ago · pay $15.50 cash at the door"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "DELIVERY CODE"
+              },
+              {
+                "role": "text",
+                "text": "••• •••"
+              },
+              {
+                "role": "text",
+                "text": "Appears at the door, once you and Tendai both confirm the cash."
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Get help"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Share trip"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  },
+                  {
+                    "role": "text",
+                    "text": "SOS"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

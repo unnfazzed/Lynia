@@ -129,6 +129,36 @@ shows the mock, the app (or an honest pending), and the screen's parity status c
   "ADMIN.orders.html": { kind: "web", app: "admin", route: "/orders", mode: "admin" },
   ```
 
+## The rendered-conformance lane — the same fixtures, but blocking
+
+The sheet above is *evidence*: a human looks at it. The **rendered-conformance** guardrail turns the
+same staging into a failing build, and it is what catches what neither a screenshot nor a static AST
+check can: which conditional branch actually won, what the live wiring interpolated into a string, and
+copy the app invented that no mock draws. (The launcher home shipped ONE generic card reading "Delivery
+in progress" where `RC.home` draws two service-specific cards; every static check was green.)
+
+It is split so the blocking half needs no browser — browser rendering is environment-sensitive, which
+is exactly why `parity-render` is `continue-on-error`:
+
+```bash
+node tools/parity/extract-expected.mjs            # BROWSER, run locally: mock DOM → tools/parity/expected/<key>.json
+node tools/parity/extract-expected.mjs --check    # determinism gate — must reproduce byte-for-byte
+pnpm --filter ./apps/mobile exec jest rendered-conformance   # NO browser — this runs in CI's blocking mobile test job
+```
+
+- The expected side renders the mock exactly as `render-mock.mjs` does (frozen `Date`/`Math.random`),
+  walks the DOM to a normalized `{role, text}` tree and commits it. The mocks' faux status bar and root
+  tab bar are dropped — the app SCREEN renders neither (the OS and `app/(tabs)/_layout.tsx` do) — and
+  the drop is recorded in `chromeDropped`, never silent.
+- The app side mounts the real screen with the **same** `tools/parity/mobile/fixtures/*.mjs` this lane
+  already uses, so the data lives in exactly one place. Both sides import `lib/rendered-tree.mjs`.
+- Escapes are per-string and reviewable — `dynamic` (a value a fixture can't pin; needs a regex),
+  `extra` (an app string the mock doesn't draw), `undrawn` (a mock string the app doesn't render) —
+  each with a reason and a `ref`. A wired+fixtured key that is neither asserted nor listed in
+  `tools/parity/rendered-conformance.pending.json` **fails the test**: no screen is silently uncovered.
+- `rendered-conformance.pending.json` is therefore also the rendered-drift inventory: it names the
+  concrete blocker for every wired screen that does not yet conform.
+
 ## How it plugs into an alignment PR
 
 1. Add/verify the screen's `app-targets.mjs` entry (+ a fixture if the mobile screen needs data).

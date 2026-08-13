@@ -1,4 +1,4 @@
-import { formatPhoneLocal, tokens } from "@lynia/shared";
+import { formatNameShort, formatPhoneDisplay, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -158,10 +158,12 @@ export default function SettingsScreen(): React.ReactElement {
           <Icon name="user" size={24} color={tokens.color.accentText} />
         </View>
         <View>
+          {/* Mock identity-row forms (SH11 `Settings` draws "Chipo M." + "+263 77 245 1180"): the
+              short name and the spaced-E.164 phone — mock copy verbatim, not the stored full forms. */}
           <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>
-            {me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account"}
+            {me ? formatNameShort(`${me.firstName} ${me.lastName}`.trim()) || "Your account" : "Your account"}
           </Text>
-          {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(me.phone)}</Text> : null}
+          {me?.phone ? <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneDisplay(me.phone)}</Text> : null}
         </View>
       </View>
 

@@ -8,5 +8,6 @@ export * from "./restaurants-order";
 export * from "./restaurant-hours";
 export * from "./offer-ranking";
 export * from "./phone";
+export * from "./name";
 export * from "./national-id";
 export * as tokens from "./design-tokens";

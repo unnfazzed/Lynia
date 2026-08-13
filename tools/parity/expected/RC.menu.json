@@ -1,0 +1,346 @@
+{
+  "key": "RC.menu",
+  "src": "RC",
+  "id": "menu",
+  "mode": "phone",
+  "component": "app/food/[id].tsx",
+  "fixture": "food_menu",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 25,
+    "text": 26,
+    "image": 3,
+    "input": 0
+  },
+  "texts": [
+    "cover banner · 1200×400",
+    "logo",
+    "Sadza Republic",
+    "$$",
+    "Home-style sadza and slow-cooked stews, cnr Fife Ave & 5th St.",
+    "★ 4.7 (210)",
+    "1.2 km",
+    "25–35 min",
+    "$1.50 delivery",
+    "Mains",
+    "Sides",
+    "Drinks",
+    "Combos",
+    "MAINS",
+    "Sadza & beef stew",
+    "Sadza, slow-cooked beef, muriwo",
+    "$4.50",
+    "dish photo",
+    "2",
+    "Half roast huku",
+    "Half chicken, chips, house peri",
+    "$6.00",
+    "dish photo",
+    "2 items",
+    "$11.50",
+    "View cart"
+  ],
+  "textPaths": [
+    "0.0.0.0",
+    "0.0.3.0",
+    "0.1.0.0",
+    "0.1.0.1",
+    "0.1.1",
+    "0.1.2.0",
+    "0.1.2.1",
+    "0.1.2.2",
+    "0.1.2.3",
+    "0.1.3.0",
+    "0.1.3.1",
+    "0.1.3.2",
+    "0.1.3.3",
+    "0.1.4",
+    "0.1.5.0.0",
+    "0.1.5.0.1",
+    "0.1.5.0.2.0",
+    "0.1.5.1.0.0",
+    "0.1.5.1.1.0",
+    "0.1.6.0.0",
+    "0.1.6.0.1",
+    "0.1.6.0.2.0",
+    "0.1.6.1.0.0",
+    "1.0.0",
+    "1.0.1",
+    "1.1"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ],
+    [
+      5,
+      6,
+      7,
+      8
+    ],
+    [
+      9,
+      10,
+      11,
+      12
+    ],
+    [
+      14,
+      15
+    ],
+    [
+      19,
+      20
+    ],
+    [
+      23,
+      24
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "cover banner · 1200×400"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "logo"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$$"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Home-style sadza and slow-cooked stews, cnr Fife Ave & 5th St."
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "★ 4.7 (210)"
+                  },
+                  {
+                    "role": "text",
+                    "text": "1.2 km"
+                  },
+                  {
+                    "role": "text",
+                    "text": "25–35 min"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$1.50 delivery"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Mains"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Sides"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Drinks"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Combos"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "MAINS"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Sadza & beef stew"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Sadza, slow-cooked beef, muriwo"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "$4.50"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "dish photo"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "2"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Half roast huku"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Half chicken, chips, house peri"
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "$6.00"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "dish photo"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "image"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "2 items"
+              },
+              {
+                "role": "text",
+                "text": "$11.50"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "View cart"
+          }
+        ]
+      }
+    ]
+  }
+}

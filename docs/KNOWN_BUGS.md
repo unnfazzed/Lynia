@@ -2178,3 +2178,22 @@ The code disagrees and the code is right per R-11/R-17: `acceptOrder` sends a CA
 `preparing` (cash changes hands at the door, so there is no pay-before-cook step), while
 `logCall`/`requestPayment`/`confirmPayment` all 409 outside `awaiting_payment`, which only a WALLET
 order ever reaches. The runbook now describes each rail correctly.
+
+---
+
+## Rendered-conformance guardrail — first run (2026-08-12)
+
+The rendered-conformance guardrail (`apps/mobile/src/parity/__tests__/rendered-conformance.test.tsx`,
+expectations in `tools/parity/expected/`) mounts each wired mobile screen with its parity fixture and
+compares the RENDERED text sequence against the design mock's. Its first full run over all 39
+wired+fixtured screens found **7 conforming and 32 diverging**. The full per-screen inventory, with the
+concrete blocker for each, is `tools/parity/rendered-conformance.pending.json` — that file is the
+register; only findings needing a stable ID outside it are listed here.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| PXR-01 | **The home "Restaurants near you" venue card renders neither of the three values the mock draws, and adds one the mock never draws.** `packages/design` `RC.home` draws each venue card with a delivery-window badge ("25–35 min"), a rating ("★ 4.7") and a delivery fee ("$1.50 delivery"). `apps/mobile/src/ui/home/RestaurantCard.tsx` renders none of them — the customer restaurant read API (Lane C1) carries no rating, ETA or fee, so the card degrades honestly rather than inventing numbers — and in that slot renders an "Open now"/"Closed" line instead. CLAUDE.md names "Open now" badges explicitly among the cosmetic extras the mocks never drew, so the badge is a removal, while the three missing values need the API to carry them first. `RestaurantRow` (the full browse list, `RC.list`) has the same gap. Recorded per-string in `tools/parity/expected/RC.home.json` under `undrawn`/`extra`, so it cannot grow without a reviewable diff. | mobile · food browse | LOW (cosmetic, no data loss) | OPEN |
+| PXR-02 | **`LJ.force_update` copy diverges from the mock verbatim.** The mock draws "A new version of LyniaGo is ready with the latest fixes. Update to keep sending."; `apps/mobile/app/force-update.tsx` renders "… Update to keep using LyniaGo." The divergence is deliberate and argued in a code comment (the gate fires from the root layout before the role is resolved, so a role-specific verb would be wrong for half the users) — but a code comment justifying a divergence carries no authority, and there is no `docs/DESIGN-DEVIATIONS.md` entry. Resolution is a founder call: either the app adopts the mock's line, or the kit gains a role-neutral variant and the deviation is ledgered. Until then `LJ.force_update` stays in `rendered-conformance.pending.json` rather than being asserted with the drift baked in. | mobile · release gate | LOW | OPEN |
+| PXR-03 | **Phone numbers render in local format where every mock draws E.164.** `LJ.otp`, `LJ.profile` and `LJ.settings` all draw "+263 77 245 1180"; the app rendered "0771234567" on each. **PARTIALLY FIXED (R2, 2026-08-12):** a new `formatPhoneDisplay` (spaced E.164, `packages/shared/src/phone.ts`) now backs the OTP subhead (`verify.tsx`) and the settings profile row (`settings/index.tsx`) — both wired + rendered-conformance-green. `LJ.profile` and any other identity surface still on `formatPhoneLocal` remain to be swept. | mobile · identity | LOW | OPEN |
+| PXR-04 | **Rider board and board-empty paint the reconnecting banner under test, because nothing stages a connected socket.** `RJM.board` / `RJM.board_empty` render "Reconnecting… your data may be a moment behind." over the mock's state. Not proof of a product defect — it is a fixture capability gap (`tools/parity/mobile/shims/socket-io.js` never reports connected) — but it does mean neither screen can be asserted until the rider fixtures can stage a live socket. | tooling · parity fixtures | LOW | OPEN |
+| PXR-05 | **Settings 'Edit profile' row shows a 'Coming soon' value the mock never draws.** The base `LJ.settings` mock draws an Edit-profile row with no value; the app (`settings/index.tsx`) renders "Coming soon" beside it because profile editing is not built. Honest degraded affordance (better than a row that navigates nowhere), declared as an `extra` in the settings rendered-conformance expectations rather than asserted as parity. Resolution: build profile editing (drops the value) or ledger it in `docs/DESIGN-DEVIATIONS.md`. | mobile · settings | LOW | OPEN |

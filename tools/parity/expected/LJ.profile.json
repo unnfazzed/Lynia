@@ -1,0 +1,126 @@
+{
+  "key": "LJ.profile",
+  "src": "LJ",
+  "id": "profile",
+  "mode": "phone",
+  "component": "app/(tabs)/account.tsx",
+  "fixture": "account_home",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%",
+    "tab-bar: HomeOrdersAccount"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 10,
+    "image": 0,
+    "input": 0
+  },
+  "texts": [
+    "Account",
+    "Your details and session.",
+    "Chipo Marufu",
+    "+263 77 245 1180",
+    "ID 63•1234••••••42",
+    "NOT VERIFIED",
+    "Customer",
+    "Trip history",
+    "Send a parcel",
+    "Sign out"
+  ],
+  "textPaths": [
+    "0.0",
+    "1",
+    "2.0",
+    "2.1",
+    "2.2.0",
+    "2.2.1",
+    "2.3",
+    "3.0",
+    "3.1",
+    "4"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      7,
+      8
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Account"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Your details and session."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Chipo Marufu"
+          },
+          {
+            "role": "text",
+            "text": "+263 77 245 1180"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "ID 63•1234••••••42"
+              },
+              {
+                "role": "text",
+                "text": "NOT VERIFIED"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Customer"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Trip history"
+          },
+          {
+            "role": "text",
+            "text": "Send a parcel"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Sign out"
+      }
+    ]
+  }
+}

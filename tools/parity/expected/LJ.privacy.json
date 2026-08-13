@@ -1,0 +1,198 @@
+{
+  "key": "LJ.privacy",
+  "src": "LJ",
+  "id": "privacy",
+  "mode": "phone",
+  "component": "app/settings/privacy.tsx",
+  "fixture": "privacy",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 16,
+    "text": 9,
+    "image": 8,
+    "input": 0
+  },
+  "texts": [
+    "Privacy",
+    "What we collect",
+    "Your name, phone number and the pins on your deliveries. No ID documents for customers.",
+    "What others see",
+    "First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked.",
+    "How long we keep it",
+    "Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days.",
+    "Request a copy of my data",
+    "Delete my account"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.1.1.0",
+    "1.1.1.1",
+    "1.2.1.0",
+    "1.2.1.1",
+    "1.3.1",
+    "1.4.1"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Privacy"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "What we collect"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Your name, phone number and the pins on your deliveries. No ID documents for customers."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "What others see"
+                  },
+                  {
+                    "role": "text",
+                    "text": "First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "How long we keep it"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "Request a copy of my data"
+              },
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "Delete my account"
+              },
+              {
+                "role": "image"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

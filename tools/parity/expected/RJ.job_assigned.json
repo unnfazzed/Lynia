@@ -1,0 +1,415 @@
+{
+  "key": "RJ.job_assigned",
+  "src": "RJ",
+  "id": "job_assigned",
+  "mode": "phone",
+  "component": "app/rider/job.tsx",
+  "fixture": "rider_parcel_job",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 35,
+    "text": 30,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Your job",
+    "assigned",
+    "Agreed fare $3.00",
+    "Sender",
+    "Eastgate contact",
+    "+263 77 245 1180",
+    "Recipient",
+    "Avenues contact",
+    "+263 71 555 0090",
+    "Items",
+    "1×",
+    "Small package",
+    "Sender's note",
+    "Ask for Rita at reception; parcel is fragile.",
+    "1",
+    "You're assigned",
+    "09:00 · live",
+    "2",
+    "Details confirmed",
+    "3",
+    "Heading to pickup",
+    "4",
+    "Parcel collected",
+    "5",
+    "Heading to drop-off",
+    "6",
+    "Delivered",
+    "7",
+    "Completed — you're free",
+    "Confirm the job"
+  ],
+  "textPaths": [
+    "0.0",
+    "0.1",
+    "1.0",
+    "1.1.0.0.0",
+    "1.1.0.0.1",
+    "1.1.0.0.2",
+    "1.1.1.0.0",
+    "1.1.1.0.1",
+    "1.1.1.0.2",
+    "1.2.0",
+    "1.2.1.0",
+    "1.2.1.1",
+    "1.2.2.0",
+    "1.2.2.1",
+    "1.3.0.0.0",
+    "1.3.0.1.0",
+    "1.3.0.1.1",
+    "1.3.1.0.0",
+    "1.3.1.1.0",
+    "1.3.2.0.0",
+    "1.3.2.1.0",
+    "1.3.3.0.0",
+    "1.3.3.1.0",
+    "1.3.4.0.0",
+    "1.3.4.1.0",
+    "1.3.5.0.0",
+    "1.3.5.1.0",
+    "1.3.6.0.0",
+    "1.3.6.1.0",
+    "2"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      3,
+      4,
+      5
+    ],
+    [
+      6,
+      7,
+      8
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      12,
+      13
+    ],
+    [
+      15,
+      16
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Your job"
+          },
+          {
+            "role": "text",
+            "text": "assigned"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Agreed fare $3.00"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Sender"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Eastgate contact"
+                      },
+                      {
+                        "role": "text",
+                        "text": "+263 77 245 1180"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Recipient"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Avenues contact"
+                      },
+                      {
+                        "role": "text",
+                        "text": "+263 71 555 0090"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Items"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "1×"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Small package"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Sender's note"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Ask for Rita at reception; parcel is fragile."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "You're assigned"
+                      },
+                      {
+                        "role": "text",
+                        "text": "09:00 · live"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Details confirmed"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "3"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Heading to pickup"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "4"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Parcel collected"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "5"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Heading to drop-off"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "6"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Delivered"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "7"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Completed — you're free"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Confirm the job"
+      }
+    ]
+  }
+}

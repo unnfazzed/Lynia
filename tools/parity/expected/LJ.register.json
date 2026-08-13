@@ -1,0 +1,141 @@
+{
+  "key": "LJ.register",
+  "src": "LJ",
+  "id": "register",
+  "mode": "phone",
+  "component": "app/profile/setup.tsx",
+  "fixture": "auth_register",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 8,
+    "text": 9,
+    "image": 1,
+    "input": 3
+  },
+  "texts": [
+    "Tell us who you are",
+    "You're sending parcels. Just a name and ID for your account record — no documents, no verification.",
+    "Full name",
+    "Phone number",
+    "Verified by SMS ✓",
+    "Verified",
+    "National ID number",
+    "Stored on your account only — we don't verify it. Riders go through a separate ID check.",
+    "Continue"
+  ],
+  "textPaths": [
+    "0",
+    "1",
+    "2.0",
+    "3.0.0",
+    "3.0.2.0",
+    "3.1.1",
+    "4.0",
+    "4.2.0",
+    "5"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "text",
+        "text": "Tell us who you are"
+      },
+      {
+        "role": "text",
+        "text": "You're sending parcels. Just a name and ID for your account record — no documents, no verification."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Full name"
+          },
+          {
+            "role": "input",
+            "text": "Chipo Marufu"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Phone number"
+              },
+              {
+                "role": "input",
+                "text": "+263 77 245 1180"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Verified by SMS ✓"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "Verified"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "National ID number"
+          },
+          {
+            "role": "input",
+            "text": "63-123456-A-42"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Stored on your account only — we don't verify it. Riders go through a separate ID check."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Continue"
+      }
+    ]
+  }
+}

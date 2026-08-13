@@ -1,0 +1,84 @@
+{
+  "key": "RJ.kyc_intro",
+  "src": "RJ",
+  "id": "kyc_intro",
+  "mode": "phone",
+  "component": "app/rider/become.tsx",
+  "fixture": "rider_kyc_intro",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 4,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Rider",
+    "Set up as a rider",
+    "Verify your ID and register your bike to start accepting deliveries. Riders go online once verified.",
+    "Become a rider"
+  ],
+  "textPaths": [
+    "0.0",
+    "1.1",
+    "1.2",
+    "1.3.0"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Rider"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Set up as a rider"
+          },
+          {
+            "role": "text",
+            "text": "Verify your ID and register your bike to start accepting deliveries. Riders go online once verified."
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Become a rider"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

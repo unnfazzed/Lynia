@@ -1,0 +1,78 @@
+{
+  "key": "LJ.perm_notif",
+  "src": "LJ",
+  "id": "perm_notif",
+  "mode": "phone",
+  "component": "app/permissions.tsx",
+  "fixture": "auth_perms_notif",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 3,
+    "text": 4,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Stay in the loop",
+    "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered.",
+    "Turn on notifications",
+    "Not now"
+  ],
+  "textPaths": [
+    "1",
+    "2",
+    "3.0",
+    "3.1"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "image"
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Stay in the loop"
+      },
+      {
+        "role": "text",
+        "text": "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Turn on notifications"
+          },
+          {
+            "role": "text",
+            "text": "Not now"
+          }
+        ]
+      }
+    ]
+  }
+}
