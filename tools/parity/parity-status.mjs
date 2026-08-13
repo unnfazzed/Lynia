@@ -83,7 +83,6 @@ export const PARITY_STATUS = {
   "LJ.draft_discard": { status: "PENDING" }, // Discard draft · confirm
 
   // ── RC ──────────────────────────────────────────────────────────
-  "RC.list_loading": { status: "PENDING" }, // List loading
   "RC.item": { status: "PENDING" }, // Item sheet
   "RC.cart_note": { status: "PENDING" }, // Note for the kitchen
   "RC.placing": { status: "PENDING" }, // Placing
@@ -100,7 +99,6 @@ export const PARITY_STATUS = {
     status: "PENDING",
     reason: "CONTROL-DEVIATION — structure adopts; the mock draws a 'Notify me when they open' primary with no notify-when-open backend (a dead control) + a live 'area · time' AppBar sub. Honest-disable the one control or ledger; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Nothing open
-  "RC.list_error": { status: "PENDING" }, // Offline list
   "RC.closed_interrupt": { status: "PENDING" }, // Closes while browsing
   "RC.cart_oos": { status: "PENDING" }, // Item sold out
   "RC.cart_price": { status: "PENDING" }, // Price changed
