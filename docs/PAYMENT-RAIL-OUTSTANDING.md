@@ -6,8 +6,8 @@ EXPO … we are shipping as much as we can ahead of launch"*). This document is 
 what those previews are not.
 
 > **One sentence, if you read nothing else:** LyniaGo still has **no payment-rail integration of any
-> kind**. Nothing in this change moves money, and no screen it ships claims to. What shipped is the
-> *drawing* of a flow whose plumbing does not exist.
+> kind**. Nothing here moves money — but since the labels came off (§1a), one of these screens now
+> *says* it did. What shipped is the drawing of a flow whose plumbing does not exist.
 
 ---
 
@@ -15,24 +15,52 @@ what those previews are not.
 
 | Flow | Screens | Entry | Reachable when |
 |---|---|---|---|
-| Rider top-up | `RJ.topup_amount` → `topup_wait` → `topup_success` / `topup_declined` | Money tab → **Top up** | preview gate open |
-| Food checkout | `R5·4` prompt wait → `R5·b2` declined | Checkout → *"Preview: paying by prompt (not connected yet)"*, below the real reference form | preview gate open |
+| Rider top-up | `RJ.topup_amount` → `topup_wait` → `topup_success` / `topup_declined` | Money tab → **Top up** | gate open |
+| Food checkout | `R5·4` prompt wait → `R5·b2` declined | Checkout → **"Pay by prompt"**, below the real reference form | gate open |
 
 The gate is `usePaymentSimulation()` — `isTestBuild()` **OR** the `paymentSimulationEnabled` server
 flag (`GET /app/preview-flags`, env `PAYMENT_SIMULATION_ENABLED`, **default `true`**).
 
-**Properties that hold in every build and every flag state** — these are what make the previews
-shippable, and each is pinned by a test in `apps/mobile/src/ui/__tests__/payment-simulation.test.tsx`:
+### 1a. The labels were removed — read this before judging the screens
 
-- no network call, no `TopUp` row, no `PendingTopup` marker, no ledger write, nothing persisted;
-- a **PREVIEW** notice above the hero of every simulated screen, **unconditionally** — the warnings no
-  longer sit behind `isTestBuild()`, so there is no state in which a fabricated screen renders without
-  its warning. *The gate is on the door, not on the sign;*
-- **no simulated success on the food lane at all**, and the top-up "approved" step is phrased in the
-  conditional ("would have been added — simulated") next to the rider's real, unchanged balance;
+These shipped first as clearly-labelled previews: a red **PREVIEW / SIMULATED** notice above the hero
+of every unbacked screen, and a top-up success step phrased in the conditional ("would have been added
+— simulated") beside the rider's real, unchanged balance.
+
+**All of that was removed hours later, on the owner's explicit instruction** (*"remove label simulation
+or preview .. i am taking the risk"*), after being shown the trade-off and choosing the unlabelled
+option over one that kept a single balance-unchanged line.
+
+The owner's reasoning: **"no one will use these until the rails are wired."** That is the load-bearing
+mitigation and it is a fair one — the app is on the internal testing track, riders are told to top up
+by calling support, and neither flow sits on a path anyone traverses to get something done. The
+exposure is a rider or tester who goes looking. This document records the resulting state rather than
+arguing with it. What it means concretely:
+
+- a customer reaching the checkout wait screen sees an ordinary **"Check your phone"** while **no
+  prompt has been sent to any rail**;
+- a rider can reach a success screen reading **"$10.00 / added to your balance"** when the balance did
+  **not** change;
+- **the server flag is now the only control over both flows.** There is no on-screen signal, so
+  `PAYMENT_SIMULATION_ENABLED` is load-bearing, not a convenience.
+
+The only residual hint to a user is structural: the wait screens carry outcome buttons ("Payment
+approved" / "Payment declined"), and no real rail lets the payer choose the result.
+
+**Properties that still hold in every build and every flag state**, pinned by
+`apps/mobile/src/ui/__tests__/payment-simulation.test.tsx`:
+
+- no network call, no `TopUp` row, no `PendingTopup` marker, no ledger write, nothing persisted — the
+  damage is confined to what a user *believes*, never to the ledger or the balance;
+- **no success screen on the food lane at all** — that lane can only reach *wait* and *declined*, so it
+  never asserts a payment; the false-success surface is the rider top-up screen alone;
 - nothing auto-resolves — every terminal requires an explicit tap;
-- the top-up preview **keeps the real support-call action** on its amount step, because that is still
-  the only way a balance actually moves.
+- the top-up flow **keeps the real support-call action** on its amount step ("TOP UP BY PHONE"),
+  because that is still the only way a balance actually moves.
+
+Reverting to the labelled version is a small, self-contained change: restore `SimulatedPathNotice`,
+re-add the strip to `TopUpSimulator`, and put the success step's verb back in the conditional. The
+tests deliberately do **not** pin the unlabelled copy, so a revert will not fight them.
 
 ---
 
@@ -63,7 +91,24 @@ shippable, and each is pinned by a test in `apps/mobile/src/ui/__tests__/payment
       with a 90s window and no one sends a prompt. The preview deliberately does **not** call it. Until
       a rail confirms, this endpoint should be considered unusable by clients.
 
-### 2.3 Food checkout has no prompt path
+### 2.3 The unlabelled screens have a shelf life
+
+The "no one will use these until the rails are wired" mitigation (§1a) holds precisely while that
+stays true. It stops holding the moment either of these happens, and each is a tripwire worth
+watching for:
+
+- [ ] **The app reaches an audience that wasn't told.** Right now that audience is internal testers.
+      A closed test, and certainly production access, widens it to people with no context — at which
+      point a success screen that says money arrived is being read by someone who will believe it.
+- [ ] **Someone routes traffic into these screens.** They are opt-in dead ends today (a "Pay by
+      prompt" ghost button under the real reference form; a Top up entry riders are told not to use).
+      Any change that promotes either into a normal path re-opens the question.
+
+Resolve by landing the rail (§2.1/§2.2), which makes the screens true, or by restoring the markers
+(§1a), which makes them honest. The owner accepted this risk deliberately and can un-accept it in one
+revert.
+
+### 2.4 Food checkout has no prompt path
 
 - [ ] **No prompt-send endpoint** and **no decline callback** exist. The real, working customer path is
       unchanged and stays: dial the USSD → submit the transaction reference → the merchant matches it
@@ -71,12 +116,12 @@ shippable, and each is pinned by a test in `apps/mobile/src/ui/__tests__/payment
 - [ ] There is deliberately **no success preview** on this lane, and there must not be one until a rail
       can produce a real success.
 
-### 2.4 The only real money-in path today
+### 2.5 The only real money-in path today
 
 - [ ] Admin manual credit — `POST /admin/riders/:id/wallet-credit` → `WalletService.creditManual`,
       driven from the admin Riders UI, capped by `WALLET_MANUAL_CREDIT_CAP_USD` ($50). Riders reach it
-      by calling support. This is what the top-up preview's "TO TOP UP FOR REAL" card routes to, and it
-      must stay on that screen until a rail lands.
+      by calling support. This is what the top-up flow's support-call card routes to, and it
+      must stay on that screen until a rail lands. It is the "TOP UP BY PHONE" card on the amount step.
 
 ---
 
@@ -88,6 +133,7 @@ shippable, and each is pinned by a test in `apps/mobile/src/ui/__tests__/payment
       `isTestBuild()` opens the gate without any server.)
 - [ ] **Set `PAYMENT_SIMULATION_ENABLED` explicitly in the Cloud Run env** rather than relying on the
       `true` default, so retracting it is a visible one-word edit to a value that is already there.
+      This matters more since the labels came off: it is the only control over both flows.
 - [ ] **Nothing auto-ships.** Merging reaches no device. This needs a `mobile-release.yml` dispatch with
       `profile: preview` (the workflow default is `production`, which builds fine and then fails at
       submission — see `CLAUDE.md` and `docs/PLAY-STORE-SUBMISSION.md`).

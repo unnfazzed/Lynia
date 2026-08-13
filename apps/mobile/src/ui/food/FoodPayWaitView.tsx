@@ -3,7 +3,6 @@ import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { Button, Icon, OfflineBanner, Screen } from "../index";
-import { SimulatedPathNotice } from "./SimulatedPathNotice";
 
 /**
  * R5·4 (r-customer-b.jsx:116) — "Check your phone": the rail prompt has gone out and we're waiting
@@ -11,15 +10,18 @@ import { SimulatedPathNotice } from "./SimulatedPathNotice";
  *
  * ⚠️ THE PAYMENT RAIL DOES NOT EXIST. There is no prompt-send endpoint in this codebase (see
  * ManualPayRail / FoodOrderAwaitingPaymentView: the shipped path is USSD + "submit my reference",
- * matched by the merchant against their own statement). This screen is therefore reachable only
- * through the preview transition gated by `usePaymentSimulation()` — the QA APK plus a server kill
- * switch — and it paints {@link SimulatedPathNotice} above its own hero saying so in as many words.
- * That notice is unconditional: there is no build or flag state in which this screen renders without
- * it.
+ * matched by the merchant against their own statement). This screen is reachable only through the
+ * transition gated by `usePaymentSimulation()` — the QA APK plus a server kill switch.
  *
- * It is a WAIT state and nothing more: it never asserts that money moved, and there is deliberately
- * no simulated success anywhere — the only way this order can become "paid" is still the customer
- * submitting a real reference from a real transfer.
+ * ⚠️ IT CARRIES NO ON-SCREEN MARKER. It used to paint a red SIMULATED/PREVIEW notice above its hero;
+ * the owner removed every such label on 2026-08-12, explicitly accepting the risk, so this now reads
+ * to a customer as an ordinary payment-wait screen while no prompt has been sent. **The server flag is
+ * therefore the ONLY control left over this screen** — there is no longer anything in the UI telling a
+ * customer it isn't real. Treat `PAYMENT_SIMULATION_ENABLED` as load-bearing, not as a nicety.
+ *
+ * It remains a WAIT state and nothing more: it never asserts that money moved, and there is still no
+ * simulated success anywhere on this lane — the only way an order becomes "paid" is a real reference
+ * from a real transfer.
  */
 export function FoodPayWaitView({
   restaurantName,
@@ -44,7 +46,6 @@ export function FoodPayWaitView({
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <ScrollView showsVerticalScrollIndicator={false}>
-        <SimulatedPathNotice what="no payment prompt was sent" />
         <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
           <View
             style={{
@@ -82,7 +83,7 @@ export function FoodPayWaitView({
           </Text>
         </View>
         {onSimulateDecline ? (
-          <Button label="Preview: what a declined payment looks like" variant="ghost" onPress={onSimulateDecline} />
+          <Button label="Payment declined" variant="ghost" onPress={onSimulateDecline} />
         ) : null}
       </ScrollView>
       <Button label="I paid another way · enter my reference" variant="ghost" onPress={onEnterReference} />
