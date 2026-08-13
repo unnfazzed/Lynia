@@ -209,7 +209,6 @@ export const PARITY_STATUS = {
   "RR.doorstep": { status: "PENDING" }, // Collect · confirm cash
   "RR.delivered": { status: "PENDING" }, // Delivered · food
   "RR.return_cash": { status: "PENDING" }, // Return the kitchen's cash
-  "RR.offer_expired": { status: "PENDING" }, // Offer expired
   "RR.cancel_reason": { status: "PENDING" }, // Drop the job · before pickup
   "RR.cancel_blocked": { status: "PENDING" }, // Can't drop after collecting
   "RR.cash_dispute": { status: "PENDING" }, // Customer confirmed, you didn't
