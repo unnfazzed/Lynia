@@ -83,18 +83,13 @@ export const PARITY_STATUS = {
   "LJ.draft_discard": { status: "PENDING" }, // Discard draft · confirm
 
   // ── RC ──────────────────────────────────────────────────────────
-  "RC.orders_empty": { status: "PENDING" }, // Orders · empty
-  "RC.list_loading": { status: "PENDING" }, // List loading
   "RC.item": { status: "PENDING" }, // Item sheet
   "RC.cart_note": { status: "PENDING" }, // Note for the kitchen
   "RC.placing": { status: "PENDING" }, // Placing
-  "RC.await_accept": { status: "PENDING" }, // Waiting on the kitchen — tracker region ADOPTED (Foundation-F.d: RTracker≡Stepper in FoodOrderAwaitingAcceptView); ring/head/hero glue deferred. Parity target+fixture wiring pending.
   "RC.confirm_call": { status: "PENDING" }, // They call to confirm
   "RC.pay_push": { status: "PENDING" }, // Push · payment requested — #670 lifted the gate: the payment-prompt lifecycle is now a plain order field (MerchantOrderResponse.paymentPromptStatus), so a static fixture can stand up each state. Adopted; parity wiring pending.
   "RC.pay_wait": { status: "PENDING" }, // Prompt sent — #670: paymentPromptStatus="pending" renders this; renderable from a fixture now.
   "RC.pay_manual": { status: "PENDING" }, // Paid another way
-  "RC.pay_confirmed": { status: "PENDING" }, // Waiting to be confirmed — #670: paymentPromptStatus="confirmed" renders this; renderable from a fixture now.
-  "RC.track_prep": { status: "PENDING" }, // Prep countdown — tracker region ADOPTED (Foundation-F.d: RTracker≡Stepper in FoodOrderPreparingView); ring/finding glue deferred. Parity target+fixture wiring pending.
   "RC.track_secured": { status: "PENDING" }, // Rider secured — #671 lifted the gate: the rider's identity (name·plate·vehicle·rating·KYC) is now a plain field on the food order read (MerchantOrderResponse.rider), so the tracker renders it from live data and a static fixture can stand it up. Adopted; parity target+fixture wiring pending.
   "RC.handoff": { status: "PENDING" }, // Pay at the door
   "RC.handoff_wait": { status: "PENDING" }, // Waiting for rider confirm
@@ -103,21 +98,14 @@ export const PARITY_STATUS = {
     status: "PENDING",
     reason: "CONTROL-DEVIATION — structure adopts; the mock draws a 'Notify me when they open' primary with no notify-when-open backend (a dead control) + a live 'area · time' AppBar sub. Honest-disable the one control or ledger; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Nothing open
-  "RC.list_error": { status: "PENDING" }, // Offline list
-  "RC.menu_closed": { status: "PENDING" }, // Closed restaurant
   "RC.closed_interrupt": { status: "PENDING" }, // Closes while browsing
   "RC.cart_oos": { status: "PENDING" }, // Item sold out
   "RC.cart_price": { status: "PENDING" }, // Price changed
-  "RC.cart_empty": { status: "PENDING" }, // Empty cart
   "RC.cart_min": { status: "PENDING" }, // Under the minimum
   "RC.checkout_offline": { status: "PENDING" }, // Offline mid-checkout
   "RC.pay_open": { status: "PENDING" }, // Still unpaid · reminder
   "RC.pay_failed": { status: "PENDING" }, // Payment declined
-  "RC.item_removed": { status: "PENDING" }, // One item unavailable
-  "RC.no_rider": { status: "PENDING" }, // NO_RIDER
   "RC.track_paused": { status: "PENDING" }, // Live paused
-  "RC.rejected": { status: "PENDING" }, // Rejected · refund pending
-  "RC.refunded": { status: "PENDING" }, // Refunded
   "RC.cancel_sheet": { status: "PENDING" }, // Cancel pre-pickup
   "RC.rider_cancelled": { status: "PENDING" }, // Rider cancelled · re-finding
   "RC.handoff_dispute": { status: "PENDING" }, // Rider didn't confirm
