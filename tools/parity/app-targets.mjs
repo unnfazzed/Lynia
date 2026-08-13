@@ -35,6 +35,8 @@ export const APP_TARGETS = {
   "RC.pay_confirmed": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_pay_confirmed" },
   "RC.rejected": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_rejected" },
   "RC.refunded": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_refunded" },
+  "RC.track_prep": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_track_prep" },
+  "RC.no_rider": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_no_rider" },
   "RC.orders_empty": { kind: "mobile", component: "app/(tabs)/orders.tsx", fixture: "food_orders_empty" },
   "RC.cart_empty": { kind: "mobile", component: "app/food/cart.tsx", fixture: "food_cart_empty" },
   "RC.menu_closed": { kind: "mobile", component: "app/food/[id].tsx", fixture: "food_menu_closed" },
