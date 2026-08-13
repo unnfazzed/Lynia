@@ -37,6 +37,7 @@ export const APP_TARGETS = {
   "RC.refunded": { kind: "mobile", component: "app/food/order/[orderId].tsx", fixture: "food_refunded" },
   "RC.orders_empty": { kind: "mobile", component: "app/(tabs)/orders.tsx", fixture: "food_orders_empty" },
   "RC.cart_empty": { kind: "mobile", component: "app/food/cart.tsx", fixture: "food_cart_empty" },
+  "RC.menu_closed": { kind: "mobile", component: "app/food/[id].tsx", fixture: "food_menu_closed" },
 
   // ─────────────────────── MOBILE — customer · send + auth + account (LJ) ───────────────────────
   // The RN splash (app/index.tsx's boot state) is the drawn `Splash` mock; its tree lives in

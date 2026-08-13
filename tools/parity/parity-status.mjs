@@ -101,7 +101,6 @@ export const PARITY_STATUS = {
     reason: "CONTROL-DEVIATION — structure adopts; the mock draws a 'Notify me when they open' primary with no notify-when-open backend (a dead control) + a live 'area · time' AppBar sub. Honest-disable the one control or ledger; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
   }, // Nothing open
   "RC.list_error": { status: "PENDING" }, // Offline list
-  "RC.menu_closed": { status: "PENDING" }, // Closed restaurant
   "RC.closed_interrupt": { status: "PENDING" }, // Closes while browsing
   "RC.cart_oos": { status: "PENDING" }, // Item sold out
   "RC.cart_price": { status: "PENDING" }, // Price changed
