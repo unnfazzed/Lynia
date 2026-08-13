@@ -72,11 +72,27 @@ export default function FoodOffer(): React.ReactElement {
   }
 
   if (!offer) {
+    // RR.offer_expired (r-rider.jsx): the food offer timed out or another rider took it. The mock
+    // wraps the EmptyState (icon "timer") in a Card and pins a reassurance line below — "no penalty"
+    // is stated as the standing rule, and the rider is told they're still first in line. Copy verbatim;
+    // the "Back to the board" ghost keeps the unchanged `router.replace("/rider")` navigation.
     return (
       <Screen>
-        <EmptyState icon="utensils" title="That offer's gone" message="It expired or went to another rider — no penalty. Check the board for your next job.">
-          <Button label="Back to board" onPress={() => router.replace("/rider")} />
-        </EmptyState>
+        <View style={{ paddingTop: 30 }}>
+          <Card style={{ padding: 16 }}>
+            <EmptyState
+              icon="timer"
+              title="That one went to another rider"
+              message="Offers hold for 60 seconds, then move to the next rider nearby. Passing or missing one doesn't affect your standing."
+            >
+              <Button label="Back to the board" onPress={() => router.replace("/rider")} />
+            </EmptyState>
+          </Card>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, justifyContent: "center", marginTop: 14 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.accent }} />
+            <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>You're online and first in line for the next one</Text>
+          </View>
+        </View>
       </Screen>
     );
   }

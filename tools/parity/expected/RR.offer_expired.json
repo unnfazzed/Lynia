@@ -1,0 +1,84 @@
+{
+  "key": "RR.offer_expired",
+  "src": "RR",
+  "id": "offer_expired",
+  "mode": "phone",
+  "component": "app/rider/food-offer.tsx",
+  "fixture": "rider_food_offer_expired",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 4,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "That one went to another rider",
+    "Offers hold for 60 seconds, then move to the next rider nearby. Passing or missing one doesn't affect your standing.",
+    "Back to the board",
+    "You're online and first in line for the next one"
+  ],
+  "textPaths": [
+    "0.1",
+    "0.2",
+    "0.3.0",
+    "1.0"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "That one went to another rider"
+          },
+          {
+            "role": "text",
+            "text": "Offers hold for 60 seconds, then move to the next rider nearby. Passing or missing one doesn't affect your standing."
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Back to the board"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "You're online and first in line for the next one"
+          }
+        ]
+      }
+    ]
+  }
+}
