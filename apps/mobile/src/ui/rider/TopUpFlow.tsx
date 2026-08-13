@@ -1,12 +1,9 @@
 import { formatPhoneLocal, TOPUP_WINDOW_MS, tokens, type TopupRail } from "@lynia/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { createTopup, getTopup } from "../../api/wallet";
-import { clearPendingTopup, savePendingTopup } from "../../auth/session";
 import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
-import { walletKey, walletLedgerKey } from "../../query/use-wallet";
+import { useTopUp } from "../../query/use-topup";
 import { uuidV4FromSeed } from "../../util";
 import { Button, Card, Field, Icon, Sub, useActionError } from "../index";
 import { SupportCallRow } from "../safety";
@@ -17,10 +14,15 @@ import { CountdownRing, formatCountdown } from "../food/CountdownRing";
  * `TopupWait`, `TopupSuccess`, `TopupDeclined`), wired to the real wallet API.
  *
  * ─── THE ONE THING TO UNDERSTAND ABOUT THIS SCREEN ────────────────────────────────────────────────
- * This is the REAL client. It creates a real `TopUp` intent (`POST /wallet/topups`), polls the real
- * one (`GET /wallet/topups/:id`), and renders whichever terminal state THE SERVER reports. It renders
- * a success only when the server says `succeeded`, which happens only when something has called
- * `WalletService.creditFromTopup` and actually moved the balance.
+ * It is a view over `useTopUp` (`src/query/use-topup.ts`), which owns the whole data lifecycle — the
+ * real `TopUp` intent, the poll, the wallet invalidation and the durable recovery marker. This file
+ * deliberately does no fetching of its own: the `mobile-ui-no-api` boundary
+ * (`.dependency-cruiser.cjs`) holds the design-system layer to props and hook state, and CI fails a
+ * new `src/ui/ → src/api/` edge. Reach for the hook, never the api module.
+ *
+ * What that buys is the property that matters here: this screen renders whichever terminal state THE
+ * SERVER reports. A success appears only when the server says `succeeded`, which happens only when
+ * something has called `WalletService.creditFromTopup` and actually moved the balance.
  *
  * It replaced a mock (`TopUpSimulator`) that drew these four screens with no backend at all and let
  * the rider pick their own outcome — including a success that asserted a credit which never happened.
@@ -39,17 +41,12 @@ import { CountdownRing, formatCountdown } from "../food/CountdownRing";
  * survives an app kill mid-wait (the Money tab reconciles it on next open).
  */
 
-type Step = "amount" | "inflight";
-
 const RAILS: { id: Exclude<TopupRail, "manual">; name: string; note: string }[] = [
   { id: "ecocash", name: "EcoCash", note: "Approve on your phone" },
   { id: "innbucks", name: "InnBucks", note: "Approve on your phone" },
   { id: "omari", name: "O'mari", note: "Approve on your phone" },
 ];
 const QUICK_AMOUNTS = [5, 10, 20];
-/** Poll cadence while an intent is pending. The window is 90s, so this is ~36 reads worst case on a
- *  cheap endpoint — responsive enough that a confirmation feels immediate without hammering. */
-const POLL_MS = 2_500;
 
 export function TopUpFlow({
   minTopUp,
@@ -60,10 +57,7 @@ export function TopUpFlow({
   maxTopUp: number;
   onExit: () => void;
 }): React.ReactElement {
-  const qc = useQueryClient();
   const fail = useActionError();
-  const [step, setStep] = React.useState<Step>("amount");
-  const [topupId, setTopupId] = React.useState<string | null>(null);
   const [amountRaw, setAmountRaw] = React.useState("10.00");
   const [phone, setPhone] = React.useState("");
   const [rail, setRail] = React.useState<Exclude<TopupRail, "manual">>("ecocash");
@@ -71,6 +65,13 @@ export function TopUpFlow({
   // Rotates per attempt so a retry after a decline opens a NEW intent, while a timeout+retry WITHIN an
   // attempt replays the same key and the server returns the original pending intent (BH-09).
   const [attempt, setAttempt] = React.useState(0);
+
+  const { topup, status, hasIntent, isStarting, start, reset } = useTopUp({
+    // Action-error rule (docs/DESIGN-SYSTEM.md): speak once as a self-clearing toast, never persist a
+    // card. Curated copy rather than the raw error message — "Network request failed" tells a rider
+    // nothing about what to do next.
+    onStartError: () => fail("We couldn't start that top-up. Check your connection and try again."),
+  });
 
   const amountError = validateTopupAmount(amountRaw, minTopUp, maxTopUp);
   const amount = Number(amountRaw);
@@ -83,32 +84,6 @@ export function TopUpFlow({
     [attempt, amountRaw, phone, rail],
   );
 
-  const create = useMutation({
-    mutationFn: () => createTopup({ amount, rail, phone, idempotencyKey }),
-    // Action-error rule (docs/DESIGN-SYSTEM.md): speak once as a self-clearing toast, never persist a
-    // card. Curated copy rather than `useActionErrorEffect`, whose default is the raw error message —
-    // "Network request failed" tells a rider nothing about what to do next.
-    onError: () => fail("We couldn't start that top-up. Check your connection and try again."),
-    onSuccess: (topup) => {
-      setTopupId(topup.id);
-      setStep("inflight");
-      // Durable marker BEFORE anything else can go wrong: if the OS reclaims the app while the rider is
-      // in their mobile-money app approving the prompt, the Money tab reconciles this on next open
-      // rather than leaving a paid-but-unseen credit (UX-2026-07-16).
-      void savePendingTopup({ topupId: topup.id });
-    },
-  });
-
-  // The server is the only source of the outcome. Polls while pending; stops the moment it is terminal.
-  const poll = useQuery({
-    queryKey: ["wallet", "topup", topupId],
-    queryFn: () => getTopup(topupId as string),
-    enabled: topupId != null,
-    refetchInterval: (q) => (q.state.data?.status === "pending" ? POLL_MS : false),
-  });
-  const topup = poll.data;
-  const status = topup?.status;
-
   // Tick only while a prompt is outstanding — the countdown ring is the only thing that needs it.
   React.useEffect(() => {
     if (status !== "pending") return;
@@ -116,22 +91,9 @@ export function TopUpFlow({
     return () => clearInterval(t);
   }, [status]);
 
-  // Terminal handling. `succeeded` is the ONLY branch that touches the balance — and it does so by
-  // invalidating, never by writing a number the client guessed.
-  React.useEffect(() => {
-    if (status == null || status === "pending") return;
-    if (status === "succeeded") {
-      void qc.invalidateQueries({ queryKey: walletKey });
-      void qc.invalidateQueries({ queryKey: walletLedgerKey });
-    }
-    void clearPendingTopup();
-  }, [status, qc]);
-
   const restart = (): void => {
-    setTopupId(null);
-    setStep("amount");
+    reset();
     setAttempt((n) => n + 1);
-    create.reset();
   };
 
   const expiresMs = topup ? Date.parse(topup.expiresAt) : null;
@@ -139,7 +101,7 @@ export function TopUpFlow({
   const elapsed = TOPUP_WINDOW_MS - remaining;
 
   // ── Waiting on the rail ──────────────────────────────────────────────────────────────────────────
-  if (step === "inflight" && (status == null || status === "pending")) {
+  if (hasIntent && (status == null || status === "pending")) {
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: "center", paddingTop: tokens.space.lg }}>
@@ -173,7 +135,7 @@ export function TopUpFlow({
   }
 
   // ── Confirmed by the server: money actually moved ────────────────────────────────────────────────
-  if (step === "inflight" && status === "succeeded") {
+  if (hasIntent && status === "succeeded") {
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: "center", paddingTop: tokens.space.md }}>
@@ -220,7 +182,7 @@ export function TopUpFlow({
   }
 
   // ── Declined, or the window closed with no answer ────────────────────────────────────────────────
-  if (step === "inflight" && (status === "declined" || status === "expired")) {
+  if (hasIntent && (status === "declined" || status === "expired")) {
     const isExpired = status === "expired";
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -381,9 +343,9 @@ export function TopUpFlow({
 
       <Button
         label={amountOk ? `Request ${formatMoney(amount)} via ${railName}` : `Request via ${railName}`}
-        disabled={!amountOk || !phoneOk || create.isPending}
-        loading={create.isPending}
-        onPress={() => create.mutate()}
+        disabled={!amountOk || !phoneOk || isStarting}
+        loading={isStarting}
+        onPress={() => start({ amount, rail, phone, idempotencyKey })}
       />
 
       {/* The route that works today. `creditFromTopup` has no caller yet, so until a rail lands the
