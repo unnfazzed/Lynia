@@ -305,6 +305,29 @@
 > production rollout, and nothing in this run started that clock. A FINISHED submission still does not
 > prove the binary *runs* — `MOB-BOOT-01` was found on a green build — so the real exit test remains
 > the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+>
+> **Status (2026-08-13 — v0.34.0 dispatched to the internal track by a Claude session on explicit
+> request; clean first-attempt run, third consecutive.)** `mobile-release.yml` run #20
+> (31667204815), **profile `preview`** per the §8-step-3 rule — production remains unarmed — ref
+> `main` @ `9f4f0def` (app version `0.34.0` at that commit; release-please bumped main to `0.35.0`
+> ~13 minutes later, unrelated to this build). Ownership guards run rather than assumed before
+> dispatch, per `CLAUDE.md`: no other reachable Claude session and no in-flight `mobile-release.yml`
+> run (so this session owned the deploy solo), CI green on the dispatched commit, and
+> `pnpm install --frozen-lockfile` clean with `pnpm-lock.yaml`/`eas.json` unmoved against
+> `origin/main`.
+>
+> EAS build `2f85f958-091f-42d4-bb80-40a680d00d02` **FINISHED**; submission
+> `47feed6a-098a-4408-b10c-046a53cadc8e` **FINISHED**, track `internal`, no error — confirmed on the
+> first `eas-build-status.yml` check, ~19 minutes after dispatch, no retries. runtimeVersion
+> `0132a2cf489cedbd85a573cbc829aac28066b0ee` is **still byte-identical** to every build since 0.22.0
+> (now spanning 0.22.0 → 0.30.0 → 0.31.0 → 0.34.0) — `REL-01`'s fingerprint fix keeps holding on real
+> version bumps.
+>
+> **What this run does NOT establish** — unchanged from the last two entries. It is still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design.
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched — nothing
+> here started that clock. A FINISHED submission does not prove the binary *runs* — the real exit
+> test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
 ---
 
