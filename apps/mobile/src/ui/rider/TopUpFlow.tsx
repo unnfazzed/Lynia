@@ -3,47 +3,43 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
-import { Button, Card, Field, Icon, Sub } from "../index";
+import { useTopUp } from "../../query/use-topup";
+import { uuidV4FromSeed } from "../../util";
+import { Button, Card, Field, Icon, Sub, useActionError } from "../index";
 import { SupportCallRow } from "../safety";
 import { CountdownRing, formatCountdown } from "../food/CountdownRing";
 
 /**
  * The kit's self-serve top-up flow (`explorations/journey/rider-screens-wallet.jsx` — `TopupAmount`,
- * `TopupWait`, `TopupSuccess`, `TopupDeclined`), shipped to riders behind a server kill switch even
- * though the rail it draws does not exist.
+ * `TopupWait`, `TopupSuccess`, `TopupDeclined`), wired to the real wallet API.
  *
- * ─── READ THIS BEFORE YOU CHANGE ANYTHING HERE ────────────────────────────────────────────────────
- * There is no payment-rail integration. `POST /wallet/topups` exists and really does open a `TopUp`
- * row, but `WalletService.creditFromTopup` — the ONLY code path that can ever confirm one and move a
- * balance — has no callers anywhere in the repo, on any rail. A real intent therefore has exactly one
- * possible ending: `expired`, 90 seconds later. That is the permanently-broken money flow
- * `app/wallet/top-up.tsx` was rewritten to remove, and nothing here may bring it back.
+ * ─── THE ONE THING TO UNDERSTAND ABOUT THIS SCREEN ────────────────────────────────────────────────
+ * It is a view over `useTopUp` (`src/query/use-topup.ts`), which owns the whole data lifecycle — the
+ * real `TopUp` intent, the poll, the wallet invalidation and the durable recovery marker. This file
+ * deliberately does no fetching of its own: the `mobile-ui-no-api` boundary
+ * (`.dependency-cruiser.cjs`) holds the design-system layer to props and hook state, and CI fails a
+ * new `src/ui/ → src/api/` edge. Reach for the hook, never the api module.
  *
- * Until 2026-08-12 every step carried a red PREVIEW strip and the success step was phrased in the
- * conditional beside the rider's real, unchanged balance, so none of it could be mistaken for a money
- * event. **The owner removed all of that, on the record and having been shown this trade-off, to ship
- * ahead of launch.** What that leaves:
+ * What that buys is the property that matters here: this screen renders whichever terminal state THE
+ * SERVER reports. A success appears only when the server says `succeeded`, which happens only when
+ * something has called `WalletService.creditFromTopup` and actually moved the balance.
  *
- *   - rendered only when `usePaymentSimulation()` is open (see app/wallet/top-up.tsx) — the QA APK or
- *     the `paymentSimulationEnabled` server flag. **That flag is now the ONLY control over this flow**,
- *     because nothing on screen tells a rider it isn't real. Shut it and riders get the honest "call
- *     support to top up" screen, with no app update;
- *   - it still makes NO network call. No `TopUp` row (which would only ever expire, and would leave a
- *     durable `PendingTopup` marker for the Money tab to report on), no wallet read or invalidation,
- *     nothing written to the device. The rider's real balance is genuinely untouched — the success
- *     step is a drawing, not a transaction;
- *   - the success step now states "added to your balance" unqualified. It is the one screen in this
- *     app that asserts something false about money. Treat it accordingly;
- *   - nothing auto-resolves — both terminals need an explicit tap;
- *   - the REAL top-up route (call support) stays on the amount step. It is the only way a balance
- *     actually moves today, so it survives regardless of what the rest of the screen claims.
+ * It replaced a mock (`TopUpSimulator`) that drew these four screens with no backend at all and let
+ * the rider pick their own outcome — including a success that asserted a credit which never happened.
+ * Nothing here can do that: the outcome is not the client's to choose.
  *
- * Delete this component the day a rail integration lands and calls `creditFromTopup`; the layout is the
- * kit's, so the real screen is this plus `createTopup`/`getTopup` — at which point the success step
- * stops being a lie because it finally corresponds to a credit.
+ * ─── WHAT IS STILL MISSING, AND WHAT THAT LOOKS LIKE TODAY ────────────────────────────────────────
+ * The APP side is complete. The SERVER side is not: `creditFromTopup` — the only code path that can
+ * confirm an intent — still has no caller, because no payment-rail client exists. So no prompt reaches
+ * the rider's phone, nothing confirms, and every real attempt runs the 90-second window down and comes
+ * back `expired`. That is the honest rendering of the actual system state, and it is why the amount
+ * step keeps a support-call card: calling support is the only route to a credit that works today.
+ *
+ * **When a rail lands and calls `creditFromTopup`, this screen starts working with no change here.**
+ * That is the point of wiring it now — `succeeded` / `declined` / `expired` are already handled, the
+ * balance and ledger are already invalidated on success, and the durable `PendingTopup` marker already
+ * survives an app kill mid-wait (the Money tab reconciles it on next open).
  */
-
-type Step = "amount" | "wait" | "approved" | "declined";
 
 const RAILS: { id: Exclude<TopupRail, "manual">; name: string; note: string }[] = [
   { id: "ecocash", name: "EcoCash", note: "Approve on your phone" },
@@ -52,7 +48,7 @@ const RAILS: { id: Exclude<TopupRail, "manual">; name: string; note: string }[] 
 ];
 const QUICK_AMOUNTS = [5, 10, 20];
 
-export function TopUpSimulator({
+export function TopUpFlow({
   minTopUp,
   maxTopUp,
   onExit,
@@ -61,12 +57,21 @@ export function TopUpSimulator({
   maxTopUp: number;
   onExit: () => void;
 }): React.ReactElement {
-  const [step, setStep] = React.useState<Step>("amount");
+  const fail = useActionError();
   const [amountRaw, setAmountRaw] = React.useState("10.00");
   const [phone, setPhone] = React.useState("");
   const [rail, setRail] = React.useState<Exclude<TopupRail, "manual">>("ecocash");
-  const [startedAt, setStartedAt] = React.useState<number | null>(null);
   const [nowMs, setNowMs] = React.useState(() => Date.now());
+  // Rotates per attempt so a retry after a decline opens a NEW intent, while a timeout+retry WITHIN an
+  // attempt replays the same key and the server returns the original pending intent (BH-09).
+  const [attempt, setAttempt] = React.useState(0);
+
+  const { topup, status, hasIntent, isStarting, start, reset } = useTopUp({
+    // Action-error rule (docs/DESIGN-SYSTEM.md): speak once as a self-clearing toast, never persist a
+    // card. Curated copy rather than the raw error message — "Network request failed" tells a rider
+    // nothing about what to do next.
+    onStartError: () => fail("We couldn't start that top-up. Check your connection and try again."),
+  });
 
   const amountError = validateTopupAmount(amountRaw, minTopUp, maxTopUp);
   const amount = Number(amountRaw);
@@ -74,17 +79,29 @@ export function TopUpSimulator({
   const phoneOk = phone.replace(/\D/g, "").length >= 9;
   const railName = RAILS.find((r) => r.id === rail)?.name ?? "";
 
-  // Only tick while the wait ring is on screen.
+  const idempotencyKey = React.useMemo(
+    () => uuidV4FromSeed(`topup|${attempt}|${amountRaw}|${phone}|${rail}`),
+    [attempt, amountRaw, phone, rail],
+  );
+
+  // Tick only while a prompt is outstanding — the countdown ring is the only thing that needs it.
   React.useEffect(() => {
-    if (step !== "wait") return;
+    if (status !== "pending") return;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [step]);
+  }, [status]);
 
-  const elapsed = startedAt == null ? 0 : Math.max(0, nowMs - startedAt);
-  const remaining = Math.max(0, TOPUP_WINDOW_MS - elapsed);
+  const restart = (): void => {
+    reset();
+    setAttempt((n) => n + 1);
+  };
 
-  if (step === "wait") {
+  const expiresMs = topup ? Date.parse(topup.expiresAt) : null;
+  const remaining = expiresMs == null ? TOPUP_WINDOW_MS : Math.max(0, expiresMs - nowMs);
+  const elapsed = TOPUP_WINDOW_MS - remaining;
+
+  // ── Waiting on the rail ──────────────────────────────────────────────────────────────────────────
+  if (hasIntent && (status == null || status === "pending")) {
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: "center", paddingTop: tokens.space.lg }}>
@@ -94,34 +111,31 @@ export function TopUpSimulator({
           </Text>
           <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", lineHeight: 21, marginTop: 6, maxWidth: 280 }}>
             Approve the {railName} prompt on{" "}
-            <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(phone)}</Text>. Your
-            balance is credited the moment it clears.
+            <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
+              {formatPhoneLocal(phone)}
+            </Text>
+            . Your balance is credited the moment it clears.
           </Text>
           <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
             {formatMoney(amount)} · {railName}
           </Text>
-          {remaining === 0 ? (
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted, textAlign: "center", lineHeight: 18, marginTop: tokens.space.md, maxWidth: 280 }}>
-              The 90-second window has closed. A request that gets no answer expires — no money moves either way.
-            </Text>
-          ) : null}
         </View>
-
         <View style={{ marginTop: tokens.space.xl }}>
-          {/* Both terminals are reached by an explicit tap, never by a timer — nothing resolves itself.
-              These two buttons are the visible seam: no real rail lets the payer choose the outcome, and
-              since the PREVIEW labels came off (2026-08-12, owner's call) they are the only remaining
-              hint to a rider that this flow is not wired to anything. */}
-          <Button label="Payment approved" variant="ghost" onPress={() => setStep("approved")} />
-          <Button label="Payment declined" variant="ghost" onPress={() => setStep("declined")} />
-          <Button label="Cancel request" variant="ghost" onPress={() => setStep("amount")} />
+          {/* Leaving does NOT cancel the intent — it stays open server-side until it confirms or the
+              window closes, and the durable marker means the Money tab picks up the outcome either way.
+              Say that, rather than implying the rider must sit here. */}
+          <Text style={{ fontSize: 12, color: tokens.color.muted, textAlign: "center", lineHeight: 18, marginBottom: tokens.space.sm }}>
+            You can leave this screen — we&apos;ll update your balance as soon as the payment clears.
+          </Text>
+          <Button label="Back to Money" variant="ghost" onPress={onExit} />
         </View>
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     );
   }
 
-  if (step === "approved") {
+  // ── Confirmed by the server: money actually moved ────────────────────────────────────────────────
+  if (hasIntent && status === "succeeded") {
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: "center", paddingTop: tokens.space.md }}>
@@ -138,15 +152,10 @@ export function TopUpSimulator({
             <Icon name="check" size={40} color={tokens.color.accentText} strokeWidth={tokens.icon.stroke} />
           </View>
           <Text style={{ fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-            {formatMoney(amount)}
+            {formatMoney(topup?.amount ?? amount)}
           </Text>
-          {/* ⚠️ THIS LINE ASSERTS A CREDIT THAT DID NOT HAPPEN. It read "would have been added —
-              simulated", beside the rider's real unchanged balance, precisely so it could not be
-              believed. The owner removed every such qualifier on 2026-08-12 having been shown this
-              exact trade-off, and chose the unqualified success screen. Nothing behind it moved a cent:
-              no request was sent, no `TopUp` row exists, the ledger is untouched, and the rider's real
-              balance is whatever it was before. If you are reading this while deciding whether to keep
-              it, the honest version is one `git revert` away. */}
+          {/* Safe to state plainly: this branch is reachable only on a server-reported `succeeded`,
+              which means creditFromTopup ran and the ledger has the entry. */}
           <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2 }}>added to your balance</Text>
         </View>
 
@@ -159,22 +168,22 @@ export function TopUpSimulator({
               <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{railName} top-up</Text>
               <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>Just now</Text>
             </View>
-            {/* Still muted rather than the ledger's credit-green — this row corresponds to no ledger
-                entry, so it must not colour-match the real credits on the Money tab. */}
-            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-              +{formatMoney(amount)}
+            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
+              +{formatMoney(topup?.amount ?? amount)}
             </Text>
           </View>
         </Card>
 
         <Button label="Back to Money" onPress={onExit} />
-        <Button label="Top up again" variant="ghost" onPress={() => setStep("amount")} />
+        <Button label="Top up again" variant="ghost" onPress={restart} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     );
   }
 
-  if (step === "declined") {
+  // ── Declined, or the window closed with no answer ────────────────────────────────────────────────
+  if (hasIntent && (status === "declined" || status === "expired")) {
+    const isExpired = status === "expired";
     return (
       <ScrollView showsVerticalScrollIndicator={false}>
         <Card>
@@ -193,14 +202,18 @@ export function TopUpSimulator({
               <Icon name="circle-alert" size={36} color={tokens.color.dangerInk} strokeWidth={tokens.icon.stroke} />
             </View>
             <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
-              The payment was declined
+              {isExpired ? "The request timed out" : "The payment was declined"}
             </Text>
             <Text style={{ fontSize: 12, color: tokens.color.muted, textAlign: "center", lineHeight: 18, marginTop: 6, maxWidth: 280 }}>
-              No money leaves your {railName} wallet. Usually the {railName} balance was too low, or the request was
-              turned down on the phone.
+              {isExpired
+                ? `No money left your ${railName} wallet. The request wasn't approved in time — you can try again, or call support to top up.`
+                : `No money leaves your ${railName} wallet. Usually the ${railName} balance was too low, or the request was turned down on the phone.`}
             </Text>
           </View>
-          <Button label="Try again" onPress={() => setStep("amount")} />
+          <Button label="Try again" onPress={restart} />
+        </Card>
+        <Card style={{ marginTop: tokens.space.md, backgroundColor: tokens.color.surface }}>
+          <SupportCallRow label="Top up" name="LyniaGo support" />
         </Card>
         <Button label="Back to Money" variant="ghost" onPress={onExit} />
         <View style={{ height: tokens.space.xxl }} />
@@ -208,6 +221,7 @@ export function TopUpSimulator({
     );
   }
 
+  // ── Amount / rail / phone ────────────────────────────────────────────────────────────────────────
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <Sub>Add to your commission balance. This money can only be spent on commission.</Sub>
@@ -266,7 +280,7 @@ export function TopUpSimulator({
         maxLength={20}
         autoComplete="tel"
         textContentType="telephoneNumber"
-        hint="This is the number that would get the payment prompt — change it if you'd pay from another line."
+        hint="This is the number that gets the payment prompt — change it if you'd pay from another line."
       />
 
       <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Pay with</Text>
@@ -329,18 +343,14 @@ export function TopUpSimulator({
 
       <Button
         label={amountOk ? `Request ${formatMoney(amount)} via ${railName}` : `Request via ${railName}`}
-        disabled={!amountOk || !phoneOk}
-        onPress={() => {
-          setStartedAt(Date.now());
-          setNowMs(Date.now());
-          setStep("wait");
-        }}
+        disabled={!amountOk || !phoneOk || isStarting}
+        loading={isStarting}
+        onPress={() => start({ amount, rail, phone, idempotencyKey })}
       />
 
-      {/* THE ONE REAL ACTION ON THIS SCREEN. Everything above is drawn against a rail that does not
-          exist; support crediting a balance by hand is how a top-up actually happens today. It stays
-          here whatever the labels say, because removing it would leave riders with no working route to
-          their money at all. Do not "tidy" it away. */}
+      {/* The route that works today. `creditFromTopup` has no caller yet, so until a rail lands the
+          request above runs its 90s window down and expires — support crediting a balance by hand is
+          the only way a rider's money actually moves. Keep this here until that changes. */}
       <View style={{ marginTop: tokens.space.xl }}>
         <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, letterSpacing: 0.3, marginBottom: 6 }}>
           TOP UP BY PHONE

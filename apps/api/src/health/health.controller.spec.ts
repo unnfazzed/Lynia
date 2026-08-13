@@ -76,10 +76,10 @@ describe("HealthController — app/feature-flags (merchant kill switches, plan �
   });
 
   it("stays exactly three fields — a fourth would break every binary already on the internal track", async () => {
-    // v0.30.0/v0.31.0 parse this body with their own bundled `.strict()` copy of the contract. An extra
-    // key makes their safeParse fail, silently dropping them to DEFAULT_FEATURE_FLAGS and disarming the
-    // Restaurants kill switch on handsets no config change can reach. New flags of that class go on
-    // `app/preview-flags` instead — see PreviewFlagsResponse.
+    // The binaries already on the internal track parse this body with their own bundled `.strict()`
+    // copy of the contract. An extra key makes their safeParse fail, silently dropping them to
+    // DEFAULT_FEATURE_FLAGS and disarming the Restaurants kill switch on handsets no config change can
+    // reach. A new flag of this class needs its own endpoint, not a fourth field here.
     expect(Object.keys(controllerWith(okReport).featureFlags()).sort()).toEqual([
       "merchantDispatchAutoEnabled",
       "merchantWalletEnabled",
@@ -88,24 +88,3 @@ describe("HealthController — app/feature-flags (merchant kill switches, plan �
   });
 });
 
-describe("HealthController — app/preview-flags (drawn-but-unbacked payment walkthroughs)", () => {
-  it("ships the previews ON by default (owner instruction 2026-08-12: ship what we can ahead of launch)", () => {
-    expect(controllerWith(okReport).previewFlags()).toEqual({ paymentSimulationEnabled: true });
-  });
-
-  it("retracts both walkthroughs when flipped off — the kill switch, no app update required", () => {
-    const controller = controllerWith(okReport, { ...baseSource, PAYMENT_SIMULATION_ENABLED: "false" });
-    expect(controller.previewFlags()).toEqual({ paymentSimulationEnabled: false });
-  });
-
-  it("rejects a malformed flag value at boot instead of guessing", () => {
-    expect(() => loadEnv({ ...baseSource, PAYMENT_SIMULATION_ENABLED: "off" })).toThrow(
-      /Invalid environment configuration/,
-    );
-  });
-
-  it("parses against the shared wire contract exactly (strict schema, no extra keys)", async () => {
-    const { PreviewFlagsResponse } = await import("@lynia/shared");
-    expect(() => PreviewFlagsResponse.parse(controllerWith(okReport).previewFlags())).not.toThrow();
-  });
-});

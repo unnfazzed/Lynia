@@ -323,17 +323,6 @@ export const envSchema = z.object({
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),
-  // Drawn-but-unbacked payment walkthroughs (rider top-up + food-checkout prompt/decline). Served on
-  // GET /app/preview-flags; mobile reads it at cold start. **Default ON** (owner instruction
-  // 2026-08-12: ship as much as possible ahead of launch) — these are designed screens from the kit
-  // that no rail can yet drive, shipped so the journey is walkable, each one labelled PREVIEW and
-  // stating in as many words that no money moved. Flip to "false" and both collapse to their honest
-  // fallbacks — call-support for top-up, manual reference-entry for checkout — within ~1 min of the
-  // Cloud Run revision serving, with NO app update. That kill switch is the whole reason the flag
-  // exists: a preview that starts confusing real users at launch must be retractable in a minute, not
-  // in a store-review cycle. Delete the flag and the walkthroughs together the day a real rail lands
-  // and calls WalletService.creditFromTopup.
-  PAYMENT_SIMULATION_ENABLED: z.enum(["true", "false"]).default("true"),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.

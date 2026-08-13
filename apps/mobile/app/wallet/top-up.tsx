@@ -1,99 +1,47 @@
-import { COMMISSION, tokens } from "@lynia/shared";
+import { COMMISSION } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Text, View } from "react-native";
 import { useWalletConfig } from "../../src/query/use-wallet";
-import { SupportCallRow } from "../../src/ui/safety";
-import { Button, Card, Heading, Icon, Screen, Sub } from "../../src/ui";
-import { usePaymentSimulation } from "../../src/ui/payment-simulation";
-import { TopUpSimulator } from "../../src/ui/rider/TopUpSimulator";
+import { Heading, Screen, Sub } from "../../src/ui";
+import { TopUpFlow } from "../../src/ui/rider/TopUpFlow";
 
 /**
- * DOC-16-02 (docs/KNOWN_BUGS.md): self-serve top-up on all three rails (EcoCash/InnBucks/O'mari)
- * previously guaranteed a 90s timeout — `WalletService.creditFromTopup`, the ONLY code path that ever
- * confirms a `TopUp` and credits the balance, has zero callers anywhere (no rail integration exists, and
- * none was ever wired to call it). The old screen collected an amount/phone/rail, opened a "Check your
- * phone" countdown, and always landed on "The request expired" — a real, live, permanently-broken money
- * flow (WALLET_REVEAL defaults true, so real riders hit this).
+ * Rider top-up (kit `rider-screens-wallet.jsx`: amount → wait → success/declined).
  *
- * Per the design brief's own UI spec, only EcoCash was ever meant to get a real self-serve form —
- * InnBucks/O'mari were always the "instruction card" / manual-credit path (`packages/shared/src/contracts.ts`
- * `TopupRail` doc: "manual is an ops-recorded credit... the launch rail for InnBucks/O'mari and the
- * fallback for EcoCash"). Since the EcoCash integration was never built either, ALL THREE rails route
- * here until a real rail integration lands and calls `creditFromTopup` — an honest instruction screen
- * pointing at the ALREADY-WORKING admin manual-credit path (`POST /admin/riders/:id/wallet-credit` →
- * `WalletService.creditManual`), instead of a self-serve form that could never succeed.
+ * This screen has been three things. It is worth knowing which one you are looking at:
  *
- * ─── THE KIT'S TOP-UP FLOW, SHIPPED TO RIDERS ─────────────────────────────────────────────────────
- * None of the above changes. The rail still doesn't exist and still moves no money. What ships is a
- * walkable rendering of the four screens the kit specifies (`rider-screens-wallet.jsx`: amount → wait
- * → approved/declined), opened by `usePaymentSimulation()` — the QA APK OR the
- * `paymentSimulationEnabled` server flag, ON by default and retractable in ~1 minute with no app
- * update.
+ *  1. A self-serve form that ALWAYS failed. `POST /wallet/topups` opens a real intent, but
+ *     `WalletService.creditFromTopup` — the only path that can confirm one — had no caller, so every
+ *     attempt ran the 90s window down and landed on "The request expired". A live, user-facing,
+ *     permanently-broken money flow (`DOC-16-02` in docs/KNOWN_BUGS.md).
+ *  2. Then a "call support to top up" screen, and later a mock of the kit's four screens — honest
+ *     about the missing rail, but not a client of anything.
+ *  3. Now (2026-08-13, owner instruction: *"assume the rail will be fully implemented and i want the
+ *     set up like its fully implemented"*) the REAL client again — but complete this time, which is
+ *     what state 1 never was: idempotent creation, server-driven outcome, a durable `PendingTopup`
+ *     marker so an app kill mid-wait is recoverable, and balance/ledger invalidation on a
+ *     server-reported success.
  *
- * It was QA-APK-only, then briefly shipped with PREVIEW markers on every step; the owner removed those
- * on 2026-08-12 ("i am taking the risk" — nobody uses these until the rails are wired). So the flow
- * now reads as an ordinary top-up, and **the server flag is the only control over it**. What did not
- * change: no network call, no `TopUp` row, no ledger write, and no path that resolves itself into a
- * success. See `src/ui/rider/TopUpSimulator.tsx` for the full account.
+ * The difference between 1 and 3 is not the rail — that is still missing — it is that nothing here
+ * pretends. A success renders only when the server says `succeeded`, an expiry is labelled an expiry,
+ * and the support-call route that actually credits a balance today is on the screen throughout. When a
+ * rail lands and calls `creditFromTopup`, this starts working with no change to the app.
  *
- * The support-call card below is the fallback whenever the gate is shut — and, because it is the ONLY
- * way a balance actually moves today, the flow keeps its own route to it rather than burying it (see
- * `TopUpSimulator`'s amount step, "TOP UP BY PHONE").
+ * See `src/ui/rider/TopUpFlow.tsx` and `docs/PAYMENT-RAIL-OUTSTANDING.md`.
  */
 export default function TopUpScreen(): React.ReactElement {
   const router = useRouter();
   const { config } = useWalletConfig();
-  const simulationEnabled = usePaymentSimulation();
-
-  if (simulationEnabled) {
-    return (
-      <Screen>
-        <Heading>Top up</Heading>
-        <TopUpSimulator
-          minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
-          maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
-          onExit={() => router.back()}
-        />
-      </Screen>
-    );
-  }
 
   return (
     <Screen>
       <Heading>Top up</Heading>
       <Sub>Add to your prepaid commission balance.</Sub>
-
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: tokens.space.lg }}>
-        <View
-          style={{
-            width: 88,
-            height: 88,
-            borderRadius: 44,
-            backgroundColor: tokens.color.highlightWash,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: tokens.space.md,
-          }}
-        >
-          <Icon name="phone" size={36} color={tokens.color.highlightInk} strokeWidth={1.75} />
-        </View>
-        <Text style={{ fontSize: 18, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>
-          Top up by contacting support
-        </Text>
-        <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", marginTop: 6, lineHeight: 20 }}>
-          Self-serve top-up isn&apos;t available yet. Call support, tell them how much you&apos;d like to add, and
-          they&apos;ll confirm your payment and credit your balance directly — no money moves until they do.
-        </Text>
-
-        <Card style={{ alignSelf: "stretch", marginTop: tokens.space.lg, backgroundColor: tokens.color.surface }}>
-          <SupportCallRow label="Top up" name="LyniaGo support" />
-        </Card>
-
-        <View style={{ alignSelf: "stretch", marginTop: tokens.space.xl }}>
-          <Button label="Back to Money" variant="ghost" onPress={() => router.back()} />
-        </View>
-      </View>
+      <TopUpFlow
+        minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
+        maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
+        onExit={() => router.back()}
+      />
     </Screen>
   );
 }
