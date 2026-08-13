@@ -1,0 +1,41 @@
+{
+  "key": "LJ.splash",
+  "src": "LJ",
+  "id": "splash",
+  "mode": "phone",
+  "component": "app/splash.view.tsx",
+  "fixture": "splash",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 1,
+    "text": 1,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "LyniaGo"
+  ],
+  "textPaths": [
+    "1"
+  ],
+  "groups": [],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "image"
+      },
+      {
+        "role": "text",
+        "text": "LyniaGo"
+      }
+    ]
+  }
+}

@@ -11,7 +11,7 @@
   ],
   "roleCounts": {
     "container": 22,
-    "text": 15,
+    "text": 14,
     "image": 20,
     "input": 0
   },
@@ -19,8 +19,7 @@
     "R",
     "•",
     "Leaflet",
-    "|",
-    "© OpenStreetMap contributors",
+    "| © OpenStreetMap contributors",
     "Tendai M. · 6 min away",
     "AEE 4471",
     "red Honda",
@@ -37,7 +36,6 @@
     "0.0.2.1.0",
     "0.1.0.1",
     "0.1.1",
-    "0.1.2",
     "1.0.1.0",
     "1.0.1.1.0",
     "1.0.1.1.1",
@@ -51,17 +49,13 @@
   ],
   "groups": [
     [
-      3,
-      4
+      5,
+      6
     ],
     [
-      6,
-      7
-    ],
-    [
+      8,
       9,
-      10,
-      11
+      10
     ]
   ],
   "note": "",
@@ -176,11 +170,7 @@
               },
               {
                 "role": "text",
-                "text": "|"
-              },
-              {
-                "role": "text",
-                "text": "© OpenStreetMap contributors"
+                "text": "| © OpenStreetMap contributors"
               }
             ]
           }

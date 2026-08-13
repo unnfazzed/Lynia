@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPhoneLocal, normalizePhone } from "./phone";
+import { formatPhoneDisplay, formatPhoneLocal, normalizePhone } from "./phone";
 
 describe("formatPhoneLocal", () => {
   it("renders a ZW number in local trunk-0 form, dropping +263", () => {
@@ -26,5 +26,21 @@ describe("formatPhoneLocal", () => {
     expect(formatPhoneLocal("999")).toBe("999");
     expect(formatPhoneLocal("  ")).toBe("");
     expect(formatPhoneLocal("")).toBe("");
+  });
+});
+
+describe("formatPhoneDisplay", () => {
+  it("renders the mock's spaced E.164 form for ZW numbers, from any input spelling", () => {
+    expect(formatPhoneDisplay("+263772451180")).toBe("+263 77 245 1180");
+    expect(formatPhoneDisplay("0772451180")).toBe("+263 77 245 1180");
+    expect(formatPhoneDisplay("263 77 245 1180")).toBe("+263 77 245 1180");
+  });
+
+  it("keeps plain E.164 for a non-9-digit national or foreign number (no wrong grouping)", () => {
+    expect(formatPhoneDisplay("+27821234567")).toBe("+27821234567");
+  });
+
+  it("returns implausible input trimmed and unchanged (display never drops text)", () => {
+    expect(formatPhoneDisplay(" 999 ")).toBe("999");
   });
 });

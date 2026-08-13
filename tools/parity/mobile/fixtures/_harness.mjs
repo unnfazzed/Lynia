@@ -62,8 +62,11 @@ export function installRouter(routes = []) {
       const hit =
         typeof m === "function" ? m(path) : m instanceof RegExp ? m.test(path) : path === m || path.endsWith(m);
       if (!hit) continue;
-      const body = typeof r.json === "function" ? r.json(path) : r.json;
-      return new Response(JSON.stringify(body ?? {}), {
+      // `json: null` is a REAL staged answer ("no active order") — only an omitted `json` falls back
+      // to the inert `{}`; `?? {}` here silently turned a staged null into a truthy object and made
+      // the delete-account screen paint its blocking strip against a fixture that staged none.
+      const body = typeof r.json === "function" ? r.json(path) : "json" in r ? r.json : {};
+      return new Response(JSON.stringify(body), {
         status: r.status || 200,
         headers: { "content-type": "application/json" },
       });

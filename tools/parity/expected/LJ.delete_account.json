@@ -1,0 +1,121 @@
+{
+  "key": "LJ.delete_account",
+  "src": "LJ",
+  "id": "delete_account",
+  "mode": "phone",
+  "component": "app/settings/delete-account.tsx",
+  "fixture": "delete_account",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 8,
+    "text": 6,
+    "image": 3,
+    "input": 0
+  },
+  "texts": [
+    "Delete account",
+    "Delete your account?",
+    "Your profile, saved places, notifications and order history will be permanently deleted. Records the law makes us keep (payments) are kept only as long as it requires.",
+    "No delivery is running — you're clear to continue. (A live order blocks deletion until it ends.)",
+    "Keep my account",
+    "Continue to delete"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.1",
+    "1.0.2",
+    "1.1.1",
+    "1.2",
+    "1.3"
+  ],
+  "groups": [
+    [
+      4,
+      5
+    ],
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Delete account"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Delete your account?"
+              },
+              {
+                "role": "text",
+                "text": "Your profile, saved places, notifications and order history will be permanently deleted. Records the law makes us keep (payments) are kept only as long as it requires."
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "No delivery is running — you're clear to continue. (A live order blocks deletion until it ends.)"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Keep my account"
+          },
+          {
+            "role": "text",
+            "text": "Continue to delete"
+          }
+        ]
+      }
+    ]
+  }
+}

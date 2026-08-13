@@ -11,7 +11,7 @@
   ],
   "roleCounts": {
     "container": 22,
-    "text": 22,
+    "text": 21,
     "image": 8,
     "input": 0
   },
@@ -33,8 +33,7 @@
     "R",
     "•",
     "Leaflet",
-    "|",
-    "© OpenStreetMap contributors",
+    "| © OpenStreetMap contributors",
     "After the drop: return leg to the kitchen · ~9 min · no new offers until they confirm the cash",
     "Accept · collect at the door",
     "Pass"
@@ -58,7 +57,6 @@
     "1.3.0.2.1.0",
     "1.3.1.0.1",
     "1.3.1.1",
-    "1.3.1.2",
     "1.4.1",
     "2.0",
     "2.1"
@@ -88,12 +86,8 @@
       13
     ],
     [
-      17,
-      18
-    ],
-    [
-      20,
-      21
+      19,
+      20
     ]
   ],
   "note": "",
@@ -283,11 +277,7 @@
                   },
                   {
                     "role": "text",
-                    "text": "|"
-                  },
-                  {
-                    "role": "text",
-                    "text": "© OpenStreetMap contributors"
+                    "text": "| © OpenStreetMap contributors"
                   }
                 ]
               }

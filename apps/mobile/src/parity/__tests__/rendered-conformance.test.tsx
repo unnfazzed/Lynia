@@ -49,6 +49,42 @@ jest.mock("expo-secure-store", () => ({
   },
 }));
 
+// Mirrors tools/parity/mobile/shims/expo-location.js: permission state answers from the fixture's
+// `__PARITY_PERMISSIONS` seed (the same key the browser shim reads), so LJ.settings_perms can stage
+// the denied device the mock draws in BOTH lanes.
+const parityPermissions = (): Record<string, string> =>
+  ((globalThis as { window?: { __PARITY_PERMISSIONS?: Record<string, string> } }).window?.__PARITY_PERMISSIONS ??
+    (globalThis as { __PARITY_PERMISSIONS?: Record<string, string> }).__PARITY_PERMISSIONS ??
+    {});
+jest.mock("expo-location", () => ({
+  Accuracy: { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
+  requestForegroundPermissionsAsync: async () => ({ status: "granted", granted: true, canAskAgain: true }),
+  getForegroundPermissionsAsync: async () => {
+    const status = parityPermissions().location || "granted";
+    return { status, granted: status === "granted", canAskAgain: status !== "never" };
+  },
+  getCurrentPositionAsync: async () => ({ coords: { latitude: -17.8292, longitude: 31.0522, accuracy: 5 }, timestamp: 0 }),
+  getLastKnownPositionAsync: async () => null,
+  hasServicesEnabledAsync: async () => true,
+}));
+
+// Mirrors tools/parity/mobile/shims/expo-notifications.js for the calls screens make at mount (the
+// cold-start push read in app/index-adjacent modules, the settings notifications row).
+jest.mock("expo-notifications", () => ({
+  getLastNotificationResponseAsync: async () => null,
+  getPermissionsAsync: async () => {
+    const status = parityPermissions().notifications || "granted";
+    return { status, granted: status === "granted", canAskAgain: status !== "never" };
+  },
+  requestPermissionsAsync: async () => ({ status: "granted", granted: true }),
+  setNotificationHandler: () => {},
+  addNotificationResponseReceivedListener: () => ({ remove() {} }),
+  addNotificationReceivedListener: () => ({ remove() {} }),
+  setNotificationChannelAsync: async () => {},
+  getExpoPushTokenAsync: async () => ({ data: "ExponentPushToken[parity]" }),
+  AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3 },
+}));
+
 jest.mock("expo-router", () => {
   const R = require("react");
   const noop = (): undefined => undefined;

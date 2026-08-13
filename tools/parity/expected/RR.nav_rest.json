@@ -11,7 +11,7 @@
   ],
   "roleCounts": {
     "container": 17,
-    "text": 9,
+    "text": 8,
     "image": 17,
     "input": 0
   },
@@ -19,8 +19,7 @@
     "R",
     "•",
     "Leaflet",
-    "|",
-    "© OpenStreetMap contributors",
+    "| © OpenStreetMap contributors",
     "Sadza Republic · 4 min",
     "Food ready in 12 min · nothing to pay here",
     "CASH",
@@ -31,7 +30,6 @@
     "0.0.2.1.0",
     "0.1.0.1",
     "0.1.1",
-    "0.1.2",
     "1.0.0.0",
     "1.0.0.1",
     "1.0.1.1",
@@ -39,12 +37,8 @@
   ],
   "groups": [
     [
-      3,
-      4
-    ],
-    [
-      5,
-      6
+      4,
+      5
     ]
   ],
   "note": "",
@@ -159,11 +153,7 @@
               },
               {
                 "role": "text",
-                "text": "|"
-              },
-              {
-                "role": "text",
-                "text": "© OpenStreetMap contributors"
+                "text": "| © OpenStreetMap contributors"
               }
             ]
           }

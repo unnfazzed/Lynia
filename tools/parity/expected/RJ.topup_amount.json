@@ -11,13 +11,12 @@
   ],
   "roleCounts": {
     "container": 18,
-    "text": 19,
+    "text": 18,
     "image": 3,
     "input": 2
   },
   "texts": [
-    "\\u2039",
-    "Wallet",
+    "\\u2039 Wallet",
     "Top up",
     "Add to your commission balance. This money can only be spent on commission.",
     "Amount (USD)",
@@ -38,7 +37,6 @@
   ],
   "textPaths": [
     "0.0",
-    "0.1",
     "1",
     "2",
     "3.0",
@@ -59,29 +57,25 @@
   ],
   "groups": [
     [
-      2,
-      3
+      1,
+      2
     ],
     [
-      0,
-      1
-    ],
-    [
+      5,
       6,
-      7,
-      8
+      7
     ],
     [
-      12,
-      13
+      11,
+      12
     ],
     [
-      14,
-      15
+      13,
+      14
     ],
     [
-      16,
-      17
+      15,
+      16
     ]
   ],
   "note": "",
@@ -96,11 +90,7 @@
         "children": [
           {
             "role": "text",
-            "text": "\\u2039"
-          },
-          {
-            "role": "text",
-            "text": "Wallet"
+            "text": "\\u2039 Wallet"
           }
         ]
       },

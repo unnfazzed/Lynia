@@ -89,3 +89,29 @@ export function formatPhoneLocal(raw: string, countryCode: string = DEFAULT_COUN
   // Foreign number — no local trunk form; keep it diallable in international shape.
   return e164;
 }
+
+/**
+ * DISPLAY form the design mocks draw on identity surfaces (OTP "We sent a 6-digit code to
+ * +263 77 245 1180 by SMS.", the settings profile row): spaced E.164 — `+<cc> XX XXX XXXX` for a
+ * 9-digit ZW national number. Mock copy is verbatim authority (CLAUDE.md Pixel parity), so screens
+ * whose mock draws this form render THIS, not the local trunk form (`formatPhoneLocal`), which other
+ * mocks draw and which keeps its own call sites.
+ *
+ * Same safety rules as formatPhoneLocal: canonicalize first; anything implausible is returned
+ * trimmed and unchanged (display never drops text); a national number that isn't 9 digits keeps
+ * plain E.164 rather than a wrong grouping.
+ */
+export function formatPhoneDisplay(raw: string, countryCode: string = DEFAULT_COUNTRY_CODE): string {
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  const e164 = normalizePhone(trimmed, countryCode);
+  if (!e164) return trimmed;
+  const digits = e164.slice(1);
+  if (digits.startsWith(countryCode)) {
+    const national = digits.slice(countryCode.length);
+    if (national.length === 9) {
+      return `+${countryCode} ${national.slice(0, 2)} ${national.slice(2, 5)} ${national.slice(5)}`;
+    }
+  }
+  return e164;
+}

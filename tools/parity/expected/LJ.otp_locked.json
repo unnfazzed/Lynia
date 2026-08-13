@@ -1,0 +1,102 @@
+{
+  "key": "LJ.otp_locked",
+  "src": "LJ",
+  "id": "otp_locked",
+  "mode": "phone",
+  "component": "app/verify.tsx",
+  "fixture": "auth_otp_locked",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 4,
+    "text": 7,
+    "image": 0,
+    "input": 1
+  },
+  "texts": [
+    "Check your messages",
+    "We sent a 6-digit code to +263 77 245 1180 by SMS.",
+    "6-digit code",
+    "That code has expired.",
+    "Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.",
+    "Send a fresh code",
+    "Back"
+  ],
+  "textPaths": [
+    "0",
+    "1",
+    "2.0",
+    "2.2.0",
+    "3.0",
+    "4",
+    "5"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "text",
+        "text": "Check your messages"
+      },
+      {
+        "role": "text",
+        "text": "We sent a 6-digit code to +263 77 245 1180 by SMS."
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "6-digit code"
+          },
+          {
+            "role": "input",
+            "text": "418207"
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "That code has expired."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too."
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Send a fresh code"
+      },
+      {
+        "role": "text",
+        "text": "Back"
+      }
+    ]
+  }
+}

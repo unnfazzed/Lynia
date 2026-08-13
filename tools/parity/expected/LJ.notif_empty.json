@@ -1,0 +1,73 @@
+{
+  "key": "LJ.notif_empty",
+  "src": "LJ",
+  "id": "notif_empty",
+  "mode": "phone",
+  "component": "app/notifications/index.tsx",
+  "fixture": "notifications_empty",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 4,
+    "text": 3,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Notifications",
+    "No notifications yet",
+    "Offers, delivery updates and account news will show up here."
+  ],
+  "textPaths": [
+    "0.0",
+    "1.1",
+    "1.2"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Notifications"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "No notifications yet"
+          },
+          {
+            "role": "text",
+            "text": "Offers, delivery updates and account news will show up here."
+          }
+        ]
+      }
+    ]
+  }
+}

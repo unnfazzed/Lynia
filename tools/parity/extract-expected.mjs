@@ -122,16 +122,49 @@ function domWalkSource() {
       }
       if (isTextLeaf(el)) return { role: "text", text: norm(el.textContent) };
 
+      // Mixed children: FUSE adjacent INLINE text — raw text nodes and inline-display text-leaf
+      // elements (a span mid-sentence, "Resend in <span>0:42</span>") — into ONE text leaf,
+      // mirroring the app side where a whole Text (with nested inline Texts) concatenates to one
+      // string (rendered-tree.ts textOf). Without this, a mock line splits on its JSX interpolation
+      // seams and reports "missing" strings the app renders as one — a false-positive class, since
+      // inline text flows as one visual line. BLOCK text leaves (a card's title/meta divs) flush
+      // the run and stay separate — groups depend on that.
+      // MIXED-CONTENT fusion only: when this element has raw text nodes among its children (a real
+      // inline flow — "Resend in <span>0:42</span>"), adjacent raw text + inline-tag text leaves
+      // fuse into ONE leaf, mirroring the app side where a whole <Text> concatenates its nested
+      // strings (rendered-tree.ts textOf). An element-only parent (a Row's <span>label</span> +
+      // <span>value</span>, a tile's two caption spans) keeps each leaf separate — those are laid
+      // out as distinct text elements on both sides, and groups depend on them staying distinct.
+      // Tag-based inline test, not computed display: a flex row's children BLOCKIFY (a span in a
+      // display:flex line computes block), but the kit authors inline emphasis as span/b/i and
+      // layout as div — authorial intent is the right seam.
+      const INLINE_TAGS = ["span", "b", "i", "em", "strong", "a", "u", "s", "small", "sub", "sup"];
+      const hasRawText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && norm(n.nodeValue));
       const children = [];
+      let inlineRun = [];
+      const flushRun = () => {
+        if (!inlineRun.length) return;
+        const t = norm(inlineRun.join(" "));
+        if (t) children.push({ role: "text", text: t });
+        inlineRun = [];
+      };
       for (const node of el.childNodes) {
         if (node.nodeType === 3) {
           const t = norm(node.nodeValue);
-          if (t) children.push({ role: "text", text: t });
+          if (t) inlineRun.push(t);
         } else if (node.nodeType === 1) {
-          const c = walk(node);
-          if (c) children.push(c);
+          const isInlineText = hasRawText && isTextLeaf(node) && INLINE_TAGS.includes(node.tagName.toLowerCase());
+          if (isInlineText) {
+            const t = norm(node.textContent);
+            if (t) inlineRun.push(t);
+          } else {
+            flushRun();
+            const c = walk(node);
+            if (c) children.push(c);
+          }
         }
       }
+      flushRun();
       if (children.length === 0 && cs.backgroundImage !== "none") return { role: "image" };
       return { role: "container", children };
     }

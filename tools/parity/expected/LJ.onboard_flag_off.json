@@ -1,0 +1,93 @@
+{
+  "key": "LJ.onboard_flag_off",
+  "src": "LJ",
+  "id": "onboard_flag_off",
+  "mode": "phone",
+  "component": "app/onboarding.tsx",
+  "fixture": "onboard_flag_off",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 5,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "LyniaGo",
+    "Skip",
+    "Name your price to send",
+    "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.",
+    "Next"
+  ],
+  "textPaths": [
+    "0.0.1",
+    "0.1",
+    "1.1",
+    "1.2",
+    "2"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "LyniaGo"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Skip"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Name your price to send"
+          },
+          {
+            "role": "text",
+            "text": "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street."
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Next"
+      }
+    ]
+  }
+}

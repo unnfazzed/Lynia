@@ -1,0 +1,93 @@
+{
+  "key": "LJ.onboard_shared",
+  "src": "LJ",
+  "id": "onboard_shared",
+  "mode": "phone",
+  "component": "app/onboarding.tsx",
+  "fixture": "onboard_shared",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 5,
+    "text": 5,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "LyniaGo",
+    "Skip",
+    "One app, one code",
+    "Same riders, same delivery code at the door, cash if that's how you pay. More services soon.",
+    "Get started"
+  ],
+  "textPaths": [
+    "0.0.1",
+    "0.1",
+    "1.1",
+    "1.2",
+    "2"
+  ],
+  "groups": [
+    [
+      2,
+      3
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "text",
+                "text": "LyniaGo"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Skip"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "One app, one code"
+          },
+          {
+            "role": "text",
+            "text": "Same riders, same delivery code at the door, cash if that's how you pay. More services soon."
+          }
+        ]
+      },
+      {
+        "role": "text",
+        "text": "Get started"
+      }
+    ]
+  }
+}
