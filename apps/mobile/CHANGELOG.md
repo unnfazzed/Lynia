@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.34.0](https://github.com/unnfazzed/Lynia/compare/v0.33.0...v0.34.0) (2026-08-13)
+
+
+### Features
+
+* **parity:** CI-blocking rendered-conformance guardrail (jest, no browser) ([e4248ff](https://github.com/unnfazzed/Lynia/commit/e4248ff0ccfd7a2a5649016bf192d0eca6050cdd))
+* **payments:** remove the SIMULATED/PREVIEW markers from the unbacked payment screens ([2162d8b](https://github.com/unnfazzed/Lynia/commit/2162d8b71f7f79d0a02c3962d2cd4fb924065f6b))
+
+
+### Bug Fixes
+
+* **mobile:** errors speak once and clear themselves; delete background error cards ([b458c2e](https://github.com/unnfazzed/Lynia/commit/b458c2e2feb37dec13d2ef36261e2d1df7c10843))
+* **mobile:** remove dead code failing oxlint (unblocks parity CI) ([5192e84](https://github.com/unnfazzed/Lynia/commit/5192e8475135d93eb2e91e5542f83d182549b122))
+
 ## [0.33.0](https://github.com/unnfazzed/Lynia/compare/v0.32.1...v0.33.0) (2026-08-12)
 
 
