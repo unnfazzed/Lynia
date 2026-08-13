@@ -5,7 +5,6 @@ import * as Location from "expo-location";
 import React, { useEffect, useMemo, useState } from "react";
 import { Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError } from "../api/client";
 import { raiseIssue, raiseSos, reportUser } from "../api/safety";
 import {
   ISSUE_DESCRIPTION_MAX,
@@ -131,11 +130,6 @@ function DoneState({ message, onClose }: { message: string; onClose: () => void 
       <Button label="Done" variant="ghost" onPress={onClose} />
     </View>
   );
-}
-
-/** Friendly error text for a mutation failure, tolerant of the endpoint still being built. */
-function errText(e: unknown): string {
-  return e instanceof ApiError ? e.message : "Something went wrong — try again.";
 }
 
 // ── 1. Get help with this trip ────────────────────────────────────────────────

@@ -8,7 +8,7 @@ import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
 import { walletKey, walletLedgerKey } from "../../query/use-wallet";
 import { uuidV4FromSeed } from "../../util";
-import { Button, Card, ErrorText, Field, Icon, Sub } from "../index";
+import { Button, Card, Field, Icon, Sub, useActionError } from "../index";
 import { SupportCallRow } from "../safety";
 import { CountdownRing, formatCountdown } from "../food/CountdownRing";
 
@@ -61,6 +61,7 @@ export function TopUpFlow({
   onExit: () => void;
 }): React.ReactElement {
   const qc = useQueryClient();
+  const fail = useActionError();
   const [step, setStep] = React.useState<Step>("amount");
   const [topupId, setTopupId] = React.useState<string | null>(null);
   const [amountRaw, setAmountRaw] = React.useState("10.00");
@@ -84,6 +85,10 @@ export function TopUpFlow({
 
   const create = useMutation({
     mutationFn: () => createTopup({ amount, rail, phone, idempotencyKey }),
+    // Action-error rule (docs/DESIGN-SYSTEM.md): speak once as a self-clearing toast, never persist a
+    // card. Curated copy rather than `useActionErrorEffect`, whose default is the raw error message —
+    // "Network request failed" tells a rider nothing about what to do next.
+    onError: () => fail("We couldn't start that top-up. Check your connection and try again."),
     onSuccess: (topup) => {
       setTopupId(topup.id);
       setStep("inflight");
@@ -380,7 +385,6 @@ export function TopUpFlow({
         loading={create.isPending}
         onPress={() => create.mutate()}
       />
-      <ErrorText message={create.isError ? "We couldn't start that top-up. Check your connection and try again." : null} />
 
       {/* The route that works today. `creditFromTopup` has no caller yet, so until a rail lands the
           request above runs its 90s window down and expires — support crediting a balance by hand is

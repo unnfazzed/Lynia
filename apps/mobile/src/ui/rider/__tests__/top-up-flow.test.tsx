@@ -35,6 +35,14 @@ jest.mock("../../food/CountdownRing", () => {
   };
 });
 
+// Action errors now speak through a self-clearing toast (PR #743's rule), which lives outside this
+// tree — so capture the raise instead of looking for text in the rendered output.
+const mockFail = jest.fn<void, [string]>();
+jest.mock("../../Toast", () => ({
+  ...jest.requireActual<Record<string, unknown>>("../../Toast"),
+  useActionError: () => mockFail,
+}));
+
 const mockSavePendingTopup = jest.fn<Promise<void>, [{ topupId: string }]>(async () => {});
 const mockClearPendingTopup = jest.fn<Promise<void>, []>(async () => {});
 jest.mock("../../../auth/session", () => ({
@@ -186,9 +194,10 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await submit(tree);
     await flush();
 
-    const t = texts(tree);
-    expect(t).toContain("We couldn't start that top-up. Check your connection and try again.");
-    expect(t).not.toContain("Check your phone");
+    // Curated copy, not the raw "offline" — and crucially the flow stays on the form rather than
+    // advancing to a wait state for an intent that was never opened.
+    expect(mockFail).toHaveBeenCalledWith("We couldn't start that top-up. Check your connection and try again.");
+    expect(texts(tree)).not.toContain("Check your phone");
     expect(mockSavePendingTopup).not.toHaveBeenCalled();
   });
 
