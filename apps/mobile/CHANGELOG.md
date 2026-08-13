@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/unnfazzed/Lynia/compare/v0.34.0...v0.35.0) (2026-08-13)
+
+
+### Features
+
+* **rider:** align food offer-expired to RR.offer_expired + wire parity ([557e056](https://github.com/unnfazzed/Lynia/commit/557e056e8a357049df4fd28d1b021cd6a1b6f6c7))
+
 ## [0.34.0](https://github.com/unnfazzed/Lynia/compare/v0.33.0...v0.34.0) (2026-08-13)
 
 
