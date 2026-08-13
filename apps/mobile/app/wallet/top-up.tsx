@@ -2,7 +2,7 @@ import { COMMISSION, tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
-import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
+import { useWalletConfig } from "../../src/query/use-wallet";
 import { SupportCallRow } from "../../src/ui/safety";
 import { Button, Card, Heading, Icon, Screen, Sub } from "../../src/ui";
 import { usePaymentSimulation } from "../../src/ui/payment-simulation";
@@ -24,26 +24,26 @@ import { TopUpSimulator } from "../../src/ui/rider/TopUpSimulator";
  * pointing at the ALREADY-WORKING admin manual-credit path (`POST /admin/riders/:id/wallet-credit` →
  * `WalletService.creditManual`), instead of a self-serve form that could never succeed.
  *
- * ─── THE KIT'S TOP-UP FLOW, SHIPPED AS A LABELLED PREVIEW ─────────────────────────────────────────
- * None of the above changes. The rail still doesn't exist and still moves no money. What the preview
- * adds is a walkable rendering of the four screens the kit specifies (`rider-screens-wallet.jsx`:
- * amount → wait → approved/declined) so the flow is reviewable before the rail lands.
+ * ─── THE KIT'S TOP-UP FLOW, SHIPPED TO RIDERS ─────────────────────────────────────────────────────
+ * None of the above changes. The rail still doesn't exist and still moves no money. What ships is a
+ * walkable rendering of the four screens the kit specifies (`rider-screens-wallet.jsx`: amount → wait
+ * → approved/declined), opened by `usePaymentSimulation()` — the QA APK OR the
+ * `paymentSimulationEnabled` server flag, ON by default and retractable in ~1 minute with no app
+ * update.
  *
- * It was QA-APK-only until 2026-08-12, when the owner asked for it in the shipping build ahead of
- * launch. It is now opened by `usePaymentSimulation()` — the QA APK OR the `paymentSimulationEnabled`
- * server flag, which is ON by default and retractable in ~1 minute with no app update. Everything that
- * made it safe is unchanged and is now unconditional rather than build-gated: no network call, no
- * `TopUp` row, no ledger write, a PREVIEW strip on every step including the terminals, and no path
- * that resolves itself into a success.
+ * It was QA-APK-only, then briefly shipped with PREVIEW markers on every step; the owner removed those
+ * on 2026-08-12 ("i am taking the risk" — nobody uses these until the rails are wired). So the flow
+ * now reads as an ordinary top-up, and **the server flag is the only control over it**. What did not
+ * change: no network call, no `TopUp` row, no ledger write, and no path that resolves itself into a
+ * success. See `src/ui/rider/TopUpSimulator.tsx` for the full account.
  *
- * The support-call card below stays the honest fallback whenever the gate is shut — and, because it is
- * the ONLY way a balance actually moves today, the preview keeps its own route to it rather than
- * burying it (see `TopUpSimulator`'s amount step).
+ * The support-call card below is the fallback whenever the gate is shut — and, because it is the ONLY
+ * way a balance actually moves today, the flow keeps its own route to it rather than burying it (see
+ * `TopUpSimulator`'s amount step, "TOP UP BY PHONE").
  */
 export default function TopUpScreen(): React.ReactElement {
   const router = useRouter();
   const { config } = useWalletConfig();
-  const { wallet } = useWallet();
   const simulationEnabled = usePaymentSimulation();
 
   if (simulationEnabled) {
@@ -51,7 +51,6 @@ export default function TopUpScreen(): React.ReactElement {
       <Screen>
         <Heading>Top up</Heading>
         <TopUpSimulator
-          balance={wallet?.balance ?? null}
           minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
           maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
           onExit={() => router.back()}

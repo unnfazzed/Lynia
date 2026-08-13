@@ -4,7 +4,6 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { Button, EmptyState, Icon, OfflineBanner, Screen } from "../index";
 import { OrderHeader } from "./FoodOrderHelpers";
-import { SimulatedPathNotice } from "./SimulatedPathNotice";
 
 /** The rails a Harare customer actually pays a merchant number from (kit `RAILS`, r-parts.jsx:50).
  *  None of these is an INTEGRATION — LyniaGo sends no prompt to any of them. Picking one here means
@@ -17,10 +16,13 @@ const RAILS = ["EcoCash", "InnBucks", "O'mari"] as const;
  * cause, offer the other rails, and keep a single retry.
  *
  * ⚠️ THE PAYMENT RAIL DOES NOT EXIST — there is no decline callback in this codebase any more than
- * there is a prompt-send endpoint. This screen is reachable only through the preview transition gated
- * by `usePaymentSimulation()` and carries {@link SimulatedPathNotice} above its hero saying exactly
- * that. It states a FAILURE, never a success, so the worst it can do is send someone to the manual
- * rail — which is the real path regardless.
+ * there is a prompt-send endpoint. This screen is reachable only through the transition gated by
+ * `usePaymentSimulation()`, and since 2026-08-12 it carries no on-screen marker saying so (the owner
+ * removed every SIMULATED/PREVIEW label, accepting the risk), so the server flag is the only control
+ * over it.
+ *
+ * This is the safest of the unbacked screens: it states a FAILURE, never a success, so the worst it
+ * can do is send someone to the manual rail — which is the real path regardless.
  */
 export function FoodPayFailedView({
   restaurantName,
@@ -43,7 +45,6 @@ export function FoodPayFailedView({
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel="Payment declined" pillTone="neutral" />
       <ScrollView showsVerticalScrollIndicator={false}>
-        <SimulatedPathNotice what="no payment prompt was sent, so nothing was declined" />
         <EmptyState
           icon="circle-alert"
           title="The payment was declined"

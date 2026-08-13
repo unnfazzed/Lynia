@@ -216,13 +216,14 @@ export function FoodOrderAwaitingPaymentView({
         />
         <ErrorText message={error} />
         <Button label="Submit my reference" onPress={onSubmitReference} disabled={busy || !referenceInput.trim()} loading={busy} />
-        {/* The door into R5·4/R5·b2 (see the payPhase comment above). Labelled for exactly what it is:
-            no rail prompt is sent, because no such endpoint exists. It sits BELOW the real "Submit my
-            reference" action so the working path is always the first one a customer reaches, and it
-            says "Preview" in the label itself — a customer who taps it has been told before the tap,
-            and told again by the notice at the top of the screen it opens. */}
+        {/* The door into R5·4/R5·b2 (see the payPhase comment above). It sits BELOW the real "Submit my
+            reference" action so the working path is always the first one a customer reaches. Since
+            2026-08-12 the label no longer says it is a preview, and the screens behind it no longer
+            carry a marker — the owner removed both, accepting the risk — so nothing on the customer's
+            side distinguishes this from a working rail. `PAYMENT_SIMULATION_ENABLED` is the only thing
+            that can take it back. */}
         {simulateRail ? (
-          <Button label="Preview: paying by prompt (not connected yet)" variant="ghost" onPress={() => setPayPhase("wait")} />
+          <Button label="Pay by prompt" variant="ghost" onPress={() => setPayPhase("wait")} />
         ) : null}
         {/* The pay screen is the other long wait the tracker had gone missing on — restore it below the
             pay actions so the kitchen-confirm/payment phase stays legible while the money is in flight. */}

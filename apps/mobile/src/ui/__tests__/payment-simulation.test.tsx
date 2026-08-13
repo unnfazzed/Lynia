@@ -1,12 +1,16 @@
 /**
- * Guards on the payment-preview gate — the rider top-up flow and the customer food-checkout
- * prompt/decline pair, shipped to real users on 2026-08-12 behind a server kill switch.
+ * Guards on the payment gate — the rider top-up flow and the customer food-checkout prompt/decline
+ * pair, shipped to real users on 2026-08-12 behind a server kill switch, and de-labelled later the
+ * same day on the owner's explicit instruction.
  *
- * The invariant these tests exist to hold: **the gate controls whether a preview is REACHABLE, never
- * whether it tells the truth.** Before this change the warning components re-checked `isTestBuild()`
- * themselves, so relaxing the entry gate alone would have shipped the fabricated payment screens with
- * their warnings silently switched off — the worst reachable state, and a plausible next refactor.
- * Anyone who re-introduces a build/flag condition on a warning breaks a test here.
+ * With the SIMULATED/PREVIEW markers gone, the gate is the ONLY control over these flows, so what is
+ * pinned here changed shape:
+ *   - the gate itself (two doors, shut by default, server `false` closes a release build);
+ *   - the behavioural invariants that outlived the labels — no network call, and the real
+ *     support-call route surviving on the screen the top-up flow took over.
+ *
+ * The copy assertions are deliberately NOT re-pointed at the new unlabelled strings. Pinning "added
+ * to your balance" would turn a decision the owner can revisit into a test that fights the revert.
  */
 let mockIsTestBuild = false;
 let mockPaymentSimulationEnabled = false;
@@ -18,7 +22,6 @@ jest.mock("../../net/use-preview-flags", () => ({
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 
-import { SimulatedPathNotice } from "../food/SimulatedPathNotice";
 import { usePaymentSimulation } from "../payment-simulation";
 import { TopUpSimulator } from "../rider/TopUpSimulator";
 
@@ -80,41 +83,29 @@ describe("usePaymentSimulation — two independent doors, closed by default", ()
   });
 });
 
-describe("SimulatedPathNotice — unconditional (the sign is not on the same switch as the door)", () => {
-  it("renders its warning in a real release build, with the flag off", () => {
-    // The headline interpolates `what`, so it lands as sibling text children, not one string.
-    const text = allText(render(<SimulatedPathNotice what="no payment prompt was sent" />));
-    expect(text).toContain("PREVIEW —");
-    expect(text).toContain("no payment prompt was sent");
-    expect(text).toContain("Nothing was charged");
-  });
-
-  it("no longer says 'test build' now that it ships to real customers", () => {
-    expect(allText(render(<SimulatedPathNotice what="no payment prompt was sent" />)).toLowerCase()).not.toContain(
-      "test build",
-    );
-  });
-});
-
-describe("TopUpSimulator — the preview cannot render without its warning, or without the real path", () => {
+describe("TopUpSimulator — what survived the de-labelling", () => {
   const props = { balance: 0, minTopUp: 5, maxTopUp: 50, onExit: () => {} };
 
-  it("carries the PREVIEW strip on the amount step in a release build", () => {
-    const text = allText(render(<TopUpSimulator {...props} />));
-    expect(text).toContain("PREVIEW — no payment request was sent");
-    expect(text).toContain("no money moves");
-  });
-
   it("keeps the only working top-up route — calling support — on the screen it replaced", () => {
-    // Regression pin: the preview took over the screen that used to be nothing BUT the support card.
-    // Shipping it without carrying that action forward would have left riders unable to add balance
-    // at all, which is strictly worse than the screen it replaced.
+    // Regression pin, and the one that matters most now. The flow took over the screen that used to be
+    // nothing BUT the support card, and calling support is still the only way a balance actually
+    // moves. Losing this leaves riders with no route to their money at all.
     const text = allText(render(<TopUpSimulator {...props} />));
-    expect(text).toContain("TO TOP UP FOR REAL");
+    expect(text).toContain("TOP UP BY PHONE");
     expect(text).toContain("LyniaGo support");
   });
 
-  it("never claims the balance moved — the amount step states the balance is untouched", () => {
-    expect(allText(render(<TopUpSimulator {...props} />))).toContain("your balance is untouched");
+  it("renders the amount step without touching the network", () => {
+    // The flow draws a rail that does not exist; it must never open a real `TopUp` intent, which could
+    // only ever expire (DOC-16-02). No fetch means no intent, no PendingTopup marker, no ledger row.
+    const fetchSpy = jest.fn();
+    const realFetch = global.fetch;
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      render(<TopUpSimulator {...props} />);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = realFetch;
+    }
   });
 });
