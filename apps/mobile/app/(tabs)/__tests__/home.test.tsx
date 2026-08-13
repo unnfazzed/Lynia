@@ -160,28 +160,25 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
-  it("error + persisted order hint: the active-order check failing surfaces UX20-01's banner instead of silently showing the reorder rail", async () => {
-    mockSecureStore["lynia.activeOrderHint"] = "order-1";
+  // Owner instruction 2026-08-12: a background poll the customer never triggered must NOT raise an
+  // error card over a working home. This used to be evidence-gated (UX-2026-08-05) — now it never
+  // renders, so a leftover hint from a pre-removal build can't resurrect it either.
+  it("error (active-order check): stays quiet, with or without a leftover order hint", async () => {
     mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
     activeTree = renderHome();
     await settle();
-    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(true);
-  });
+    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
 
-  // UX-2026-08-05: without local evidence an order may be in flight, a failed background check must
-  // NOT camp a danger banner over the home — the query self-heals via its own poll/reconnect refetch.
-  it("error with no order hint: stays quiet instead of camping the banner over the home", async () => {
-    mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
+    act(() => activeTree!.unmount());
+    mockSecureStore["lynia.activeOrderHint"] = "order-1";
     activeTree = renderHome();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
-  // A check that authoritatively answers "no active order" invalidates any stale hint — the next
-  // flaky-link error must not resurrect the banner for an order that provably finished.
-  it("success with null clears a stale persisted order hint", async () => {
-    mockSecureStore["lynia.activeOrderHint"] = "order-done";
-    mockGetActiveCustomerOrders.mockResolvedValue([]);
+  // The home must not write the retired hint slot either — the evidence machinery is fully gone.
+  it("a live order no longer arms the retired active-order hint", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
     activeTree = renderHome();
     await settle();
     expect(mockSecureStore["lynia.activeOrderHint"]).toBeUndefined();

@@ -8,7 +8,7 @@ import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from ".
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, EmptyState, ErrorText, haptic, Icon, Money, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, haptic, Icon, Money, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
 import { TypeTag } from "../../src/ui/rider/TypeTag";
 import { RiderFoodOfferCardView } from "./food-offer-card.view";
 
@@ -46,6 +46,10 @@ export default function FoodOffer(): React.ReactElement {
     mutationFn: (orderId: string) => declineFoodDispatch(orderId),
     onSuccess: () => router.replace("/rider"),
   });
+  // Accept/decline failures speak once as an auto-dismissing toast (owner instruction 2026-08-12) —
+  // this screen is a live countdown, the worst possible place to camp a stuck red line. Declared here
+  // (above the flag early-return) so the hook runs unconditionally on every render path.
+  useActionErrorEffect(acceptM.error ?? declineM.error);
 
   // Reachable only from a live server `false` (the kill switch actually pulled) — NOT a boot state.
   // `useFeatureFlags` defaults `restaurantsEnabled` true because the vertical is launched, so this
@@ -130,15 +134,6 @@ export default function FoodOffer(): React.ReactElement {
           // door and handed back after the drop.
           <RiderFoodOfferCardView fare={offer.deliveryFee} collectAmount={offer.merchantGoodsTotal} />
         )}
-        <ErrorText
-          message={
-            acceptM.error instanceof ApiError
-              ? acceptM.error.message
-              : declineM.error instanceof ApiError
-                ? declineM.error.message
-                : null
-          }
-        />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>

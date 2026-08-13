@@ -8,7 +8,7 @@ import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { ActiveOrderCheckFailedBanner, AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, useActiveOrderCheckGate } from "../../src/ui";
+import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel } from "../../src/ui";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
@@ -128,13 +128,8 @@ export default function OrdersTabScreen(): React.ReactElement {
     refetchInterval: focused ? 30_000 : false,
   });
   const activeOrders = activeOrdersQ.data ?? [];
-  // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
-  // be in flight — see useActiveOrderCheckGate's rationale.
-  const activeOrderCheckFailed = useActiveOrderCheckGate({
-    isError: activeOrdersQ.isError,
-    isSuccess: activeOrdersQ.isSuccess,
-    data: activeOrders[0] ?? null,
-  });
+  // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
+  // error card. A failed check just shows no live cards; the poll and reconnect refetch self-heal.
 
   const { rows, showingStale, isFetching, isError, hasLiveData, refetch } = useHistoryFeed();
   useForegroundRefetch(() => {
@@ -167,13 +162,6 @@ export default function OrdersTabScreen(): React.ReactElement {
               onPress={() => router.push(o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`)}
             />
           ))
-        ) : activeOrderCheckFailed ? (
-          // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
-          // hits an error on this exact check must see a way back to it, not just the earlier list —
-          // evidence-gated (UX-2026-08-05) so an inconsequential flaky-link failure stays quiet.
-          <View style={{ marginBottom: tokens.space.md }}>
-            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrdersQ.refetch()} retrying={activeOrdersQ.isFetching} />
-          </View>
         ) : null}
 
         {earlier.length > 0 ? (

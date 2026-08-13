@@ -4,7 +4,7 @@ import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";
 import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
-import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
+import { AppBar, Button, Card, EmptyState, Field, Icon, OfflineBanner, Screen, Stepper } from "../index";
 import { usePaymentSimulation } from "../payment-simulation";
 import { Money } from "../Money";
 import { FoodPayFailedView } from "./FoodPayFailedView";
@@ -35,7 +35,6 @@ export function FoodOrderAwaitingPaymentView({
   restaurantName,
   reachable,
   now,
-  error,
   busy,
   forcePayScreen,
   onForcePay,
@@ -50,7 +49,6 @@ export function FoodOrderAwaitingPaymentView({
   restaurantName: string;
   reachable: boolean;
   now: number;
-  error: string | null;
   busy: boolean;
   forcePayScreen: boolean;
   onForcePay: () => void;
@@ -124,7 +122,6 @@ export function FoodOrderAwaitingPaymentView({
           <Row label="Your reference" value={order.merchantPaymentReference} />
         </Card>
         <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
-        <ErrorText message={error} />
         {cancelFooter}
       </Screen>
     );
@@ -143,7 +140,6 @@ export function FoodOrderAwaitingPaymentView({
         {/* Keep the journey tracker visible during the longest wait — the neighbouring phases all show
             it, so dropping it here made progress vanish exactly when the customer doubts the order. */}
         <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
-        <ErrorText message={error} />
       </Screen>
     );
   }
@@ -164,7 +160,6 @@ export function FoodOrderAwaitingPaymentView({
           </Text>
         </View>
         <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
-        <ErrorText message={error} />
         {cancelFooter}
       </Screen>
     );
@@ -214,7 +209,6 @@ export function FoodOrderAwaitingPaymentView({
           placeholder="e.g. EC240727.1132.A81043"
           hint="Copy it from the confirmation SMS — not a screenshot."
         />
-        <ErrorText message={error} />
         <Button label="Submit my reference" onPress={onSubmitReference} disabled={busy || !referenceInput.trim()} loading={busy} />
         {/* The door into R5·4/R5·b2 (see the payPhase comment above). Labelled for exactly what it is:
             no rail prompt is sent, because no such endpoint exists. It sits BELOW the real "Submit my

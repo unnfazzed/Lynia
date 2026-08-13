@@ -56,6 +56,53 @@ export function useToast(): ToastApi {
 }
 const NOOP: ToastApi = { show: () => undefined };
 
+/**
+ * How an ACTION error reaches the user (owner instruction 2026-08-12): "error cards must just display
+ * once and go — which is when an action is attempted and there is an error."
+ *
+ * Screens used to hold the failure in `useState` and paint a persistent red `<ErrorText>` under the
+ * button. That message then camped on the screen indefinitely — nothing cleared it but a later success
+ * — which is the same get-in-the-way problem as the background error cards, just smaller. This hook is
+ * the drop-in replacement: it keeps the exact `(message: string | null) => void` shape of the `setError`
+ * setters it replaces, so call sites keep reading `setError("Couldn't send the offer.")` and the
+ * screen-specific, curated copy each `onError` computes is preserved verbatim — but the message is now
+ * spoken once as a 4s auto-dismissing toast instead of being stored.
+ *
+ * Raising is UNCONDITIONAL per call, which is the point: a second failed attempt with a byte-identical
+ * message must still speak. (A `useState`-based version silently swallows that — React bails out when
+ * the value is unchanged, so the effect never re-runs and the rider gets no feedback on retry #2.)
+ * `null`/`undefined` is the old "clear the error" call and is simply a no-op — a toast clears itself.
+ *
+ * NOT for inline field validation: `Field`'s own `error` prop still draws a persistent danger border +
+ * caption under the offending input, because that message must stay readable while you fix the field.
+ */
+export function useActionError(): (message?: string | null) => void {
+  const { show } = useToast();
+  return useCallback(
+    (message?: string | null): void => {
+      if (message) show(message, "warning");
+    },
+    [show],
+  );
+}
+
+/**
+ * The same rule for screens that don't hold an error in state but DERIVE one from a mutation's own
+ * `error` object (the tracker's `selectM.error ?? rotateM.error ?? …`, the safety sheets, the
+ * food-offer accept/decline pair). Raises once per failure and never persists.
+ *
+ * Keyed on the Error OBJECT, not its message: React Query mints a fresh Error per failed attempt, so
+ * a retry that fails with byte-identical copy still changes identity here and still speaks. Keying on
+ * the string would swallow exactly the repeat the rider most needs to hear.
+ */
+export function useActionErrorEffect(error: unknown): void {
+  const fail = useActionError();
+  useEffect(() => {
+    if (error instanceof Error) fail(error.message);
+    // `fail` is stable (useCallback over the provider's stable `show`), so this runs on error identity.
+  }, [error, fail]);
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [queue, setQueue] = useState<ToastMessage[]>([]);
   const nextId = useRef(1);

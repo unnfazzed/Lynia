@@ -39,52 +39,24 @@ async function del(storeKey: string): Promise<void> {
 const orderKey = (orderId: string): string => `lynia.lastActive.${orderId}`;
 
 export const saveLastActiveOrder = async (o: OrderSnapshot): Promise<void> => {
-  await Promise.all([put(orderKey(o.id), o), saveActiveOrderHint(o.id)]);
+  await put(orderKey(o.id), o);
 };
 export const loadLastActiveOrder = (orderId: string): Promise<LastActive | null> => get(orderKey(orderId));
 export const clearLastActiveOrder = async (orderId: string): Promise<void> => {
-  await Promise.all([del(orderKey(orderId)), clearActiveOrderHintFor(orderId)]);
+  await del(orderKey(orderId));
 };
 
-// --- "An order may be in flight" hint (single slot, customer side) ---
-// The evidence `useActiveOrderCheckGate` (src/ui/ActiveOrderCheckFailedBanner.tsx) reads to decide
-// whether a failed active-order check is worth interrupting for. Just the order id — no route, fare,
-// or PII. Written the moment a broadcast succeeds (send.tsx) and alongside every saveLastActiveOrder;
-// cleared when the check authoritatively returns "none", when the tracker sees the hinted order reach
-// a terminal status, and at sign-out (clearDeviceState).
+// --- "An order may be in flight" hint (single slot, customer side) — RETIRED ---
+// This slot existed for exactly one reader: `useActiveOrderCheckGate`, the evidence gate in front of
+// `ActiveOrderCheckFailedBanner`. Both are gone (owner instruction 2026-08-12: an error card belongs
+// to an action the customer took, never to a background poll — the same rule that removed the rider
+// board's card), so nothing reads or writes this any more and the read/write helpers are deleted.
+//
+// The KEY itself is deliberately KEPT, for `clearDeviceState` only: installs upgrading from a build
+// that DID write the hint still have the value sitting in SecureStore, and on a shared device it must
+// still be wiped at sign-out rather than left behind for the next user. Delete this constant (and its
+// line in auth/device-state.ts) once the pre-removal builds are no longer in the field.
 export const ORDER_HINT_KEY = "lynia.activeOrderHint";
-
-export async function saveActiveOrderHint(orderId: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(ORDER_HINT_KEY, orderId);
-  } catch {
-    /* best-effort */
-  }
-}
-export async function loadActiveOrderHint(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(ORDER_HINT_KEY);
-  } catch {
-    return null;
-  }
-}
-export async function clearActiveOrderHint(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(ORDER_HINT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
-/** Clear the hint only if it still points at `orderId` — the tracker calls this when a viewed order
- *  hits a terminal status, and a customer re-reading an OLD completed trip from history must not wipe
- *  the hint for a different, genuinely live order. */
-export async function clearActiveOrderHintFor(orderId: string): Promise<void> {
-  try {
-    if ((await SecureStore.getItemAsync(ORDER_HINT_KEY)) === orderId) await SecureStore.deleteItemAsync(ORDER_HINT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
 
 // --- Rider's active job (single slot — there's only ever one active job) ---
 // Exported so sign-out (auth/session `clearDeviceState`) can wipe it — on a shared device the next

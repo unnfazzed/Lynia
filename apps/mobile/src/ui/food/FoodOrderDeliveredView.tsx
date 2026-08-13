@@ -4,7 +4,7 @@ import { Text, View } from "react-native";
 import type { OrderEvent } from "../../api/orders";
 import { fmtClock } from "../../logic/format-time";
 import { formatMoney } from "../../logic/money";
-import { Button, ErrorText, Icon, OfflineBanner, Screen } from "../index";
+import { Button, Icon, OfflineBanner, Screen } from "../index";
 import { RatingCard } from "../order/RatingCard";
 
 type DeliveredOrder = Pick<MerchantOrderResponse, "status" | "paymentMethod" | "total" | "merchantGoodsTotal">;
@@ -18,7 +18,6 @@ export function FoodOrderDeliveredView({
   order,
   restaurantName,
   reachable,
-  error,
   events,
   rateBusy,
   onRate,
@@ -29,7 +28,6 @@ export function FoodOrderDeliveredView({
   order: DeliveredOrder;
   restaurantName: string;
   reachable: boolean;
-  error: string | null;
   events: OrderEvent[] | undefined;
   rateBusy: boolean;
   onRate: (score: number) => void;
@@ -68,7 +66,6 @@ export function FoodOrderDeliveredView({
       ) : (
         <Button label="Order from somewhere else" onPress={onOrderElsewhere} />
       )}
-      <ErrorText message={error} />
     </Screen>
   );
 }

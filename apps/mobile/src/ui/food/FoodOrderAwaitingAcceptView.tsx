@@ -1,7 +1,7 @@
 import { RESTAURANTS_TIMING, tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { ErrorText, OfflineBanner, Screen } from "../index";
+import { OfflineBanner, Screen } from "../index";
 import { CountdownRing, formatCountdown } from "./CountdownRing";
 import { FoodAwaitAcceptTrackerView } from "./food-await-accept-tracker.view";
 import { OrderHeader } from "./FoodOrderHelpers";
@@ -15,14 +15,12 @@ export function FoodOrderAwaitingAcceptView({
   restaurantName,
   reachable,
   now,
-  error,
   cancelFooter,
 }: {
   order: AwaitingAcceptOrder;
   restaurantName: string;
   reachable: boolean;
   now: number;
-  error: string | null;
   cancelFooter: React.ReactNode;
 }): React.ReactElement {
   const deadline = order.acceptDeadlineAt ? new Date(order.acceptDeadlineAt).getTime() : null;
@@ -45,7 +43,6 @@ export function FoodOrderAwaitingAcceptView({
       {/* The kit puts the tracker on every tracking screen, including this one (RTracker step=0) —
           it was absent here, so the first thing that happens to an order showed no timeline at all. */}
       <FoodAwaitAcceptTrackerView events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
-      <ErrorText message={error} />
       {cancelFooter}
     </Screen>
   );

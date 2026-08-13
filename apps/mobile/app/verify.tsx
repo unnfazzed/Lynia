@@ -7,7 +7,7 @@ import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { Button, ErrorText, Field, Heading, Icon, Screen, Sub } from "../src/ui";
+import { Button, Field, Heading, Icon, Screen, Sub, useActionError } from "../src/ui";
 
 /**
  * The three seed props stage the OTP screen's non-idle states, each of which is its own gallery
@@ -38,7 +38,9 @@ export default function VerifyScreen({
   const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
   const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   // Resend affordance (C3): a visible cooldown so the user isn't left tapping "Back" when the code
   // never arrives. `resent` shows a calm confirmation after a successful resend; the countdown starts
   // ticking on arrival (a code was just sent from the phone screen) and resets after each resend.
@@ -240,7 +242,6 @@ export default function VerifyScreen({
       {/* The kit draws the way back as a bottom ghost button (no top bar). */}
       <Button label="Back" variant="ghost" onPress={() => router.back()} />
 
-      <ErrorText message={error} />
     </Screen>
   );
 }

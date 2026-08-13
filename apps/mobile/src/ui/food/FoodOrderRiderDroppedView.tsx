@@ -1,7 +1,7 @@
 import { tokens, type MerchantOrderResponse } from "@lynia/shared";
 import React from "react";
 import { Text, View } from "react-native";
-import { Card, ErrorText, Icon, OfflineBanner, Screen, Skeleton, Stepper } from "../index";
+import { Card, Icon, OfflineBanner, Screen, Skeleton, Stepper } from "../index";
 import { OrderHeader } from "./FoodOrderHelpers";
 
 type RiderDroppedOrder = Pick<MerchantOrderResponse, "status" | "merchantPhase" | "noRiderHoldAt">;
@@ -29,12 +29,10 @@ export function FoodOrderRiderDroppedView({
   order,
   restaurantName,
   reachable,
-  error,
 }: {
   order: RiderDroppedOrder;
   restaurantName: string;
   reachable: boolean;
-  error: string | null;
 }): React.ReactElement {
   const onHold = order.noRiderHoldAt != null;
   return (
@@ -87,7 +85,6 @@ export function FoodOrderRiderDroppedView({
       <Card>
         <Stepper events={[]} currentStatus={order.status} view="customer" jobType="food" merchantPhase={order.merchantPhase} />
       </Card>
-      <ErrorText message={error} />
     </Screen>
   );
 }

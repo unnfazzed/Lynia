@@ -125,20 +125,18 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     expect(has(activeTree, /Couldn.t load your orders/)).toBe(true);
   });
 
-  it("error (active-order check) + persisted order hint: surfaces UX20-01's banner rather than silently falling through to the list", async () => {
-    mockSecureStore["lynia.activeOrderHint"] = "order-1";
+  // Owner instruction 2026-08-12: a background poll the customer never triggered must NOT raise an
+  // error card. This used to be evidence-gated (UX-2026-08-05) — now it never renders at all, so the
+  // stale hint a pre-removal build may have left in SecureStore can't resurrect it either.
+  it("error (active-order check): stays quiet, with or without a leftover order hint", async () => {
     mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
     mockUseHistoryFeed.mockReturnValue(emptyHistory);
     activeTree = renderOrders();
     await settle();
-    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(true);
-  });
+    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
 
-  // UX-2026-08-05: without local evidence an order may be in flight, a failed background check must
-  // NOT camp a danger banner over the tab — the query self-heals via its own poll/reconnect refetch.
-  it("error (active-order check) with no order hint: stays quiet instead of camping the banner", async () => {
-    mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    act(() => activeTree!.unmount());
+    mockSecureStore["lynia.activeOrderHint"] = "order-1";
     activeTree = renderOrders();
     await settle();
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);

@@ -20,7 +20,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, Celebrate, EmptyState, ErrorText, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -544,6 +544,15 @@ export default function OrderScreen(): React.ReactElement {
     },
   });
 
+  // Action errors from any of the five mutations speak ONCE as an auto-dismissing toast (owner
+  // instruction 2026-08-12) instead of the old red line camped at the bottom of the tracker. Declared
+  // here, above every early return, because it's a hook — the old `<ErrorText>` was plain JSX and
+  // could live down in the render body; this cannot. Keyed on the Error OBJECT, so a retry that fails
+  // with identical copy still speaks. A select 409 (rider raced away) is excluded: it has its own
+  // muted "just taken" notice, and toasting it too would say the same thing twice in two voices.
+  const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
+  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error);
+
   // A mutation error (e.g. "the network is slow, try again" after a select/rotate/rate/cancel/notify
   // timeout) can be stale the instant the status actually changes underneath it — the request often
   // DID succeed server-side; the refetch just landed after the client gave up waiting. Without this, the
@@ -615,11 +624,6 @@ export default function OrderScreen(): React.ReactElement {
   // cancel-blame line, the counterparty-phone label) so a rider sees role-correct copy.
   const isRiderViewer = order.viewerRole === "rider";
   const fare = order.agreedFare ?? order.proposedFare;
-  // A select 409 (rider raced away) is handled with its own muted notice, so it's excluded here;
-  // any other select failure is a real error and joins the red slot.
-  const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
-  const firstError = (selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error;
-  const mutationError = firstError instanceof Error ? firstError.message : null;
   const bidCount = orderedOffers.length;
   // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
   // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
@@ -1226,7 +1230,6 @@ export default function OrderScreen(): React.ReactElement {
           <ReportControl orderId={orderId} counterpartyNoun={isRiderViewer ? "sender" : "rider"} />
         ) : null}
         <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
-        <ErrorText message={mutationError} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>

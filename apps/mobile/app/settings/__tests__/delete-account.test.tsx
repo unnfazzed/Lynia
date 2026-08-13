@@ -16,6 +16,12 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+// The API's refusal copy now reaches the user as an auto-dismissing toast rather than a persistent red
+// line (owner instruction 2026-08-12), so the tree must carry the provider that renders one.
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ToastProvider } from "../../../src/ui";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
 
 // `mock`-prefixed so jest's module-factory hoisting allows the reference (the factories run before
 // these initialisers otherwise would).
@@ -73,18 +79,31 @@ async function settle(): Promise<void> {
   });
 }
 
+// The toast strip animates and holds a dismiss timer, so a tree left mounted keeps a RN Animated timer
+// ticking past the end of the run and blows up on a torn-down Jest environment.
+let activeTree: renderer.ReactTestRenderer | null = null;
+afterEach(() => {
+  if (activeTree) act(() => activeTree!.unmount());
+  activeTree = null;
+});
+
 async function render(props: DeleteAccountScreenProps = {}): Promise<renderer.ReactTestRenderer> {
   // retry:false so a rejected mutation settles in one tick instead of backing off through retries.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
-      <QueryClientProvider client={client}>
-        <DeleteAccountScreen {...props} />
-      </QueryClientProvider>,
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <QueryClientProvider client={client}>
+          <ToastProvider>
+            <DeleteAccountScreen {...props} />
+          </ToastProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>,
     );
   });
   await settle();
+  activeTree = tree;
   return tree;
 }
 
@@ -145,7 +164,10 @@ describe("delete account — the final step (LJ.delete_final)", () => {
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces the API's refusal verbatim and keeps the user signed in", async () => {
+  // The message must still REACH the user — it just arrives as a toast that clears itself. Asserting
+  // on the rendered tree keeps that guarantee honest: if the toast never rendered, this fails exactly
+  // as the old inline assertion would have.
+  it("surfaces the API's refusal verbatim (as a toast) and keeps the user signed in", async () => {
     // The 409 the server raises when a delivery is in flight — erasing would strand the other party.
     mockDeleteAccount.mockRejectedValue(new Error("Finish or cancel your active delivery before deleting your account"));
     const tree = await render({ initialStep: "final", initialAcknowledged: true });

@@ -4,7 +4,7 @@ import { ScrollView, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import type { RiderIdentity } from "../../logic/rider-identity";
 import { handshakeState } from "../../logic/food-doorstep";
-import { Button, Card, ErrorText, Icon, OfflineBanner, Screen, SkeletonCard } from "../index";
+import { Button, Card, Icon, OfflineBanner, Screen, SkeletonCard } from "../index";
 import { GetHelpControl, SosControl } from "../safety";
 import { LiveTrackingCard } from "../order/LiveTrackingCard";
 import { CashHandshakeCard } from "./CashHandshakeCard";
@@ -35,7 +35,6 @@ export function FoodOrderLiveTrackerView({
   restaurantName,
   reachable,
   now,
-  error,
   busy,
   trackData,
   deliveryCode,
@@ -52,7 +51,6 @@ export function FoodOrderLiveTrackerView({
   restaurantName: string;
   reachable: boolean;
   now: number;
-  error: string | null;
   busy: boolean;
   trackData: OrderSnapshot | undefined;
   deliveryCode: string | null;
@@ -174,7 +172,6 @@ export function FoodOrderLiveTrackerView({
         {/* D-28: Express's safety surface, reused verbatim — same riders, same risk, same controls. */}
         <GetHelpControl orderId={orderId} />
         <SosControl orderId={orderId} />
-        <ErrorText message={error} />
         {cancellable ? (
           cancelConfirm ? (
             <Card style={{ borderColor: tokens.color.danger }}>

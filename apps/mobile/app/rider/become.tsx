@@ -10,7 +10,7 @@ import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
-import { AppBar, Button, Card, ErrorText, Field, Heading, Icon, isTestBuild, Label, Screen, Sub } from "../../src/ui";
+import { AppBar, Button, Card, Field, Heading, Icon, isTestBuild, Label, Screen, Sub, useActionError } from "../../src/ui";
 import { PhotoCaptureGuide, PhotoReviewCard } from "../../src/ui/rider/PhotoReviewCard";
 
 export default function BecomeRiderScreen(): React.ReactElement {
@@ -31,8 +31,16 @@ export default function BecomeRiderScreen(): React.ReactElement {
   // dimensions), so a retry re-runs the downscale in doUpload — cheap and local — rather than caching
   // a derived file that may have been evicted from the manipulator's cache dir.
   const [failedAsset, setFailedAsset] = useState<UploadImageSource | null>(null);
+  // Why the "Try again" button below is showing. NOT an action error and deliberately NOT a toast: it
+  // is set on MOUNT (restoring a draft after an app kill), and it explains a persistent affordance —
+  // a 4s toast would vanish and leave an unexplained button. Rendered as a calm muted line beside the
+  // button, never a red card. (Owner rule 2026-08-12 is about error CARDS raised by background work;
+  // an in-flow explanation of a control that is right there is the opposite of get-in-the-way.)
+  const [uploadResumeNote, setUploadResumeNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   // BH-11: which capture source is blocked by an OS-level "don't ask again" permission denial — the
   // photo is MANDATORY for KYC, unlike PickupChecklist's optional one, so an error string with no way
   // to recover is a real onboarding dead end. Mirrors the location-permission gate's "Open settings"
@@ -82,7 +90,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
             height: d.pendingPhoto.height,
             contentType: d.pendingPhoto.contentType,
           });
-          setError("We didn't confirm your last photo uploaded — tap \"Try again\" to finish adding it.");
+          setUploadResumeNote("We didn't confirm your last photo uploaded — tap \"Try again\" to finish adding it.");
         }
       }
       hydrated.current = true;
@@ -140,6 +148,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
       setPhotoUri(prepared.uri);
       setPhotoKey(key);
       setFailedAsset(null);
+      setUploadResumeNote(null);
       // The upload landed — clear the pending marker (both the ref and the persisted draft) now,
       // rather than leaving it for the generic field-effect to notice next render.
       pendingPhotoRef.current = null;
@@ -323,7 +332,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
               {/* R6: retry the SAME captured file — the everyday failure on this market's links is the
                   upload, not the capture, so re-posing for a fresh photo every retry is unnecessary friction. */}
               {failedAsset && !uploading ? (
-                <Button label="Try again" variant="ghost" onPress={() => void retryUpload()} />
+                <>
+                  {uploadResumeNote ? (
+                    <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>{uploadResumeNote}</Text>
+                  ) : null}
+                  <Button label="Try again" variant="ghost" onPress={() => void retryUpload()} />
+                </>
               ) : null}
               {photoKey ? (
                 <Text style={{ fontSize: 12, color: tokens.color.accentText, fontWeight: "600", marginTop: 4 }}>Photo added ✓</Text>
@@ -346,7 +360,6 @@ export default function BecomeRiderScreen(): React.ReactElement {
             <Button label="Submit for verification" onPress={submit} loading={busy} disabled={!canSubmit} />
           </>
         )}
-        <ErrorText message={error} />
       </ScrollView>
     </Screen>
   );

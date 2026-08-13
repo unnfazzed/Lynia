@@ -7,7 +7,7 @@ import { deleteAccount } from "../../src/api/auth";
 import { getActiveCustomerOrder } from "../../src/api/orders";
 import { useAuth } from "../../src/auth/auth-context";
 import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, ErrorText, Icon, Screen } from "../../src/ui";
+import { AppBar, Button, Card, Icon, Screen, useActionErrorEffect } from "../../src/ui";
 
 /**
  * Account deletion — the two screens the design draws (screens-shipped.jsx, SH7):
@@ -53,7 +53,11 @@ export default function DeleteAccountScreen({
     // rather than leaving the app to discover it via a 401 on the next poll.
     onSuccess: () => void signOut(),
   });
-  const deleteError = deleteM.error instanceof Error ? deleteM.error.message : null;
+  // The API's 409s ("finish your active delivery", "account under a standing restriction") are
+  // already user-facing copy and surface verbatim — but as an auto-dismissing toast, not a red line
+  // camped under the button (owner instruction 2026-08-12). Keyed on the Error object, so a second
+  // refused attempt still speaks.
+  useActionErrorEffect(deleteM.error);
 
   const keep = (): void => router.back();
 
@@ -104,7 +108,6 @@ export default function DeleteAccountScreen({
             </Text>
           </Pressable>
         </Card>
-        <ErrorText message={deleteError} />
         <Button
           label="Delete my account"
           tone="danger"

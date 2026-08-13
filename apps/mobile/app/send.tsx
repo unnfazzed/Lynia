@@ -23,8 +23,7 @@ import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { saveActiveOrderHint } from "../src/net/last-active-store";
-import { ActiveOrderCheckFailedBanner, ErrorText, Field, haptic, Icon, TestBuildBanner, useActiveOrderCheckGate } from "../src/ui";
+import { Field, haptic, Icon, TestBuildBanner, useActionError } from "../src/ui";
 import { AddressConfirmSheet } from "../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
@@ -93,7 +92,9 @@ export default function HomeScreen(): React.ReactElement {
   const [declaredValue, setDeclaredValue] = useState("");
   const [proposedFare, setProposedFare] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   // Q1 out-of-service-area (a distinct state, not a red error): set when a pin is outside the launch
   // corridor — either caught client-side pre-broadcast or from the server's service-corridor 4xx.
   const [outOfArea, setOutOfArea] = useState(false);
@@ -139,10 +140,8 @@ export default function HomeScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
   const activeOrder = activeOrderQ.data ?? null;
-  // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
-  // be in flight — see useActiveOrderCheckGate's rationale. Called before the on-hold early return
-  // (hooks must run unconditionally), which is why the on-hold view takes the decision as a prop.
-  const activeOrderCheckFailed = useActiveOrderCheckGate(activeOrderQ);
+  // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
+  // error card over the compose screen. A failed check shows no way-back banner; the poll self-heals.
   // Only seed orderKey(id) while THIS screen is the visible route — mirrors home.tsx's identical
   // guard. When send.tsx is blurred beneath /order/[id], use-order-socket.ts owns that cache entry and
   // merges live position/status pushes with an anti-rollback guard; an unrelated foreground/focus
@@ -436,10 +435,6 @@ export default function HomeScreen(): React.ReactElement {
       const order = await createOrder(payload);
       // A light confirming tick the instant the request goes live — the broadcast is away.
       haptic("tap");
-      // The earliest durable evidence an order is in flight (useActiveOrderCheckGate reads this) —
-      // written here, not just in the tracker's effect, so a kill before /order/[id] mounts still
-      // arms the failed-check banner on the next cold start.
-      void saveActiveOrderHint(order.id);
       // Remember this recipient for a one-tap re-send next time (best-effort, on-device only).
       void rememberRecipient({ name: "", phone: dropPhone.trim() });
       // Remember the sender's own pickup number so the next order prefills it instead of re-typing.
@@ -513,7 +508,7 @@ export default function HomeScreen(): React.ReactElement {
   // until-pins hint above the "Broadcast request" CTA. The app's hint names EVERY still-missing
   // requirement (one noun each, matching the kit's single-line phrasing) so a disabled CTA is never a
   // silent greyed dead-end — the same copy as before, hoisted here so SendComposeFooterView owns the
-  // hint+CTA sub-tree while the out-of-area notice + ErrorText stay live glue beside it.
+  // hint+CTA sub-tree while the out-of-area notice stays live glue beside it.
   const missingHint = `Add ${[
     !coordsOk ? "pickup & drop-off pins" : null,
     !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
@@ -532,9 +527,6 @@ export default function HomeScreen(): React.ReactElement {
     return (
       <SendAccountOnHoldView
         activeOrder={activeOrder}
-        activeOrderCheckFailed={activeOrderCheckFailed}
-        activeOrderIsFetching={activeOrderQ.isFetching}
-        onRetryActiveOrder={() => void activeOrderQ.refetch()}
         meIsFetching={meQ.isFetching}
         onRefreshStatus={() => void meQ.refetch()}
       />
@@ -606,8 +598,6 @@ export default function HomeScreen(): React.ReactElement {
           {activeOrder ? (
             // UX review #1: a live order the customer can be killed away from — always offer the way back.
             <ActiveOrderBanner order={activeOrder} />
-          ) : activeOrderCheckFailed ? (
-            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrderQ.refetch()} retrying={activeOrderQ.isFetching} />
           ) : null}
         </View>
 
@@ -652,7 +642,7 @@ export default function HomeScreen(): React.ReactElement {
               ) : null}
               {/* Region-adopted submit sheet-footer (LJ.home_empty#footer): the until-complete hint +
                   the kit's verbatim "Broadcast request" CTA. onBroadcast runs the disclaimer gate + the
-                  idempotent create — unchanged. The out-of-area notice above + ErrorText below stay live
+                  idempotent create — unchanged. The out-of-area notice above stays live
                   glue (pruned from the composition; the static mock draws neither). */}
               <SendComposeFooterView
                 showHint={!canSubmit}
@@ -661,7 +651,6 @@ export default function HomeScreen(): React.ReactElement {
                 busy={busy}
                 disabled={!canSubmit}
               />
-              <ErrorText message={error} />
             </>
           }
         >

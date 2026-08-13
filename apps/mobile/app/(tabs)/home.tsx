@@ -12,7 +12,6 @@ import { invalidateIfStale, orderKey } from "../../src/query/client";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import {
-  ActiveOrderCheckFailedBanner,
   AppScreen,
   BrandHeader,
   getServiceTiles,
@@ -21,7 +20,6 @@ import {
   ServiceTiles,
   SkeletonRows,
   statusPillLabel,
-  useActiveOrderCheckGate,
 } from "../../src/ui";
 
 const RESTAURANT_RAIL_LIMIT = 10;
@@ -158,14 +156,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
   });
   const activeOrders = activeOrdersQ.data ?? [];
   const deliveryCodes = useDeliveryCodes(activeOrders);
-  // UX-2026-08-05: only surface a failed check when the device holds evidence an order may actually
-  // be in flight — see useActiveOrderCheckGate's rationale. The gate stores one hint id; the newest
-  // live order carries that role for the list.
-  const activeOrderCheckFailed = useActiveOrderCheckGate({
-    isError: activeOrdersQ.isError,
-    isSuccess: activeOrdersQ.isSuccess,
-    data: activeOrders[0] ?? null,
-  });
+  // No failed-check banner here (owner instruction 2026-08-12): a background poll the customer never
+  // triggered must not raise an error card over a working screen. A failed check simply shows no live
+  // card, and the 30s poll + refetchOnReconnect restore it the moment the link heals.
   // Only seed orderKey(id) while THIS screen is the visible route. When home is blurred beneath
   // /order/[id] (the customer is looking at the live tracking screen), use-order-socket.ts owns that
   // same cache entry and merges live position/status pushes into it with an anti-rollback guard
@@ -230,13 +223,6 @@ export default function LauncherHomeScreen(): React.ReactElement {
                 />
               );
             })}
-          </View>
-        ) : activeOrderCheckFailed ? (
-          // UX20-01's rule, applied to this call site too: a customer with a genuine live order who
-          // hits an error on this exact check must see a way back to it, not a silently-empty rail —
-          // evidence-gated (UX-2026-08-05) so an inconsequential flaky-link failure stays quiet.
-          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.sm }}>
-            <ActiveOrderCheckFailedBanner onRetry={() => void activeOrdersQ.refetch()} retrying={activeOrdersQ.isFetching} />
           </View>
         ) : null}
         {/* No order-again / send-again rail here — the design AppHome is explicit ("the live cards

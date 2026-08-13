@@ -1,10 +1,15 @@
 /**
- * UX-2026-08-05: the single-slot "an order may be in flight" hint that gates
- * ActiveOrderCheckFailedBanner (see useActiveOrderCheckGate). Two properties matter enough to pin:
- *  1. the hint tracks the last-active summary's lifecycle (armed on save, cleared on terminal), and
- *  2. clearing is CONDITIONAL on the order id — a customer re-reading an OLD completed trip from
- *     history mounts the same tracker effect (which calls clearLastActiveOrder for that old id) and
- *     must not disarm the banner for a different, genuinely live order.
+ * The customer's per-order "last active" summary slot.
+ *
+ * This file used to pin the single-slot `lynia.activeOrderHint` that gated
+ * `ActiveOrderCheckFailedBanner` (UX-2026-08-05's `useActiveOrderCheckGate`). Both the banner and the
+ * gate are GONE — owner instruction 2026-08-12: an error card belongs to an action the customer took,
+ * never to a background poll, the same rule that removed the rider board's card. So the hint has no
+ * reader left and its read/write helpers are deleted.
+ *
+ * What's pinned now: (1) the per-order summary still saves/loads/clears (it's what paints the tracker's
+ * warm cold-start), and (2) the retired hint is genuinely NOT written any more — a regression here
+ * would mean the removed banner's evidence machinery had quietly crept back in.
  */
 const mockDeleteItemAsync = jest.fn(async (key: string) => {
   delete secureStore[key];
@@ -22,7 +27,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 import type { OrderSnapshot } from "../../api/orders";
-import { clearActiveOrderHintFor, clearLastActiveOrder, loadActiveOrderHint, ORDER_HINT_KEY, saveActiveOrderHint, saveLastActiveOrder } from "../last-active-store";
+import { clearLastActiveOrder, loadLastActiveOrder, ORDER_HINT_KEY, saveLastActiveOrder } from "../last-active-store";
 
 function snapshot(id: string): OrderSnapshot {
   return {
@@ -41,35 +46,49 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe("active-order hint slot", () => {
-  it("saveLastActiveOrder arms the hint alongside the per-order summary", async () => {
+describe("last-active order summary slot", () => {
+  it("saves and reads back a per-order summary", async () => {
     await saveLastActiveOrder(snapshot("order-1"));
-    expect(await loadActiveOrderHint()).toBe("order-1");
     expect(secureStore["lynia.lastActive.order-1"]).toBeTruthy();
+    const back = await loadLastActiveOrder("order-1");
+    expect(back?.id).toBe("order-1");
   });
 
-  it("clearLastActiveOrder disarms the hint when it points at that same order", async () => {
+  it("clearLastActiveOrder drops that order's summary", async () => {
     await saveLastActiveOrder(snapshot("order-1"));
     await clearLastActiveOrder("order-1");
-    expect(await loadActiveOrderHint()).toBeNull();
+    expect(secureStore["lynia.lastActive.order-1"]).toBeUndefined();
+    expect(await loadLastActiveOrder("order-1")).toBeNull();
   });
 
-  it("clearing an OLD order's summary leaves a different live order's hint armed", async () => {
-    await saveActiveOrderHint("order-live");
-    await clearLastActiveOrder("order-old-completed");
-    expect(await loadActiveOrderHint()).toBe("order-live");
+  it("clearing one order's summary leaves another order's summary intact", async () => {
+    await saveLastActiveOrder(snapshot("order-live"));
+    await saveLastActiveOrder(snapshot("order-old"));
+    await clearLastActiveOrder("order-old");
+    expect(await loadLastActiveOrder("order-live")).not.toBeNull();
   });
 
-  it("clearActiveOrderHintFor is a no-op for a non-matching id", async () => {
-    await saveActiveOrderHint("order-live");
-    await clearActiveOrderHintFor("order-other");
-    expect(secureStore[ORDER_HINT_KEY]).toBe("order-live");
-  });
-
-  it("hint reads/writes are best-effort: a throwing keystore yields null, never a rejection", async () => {
-    mockGetItemAsync.mockRejectedValueOnce(new Error("keystore broken"));
-    await expect(loadActiveOrderHint()).resolves.toBeNull();
+  it("a throwing keystore is best-effort: a failed save never rejects", async () => {
     mockSetItemAsync.mockRejectedValueOnce(new Error("keystore broken"));
-    await expect(saveActiveOrderHint("order-1")).resolves.toBeUndefined();
+    await expect(saveLastActiveOrder(snapshot("order-1"))).resolves.toBeUndefined();
+  });
+
+  it("a throwing keystore is best-effort: a failed read yields null, never a rejection", async () => {
+    mockGetItemAsync.mockRejectedValueOnce(new Error("keystore broken"));
+    await expect(loadLastActiveOrder("order-1")).resolves.toBeNull();
+  });
+
+  // The removal pin: saving a live order must no longer arm the retired banner's evidence slot.
+  it("does NOT write the retired active-order hint (the banner it gated is gone)", async () => {
+    await saveLastActiveOrder(snapshot("order-1"));
+    expect(secureStore[ORDER_HINT_KEY]).toBeUndefined();
+    expect(mockSetItemAsync).not.toHaveBeenCalledWith(ORDER_HINT_KEY, expect.anything());
+  });
+
+  // ORDER_HINT_KEY itself is deliberately still exported for `clearDeviceState` only: an install
+  // upgrading from a build that DID write the hint must still have it wiped at sign-out on a shared
+  // device. Pin the constant so that wipe can't silently start targeting the wrong key.
+  it("still exports the legacy hint key for the sign-out wipe", () => {
+    expect(ORDER_HINT_KEY).toBe("lynia.activeOrderHint");
   });
 });

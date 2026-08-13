@@ -15,7 +15,7 @@ import { useReachability } from "../../src/net/use-reachability";
 import { seedFoodOrder } from "../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { uuidV4FromSeed } from "../../src/util";
-import { AppBar, Button, Card, EmptyState, ErrorText, Field, Icon, OfflineBanner, Screen, SkeletonList } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Field, Icon, OfflineBanner, Screen, SkeletonList, useActionError } from "../../src/ui";
 import type { PickedPoint } from "../../src/ui/MapPicker";
 import { MapPicker } from "../../src/ui/MapPicker";
 import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
@@ -52,7 +52,9 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   const [dropPhone, setDropPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<MerchantPaymentMethod>("cash");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
 
   useEffect(() => {
     void loadMyPickupPhone().then((phone) => {
@@ -321,7 +323,6 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             </Card>
           ) : null}
 
-          <ErrorText message={error} />
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
       </KeyboardAvoidingView>

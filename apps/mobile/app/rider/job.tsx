@@ -38,7 +38,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, ErrorText, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
 import { RiderActiveParcelCashStripView } from "./active-parcel-cash-strip.view";
 import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
@@ -58,7 +58,9 @@ export default function RiderJob(): React.ReactElement {
   const qc = useQueryClient();
   const toast = useToast();
   const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Action errors speak once as an auto-dismissing toast, never as a persistent card
+  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
+  const setError = useActionError();
   // Pickup item verification: which line-items the rider has ticked as physically collected. Indexes
   // into order.items; defaults to all ticked when the rider reaches the pickup-verification step.
   const [checkedItems, setCheckedItems] = useState<Set<number>>(() => new Set());
@@ -472,7 +474,7 @@ export default function RiderJob(): React.ReactElement {
         return;
       }
       // The tap fills the star optimistically (setSenderScore below); roll it back on genuine failure so
-      // a failed POST doesn't leave a falsely-filled star with no acknowledgement — the ErrorText on the
+      // a failed POST doesn't leave a falsely-filled star with no acknowledgement — the error toast on the
       // delivered terminal then surfaces why, and the (now-empty) stars invite a retry. The durable
       // marker (saved on tap, below) survives to retry this on the next reconciliation/relaunch.
       setSenderScore(0);
@@ -787,7 +789,6 @@ export default function RiderJob(): React.ReactElement {
           />
           {/* A failed rate-the-sender POST writes `error` (senderRateM.onError → fail); surface it here
               the same way live-job errors do — this frozen terminal is the only place that mutation runs. */}
-          <ErrorText message={error} />
           <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
       </Screen>
@@ -1025,7 +1026,6 @@ export default function RiderJob(): React.ReactElement {
             frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
         {isActive ? <GetHelpControl orderId={order.id} /> : null}
         <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
-        <ErrorText message={error} />
         <View style={{ height: tokens.space.xxl }} />
       </ScrollView>
     </Screen>
