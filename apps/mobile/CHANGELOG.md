@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.36.0](https://github.com/unnfazzed/Lynia/compare/v0.35.0...v0.36.0) (2026-08-16)
+
+
+### Features
+
+* **mobile:** harmonise the customer account cluster with the rider account grammar ([#756](https://github.com/unnfazzed/Lynia/issues/756)) ([b68da92](https://github.com/unnfazzed/Lynia/commit/b68da920c19a2a7de8648fd954f11238f3be10c6))
+* **rider:** drop every manual "Refresh status"; move the customer bridge to the Account tab ([#755](https://github.com/unnfazzed/Lynia/issues/755)) ([13c0e04](https://github.com/unnfazzed/Lynia/commit/13c0e04d9ae266f11eb496580785945e042d8b34))
+
+
+### Bug Fixes
+
+* **mobile:** drop duplicate sub-heading on rider top-up screen ([#752](https://github.com/unnfazzed/Lynia/issues/752)) ([72440b6](https://github.com/unnfazzed/Lynia/commit/72440b6b7bb8e1ca9bebfa90abe8e99a0b714a3a))
+* **send:** give the map composer a way back (ledger D-14) ([#753](https://github.com/unnfazzed/Lynia/issues/753)) ([247d07a](https://github.com/unnfazzed/Lynia/commit/247d07aaef6bfb654f933247efd46487b960905b))
+
 ## [0.35.0](https://github.com/unnfazzed/Lynia/compare/v0.34.0...v0.35.0) (2026-08-13)
 
 
