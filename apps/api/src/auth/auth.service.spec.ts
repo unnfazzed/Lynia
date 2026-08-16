@@ -210,6 +210,7 @@ describe("AuthService.getProfile", () => {
     email: null,
     photoUrl: null,
     ordersCount: 3,
+    idNumber: null,
     rider: null,
   };
   const riderRow = {
@@ -239,6 +240,25 @@ describe("AuthService.getProfile", () => {
     const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, { profile: { findUnique: async () => riderRow } });
     const me = await svc.getProfile("p2");
     expect(me.rider).toMatchObject({ kycMode: "manual" });
+  });
+
+  // The account record's national ID goes back to its own owner IN FULL (owner instruction
+  // 2026-08-16), so the Account screen can draw it. It is stored encrypted, which means the round
+  // trip — not just the field's presence — is what has to hold: a select that forgot to decrypt
+  // would return `v1:…` base64 and the screen would render ciphertext at the user.
+  it("returns the caller's own national ID decrypted, in full", async () => {
+    const stored = pii.encryptId("63-123456-A-42");
+    expect(stored).toMatch(/^v1:/); // guard the fixture: a plaintext row would make this test vacuous
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => ({ ...customerRow, idNumber: stored }) } });
+    const me = await svc.getProfile("p1");
+    expect(me.idNumber).toBe("63-123456-A-42");
+  });
+
+  // A customer can register name-only, so "no ID on the account" is a normal state, not an error —
+  // the screen draws no ID line at all rather than an empty or "null" one.
+  it("returns idNumber:null for an account that never supplied one", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => customerRow } });
+    await expect(svc.getProfile("p1")).resolves.toMatchObject({ idNumber: null });
   });
 
   it("404s when the profile is missing", async () => {

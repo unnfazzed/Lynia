@@ -43,6 +43,15 @@ export interface Me {
   email: string | null;
   photoUrl: string | null;
   ordersCount: number;
+  /**
+   * The account record's national ID, in FULL — this is the caller's own record (owner instruction
+   * 2026-08-16). `null` for an account that never supplied one; a customer can register name-only.
+   *
+   * Rendered ONLY on `/profile`, and deliberately excluded from the persisted query cache — see
+   * `redactBeforePersist` in `src/query/persist.ts`. Anything new that reads this field should
+   * assume it is absent after a cold start until `/auth/me` revalidates.
+   */
+  idNumber: string | null;
   /** S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen). */
   onHold?: boolean;
   rider: {

@@ -20,14 +20,16 @@ import { RiderAccountView, type RiderAccountRow } from "./account.view";
  * SEAM only: it feeds the live `['me']` identity + the settings rows/routes, and early-returns a
  * loading skeleton (the static mock draws no loading variant, so that branch is glue, not gated).
  *
- * Profile/settings + sign-out live behind a tap on the identity card (`/profile`, which already branches
- * on `isRider`) — the mock draws no separate "settings" row, so the identity card is the way in.
+ * Personal details + sign-out live behind a tap on the identity card (`/profile?side=rider`).
  *
- * ONE row beyond the mock's five: "Switch to customer" (owner instruction 2026-08-16, logged as D-16 in
- * docs/DESIGN-DEVIATIONS.md). It is the rider→customer bridge that used to be a "Back to customer"
- * button pinned to the Jobs board footer; the owner moved it here. It is fed through the same `rows`
- * prop as every other row, so the generated view's tree is untouched and the structure snapshot still
- * matches the mock — the deviation is one data entry, not a structural edit.
+ * TWO rows beyond the mock's five, both sanctioned and both fed through the same `rows` prop as every
+ * other row — so the generated view's tree is untouched and the structure snapshot still matches the
+ * mock. The deviations are data entries, not structural edits:
+ *  - "Switch to customer" (D-16) — the rider→customer bridge, moved here off the Jobs board footer.
+ *  - "Settings" (D-22) — the role-separation pass. The mock draws no settings row and left the
+ *    identity card as the only way in; that put permissions, privacy and account deletion two taps
+ *    deep for a rider, behind a `/profile` whose rows were the customer's. The customer tab has
+ *    carried a Settings row all along, so this also makes the two tabs mirror images.
  */
 export default function RiderAccountTabScreen(): React.ReactElement {
   const router = useRouter();
@@ -81,9 +83,16 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     ["wallet", "Money", "Balance, cash held, commission"],
     ["bell", "Notifications", "One inbox for both services"],
     ["phone", "Help & support", "Call the safety line"],
+    // D-22's addition. Settings carries the two Play-listing REQUIREMENTS (Privacy notice, Delete
+    // account) plus permissions, language and payment; before this row a rider could only reach them
+    // by tapping the identity card into /profile — two taps, through a screen whose rows were the
+    // customer's. Same label, sub and icon as the customer tab's, so the two tails read identically.
+    ["shield", "Settings", "Permissions, privacy and sign out"],
     ["shopping-bag", "Switch to customer", "Order food and send parcels"],
   ];
-  const routes = ["/rider/documents", "/history", "/rider/money", "/notifications", "/help"] as const;
+  // Index-aligned with `rows`; the switch row is deliberately the one entry with NO route (see
+  // onRowPress), so it stays the array's short tail rather than needing a sentinel.
+  const routes = ["/rider/documents", "/history", "/rider/money", "/notifications", "/help", "/settings"] as const;
 
   if (meQ.isLoading) {
     return (
@@ -101,7 +110,9 @@ export default function RiderAccountTabScreen(): React.ReactElement {
         name={name}
         identityLine={identityLine}
         online={online}
-        onIdentityPress={() => router.push("/profile")}
+        // `side=rider` — /profile is shared with the customer tab and takes the side from whichever
+        // tab owned the tap rather than from the account's role (D-22).
+        onIdentityPress={() => router.push("/profile?side=rider")}
         rows={rows}
         onRowPress={(i) => {
           const route = routes[i];

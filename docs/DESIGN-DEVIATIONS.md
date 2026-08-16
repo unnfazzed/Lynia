@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -350,6 +350,15 @@ adopt the **full** rider language; fill the rider's online/offline pill slot wit
 when relevant** and leave it empty for a plain customer; and cover the **whole customer account
 cluster**.
 
+> **Amended the same day by D-22.** This entry settled how the two Account screens LOOK; D-22 settles
+> what each one CONTAINS, and supersedes two things here. (1) The verification-pill decision above is
+> withdrawn for the customer TAB: "when relevant" only ever resolved to "this account is also a
+> rider", which is the role bleed D-22 exists to remove — the pill now renders on the rider tab and on
+> `/profile?side=rider`, never on the customer hub. (2) The per-screen dispositions in the table below
+> describe the row sets as they stood before the role split; the current sets are in D-22. Everything
+> else here — the grammar, the geometry mirroring, and `LJ.profile` being a superseded target — stands
+> unchanged and is still what `account-harmony.test.tsx` pins.
+
 **So the deviation is:** `LJ.profile` is superseded as the customer Account tab's target. The app no
 longer aligns that screen to the older `Profile` mock — it aligns to the *rider* mock's grammar. Every
 number in `apps/mobile/src/ui/account/AccountRows.tsx` is copied from the GENERATED
@@ -393,6 +402,11 @@ The board's tree is now closer to the mock than before; this ledger entry is the
 `RiderAccountView` — no structural edit, so `account.view.tsx` still matches the mock tree and the
 structure snapshot is untouched. The label is **not** the old button's "Back to customer": a settings
 row sitting under "Help & support" reads as a destination, so it takes the destination's name.
+
+> **Amended by D-22 (same day).** The rider tab now draws **seven** rows, not six: D-22 adds a
+> "Settings" row between "Help & support" and this one. "Switch to customer" is still the last row and
+> still the only route-less entry in the container's index-aligned `routes` array, so the mechanism
+> described here is unchanged — there is simply one more route ahead of it.
 
 **What came with it.** The board's confirmation guard moved too — leaving the rider side while online
 or mid-job still asks first ("You're online for deliveries" / "You have a job in progress"), because
@@ -566,7 +580,105 @@ rendered-conformance assertion on this screen to update in the meantime.
 
 ---
 
-## D-22 · The Account cluster's cards sit 32px in, not the mock's 16px — APPROVED (2026-08-16)
+## D-22 · Account tabs are role-separated; both carry a Settings row — APPROVED (2026-08-16)
+
+**In effect.** D-15 made the two Account screens look alike. It did not make them mean different
+things, and by sharing the row set it actually spread each role's entries onto the other's screen.
+Owner instruction (2026-08-16), after D-15 landed: *"Let's have a clear separation of what shows up
+under account for a rider and customer. Review what's necessary under customers vs rider Account
+Tab."* Answering the clarifying questions the owner chose: strict separation with **one bridge row**
+per side; remove **both** duplicated customer rows; add a **Settings row to both tabs**; keep
+`/profile` as a row list but make it role-correct, and make that role **context-aware** rather than
+account-derived.
+
+**The shape it settles.** The two tabs are mirror images — each side's own destinations, then the same
+tail: `Help & support` · `Settings` · one bridge row to the other side.
+
+| | Customer tab (`app/(tabs)/account.tsx`) | Rider tab (`app/rider/(tabs)/account.tsx`) |
+|---|---|---|
+| Own rows | — | Bike & documents · Job history · Money |
+| Shared tail | Notifications · Help & support · Settings | Notifications · Help & support · Settings |
+| Bridge | Switch to rider / Become a rider | Switch to customer (D-16) |
+| Identity pill | none | Online/Offline (the mock's) |
+
+**What came off the customer tab, and why none of it is a lost feature:**
+
+- **Trip history** — the Orders tab already *"absorbs `app/history`'s content directly instead of
+  bridging out to it"* (`app/(tabs)/orders.tsx`). The row was a second door onto a screen one tab away.
+- **Send a parcel** — a TASK, not an account destination. Every other row on either tab is somewhere
+  you go about your account; the composer is reached from Home and from the Orders empty state.
+- **Bike & documents** — rider maintenance. Drawing it here put it on three screens at once and put
+  rider state on the customer's hub.
+- **The KYC pill** — verification is a rider fact. This withdraws that half of D-15 (see the amendment
+  note there): "when relevant" only ever meant "this account is also a rider", which is the bleed.
+
+**The deviation proper** is the **Settings row on the rider tab** — a seventh row where `RJM.account`
+draws five and D-16 sanctioned a sixth. The mock draws no settings row at all and left the identity
+card as the only way in, which put permissions, the privacy notice and account deletion two taps deep
+for a rider, *behind a `/profile` whose rows were the customer's*. Privacy notice and Delete account
+are Google Play listing REQUIREMENTS (`docs/PLAY-STORE-SUBMISSION.md` §4), not niceties. The customer
+tab has carried a Settings row since D-15, so this also completes the mirror. Like D-16 it is one
+entry in the `rows` array the container feeds the generated `RiderAccountView` — no structural edit,
+so `account.view.tsx` still matches the mock tree and the structure snapshot is untouched.
+
+**`/profile` takes its side from the CALLER.** `?side=rider|customer`, set by whichever tab owned the
+tap, with the account's role as the fallback for arrivals that carry no side (deep links, push taps).
+Keying off `me.role` — the obvious implementation — is indistinguishable from correct until a
+dual-role user taps their name on the customer hub: their role is `"rider"` permanently, so they would
+get the rider list on the customer side, reintroducing on that screen exactly the bleed this entry
+removes from the tab above it.
+
+**Settings is role-independent again.** Its first row is the mock's own "Edit profile" for every role;
+the rider-only "Bike & documents" swap is gone. That moves the screen CLOSER to `LJ.settings`, which
+draws "Edit profile" unconditionally — so this half is an alignment, not a deviation.
+
+**Pinned by** `app/(tabs)/__tests__/account-role-separation.test.tsx`, which asserts ABSENCE in both
+directions for a dual-role account — the case a hand-check skips, because a plain customer's tab
+looked correct throughout. Also `app/profile/__tests__/profile-screen.test.tsx` (side param) and the
+Settings-row block in `app/rider/(tabs)/__tests__/account.test.tsx`.
+
+**Revisit when** an export redraws either Account screen with its own role split. Adopt what it draws
+and delete this.
+
+---
+
+## D-23 · `/profile` draws the national ID unmasked — APPROVED (2026-08-16)
+
+**In effect.** `LJ.profile` (`screens.jsx :: Profile`) draws the account's national ID **masked**,
+paired with a tag: `ID 63•1234••••••42` `NOT VERIFIED`. The app draws the same line with the number in
+full: `ID 63-123456-A-42`.
+
+**Why.** Owner instruction (2026-08-16), deciding how `/profile` should earn its place once D-22 left
+it carrying the same rows as the tab above it: *"Want it to display full ID and phone number since
+this is user account."* It is the account owner reading their own record on their own authenticated
+screen — the mask was protecting them from themselves.
+
+**Scope — this is one line on one screen.** It renders on `/profile` only, never on a tab, and only
+when the account has an ID at all (a customer can register name-only; the line is simply absent
+otherwise). The paired verification tag is kept exactly as drawn, because it is the honest half: a
+customer's ID is stored and never checked (*"Riders go through a separate ID check"*, registration
+mock), so the number without the tag would imply a verification that never happened. A verified rider
+gets the same pill in the affirmative — a state `LJ.profile`, a customer screen, never drew.
+
+**What it cost on the API side, and the guard that came with it.** `GET /auth/me` now returns
+`idNumber` decrypted in full (it is stored AES-256-GCM; the only other reader is the admin KYC
+review). The `["me"]` query is on the disk-persistence allowlist (`src/query/persist.ts`), so without
+a guard the plaintext ID would have been serialised into `rq-cache.json` and left there between
+launches. It is stripped at serialize time by `redactBeforePersist` — memory-only, full stop. The file
+is app-private and purged on sign-out, but shared handsets are common in this market (S1) and a
+national ID is the one field in that payload whose exposure signing out does not undo. Cost: after a
+cold start the ID line arrives with the first live `/auth/me` rather than with the warm paint.
+
+**Phone** needed no deviation — `me.phone` was already the complete number; `/profile` now formats it
+`+263 77 883 1938` (`formatPhoneDisplay`) instead of the local trunk form.
+
+**Retire this entry** if an export redraws `Profile` with an unmasked ID (then it is alignment, not
+deviation) — or if the owner reverses the call, in which case the masking belongs on the SERVER, not
+in the component.
+
+---
+
+## D-24 · The Account cluster's cards sit 32px in, not the mock's 16px — APPROVED (2026-08-16)
 
 **In effect.** `RJM.account` (`rider-one-app.jsx :: account`) draws its two cards inside a single
 `Pad` — `padding: "10px 16px 16px"` — so on a 360px phone the identity card and the settings card are
@@ -579,8 +691,9 @@ was codegen-adopted.
 **How it surfaced.** Owner instruction (2026-08-16), from two handset photos: *"The customer options
 tab does not have same margins as the rider options cards.. Align the customer cards so they have the
 same dimensions and design as the rider cards."* D-15 had already harmonised the row GRAMMAR (same
-icon/label/sub/chevron geometry, from the same shared component) but not the screen-edge inset, so the
-two tabs drew identical rows at two different widths — customer 328, rider 296.
+icon/label/sub/chevron geometry, from the same shared component) and D-22 had settled WHICH rows each
+side gets, but neither touched the screen-edge inset — so the two tabs drew the same row grammar at
+two different card widths: customer 328, rider 296.
 
 **The decision.** Asked which side should move — the design says 16px, which is what the *customer*
 was already drawing, so the mock-faithful fix was to widen the rider — the owner chose the other
@@ -602,7 +715,8 @@ unchanged**, and is NOT covered by this entry — if it is ever aligned, it alig
 **What is NOT deviating.** Every value inside the cards still comes from the kit and is still asserted:
 the shared row component (`apps/mobile/src/ui/account/AccountRows.tsx`) mirrors the generated rider
 view number-for-number, and `app/(tabs)/__tests__/account-harmony.test.tsx` fails if either the row
-geometry or the screen-edge inset splits the two tabs again. The `AppBar` title inset stays at the
+geometry or the screen-edge inset splits the two tabs again. This entry is orthogonal to D-22: that
+one governs WHICH rows each side lists, this one only how far in the cards that hold them sit. The `AppBar` title inset stays at the
 app's 16px (the mock draws 12px) — untouched, pre-existing, and app-wide rather than specific to this
 cluster.
 
