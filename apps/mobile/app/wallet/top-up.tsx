@@ -2,7 +2,7 @@ import { COMMISSION } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { useWalletConfig } from "../../src/query/use-wallet";
-import { Heading, Screen, Sub } from "../../src/ui";
+import { Heading, Screen } from "../../src/ui";
 import { TopUpFlow } from "../../src/ui/rider/TopUpFlow";
 
 /**
@@ -36,7 +36,6 @@ export default function TopUpScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>Top up</Heading>
-      <Sub>Add to your prepaid commission balance.</Sub>
       <TopUpFlow
         minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
         maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
