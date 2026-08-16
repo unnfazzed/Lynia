@@ -47,17 +47,37 @@
 #
 # Both keys ALREADY EXIST. Applying with the flag on and no import creates a SECOND
 # pair with new key strings, leaves the originals unmanaged, and ships nothing —
-# the app reads the old values from EAS. Import first:
+# the app reads the old values from EAS.
 #
-#   # list the existing keys to get their uids
-#   gcloud services api-keys list --project <project> --format='table(uid,displayName)'
+# ⚠️ `name` IS THE KEY'S IMMUTABLE ID, NOT A LABEL. In the API Keys v2 resource
+# `projects/<n>/locations/global/keys/<KEY_ID>`, Terraform's `name` is KEY_ID. The API's
+# patch method can only modify display_name, restrictions and annotations — never the id
+# — so `name` is ForceNew. Importing a console-created key (whose KEY_ID is a
+# server-generated UUID) into a config that hardcodes a pretty id would therefore plan a
+# DESTROY + CREATE: the live key deleted, a new one minted with a new key string, and the
+# app — which reads the old value from EAS — broken. That is the exact outcome this file
+# exists to prevent, so the ids are REQUIRED INPUTS (maps_api_key_id / places_api_key_id)
+# with no defaults, and both resources carry prevent_destroy.
 #
-#   terraform import 'google_apikeys_key.maps[0]'   projects/<project>/locations/global/keys/<uid>
-#   terraform import 'google_apikeys_key.places[0]' projects/<project>/locations/global/keys/<uid>
+# Note `uid` is a DIFFERENT field: an output-only UUID4 that the import path does not
+# accept. List `name` and take its final component.
+#
+#   gcloud services api-keys list --project <project> --format='table(name,displayName)'
+#   # -> projects/123456789/locations/global/keys/<KEY_ID>   "Maps SDK ..."
+#
+#   # set maps_api_key_id / places_api_key_id to those KEY_ID values FIRST, then:
+#   terraform import 'google_apikeys_key.maps[0]'   projects/<project>/locations/global/keys/<KEY_ID>
+#   terraform import 'google_apikeys_key.places[0]' projects/<project>/locations/global/keys/<KEY_ID>
 #   terraform plan    # the diff IS the fix — read it before applying
 #
-# The plan after import is the review artefact: it should show restriction changes on
-# the imported keys and no key creation. If it proposes creating a key, stop.
+# The plan after import is the review artefact. It should show ONLY in-place restriction
+# (and possibly display_name) changes. If it proposes creating, destroying or replacing a
+# key, stop — the id does not match, and prevent_destroy will refuse the apply anyway.
+#
+# DISARMING AFTER IMPORT IS NOT "SET THE FLAG BACK TO FALSE". Once the keys are in state,
+# count = 0 means destroy, i.e. deleting the live keys. Use `terraform state rm` to hand
+# them back to manual management. prevent_destroy turns the mistake into an error rather
+# than an outage.
 #
 # QUOTA (§B step 3) IS NOT MANAGED HERE — deliberately. A client-side key is public by
 # construction (it ships inside the app), so the cap is what bounds the bill on a
@@ -98,7 +118,7 @@ resource "google_apikeys_key" "maps" {
   count = var.maps_api_keys_enabled ? 1 : 0
 
   project      = local.project_id
-  name         = "lynia-maps-android"
+  name         = var.maps_api_key_id
   display_name = "LyniaGo — Maps SDK for Android"
 
   restrictions {
@@ -120,12 +140,21 @@ resource "google_apikeys_key" "maps" {
   depends_on = [google_project_service.apikeys]
 
   lifecycle {
+    # `name` is ForceNew and this key is live: a plan that destroys it takes the map down
+    # for every user and mints a key string nothing has. Refuse rather than proceed.
+    prevent_destroy = true
+
     # An android_key_restrictions block with zero allowed_applications is a key nothing
     # may use — i.e. the blank map this file exists to prevent, applied deliberately.
     # Fail at plan time with the reason rather than shipping it.
     precondition {
       condition     = length(var.android_cert_sha1_fingerprints) > 0
       error_message = "maps_api_keys_enabled is on but android_cert_sha1_fingerprints is empty. Restricting the Maps SDK key to no certificate blanks the map for everyone. Supply at least the Play app-signing SHA-1 (Play Console → Test and release → Setup → App integrity)."
+    }
+
+    precondition {
+      condition     = length(trimspace(var.maps_api_key_id)) > 0
+      error_message = "maps_api_keys_enabled is on but maps_api_key_id is empty. It must be the EXISTING key's id — the final component of `gcloud services api-keys list --format='table(name)'` — because `name` is ForceNew: a mismatch plans a destroy+create of the live Maps key. See the header of apikeys.tf."
     }
   }
 }
@@ -137,7 +166,7 @@ resource "google_apikeys_key" "places" {
   count = var.maps_api_keys_enabled ? 1 : 0
 
   project      = local.project_id
-  name         = "lynia-places-web"
+  name         = var.places_api_key_id
   display_name = "LyniaGo — Places API (web service)"
 
   restrictions {
@@ -147,4 +176,14 @@ resource "google_apikeys_key" "places" {
   }
 
   depends_on = [google_project_service.apikeys]
+
+  lifecycle {
+    # Same reasoning as `maps` above: live key, ForceNew id.
+    prevent_destroy = true
+
+    precondition {
+      condition     = length(trimspace(var.places_api_key_id)) > 0
+      error_message = "maps_api_keys_enabled is on but places_api_key_id is empty. It must be the EXISTING key's id — the final component of `gcloud services api-keys list --format='table(name)'` — because `name` is ForceNew: a mismatch plans a destroy+create of the live Places key. See the header of apikeys.tf."
+    }
+  }
 }

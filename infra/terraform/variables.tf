@@ -332,6 +332,18 @@ variable "maps_api_keys_enabled" {
   default     = false
 }
 
+variable "maps_api_key_id" {
+  description = "The EXISTING Maps SDK key's id — the final component of its resource name (`gcloud services api-keys list --format='table(name,displayName)'` → projects/N/locations/global/keys/<THIS>). NOT the `uid` field, which the import path does not accept, and not the display name. Terraform's `name` is ForceNew, so a value that doesn't match the imported key plans a DESTROY + CREATE of a live key: the map goes down and the new key string reaches nobody. No default on purpose — looking it up is the step that prevents that."
+  type        = string
+  default     = ""
+}
+
+variable "places_api_key_id" {
+  description = "The EXISTING Places key's id, same rules as maps_api_key_id. No default on purpose."
+  type        = string
+  default     = ""
+}
+
 variable "android_package_name" {
   description = "Android application id the Maps SDK key is restricted to. Matches `android.package` in apps/mobile/app.config.ts — change both together or the map goes blank."
   type        = string
@@ -348,6 +360,6 @@ variable "android_cert_sha1_fingerprints" {
       for f in var.android_cert_sha1_fingerprints :
       can(regex("^([0-9A-Fa-f]{2}:){19}[0-9A-Fa-f]{2}$", f))
     ])
-    error_message = "Each fingerprint must be a SHA-1: 20 colon-separated hex byte pairs, e.g. A1:B2:C3:...:F0. A SHA-256 (32 pairs) is the wrong algorithm and silently fails to match at runtime."
+    error_message = "Each fingerprint must be a SHA-1: exactly 20 colon-separated hex byte pairs, e.g. 00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33. A SHA-256 (32 pairs) is the wrong algorithm and silently fails to match at runtime."
   }
 }
