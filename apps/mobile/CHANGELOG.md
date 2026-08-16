@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.2](https://github.com/unnfazzed/Lynia/compare/v0.36.1...v0.36.2) (2026-08-16)
+
+
+### Bug Fixes
+
+* **send:** give the held customer a plain way back (ledger D-21) ([#759](https://github.com/unnfazzed/Lynia/issues/759)) ([25394a9](https://github.com/unnfazzed/Lynia/commit/25394a95803818b72bfb1a8cc5b96cb528f6ed3f))
+
 ## [0.36.1](https://github.com/unnfazzed/Lynia/compare/v0.36.0...v0.36.1) (2026-08-16)
 
 
