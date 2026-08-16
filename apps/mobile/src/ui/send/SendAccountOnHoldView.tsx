@@ -6,7 +6,7 @@ import type { OrderSnapshot } from "../../api/orders";
 import { useAuth } from "../../auth/auth-context";
 import { ACCOUNT_ON_HOLD_COPY } from "../../logic/gates";
 import { formatMoney } from "../../logic/money";
-import { Button, EmptyState, Icon, Screen, statusPillLabel } from "../index";
+import { AppBar, Button, EmptyState, Icon, Screen, statusPillLabel } from "../index";
 import { SupportCallRow } from "../safety";
 
 /**
@@ -57,8 +57,18 @@ export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.Re
  */
 export function SendAccountOnHoldView({ activeOrder }: { activeOrder: OrderSnapshot | null }): React.ReactElement {
   const { signOut } = useAuth();
+  const router = useRouter();
   return (
     <Screen>
+      {/* Ledger D-21: a plain back, which the OnHold mock does not draw. The mock's exit set is a support
+          call plus "Sign out", and that was judged enough right up until you notice WHAT a hold actually
+          gates: `accountOnHold` is checked in exactly one place in the app (app/send.tsx), and the server
+          blocks only the composing of NEW orders. Home, Orders, Account, history, settings, restaurant
+          browsing and order tracking all still work for a held customer. So the only thing standing
+          between them and the rest of the app was this pushed screen having no route back — and the exits
+          on offer were "end your session" (then re-verify by SMS to look at your own order history) or
+          "leave for the dialer". A 24-hour ops review should not cost a customer their session. */}
+      <AppBar onBack={() => (router.canGoBack() ? router.back() : router.replace("/home"))} />
       {/* A hold blocks composing NEW orders server-side, not viewing/tracking/cancelling/rating an order
           already in flight (getSnapshot/cancel/rating all still work for a held customer). So a customer
           put on hold mid-delivery keeps a way into that live order — the only nav entry point on this
@@ -75,8 +85,9 @@ export function SendAccountOnHoldView({ activeOrder }: { activeOrder: OrderSnaps
             no tab bar shows; app/send.tsx returns this view BEFORE the map top bar renders, so the D-14
             back puck never mounts for a held customer; and with the manual "Refresh status" gone there
             was nothing left to tap but a phone number. Restoring the drawn control is not a new
-            affordance, it is the app paying back drift — and it is the honest one: a hold is lifted by
-            ops server-side, so the only thing a held customer can actually DO here is call, or leave. */}
+            affordance, it is the app paying back drift. It stays the right control for a customer who
+            wants OFF this account; the back above is for the far commoner one who just wants the rest of
+            the app, which the hold never blocked. */}
         <Button label="Sign out" variant="ghost" onPress={() => void signOut()} />
       </EmptyState>
     </Screen>

@@ -205,6 +205,43 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     expect(tree.root.findAll((n) => n.props.children === "Refresh status")).toHaveLength(0);
   });
 
+  // Ledger D-21: the wall keeps a plain back too. A hold gates ONE screen (send.tsx is the only
+  // accountOnHold check) and the server blocks only NEW orders, so the rest of the app still works for
+  // a held customer — signing out to reach their own order history was the wrong price.
+  it("offers a plain Back that pops, so a hold does not cost the customer their session", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    expect(back.length).toBeGreaterThan(0);
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the launcher from the hold wall when there is no stack to pop", async () => {
+    mockCanGoBack = false;
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
   // Ledger D-19: the kit's OnHold draws a "Sign out" ghost button the app had dropped, which left the
   // wall with a phone number as its only interactive control — no tab bar (/send is pushed), no back
   // puck (this branch returns before the map top bar), and no manual refresh since 2026-08-16.

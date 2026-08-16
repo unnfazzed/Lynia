@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -489,11 +489,10 @@ pushed so no tab bar shows; `app/send.tsx` returns `SendAccountOnHoldView` **bef
 renders, so D-14's back puck never mounts for a held customer; and the manual "Refresh status" was
 removed on 2026-08-16, leaving a phone number as the only interactive thing on screen.
 
-**Noted, and deliberately not done:** a held customer still has no *non-destructive* way back to the
-tabs — signing out or calling support is the whole exit set the mock offers. That is arguably right
-(a hold is lifted by ops server-side, so there is nothing else the customer can do here) and the live
-`ActiveOrderBanner` still covers the mid-delivery case. If the owner wants a plain back as well, it is
-an undrawn affordance and needs its own line here.
+**Superseded by D-21 (2026-08-16, same day).** This entry originally recorded that a held customer had
+no *non-destructive* way back — signing out or calling support being the mock's whole exit set — and
+left the question open for the owner. The owner took it: see **D-21**, which adds the plain back. The
+reasoning for leaving it out is kept here only so the reversal is legible, not as live guidance.
 
 **Retire this entry** if an export redraws the tracking screen or the on-hold wall with their own
 navigation.
@@ -530,3 +529,37 @@ correctly. Lines 62, 85 and 111 of `rider-screens-wallet.jsx` are the only bare-
 entry is complete, not a sample.
 
 **Retire this entry** when an export lands with the escapes fixed.
+
+---
+
+## D-21 · The account-on-hold wall keeps a plain back — APPROVED (2026-08-16)
+
+**In effect. Supersedes the "deliberately not done" paragraph of D-19**, decided by the owner the same
+day it was raised. The `OnHold` mock (`screens.jsx:852`) draws an icon, a title, a message, a support
+call row and a "Sign out" ghost button. It draws no back, and D-19 initially took that at face value:
+the wall had *an* exit (D-19 restored the dropped "Sign out"), so it was no longer a dead end, and
+widening a blocking state looked like a judgment call to leave to the owner.
+
+**What changes the answer is what a hold actually gates.** `accountOnHold` is checked in exactly ONE
+place in the whole app — `app/send.tsx` — and the server-side hold blocks only the composing of NEW
+orders (`getSnapshot` / cancel / rating all still succeed for a held customer; see the note on
+`SendAccountOnHoldView`'s `ActiveOrderBanner`). Home, Orders, Account, trip history, settings,
+restaurant browsing and live order tracking all keep working. So the wall was never gating the app —
+it was gating one pushed screen, and the customer's only ways off it were:
+
+- **Sign out** — ends the session, so checking your own order history costs an SMS re-verification, or
+- **the support call row** — leaves the app for the dialer.
+
+A 24-hour ops review should not cost a customer their session. The back is a title-less `AppBar`, the
+same primitive and the same guarded fallback (`canGoBack()` → pop, else `/home`) as D-18 and D-19 use
+everywhere else on this surface, mounted above the banner so the wall's own content is untouched.
+"Sign out" stays exactly where the mock draws it — it is still the right control for a customer who
+wants off the account; the back is for the far commoner one who just wants the rest of the app.
+
+**Not drawn ⇒ not rendered still holds everywhere else.** This is the sanctioned escape working as
+designed: an undrawn affordance, raised as an open question, decided by the owner, recorded before it
+shipped.
+
+**Retire this entry** when an export redraws `LJ on_hold` with its own navigation — `LJ.on_hold` is
+`PENDING` in `tools/parity/parity-status.mjs` (adopted, not yet wired to an app target), so there is no
+rendered-conformance assertion on this screen to update in the meantime.
