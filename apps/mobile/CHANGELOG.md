@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.37.0](https://github.com/unnfazzed/Lynia/compare/v0.36.2...v0.37.0) (2026-08-16)
+
+
+### Features
+
+* **account:** separate the rider and customer Account tabs (D-22, D-23) ([7b5af25](https://github.com/unnfazzed/Lynia/commit/7b5af257c58212cf10bdffc0f213a4d5f0b6ca3f))
+
+
+### Bug Fixes
+
+* **mobile:** a failed map no longer closes the send-parcel flow ([99d6fb7](https://github.com/unnfazzed/Lynia/commit/99d6fb74b2c34389a77a8f178303ea45607d707f))
+* **mobile:** a provisioned Places key can still dead-end the same way ([b0122d9](https://github.com/unnfazzed/Lynia/commit/b0122d9bed778f8e6530eddb22c2a1e1f81465b2))
+* **mobile:** give the customer Account tab the rider's card margins ([#764](https://github.com/unnfazzed/Lynia/issues/764)) ([a2dcdc2](https://github.com/unnfazzed/Lynia/commit/a2dcdc2ed6ec22306924b9c57315023e2ed84659))
+
 ## [0.36.2](https://github.com/unnfazzed/Lynia/compare/v0.36.1...v0.36.2) (2026-08-16)
 
 
