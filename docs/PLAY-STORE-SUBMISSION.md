@@ -348,10 +348,12 @@
 > first `eas-build-status.yml` check (run #24, `31948530251`, dispatched ~22 minutes after the release
 > dispatch), no retries needed.
 >
-> **New gap found while verifying, not fixed here.** `eas build:list --json` returned `channel=?` and
-> `runtime=?` for **every** listed build in this run's window, including the four earlier builds whose
-> runtimeVersion is on record above as `0132a2cf489cedbd85a573cbc829aac28066b0ee` — i.e. the fields
-> the Recap step reads came back empty for builds that provably have them, not just the new one. This
+> **New gap found while verifying, not fixed here.** The `eas build:list --json` response carried no
+> non-null `channel` or `runtimeVersion` values for **any** listed build in this run's window —
+> `eas-build-status.yml`'s own jq formatting (`// "?"`) is what rendered that as `channel=?`/`runtime=?`
+> in the log, not literal CLI output — including the four earlier builds whose runtimeVersion is on
+> record above as `0132a2cf489cedbd85a573cbc829aac28066b0ee`. I.e. the underlying JSON fields the Recap
+> step reads came back null for builds that provably have them, not just the new one. This
 > run's `eas-cli` was `22.0.0` (prior entries never recorded the CLI version, so there's no in-doc
 > baseline to compare against); a CLI/API field rename is the likely cause. Practical effect: **this
 > run cannot confirm the runtimeVersion fingerprint held** the way every entry since 2026-08-12 did —
