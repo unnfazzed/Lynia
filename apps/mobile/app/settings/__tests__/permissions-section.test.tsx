@@ -1,9 +1,14 @@
 /**
- * Settings' permissions section (mock screens-shipped.jsx `SettingsPerms`, SH11 —
- * LJ.settings_perms / LJ.settings_perms_ok). Both rows read the phone's REAL state: the section
- * exists precisely because a hardcoded "On" lies to anyone who denied the permission. Pinned here:
- * the section label, the granted values the mock draws, and the denied variant's warning + the
- * consequence line the mock spells out.
+ * Settings' permission rows (mock screens-shipped.jsx `SettingsPerms`, SH11 — LJ.settings_perms /
+ * LJ.settings_perms_ok). Both read the phone's REAL state: they exist precisely because a hardcoded
+ * "On" lies to anyone who denied the permission. Pinned here: the granted values the mock draws, and
+ * the denied variant's warning + the consequence line the mock spells out.
+ *
+ * The rows now live INSIDE the single settings card, not in a section of their own, and the section
+ * header + framing paragraph are gone with it (`docs/DESIGN-DEVIATIONS.md` D-25, owner instruction
+ * 2026-08-16: "Permissions must fall under the same card and not be separate"). What they SAY is
+ * unchanged and still asserted here; the third case below is what keeps the section from creeping
+ * back.
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -47,16 +52,21 @@ beforeEach(() => {
   mockLocPerms.mockResolvedValue({ granted: true, canAskAgain: true });
 });
 
-describe("settings permissions section", () => {
+describe("settings permission rows", () => {
   it("all granted (LJ.settings_perms_ok): 'While using' and 'On', no warning", async () => {
     const out = text(await render());
-    expect(out).toContain("PERMISSIONS — READ FROM YOUR PHONE");
     expect(out).toContain("While using");
     expect(out).toContain("On");
-    expect(out).toContain(
-      "These show your phone's real settings — LyniaGo re-checks them every time you come back to the app. Changing one opens Android settings.",
-    );
     expect(out).not.toContain("You won't hear when a rider offers");
+  });
+
+  // D-25: the permissions are rows in the one settings card now. Neither piece of section chrome may
+  // come back — they framed a section that no longer exists, and reinstating either would re-split
+  // the card the owner asked be made whole.
+  it("draws neither the section header nor the framing paragraph (D-25)", async () => {
+    const out = text(await render());
+    expect(out).not.toContain("PERMISSIONS — READ FROM YOUR PHONE");
+    expect(out).not.toContain("These show your phone's real settings");
   });
 
   it("denied (LJ.settings_perms): 'Ask every time', 'Off', and the consequence spelled out", async () => {
