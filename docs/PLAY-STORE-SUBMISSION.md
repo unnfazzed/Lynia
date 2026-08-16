@@ -328,6 +328,44 @@
 > §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched — nothing
 > here started that clock. A FINISHED submission does not prove the binary *runs* — the real exit
 > test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+>
+> **Status (2026-08-16 — v0.36.1 dispatched to the internal track by a Claude session on explicit
+> "ship to Expo and Google Play, track the build" request; clean first-attempt run, fourth
+> consecutive.)** Ownership guards run rather than assumed before dispatch, per `CLAUDE.md`:
+> `list_sessions` showed no other reachable Claude session mid-deploy, no in-flight
+> `mobile-release.yml` run (the last, run #20 / `31667204815`, completed 2026-08-13), CI green on the
+> dispatched commit (run `31947129363` on `main` @ `b7bba818`), and `pnpm install --frozen-lockfile`
+> clean on pnpm 10.33.0 with `pnpm-lock.yaml`/`eas.json` unmoved against `origin/main`.
+>
+> `mobile-release.yml` run #21 (`31947511372`), **profile `preview`** per the §8-step-3 rule —
+> production remains unarmed — ref `main` @ `b7bba818240fd27beab7f3b245683c77618f0cfe` (app version
+> `0.36.1`). The dispatcher job completed in 65 s (12:36:17 → 12:37:22 UTC), as expected for
+> `--no-wait`: that only proves the build was queued, not that it finished, so tracking continued via
+> `eas-build-status.yml`.
+>
+> EAS build `ccc99fd5-cd30-4e33-804b-dbd9a63663c3` **FINISHED**; submission
+> `a18ea714-8b29-423a-8ef9-a0cc2afcd9c9` **FINISHED**, track `internal`, no error — confirmed on the
+> first `eas-build-status.yml` check (run #24, `31948530251`, dispatched ~22 minutes after the release
+> dispatch), no retries needed.
+>
+> **New gap found while verifying, not fixed here.** The `eas build:list --json` response carried no
+> non-null `channel` or `runtimeVersion` values for **any** listed build in this run's window —
+> `eas-build-status.yml`'s own jq formatting (`// "?"`) is what rendered that as `channel=?`/`runtime=?`
+> in the log, not literal CLI output — including the four earlier builds whose runtimeVersion is on
+> record above as `0132a2cf489cedbd85a573cbc829aac28066b0ee`. I.e. the underlying JSON fields the Recap
+> step reads came back null for builds that provably have them, not just the new one. This
+> run's `eas-cli` was `22.0.0` (prior entries never recorded the CLI version, so there's no in-doc
+> baseline to compare against); a CLI/API field rename is the likely cause. Practical effect: **this
+> run cannot confirm the runtimeVersion fingerprint held** the way every entry since 2026-08-12 did —
+> the data to check it was simply not returned, not necessarily that it changed. Recording this as an
+> observation rather than fixing `eas-build-status.yml`'s query, which is outside the scope of a
+> ship-and-track request — worth a follow-up session.
+>
+> **What this run does NOT establish** — unchanged from prior entries. It is still the **internal**
+> track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design. §8 step 2
+> (closed test, its mandatory ~14-day clock, production access) remains untouched. A FINISHED
+> submission does not prove the binary *runs* — the real exit test remains the device smoke in
+> `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
 ---
 
