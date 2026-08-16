@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { countMemoRenders } from "../../testing/render-count";
@@ -377,5 +377,27 @@ describe("OrderCard — render isolation (B-O17)", () => {
     // A real content change (fresh `order` object, different phase) — must re-render.
     rerender(<OrderCard {...props} order={order({ merchantPhase: "ready_for_pickup" })} />);
     expect(count()).toBe(2);
+  });
+});
+
+describe("OrderCard — CF-01 double-submit guard (useAsyncAction)", () => {
+  it("a same-tick double-tap on 'Log the call' calls onLogCall only once", async () => {
+    const { onLogCall } = renderCard("payment", order({ merchantPhase: "awaiting_payment" }));
+    let resolveCall!: () => void;
+    onLogCall.mockReturnValueOnce(new Promise<void>((res) => { resolveCall = res; }));
+
+    // Two native clicks inside ONE act() call reproduce a genuine fast double-tap: both onClick
+    // handlers run against the same pre-update `busy === false` render, since React only
+    // commits/re-renders after the act() callback returns (mirrors ConfirmModal's CF-02 test).
+    // useAsyncAction backs every button in this file (log call, request/confirm payment, release
+    // unpaid), so this one regression test protects the whole shared hook.
+    const button = screen.getByRole("button", { name: "Log the call" });
+    act(() => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onLogCall).toHaveBeenCalledTimes(1);
+    resolveCall();
   });
 });
