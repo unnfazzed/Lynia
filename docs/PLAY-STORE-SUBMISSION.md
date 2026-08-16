@@ -425,6 +425,20 @@
 > should decide on (touches `.github/workflows/`, which is now CODEOWNERS-gated): default the
 > workflow's `profile` input to `preview` instead of `production`, so an omitted/empty input fails
 > safe instead of failing toward production.
+>
+> **Addendum (19:32 UTC, ③ resolved — submission ERRORED, no production impact).** Re-checked via
+> `eas-build-status.yml` run `31967851748` with `build_id=e0298874-…` explicit. Build
+> `e0298874-c136-4a51-ab78-881985094039` reached **FINISHED** (583.8s Gradle build, 31.3 MB `.aab`).
+> Its submission `62646dbc-4c03-4a8f-abd7-25922815b253` reached **ERRORED** —
+> `SUBMISSION_SERVICE_ANDROID_UNKNOWN_ERROR`, "Fastlane supply failed. We couldn't figure out what
+> went wrong." A generic Fastlane failure rather than the specific
+> `…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` class seen historically for permission gaps, so the exact
+> proximate cause is unconfirmed — but the outcome that matters is unambiguous either way: **the
+> submission never reached a `FINISHED` state, so nothing was published to the production track. No
+> rollout, staged or otherwise, went live.** Net cost of the whole incident: one EAS build spent from
+> the monthly allowance on a dispatch that should never have happened, and about 25 minutes of
+> tracking. Nothing else. Both other builds this session remain **FINISHED**/**FINISHED**, track
+> `internal`, as recorded above.
 
 ---
 
