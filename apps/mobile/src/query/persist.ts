@@ -1,5 +1,6 @@
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { defaultShouldDehydrateQuery, type Query } from "@tanstack/react-query";
+import type { PersistedClient } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system";
 
@@ -40,6 +41,45 @@ export function shouldPersistQuery(query: Query): boolean {
   return defaultShouldDehydrateQuery(query) && PERSISTED_KEY_ROOTS.has(String(query.queryKey[0]));
 }
 
+/** Fields that may live in memory but must never be written to `rq-cache.json`. */
+const NEVER_PERSISTED_ME_FIELDS = ["idNumber"] as const;
+
+/**
+ * Strip the caller's national ID out of the `["me"]` entry on its way to disk.
+ *
+ * `/auth/me` returns the ID in FULL (owner instruction 2026-08-16, `docs/DESIGN-DEVIATIONS.md`
+ * D-23) so the Account screen can draw it — but `"me"` is on the persistence allowlist above, so
+ * without this the plaintext national ID would be serialised into `rq-cache.json` and sit there
+ * between launches. The file is app-private and {@link clearPersistedQueries} wipes it on sign-out,
+ * but shared handsets are common in this market (S1) and a national ID is the one field in the
+ * payload whose leak is not undone by signing out — so it is memory-only, full stop.
+ *
+ * The cost is one beat of latency: after a cold start the identity card warm-paints from cache with
+ * every other field and the ID line appears when `/auth/me` revalidates. That is the right trade —
+ * a stale ID would be worthless anyway, since it is the one thing about an account that never changes.
+ *
+ * Runs at SERIALIZE time rather than in {@link shouldPersistQuery}, because the allowlist decides
+ * *whether* a query persists and this decides *what of it* does. Dropping the whole `["me"]` entry
+ * instead would cost every account screen its warm boot to protect one field.
+ */
+export function redactBeforePersist(client: PersistedClient): PersistedClient {
+  const queries = client.clientState.queries.map((q) => {
+    if (String(q.queryKey[0]) !== "me") return q;
+    const data = q.state.data;
+    if (!data || typeof data !== "object") return q;
+    const redacted = { ...(data as Record<string, unknown>) };
+    let hit = false;
+    for (const f of NEVER_PERSISTED_ME_FIELDS) {
+      if (f in redacted) {
+        delete redacted[f];
+        hit = true;
+      }
+    }
+    return hit ? { ...q, state: { ...q.state, data: redacted } } : q;
+  });
+  return { ...client, clientState: { ...client.clientState, queries } };
+}
+
 /** Drop cache entries older than a day on restore — yesterday's balance is a fine first paint,
  *  last month's is a lie. (Restore-time only; live refetching is governed by staleTime as usual.) */
 export const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -66,6 +106,9 @@ export const fileStorage = {
 export const queryPersister = createAsyncStoragePersister({
   storage: fileStorage,
   key: "lynia-rq-cache",
+  // The ONE hook every write passes through, so there is no second path that could reach the file
+  // with an un-redacted payload. See {@link redactBeforePersist}.
+  serialize: (client) => JSON.stringify(redactBeforePersist(client)),
   // Batch bursts of cache updates into one disk write every few seconds — a screen-load fires
   // several queries back-to-back and serialising the cache per update would churn the flash for
   // nothing. Loss window on a hard kill is one interval of the least-fresh data: acceptable for an

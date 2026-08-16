@@ -48,12 +48,16 @@ export type AccountRow = {
 export function AccountIdentityCard({
   name,
   line,
+  detail,
   trailing,
   onPress,
   accessibilityLabel,
 }: {
   name: string;
   line?: string;
+  /** An extra line under `line`, inside the same column — `/profile`'s account-record detail
+   *  ({@link AccountIdLine}). The two Account TABS pass nothing, so their card is unchanged. */
+  detail?: React.ReactNode;
   trailing?: React.ReactNode;
   onPress?: () => void;
   accessibilityLabel?: string;
@@ -67,6 +71,7 @@ export function AccountIdentityCard({
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 15.5, fontWeight: "700", color: tokens.color.ink }}>{name}</Text>
           {line ? <Text style={{ fontSize: 12.5, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{line}</Text> : null}
+          {detail}
         </View>
         {trailing}
       </View>
@@ -163,6 +168,40 @@ export function KycPill({ status }: { status: KycStatus }): React.ReactElement {
       }}
     >
       <Text style={{ fontSize: 12, fontWeight: "600", color }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * The account-record line under the identity card on `/profile`: the national ID as stored, plus a
+ * pill saying whether anyone has checked it.
+ *
+ * Drawn from `LJ.profile` (`screens.jsx :: Profile`), which pairs the ID with a `NOT VERIFIED` tag —
+ * the app's copy of the registration mock's promise that a customer's ID is "stored on your account
+ * only — we don't verify it. Riders go through a separate ID check." So the pill is not decoration:
+ * for a customer it is the whole point of showing the number, and for a rider it is their real KYC
+ * state, which is the one thing that makes the same number mean something different.
+ *
+ * The mock MASKS the number (`ID 63•1234••••••42`); the app draws it in full, per the owner's
+ * instruction of 2026-08-16 and `docs/DESIGN-DEVIATIONS.md` D-23. It renders only here — never on a
+ * tab — because this is the screen the identity card promises will show your details, and the value
+ * is deliberately kept out of the persisted query cache (`src/query/persist.ts`).
+ */
+export function AccountIdLine({ idNumber, kycStatus }: { idNumber: string; kycStatus?: KycStatus }): React.ReactElement {
+  const verified = kycStatus === "verified";
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+      {/* One interpolated string, not `ID {idNumber}` — that renders as two text nodes, which can
+          break the line between the label and the number it labels. */}
+      <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{`ID ${idNumber}`}</Text>
+      <View style={{ borderRadius: tokens.radius.pill, backgroundColor: verified ? tokens.color.accentWash : tokens.color.surface, paddingHorizontal: 8, paddingVertical: 2 }}>
+        {/* Mock copy verbatim for the customer case ("NOT VERIFIED", 10.5/700 tracked, muted on
+            surface). A verified rider gets the same pill in the affirmative — the mock never drew
+            that state because LJ.profile is a customer screen. */}
+        <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.3, color: verified ? tokens.color.accentText : tokens.color.muted }}>
+          {verified ? "VERIFIED" : "NOT VERIFIED"}
+        </Text>
+      </View>
     </View>
   );
 }

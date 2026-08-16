@@ -87,6 +87,7 @@ function meFixture(overrides: Partial<NonNullable<Me["rider"]>> = {}): Me {
     email: null,
     photoUrl: null,
     ordersCount: 0,
+    idNumber: "63-123456-A-42",
     rider: {
       bikeReg: "ABC123",
       kycStatus: "verified",

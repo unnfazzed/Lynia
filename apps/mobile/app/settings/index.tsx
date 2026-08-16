@@ -9,7 +9,7 @@ import { AppState, Linking, Pressable, ScrollView, Text, View } from "react-nati
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { AppBar, Icon, type IconName, Screen } from "../../src/ui";
-import { AccountIdentityCard, AccountRowList, bikeDocsSub } from "../../src/ui/account/AccountRows";
+import { AccountIdentityCard, AccountRowList } from "../../src/ui/account/AccountRows";
 
 /**
  * Settings (customer + rider A·6 / A·4). A lean row list — profile, notifications, language, payment
@@ -17,6 +17,10 @@ import { AccountIdentityCard, AccountRowList, bikeDocsSub } from "../../src/ui/a
  * profile", "Language") are honest: they read as "coming soon" rather than dead taps. Payment is
  * fixed to Cash (§6). Notifications reflects the REAL OS permission and taps through to OS settings;
  * language stays display-only until per-language copy lands.
+ *
+ * ROLE-INDEPENDENT by design (D-22): every row here is device, app or legal, so both roles get the
+ * same screen. Both Account tabs now reach it directly, which is what let the rider-only "Bike &
+ * documents" swap come off the first row — rider paperwork belongs on the rider side.
  *
  * "Delete account" and "Privacy notice" are Google Play listing REQUIREMENTS, not niceties: Play
  * policy obliges any app offering account creation to offer in-app account deletion, and the privacy
@@ -93,10 +97,9 @@ function PermissionRow(props: {
 
 export default function SettingsScreen(): React.ReactElement {
   const router = useRouter();
-  const { session, signOut } = useAuth();
+  const { signOut } = useAuth();
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const me = meQ.data;
-  const isRider = (me?.role ?? session?.role) === "rider";
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   // Reflect the REAL OS notification permission instead of a hardcoded "On" (which lied to anyone who
@@ -147,15 +150,14 @@ export default function SettingsScreen(): React.ReactElement {
           line={me?.phone ? formatPhoneDisplay(me.phone) : undefined}
         />
 
-        <AccountRowList
-          rows={[
-            isRider
-              ? { icon: "id-card", label: "Bike & documents", sub: bikeDocsSub(me?.rider?.kycStatus, me?.rider?.bikeReg), onPress: () => router.push("/rider/documents") }
-              // "Coming soon" verbatim — it is the string the expected-conformance JSON already
-              // sanctions for this row (tools/parity/expected/LJ.settings_perms*.json `extra`).
-              : { icon: "user", label: "Edit profile", sub: "Coming soon" },
-          ]}
-        />
+        {/* The mock's own first row, for EVERY role. It used to be swapped for "Bike & documents"
+            when the caller was a rider, which put that row in three places at once (rider Account
+            tab, /profile, here) and made a shared screen role-dependent for no gain — Settings is
+            device, app and legal, not rider paperwork. Dropping the swap also moves this screen
+            CLOSER to LJ.settings, which draws "Edit profile" unconditionally (D-22).
+            "Coming soon" verbatim — the string the expected-conformance JSON already sanctions for
+            this row (tools/parity/expected/LJ.settings_perms*.json `extra`). */}
+        <AccountRowList rows={[{ icon: "user", label: "Edit profile", sub: "Coming soon" }]} />
 
         {/* PERMISSIONS — the SH11 section (LJ.settings_perms / LJ.settings_perms_ok). Both rows read the
             phone's real state and tap through to OS settings, the only place either can be changed.

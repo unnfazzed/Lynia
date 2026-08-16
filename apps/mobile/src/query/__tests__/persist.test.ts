@@ -17,7 +17,8 @@ jest.mock("expo-file-system", () => ({
 }));
 
 import * as FileSystem from "expo-file-system";
-import { clearPersistedQueries, fileStorage, PERSISTED_KEY_ROOTS, shouldPersistQuery } from "../persist";
+import type { PersistedClient } from "@tanstack/react-query-persist-client";
+import { clearPersistedQueries, fileStorage, PERSISTED_KEY_ROOTS, redactBeforePersist, shouldPersistQuery } from "../persist";
 
 const fs = jest.mocked(FileSystem);
 
@@ -61,6 +62,64 @@ describe("shouldPersistQuery — the persistence allowlist", () => {
   it("the allowlist stays an explicit, reviewed set", () => {
     // Adding a root here is a product decision (see persist.ts) — this pins the current contract.
     expect([...PERSISTED_KEY_ROOTS].sort()).toEqual(["earnings", "history", "me", "notifications", "wallet"]);
+  });
+});
+
+describe("redactBeforePersist — the national ID never reaches the disk", () => {
+  const me = {
+    profileId: "p1",
+    firstName: "Chipo",
+    lastName: "Marufu",
+    phone: "+263772451180",
+    idNumber: "63-123456-A-42",
+    rider: null,
+  };
+  const clientWith = (queries: unknown[]): PersistedClient =>
+    ({ buster: "1.0.0", timestamp: 0, clientState: { mutations: [], queries } }) as unknown as PersistedClient;
+
+  const meEntry = (data: unknown): unknown => ({ queryKey: ["me"], queryHash: '["me"]', state: { status: "success", data } });
+
+  it("drops idNumber from the ['me'] entry", () => {
+    const out = redactBeforePersist(clientWith([meEntry(me)]));
+    const data = out.clientState.queries[0]?.state.data as Record<string, unknown>;
+    expect(data).not.toHaveProperty("idNumber");
+  });
+
+  // The whole point is a WARM boot minus one field — dropping the entry (or any other field) to
+  // protect the ID would cost every account screen its instant first paint.
+  it("keeps every other field of the profile", () => {
+    const out = redactBeforePersist(clientWith([meEntry(me)]));
+    expect(out.clientState.queries).toHaveLength(1);
+    expect(out.clientState.queries[0]?.state.data).toEqual({
+      profileId: "p1",
+      firstName: "Chipo",
+      lastName: "Marufu",
+      phone: "+263772451180",
+      rider: null,
+    });
+  });
+
+  it("does not mutate the live in-memory cache — the screen still renders the ID", () => {
+    const live = { ...me };
+    redactBeforePersist(clientWith([meEntry(live)]));
+    expect(live.idNumber).toBe("63-123456-A-42");
+  });
+
+  it("leaves other allowlisted roots untouched", () => {
+    const history = { queryKey: ["history"], queryHash: '["history"]', state: { status: "success", data: [{ id: "o1" }] } };
+    const out = redactBeforePersist(clientWith([history]));
+    expect(out.clientState.queries[0]).toBe(history);
+  });
+
+  it("survives a ['me'] entry with no data (nothing to redact)", () => {
+    expect(() => redactBeforePersist(clientWith([meEntry(undefined)]))).not.toThrow();
+    expect(() => redactBeforePersist(clientWith([meEntry(null)]))).not.toThrow();
+  });
+
+  // The serializer is the single write path; if it ever stops running the redaction, the plaintext
+  // ID lands in the file. Assert on the STRING that would be written, not just the object.
+  it("the serialized payload contains no national ID", () => {
+    expect(JSON.stringify(redactBeforePersist(clientWith([meEntry(me)])))).not.toContain("63-123456-A-42");
   });
 });
 

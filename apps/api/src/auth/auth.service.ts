@@ -99,6 +99,13 @@ export class AuthService {
         photoUrl: true,
         ordersCount: true,
         onHold: true,
+        // The account record's national ID, returned to ITS OWN OWNER in full (owner instruction
+        // 2026-08-16: "want it to display full ID and phone number since this is user account").
+        // Stored AES-256-GCM encrypted; decrypted here, never queried in the clear. The only other
+        // reader is the admin KYC review. See `docs/DESIGN-DEVIATIONS.md` D-23 for why it is drawn
+        // unmasked where the mock draws `ID 63•1234••••••42`, and `src/query/persist.ts` on the
+        // client for why it is the one `/auth/me` field that never reaches disk.
+        idNumber: true,
         rider: {
           select: {
             bikeReg: true,
@@ -128,6 +135,9 @@ export class AuthService {
       email: p.email,
       photoUrl: p.photoUrl,
       ordersCount: p.ordersCount,
+      // `null` for an account that never supplied one (a customer can register name-only) — the
+      // Account screen simply draws no ID line rather than an empty field.
+      idNumber: this.pii.decryptId(p.idNumber),
       // S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen).
       onHold: p.onHold,
       rider: p.rider

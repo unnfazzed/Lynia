@@ -53,6 +53,7 @@ function meFixture(overrides: Partial<NonNullable<Me["rider"]>> = {}): Me {
     email: null,
     photoUrl: null,
     ordersCount: 0,
+    idNumber: "63-123456-A-42",
     rider: {
       bikeReg: "ABC123",
       kycStatus: "verified",
@@ -202,7 +203,7 @@ describe("rider Account tab — the customer bridge moved here from the board (o
     expect(has(activeTree, "You're online for deliveries")).toBe(false);
   });
 
-  it("the five mock rows still route where they did — the new row didn't shift the mapping", async () => {
+  it("the five mock rows still route where they did — the new rows didn't shift the mapping", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
 
@@ -213,9 +214,56 @@ describe("rider Account tab — the customer bridge moved here from the board (o
     expect(mockPush).toHaveBeenCalledWith("/history");
     press(activeTree, "Help & support");
     expect(mockPush).toHaveBeenCalledWith("/help");
-    // And the switch row must NOT be routed like the others — an off-by-one would send it to /help.
+    // And the switch row must NOT be routed like the others — an off-by-one would send it to /settings.
     mockPush.mockClear();
     press(activeTree, SWITCH_ROW);
     expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * D-22 — the rider's own way into Settings. Before this row, permissions, the privacy notice and
+ * account deletion (the last two are Play LISTING REQUIREMENTS, not niceties) were reachable only by
+ * tapping the identity card into a /profile that then listed the customer's destinations.
+ */
+describe("rider Account tab — Settings row (D-22)", () => {
+  it("draws Settings with the same copy as the customer tab's row", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+
+    activeTree = renderScreen();
+    await settle();
+
+    expect(has(activeTree, "Settings")).toBe(true);
+    expect(has(activeTree, "Permissions, privacy and sign out")).toBe(true);
+  });
+
+  it("routes to /settings — the row sits between Help & support and the switch row", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+
+    activeTree = renderScreen();
+    await settle();
+
+    press(activeTree, "Settings");
+    expect(mockPush).toHaveBeenCalledWith("/settings");
+  });
+
+  // /profile is shared with the customer tab and reads its side from the query string; without it a
+  // rider tapping their own identity card would fall back to role and get the right list by luck,
+  // while a dual-role user on the customer hub would get the wrong one.
+  it("names its side when opening /profile from the identity card", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+
+    activeTree = renderScreen();
+    await settle();
+
+    const card = activeTree.root.findAll(
+      (n) => n.props.accessibilityLabel === "Your profile and settings" && typeof n.props.onPress === "function",
+    )[0];
+    expect(card).toBeDefined();
+    act(() => card!.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/profile?side=rider");
   });
 });
