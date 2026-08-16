@@ -61,6 +61,16 @@ export default function HomeScreen(): React.ReactElement {
   // the customer explicitly asked to re-send THIS order.
   const rbParams = useLocalSearchParams<RebroadcastParams>();
 
+  // /send is a PUSHED route over the tab shell (home/orders/account/history/profile all router.push
+  // it), so the tab bar is hidden while it is up — and the map-anchored composer, inheriting a mock
+  // that was drawn when this screen was the app's root, shipped with no way out at all. Same escape
+  // as `rider/become`: pop when there is a stack, otherwise land on the launcher so a deep link or a
+  // notification cold-start can't strand the customer either.
+  const goBack = useCallback((): void => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/home");
+  }, [router]);
+
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
   const [pickupPhone, setPickupPhone] = useState("");
@@ -575,7 +585,7 @@ export default function HomeScreen(): React.ReactElement {
               but every customer-surface entry point now targets the richer Account tab instead —
               matches `(tabs)/home.tsx`'s BrandHeader `onProfile` already doing the same. Notifications
               are reached from the Account tab (kit draws a single top-right action here). */}
-          <MapHomeTopBar onAccount={() => router.push("/account")} />
+          <MapHomeTopBar onAccount={() => router.push("/account")} onBack={goBack} />
 
           {meQ.data?.rider?.isOnline ? (
             // A rider who switches to the customer view stayed online server-side with no reminder here

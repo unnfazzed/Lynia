@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -299,7 +299,40 @@ to revisit.
 
 ---
 
-## D-14 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
+## D-14 · `/send` composer keeps a floating Back puck the map-home mock never drew — APPROVED (2026-08-16)
+
+**In effect.** `LJ home_empty` / `home_pins` (`explorations/journey/screens.jsx` `Home`) draw exactly two
+things in the floating top row: the brand pill left, the account puck right. No back — correctly, because
+that mock was drawn when the map composer WAS the app's root screen (the pre-`(tabs)` rootless composer,
+see `app/(tabs)/_layout.tsx`'s own note).
+
+The shipped app no longer works that way. `/send` sits **outside** the `(tabs)` group and is reached only
+by `router.push` — from Home's Express tile, Orders, Account, History and Profile — so the tab bar is
+hidden while it is up. Following "not drawn ⇒ not rendered" literally therefore ships a screen with **no
+exit**: no tab bar, no header, no gesture affordance. Reported by the owner from a device (2026-08-16):
+*"There is no nav button here for someone to go back."* Approved in the same instruction.
+
+What ships is deliberately not invented chrome — it is the kit's **own** floating back, lifted from
+`LJ addr_confirm` (`screens.jsx`:443–445), the other map-anchored screen in the same flow: a 40×40 round
+`--bg` puck with `shadow-card`, holding an 18px `--ink` arrow, at the row's leading edge. That makes it
+the same object as the account puck already opposite it, at the same size, elevation and vertical offset.
+Two ports, both pre-existing in this repo: the arrow is a flipped `arrow-right` because the icon subset
+carries no left-pointing glyph (`shell/AppBar` does the same for its back chevron, ledger D-08 covers the
+subset), and the drawn 40px stays 40px with `hitSlop` making up the touch floor.
+
+Pressing it pops when `router.canGoBack()`; a deep-link / notification cold start that makes `/send` the
+first route lands on `/home` instead of dead-ending. The one knock-on the side-by-side shows is that the
+brand pill starts one puck + `space.sm` further right than the mock draws it — the row is otherwise
+unchanged (same puck size, elevation and top offset, account action still alone on the trailing edge).
+The on-hold wall (`SendAccountOnHoldView`) is untouched — that mock is a deliberate blocking state that
+carries its own exits.
+
+**Retire this entry** if a future export redraws `LJ home_empty` as a pushed screen (with or without its
+own back affordance); align to whatever it draws.
+
+---
+
+## D-15 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
 
 **In effect.** The kit's `RJM.account` (`explorations/journey/rider-one-app.jsx`, `account`) draws an
 identity Card and **five** settings rows: Bike & documents · Job history · Money · Notifications ·
