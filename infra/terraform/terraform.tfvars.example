@@ -66,3 +66,29 @@
 # cloudflare_dns_enabled = true
 # cloudflare_zone_id     = "0123456789abcdef0123456789abcdef"  # lyniafinance.com zone id
 # cloudflare_api_token   = "..."   # Zone:DNS:Edit token — keep in a VCS-ignored tfvars
+
+# =============================================================================
+# Maps Platform client API keys (apikeys.tf)
+# -----------------------------------------------------------------------------
+# Off by default — a plain apply is a no-op and the hand-created keys are left
+# alone. Arming brings both client keys under Terraform with the docs/SECURITY-OPS.md
+# §B restrictions: the Maps SDK key restricted to the Android package + signing
+# certs, the Places key deliberately UNrestricted by application (it calls
+# web-service endpoints, which return REQUEST_DENIED to an Android-restricted key —
+# the symptom is a search box that silently returns nothing).
+#
+# ⚠️  IMPORT BEFORE YOU APPLY. Both keys already exist. Applying without
+#     `terraform import` creates a SECOND pair with new key strings, leaves the
+#     originals unmanaged, and reaches no device (the app reads EAS). The import
+#     commands are in the header of apikeys.tf; after importing, the plan diff IS
+#     the fix — if it proposes CREATING a key, stop.
+#
+# Both SHA-1s belong in the list. Play RE-SIGNS the AAB with the app-signing
+# certificate, so a key allowlisted only for the EAS upload keystore works in a
+# sideloaded APK and fails in every Play-installed build (MOB-MAP-02).
+# maps_api_keys_enabled          = true
+# android_package_name           = "zw.co.lynia"   # already the default
+# android_cert_sha1_fingerprints = [
+#   "AA:BB:...:FF",  # Play app signing — Play Console → Test and release → Setup → App integrity
+#   "11:22:...:99",  # EAS upload keystore — for sideloaded QA APKs
+# ]

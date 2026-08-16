@@ -52,6 +52,14 @@ An Android-app-restricted key returns `REQUEST_DENIED` for every call — and th
 error into an empty result list, so the symptom is a search box that silently never returns anything.
 (If you want app restrictions on this key, that's a migration to the Places **SDK**, not a config change.)
 
+**These restrictions are Terraform-managed** (`infra/terraform/apikeys.tf`), gated off by
+`maps_api_keys_enabled` until the keys are imported — steps 1 and 2 below are what that config
+encodes, and after arming they are a reviewable plan diff rather than console clicks. Read the
+file's header before enabling: both keys already exist, so it is `terraform import` first and
+apply second, or you create a second pair that reaches no device. Step 3 (quota) is still manual;
+step 4 is a separate key this repo does not manage. The console steps remain the source of truth
+until the import lands.
+
 Contain them in the GCP console:
 1. **APIs & Services → Credentials →** the Maps SDK key → **Application restrictions**: Android package
    name + SHA-1 signing cert (and iOS bundle id if applicable).

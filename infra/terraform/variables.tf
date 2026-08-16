@@ -324,3 +324,30 @@ variable "ci_provisioner_enabled" {
   type        = bool
   default     = false
 }
+
+# --- Maps Platform client API keys (apikeys.tf) — gated off by default ---
+variable "maps_api_keys_enabled" {
+  description = "Bring the two Maps Platform client keys (GOOGLE_MAPS_API_KEY for the Maps SDK for Android, EXPO_PUBLIC_GOOGLE_PLACES_KEY for the Places web service) under Terraform, applying the docs/SECURITY-OPS.md §B restrictions. Off by default — zero diff, and the existing hand-created keys are left untouched. IMPORT BEFORE APPLYING: both keys already exist, so an apply without `terraform import` creates a second pair with new key strings, leaves the originals unmanaged, and reaches no device. Commands are in the header of apikeys.tf."
+  type        = bool
+  default     = false
+}
+
+variable "android_package_name" {
+  description = "Android application id the Maps SDK key is restricted to. Matches `android.package` in apps/mobile/app.config.ts — change both together or the map goes blank."
+  type        = string
+  default     = "zw.co.lynia"
+}
+
+variable "android_cert_sha1_fingerprints" {
+  description = "Signing-certificate SHA-1 fingerprints allowed to use the Maps SDK key, colon-separated uppercase hex. List BOTH: the Play **app signing** certificate (Play Console → Test and release → Setup → App integrity — this is what installed builds are actually signed with, and omitting it is the 2026-08-16 blank-map failure) and the EAS-managed **upload** keystore (sideloaded QA APKs). Only used when maps_api_keys_enabled; the app-signing value has no API and is read from the Play Console by hand."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for f in var.android_cert_sha1_fingerprints :
+      can(regex("^([0-9A-Fa-f]{2}:){19}[0-9A-Fa-f]{2}$", f))
+    ])
+    error_message = "Each fingerprint must be a SHA-1: 20 colon-separated hex byte pairs, e.g. A1:B2:C3:...:F0. A SHA-256 (32 pairs) is the wrong algorithm and silently fails to match at runtime."
+  }
+}
