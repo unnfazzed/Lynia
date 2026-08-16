@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/unnfazzed/Lynia/compare/v0.36.0...v0.36.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* **nav:** close every navigation dead end on the customer and rider surfaces ([#757](https://github.com/unnfazzed/Lynia/issues/757)) ([1f081a5](https://github.com/unnfazzed/Lynia/commit/1f081a578ec5287e9e84099a2c402409e2218791))
+
 ## [0.36.0](https://github.com/unnfazzed/Lynia/compare/v0.35.0...v0.36.0) (2026-08-16)
 
 
