@@ -25,7 +25,7 @@ import { AccountIdentityCard, AccountRowList, bikeDocsSub } from "../../src/ui/a
  *
  * The screen's own bespoke `Row` (icon 19 accentText · label 14 · right-aligned value) is GONE —
  * replaced by the shared account row grammar (`src/ui/account/AccountRows.tsx`) that the rider
- * Account tab draws, per `docs/DESIGN-DEVIATIONS.md` D-14. Each row's old right-hand VALUE became its
+ * Account tab draws, per `docs/DESIGN-DEVIATIONS.md` D-15. Each row's old right-hand VALUE became its
  * sub-line, which is where the rider grammar puts a row's supporting fact. The permissions section
  * below keeps its own `PermissionRow`: that one is aligned to its OWN drawn mock (SH11
  * `SettingsPerms` — LJ.settings_perms / settings_perms_ok), so harmonising it would be drift, not
@@ -160,7 +160,7 @@ export default function SettingsScreen(): React.ReactElement {
         {/* PERMISSIONS — the SH11 section (LJ.settings_perms / LJ.settings_perms_ok). Both rows read the
             phone's real state and tap through to OS settings, the only place either can be changed.
             Left in its OWN drawn grammar deliberately: it aligns to a mock of its own (see the header
-            note), so D-14's harmonisation stops at its edge. */}
+            note), so D-15's harmonisation stops at its edge. */}
         <Text style={{ fontSize: 11, fontWeight: "700", letterSpacing: 0.44, color: tokens.color.muted, marginTop: 10, marginBottom: 2 }}>
           PERMISSIONS — READ FROM YOUR PHONE
         </Text>

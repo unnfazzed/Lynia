@@ -11,7 +11,7 @@ import { AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type Account
 /**
  * Account details — the screen BOTH account tabs reach by tapping their identity card, so it is the
  * one place customer and rider already shared and the one that most needed harmonising. Same grammar
- * as the two tabs (`docs/DESIGN-DEVIATIONS.md` D-14): AppBar → identity card → one card of
+ * as the two tabs (`docs/DESIGN-DEVIATIONS.md` D-15): AppBar → identity card → one card of
  * `icon · label · sub · chevron` rows.
  *
  * Sign out stays ON this screen as a danger row (it is also on Settings). This screen is the rider's

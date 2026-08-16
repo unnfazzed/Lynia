@@ -1,5 +1,5 @@
 /**
- * Customer Account tab ≡ rider Account tab, structurally (docs/DESIGN-DEVIATIONS.md D-14, owner
+ * Customer Account tab ≡ rider Account tab, structurally (docs/DESIGN-DEVIATIONS.md D-15, owner
  * instruction 2026-08-16: "the account under customer is visually different than the rider account ..
  * lets harmonise the design to match the state of the rider account").
  *

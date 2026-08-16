@@ -14,7 +14,7 @@ import { AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type Account
  * card (avatar · name · one identity line · verification pill) → ONE card of `icon · label · sub ·
  * chevron` rows. Owner decision 2026-08-16 — "the account under customer is visually different than
  * the rider account … let's harmonise the design to match the state of the rider account" — logged as
- * `docs/DESIGN-DEVIATIONS.md` D-14, which is what authorises this screen to leave the older static
+ * `docs/DESIGN-DEVIATIONS.md` D-15, which is what authorises this screen to leave the older static
  * `LJ.profile` mock (Heading + Sub + a stack of full-width Buttons) behind.
  *
  * What that decision changed, and why each is intentional rather than a dropped feature:

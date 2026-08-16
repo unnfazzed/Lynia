@@ -7,7 +7,7 @@ import { Card, Icon, type IconName } from "../index";
  * The account-cluster row grammar, extracted from the RIDER account screen so the customer side can
  * speak it too (owner decision 2026-08-16: "the account under customer is visually different than the
  * rider account — let's harmonise the design to match the state of the rider account", authorised as
- * `docs/DESIGN-DEVIATIONS.md` D-14).
+ * `docs/DESIGN-DEVIATIONS.md` D-15).
  *
  * **Every value here is copied from the GENERATED `app/rider/(tabs)/account.tsx` view**
  * (`account.view.tsx`, transpiled from `packages/design/explorations/journey/rider-one-app.jsx ::

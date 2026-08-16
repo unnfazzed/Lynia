@@ -1,6 +1,6 @@
 # Phase 3 — Customer account cluster alignment
 
-> **Superseded in part (2026-08-16) — read `docs/DESIGN-DEVIATIONS.md` D-14 first.** The
+> **Superseded in part (2026-08-16) — read `docs/DESIGN-DEVIATIONS.md` D-15 first.** The
 > `LJ.profile → app/(tabs)/account.tsx` section below records this screen's alignment to the older
 > static `Profile` mock. That target has since been **retired by owner decision**: the customer
 > Account tab (and `app/profile/index.tsx`, and the row grammar of `app/settings/index.tsx`) now draw

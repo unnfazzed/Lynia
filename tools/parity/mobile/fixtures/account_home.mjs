@@ -3,7 +3,7 @@
 // Settings / Help & support) render below it in one card.
 //
 // The tab draws the RIDER account grammar, not this key's older `Profile` mock — see
-// docs/DESIGN-DEVIATIONS.md D-14 (owner-approved 2026-08-16). The key stays wired here so the screen
+// docs/DESIGN-DEVIATIONS.md D-15 (owner-approved 2026-08-16). The key stays wired here so the screen
 // is still rendered and inventoried; its rendered-conformance IOU explains the superseded target.
 //
 // account.tsx calls useAuth(), so an AuthProvider must wrap it alongside the QueryClient.
