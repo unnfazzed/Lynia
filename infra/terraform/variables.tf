@@ -324,3 +324,42 @@ variable "ci_provisioner_enabled" {
   type        = bool
   default     = false
 }
+
+# --- Maps Platform client API keys (apikeys.tf) — gated off by default ---
+variable "maps_api_keys_enabled" {
+  description = "Bring the two Maps Platform client keys (GOOGLE_MAPS_API_KEY for the Maps SDK for Android, EXPO_PUBLIC_GOOGLE_PLACES_KEY for the Places web service) under Terraform, applying the docs/SECURITY-OPS.md §B restrictions. Off by default — zero diff, and the existing hand-created keys are left untouched. IMPORT BEFORE APPLYING: both keys already exist, so an apply without `terraform import` creates a second pair with new key strings, leaves the originals unmanaged, and reaches no device. Commands are in the header of apikeys.tf."
+  type        = bool
+  default     = false
+}
+
+variable "maps_api_key_id" {
+  description = "The EXISTING Maps SDK key's id — the final component of its resource name (`gcloud services api-keys list --format='table(name,displayName)'` → projects/N/locations/global/keys/<THIS>). NOT the `uid` field, which the import path does not accept, and not the display name. Terraform's `name` is ForceNew, so a value that doesn't match the imported key plans a DESTROY + CREATE of a live key: the map goes down and the new key string reaches nobody. No default on purpose — looking it up is the step that prevents that."
+  type        = string
+  default     = ""
+}
+
+variable "places_api_key_id" {
+  description = "The EXISTING Places key's id, same rules as maps_api_key_id. No default on purpose."
+  type        = string
+  default     = ""
+}
+
+variable "android_package_name" {
+  description = "Android application id the Maps SDK key is restricted to. Matches `android.package` in apps/mobile/app.config.ts — change both together or the map goes blank."
+  type        = string
+  default     = "zw.co.lynia"
+}
+
+variable "android_cert_sha1_fingerprints" {
+  description = "Signing-certificate SHA-1 fingerprints allowed to use the Maps SDK key, colon-separated uppercase hex. List BOTH: the Play **app signing** certificate (Play Console → Test and release → Setup → App integrity — this is what installed builds are actually signed with, and omitting it is the 2026-08-16 blank-map failure) and the EAS-managed **upload** keystore (sideloaded QA APKs). Only used when maps_api_keys_enabled; the app-signing value has no API and is read from the Play Console by hand."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for f in var.android_cert_sha1_fingerprints :
+      can(regex("^([0-9A-Fa-f]{2}:){19}[0-9A-Fa-f]{2}$", f))
+    ])
+    error_message = "Each fingerprint must be a SHA-1: exactly 20 colon-separated hex byte pairs, e.g. 00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33. A SHA-256 (32 pairs) is the wrong algorithm and silently fails to match at runtime."
+  }
+}

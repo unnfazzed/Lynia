@@ -201,3 +201,28 @@ Build-loop trigger IDs and crons under that chain (all five now deleted):
 > **Connector caveat:** these triggers store no MCP connectors, so fired sessions may lack the
 > GitHub MCP tools — the documented fallback applies (`docs/ROUTINES.md` §known constraints: push
 > the branch, session auto-PR opens it, the PR-health watchdog merges on green).
+
+## Addendum 2026-08-16 — four Sunday-night maintenance lanes
+
+Owner instruction (2026-08-16): four new weekly lanes run Sunday night from **22:00 Harare
+(20:00 UTC)**, extending the Sunday chain into previously idle hours. The 22:00 UTC slot is
+skipped (watchdog owns it). Full spec: `docs/ROUTINES.md` §"Four Sunday-night maintenance lanes";
+prompts: `docs/routines/{crash-fuzzing,logic-model-audit,flag-retirement,useless-test-pruning}.md`.
+
+| Hour (UTC) | 20 | 21 | 22 | 23 | 00 (Mon) |
+|---|---|---|---|---|---|
+| Lane | Crash fuzzing | Logic model audit | *(watchdog — existing)* | Flag retirement | Useless-test pruning |
+
+| Routine | trigger_id | Cron (UTC) | Environment | Model |
+|---|---|---|---|---|
+| Crash fuzzing | `trig_01GRX63yw2A4GvuyBiCmTbZv` | `0 20 * * 0` | env_01B3aX… | claude-sonnet-5 |
+| Logic model audit | `trig_01VH6RpSakGCFhdoAYaNftvp` | `0 21 * * 0` | env_01V3Lw… | claude-sonnet-5 |
+| Flag retirement | `trig_01M2ktaNdry3zxpXpLmkvwKP` | `0 23 * * 0` | env_01B3aX… | claude-sonnet-5 |
+| Useless-test pruning | `trig_01U7RohvvYy1yp4j2LPJQ6GE` | `0 0 * * 1` | env_01V3Lw… | claude-sonnet-5 |
+
+> **Model-caveat update:** the 2026-08-01 `model_update_disabled` caveat above no longer holds —
+> `update_trigger` accepted a programmatic model pin on 2026-08-16, and all four new triggers carry
+> `session_context.model: claude-sonnet-5` (owner instruction: cost-effective model, not Fable).
+> **Connector caveat still applies:** these triggers store no MCP connectors; if a fired session
+> lacks the GitHub MCP tools, the documented fallback holds (push the branch, auto-PR, watchdog
+> merges on green).

@@ -366,6 +366,79 @@
 > (closed test, its mandatory ~14-day clock, production access) remains untouched. A FINISHED
 > submission does not prove the binary *runs* — the real exit test remains the device smoke in
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+>
+> **Status (2026-08-16, later — recovered an orphaned dispatch, shipped the #768 UI change, and an
+> operator error queued an unintended production submission; two of three resolved, one still in
+> flight.)** Three distinct events from one continuation session, in the order discovered.
+>
+> **① Recovered a dropped tracking obligation.** A separate session dispatched `mobile-release.yml`
+> run #22 (`31958630297`, 16:26:48 UTC, `main`@`f9dbccd`, v0.37.0) and armed a one-shot `send_later`
+> check-in to confirm it — but that session ended before the check-in fired, and the trigger
+> auto-disabled itself (`ended_reason: auto_disabled_session_gone`) without ever checking the
+> outcome. This session found the dead trigger via `list_triggers` and verified directly: EAS build
+> `44c73459-ef27-46d0-b393-c35708e9efa1` **FINISHED**, submission
+> `31643b12-312c-4d0d-ba1f-578075729752` **FINISHED**, track `internal`. Nothing was wrong with what
+> shipped — only with who confirmed it shipped.
+>
+> **② v0.38.0-content is now on the internal track: #768's settings redesign.** `main` had moved two
+> commits past the last confirmed build: #768 (mobile settings adopts the Account tab's card design,
+> a real UI change) and #767 (Terraform-only, no mobile impact — also the commit that introduced
+> `.github/CODEOWNERS` with `* @unnfazzed`, which surfaced separately while merging PRs this
+> session). Ownership guards ran rather than were assumed: no reachable Claude session
+> (`ListAgents`), no in-flight `mobile-release.yml` run, CI green on `main`@`909bee5`, `pnpm install
+> --frozen-lockfile` clean on pnpm 10.33.0 with the lockfile unmoved. Dispatched `mobile-release.yml`
+> run `31965445147` (**profile `preview`**, ref `main`@`909bee59c5d816c483a600e14faf4c24cf95bd7b`).
+> EAS build `333ebcda-359d-486d-bfad-1d44fe2edc95` **FINISHED**; submission
+> `fed0f9d3-d007-49f8-a59b-cd1960d510f4` **FINISHED**, track `internal`. Still internal-testing only —
+> §8 step 2 (closed test, its 14-day clock, production access) remains untouched.
+>
+> **③ Operator error — an empty-input redispatch queued a live production submission attempt.** While
+> issuing a follow-up `eas-build-status.yml` check, a mistaken parallel tool call re-dispatched
+> `mobile-release.yml` itself with **no inputs**, which resolves to the workflow's declared defaults —
+> `profile: production`, `submit: true` — exactly the dangerous default this doc has warned about
+> since 2026-08-10 (§ "the `profile` input is load-bearing"). This was not caught before it ran: job
+> `31966592192` (19:06:30–19:07:14 UTC) executed, built, and reached **"✔ Scheduled Android
+> submission."** EAS build `e0298874-c136-4a51-ab78-881985094039` — app version `0.37.0` (the version
+> string on `main` before #769 merges), **versionCode 16** (auto-incremented from 15) — targeted
+> **`production`**, release status `IN_PROGRESS`, **rollout `0.1`** (10% staged), using the on-file
+> service account (`id-play-publisher@lynia-500911.iam.gserviceaccount.com`). Submission
+> `62646dbc-4c03-4a8f-abd7-25922815b253` was, as of the last check this session (19:10 UTC, via
+> `eas-build-status.yml` run `31966763407`), status **`AWAITING_BUILD`** — queued behind the build,
+> not yet actually attempted against the Play API — and the build itself was still **`IN_PROGRESS`**.
+> Per §7.2 and the profile table above, this service account's production-release grant was
+> **deliberately deferred** (testing-track permissions only), so the expected outcome once the build
+> finishes and EAS actually calls Play is an `ERRORED` submission, not a live rollout — **but that
+> expectation is not yet confirmed as of this entry; treat it as a live incident, not a closed one,
+> until a follow-up addendum lands here.** No workflow in this repo can cancel an in-flight EAS build
+> or a scheduled Play submission; that requires the Expo dashboard
+> (`expo.dev/accounts/lyniago/projects/lynia/builds/e0298874-…`) or Play Console directly. Cost
+> regardless of outcome: one EAS build burned from the monthly allowance for a dispatch that was
+> never supposed to happen.
+>
+> **Net effect, pending ③'s resolution.** Two builds confirmed shipped to the **internal** track
+> (recovered orphan + the #768 UI change); `play.google.com/store/apps/details?id=zw.co.lynia` still
+> 404s by design; §8 step 2 remains untouched. And, newly: **the workflow's `production` default is
+> not just a theoretical footgun — it fired for real today**, on a manual dispatch, not a tag push.
+> Until `EAS_TAG_RELEASES_ENABLED` and the production submit train are deliberately armed (§8 step 3),
+> every dispatch of `mobile-release.yml` — human or agent — must pass `profile: preview` explicitly;
+> this doc already said so, and it still wasn't enough to prevent a slip. Worth a follow-up the owner
+> should decide on (touches `.github/workflows/`, which is now CODEOWNERS-gated): default the
+> workflow's `profile` input to `preview` instead of `production`, so an omitted/empty input fails
+> safe instead of failing toward production.
+>
+> **Addendum (19:32 UTC, ③ resolved — submission ERRORED, no production impact).** Re-checked via
+> `eas-build-status.yml` run `31967851748` with `build_id=e0298874-…` explicit. Build
+> `e0298874-c136-4a51-ab78-881985094039` reached **FINISHED** (583.8s Gradle build, 31.3 MB `.aab`).
+> Its submission `62646dbc-4c03-4a8f-abd7-25922815b253` reached **ERRORED** —
+> `SUBMISSION_SERVICE_ANDROID_UNKNOWN_ERROR`, "Fastlane supply failed. We couldn't figure out what
+> went wrong." A generic Fastlane failure rather than the specific
+> `…SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS` class seen historically for permission gaps, so the exact
+> proximate cause is unconfirmed — but the outcome that matters is unambiguous either way: **the
+> submission never reached a `FINISHED` state, so nothing was published to the production track. No
+> rollout, staged or otherwise, went live.** Net cost of the whole incident: one EAS build spent from
+> the monthly allowance on a dispatch that should never have happened, and about 25 minutes of
+> tracking. Nothing else. Both other builds this session remain **FINISHED**/**FINISHED**, track
+> `internal`, as recorded above.
 
 ---
 

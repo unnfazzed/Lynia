@@ -35,6 +35,23 @@ export type AccountRow = {
    *  a drawn mock (LJ.settings_perms / settings_perms_ok) that draws several of them label-only —
    *  inventing a sub-line there would add undrawn copy, which "not drawn ⇒ not rendered" forbids. */
   sub?: string;
+  /**
+   * A right-aligned VALUE, before the chevron — the settings grammar (`screens.jsx :: Settings`
+   * draws `Notifications … On`, `Language … English`, `Payment … Cash`; `screens-shipped.jsx ::
+   * SettingsPerms` draws the live permission state the same way). Distinct from {@link sub}: a sub
+   * explains what a row IS, a value states what it currently SAYS, and the mocks put the two in
+   * different places. Added when Settings moved into this card grammar (D-25) — the owner kept the
+   * value on the right, so this is the mock's placement preserved inside the card, not a new idea.
+   */
+  value?: string;
+  /** The value reads as a problem (a denied permission): warning triangle + danger-ink, 700. */
+  warn?: boolean;
+  /**
+   * What a denied permission COSTS, spelled out under the row with the affordance that fixes it —
+   * `SettingsPerms`'s consequence line. Drawn inside the row's hairline, so it reads as part of the
+   * row rather than as a new section.
+   */
+  consequence?: string;
   onPress?: () => void;
   /** Destructive (sign out, delete account) — icon + label go danger and the chevron is dropped, the
    *  same treatment the settings screen already gave its danger rows. */
@@ -96,39 +113,68 @@ export function AccountRowList({ rows, style }: { rows: AccountRow[]; style?: { 
       {rows.map((r) => {
         const tint = r.danger ? tokens.color.danger : tokens.color.muted;
         return (
-          <Pressable
-            key={r.label}
-            onPress={r.onPress}
-            disabled={!r.onPress}
-            accessibilityRole="button"
-            accessibilityLabel={r.label}
-            style={({ pressed }) => ({ opacity: pressed && r.onPress ? 0.6 : 1 })}
-          >
-            <View
-              style={{
-                alignItems: "center",
-                gap: 11,
-                paddingTop: 11,
-                paddingRight: 10,
-                paddingBottom: 11,
-                paddingLeft: 10,
-                borderBottomWidth: 1,
-                borderBottomColor: tokens.color.line,
-                flexDirection: "row",
-                // A row WITH a sub-line already clears the 44px floor from its own content (11 + 11
-                // padding + two lines). A label-only row does not, so it gets the floor explicitly —
-                // the same guard the settings screen's own row carried before this grammar replaced it.
-                ...(r.sub ? null : { minHeight: tokens.touchTargetMin }),
-              }}
+          // The hairline sits on a WRAPPER, not on the row itself, so a consequence line falls INSIDE
+          // the row's rule rather than starting a new one. Visually identical for every row without
+          // one — both forms draw a full-width rule under the padded row.
+          <View key={r.label} style={{ borderBottomWidth: 1, borderBottomColor: tokens.color.line }}>
+            <Pressable
+              onPress={r.onPress}
+              disabled={!r.onPress}
+              // `button` only when the row DOES something. A handler-less row is a fact on a card, not
+              // a control: announcing it as a (disabled) button tells a screen-reader user there is
+              // something to activate here and that it has been taken away from them — neither is
+              // true. `text` states what it is. This matters more since D-25, because the Language and
+              // Payment detail screens are made ENTIRELY of these rows.
+              accessibilityRole={r.onPress ? "button" : "text"}
+              accessibilityLabel={r.label}
+              style={({ pressed }) => ({ opacity: pressed && r.onPress ? 0.6 : 1 })}
             >
-              <Icon name={r.icon} size={18} color={tint} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13.5, fontWeight: "600", color: r.danger ? tokens.color.danger : tokens.color.ink }}>{r.label}</Text>
-                {r.sub ? <Text style={{ fontSize: 12, color: tokens.color.muted }}>{r.sub}</Text> : null}
+              <View
+                style={{
+                  alignItems: "center",
+                  gap: 11,
+                  paddingTop: 11,
+                  paddingRight: 10,
+                  paddingBottom: 11,
+                  paddingLeft: 10,
+                  flexDirection: "row",
+                  // A row WITH a sub-line already clears the 44px floor from its own content (11 + 11
+                  // padding + two lines). A label-only row does not, so it gets the floor explicitly —
+                  // the same guard the settings screen's own row carried before this grammar replaced it.
+                  ...(r.sub ? null : { minHeight: tokens.touchTargetMin }),
+                }}
+              >
+                <Icon name={r.icon} size={18} color={tint} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13.5, fontWeight: "600", color: r.danger ? tokens.color.danger : tokens.color.ink }}>{r.label}</Text>
+                  {r.sub ? <Text style={{ fontSize: 12, color: tokens.color.muted }}>{r.sub}</Text> : null}
+                </View>
+                {r.value ? (
+                  // The settings grammar's right-hand value (13, muted; danger-ink + triangle when it
+                  // is a problem) — `SettingsPerms`'s own treatment, kept where the mock draws it.
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    {r.warn ? <Icon name="triangle-alert" size={14} color={tokens.color.dangerInk} /> : null}
+                    <Text style={{ fontSize: 13, fontWeight: r.warn ? "700" : "400", color: r.warn ? tokens.color.dangerInk : tokens.color.muted }}>
+                      {r.value}
+                    </Text>
+                  </View>
+                ) : null}
+                {r.onPress && !r.danger ? <Icon name="chevron-right" size={16} color={tokens.color.muted} /> : null}
               </View>
-              {r.onPress && !r.danger ? <Icon name="chevron-right" size={16} color={tokens.color.muted} /> : null}
-            </View>
-          </Pressable>
+            </Pressable>
+            {r.consequence ? (
+              // Indented to the label column (row paddingLeft 10 + icon 18 + gap 11), so the cost of a
+              // denied permission reads as that row's own consequence and not as loose page copy.
+              <View style={{ flexDirection: "row", gap: 8, paddingBottom: 12, paddingRight: 10, paddingLeft: 39 }}>
+                <Text style={{ flex: 1, fontSize: 12, color: tokens.color.muted, lineHeight: 17 }}>
+                  {r.consequence}{" "}
+                  <Text style={{ fontWeight: "700", color: tokens.color.accentText }} onPress={r.onPress}>
+                    Open system settings
+                  </Text>
+                </Text>
+              </View>
+            ) : null}
+          </View>
         );
       })}
     </Card>

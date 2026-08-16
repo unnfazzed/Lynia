@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { RESTAURANTS_DISPATCH } from "@lynia/shared";
 import { formatCountdown, msSince } from "../../lib/countdown";
@@ -30,10 +30,15 @@ export function NoRiderHoldTakeover({
   const now = useNow();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class) — see OrderCard.tsx's useAsyncAction for why
+  // `submitting` (React state) alone can't stop two same-tick clicks both calling `action()`.
+  const runningRef = useRef(false);
 
   const searchingMs = msSince(order.readyAt, now);
 
   async function run(action: (orderId: string) => Promise<void>) {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -42,6 +47,8 @@ export function NoRiderHoldTakeover({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong — try again.");
       setSubmitting(false);
+    } finally {
+      runningRef.current = false;
     }
   }
 

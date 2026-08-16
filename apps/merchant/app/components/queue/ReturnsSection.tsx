@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { formatMoney } from "../../lib/money-input";
 import { NonReturnSheet, ReturnCashSheet } from "./PaymentConfirmSheet";
@@ -32,10 +32,20 @@ export function ReturnsSection({
   const [openSheet, setOpenSheet] = useState<{ orderId: string; kind: "cash" | "non-return" } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class) for the two onConfirm callbacks below — see
+  // OrderCard.tsx's useAsyncAction for why `submitting` (React state) alone can't stop two same-tick
+  // clicks. This flow records a cash amount against a merchant debt, so a double-fire is a real
+  // double-recorded cash return, not a cosmetic re-render.
+  const submittingRef = useRef(false);
   // LC-D03: "Confirm the food is back" has no sheet, so it needs its own per-order busy+error
   // state rather than firing as a bare `void` promise that swallows a network failure silently.
   const [goodsBackBusyId, setGoodsBackBusyId] = useState<string | null>(null);
   const [goodsBackErrors, setGoodsBackErrors] = useState<Record<string, string>>({});
+  // Synchronous double-submit guard (CF-01 class) for handleGoodsBack, scoped PER ORDER — a Set,
+  // not the single `submittingRef` above, because the button it guards is deliberately per-order
+  // (`disabled={goodsBackBusyId === o.id}`, not a global lock): two different orders' "Confirm the
+  // food is back" must stay independently tappable while one is in flight.
+  const goodsBackInFlightRef = useRef<Set<string>>(new Set());
 
   if (orders.length === 0) return null;
   const active = openSheet ? orders.find((o) => o.id === openSheet.orderId) : null;
@@ -46,6 +56,8 @@ export function ReturnsSection({
   }
 
   async function handleGoodsBack(orderId: string) {
+    if (goodsBackInFlightRef.current.has(orderId)) return;
+    goodsBackInFlightRef.current.add(orderId);
     setGoodsBackBusyId(orderId);
     setGoodsBackErrors((prev) => {
       const rest = { ...prev };
@@ -58,6 +70,7 @@ export function ReturnsSection({
       setGoodsBackErrors((prev) => ({ ...prev, [orderId]: err instanceof Error ? err.message : "Something went wrong — try again." }));
     } finally {
       setGoodsBackBusyId(null);
+      goodsBackInFlightRef.current.delete(orderId);
     }
   }
 
@@ -112,12 +125,17 @@ export function ReturnsSection({
           error={error}
           onCancel={close}
           onConfirm={(amount) => {
+            if (submittingRef.current) return;
+            submittingRef.current = true;
             setSubmitting(true);
             setError(null);
             onConfirmReturnedCash(active.id, amount)
               .then(close)
               .catch((err: unknown) => setError(err instanceof Error ? err.message : "Something went wrong"))
-              .finally(() => setSubmitting(false));
+              .finally(() => {
+                setSubmitting(false);
+                submittingRef.current = false;
+              });
           }}
         />
       )}
@@ -131,12 +149,17 @@ export function ReturnsSection({
           error={error}
           onCancel={close}
           onConfirm={(note) => {
+            if (submittingRef.current) return;
+            submittingRef.current = true;
             setSubmitting(true);
             setError(null);
             onReportNonReturn(active.id, note)
               .then(close)
               .catch((err: unknown) => setError(err instanceof Error ? err.message : "Something went wrong"))
-              .finally(() => setSubmitting(false));
+              .finally(() => {
+                setSubmitting(false);
+                submittingRef.current = false;
+              });
           }}
         />
       )}
