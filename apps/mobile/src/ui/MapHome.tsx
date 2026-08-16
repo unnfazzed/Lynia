@@ -111,16 +111,18 @@ export function AddressRows(props: {
 /**
  * The kit's one-line caption under the address rows (`screens.jsx` AddressFields: "Search an address,
  * or tap the map to drop a pin."). It never shipped, which left the rows' search magnifier as the only
- * hint that addressing is anything other than a pin drop. Names whichever inputs are actually live, so
- * it can't promise a search an unkeyed build doesn't have.
+ * hint that addressing is anything other than a pin drop.
+ *
+ * It used to take a `searchEnabled` prop and swap to a pins-only sentence on a build with no Places
+ * key — honest at the time, because the search field genuinely wasn't there. It is now unconditional
+ * (kit copy verbatim): `AddressSearch` always renders a working field, falling back to the device
+ * geocoder when Places isn't keyed, so both halves of the sentence are always true.
  */
-export function AddressHint({ searchEnabled }: { searchEnabled: boolean }): React.ReactElement {
+export function AddressHint(): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: tokens.space.sm, paddingHorizontal: 2 }}>
       <Icon name="map-pin" size={13} color={tokens.color.muted} />
-      <Text style={{ flex: 1, fontSize: 11.5, color: tokens.color.muted }}>
-        {searchEnabled ? "Search an address, or tap the map to drop a pin." : "Tap the map to drop a pin for each address."}
-      </Text>
+      <Text style={{ flex: 1, fontSize: 11.5, color: tokens.color.muted }}>Search an address, or tap the map to drop a pin.</Text>
     </View>
   );
 }

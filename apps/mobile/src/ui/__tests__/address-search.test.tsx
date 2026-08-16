@@ -6,8 +6,13 @@
  * mocks this component out wholesale. So a build that silently dropped the entire search path stayed
  * green. See docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2.
  *
- * These pin the two halves of the gate: keyed ⇒ a real search field; unkeyed ⇒ a VISIBLE explainer
- * naming the pin fallback, never an empty render.
+ * The unkeyed half of the gate has since been raised twice. `null` became a visible-but-DEAD explainer
+ * field, which was honest and still a dead end: with the compose map's tiles also failing to render
+ * (the 2026-08-16 report), no affordance on the screen could produce a coordinate, so `coordsOk` in
+ * send.tsx could never be satisfied and Broadcast stayed disabled forever. The unkeyed field is now
+ * LIVE, resolved by the device's own geocoder, which needs neither Google key nor a working map.
+ *
+ * These pin both halves: keyed ⇒ Places autocomplete; unkeyed ⇒ a real field that still resolves.
  *
  * `placesEnabled` is read through `../api/places` at render time, so a mutable mock flips the gate
  * between tests. (Re-requiring the module under `jest.resetModules()` would hand the component a
@@ -21,10 +26,15 @@ import { AddressSearch } from "../AddressSearch";
 let mockKeyed = true;
 
 jest.mock("../../api/places", () => ({
-  autocompletePlaces: jest.fn(async () => []),
+  autocompletePlaces: (...args: unknown[]) => mockAutocomplete(...(args as [])),
   placeDetails: jest.fn(async () => null),
   placesEnabled: jest.fn(() => mockKeyed),
 }));
+
+const mockGeocodeAddress = jest.fn();
+jest.mock("../../logic/geocode", () => ({ geocodeAddress: (q: string) => mockGeocodeAddress(q) }));
+
+const mockAutocomplete = jest.fn(async () => [] as unknown[]);
 
 jest.mock("../../logic/saved-places", () => ({
   addRecent: jest.fn(async () => []),
@@ -41,6 +51,11 @@ function textOf(tree: renderer.ReactTestRenderer): string {
     .join(" ");
 }
 
+beforeEach(() => {
+  mockGeocodeAddress.mockReset();
+  mockAutocomplete.mockReset().mockResolvedValue([]);
+});
+
 describe("AddressSearch key gate", () => {
   it("renders a usable search field when a Places key is configured", () => {
     mockKeyed = true;
@@ -53,19 +68,150 @@ describe("AddressSearch key gate", () => {
     act(() => tree.unmount());
   });
 
-  it("renders a VISIBLE explainer naming the pin fallback when no key is configured", () => {
+  it("renders a LIVE field, not a dead explainer, when no key is configured", () => {
     mockKeyed = false;
     let tree!: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(<AddressSearch label="Drop-off" onResolved={jest.fn()} />);
     });
 
-    // The regression: this used to render nothing at all, leaving the address rows' search magnifier
-    // pointing at a search that did not exist.
+    // The original regression: this rendered nothing at all, leaving the address rows' search
+    // magnifier pointing at a search that did not exist.
     expect(tree.toJSON()).not.toBeNull();
-    // No live input to type into — but the customer is told where the address goes instead.
-    expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
+    // The second regression: a field the customer could not type into was the only thing left on a
+    // screen whose map had also failed — an unreachable Broadcast with no way forward.
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("resolves a typed address through the device geocoder when unkeyed", async () => {
+    mockKeyed = false;
+    const place = { lat: -17.83, lng: 31.05, landmark: "14 Glenara Ave", placeId: "" };
+    mockGeocodeAddress.mockResolvedValue({ ok: true, place });
+    const onResolved = jest.fn();
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={onResolved} />);
+    });
+    const input = tree.root.findByType(TextInput);
+    await act(async () => {
+      input.props.onChangeText("14 Glenara Ave");
+    });
+    await act(async () => {
+      input.props.onSubmitEditing();
+    });
+
+    expect(mockGeocodeAddress).toHaveBeenCalledWith("14 Glenara Ave");
+    // Feeds the identical confirm-then-commit flow the Places path uses.
+    expect(onResolved).toHaveBeenCalledWith(place);
+    act(() => tree.unmount());
+  });
+
+  it("says why a lookup failed instead of failing silently", async () => {
+    mockKeyed = false;
+    mockGeocodeAddress.mockResolvedValue({ ok: false, reason: "not-found" });
+    const onResolved = jest.fn();
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={onResolved} />);
+    });
+    const input = tree.root.findByType(TextInput);
+    await act(async () => {
+      input.props.onChangeText("nowhere at all");
+    });
+    await act(async () => {
+      input.props.onSubmitEditing();
+    });
+
+    expect(onResolved).not.toHaveBeenCalled();
+    expect(textOf(tree)).toContain("Couldn't find that address");
+    // Every failure line still names the pin as the way through.
     expect(textOf(tree)).toContain("tap the map");
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The third dead-end path, and the one a PROVISIONED key does not rule out.
+ *
+ * `src/api/places.ts` calls the Places WEB-SERVICE endpoints, which honour IP/None application
+ * restrictions only — an Android-package-restricted key answers `REQUEST_DENIED` to every call
+ * (docs/SECURITY-OPS.md §B). `mapPredictions` flattens that to the same `[]` a genuine no-match gives,
+ * so the customer types into a live search box that will never offer anything, and if the map's tiles
+ * are also dead, `coordsOk` is once again unreachable. The escape row below is what keeps a keyed
+ * build off that path.
+ */
+describe("AddressSearch — a keyed search that returns nothing", () => {
+  const ESCAPE = "No results — look it up on this phone";
+
+  async function searchFor(tree: renderer.ReactTestRenderer, text: string): Promise<void> {
+    const input = tree.root.findByType(TextInput);
+    await act(async () => {
+      input.props.onChangeText(text);
+    });
+    // Clear the 300 ms debounce, then let the autocomplete promise settle.
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  beforeEach(() => {
+    mockKeyed = true;
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("offers the device geocoder when autocomplete comes back empty", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={jest.fn()} />);
+    });
+    expect(textOf(tree)).not.toContain(ESCAPE);
+
+    await searchFor(tree, "14 Glenara Ave");
+    expect(textOf(tree)).toContain(ESCAPE);
+
+    act(() => tree.unmount());
+  });
+
+  it("resolves through it, so a denied key is no longer a dead end", async () => {
+    const place = { lat: -17.83, lng: 31.05, landmark: "14 Glenara Ave", placeId: "" };
+    mockGeocodeAddress.mockResolvedValue({ ok: true, place });
+    const onResolved = jest.fn();
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={onResolved} />);
+    });
+    await searchFor(tree, "14 Glenara Ave");
+
+    const escape = tree.root.findByProps({ accessibilityLabel: 'No results — look up "14 Glenara Ave" on this phone instead' });
+    await act(async () => {
+      (escape.props as { onPress: () => void }).onPress();
+    });
+
+    expect(mockGeocodeAddress).toHaveBeenCalledWith("14 Glenara Ave");
+    expect(onResolved).toHaveBeenCalledWith(place);
+    act(() => tree.unmount());
+  });
+
+  it("stays hidden when autocomplete does return suggestions", async () => {
+    mockAutocomplete.mockResolvedValue([{ placeId: "abc", primary: "Eastgate Mall", secondary: "Harare" }]);
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={jest.fn()} />);
+    });
+    await searchFor(tree, "Eastgate");
+
+    expect(textOf(tree)).toContain("Eastgate Mall");
+    expect(textOf(tree)).not.toContain(ESCAPE);
     act(() => tree.unmount());
   });
 });

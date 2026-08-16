@@ -1,6 +1,7 @@
 import { GOOGLE_PLACES_KEY, placesEnabled } from "../config";
-import { mapPlaceDetails, mapPredictions, type PlaceSuggestion, type ResolvedPlace } from "../logic/places";
+import { mapPlaceDetails, mapPredictions, placesFault, type PlaceSuggestion, type ResolvedPlace } from "../logic/places";
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
+import { captureException } from "../telemetry/sentry";
 
 /**
  * Google Places REST client for search-first addressing (customer-journey §1·2/§1·3). These call Google
@@ -70,7 +71,24 @@ export async function autocompletePlaces(input: string, sessionToken?: string): 
     sessiontoken: sessionToken,
   });
   const body = await getJson(`${AUTOCOMPLETE_URL}?${query}`);
+  reportFault(body);
   return mapPredictions(body);
+}
+
+/**
+ * Report a non-OK Places `status` ONCE per app run. A keyed build whose key carries the wrong
+ * restriction answers `REQUEST_DENIED` to every call, and the mapper turns that into the same `[]` a
+ * genuine no-match produces — so the search box looks live, returns nothing forever, and nothing
+ * anywhere says why. That is the shape a mis-restricted key hides in (docs/SECURITY-OPS.md §B: these
+ * are WEB-SERVICE endpoints and honour IP/None restrictions only). Reported once because it is a
+ * configuration fault, not an event: it will recur on literally every keystroke.
+ */
+let faultReported = false;
+function reportFault(body: unknown): void {
+  const fault = placesFault(body);
+  if (!fault || faultReported) return;
+  faultReported = true;
+  captureException(new Error(`places-status-${fault}`));
 }
 
 /**
@@ -87,6 +105,7 @@ export async function placeDetails(placeId: string, sessionToken?: string): Prom
     sessiontoken: sessionToken,
   });
   const body = await getJson(`${DETAILS_URL}?${query}`);
+  reportFault(body);
   return mapPlaceDetails(body, placeId);
 }
 

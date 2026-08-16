@@ -1,17 +1,25 @@
 /**
- * Map-load fallback copy (customer-journey C1). When the compose map times out before signalling
- * ready — a missing Google Maps key, blocked tiles, or a WebGL failure — the screen falls back to
- * whatever address-entry affordances actually render. `AddressSearch` is key-gated
- * (`placesEnabled()`) and "Use my location" only sets the pickup pin (the recipient isn't standing
- * at the drop-off), so this must name only the affordances that are really on screen rather than
- * always pointing at a search box or locate button that may not exist.
+ * Map-load fallback copy (customer-journey C1 / kit `LJ.map_failed`). Shown when the compose map's
+ * tiles never render — a bad or mis-restricted Google Maps key, blocked tiles, an authorization
+ * failure — so the customer is told what still works instead of staring at a blank canvas.
+ *
+ * The old version of this string ended with `type your landmark under "Add details" and we'll use
+ * that`, which was simply untrue: `send.tsx` gates Broadcast on `coordsOk` (a lat/lng for BOTH
+ * waypoints) and a landmark is text that never produces one. On the build where this card actually
+ * appeared — no Places key, no tiles — that sentence was the ONLY instruction on screen and it led
+ * nowhere. It is gone.
+ *
+ * What is offered now is only what genuinely sets a coordinate:
+ *  - the address search above (always live: Google Places when keyed, the device geocoder when not —
+ *    see `src/logic/geocode.ts`), and
+ *  - "Use my location", which sets the ACTIVE slot only, so it is named for the pickup and not for the
+ *    drop-off (the customer isn't standing at the recipient's gate).
  */
-export function mapFallbackHint(canSearch: boolean, canLocate: boolean): string {
-  const actions: string[] = [];
-  if (canSearch) actions.push("search for an address above");
-  if (canLocate) actions.push('tap "Use my location" below');
-  actions.push('type your landmark under "Add details" and we\'ll use that');
-  const last = actions[actions.length - 1] as string;
-  const sentence = actions.length === 1 ? last : `${actions.slice(0, -1).join(", ")}, or ${last}`;
-  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+export function mapFallbackHint(canLocate: boolean): string {
+  // Kit copy (screens-shipped.jsx `ComposerState variant="mapfail"`): "You can still send — search
+  // both addresses below. The pin is optional once an address is set." Adapted only where the mock's
+  // wording would be wrong here: the search sits ABOVE the compose fields on this screen, and the
+  // locate shortcut exists for the pickup slot, which the static mock has no way to express.
+  const search = "You can still send — search the address above and confirm the pin.";
+  return canLocate ? `${search} Or tap "Use my location" for the pickup.` : search;
 }

@@ -62,6 +62,43 @@ if (releaseBuildProfile) {
         "— see docs/QA-DEVICE-CHECKLIST.md → LR20. Refusing to build a blind release.",
     );
   }
+
+  /**
+   * The Android Maps key is NATIVE — it is written into the merged manifest by the `android.config`
+   * block below, so a build made without it ships a permanently blank map on the send-parcel screen
+   * and **no OTA can repair it**: the key isn't in the JS bundle, and expo-updates matches bundles to
+   * binaries by a fingerprint that the key itself is part of. The only fix is another store build.
+   *
+   * Same guard shape as Sentry above, and for the same reason: this is evaluated on the EAS worker
+   * BEFORE the build runs, so a missing key costs a config error instead of one of a limited monthly
+   * EAS build allowance plus a release that reaches testers with the flow's primary input dead.
+   * (The reported failure of 2026-08-16 is what this exists to make impossible to ship silently.)
+   */
+  if (!googleMapsApiKey?.trim()) {
+    throw new Error(
+      `GOOGLE_MAPS_API_KEY is unset for EAS build profile "${releaseBuildProfile}". The Android map is ` +
+        "native — a build without this key renders a blank map on /send and CANNOT be fixed by an OTA. " +
+        `Set it with \`eas env:create --scope project --environment ${releaseBuildProfile} ` +
+        '--name GOOGLE_MAPS_API_KEY --visibility sensitive --value <key>` (visibility MUST be Sensitive, ' +
+        "not Secret — a Secret is unreadable by the CLI and desynchronises the fingerprint; see " +
+        "docs/PLAY-STORE-SUBMISSION.md, 2026-08-04). Refusing to build a mapless release.",
+    );
+  }
+
+  /**
+   * The Places key is the opposite case and so is a WARNING, not a throw: it lives only in the JS
+   * bundle (`EXPO_PUBLIC_*`), touches no config, and can therefore be shipped to an already-installed
+   * binary through `mobile-ota.yml`. Without it the address field falls back to the device geocoder,
+   * which works but offers no as-you-type predictions — degraded, not broken.
+   */
+  if (!process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY?.trim()) {
+    // eslint-disable-next-line no-console -- build-time operator signal; there is no logger here.
+    console.warn(
+      `[lynia] EXPO_PUBLIC_GOOGLE_PLACES_KEY is unset for profile "${releaseBuildProfile}" — address ` +
+        "autocomplete will fall back to the device geocoder. OTA-fixable; see docs/SECURITY-OPS.md §B " +
+        "for the restriction this key needs (Application restrictions: None — it is a web-service key).",
+    );
+  }
 }
 
 const config: ExpoConfig = {
@@ -238,11 +275,19 @@ const config: ExpoConfig = {
   },
   extra: {
     apiUrl: "https://lyniago.lyniafinance.com",
-    // Google Places key for search-first addressing (OPTIONAL). Prefer the EXPO_PUBLIC_ env var, which
-    // is inlined into the JS bundle at build; this `extra` entry is the parity fallback (mirrors apiUrl).
-    // When unset the address-search UI hides and the pin-on-map picker stays the primary path — an
-    // unkeyed build runs fully. See src/config.ts (placesEnabled).
-    googlePlacesKey: process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY,
+    // NOTE — there is deliberately NO `googlePlacesKey` entry here, unlike every other EXPO_PUBLIC_
+    // value below. It used to mirror `EXPO_PUBLIC_GOOGLE_PLACES_KEY` as a "parity fallback", which made
+    // the Places key a FINGERPRINT input: `@expo/fingerprint` hashes the whole resolved `extra` section
+    // (only `ExpoConfigExtraSection` skips it, and that is not in the default source skips), so a build
+    // or OTA export that HAS the key computes a different runtimeVersion from one that doesn't. That is
+    // the same failure class that killed builds 2–4 via `android.config.googleMaps.apiKey` (see
+    // docs/PLAY-STORE-SUBMISSION.md, 2026-08-04) — and it is worse here, because it silently blocks the
+    // one repair channel that can reach an already-installed binary: an OTA is matched to devices BY
+    // runtimeVersion, so publishing the key through `mobile-ota.yml` would have reached zero phones.
+    //
+    // Read purely from `EXPO_PUBLIC_GOOGLE_PLACES_KEY`, the key is a Metro build-time string
+    // substitution in the JS bundle and touches no config — so it can be added by OTA to a binary that
+    // shipped without it. See src/config.ts (placesEnabled).
     // Test-build marker: only the QA APK workflow (.github/workflows/android-test-apk.yml) sets
     // LYNIA_TEST_BUILD=1, so a normal EAS release build leaves this false and the TEST BUILD banner
     // (src/ui Screen) never renders. Testers get a visible signal they're on a bypass build hitting
