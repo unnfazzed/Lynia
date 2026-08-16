@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -332,7 +332,48 @@ own back affordance); align to whatever it draws.
 
 ---
 
-## D-15 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
+## D-15 · Customer account cluster adopts the RIDER account grammar — APPROVED (2026-08-16)
+
+**In effect.** The two Account screens were built from two different mocks a design generation apart,
+and looked it. The rider tab is `RJM.account` (`rider-one-app.jsx :: account`, the current one-app
+language): `AppBar` → identity card (48px avatar disc · name 15.5/700 · one identity line 12.5 muted ·
+a trailing status pill) → ONE card of `icon 18 · label 13.5/600 · sub 12 muted · chevron 16` rows. The
+customer tab was `LJ.profile` (`screens.jsx :: Profile`, the older language): `Heading` + `Sub` → a
+text-only details card → seven full-width stacked `Button`s across two cards → a "Sign out" ghost
+button.
+
+Owner instruction (2026-08-16), from a handset photo of both screens side by side: *"The account under
+customer is visually different than the rider account .. lets harmonise the design to match the state
+of the rider account."* Answering the clarifying questions, the owner chose: authorise via **this
+ledger** (not by redrawing the mock — `packages/design/**` stays a mirror of the design tool, D-00);
+adopt the **full** rider language; fill the rider's online/offline pill slot with **verification state
+when relevant** and leave it empty for a plain customer; and cover the **whole customer account
+cluster**.
+
+**So the deviation is:** `LJ.profile` is superseded as the customer Account tab's target. The app no
+longer aligns that screen to the older `Profile` mock — it aligns to the *rider* mock's grammar. Every
+number in `apps/mobile/src/ui/account/AccountRows.tsx` is copied from the GENERATED
+`app/rider/(tabs)/account.view.tsx`, which the codegen locks to `RJM.account`, so the design kit is
+still the source of truth — just a different (newer) screen of it. When a future export redraws
+`Profile` in the one-app language, delete this entry and align normally.
+
+**What each screen did, and what limited it:**
+
+| Screen | Disposition |
+|---|---|
+| `app/(tabs)/account.tsx` (customer Account tab) | **Fully adopted.** AppBar, identity card + KYC pill, one row card. The `Heading`/`Sub`, both action Buttons and the standalone "Sign out" Button are gone — the actions became rows, and sign-out is on Settings and `/profile`, exactly as the rider reaches it. |
+| `app/profile/index.tsx` (details screen behind BOTH identity cards) | **Fully adopted**, same grammar. "Sign out" stays here as a danger row — the rider's documented route to it. |
+| `app/settings/index.tsx` | **Grammar adopted, copy untouched.** Its rows now draw in the shared row component, but every string stays mock-verbatim: `Language`/`English` and `Payment`/`Cash` moved from a right-hand value into the sub-line slot, and rows the mock draws label-only stayed label-only. Its `PermissionRow` block is NOT harmonised — it aligns to its own drawn mock (SH11 `SettingsPerms`), so changing it would be drift. `LJ.settings_perms` / `LJ.settings_perms_ok` still pass. |
+| `app/help/index.tsx`, `app/notifications/index.tsx` | **Not touched — nothing to harmonise.** Both are codegen-ADOPTED (generated `*.view.tsx` locked to their mocks by `structure-snapshot.spec.ts`) **and** both are already SHARED: the rider Account's rows route to `/notifications` and `/help`, the same routes the customer uses. There is no customer-vs-rider divergence to remove, and un-adopting a screen that currently matches its mock would be a regression. |
+| `app/history/index.tsx` | **Not touched — same reason.** `/history` is the destination of the customer's "Trip history" row AND the rider's "Job history" row; it is one screen already. Its rows are money/status order cards, not settings rows, so the account row grammar does not apply to them. Its own divergence from `LJ.history` is unrelated and still tracked in `tools/parity/rendered-conformance.pending.json`. |
+
+**Icon note.** The Settings row uses `shield`, not a settings/cog glyph: the design kit's 38-icon
+subset (`packages/design/assets/lynia-icons.js`) has no such glyph, and that row's contents genuinely
+are permissions, privacy and sign-out. No new icon was invented for this work.
+
+---
+
+## D-16 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
 
 **In effect.** The kit's `RJM.account` (`explorations/journey/rider-one-app.jsx`, `account`) draws an
 identity Card and **five** settings rows: Bike & documents · Job history · Money · Notifications ·

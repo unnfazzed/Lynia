@@ -23,7 +23,7 @@ import { RiderAccountView, type RiderAccountRow } from "./account.view";
  * Profile/settings + sign-out live behind a tap on the identity card (`/profile`, which already branches
  * on `isRider`) — the mock draws no separate "settings" row, so the identity card is the way in.
  *
- * ONE row beyond the mock's five: "Switch to customer" (owner instruction 2026-08-16, logged as D-15 in
+ * ONE row beyond the mock's five: "Switch to customer" (owner instruction 2026-08-16, logged as D-16 in
  * docs/DESIGN-DEVIATIONS.md). It is the rider→customer bridge that used to be a "Back to customer"
  * button pinned to the Jobs board footer; the owner moved it here. It is fed through the same `rows`
  * prop as every other row, so the generated view's tree is untouched and the structure snapshot still

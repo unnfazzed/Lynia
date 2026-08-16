@@ -1,6 +1,12 @@
-// LJ.profile — the Account tab. GET /auth/me populates the details card (name, phone, "Customer"); the
-// entry-point cards (Notifications / Send a parcel / Become a rider / Settings / Help) render below.
-// account.tsx calls useAuth() (for signOut), so an AuthProvider must wrap it alongside the QueryClient.
+// LJ.profile — the Account tab. GET /auth/me populates the IDENTITY CARD (avatar · name · "phone ·
+// role"); the navigation rows (Trip history / Send a parcel / Notifications / Become a rider /
+// Settings / Help & support) render below it in one card.
+//
+// The tab draws the RIDER account grammar, not this key's older `Profile` mock — see
+// docs/DESIGN-DEVIATIONS.md D-15 (owner-approved 2026-08-16). The key stays wired here so the screen
+// is still rendered and inventoried; its rendered-conformance IOU explains the superseded target.
+//
+// account.tsx calls useAuth(), so an AuthProvider must wrap it alongside the QueryClient.
 import { installRouter } from "./_harness.mjs";
 import { withAuthQuery } from "./_auth.mjs";
 
