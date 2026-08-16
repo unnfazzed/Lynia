@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -461,3 +461,35 @@ not strand anyone either.
 
 **Retire this entry** if an export redraws these screens as pushed, with their own back affordances.
 Adopt whatever it draws.
+
+---
+
+## D-19 · Parcel-order screen gains back chrome; the on-hold wall gets its drawn "Sign out" back — APPROVED (2026-08-16)
+
+**In effect.** The remaining two findings of the 2026-08-16 navigation audit. Same root cause as D-14
+and D-18: `headerShown: false` on both stacks means a pushed screen's only exit is one it draws.
+
+**`/order/[id]` — a title-less `AppBar` above the heading.** Unlike the food cases this screen was not
+a total dead end: `Button label="Back home"` has always been there. It sits at the **bottom**, though,
+below the hand-off code card, the auction/rebroadcast cards, the cancel-confirm block, `GetHelpControl`
+and `ReportControl` — so on a live order the way out is a long scroll away. The error branches
+(`:607`, `:616`) place the same button near the top, which made the worst case the *normal* case. The
+bar is title-less because `LJ.track_active` draws its own "Order 8f3a91c2" heading and a bar title
+would duplicate it; "Back home" stays where it is, since it clears the stack rather than popping and
+is the right control at the end of a finished order.
+
+**The customer on-hold wall — restoring the mock's own "Sign out".** This one is drift, not a new
+affordance: the kit's `OnHold` (`screens.jsx:852`) draws a "Sign out" ghost button under the support
+call row and the app had dropped it. That omission is what made the wall a true dead end — `/send` is
+pushed so no tab bar shows; `app/send.tsx` returns `SendAccountOnHoldView` **before** the map top bar
+renders, so D-14's back puck never mounts for a held customer; and the manual "Refresh status" was
+removed on 2026-08-16, leaving a phone number as the only interactive thing on screen.
+
+**Noted, and deliberately not done:** a held customer still has no *non-destructive* way back to the
+tabs — signing out or calling support is the whole exit set the mock offers. That is arguably right
+(a hold is lifted by ops server-side, so there is nothing else the customer can do here) and the live
+`ActiveOrderBanner` still covers the mid-delivery case. If the owner wants a plain back as well, it is
+an undrawn affordance and needs its own line here.
+
+**Retire this entry** if an export redraws the tracking screen or the on-hold wall with their own
+navigation.

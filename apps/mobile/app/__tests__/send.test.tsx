@@ -34,6 +34,7 @@ const mockDeleteItemAsync = jest.fn(async (key: string) => {
 });
 
 const mockBack = jest.fn();
+const mockSignOut = jest.fn();
 const mockReplace = jest.fn();
 let mockCanGoBack = true;
 
@@ -57,6 +58,11 @@ jest.mock("expo-secure-store", () => ({
 }));
 jest.mock("../../src/api/auth", () => ({
   getMe: (...args: unknown[]) => mockGetMe(...args),
+}));
+// The on-hold wall restores the mock's "Sign out" ghost button (ledger D-19), so this screen now
+// reaches auth context. Same shape the settings/profile screen tests use.
+jest.mock("../../src/auth/auth-context", () => ({
+  useAuth: () => ({ session: { role: "customer" }, signOut: mockSignOut }),
 }));
 jest.mock("../../src/api/orders", () => ({
   createOrder: (...args: unknown[]) => mockCreateOrder(...args),
@@ -197,6 +203,21 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     // runs only while held, plus the app-foreground invalidate in send.tsx), not on a tap the customer
     // has to remember. Asserting the ABSENCE is the point: this is what the removal must not regress.
     expect(tree.root.findAll((n) => n.props.children === "Refresh status")).toHaveLength(0);
+  });
+
+  // Ledger D-19: the kit's OnHold draws a "Sign out" ghost button the app had dropped, which left the
+  // wall with a phone number as its only interactive control — no tab bar (/send is pushed), no back
+  // puck (this branch returns before the map top bar), and no manual refresh since 2026-08-16.
+  it("offers the mock's Sign out, the wall's only way off a held account", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: true });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressByText(tree, "Sign out");
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
   it("shows the active-order restore banner instead of the on-hold wall's own default, when a live order exists while held", async () => {
