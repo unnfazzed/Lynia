@@ -130,12 +130,10 @@ describe("account harmony — the customer tab renders the rider grammar", () =>
     // Every navigation entry is a ROW with a sub-line — the label alone is not enough, the sub is what
     // makes the row self-explanatory before it is tapped (and what keeps it over the 44px floor).
     for (const [label, sub] of [
-      ["Trip history", "Every parcel you've sent or delivered"],
-      ["Send a parcel", "Book a rider to collect it"],
       ["Notifications", "One inbox for both services"],
-      ["Become a rider", "Earn by delivering parcels and food"],
-      ["Settings", "Permissions, privacy and sign out"],
       ["Help & support", "Call the safety line"],
+      ["Settings", "Permissions, privacy and sign out"],
+      ["Become a rider", "Earn by delivering parcels and food"],
     ]) {
       expect(all).toContain(label);
       expect(all).toContain(sub);
@@ -143,13 +141,16 @@ describe("account harmony — the customer tab renders the rider grammar", () =>
 
     // The retired LJ.profile language is GONE — "not drawn ⇒ not rendered".
     expect(all).not.toContain("Your details and session.");
-    // Sign out is on Settings and /profile (as the rider reaches it), not a button on this tab.
+    // Sign out is on Settings and /profile, not a button on this tab.
     expect(all).not.toContain("Sign out");
     // A customer has nothing to verify, so the rider's pill slot stays empty.
     expect(all).not.toContain("Verification pending");
   });
 
-  it("shows the verification pill and bike row only for a rider", async () => {
+  // D-22: the bridge row is the ONLY thing that changes for a dual-role user. The rider's own
+  // destinations (and their verification state) stay on the rider side — see the dedicated
+  // role-separation suite in account-role-separation.test.tsx for the full both-directions check.
+  it("swaps only the bridge row when the account is also a rider", async () => {
     mockGetMe.mockResolvedValueOnce({
       firstName: "Shepherd",
       lastName: "Mahupa",
@@ -163,9 +164,8 @@ describe("account harmony — the customer tab renders the rider grammar", () =>
       .flatMap((n) => (typeof n.props.children === "string" ? [n.props.children] : []))
       .join("\n");
 
-    expect(all).toContain("Verification pending");
-    expect(all).toContain("Bike & documents");
-    expect(all).toContain("Verify your ID and register your bike.");
-    expect(all).toContain("Rider dashboard");
+    expect(all).toContain("Switch to rider");
+    expect(all).toContain("Jobs, money and your bike");
+    expect(all).not.toContain("Become a rider");
   });
 });
