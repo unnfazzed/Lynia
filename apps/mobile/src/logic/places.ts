@@ -31,6 +31,22 @@ interface RawPrediction {
   structured_formatting?: { main_text?: unknown; secondary_text?: unknown };
 }
 
+/**
+ * The Places `status` field, when the body carries one that is NOT a successful lookup.
+ *
+ * This matters because `REQUEST_DENIED` and `ZERO_RESULTS` are indistinguishable downstream: both
+ * yield `[]` from `mapPredictions`, so a key with the WRONG RESTRICTION (an Android-restricted key on
+ * these web-service endpoints returns `REQUEST_DENIED` for every call — docs/SECURITY-OPS.md §B) looks
+ * exactly like an address nobody could find. A provisioned-but-denied key is therefore silently
+ * identical to no key at all, which is how it could sit unnoticed. `OK` and `ZERO_RESULTS` are the two
+ * honest answers and map to `null`; anything else is a configuration fault worth reporting.
+ */
+export function placesFault(body: unknown): string | null {
+  const status = (body as { status?: unknown } | null)?.status;
+  if (typeof status !== "string" || status === "OK" || status === "ZERO_RESULTS") return null;
+  return status;
+}
+
 /** Map a Places Autocomplete body → suggestion rows. Drops any prediction missing a place_id. */
 export function mapPredictions(body: unknown): PlaceSuggestion[] {
   const preds = (body as { predictions?: unknown } | null)?.predictions;

@@ -1,4 +1,4 @@
-import { mapPlaceDetails, mapPredictions } from "../places";
+import { mapPlaceDetails, mapPredictions, placesFault } from "../places";
 
 describe("mapPredictions (autocomplete → suggestion rows)", () => {
   it("flattens structured predictions, preferring main/secondary text", () => {
@@ -80,5 +80,30 @@ describe("mapPlaceDetails (place_id → resolved point)", () => {
     const long = "x".repeat(300);
     const body = { result: { geometry: { location: { lat: 1, lng: 2 } }, name: long, formatted_address: "" } };
     expect(mapPlaceDetails(body, "id")!.landmark.length).toBe(160);
+  });
+});
+
+/**
+ * `REQUEST_DENIED` and `ZERO_RESULTS` both flatten to `[]` downstream, so a key with the wrong
+ * restriction is indistinguishable from an address nobody could find — a live search box that never
+ * returns anything, with nothing anywhere saying why. This is the split that makes them tellable
+ * apart (`src/api/places.ts` reports a fault once per run).
+ */
+describe("placesFault (configuration faults vs. honest misses)", () => {
+  it("names a status that indicates a broken key or quota", () => {
+    expect(placesFault({ status: "REQUEST_DENIED", predictions: [] })).toBe("REQUEST_DENIED");
+    expect(placesFault({ status: "OVER_QUERY_LIMIT" })).toBe("OVER_QUERY_LIMIT");
+    expect(placesFault({ status: "INVALID_REQUEST" })).toBe("INVALID_REQUEST");
+  });
+
+  it("stays silent for the two honest answers", () => {
+    expect(placesFault({ status: "OK", predictions: [] })).toBeNull();
+    expect(placesFault({ status: "ZERO_RESULTS", predictions: [] })).toBeNull();
+  });
+
+  it("is total — a missing or malformed body is not a fault (the network layer already handled it)", () => {
+    expect(placesFault(null)).toBeNull();
+    expect(placesFault({})).toBeNull();
+    expect(placesFault({ status: 42 })).toBeNull();
   });
 });

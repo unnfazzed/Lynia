@@ -294,6 +294,11 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [failed, setFailed] = useState(false);
+  // A completed autocomplete that produced no rows — see `runSearch`. Drives the device-geocoder
+  // escape so a keyed-but-unproductive search is never the end of the road.
+  const [noMatch, setNoMatch] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
+  const [deviceMsg, setDeviceMsg] = useState<string | null>(null);
 
   // Idle-state shortcuts (customer-journey §1·2): the customer's Home/Work slots and last few picked
   // places, shown while the field is empty so a repeat drop-off is one tap. Best-effort — a load miss
@@ -331,10 +336,18 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
     (text: string): void => {
       const seq = ++reqSeq.current;
       setLoading(true);
+      setNoMatch(false);
       void autocompletePlaces(text, sessionToken.current)
         .then((rows) => {
           if (seq !== reqSeq.current) return; // a newer keystroke already superseded this call
           setSuggestions(rows);
+          // A completed search that returned nothing. Not necessarily "no such address": these are
+          // web-service endpoints, and a key restricted to an Android package answers REQUEST_DENIED
+          // to every call, which `mapPredictions` flattens to the same empty list. Either way the
+          // customer is now looking at a live search box that will never offer them anything — so the
+          // device-geocoder escape below is offered rather than leaving them with a dead field over a
+          // dead map. `src/api/places.ts` reports the denied case to Sentry so we can tell them apart.
+          setNoMatch(rows.length === 0);
         })
         .finally(() => {
           if (seq === reqSeq.current) setLoading(false);
@@ -343,10 +356,38 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
     [],
   );
 
+  // The device-geocoder escape from a search that returns nothing. Same resolver, same confirm step,
+  // and the same reason codes as the unkeyed path — see AddressSearchDeviceGeocode.
+  const { onResolved } = props;
+  const geocodeInFlight = useRef(false);
+  const tryDevice = useCallback((): void => {
+    const q = query.trim();
+    if (geocodeInFlight.current || q.length < 3) return;
+    geocodeInFlight.current = true;
+    setGeocoding(true);
+    void geocodeAddress(q)
+      .then((outcome) => {
+        if (outcome.ok) {
+          onResolved(outcome.place);
+          setNoMatch(false);
+          setSuggestions([]);
+          setQuery(outcome.place.landmark);
+        } else {
+          setDeviceMsg(geocodeFailureMessage(outcome.reason));
+        }
+      })
+      .finally(() => {
+        geocodeInFlight.current = false;
+        setGeocoding(false);
+      });
+  }, [query, onResolved]);
+
   const onChangeText = useCallback(
     (text: string): void => {
       setQuery(text);
       setFailed(false);
+      setNoMatch(false);
+      setDeviceMsg(null);
       if (debounce.current) clearTimeout(debounce.current);
       const trimmed = text.trim();
       if (trimmed.length < 3) {
@@ -423,6 +464,8 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
     setQuery("");
     setSuggestions([]);
     setFailed(false);
+    setNoMatch(false);
+    setDeviceMsg(null);
     sessionToken.current = newSessionToken();
   }, []);
 
@@ -519,6 +562,46 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
       ) : null}
 
       {suggestions.length > 0 ? <PoweredByGoogle /> : null}
+
+      {/* Escape from a search that returned nothing. A keyed build can still be an addressing dead end:
+          these are Places WEB-SERVICE endpoints, so a key restricted to an Android package answers
+          REQUEST_DENIED to every call (docs/SECURITY-OPS.md §B) and the mapper flattens that to the
+          same empty list a genuine no-match gives. Either way the customer is typing into a box that
+          will never offer them anything — and if the map's tiles are also dead, nothing left on the
+          screen can produce a coordinate. This row hands them the device geocoder, the one resolver
+          that needs neither our key nor a rendered map. */}
+      {noMatch && !loading ? (
+        <View style={{ marginTop: tokens.space.xs }}>
+          <Pressable
+            onPress={tryDevice}
+            disabled={geocoding}
+            accessibilityRole="button"
+            accessibilityLabel={`No results — look up "${query.trim()}" on this phone instead`}
+            accessibilityState={{ disabled: geocoding }}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: tokens.space.sm,
+              minHeight: tokens.touchTargetMin,
+              paddingHorizontal: tokens.space.md,
+              paddingVertical: tokens.space.sm,
+              borderWidth: 1,
+              borderColor: tokens.color.line,
+              borderRadius: tokens.radius.input,
+              backgroundColor: pressed ? tokens.color.accentWash : tokens.color.bg,
+              opacity: geocoding ? 0.6 : 1,
+            })}
+          >
+            {geocoding ? <ActivityIndicator color={tokens.color.accentText} /> : <Icon name="map-pin" size={16} color={tokens.color.accentText} />}
+            <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+              {geocoding ? "Looking it up…" : "No results — look it up on this phone"}
+            </Text>
+          </Pressable>
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs, lineHeight: 16 }}>
+            {deviceMsg ?? "You'll get a pin to check and adjust before it's set."}
+          </Text>
+        </View>
+      ) : null}
 
       {/* Idle state (customer-journey §1·2): while the field is empty/below the search threshold, offer
           the customer's saved slots + recent picks in place of the (empty) suggestion list. */}

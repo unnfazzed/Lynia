@@ -29,11 +29,38 @@ So on a build where the Places key is absent **and** the map's tiles never rende
 cannot be set by any means available on the screen. `canSubmit` can never become true. That is not a
 degraded flow, it is a closed one — exactly what was reported.
 
-The Places key being absent is not hypothetical: the 2026-08-05 device audit
+The Places key being absent was observed, not assumed: the 2026-08-05 device audit
 (`docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) confirmed `placesEnabled() === false` on the
-installed build, and nothing in the repo has provisioned it since —
-`.github/workflows/mobile-ota.yml` passes it from a GitHub secret, `eas.json`'s build profiles carry
-no `env` block, and until this change nothing asserted the EAS-side variable existed.
+installed build. Nothing in the repo provisions it — `.github/workflows/mobile-ota.yml` passes it from
+a GitHub secret, `eas.json`'s build profiles carry no `env` block, and until this change nothing
+asserted the EAS-side variable existed.
+
+### 1.1 …and a key that IS set does not rule the dead end out
+
+The owner believes the key has since been set (2026-08-16), which cannot be verified from the repo —
+EAS environment variables and GitHub secrets are both unreadable here. It does not change the
+conclusion, because **a provisioned key produces the same dead end when it carries the wrong
+restriction**, and this is the *documented* mis-restriction for this app:
+
+`src/api/places.ts` calls the Places **web-service** endpoints, which honour *IP* and *None*
+application restrictions only. `docs/SECURITY-OPS.md` §B says an Android-package-restricted key
+returns `REQUEST_DENIED` for every one of those calls — and `mapPredictions` flattens a
+`REQUEST_DENIED` body to exactly the `[]` that a genuine no-match produces. So a keyed-but-denied
+build shows a **live search box that silently returns nothing, forever**, with `placesEnabled()` true,
+no error state, and nothing logged. Add a dead map and `coordsOk` is unreachable again by a different
+route.
+
+Three states, therefore, and only the first was covered by the original fix:
+
+| Places key | Symptom with the map dead | Covered by |
+|---|---|---|
+| absent | no search field at all (pre-fix) → dead end | live device-geocoder field |
+| present but `REQUEST_DENIED` | search box that never returns a row → dead end | "look it up on this phone" escape row |
+| present and working | search resolves → **flow completes** | — |
+
+Both escapes land in the same `AddressConfirmSheet` the Places path uses. Separately, a non-OK Places
+`status` is now reported once per run as `places-status-REQUEST_DENIED`, so state 2 stops being
+indistinguishable from "nobody could find that address".
 
 ## 2. The failure was invisible to the app, and to us
 
@@ -99,24 +126,55 @@ This split decides the whole plan, and it was previously obscured by one line of
   code 0, an update visible in the Expo console. The one key that could rescue an installed build was
   the one the config had made undeliverable.
 
-That mirror is now removed, which is what makes step 5.1 below possible. Because the env var was
-unset when v0.36.1 was built, `extra.googlePlacesKey` was `undefined` and dropped from the serialized
-config — so **removing it leaves the resolved config, and therefore the fingerprint, unchanged**, and
-an OTA still matches the installed binary. (If the EAS environment turns out to have the key set
-after all, that no longer holds and the repair is a build, not an OTA; `mobile-ota.yml`'s
-runtime-mismatch preflight will say so rather than publishing into the void.)
+That mirror is now removed. Whether **this particular** OTA reaches v0.36.1 depends on a fact not
+readable from here — whether `EXPO_PUBLIC_GOOGLE_PLACES_KEY` was set in the EAS `preview` environment
+at the moment that binary was built:
+
+- **Unset at build time** (what the 2026-08-05 audit observed): `extra.googlePlacesKey` was
+  `undefined` and dropped from the serialized config, so removing the line leaves the resolved config
+  — and the fingerprint — **unchanged**. The OTA matches and lands.
+- **Set at build time** (possible if it was provisioned between then and the v0.36.1 build): the
+  binary's config carried the key, removing it **shifts** the fingerprint, and this OTA reaches
+  nothing. The fix then ships with the next binary instead, which is needed for the Maps key anyway.
+
+Do not guess between them — `mobile-ota.yml`'s runtime-mismatch preflight resolves it for free. Leave
+`allow_runtime_mismatch` **off** and the workflow either publishes (fingerprints match) or aborts with
+the mismatch named, rather than publishing into the void. Either outcome is informative and neither is
+destructive.
+
+The removal is the right call in both branches regardless: it permanently decouples a JS-only value
+from the native compatibility key, so the Places key stops being able to strand an OTA lane at all.
 
 ---
 
 ## 5. The way forward
 
+### 5.0 First — settle what the Places key is actually doing
+
+Two minutes, and it decides how much of the rest matters. On the handset, open /send:
+
+- **No search field under the address rows** ⇒ the key is not in the installed bundle, whatever the
+  EAS dashboard says today (it was set after that binary was built, or on the wrong environment).
+- **A search field that returns nothing however you type** ⇒ the key is present and being refused.
+  Almost certainly the §B restriction fault: these are web-service endpoints, and an Android-restricted
+  key answers `REQUEST_DENIED` to every call. Fix is a GCP change, not a build — set **Application
+  restrictions: None** on the Places key and compensate with an API restriction (Places only) plus a
+  hard quota cap. After the OTA in 5.1 this state also reports itself as
+  `places-status-REQUEST_DENIED` in Sentry.
+- **A search field that returns suggestions** ⇒ Places is healthy; the send flow was already
+  completable and the report is purely the Maps key (§3), which is 5.2.
+
 ### 5.1 Now — OTA the JS half to the installed build
 
 Everything in §6 is JS. With `EXPO_PUBLIC_GOOGLE_PLACES_KEY` set as a GitHub secret, dispatch
 `mobile-ota.yml` with **branch `preview`** (the only channel any binary was built on — `REL-02`) and
-`allow_runtime_mismatch` left **off**, so the preflight aborts rather than publishing to nobody.
-After that, the installed v0.36.1 can complete a send even with the map still blank: the address field
-resolves, the failure card explains itself, and Retry is there for a transient failure.
+`allow_runtime_mismatch` left **off** — which, per §4, also settles whether the key was in the v0.36.1
+config: it publishes if the fingerprints match and aborts naming the mismatch if they don't.
+
+If it lands, the installed v0.36.1 can complete a send even with the map still blank and Places still
+refusing: the search field resolves (via Places, or the escape row, or the device geocoder), the
+failure card explains itself, and Retry is there for a transient failure. If it aborts, everything in
+§6 rides along with the 5.2 binary instead.
 
 ### 5.2 Then — fix the key and ship a binary
 
@@ -144,6 +202,8 @@ map frame is not.
 | Fallback copy no longer promises the landmark field sets a location | `src/logic/map-fallback.ts` |
 | **Keyless address→coordinates path** via the device geocoder — needs neither Google key nor a working map | `src/logic/geocode.ts` |
 | Unkeyed `AddressSearch` is a LIVE field (device geocoder) instead of a dead explainer | `src/ui/AddressSearch.tsx` |
+| **Keyed** search that returns nothing offers a "look it up on this phone" escape — covers a `REQUEST_DENIED` key, which looks identical to a no-match | `src/ui/AddressSearch.tsx` |
+| A non-OK Places `status` is reported once per run, so a denied key stops masquerading as "no such address" | `src/logic/places.ts`, `src/api/places.ts` |
 | `AddressHint` restored to the kit's verbatim copy (search is now always live) | `src/ui/MapHome.tsx` |
 | Places key de-mirrored from `extra` — restores OTA deliverability | `app.config.ts`, `src/config.ts` |
 | Release build fails fast without `GOOGLE_MAPS_API_KEY`; warns without the Places key | `app.config.ts` |
