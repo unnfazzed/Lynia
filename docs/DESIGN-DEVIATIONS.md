@@ -406,8 +406,12 @@ inline Card. Pinned by `app/rider/(tabs)/__tests__/account.test.tsx`.
 
 ## D-17 · Rider top-up back row says "Money", not the kit's "Wallet" — APPROVED (2026-08-16)
 
-**In effect, and small.** `rider-screens-wallet.jsx:111` draws a back row above the Top-up heading —
-`‹ Wallet`, a 13px/600 `--muted` label with a 17px chevron 2px to its left, 12px below the row. The
+**In effect, and small.** `rider-screens-wallet.jsx:111` draws a back row above the Top-up heading: a
+13px/600 `--muted` label with a 17px chevron 2px to its left, 12px below the row. The **intended**
+output is `‹ Wallet`; the source currently reads `\u2039 Wallet` because the escape sits in a JSX text
+node and is never interpreted, so the mock renders that literally — a kit defect logged separately as
+**D-20**, not a copy the app should reproduce. This entry is about the label word; D-20 is about the
+glyph. The
 app had dropped that row entirely, which is what left the top-up ENTRY state with no exit at all
 (`TopUpFlow` only offers "Back to Money" once a request is pending/succeeded/failed). Restoring it is
 not a deviation — it is the app paying back plain drift, and the geometry is adopted verbatim.
@@ -456,8 +460,8 @@ odd one out, not the rule.
 
 Both use the flipped-`chevron-right` glyph and wrapper-View rotation established by `shell/AppBar` and
 D-14 (`react-native-web` drops a transform set on the glyph itself), and both fall back to a sensible
-route when there is no stack to pop — `/orders` and `/food` — so a push notification or deep link can
-not strand anyone either.
+route when there is no stack to pop — `/orders` and `/food` — so a push notification or deep link
+cannot strand anyone either.
 
 **Retire this entry** if an export redraws these screens as pushed, with their own back affordances.
 Adopt whatever it draws.

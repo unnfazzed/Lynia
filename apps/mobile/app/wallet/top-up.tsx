@@ -70,7 +70,11 @@ export default function TopUpScreen(): React.ReactElement {
       <TopUpFlow
         minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
         maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
-        onExit={() => router.back()}
+        // Same guarded exit as the back row above, not a bare router.back(): TopUpFlow's own "Back to
+        // Money" buttons (pending / succeeded / declined / expired) would otherwise no-op on a
+        // history-less entry — a rider who lands here from a push notification about a top-up outcome
+        // is exactly the case, and exactly the case the fallback exists for.
+        onExit={exit}
       />
     </Screen>
   );
