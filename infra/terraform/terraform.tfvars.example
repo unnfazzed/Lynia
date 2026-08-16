@@ -66,3 +66,47 @@
 # cloudflare_dns_enabled = true
 # cloudflare_zone_id     = "0123456789abcdef0123456789abcdef"  # lyniafinance.com zone id
 # cloudflare_api_token   = "..."   # Zone:DNS:Edit token — keep in a VCS-ignored tfvars
+
+# =============================================================================
+# Maps Platform client API keys (apikeys.tf)
+# -----------------------------------------------------------------------------
+# Off by default — a plain apply is a no-op and the hand-created keys are left
+# alone. Arming brings both client keys under Terraform with the docs/SECURITY-OPS.md
+# §B restrictions: the Maps SDK key restricted to the Android package + signing
+# certs, the Places key deliberately UNrestricted by application (it calls
+# web-service endpoints, which return REQUEST_DENIED to an Android-restricted key —
+# the symptom is a search box that silently returns nothing).
+#
+# ⚠️  IMPORT BEFORE YOU APPLY, AND SET THE KEY IDS FIRST. Both keys already exist.
+#     Terraform's `name` is the key's IMMUTABLE id (the final component of
+#     projects/N/locations/global/keys/<KEY_ID>) and is ForceNew — so an id that
+#     doesn't match the imported key plans a DESTROY + CREATE of a live key, taking
+#     the map down and minting a key string nothing has. Get the real ids with:
+#
+#       gcloud services api-keys list --project <project> --format='table(name,displayName)'
+#
+#     ...and note that is `name`, NOT the `uid` field — uid is an output-only UUID4
+#     the import path does not accept. Then import (commands in apikeys.tf) and read
+#     the plan: it should show ONLY in-place restriction changes. If it proposes
+#     creating, destroying or replacing a key, stop.
+#
+# Both SHA-1s belong in the list. Play RE-SIGNS the AAB with the app-signing
+# certificate, so a key allowlisted only for the EAS upload keystore works in a
+# sideloaded APK and fails in every Play-installed build (MOB-MAP-02).
+#
+# The fingerprints below are syntactically valid PLACEHOLDERS so the shape is
+# unambiguous — they are not real and must both be replaced, or the map will be
+# restricted to certificates that do not exist.
+# maps_api_keys_enabled          = true
+# The real ids look like UUIDs. They are NOT written here even as examples: a
+# UUID-shaped value next to a *_key_id assignment trips gitleaks' generic-api-key
+# rule, and the honest fix is a placeholder that cannot be mistaken for a
+# credential rather than an entry in .gitleaks.toml's allowlist (that allowlist is
+# deliberately scoped to test fixtures). Your filled-in tfvars is gitignored.
+# maps_api_key_id                = "REPLACE-with-the-KEY_ID-printed-above"
+# places_api_key_id              = "REPLACE-with-the-KEY_ID-printed-above"
+# android_package_name           = "zw.co.lynia"   # already the default
+# android_cert_sha1_fingerprints = [
+#   "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33",  # REPLACE — Play app signing (Play Console → Test and release → Setup → App integrity)
+#   "44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77",  # REPLACE — EAS upload keystore, for sideloaded QA APKs
+# ]

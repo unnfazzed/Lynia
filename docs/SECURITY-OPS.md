@@ -52,6 +52,23 @@ An Android-app-restricted key returns `REQUEST_DENIED` for every call — and th
 error into an empty result list, so the symptom is a search box that silently never returns anything.
 (If you want app restrictions on this key, that's a migration to the Places **SDK**, not a config change.)
 
+**These restrictions are Terraform-managed** (`infra/terraform/apikeys.tf`), gated off by
+`maps_api_keys_enabled` until the keys are imported — steps 1 and 2 below are what that config
+encodes, and after arming they are a reviewable plan diff rather than console clicks. Step 3
+(quota) is still manual; step 4 is a separate key this repo does not manage. The console steps
+remain the source of truth until the import lands.
+
+> ⚠️ **Read the header of `apikeys.tf` before enabling.** Both keys already exist, and Terraform's
+> `name` is the key's **immutable id** (the last component of
+> `projects/<n>/locations/global/keys/<KEY_ID>`), not a label — the API cannot patch it, so it is
+> ForceNew. Set `maps_api_key_id` / `places_api_key_id` to the real ids **first**
+> (`gcloud services api-keys list --format='table(name,displayName)'` — that is `name`, **not** the
+> output-only `uid`, which the import path rejects), then import, then read the plan: it must show
+> only in-place restriction changes. Anything proposing to create, destroy or replace a key means
+> the id is wrong. Both resources carry `prevent_destroy`, so that mistake errors instead of
+> deleting a live key. And once imported, **disarming is `terraform state rm`, not flipping the flag
+> to `false`** — `count = 0` on a resource in state means destroy.
+
 Contain them in the GCP console:
 1. **APIs & Services → Credentials →** the Maps SDK key → **Application restrictions**: Android package
    name + SHA-1 signing cert (and iOS bundle id if applicable).
