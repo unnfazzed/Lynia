@@ -75,6 +75,38 @@ interleave on the even hours) and the apply/revert procedure live in `docs/routi
 > claude.ai Routines UI (programmatic pinning is `model_update_disabled`; see
 > `docs/routines/routine-chain.md`).
 
+## Four Sunday-night maintenance lanes — added 2026-08-16
+
+Owner instruction (2026-08-16): four new weekly lanes, adapted from the "Claude maintains apps"
+routine set (crash fuzzer / flag hygiene / useless-test pruner / logic modeling), run **every Sunday
+from 22:00 Harare time (20:00 UTC — Harare is CAT, UTC+2, no DST)**, one per hour, on the
+cost-effective model: **Sonnet 5 (`claude-sonnet-5`), explicitly not Fable**. The model is pinned
+programmatically on each trigger (`session_context.model` — pinning works now; the 2026-08-01
+`model_update_disabled` caveat in `routine-chain.md` no longer applies) and restated inside each
+prompt. The 22:00 UTC slot is deliberately skipped — the PR-health watchdog owns it, and it
+conveniently babysits the first two lanes' PRs mid-chain.
+
+| Routine | trigger_id | Cron (UTC) | Harare | Environment | Mirror file |
+|---|---|---|---|---|---|
+| Crash fuzzing | `trig_01GRX63yw2A4GvuyBiCmTbZv` | `0 20 * * 0` | Sun 22:00 | env_01B3aX… | `docs/routines/crash-fuzzing.md` |
+| Logic model audit | `trig_01VH6RpSakGCFhdoAYaNftvp` | `0 21 * * 0` | Sun 23:00 | env_01V3Lw… | `docs/routines/logic-model-audit.md` |
+| Flag retirement | `trig_01M2ktaNdry3zxpXpLmkvwKP` | `0 23 * * 0` | Mon 01:00 | env_01B3aX… | `docs/routines/flag-retirement.md` |
+| Useless-test pruning | `trig_01U7RohvvYy1yp4j2LPJQ6GE` | `0 0 * * 1` | Mon 02:00 | env_01V3Lw… | `docs/routines/useless-test-pruning.md` |
+
+Lane scopes (full prompts in the mirror files): **Crash fuzzing** — runtime failures found by
+running the real apps (no mocks) through `tools/parity/` + Playwright at the canonical viewports;
+the MOB-BOOT bug class. Ledger prefix `CF-`. **Logic model audit** — one sensitive lane per run
+(bids → assignment → agreed-price → KYC → wallet → cancellation), full (state × actor × action)
+truth table posted to the PR; every logic claim becomes a truth table. Prefix `LM-`. **Flag
+retirement** — inventory + classify every feature flag; inline shipped ones (the MOB-BOOT-02
+class), verify unlaunched seeds, report forgotten ones for a ship-or-delete decision. Prefix
+`FLAG-`. **Useless-test pruning** — find tests that can't fail, prove it by mutation, strengthen or
+delete; guardrail suite and failing tests are untouchable. Prefix `TP-`.
+
+All four follow the universal policies unchanged: Phase-0 `KNOWN_BUGS.md` read + sibling-PR read,
+fix-in-same-run, ledger + dated report in the same PR, sensitive-lane doctrine, merge-on-green,
+never merge red. They dedupe through `docs/KNOWN_BUGS.md` like the existing bug-finders.
+
 ## Weekly Sunday chain — 2026-08-04
 
 Per user instruction (2026-08-04): **run these routines once a week, on Sunday.** This replaces the

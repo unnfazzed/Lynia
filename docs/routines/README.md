@@ -18,6 +18,16 @@ All eight run **weekly, on Sunday (UTC)** as of 2026-08-04 — see `routine-chai
 | *(none yet — see note)* | Performance watch | `0 11 * * 0` |
 | `refactoring.md` | Refactoring | `0 13 * * 0` |
 | `pr-health-watchdog.md` | PR health & delivery watchdog | `0 22 * * 0` |
+| `crash-fuzzing.md` | Crash fuzzing | `0 20 * * 0` |
+| `logic-model-audit.md` | Logic model audit | `0 21 * * 0` |
+| `flag-retirement.md` | Flag retirement | `0 23 * * 0` |
+| `useless-test-pruning.md` | Useless-test pruning | `0 0 * * 1` |
+
+> **Four Sunday-night lanes added 2026-08-16** (owner instruction: weekly from 22:00 Harare, on
+> Sonnet 5, not Fable — see `docs/ROUTINES.md` §"Four Sunday-night maintenance lanes"). These four
+> were created via the in-session `create_trigger` MCP path and their model IS pinned
+> programmatically (`claude-sonnet-5`); their prompts were landed here in the same change that
+> created the triggers, so mirror and live trigger start identical.
 
 > **Temporary build loops (2026-07-28): finished.** All five Restaurants + Send lanes completed
 > 2026-07-31 and their triggers no longer exist. `build-loops-restaurants-send.md` is kept as
