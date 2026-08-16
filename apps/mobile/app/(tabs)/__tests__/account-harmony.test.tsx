@@ -14,6 +14,13 @@
  *  2. STRUCTURE — the customer tab renders the rider's grammar (identity card, one card of
  *     icon/label/sub/chevron rows) and NOT the retired `LJ.profile` language (Heading + Sub + a stack
  *     of full-width Buttons + a standalone "Sign out" Button).
+ *
+ *  3. GEOMETRY — the two tabs draw their cards at the SAME screen-edge inset
+ *     (docs/DESIGN-DEVIATIONS.md D-24, owner instruction 2026-08-16: "the customer options tab does
+ *     not have same margins as the rider options cards"). Halves 1 and 2 both passed while the rider's
+ *     cards were 296px wide and the customer's 328px — identical rows, two different card widths —
+ *     because neither reads the screen-edge padding. This half RENDERS both screens and compares the
+ *     computed inset, so a card-width split reddens here instead of shipping.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -36,6 +43,8 @@ const mockGetMe = jest.fn(async () => ({
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 
 import AccountTabScreen from "../account";
+import { RiderAccountView, type RiderAccountRow } from "../../rider/(tabs)/account.view";
+import { tokens } from "@lynia/shared";
 
 const APP = resolve(__dirname, "../../..");
 const riderView = readFileSync(resolve(APP, "app/rider/(tabs)/account.view.tsx"), "utf8");
@@ -167,5 +176,77 @@ describe("account harmony — the customer tab renders the rider grammar", () =>
     expect(all).toContain("Switch to rider");
     expect(all).toContain("Jobs, money and your bike");
     expect(all).not.toContain("Become a rider");
+  });
+});
+
+/** Flatten an RN style prop (object, array of objects, or absent) to one plain object. */
+function flatStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) return Object.assign({}, ...style.map(flatStyle));
+  return (style ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * The total inset an Account tab's cards sit at: the scrolling body's own edge padding (`Screen`)
+ * PLUS the mock's `Pad` wrapper inside it. Read from the rendered tree, not from the source text —
+ * the two screens express it in different files and a source grep would not have caught the split
+ * this test exists for.
+ */
+function cardInset(tree: renderer.ReactTestRenderer): number {
+  // The scrolling body — D-24's second half. Absent means the screen doesn't scroll at all.
+  const [scroller] = tree.root.findAll((n) => flatStyle(n.props?.contentContainerStyle).padding != null);
+  if (!scroller) throw new Error("no scrolling body: expected <Screen scroll> with a padded content container");
+  const body = flatStyle(scroller.props.contentContainerStyle).padding as number;
+
+  // The mock's `Pad` inside it — the inset that was missing on the customer tab.
+  const [pad] = tree.root.findAll((n) => {
+    const s = flatStyle(n.props?.style);
+    return s.padding === tokens.space.screen && s.paddingTop === 0;
+  });
+  if (!pad) throw new Error("no `Pad` body wrapper: expected padding: space.screen with paddingTop: 0");
+  return body + (flatStyle(pad.props.style).padding as number);
+}
+
+describe("account harmony — both tabs inset their cards the same (D-24)", () => {
+  // The rider tab's live row set (app/rider/(tabs)/account.tsx), so the rendered tree under test is
+  // the one that ships. The inset is set by the body wrapper, not by the rows, but a fixture that
+  // drifts from production makes the comparison read as staged.
+  const riderRows: RiderAccountRow[] = [
+    ["id-card", "Bike & documents", "Verify your ID and register your bike."],
+    ["history", "Job history", "Parcels and food in one list"],
+    ["wallet", "Money", "Balance, cash held, commission"],
+    ["bell", "Notifications", "One inbox for both services"],
+    ["phone", "Help & support", "Call the safety line"],
+    ["shield", "Settings", "Permissions, privacy and sign out"],
+    ["shopping-bag", "Switch to customer", "Order food and send parcels"],
+  ];
+
+  function renderRider(): renderer.ReactTestRenderer {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <RiderAccountView
+          name="Shepherd Mahupa"
+          identityLine="★ new · 0 jobs · verifying"
+          online={false}
+          onIdentityPress={jest.fn()}
+          rows={riderRows}
+          onRowPress={jest.fn()}
+        />,
+      );
+    });
+    return tree;
+  }
+
+  it("draws the customer's cards at the rider's inset, not 16px narrower-margined", async () => {
+    const customer = cardInset(await render());
+    const rider = cardInset(renderRider());
+    expect(customer).toBe(rider);
+  });
+
+  // The value itself, so a change to either side has to come through this test (and the ledger) rather
+  // than drift: Screen's edge padding + the mock's Pad, both `space.screen`.
+  it("is Screen's edge padding plus the mock's Pad on both tabs", async () => {
+    expect(cardInset(await render())).toBe(tokens.space.screen * 2);
+    expect(cardInset(renderRider())).toBe(tokens.space.screen * 2);
   });
 });

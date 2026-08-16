@@ -353,9 +353,22 @@ export function transpile(src, report) {
       visitor: {
         // Render-helper shell wrapper → <Screen>. The rider-one-app.jsx family returns
         // `S(<div>…</div>, { tab, footer, banner })`, where `S` mounts the DS AppScreen/SHELL around the
-        // body. Lower it to `<Screen banner={…} footer={…}>{body}</Screen>` so the generated view renders
-        // the app's real scaffold (Screen → SCREEN in the normalizer, matching the mock's folded SHELL),
-        // dropping the tab/bg/dark chrome the live app supplies elsewhere. Only the OUTER wrapper matches:
+        // body. Lower it to `<Screen scroll banner={…} footer={…}>{body}</Screen>` so the generated view
+        // renders the app's real scaffold (Screen → SCREEN in the normalizer, matching the mock's folded
+        // SHELL), dropping the tab/bg/dark chrome the live app supplies elsewhere.
+        //
+        // `scroll` is unconditional because the shell it stands for IS scrolling: the kit's AppScreen
+        // body is `{ flex: 1, minHeight: 0, overflowY: "auto" }`, so a mock screen taller than the phone
+        // scrolls rather than clipping. It is a plain prop, so the normalizer's tree is unchanged and
+        // the structural guardrail is unaffected.
+        //
+        // CAVEAT for whoever adopts the next `S()`-rooted screen: a ScrollView must not wrap a
+        // FlatList/VirtualizedList — both scrollers break. Only the rider-one-app family renders through
+        // `S()`, and RJM.account (its one adopted screen) has no list, so nothing is nested today. A
+        // future S()-rooted mock whose body is a long feed (the shape `LJ.notifications` transpiles to a
+        // FlatList for) needs this made conditional rather than inherited.
+        //
+        // Only the OUTER wrapper matches:
         // a plain-identifier callee whose FIRST arg is JSX (never a `.map`/member call, never `nop()`).
         // The replacement is a JSXElement, so it is not re-matched — no infinite loop — and Babel then
         // descends into the body to transpile it normally.
@@ -365,7 +378,7 @@ export function transpile(src, report) {
           const body = node.arguments[0];
           if (!body || (body.type !== "JSXElement" && body.type !== "JSXFragment")) return;
           const opts = node.arguments[1];
-          const attrs = [];
+          const attrs = [t.jsxAttribute(t.jsxIdentifier("scroll"), null)];
           if (opts && opts.type === "ObjectExpression") {
             for (const prop of opts.properties) {
               if (prop.type !== "ObjectProperty" || prop.computed) continue;

@@ -2,7 +2,7 @@ import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, Text } from "react-native";
+import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
@@ -32,6 +32,15 @@ import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/
  *
  * The bridge row is the counterpart of the rider tab's "Switch to customer" (D-16): one row, two
  * states — "Switch to rider" for someone who already is one, "Become a rider" for someone who isn't.
+ *
+ * The BODY GEOMETRY is mirrored from the generated rider view (owner instruction 2026-08-16, from a
+ * photo of both tabs: "the customer options tab does not have same margins as the rider options cards
+ * .. align the customer cards so they have the same dimensions and design as the rider cards" —
+ * `docs/DESIGN-DEVIATIONS.md` D-24). D-15 harmonised what a row LOOKS like and D-22 settled WHICH rows
+ * each side gets, but both left the two screens inset differently: the rider's generated view nests
+ * the mock's `Pad` inside `Screen`'s own 16px edge padding, so its cards sit 32px in, while this
+ * screen put its cards straight into `Screen` at 16px. Same rows, two different card widths. Both now
+ * draw `Screen scroll` → `Pad` → cards, so the cards are one width on both tabs.
  */
 export default function AccountTabScreen(): React.ReactElement {
   const router = useRouter();
@@ -60,33 +69,37 @@ export default function AccountTabScreen(): React.ReactElement {
   ];
 
   return (
-    <Screen>
+    // `scroll` — the whole body, not a ScrollView around the rows alone, so the tab still reaches its
+    // last row on the mandatory 320×640 entry phone once a long name wraps. The rider view earns the
+    // same scaffold from the codegen, so the two screens scroll identically (D-24).
+    <Screen scroll>
       <AppBar title="Account" back={false} />
 
-      {meQ.isLoading ? (
-        <SkeletonList count={1} />
-      ) : meQ.isError ? (
-        <Card>
-          <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn&apos;t load your details.</Text>
-          <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
-        </Card>
-      ) : (
-        <AccountIdentityCard
-          name={name}
-          line={identityLine}
-          // `side=customer`: /profile is shared by both tabs and would otherwise key its rows off the
-          // account's role, showing a dual-role user the RIDER list after they tapped their name on
-          // the customer hub. The tab that owns the tap names the side (D-22).
-          onPress={() => router.push("/profile?side=customer")}
-          accessibilityLabel="Your details and session"
-        />
-      )}
+      {/* The mock's `Pad` — the SECOND 16px inset, copied from the generated rider view
+          (`app/rider/(tabs)/account.view.tsx`, its `Pad`→View). This is what makes the two tabs' cards
+          the same width; see D-24 and the header comment. */}
+      <View style={{ padding: tokens.space.screen, minHeight: "100%", paddingTop: 0 }}>
+        {meQ.isLoading ? (
+          <SkeletonList count={1} />
+        ) : meQ.isError ? (
+          <Card>
+            <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn&apos;t load your details.</Text>
+            <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
+          </Card>
+        ) : (
+          <AccountIdentityCard
+            name={name}
+            line={identityLine}
+            // `side=customer`: /profile is shared by both tabs and would otherwise key its rows off the
+            // account's role, showing a dual-role user the RIDER list after they tapped their name on
+            // the customer hub. The tab that owns the tap names the side (D-22).
+            onPress={() => router.push("/profile?side=customer")}
+            accessibilityLabel="Your details and session"
+          />
+        )}
 
-      {/* Scrolls so the tab still fits the mandatory 320×640 entry phone once a long name wraps.
-          Not a visual element — nothing drawn changes. */}
-      <ScrollView showsVerticalScrollIndicator={false}>
         <AccountRowList rows={rows} />
-      </ScrollView>
+      </View>
     </Screen>
   );
 }
