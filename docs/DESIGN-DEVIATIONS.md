@@ -727,5 +727,16 @@ last row on the 320×640 entry phone. `Screen` now takes an opt-in `scroll` prop
 scrolling body, the codegen's `S()`→`<Screen>` lowering emits it (which is why the rider view changed
 by exactly one prop), and both tabs use it. This is a port of kit behaviour, not a deviation from it.
 
-**Retire this entry** by widening both tabs back to a single 16px inset — a one-line change on each
-side once the owner wants the mock's card width. Nothing else depends on 32px.
+**Retire this entry** by widening both tabs back to a single 16px inset. Nothing else depends on 32px,
+but it is NOT a one-line edit per side — the rider half is machine-generated, so retiring it means:
+
+1. `app/(tabs)/account.tsx` — drop the `Pad` body wrapper (the customer half; one edit).
+2. The rider half comes from the CODEGEN, so **never hand-edit `app/rider/(tabs)/account.view.tsx`** —
+   the next `gen-all` would put the 32px back. Its inner 16px is `PAD_BASE` in
+   `tools/parity/codegen/transpile.mjs`, which every generated view shares, so the targeted lever is
+   usually `Screen`'s own `padding: tokens.space.screen` (drop it for the `scroll` branch) rather than
+   `PAD_BASE`. Change the source, then `node tools/parity/codegen/cli.mjs gen RJM.account`.
+3. `app/(tabs)/__tests__/account-harmony.test.tsx` — the geometry half asserts the combined inset is
+   `tokens.space.screen * 2`; it is meant to fail here, so update it to the new value in the same PR.
+
+Then re-run the guardrails: `structure-snapshot` proves the regenerated view still matches the mock.
