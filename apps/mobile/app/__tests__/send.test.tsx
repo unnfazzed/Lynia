@@ -33,8 +33,17 @@ const mockDeleteItemAsync = jest.fn(async (key: string) => {
   delete secureStore[key];
 });
 
+const mockBack = jest.fn();
+const mockReplace = jest.fn();
+let mockCanGoBack = true;
+
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: (...args: [string]) => mockReplace(...args),
+    back: () => mockBack(),
+    canGoBack: () => mockCanGoBack,
+  }),
   useLocalSearchParams: () => ({}),
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
@@ -160,6 +169,7 @@ afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
   secureStore = {};
+  mockCanGoBack = true;
   jest.clearAllMocks();
 });
 
@@ -517,6 +527,42 @@ describe("send.tsx — map-anchored top bar (pixel parity: single action)", () =
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Account" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
     // …and the old top-bar Notifications round button is gone (notifications live on the Account tab).
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Notifications").length).toBe(0);
+  });
+
+  // /send is pushed over the tab shell, which hides the tab bar — without this puck the composer has no
+  // exit at all (owner report 2026-08-16, ledger D-14).
+  it("floats a round Back puck that pops the stack", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    expect(back.length).toBeGreaterThan(0);
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("lands on the launcher instead of popping when /send is the first route (deep link / cold start)", async () => {
+    mockCanGoBack = false;
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
   it("shows no invented 'Delivery details' heading — the sheet opens straight into the address rows and fields", async () => {

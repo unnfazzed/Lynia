@@ -11,12 +11,20 @@ import { Icon, type IconName } from "./index";
  * AddressFields) that also chooses which pin the single map hero edits.
  */
 
-export function MapHomeTopBar(props: { onAccount: () => void }): React.ReactElement {
+export function MapHomeTopBar(props: { onAccount: () => void; onBack?: () => void }): React.ReactElement {
   // Kit Home (screens.jsx:154–162): the floating chrome over the map is a brand pill top-left and a
   // SINGLE round action top-right — the account avatar. The mock draws no second (notifications) button
   // here; that entry point lives on the Account tab instead, so it is not duplicated on the map.
+  //
+  // `onBack` is the one addition (ledger D-14): the mock's map-home is the ROOT of a rootless app, so
+  // it draws no back affordance — but the shipped app pushes /send on top of the tab shell, which hides
+  // the tab bar and left the composer with no way out. The button is not invented chrome: it is the
+  // kit's OWN floating back, lifted verbatim from `LJ addr_confirm` (screens.jsx:443–445) — a 40×40
+  // round `--bg` puck with `shadow-card` and an 18px `--ink` arrow — so it is the same object as the
+  // account puck opposite it. Omitted when there is nothing to go back to.
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.sm }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
+      {props.onBack ? <RoundButton icon="arrow-right" flip label="Back" onPress={props.onBack} /> : null}
       <View
         style={{
           flexDirection: "row",
@@ -38,12 +46,15 @@ export function MapHomeTopBar(props: { onAccount: () => void }): React.ReactElem
   );
 }
 
-function RoundButton(props: { icon: IconName; label: string; onPress: () => void }): React.ReactElement {
+function RoundButton(props: { icon: IconName; label: string; flip?: boolean; onPress: () => void }): React.ReactElement {
   return (
     <Pressable
       onPress={props.onPress}
       accessibilityRole="button"
       accessibilityLabel={props.label}
+      // The 40px puck is the kit's drawn size; hitSlop makes up the device touch floor without
+      // growing the glyph (same trade the shell AppBar makes for its 32px back chevron).
+      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
       style={({ pressed }) => ({
         width: 40,
         height: 40,
@@ -55,7 +66,16 @@ function RoundButton(props: { icon: IconName; label: string; onPress: () => void
         ...tokens.shadow.card,
       })}
     >
-      <Icon name={props.icon} size={18} color={tokens.color.accentText} />
+      {/* Neither icon set carries a left-pointing arrow (the kit's own 38-glyph subset stops at
+          `ArrowRight` — ledger D-08), so a flipped `arrow-right` stands in for the mock's `arrow-left`,
+          the same substitution `shell/AppBar` makes for its back chevron. The rotation lives on a
+          wrapper View, not on the glyph's own style: an SVG-level transform survives react-native-svg
+          but is dropped by the react-native-web build the parity renderer uses, which would have shipped
+          a screenshot (and any future web target) with the arrow pointing the wrong way.
+          Back is drawn in `--ink` (addr_confirm), the account puck in `--accent-text` (Home). */}
+      <View style={props.flip ? { transform: [{ rotate: "180deg" }] } : undefined}>
+        <Icon name={props.icon} size={18} color={props.flip ? tokens.color.ink : tokens.color.accentText} />
+      </View>
     </Pressable>
   );
 }
