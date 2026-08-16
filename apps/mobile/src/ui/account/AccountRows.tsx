@@ -120,7 +120,12 @@ export function AccountRowList({ rows, style }: { rows: AccountRow[]; style?: { 
             <Pressable
               onPress={r.onPress}
               disabled={!r.onPress}
-              accessibilityRole="button"
+              // `button` only when the row DOES something. A handler-less row is a fact on a card, not
+              // a control: announcing it as a (disabled) button tells a screen-reader user there is
+              // something to activate here and that it has been taken away from them — neither is
+              // true. `text` states what it is. This matters more since D-25, because the Language and
+              // Payment detail screens are made ENTIRELY of these rows.
+              accessibilityRole={r.onPress ? "button" : "text"}
               accessibilityLabel={r.label}
               style={({ pressed }) => ({ opacity: pressed && r.onPress ? 0.6 : 1 })}
             >

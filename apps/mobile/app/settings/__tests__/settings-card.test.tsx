@@ -31,6 +31,7 @@ jest.mock("../../../src/api/auth", () => ({
 
 import SettingsScreen from "../index";
 import AccountTabScreen from "../../(tabs)/account";
+import { AccountRowList, type AccountRow } from "../../../src/ui/account/AccountRows";
 
 async function render(Screen: React.ComponentType): Promise<renderer.ReactTestRenderer> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -118,6 +119,23 @@ describe("settings draws the Account tab's card design (D-25)", () => {
       const row = tree.root.find((n) => n.props?.accessibilityRole === "button" && n.props?.accessibilityLabel === label);
       expect(typeof row.props.onPress).toBe("function");
     }
+  });
+
+  // The flip side of "no dead taps": the two detail screens ARE made of handler-less rows, so the
+  // shared grammar must stop calling those buttons. A disabled button tells a screen-reader user
+  // there is something to activate and that it has been withheld; neither is true of a fact on a card.
+  it("announces a handler-less row as text, not as a disabled button", async () => {
+    const row: AccountRow = { icon: "check", label: "English", sub: "Used across the app and in your notifications" };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<AccountRowList rows={[row]} />);
+    });
+    expect(tree.root.find((n) => n.props?.accessibilityLabel === "English").props.accessibilityRole).toBe("text");
+
+    act(() => {
+      tree.update(<AccountRowList rows={[{ ...row, onPress: jest.fn() }]} />);
+    });
+    expect(tree.root.find((n) => n.props?.accessibilityLabel === "English").props.accessibilityRole).toBe("button");
   });
 
   it("routes Language and Payment to their own detail screens", async () => {
