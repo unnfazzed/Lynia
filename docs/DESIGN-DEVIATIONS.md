@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -296,3 +296,34 @@ near you", nothing else. The app-side `ReorderRail` component and its `reorderRa
 deleted; re-ordering remains available from the trip-history screen's own "Send again" action. If a
 future design export resolves the conflict in `home.prompt.md`'s favour, this entry is the pointer
 to revisit.
+
+---
+
+## D-14 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
+
+**In effect.** The kit's `RJM.account` (`explorations/journey/rider-one-app.jsx`, `account`) draws an
+identity Card and **five** settings rows: Bike & documents · Job history · Money · Notifications ·
+Help & support. The app draws a **sixth**: `["shopping-bag", "Switch to customer", "Order food and send
+parcels"]`.
+
+**Why.** The rider→customer bridge has to live somewhere, and the mocks never drew it anywhere. Until
+now it was a "Back to customer" ghost button in the **Jobs board footer** — a placement no RJM board
+mock draws either (already flagged in `docs/parity/PHASE5-ridertabs.md` and in the `RJM.board_empty`
+rendered-conformance note). The owner's instruction (2026-08-16, from a photo of the rider board):
+*"remove the back to customer button as well. This must be under the Account Tab."* So the deviation
+did not appear here — it **moved** here, out of a screen where it broke the board's element tree and
+into the one screen whose whole design is a list of account-level destinations, where it costs one row.
+The board's tree is now closer to the mock than before; this ledger entry is the net remainder.
+
+**Scope of the deviation.** One entry in the `rows` array the container already feeds the generated
+`RiderAccountView` — no structural edit, so `account.view.tsx` still matches the mock tree and the
+structure snapshot is untouched. The label is **not** the old button's "Back to customer": a settings
+row sitting under "Help & support" reads as a destination, so it takes the destination's name.
+
+**What came with it.** The board's confirmation guard moved too — leaving the rider side while online
+or mid-job still asks first ("You're online for deliveries" / "You have a job in progress"), because
+switching unmounts the board socket + heartbeat and, with no active job, takes the rider offline
+server-side. It is rendered as a bottom sheet (the `src/ui/safety.tsx` idiom), not as the board's old
+inline Card. Pinned by `app/rider/(tabs)/__tests__/account.test.tsx`.
+
+**Revisit when** a design export draws a rider→customer bridge. Adopt whatever it draws and delete this.

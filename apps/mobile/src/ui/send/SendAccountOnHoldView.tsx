@@ -5,7 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { ACCOUNT_ON_HOLD_COPY } from "../../logic/gates";
 import { formatMoney } from "../../logic/money";
-import { Button, EmptyState, Icon, Screen, statusPillLabel } from "../index";
+import { EmptyState, Icon, Screen, statusPillLabel } from "../index";
 import { SupportCallRow } from "../safety";
 
 /**
@@ -54,15 +54,7 @@ export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.Re
  * (not the compose form) with a real "contact support" affordance, matching the mockup's OnHold.
  * Overrides the whole home so a held customer never reaches the map/compose UI.
  */
-export function SendAccountOnHoldView({
-  activeOrder,
-  meIsFetching,
-  onRefreshStatus,
-}: {
-  activeOrder: OrderSnapshot | null;
-  meIsFetching: boolean;
-  onRefreshStatus: () => void;
-}): React.ReactElement {
+export function SendAccountOnHoldView({ activeOrder }: { activeOrder: OrderSnapshot | null }): React.ReactElement {
   return (
     <Screen>
       {/* A hold blocks composing NEW orders server-side, not viewing/tracking/cancelling/rating an order
@@ -70,9 +62,12 @@ export function SendAccountOnHoldView({
           put on hold mid-delivery keeps a way into that live order — the only nav entry point on this
           headerless screen — rather than being locked out of it entirely by the wall below. */}
       {activeOrder ? <ActiveOrderBanner order={activeOrder} /> : null}
+      {/* No "Refresh status" (owner instruction 2026-08-16 — nothing in the app asks the user to refresh
+          by hand any more). A lift is an ops action landing server-side, so the screen watches for it
+          itself: app/send.tsx polls ["me"] while the hold stands and re-reads it on every app foreground,
+          which is strictly more current than a button the customer had to remember to press. */}
       <EmptyState icon="triangle-alert" title={ACCOUNT_ON_HOLD_COPY.title} message={ACCOUNT_ON_HOLD_COPY.message}>
         <SupportCallRow />
-        <Button label="Refresh status" variant="ghost" onPress={onRefreshStatus} loading={meIsFetching} />
       </EmptyState>
     </Screen>
   );

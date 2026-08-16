@@ -94,10 +94,6 @@ export default function RiderHome(): React.ReactElement {
   const userToggledRef = useRef(false);
   // Runs the server-online reconcile at most once per mount (see the effect after meQ).
   const didSeedOnlineRef = useRef(false);
-  // "Back to customer" used to be a single unconfirmed tap even while online/mid-job, unmounting the
-  // board socket + heartbeat with no warning — a rider could go browse as a customer and lose track of
-  // an accepted job, or go effectively deaf to new broadcasts while still marked online server-side.
-  const [confirmSwitch, setConfirmSwitch] = useState(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -301,20 +297,31 @@ export default function RiderHome(): React.ReactElement {
 
   // Gate the dashboard behind KYC: a rider goes online only once verified (the backend enforces it on
   // makeOffer too — the UI shouldn't pretend otherwise). `rider: null` = hasn't started rider setup.
-  // While the check is `pending`, poll so a vendor webhook flipping the rider to verified clears the
-  // gate on its own — no manual Refresh needed. Stop polling once it resolves (verified/failed).
-  // Cadence by review mode (wave-2 perf): in `auto` mode the vendor answers within minutes, so 5s
-  // keeps the "verified!" moment snappy; in `manual` mode the pending state is an OPS review lasting
-  // hours or days — 5s polling there was ~17k requests/day of radio wakeups per waiting rider for a
-  // transition that lands via ops, so it slows to a 60s safety net (the screen also refetches on
-  // focus/foreground, so a rider actively checking still sees the flip quickly).
+  //
+  // Owner instruction (2026-08-16): there is NO manual "Refresh status" button anywhere on this screen
+  // any more — every blocked state resolves itself. So this poll can no longer cover only `pending`:
+  // it has to cover EVERY state that blocks the rider, because whatever the button used to do on tap
+  // is now this interval's job. Three inputs keep a walled rider current, and none of them is a tap:
+  //   1. this interval (below),
+  //   2. the app-foreground refetch + gate clear (the AppState effect further down), which is what
+  //      catches a decision that landed while the phone was in a pocket,
+  //   3. the KYC-decision push invalidating ["me"] on arrival (src/push/use-push-registration.ts), so
+  //      a rider sitting on the wall sees it flip the instant the notification lands.
+  // Cadence by state (wave-2 perf): in `auto` mode the vendor answers within minutes, so 5s keeps the
+  // "verified!" moment snappy; every other blocked state resolves through ops or a re-verify over
+  // hours-to-days, where 5s would be ~17k radio wakeups/day per waiting rider — those get a 60s safety
+  // net under the push + foreground paths. A verified rider polls nothing.
   const meQ = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
     refetchInterval: (query) => {
-      const rider = query.state.data?.rider;
-      if (rider?.kycStatus !== "pending") return false;
-      return rider.kycMode === "manual" ? 60_000 : 5000;
+      const me = query.state.data;
+      if (!me) return false; // nothing resolved yet — the mount fetch/retry owns this window
+      const rider = me.rider;
+      if (!rider) return 60_000; // not a rider yet: /rider/become completing elsewhere lands here
+      if (rider.kycStatus === "verified") return false; // through the gate — nothing left to watch
+      if (rider.kycStatus === "pending") return rider.kycMode === "manual" ? 60_000 : 5000;
+      return 60_000; // failed / expired — an ops reset or a fresh check clears it
     },
   });
   // Reconcile the local toggle with the server's is_online on first load. is_online only flips on an
@@ -345,11 +352,32 @@ export default function RiderHome(): React.ReactElement {
 
   // Re-check verification whenever this screen regains focus (e.g. back from the Didit browser flow), so a
   // freshly-verified rider isn't trapped behind the gate by a stale ["me"] cache.
+  //
+  // `setGate(null)` rides along because the online-gate wall has no manual refresh any more. `gate` is
+  // pure client state set from a refused toggle — no ["me"] field carries suspended/on_hold/cooldown —
+  // so nothing the server sends can clear it, and without this a rider refused once would be pinned on
+  // the wall for the life of the mount. Focus (not a timer) is the right boundary: it can't fire while
+  // the rider is reading the wall, so the wall never yanks itself out from under them mid-sentence; it
+  // fires when they come back from the Money/Account tab, which is exactly when re-testing is honest.
   useFocusEffect(
     useCallback(() => {
+      setGate(null);
       void qc.invalidateQueries({ queryKey: ["me"] });
     }, [qc]),
   );
+
+  // The other half of that: an app-FOREGROUND transition. The interval above is paused while the app is
+  // backgrounded (wireFocusManager in src/query/client.ts), and this tab stays focused across a
+  // background/foreground cycle — so no focus event fires when a rider pockets the phone during a
+  // pending check and pulls it back out. Without this, the very case the removed button existed for
+  // (come back later and look) would wait a whole poll period. Re-arm on every active transition:
+  // refetch ["me"] and drop a stale gate so the board reflects server truth by the time they've looked.
+  // Unconditional (no `enabled` gate): the states this serves — pending KYC, a gate wall — are exactly
+  // the ones where the rider is NOT online, so the `online`-gated call below can't cover them.
+  useForegroundRefetch(() => {
+    setGate(null);
+    void qc.invalidateQueries({ queryKey: ["me"] });
+  });
 
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
@@ -837,41 +865,12 @@ export default function RiderHome(): React.ReactElement {
   ) : null;
 
   // Unconditional trailing content — must render regardless of meQ/knownUnverified/locDenied/gate
-  // state (a rider stuck on ANY gated screen still needs a way back to the customer view), so it's
-  // shared between both returns below rather than living only in the FlatList's footer.
+  // state, so it's shared between both returns below rather than living only in the FlatList's footer.
+  // The "Back to customer" action that used to anchor this footer now lives on the Account tab (owner
+  // instruction 2026-08-16) — a rider stuck on ANY gated screen still reaches it there, because the tab
+  // bar is drawn below every one of those walls.
   const trailingFooterContent = (
     <>
-      {confirmSwitch ? (
-        <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
-          <Text style={{ fontWeight: "700", marginBottom: 6, color: tokens.color.ink }}>
-            {activeJob ? "You have a job in progress" : "You're online for deliveries"}
-          </Text>
-          <Sub>
-            {activeJob
-              ? "Switching to the customer view won't cancel your job, but you'll stop seeing job updates here until you come back."
-              : "Switching to the customer view takes you offline, so you'll stop receiving nearby deliveries."}
-          </Sub>
-          <Button
-            label="Go to customer view"
-            onPress={() => {
-              // No-active-job path: the copy promises this takes you offline, so make it true —
-              // fire the offline toggle best-effort (don't block leaving on it; the component
-              // unmounts on navigate and the request still lands server-side). The active-job path
-              // deliberately stays online (its copy says the job isn't cancelled), so only toggle
-              // when there's no active job.
-              if (!activeJob) onlineM.mutate(false);
-              router.replace("/home");
-            }}
-          />
-          <Button label="Stay online as a rider" variant="ghost" onPress={() => setConfirmSwitch(false)} />
-        </Card>
-      ) : (
-        <Button
-          label="Back to customer"
-          variant="ghost"
-          onPress={() => (online || activeJob ? setConfirmSwitch(true) : router.replace("/home"))}
-        />
-      )}
       {info ? <Sub>{info}</Sub> : null}
       <View style={{ height: tokens.space.xxl }} />
     </>
@@ -1036,7 +1035,6 @@ export default function RiderHome(): React.ReactElement {
               message="Verify your ID and register your bike to start accepting deliveries."
             >
               <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
-              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : kyc === "expired" ? (
             // 1·b2: a previously-verified rider whose ID lapsed. Distinct from the first-time "verify"
@@ -1048,7 +1046,6 @@ export default function RiderHome(): React.ReactElement {
               message="You can't go online until you re-verify. Re-submit a valid national ID to keep riding."
             >
               <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
-              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : kyc === "failed" ? (
             kycLocked ? (
@@ -1067,7 +1064,6 @@ export default function RiderHome(): React.ReactElement {
                     instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
                     5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
                 <SupportCallRow />
-                <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             ) : (
               // Honest declined state with the specific reason + a real retry (a fresh session).
@@ -1081,7 +1077,6 @@ export default function RiderHome(): React.ReactElement {
                 }
               >
                 <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
-                <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
               </EmptyState>
             )
           ) : rider?.kycMode === "manual" ? (
@@ -1094,7 +1089,6 @@ export default function RiderHome(): React.ReactElement {
               title="Your ID is under review"
               message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
             >
-              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           ) : (
             // Pending — let them re-open a working verification session instead of re-keying the form.
@@ -1104,7 +1098,6 @@ export default function RiderHome(): React.ReactElement {
               message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
             >
               <Button label="Continue verification" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
-              <Button label="Refresh status" variant="ghost" onPress={() => void meQ.refetch()} />
             </EmptyState>
           )
         ) : locDenied ? (
@@ -1159,18 +1152,19 @@ export default function RiderHome(): React.ReactElement {
           >
             {/* Recoverable-by-retry states re-DRIVE the online toggle (the server re-checks and either
                 lets them through or re-gates) — cooldown elapses and out-of-area clears once they ride
-                back into the corridor. "Refresh status" alone only refetched ["me"], which never cleared
-                `gate`, so these used to be dead ends. `on_hold` is NOT included: only an admin's
-                `clearHold` action lifts it (see admin-riders.service.ts) — nothing this button does can
-                change the outcome, so it's dropped in favour of the support-call row below, matching the
-                "contact support" copy in ONLINE_GATE_COPY.on_hold. */}
+                back into the corridor. This is a real RETRY, not a refresh: it re-runs the decision
+                server-side, so it survives the no-manual-refresh rule the removed button fell under.
+                `on_hold` is NOT included: only an admin's `clearHold` action lifts it (see
+                admin-riders.service.ts) — nothing this button does can change the outcome, so it's
+                dropped in favour of the support-call row below, matching the "contact support" copy in
+                ONLINE_GATE_COPY.on_hold. */}
             {gate === "cooldown" || gate === "out_of_area" ? (
               <Button label="Try again" onPress={() => onlineM.mutate(true)} loading={pendingOrQueued(onlineM)} />
             ) : null}
             {/* UX-2026-07-16: ONLINE_GATE_COPY.commission_low_balance's own copy promises "top up your
                 prepaid balance and you're straight back on" and its doc comment claims this screen
                 "deep-links the CTA into the wallet's top-up flow" — but no such branch existed, so the
-                rider's only button was "Refresh status" re-showing the identical wall. B3: the wallet
+                rider's only button re-showed the identical wall. B3: the wallet
                 is now the Money tab (RJM gate_topup) rather than a standalone screen, so this re-targets
                 there — the rider sees their real balance + the Top up button in one place, instead of
                 being deep-linked past it straight into the top-up form. */}
@@ -1180,16 +1174,11 @@ export default function RiderHome(): React.ReactElement {
             {/* R4: suspended / on hold / banned all say "contact support" — a real `tel:` call row, not
                 a dead mailto button. */}
             {gate === "suspended" || gate === "on_hold" || gate === "banned" ? <SupportCallRow /> : null}
-            {/* Clear the gate too, so after support lifts a suspension/ban (or KYC verifies) the
-                "Go online" card comes back instead of the rider being pinned on the gate screen. */}
-            <Button
-              label="Refresh status"
-              variant="ghost"
-              onPress={() => {
-                setGate(null);
-                void meQ.refetch();
-              }}
-            />
+            {/* No "Refresh status" here any more (owner instruction 2026-08-16). What it did — clear the
+                gate and refetch ["me"] — now happens on its own at the two boundaries that matter: the
+                app returning to foreground and this tab regaining focus (see the useFocusEffect +
+                useForegroundRefetch pair above). So after support lifts a suspension/ban the "Go online"
+                card comes back without a tap, and the rider is never pinned on this wall. */}
           </EmptyState>
         ) : (
           <>
