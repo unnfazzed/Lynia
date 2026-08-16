@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PREP_CHIPS_MIN, type MerchantOrderResponse, type MerchantRejectionReasonCode } from "@lynia/shared";
 import { computeAcceptPreview } from "../../lib/accept-preview";
 import { formatCountdown, msUntil } from "../../lib/countdown";
@@ -40,6 +40,11 @@ export function NewOrderTakeover({
   const [showReject, setShowReject] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class): `submitting` is React state, so two clicks in the
+  // same event-loop tick — a real fast double-tap on a kitchen tablet, not just accidental — both read
+  // it as `false` and both call onAccept/onReject before the disabled state commits. Order assignment
+  // is a sensitive lane (CLAUDE.md), so this must not silently double-accept/double-reject on a tap.
+  const submittingRef = useRef(false);
 
   const preview = computeAcceptPreview(active.items, unavailable);
   const remainingMs = msUntil(active.acceptDeadlineAt, now);
@@ -62,6 +67,8 @@ export function NewOrderTakeover({
   // takeover clears itself (QueueBoard re-derives `active` and unmounts this component) as soon
   // as the fresh queue snapshot lands, instead of waiting out the ambient poll.
   async function submitAccept() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -71,10 +78,14 @@ export function NewOrderTakeover({
       setError(err instanceof Error ? err.message : "Couldn't accept the order — try again.");
       await refetch();
       setSubmitting(false);
+    } finally {
+      submittingRef.current = false;
     }
   }
 
   async function submitReject(reason: MerchantRejectionReasonCode) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -85,6 +96,8 @@ export function NewOrderTakeover({
       await refetch();
       setSubmitting(false);
       setShowReject(false);
+    } finally {
+      submittingRef.current = false;
     }
   }
 

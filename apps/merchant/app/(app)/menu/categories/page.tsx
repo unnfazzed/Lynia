@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MerchantCategoryResponse } from "@lynia/shared";
 import { Kitchen } from "../../../components/Kitchen";
@@ -34,6 +34,9 @@ export default function CategoryManagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class) — see menu/page.tsx: createCategory is NOT
+  // idempotent, so a same-tick double-tap on "Save" genuinely creates two categories.
+  const submittingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -99,6 +102,8 @@ export default function CategoryManagePage() {
 
   async function onSaveSheet(body: CategorySave) {
     if (sheet.kind !== "category") return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setSheetError(null);
     try {
@@ -111,6 +116,7 @@ export default function CategoryManagePage() {
       setSheetError(err instanceof ApiError ? err.message : "Something went wrong — try again.");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -73,6 +73,44 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
     gate.resolve();
     await screen.findByRole("button", { name: "Credit account…" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("CF-02: a same-tick double-click on Confirm calls onConfirm only once (rider.suspend double-recorded an audit row, ~190ms apart, from one crash-fuzz double-tap)", async () => {
+    const gate = deferred<void>();
+    const onConfirm = vi.fn().mockReturnValue(gate.promise);
+
+    render(
+      <ConfirmModal
+        action="rider.suspend"
+        auditInEndpoint
+        target="Rider C"
+        path="/riders/3"
+        triggerLabel="Suspend rider…"
+        title="Suspend Rider C?"
+        consequence="Suspends the rider."
+        confirmLabel="Suspend rider"
+        onConfirm={onConfirm}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Suspend rider…" }));
+
+    // Two native click events dispatched inside ONE `act()` call — React only flushes/re-renders
+    // AFTER the act() callback returns, so both onClick handlers run against the SAME pre-update
+    // `submitting === false` closure, exactly like two real taps landing in the same event-loop
+    // tick before the browser lets React commit. Two separate `fireEvent.click()` statements would
+    // NOT reproduce this: each wraps its own act() and flushes in between, masking the race.
+    const confirmButton = screen.getByRole("button", { name: "Suspend rider" });
+    act(() => {
+      confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    gate.resolve();
+    await screen.findByRole("button", { name: "Suspend rider…" });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
   it("does close on Escape/backdrop/Cancel once no submit is in flight", () => {

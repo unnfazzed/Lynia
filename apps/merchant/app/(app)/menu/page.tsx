@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
@@ -44,6 +44,10 @@ export default function MenuPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class): `submitting` is React state, so two same-tick
+  // clicks both see it as `false` before either commits. createCategory/createDish are NOT
+  // idempotent — a double-tap on "Add" genuinely creates two rows, not just a wasted duplicate PUT.
+  const submittingRef = useRef(false);
 
   const refresh = useCallback(() => {
     Promise.all([listCategories(), listDishes()])
@@ -59,6 +63,8 @@ export default function MenuPage() {
   }, [refresh]);
 
   async function withSheet(fn: () => Promise<void>) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setSheetError(null);
     try {
@@ -70,6 +76,7 @@ export default function MenuPage() {
       setSheetError(err instanceof ApiError ? err.message : "Something went wrong — try again.");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
@@ -82,6 +89,8 @@ export default function MenuPage() {
   }
 
   async function onCreateStarterCategory(name: string) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setListError(null);
     try {
@@ -94,6 +103,7 @@ export default function MenuPage() {
       setListError(err instanceof ApiError ? err.message : "Couldn't create the category — try again.");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 

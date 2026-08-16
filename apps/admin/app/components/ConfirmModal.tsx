@@ -178,6 +178,14 @@ export function ConfirmModal(props: ConfirmModalProps) {
 
   function confirm() {
     if (!canConfirm) return;
+    // `canConfirm` closes over `submitting` (React state), which only reflects the double-click's
+    // FIRST call by the time the second one runs — two clicks dispatched in the same event-loop tick
+    // (a real fast double-tap, not just a synthetic test) both read `submitting === false` and both
+    // proceed, double-recording the action in the audit log (confirmed: a rider.suspend double-tap
+    // wrote two audit_logs rows ~190ms apart for one confirm click). `submittingRef` updates
+    // immediately, so this second check catches what the state check above cannot.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     const fd = new FormData();
     fd.set("action", action);
     fd.set("target", target);

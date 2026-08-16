@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { formatMoney } from "../../lib/money-input";
@@ -25,8 +25,16 @@ function orderLabel(o: MerchantOrderResponse): string {
 function useAsyncAction(fallbackMessage = "Something went wrong — try again.") {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous double-submit guard (CF-01 class): `busy` is React state, so two clicks landing in
+  // the same event-loop tick — a real fast double-tap, not just a test race — both see it as `false`
+  // and both call `action()` before the disabled state commits. This hook backs money/order-lifecycle
+  // buttons across this file (log call, request/confirm payment, release unpaid), so a double-fire
+  // here means a duplicated write on a sensitive action, not just a cosmetic re-render.
+  const runningRef = useRef(false);
 
   async function run<R>(action: () => Promise<R>): Promise<{ ok: true; value: R } | { ok: false }> {
+    if (runningRef.current) return { ok: false };
+    runningRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -37,6 +45,7 @@ function useAsyncAction(fallbackMessage = "Something went wrong — try again.")
       return { ok: false };
     } finally {
       setBusy(false);
+      runningRef.current = false;
     }
   }
 

@@ -20,16 +20,33 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Synchronous double-submit guard: `busy` state only disables the button after React's next
+  // render, so two clicks landing in the same event-loop tick (a real double-tap gesture, not just
+  // a test race) both fire the handler before that re-render happens — the seeded merchant phone
+  // fires two live OTP sends for one tap. A ref updates immediately, closing that window.
+  const submittingRef = useRef(false);
 
   // Focus the current step's input via a ref rather than the `autoFocus` attribute (jsx-a11y flags
   // autoFocus as a usability hazard for screen-reader/keyboard users landing mid-page) — this only
   // runs on the step transitions this tablet-kiosk flow itself drives, not on an arbitrary mount.
+  //
+  // Also reconciles a pre-hydration keystroke race (real on the 2G/3G links this app targets): a
+  // kitchen operator who taps the phone box and starts typing before React attaches this input's
+  // onChange listener gets those keystrokes written to the DOM (visible in the box) but never into
+  // `phone` state, since no React event fired for them — "Send code" then stays disabled forever
+  // even though the box looks filled in. Re-reading the input's actual DOM value on mount pulls any
+  // such pre-hydration text into state once, so the button's disabled check matches what's on screen.
   useEffect(() => {
     inputRef.current?.focus();
+    const domValue = inputRef.current?.value ?? "";
+    if (step.kind === "phone" && domValue !== phone) setPhone(domValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate one-shot-per-step reconcile
   }, [step.kind]);
 
   async function submitPhone(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     setBusy(true);
     try {
@@ -39,12 +56,15 @@ export default function LoginPage() {
       setError(err instanceof ApiError ? err.message : "Couldn't send the code — try again.");
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   }
 
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
     if (step.kind !== "code") return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     setBusy(true);
     try {
@@ -60,6 +80,7 @@ export default function LoginPage() {
       setError(err instanceof ApiError ? err.message : "That code didn't work — try again.");
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   }
 
