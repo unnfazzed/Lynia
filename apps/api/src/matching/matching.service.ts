@@ -338,6 +338,15 @@ export class MatchingService {
         // who rode outward across the boundary gets one duplicate push — the safe direction.
         nearby.filter((r) => r.distanceM > prevRadiusM).map((r) => r.profileId);
       if (claimed.length === 0) return;
+      // LM-01: the ONLY status check above (`order.status !== "open_for_offers"`) ran before the two
+      // async round-trips just above (nearbyRiders geo lookup + claimBroadcastRecipients) — a customer
+      // select or a cancel landing in that window is invisible to it. Re-read the status right before
+      // the actual disruptive side effect (the FCM send) so a dead auction never invites a rider to bid
+      // on it. Deliberately BEFORE the DS17-01 remainingMs computation below, not after: that computation
+      // must reflect the time closest to the actual send, so this re-check's own round trip cannot itself
+      // stale the TTL it feeds.
+      const stillOpen = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+      if (stillOpen?.status !== "open_for_offers") return;
       // DS17-01: this widening tick fires MID-window (t≈30s/60s), so the create-time flat OFFER_WINDOW TTL
       // would outlive the order's own 90s auction — a push sent at t=60s with a 90s TTL stays valid until
       // t=150s, long after the window closed at t=90s, so a reconnecting dead-zone rider could tap a dead
@@ -345,14 +354,6 @@ export class MatchingService {
       // push at all — the expiry/reconciler owns closing the order out; a stale broadcast is pure noise.
       const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
       if (remainingMs <= 0) return;
-      // LM-01: the ONLY status check above (`order.status !== "open_for_offers"`) ran before the two
-      // async round-trips just above (nearbyRiders geo lookup + claimBroadcastRecipients) — a customer
-      // select or a cancel landing in that window is invisible to it. DS17-01 bounds a push outliving the
-      // order's OWN window; it does nothing for one that closed EARLY mid-tick. Re-read the status right
-      // before the actual disruptive side effect (the FCM send) so a dead auction never invites a rider
-      // to bid on it.
-      const stillOpen = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
-      if (stillOpen?.status !== "open_for_offers") return;
       // best-effort, never throws, un-awaited — same contract as the create-time fan-out.
       void this.notifications.notifyNewBroadcast(
         orderId,

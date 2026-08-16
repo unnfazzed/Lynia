@@ -111,7 +111,12 @@ still fired) and passes after.
 lock screen regardless of app state; the preceding best-effort board-cell re-emit is left alone, since
 WS clients already reconcile via `order:taken`/`bid:expired` and dedupe by id). No behavior change for the
 already-covered no-op cases (order closed before the tick even starts, or the order's own window elapsed —
-both still short-circuit exactly as before).
+both still short-circuit exactly as before). **Ordering matters**: the re-check runs *before* DS17-01's
+`remainingMs`/TTL computation, not after — CodeRabbit's first-pass review on this PR correctly flagged
+that computing the TTL first and then awaiting the re-check would let the re-check's own round-trip go
+stale-uncounted into a TTL that's supposed to reflect the order's remaining life at send time. Re-check
+first, then compute the TTL fresh right before the send, so the two guarantees compose instead of one
+silently degrading the other.
 
 - **Idempotency:** n/a — this is a read-only re-check gating a best-effort push, not a state mutation.
 - **State transition:** none — `expandBroadcast` never writes `OrderStatus`; this only tightens when its
@@ -119,7 +124,9 @@ both still short-circuit exactly as before).
 - **Money arithmetic:** none.
 - **Regression test:** `matching.service.spec.ts` "LM-01: does NOT push when the order left
   open_for_offers WHILE the tick was mid-flight (post-initial-read)" — verified failing pre-fix (reverted
-  the source change, re-ran, confirmed red), passing post-fix.
+  the source change, re-ran, confirmed red), passing post-fix. Asserts the actual call *order* (opening
+  read → geo lookup → recipient claim → re-check), not just a call count, so a re-check placed anywhere
+  else in the method can't accidentally satisfy it.
 
 ### LM-01-pin (UNTESTED cell, pinned — no behavior change)
 
@@ -137,7 +144,11 @@ legitimate counters, or silently starting to accept fare-tampered "accepts").
 ## Phase 3 — verification
 
 - `pnpm typecheck && pnpm test` green on the branch: api 100 files / **1729** tests (1727 + 2 new), mobile
-  160 files / 1201 tests, admin + merchant unchanged. No other files touched.
+  160 files / 1201 tests, admin + merchant unchanged. Full changed-file scope for this PR: one source
+  file (`apps/api/src/matching/matching.service.ts`, the LM-01 fix), two spec files
+  (`apps/api/src/matching/matching.service.spec.ts`, `apps/api/src/offers/offers.service.spec.ts`, the two
+  new regression/pinning tests), and these two docs (`docs/KNOWN_BUGS.md`, this report). No other file in
+  the repo was touched.
 - No DUPLICATED logic found *inside* this lane (both `open_for_offers` checks in `offers.service.ts` and
   `matching.service.ts` use the identical predicate). `X2-OBS-2` (an existing OPEN ledger row about two
   divergent "is this rider holding a live food offer" predicates) is a C3/merchant-dispatch concern
