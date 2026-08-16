@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -493,3 +493,36 @@ an undrawn affordance and needs its own line here.
 
 **Retire this entry** if an export redraws the tracking screen or the on-hold wall with their own
 navigation.
+
+---
+
+## D-20 · Rider wallet mocks print `\u2039` as literal text — UPSTREAM (2026-08-16)
+
+**A defect in the kit; the app is right.** `explorations/journey/rider-screens-wallet.jsx` writes the
+back chevron as a JSX **text node**:
+
+```jsx
+<span style={{ fontSize: 17, lineHeight: 1, marginRight: 2 }}>\u2039</span>Wallet
+```
+
+A `\uXXXX` escape is only interpreted inside a JavaScript *string literal*. In JSX text it is six
+literal characters, so the mock renders **`\u2039 Wallet`** instead of **`‹ Wallet`**. Three sites:
+`:62` and `:85` (`‹ Earnings` on the wallet screens) and `:111` (`‹ Wallet` on top-up). Visible in any
+`tools/parity` sheet that renders `RJ.topup_amount` — the mock column shows the raw escape.
+
+**Not fixed here.** `packages/design/` mirrors the design tool; editing it is how the repo's copy
+stopped being the design in the first place, and the `design-freeze` CI job blocks exactly that. The
+app renders a real rotated chevron (D-17), which is what the mock *means*, so nothing is shipped
+wrong — the only casualty is that parity sheets for these screens will keep showing an ugly mock
+column until Design fixes the source.
+
+**For Design:** the fix is `{"\u2039"}` (an expression container, where the escape is interpreted) or
+simply pasting the `‹` character.
+
+**Swept, so the scope is known rather than assumed.** `grep -rn '\\u[0-9a-fA-F]\{4\}' packages/design
+--include=*.jsx` returns every escape in the package; all of them except these three sit inside string
+literals (`"\u2212$"`, `"Tue 14:02 \u00b7 ref 8821"`, `screens.jsx:114`'s `btn("\u2212")`) and render
+correctly. Lines 62, 85 and 111 of `rider-screens-wallet.jsx` are the only bare-JSX-text cases, so this
+entry is complete, not a sample.
+
+**Retire this entry** when an export lands with the escapes fixed.
