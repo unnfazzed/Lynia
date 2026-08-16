@@ -111,7 +111,16 @@ export default function HomeScreen(): React.ReactElement {
   // S·2: customer account-on-hold gate. Proactive — a lightweight `me` fetch flags a held account so
   // the blocking screen shows before the customer builds a whole order; the reactive flag is the
   // belt-and-suspenders for a hold applied mid-session, caught on the broadcast 403.
-  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  // The on-hold screen carries no manual "Refresh status" any more (owner instruction 2026-08-16), so
+  // this query owns noticing the lift: poll once a minute while the hold stands (an ops action lands
+  // server-side with nothing to push it to the client), and stop the moment it clears — a customer who
+  // isn't held pays nothing. `heldFromBroadcast` is deliberately NOT an input here: it's a client-only
+  // flag set from a 403, and the poll's job is to read the server's own `onHold`, which is what clears it.
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    refetchInterval: (query) => (query.state.data?.onHold === true ? 60_000 : false),
+  });
   const [heldFromBroadcast, setHeldFromBroadcast] = useState(false);
   const accountOnHold = heldFromBroadcast || meQ.data?.onHold === true;
 
@@ -148,6 +157,11 @@ export default function HomeScreen(): React.ReactElement {
   useForegroundRefetch(() => {
     invalidateIfStale(qc, ["activeCustomerOrder"]);
     invalidateCustomerOrderHistory(qc);
+    // The other half of the removed "Refresh status": a hold lifted while the phone was in a pocket is
+    // read the moment the customer looks at it again, rather than up to a poll period later. Unlike the
+    // two above this is a plain invalidate — the on-hold wall is a blocking screen, so serving a
+    // within-staleness cached "still held" is exactly the wrong answer to save a round trip on.
+    void qc.invalidateQueries({ queryKey: ["me"] });
   });
   const activeOrder = activeOrderQ.data ?? null;
   // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
@@ -534,13 +548,7 @@ export default function HomeScreen(): React.ReactElement {
   // real "contact support" affordance, matching the mockup's OnHold. Overrides the whole home so a
   // held customer never reaches the map/compose UI.
   if (accountOnHold) {
-    return (
-      <SendAccountOnHoldView
-        activeOrder={activeOrder}
-        meIsFetching={meQ.isFetching}
-        onRefreshStatus={() => void meQ.refetch()}
-      />
-    );
+    return <SendAccountOnHoldView activeOrder={activeOrder} />;
   }
 
   return (

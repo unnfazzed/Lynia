@@ -589,3 +589,79 @@ describe("rider board (owner 2026-08-12: a failing background active-job check m
     expect(openJob.length).toBeGreaterThan(0);
   });
 });
+
+// Owner instruction (2026-08-16), from a photo of the rider board's "Finish verifying your ID" wall:
+// remove "Refresh status" — the app handles this from the background, no manual refreshing — and move
+// "Back to customer" off this screen onto the Account tab. Both are ABSENCE assertions, which is the
+// only kind that can regress silently: a future edit re-adding either button breaks nothing else.
+describe("rider board (owner 2026-08-16: no manual refresh, and no customer bridge on this screen)", () => {
+  function labelHits(tree: renderer.ReactTestRenderer, label: string): number {
+    // Buttons carry their copy as a `label` prop; the copy also renders as a Text child, so check both.
+    return (
+      tree.root.findAll((n) => n.props.label === label).length +
+      tree.root.findAll((n) => n.props.children === label).length
+    );
+  }
+
+  // Every state that used to draw its own "Refresh status", including the exact one in the photo.
+  const WALLS: ReadonlyArray<[string, Parameters<typeof meFixture>[0] | "no-rider"]> = [
+    ["not a rider yet", "no-rider"],
+    ["KYC pending, auto mode (the screen in the photo)", { kycStatus: "pending", kycMode: "auto" }],
+    ["KYC pending, manual/ops review", { kycStatus: "pending", kycMode: "manual" }],
+    ["ID expired", { kycStatus: "expired" }],
+    ["ID check declined", { kycStatus: "failed" }],
+    ["ID check declined and locked", { kycStatus: "failed", kycAttempts: 2 }],
+  ];
+
+  it.each(WALLS)("%s: draws no 'Refresh status' button", async (_name, patch) => {
+    mockGetMe.mockResolvedValue(patch === "no-rider" ? { ...meFixture(), rider: null } : meFixture(patch));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(labelHits(activeTree, "Refresh status")).toBe(0);
+  });
+
+  it("the verified/online board draws no 'Refresh status' either", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(labelHits(activeTree, "Refresh status")).toBe(0);
+  });
+
+  it("'Back to customer' is gone from the board — the bridge lives on the Account tab now", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(labelHits(activeTree, "Back to customer")).toBe(0);
+    // The confirmation that button used to open moved with it, so its copy must be gone too.
+    expect(labelHits(activeTree, "Go to customer view")).toBe(0);
+  });
+
+  it("a KYC-walled rider sees no customer bridge on the board (it is reachable via the tab bar)", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(labelHits(activeTree, "Back to customer")).toBe(0);
+    // The wall itself still renders — this is a removal, not a regression of the gate.
+    expect(labelHits(activeTree, "Continue verification")).toBeGreaterThan(0);
+  });
+});

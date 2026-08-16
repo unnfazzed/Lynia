@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { usePushRegistration } from "../use-push-registration";
@@ -22,8 +23,17 @@ const mockAddListener = jest.fn((fn: ResponseListener) => {
 type TokenListener = (t: { data: unknown }) => void;
 let tokenRotationListener: TokenListener | null = null;
 const mockPushTokenRemove = jest.fn();
+// Capture the ARRIVAL listener (distinct from the tap/response listener above) — the one that keeps a
+// walled screen current without a manual refresh when an account-standing push lands.
+type ReceivedListener = (n: { request: { content: { data: unknown } } }) => void;
+let receivedListener: ReceivedListener | null = null;
+const mockReceivedRemove = jest.fn();
 jest.mock("expo-notifications", () => ({
   addNotificationResponseReceivedListener: (fn: ResponseListener) => mockAddListener(fn),
+  addNotificationReceivedListener: (fn: ReceivedListener) => {
+    receivedListener = fn;
+    return { remove: mockReceivedRemove };
+  },
   addPushTokenListener: (fn: TokenListener) => {
     tokenRotationListener = fn;
     return { remove: mockPushTokenRemove };
@@ -72,9 +82,24 @@ jest.mock("../push", () => ({
 // use-push-registration.ts), so this whole file needs fake timers to drive it deterministically.
 jest.useFakeTimers();
 
-function Harness({ role }: { role: "customer" | "rider" }): null {
+function Inner({ role }: { role: "customer" | "rider" }): null {
   usePushRegistration({ profileId: "p1", role, accessToken: "t" } as never);
   return null;
+}
+
+// The hook reads the query cache (to invalidate ["me"] when an account-standing push arrives), and in
+// the app it mounts as `PushSync` inside the root provider — so the harness supplies one too. A fresh
+// client per mount keeps the suites independent; `harnessQc` exposes it so the arrival test can spy on
+// the invalidation without reaching into the hook.
+let harnessQc: QueryClient | null = null;
+function Harness({ role }: { role: "customer" | "rider" }): React.ReactElement {
+  const [qc] = React.useState(() => new QueryClient());
+  harnessQc = qc;
+  return (
+    <QueryClientProvider client={qc}>
+      <Inner role={role} />
+    </QueryClientProvider>
+  );
 }
 
 async function flush(): Promise<void> {
@@ -159,6 +184,66 @@ describe("usePushRegistration warm-tap listener", () => {
     await flush();
     expect(mockPush).toHaveBeenCalledTimes(1);
     tree.unmount();
+  });
+});
+
+// Owner instruction (2026-08-16): no manual "Refresh status" anywhere, so an account-standing decision
+// has to reach the UI on its own. `kind: "account"` is what the API tags a KYC decision with
+// (rider.service.ts `notifyKycDecision`, from BOTH the vendor-webhook and admin-console paths) — the
+// exact event that button existed to catch. This is the arrival half (app foregrounded); the screens'
+// own `useForegroundRefetch` covers a decision that lands while the app is backgrounded.
+describe("usePushRegistration account-standing arrivals", () => {
+  beforeEach(() => {
+    receivedListener = null;
+    mockReceivedRemove.mockClear();
+    harnessQc = null;
+  });
+
+  it("invalidates ['me'] when an account push ARRIVES, so a walled screen updates with no manual refresh", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(receivedListener).not.toBeNull();
+    const invalidate = jest.spyOn(harnessQc!, "invalidateQueries");
+
+    act(() => {
+      receivedListener?.({ request: { content: { data: { kind: "account" } } } });
+    });
+    await flush();
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["me"] });
+
+    // Teardown removes the listener so a later-firing native callback can't touch an unmounted tree.
+    // Measured as a DELTA, not an absolute count: an earlier test in this file unmounts outside `act`,
+    // so its cleanup effect can flush during this one and inflate a whole-run total.
+    const removesBefore = mockReceivedRemove.mock.calls.length;
+    act(() => {
+      tree.unmount();
+    });
+    expect(mockReceivedRemove.mock.calls.length).toBe(removesBefore + 1);
+  });
+
+  it("leaves the cache alone for a push that is not about account standing", async () => {
+    // Scoping guard: every order/bid push would otherwise force a ["me"] round trip on arrival — a
+    // per-notification refetch of an unrelated resource on a metered corridor link.
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    const invalidate = jest.spyOn(harnessQc!, "invalidateQueries");
+
+    act(() => {
+      receivedListener?.({ request: { content: { data: { kind: "order", orderId: "o1" } } } });
+    });
+    await flush();
+
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
   });
 });
 

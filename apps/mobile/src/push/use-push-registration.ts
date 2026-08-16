@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import { router, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
@@ -180,4 +181,29 @@ export function usePushRegistration(session: Session | null): void {
     });
     return () => sub.remove();
   }, [isRider]);
+
+  // Owner instruction (2026-08-16): no screen asks the user to refresh by hand any more, so an
+  // account-standing decision has to reach the UI on its own. `kind: "account"` is what the API tags a
+  // KYC decision with (rider.service.ts `notifyKycDecision`, fired from BOTH the vendor-webhook and the
+  // admin-console paths) — the exact event the "Refresh status" button on the rider board existed to
+  // catch. Invalidating ["me"] on arrival flips the wall to the verified board while the rider is
+  // looking at it, without waiting for the screen's own poll to come round.
+  //
+  // Scope, honestly stated: `addNotificationReceivedListener` fires for a notification delivered while
+  // the app is FOREGROUNDED. One arriving while the app is backgrounded or killed is handled by the
+  // foreground refetch on the screens themselves (useForegroundRefetch) — no JS runs in this process
+  // until then. Tapping such a notification also lands here, via the response listener above, whose
+  // `pushDestination` routes an account push to `/rider`; the destination screen invalidates on focus.
+  // `useQueryClient()` rather than importing the `queryClient` singleton: this hook only ever mounts in
+  // `PushSync`, which sits inside the provider (app/_layout.tsx), so the hook resolves to the same cache
+  // — and it keeps this module off the singleton's import chain (query/client → api/client →
+  // auth/session → expo-secure-store), which a hook this low in the tree has no reason to drag in.
+  const qc = useQueryClient();
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      if (notification.request.content.data?.kind !== "account") return;
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    });
+    return () => sub.remove();
+  }, [qc]);
 }

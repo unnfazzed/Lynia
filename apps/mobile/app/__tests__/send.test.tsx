@@ -174,7 +174,7 @@ afterEach(() => {
 });
 
 describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extraction)", () => {
-  it("shows the on-hold copy + support call row, and refresh calls the me query's refetch", async () => {
+  it("shows the on-hold copy + support call row, and offers NO manual refresh (the wall self-updates)", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
     mockGetMe.mockResolvedValue({ onHold: true });
 
@@ -192,10 +192,11 @@ describe("send.tsx — account-on-hold wall (RF-21 characterization, pre-extract
     // SupportCallRow's phone-call affordance
     expect(tree.root.findAll((n) => n.props.children === "LyniaGo support").length).toBeGreaterThan(0);
 
-    mockGetMe.mockClear();
-    pressByText(tree, "Refresh status");
-    await settle();
-    expect(mockGetMe).toHaveBeenCalled();
+    // Owner instruction (2026-08-16): no manual refreshing anywhere — the wall must carry no "Refresh
+    // status" button. A lift is an ops action, so the screen notices it on its own (the ["me"] poll that
+    // runs only while held, plus the app-foreground invalidate in send.tsx), not on a tap the customer
+    // has to remember. Asserting the ABSENCE is the point: this is what the removal must not regress.
+    expect(tree.root.findAll((n) => n.props.children === "Refresh status")).toHaveLength(0);
   });
 
   it("shows the active-order restore banner instead of the on-hold wall's own default, when a live order exists while held", async () => {
