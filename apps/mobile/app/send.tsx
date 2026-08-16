@@ -29,7 +29,6 @@ import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
 import { DisclaimerSheet } from "../src/ui/home/DisclaimerSheet";
 import { AddressHint, AddressRows, type AddressSlot, MapHomeTopBar } from "../src/ui/MapHome";
-import { placesEnabled } from "../src/config";
 import type { PickedPoint } from "../src/ui/MapPicker";
 import { ActiveOrderBanner, SendAccountOnHoldView } from "../src/ui/send/SendAccountOnHoldView";
 import { SendItemsList } from "../src/ui/send/SendItemsList";
@@ -681,7 +680,7 @@ export default function HomeScreen(): React.ReactElement {
               pin the map behind edits (pickup = green dot, drop-off = red square); on an unkeyed build
               the search renders its honest disabled explainer rather than nothing. */}
           <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={pickSlot} />
-          <AddressHint searchEnabled={placesEnabled()} />
+          <AddressHint />
           {activePin === "pickup" ? (
             <AddressSearch
               key="pickup-search"

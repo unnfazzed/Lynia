@@ -41,15 +41,17 @@ const apiOrigin = API_URL.replace(/\/+$/, "");
 export const PRIVACY_URL = `${apiOrigin}/legal/privacy`;
 
 /**
- * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the whole address-search
- * path is key-gated: when this is unset the search UI hides and the app falls back to the pin-on-map
- * picker (the default primary path), so the app builds and runs fully with no key. Set it via
- * `EXPO_PUBLIC_GOOGLE_PLACES_KEY` (inlined at build) or `extra.googlePlacesKey` in app.config.ts. It is
- * used for direct REST calls to Google (Autocomplete + Details), NOT through the Lynia API. Never
- * hard-require it anywhere.
+ * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the autocomplete path is
+ * key-gated: when this is unset `AddressSearch` falls back to the device geocoder (src/logic/geocode.ts),
+ * so the app builds and runs fully with no key and an address can still become a coordinate. Used for
+ * direct REST calls to Google (Autocomplete + Details), NOT through the Lynia API. Never hard-require
+ * it anywhere.
+ *
+ * Read ONLY from `EXPO_PUBLIC_GOOGLE_PLACES_KEY` — there is deliberately no `extra.googlePlacesKey`
+ * mirror, because `extra` is hashed into the expo-updates fingerprint runtimeVersion and that would
+ * make this key un-shippable by OTA to an installed binary. See the note in app.config.ts.
  */
-const placesKeyFromExtra = (Constants.expoConfig?.extra as { googlePlacesKey?: string } | undefined)?.googlePlacesKey;
-export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? placesKeyFromExtra ?? null;
+export const GOOGLE_PLACES_KEY: string | null = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? null;
 
 /**
  * PostHog product analytics. OPTIONAL and key-gated exactly like Places: with no key the provider

@@ -105,6 +105,26 @@ for s in GOOGLE_MAPS_API_KEY GOOGLE_SERVICES_JSON; do
   fi
 done
 
+# The Places key is checked separately from the loop above because it is provisioned in two places at
+# once, and both halves must agree. `mobile-release.yml` builds on EAS, so the BINARY reads the EAS
+# environment variable; `mobile-ota.yml` exports the bundle on the GitHub runner, so an OTA reads the
+# GitHub secret. Have one and not the other and an OTA silently changes the app's address search on or
+# off relative to the binary it lands on. It stays a WARN, never a FAIL: the app runs unkeyed (the
+# address field falls back to the device geocoder, src/logic/geocode.ts) — this is degradation, not a
+# broken release, unlike GOOGLE_MAPS_API_KEY above, which is native and cannot be repaired by OTA.
+PLACES_EAS=0; PLACES_GH=0
+echo "$EAS_SECRETS" | grep -q "EXPO_PUBLIC_GOOGLE_PLACES_KEY" && PLACES_EAS=1
+[ -n "$(gh_secret EXPO_PUBLIC_GOOGLE_PLACES_KEY)" ] && PLACES_GH=1
+if [ $PLACES_EAS -eq 1 ] && [ $PLACES_GH -eq 1 ]; then
+  ok "EXPO_PUBLIC_GOOGLE_PLACES_KEY set on both EAS (builds) and GitHub (OTA)"
+elif [ $PLACES_EAS -eq 0 ] && [ $PLACES_GH -eq 0 ]; then
+  warn "EXPO_PUBLIC_GOOGLE_PLACES_KEY unset — address autocomplete falls back to the device geocoder" \
+    "eas env:create --scope project --environment preview --name EXPO_PUBLIC_GOOGLE_PLACES_KEY --visibility sensitive --value '<key>' (repeat for production), and gh secret set EXPO_PUBLIC_GOOGLE_PLACES_KEY"
+else
+  warn "EXPO_PUBLIC_GOOGLE_PLACES_KEY set on only one side (EAS=$PLACES_EAS, GitHub=$PLACES_GH)" \
+    "set the SAME value on both, or an OTA flips search on/off relative to the installed binary"
+fi
+
 hdr "GitHub secret EXPO_TOKEN"
 if [ -n "$(gh_secret EXPO_TOKEN)" ]; then
   ok "EXPO_TOKEN is set"

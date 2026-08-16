@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import * as Location from "expo-location";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import MapView, {
   type LatLng,
@@ -10,8 +10,8 @@ import MapView, {
   Polyline,
   type Region,
 } from "react-native-maps";
-import { placesEnabled } from "../config";
 import { mapFallbackHint } from "../logic/map-fallback";
+import { captureException } from "../telemetry/sentry";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
 
@@ -33,6 +33,8 @@ import { Icon } from "./index";
  */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const LOCATE_TIMEOUT_MS = 9_000;
+/** How long tiles get to render before the screen admits the map didn't load. See the state below. */
+const MAP_LOAD_TIMEOUT_MS = 9_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -70,16 +72,48 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
   const [locateMsg, setLocateMsg] = useState<string | null>(null);
-  // Map-load fallback (C1): if the map never signals ready within a few seconds — a missing Google Maps
-  // key or blocked tiles leaves a blank grey box — surface a card pointing to the address search / the
-  // required-landmark path, so addressing is never a silent dead end.
+  // Map-load fallback (C1 / kit `LJ.map_failed`). The signal here is `onMapLoaded` — "the map finished
+  // rendering all tiles" — NOT `onMapReady`.
+  //
+  // That distinction is the whole fix. `onMapReady` fires when the native view has a `GoogleMap`
+  // object, which it does even when the Maps SDK rejects the API key: an unrestricted-package /
+  // wrong-SHA-1 / billing-disabled key produces an authorization failure whose only symptom is that
+  // tiles never draw. Keyed on `onMapReady`, this fallback therefore stayed silent through exactly the
+  // failure that was reported — a blank grey canvas under a "tap the map to drop your pin" hint, with
+  // the pin tap doing nothing and no explanation on screen. `onMapLoaded` is Android-supported
+  // (react-native-maps 1.18 `MapView.d.ts`) and does not fire in that state.
   const [mapReady, setMapReady] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [mapTimedOut, setMapTimedOut] = useState(false);
+  // Remount nonce for "Retry the map" — bumping it gives MapView a new key, which is the only way to
+  // re-attempt the native map's own initialisation (a transient tile/auth failure is otherwise
+  // permanent for the life of the screen, and this screen lives for a whole compose session).
+  const [mapNonce, setMapNonce] = useState(0);
   useEffect(() => {
-    if (mapReady) return;
-    const t = setTimeout(() => setMapTimedOut(true), 6_000);
+    if (mapLoaded) return;
+    // Longer than the old 6s: tiles on a constrained link are legitimately slow, and the card now
+    // clears itself the moment they arrive, so erring late costs nothing while erring early would
+    // accuse a working map. Both `mapLoaded` and `mapNonce` are inputs so a retry restarts the clock.
+    const t = setTimeout(() => setMapTimedOut(true), MAP_LOAD_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [mapReady]);
+  }, [mapLoaded, mapNonce]);
+  // Report it once per mount. A blank map is invisible to every existing signal — the previous
+  // occurrence had to be diagnosed from a user's description — so this is the difference between
+  // "somebody said the map was blank" and a dated, versioned event with a device attached.
+  const reported = useRef(false);
+  const mapFailed = !mapLoaded && mapTimedOut;
+  useEffect(() => {
+    if (!mapFailed || reported.current) return;
+    reported.current = true;
+    captureException(new Error(`compose-map-not-loaded (onMapReady=${mapReady})`));
+  }, [mapFailed, mapReady]);
+
+  const retryMap = useCallback((): void => {
+    setMapReady(false);
+    setMapLoaded(false);
+    setMapTimedOut(false);
+    setMapNonce((n) => n + 1);
+  }, []);
 
   const activePoint = active === "pickup" ? pickup : drop;
   const setActive = (c: LatLng): void => {
@@ -162,10 +196,15 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   return (
     <View style={{ flex: 1 }}>
       <MapView
+        // `key` is the retry mechanism: a new nonce unmounts the failed native map and mounts a fresh
+        // one. `lastKey` (the camera-framing guard below) is deliberately NOT reset with it — the
+        // remounted map takes its camera from `initialRegion`, which already honours the current pins.
+        key={mapNonce}
         ref={mapRef}
         style={{ flex: 1 }}
         initialRegion={initialRegion}
         onMapReady={() => setMapReady(true)}
+        onMapLoaded={() => setMapLoaded(true)}
         onPress={(e: MapPressEvent) => setActive(e.nativeEvent.coordinate)}
       >
         {pickup ? (
@@ -243,10 +282,13 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       {/* Pin-discoverability hint: the full-bleed map dropped MapPicker's "tap to drop a pin" caption, so
           a first-time user has no cue the map itself is the input. Show it until the active slot has a pin.
           Styled as the kit's DARK pill (`screens.jsx` Home: ink fill, white label), not the muted-grey-on-
-          white it had drifted to — with search absent on an unkeyed build this is the ONLY instruction on
-          the screen, and it was rendering as the faintest thing on it. Copy names BOTH inputs when search
-          is live, matching the kit's "Search an address, or tap the map to drop a pin." */}
-      {mapReady && !activePoint ? (
+          white it had drifted to — it was rendering as the faintest thing on the screen while being the
+          instruction the composer turns on.
+
+          Gated on `mapLoaded`, not `mapReady`: inviting someone to tap a canvas that never drew a tile is
+          the exact dead end this file's fallback exists to replace, and the failure card takes this slot
+          in that state. */}
+      {mapLoaded && !activePoint ? (
         <View
           pointerEvents="none"
           style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
@@ -260,17 +302,46 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
         </View>
       ) : null}
 
-      {/* Map-load failure fallback (C1): the manual path (address search above + the required landmark
-          field under "Add details") stays usable even when the tiles never render. */}
-      {!mapReady && mapTimedOut ? (
+      {/* Map-load failure fallback, adopting the kit's `LJ.map_failed` card (screens-shipped.jsx
+          `ComposerState variant="mapfail"`): the muted circular map-pin badge, the title, the
+          "you can still send" line, and the "Retry the map" pill it draws. The mock's own copy claims
+          search is the way out; `mapFallbackHint` derives the sentence from the affordances actually
+          on screen instead, because "search" and "use my location" are each conditionally present.
+          Still PENDING in tools/parity/parity-status.mjs — this adopts the card's copy and its retry
+          affordance, not the full screen structure (the mock also drops the locate pill in this state,
+          which here is the one control that still sets a pin). */}
+      {mapFailed ? (
         <View
           accessibilityRole="alert"
-          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: tokens.space.md, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.input, padding: tokens.space.md, ...tokens.shadow.card }}
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: topOffset + 44, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.card, padding: tokens.space.md, alignItems: "center", ...tokens.shadow.card }}
         >
-          <Text style={{ fontSize: tokens.font.size.caption, fontWeight: "700", color: tokens.color.ink, marginBottom: 2 }}>Map didn&apos;t load</Text>
-          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 16 }}>
-            {mapFallbackHint(placesEnabled(), active === "pickup")}
+          <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+            <Icon name="map-pin" size={24} color={tokens.color.muted} />
+          </View>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>The map didn&apos;t load</Text>
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, textAlign: "center", marginTop: 4 }}>
+            {mapFallbackHint(active === "pickup")}
           </Text>
+          <Pressable
+            onPress={retryMap}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading the map"
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 10,
+              minHeight: 40,
+              paddingHorizontal: tokens.space.md,
+              borderRadius: tokens.radius.pill,
+              borderWidth: 1,
+              borderColor: tokens.color.line,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Icon name="refresh-cw" size={14} color={tokens.color.accentText} />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Retry the map</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>

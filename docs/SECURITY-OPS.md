@@ -55,6 +55,17 @@ error into an empty result list, so the symptom is a search box that silently ne
 Contain them in the GCP console:
 1. **APIs & Services → Credentials →** the Maps SDK key → **Application restrictions**: Android package
    name + SHA-1 signing cert (and iOS bundle id if applicable).
+
+   > ⚠️ **Which SHA-1 — this is the one that bites.** Google Play **re-signs** the uploaded AAB with
+   > the *app signing* certificate, which is NOT the EAS-managed *upload* keystore. A key allowlisted
+   > for the upload certificate alone renders tiles perfectly in a sideloaded APK and returns
+   > `Authorization failure` — a blank grey map — in every Play-installed build, so the failure only
+   > appears after a track upload and looks like a regression that "worked yesterday". List **both**
+   > fingerprints against `zw.co.lynia`: Play Console → Test and release → Setup → **App integrity** →
+   > *App signing key certificate* SHA-1 (the one devices actually run), plus the upload key SHA-1 for
+   > sideloaded QA APKs. Confirm from the handset with
+   > `adb logcat | grep -i "Google Maps Android API"`. See MOB-MAP-02 in `docs/KNOWN_BUGS.md` and
+   > `docs/MAPS-LOADING-REVIEW-2026-08-16.md`.
 2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
    Compensate with a tight **API restriction** (Places API *only*) and a hard **quota cap**.
 3. Set a **quota cap** on both so a leaked key can't run up an unbounded bill.

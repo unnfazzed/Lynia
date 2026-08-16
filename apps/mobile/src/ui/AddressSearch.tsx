@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { autocompletePlaces, placeDetails, placesEnabled, type PlaceSuggestion, type ResolvedPlace } from "../api/places";
+import { geocodeAddress, type GeocodeFailure } from "../logic/geocode";
 import { addRecent, loadRecents, loadSaved, type SavedPlaces, type SavedSlot, saveSlot } from "../logic/saved-places";
 import { Icon, type IconName, Label } from "./index";
 
@@ -11,13 +12,15 @@ import { Icon, type IconName, Label } from "./index";
  * flow the MapPicker produces. Pin-on-map stays the primary path below this — the search is the fast
  * path when a key is present.
  *
- * KEY-GATED, but never SILENT: with no Places key configured this used to render `null`, which shipped
- * a build whose address rows advertise a search magnifier and then offer only the pin picker — the exact
- * "the UI says search, the app gives pins" mismatch reported from the store build (see
- * docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2). An unkeyed build now renders a visible, honest
- * disabled field naming the pin path instead, so a mis-provisioned build is obvious on screen rather
- * than invisible. Every network failure still degrades to a muted "set it on the map below" hint — it
- * never blocks or crashes the pin path.
+ * KEY-GATED, but never SILENT and never DEAD. With no Places key configured this first rendered
+ * `null` (a build whose address rows advertise a search magnifier and then offer only pins — the
+ * mismatch reported from the store build, docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2), then a
+ * visibly disabled explainer field. The explainer was honest but still a dead end in the one case that
+ * matters: with the map's tiles ALSO not rendering there was no way left to produce a coordinate at
+ * all, so `coordsOk` could never be satisfied and Broadcast stayed permanently disabled. An unkeyed
+ * build now renders a LIVE field backed by the device's own geocoder (`src/logic/geocode.ts`) — no
+ * Google key, no map required — feeding the identical confirm-then-commit flow. Every network failure
+ * still degrades to a muted "set it on the map below" hint; nothing here blocks or crashes the pin path.
  */
 
 const DEBOUNCE_MS = 300;
@@ -152,41 +155,135 @@ export type AddressSearchProps = {
 };
 
 export function AddressSearch(props: AddressSearchProps): React.ReactElement {
-  // The gate: no key → no live search. Render the disabled explainer instead of nothing, so the pin
-  // path is named on screen and a build missing the key can't hide (see the file header).
-  if (!placesEnabled()) return <AddressSearchUnavailable label={props.label} />;
+  // The gate: no Places key → no autocomplete. Fall back to the device geocoder rather than to a dead
+  // field, so an address can always become a coordinate even with no map on screen (see the header).
+  if (!placesEnabled()) return <AddressSearchDeviceGeocode {...props} />;
   return <AddressSearchInner {...props} />;
 }
 
+/** One honest line per failure reason — each names the next thing the customer can actually do. */
+function geocodeFailureMessage(reason: GeocodeFailure): string {
+  switch (reason) {
+    case "permission":
+      return "Looking an address up on this phone needs location permission. Turn it on in Settings, or tap the map to drop the pin.";
+    case "unavailable":
+      return "Address lookup isn't working on this phone right now — tap the map to drop the pin instead.";
+    case "not-found":
+      return "Couldn't find that address. Try adding the suburb, or tap the map to drop the pin.";
+  }
+}
+
 /**
- * Keyless state: a non-interactive field that looks like the search it replaces and says plainly where
- * the address goes instead. Deliberately NOT a silent `null` — see the file header.
+ * Keyless state: the SAME field, resolved by the phone's own geocoder instead of Google Places.
+ *
+ * It behaves differently from the keyed path in one visible way, and the copy says so: the platform
+ * geocoder offers no as-you-type predictions, so nothing happens until the customer submits the line
+ * they typed. What comes back is a coordinate and nothing else, so their typed text becomes the
+ * landmark and `AddressConfirmSheet` — the same confirm step the Places path uses — is where they
+ * check the result and adjust it.
  */
-function AddressSearchUnavailable({ label }: { label: string }): React.ReactElement {
+function AddressSearchDeviceGeocode(props: AddressSearchProps): React.ReactElement {
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const input = useRef<TextInput>(null);
+
+  const { focusSignal } = props;
+  useEffect(() => {
+    if (!focusSignal) return;
+    input.current?.focus();
+  }, [focusSignal]);
+
+  // Guards a double-submit (return key + the Find button) from paying for two geocoder round trips.
+  const inFlight = useRef(false);
+  const { onResolved } = props;
+  const submit = useCallback((): void => {
+    const q = query.trim();
+    if (inFlight.current) return;
+    if (q.length < 3) {
+      setMessage("Type at least a few characters of the address.");
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setMessage(null);
+    void geocodeAddress(q)
+      .then((outcome) => {
+        if (outcome.ok) onResolved(outcome.place);
+        else setMessage(geocodeFailureMessage(outcome.reason));
+      })
+      .finally(() => {
+        inFlight.current = false;
+        setBusy(false);
+      });
+  }, [query, onResolved]);
+
+  const canSubmit = query.trim().length >= 3 && !busy;
+
   return (
     <View style={{ marginBottom: tokens.space.sm }}>
-      <Label>{label}</Label>
+      <Label>{props.label}</Label>
       <View
-        accessibilityRole="text"
-        accessibilityLabel={`${label} search is unavailable — set this address on the map instead`}
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: tokens.space.sm,
           borderWidth: 1,
           borderColor: tokens.color.line,
           borderRadius: tokens.radius.input,
           paddingHorizontal: tokens.space.md,
-          paddingVertical: tokens.space.md,
-          minHeight: tokens.touchTargetMin,
-          backgroundColor: tokens.color.surface,
+          backgroundColor: tokens.color.bg,
         }}
       >
-        <Icon name="map-pin" size={16} color={tokens.color.muted} />
-        <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.muted }}>
-          Address search is unavailable — tap the map to set this pin.
-        </Text>
+        <Icon name="search" size={16} color={tokens.color.muted} />
+        <TextInput
+          ref={input}
+          value={query}
+          onChangeText={(t) => {
+            setQuery(t);
+            setMessage(null);
+          }}
+          onSubmitEditing={submit}
+          returnKeyType="search"
+          placeholder={props.placeholder ?? "Search an address or place"}
+          placeholderTextColor={tokens.color.muted}
+          accessibilityLabel={props.label}
+          autoCorrect={false}
+          style={{
+            flex: 1,
+            paddingVertical: tokens.space.md,
+            paddingHorizontal: tokens.space.sm,
+            fontSize: tokens.font.size.bodyLg,
+            color: tokens.color.ink,
+            minHeight: tokens.touchTargetMin,
+          }}
+        />
+        {busy ? (
+          <ActivityIndicator color={tokens.color.accentText} />
+        ) : (
+          <Pressable
+            onPress={submit}
+            disabled={!canSubmit}
+            accessibilityRole="button"
+            accessibilityLabel={`Find ${props.label.toLowerCase()} address`}
+            accessibilityState={{ disabled: !canSubmit }}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              minWidth: 32,
+              minHeight: 32,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: !canSubmit ? 0.4 : pressed ? 0.6 : 1,
+            })}
+          >
+            <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>
+              Find
+            </Text>
+          </Pressable>
+        )}
       </View>
+      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs, lineHeight: 16 }}>
+        {message ?? "Type the address and tap Find — then check the pin. You can also tap the map to place it yourself."}
+      </Text>
     </View>
   );
 }

@@ -48,3 +48,34 @@ describe("fingerprint.config.js (REL-01 — OTA runtime-version stability)", () 
     }
   });
 });
+
+/**
+ * The other half of OTA deliverability, and the one that bit on 2026-08-16.
+ *
+ * `sourceSkips` above removes only the VERSION fields; the resolved `extra` section is still hashed in
+ * full (`@expo/fingerprint`'s `normalizeExpoConfig` drops it only under `ExpoConfigExtraSection`,
+ * which is not skipped here and must not be — `extra` carries real config). So any `EXPO_PUBLIC_*`
+ * value mirrored into `extra` stops being a plain JS-bundle string and becomes a fingerprint input:
+ * a build made WITHOUT it and an OTA exported WITH it compute different runtimeVersions, and
+ * expo-updates then delivers that update to zero devices, silently.
+ *
+ * That is precisely the shape the Places key had. It made the one key that CAN be repaired over the
+ * air — unlike the native Maps key — undeliverable by the only lane that could repair it. Nothing at
+ * runtime, in a build, or in CI would notice a re-introduction, so this is a structural guard like the
+ * one above.
+ */
+describe("app.config.ts — no EXPO_PUBLIC_ value may be mirrored into `extra`", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "app.config.ts"), "utf8");
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("does not mirror the Places key into extra (OTA-repairable ⇒ must stay out of the fingerprint)", () => {
+    expect(code).not.toMatch(/googlePlacesKey/);
+  });
+
+  it("reads the Places key only as a bundle-time substitution", () => {
+    // The key must appear in the file solely inside the release-build provisioning warning, never as
+    // an `extra` entry. Assert on the *uncommented* code so the explanatory prose above doesn't count.
+    const extraSection = code.slice(code.indexOf("extra:"));
+    expect(extraSection).not.toMatch(/EXPO_PUBLIC_GOOGLE_PLACES_KEY/);
+  });
+});
