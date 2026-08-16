@@ -86,6 +86,32 @@ hangs, no infinite spinners, no flash-of-wrong-state frames. The one recurring c
 a `public/favicon.ico`, so the browser's automatic request 404s regardless of any app action; not a
 finding.
 
+## Post-push review fixes (same PR, before merge)
+
+CodeRabbit's automated review on the PR caught two real gaps in the CF-02 fix that this run's own
+fuzzing missed, both fixed in a follow-up commit before merge:
+
+- **`ReturnsSection.tsx`'s `handleGoodsBack`** (the "Confirm the food is back" button — a THIRD action
+  in this file beyond the two `onConfirm` sheet callbacks already guarded) had no double-submit guard
+  at all. Fixed with a **per-order** `Set`-backed ref (`goodsBackInFlightRef`), not the file's existing
+  single `submittingRef` — the button's own disabled state (`goodsBackBusyId === o.id`) is deliberately
+  per-order, so reusing the single shared ref would have introduced a NEW bug (blocking a different
+  order's "goods back" confirm while an unrelated order's was in flight). Verified: a same-tick
+  double-tap on one order's button now fires `onConfirmGoodsReturned` exactly once for that order,
+  while a second order's button independently fires — a regression test failed 2-calls-recorded before
+  the fix, confirming the gap was real.
+- **`NewOrderTakeover.tsx`'s `submitAccept`/`submitReject`** could leave `submitting` (React state)
+  permanently `true` — Accept/Reject stuck disabled — if `onAccept`/`onReject` rejected AND the
+  self-heal `refetch()` call inside the catch block also rejected: `setSubmitting(false)` sat after the
+  `await refetch()` and was never reached, and the exception propagating out of the handler meant only
+  `finally`'s `submittingRef.current = false` ran, not the React state reset. This exact shape predates
+  this PR (present in the original code before CF-02's fix, just newly visible once a `finally` block
+  existed to compare against) — a genuine stuck-UI bug under a compound failure, fixed while already
+  touching this code rather than left for a future run to rediscover. Fixed by moving
+  `setSubmitting(false)` into `finally` (so it always runs) and making the refetch best-effort
+  (`.catch(() => {})`, matching its own self-heal framing already in the code comment above it — a
+  failed refetch just means the ambient poll catches it instead).
+
 ## Verification
 
 `pnpm typecheck && pnpm test` green locally across all 6 packages after the fixes (admin: 58 tests

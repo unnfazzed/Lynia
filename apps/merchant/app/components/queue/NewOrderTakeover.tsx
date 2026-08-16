@@ -73,12 +73,14 @@ export function NewOrderTakeover({
     setError(null);
     try {
       await onAccept(active.id, prepMinutes, [...unavailable]);
-      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't accept the order — try again.");
-      await refetch();
-      setSubmitting(false);
+      // Best-effort self-heal (see the comment above): if this ALSO rejects, don't let it escape
+      // the handler and skip the finally below — a refetch failure here just means the stale-clear
+      // didn't happen this round; the next ambient poll (≤5s) still catches it either way.
+      await refetch().catch(() => {});
     } finally {
+      setSubmitting(false);
       submittingRef.current = false;
     }
   }
@@ -90,13 +92,12 @@ export function NewOrderTakeover({
     setError(null);
     try {
       await onReject(active.id, reason);
-      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't reject the order — try again.");
-      await refetch();
-      setSubmitting(false);
       setShowReject(false);
+      await refetch().catch(() => {});
     } finally {
+      setSubmitting(false);
       submittingRef.current = false;
     }
   }

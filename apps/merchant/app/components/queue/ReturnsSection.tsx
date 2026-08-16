@@ -41,6 +41,11 @@ export function ReturnsSection({
   // state rather than firing as a bare `void` promise that swallows a network failure silently.
   const [goodsBackBusyId, setGoodsBackBusyId] = useState<string | null>(null);
   const [goodsBackErrors, setGoodsBackErrors] = useState<Record<string, string>>({});
+  // Synchronous double-submit guard (CF-01 class) for handleGoodsBack, scoped PER ORDER — a Set,
+  // not the single `submittingRef` above, because the button it guards is deliberately per-order
+  // (`disabled={goodsBackBusyId === o.id}`, not a global lock): two different orders' "Confirm the
+  // food is back" must stay independently tappable while one is in flight.
+  const goodsBackInFlightRef = useRef<Set<string>>(new Set());
 
   if (orders.length === 0) return null;
   const active = openSheet ? orders.find((o) => o.id === openSheet.orderId) : null;
@@ -51,6 +56,8 @@ export function ReturnsSection({
   }
 
   async function handleGoodsBack(orderId: string) {
+    if (goodsBackInFlightRef.current.has(orderId)) return;
+    goodsBackInFlightRef.current.add(orderId);
     setGoodsBackBusyId(orderId);
     setGoodsBackErrors((prev) => {
       const rest = { ...prev };
@@ -63,6 +70,7 @@ export function ReturnsSection({
       setGoodsBackErrors((prev) => ({ ...prev, [orderId]: err instanceof Error ? err.message : "Something went wrong — try again." }));
     } finally {
       setGoodsBackBusyId(null);
+      goodsBackInFlightRef.current.delete(orderId);
     }
   }
 
