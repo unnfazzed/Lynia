@@ -16,11 +16,13 @@ const mockSubmitReference = jest.fn(async (..._args: unknown[]) => undefined);
 const mockGetOrder = jest.fn();
 const mockCancelOrder = jest.fn(async (..._args: unknown[]) => ({ orderId: "order-1", status: "cancelled" as const, cancelledBy: "customer" as const, cooldownUntil: null }));
 const mockReplace = jest.fn();
+const mockBack = jest.fn();
+let mockCanGoBack = true;
 const mockUseOrderSocket = jest.fn((_orderId: string | null) => ({ connected: false }));
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ orderId: "order-1" }),
-  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace, back: mockBack, canGoBack: () => mockCanGoBack }),
 }));
 jest.mock("../../../../src/api/food-orders", () => ({
   getFoodOrder: (...args: unknown[]) => mockGetFoodOrder(...args),
@@ -190,6 +192,8 @@ beforeEach(() => {
   mockGetOrder.mockReset().mockResolvedValue(BASE_SNAPSHOT);
   mockCancelOrder.mockClear().mockResolvedValue({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
   mockReplace.mockClear();
+  mockBack.mockClear();
+  mockCanGoBack = true;
   mockUseOrderSocket.mockClear().mockReturnValue({ connected: false });
 });
 
@@ -198,6 +202,47 @@ afterEach(() => {
     activeTree?.unmount();
   });
   activeTree = null;
+});
+
+describe("food order screen — every state keeps a way out (nav audit N-02, ledger D-18)", () => {
+  // This route is PUSHED from the Orders tab, so no tab bar shows, and both stacks run
+  // headerShown:false. Eight of the twelve state views used to draw no exit at all — the shared
+  // OrderHeader now owns one, so a state that renders the header cannot lose it again.
+  const NO_EXIT_STATES: Array<[string, Record<string, unknown>]> = [
+    ["awaiting_accept", { merchantPhase: "awaiting_accept" }],
+    ["preparing", { merchantPhase: "preparing" }],
+    ["ready_for_pickup", { merchantPhase: "ready_for_pickup" }],
+  ];
+
+  it.each(NO_EXIT_STATES)("offers a Back control while %s", async (_name, patch) => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, ...patch });
+    const tree = await render();
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    expect(back.length).toBeGreaterThan(0);
+  });
+
+  it("pops the stack when Back is pressed", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing" });
+    const tree = await render();
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("lands on the orders list when there is no stack to pop (push notification / deep link)", async () => {
+    mockCanGoBack = false;
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing" });
+    const tree = await render();
+    const back = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function");
+    await act(async () => {
+      back[0]!.props.onPress();
+    });
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/orders");
+  });
 });
 
 describe("food order screen — phase branching", () => {

@@ -6,7 +6,7 @@ import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { EmptyState, Icon, Screen } from "../../src/ui";
+import { AppBar, EmptyState, Icon, Screen } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
 
 /** R1·5 search — restaurant name + cuisine tags only (client-side, over the already-fetched list).
@@ -40,8 +40,18 @@ export default function RestaurantSearchScreen(): React.ReactElement {
       )
     : [];
 
+  // Ledger D-18: the `RC.search` mock draws the field's clear-x and no back, which is right for a mock
+  // drawn as a standalone board and wrong here — this route is PUSHED from `food/index.tsx:83`, no tab
+  // bar shows, and both stacks run headerShown:false. The one `x` on this screen is labelled "Clear
+  // search" and clears the query, so a customer who opened search had nothing to tap to leave it.
+  // Sibling food screens (`food/index`, `food/[id]`, `cart`, `checkout`) all carry an AppBar already;
+  // this is the same primitive, so search stops being the odd one out.
   return (
     <Screen>
+      {/* Back-only — no title. The mock draws no header text, and AppBar's title is optional precisely
+          so a screen can mount it as bare back chrome (the auth/KYC screens do the same). Adding a
+          "Search" heading the mock never drew would trade one drift for another. */}
+      <AppBar onBack={() => (router.canGoBack() ? router.back() : router.replace("/food"))} />
       <View
         style={{
           flexDirection: "row",

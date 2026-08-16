@@ -20,7 +20,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -705,6 +705,12 @@ export default function OrderScreen(): React.ReactElement {
     <Screen>
       {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
       {socketExpected && wasConnected.current && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
+      {/* Ledger D-19: back-only chrome above the in-body heading the mock draws. "Back home" exists at
+          the very bottom of this screen (below the code card, the auction cards, cancel-confirm, help
+          and report), so on a live order the exit was a long scroll away — and the error branches put
+          the same button near the top, which made the worst case the NORMAL case. Title-less, since
+          `LJ.track_active` draws its own "Order 8f3a91c2" heading and a bar title would duplicate it. */}
+      <AppBar onBack={() => (router.canGoBack() ? router.back() : goHomeClearingStack(router))} />
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
           <Heading>Order {order.id.slice(0, 8)}</Heading>

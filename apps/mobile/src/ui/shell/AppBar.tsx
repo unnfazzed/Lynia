@@ -9,7 +9,8 @@ import { Icon } from "../Icon";
  *
  * Two deliberate ports from the web source:
  * - The kit draws its back glyph as a rotated `chevron-right` because the icon subset carries no
- *   left-pointing glyph; same trick here via Icon's style passthrough.
+ *   left-pointing glyph; same trick here, but the rotation goes on a wrapper View — react-native-web
+ *   drops a transform set on the glyph itself, which pointed every rendered AppBar chevron right.
  * - The kit's 32×32 back hit area is below the 44px device rule, so the Pressable keeps the kit's
  *   32px visual footprint and makes up the difference with hitSlop.
  *
@@ -56,7 +57,13 @@ export function AppBar({
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={{ width: 32, height: 32, marginLeft: -4, alignItems: "center", justifyContent: "center", flexShrink: 0 }}
         >
-          <Icon name="chevron-right" size={20} color={tokens.color.ink} style={{ transform: [{ rotate: "180deg" }] }} />
+          {/* Rotation on a wrapper View, not the glyph's own style. react-native-svg honours an
+              SVG-level transform, but the react-native-web build the parity renderer (and any future
+              web target) uses drops it — every AppBar screen was rendering a chevron pointing RIGHT in
+              the parity sheets. Same fix as the D-14 puck and the D-18 food header. */}
+          <View style={{ transform: [{ rotate: "180deg" }] }}>
+            <Icon name="chevron-right" size={20} color={tokens.color.ink} />
+          </View>
         </Pressable>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>

@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -401,3 +401,132 @@ server-side. It is rendered as a bottom sheet (the `src/ui/safety.tsx` idiom), n
 inline Card. Pinned by `app/rider/(tabs)/__tests__/account.test.tsx`.
 
 **Revisit when** a design export draws a rider→customer bridge. Adopt whatever it draws and delete this.
+
+---
+
+## D-17 · Rider top-up back row says "Money", not the kit's "Wallet" — APPROVED (2026-08-16)
+
+**In effect, and small.** `rider-screens-wallet.jsx:111` draws a back row above the Top-up heading: a
+13px/600 `--muted` label with a 17px chevron 2px to its left, 12px below the row. The **intended**
+output is `‹ Wallet`; the source currently reads `\u2039 Wallet` because the escape sits in a JSX text
+node and is never interpreted, so the mock renders that literally — a kit defect logged separately as
+**D-20**, not a copy the app should reproduce. This entry is about the label word; D-20 is about the
+glyph. The
+app had dropped that row entirely, which is what left the top-up ENTRY state with no exit at all
+(`TopUpFlow` only offers "Back to Money" once a request is pending/succeeded/failed). Restoring it is
+not a deviation — it is the app paying back plain drift, and the geometry is adopted verbatim.
+
+The **label** is the deviation, and it is one word. The kit's destination "Wallet" is `RJ wallet`, a
+**retired** screen id (`gallery-map.js` header: *"RJ wallet — replaced by the merged Money tab (RJM
+money)"*). The rider IA that ships is RJM — Jobs · Money · Account — and `RIDER_TABS` labels that tab
+"Money". Sending a rider "back to Wallet" would name a screen the app does not have, so the row
+follows the tab the rider actually lands on. This is the same standing rule that governs the rest of
+the rider surface (CLAUDE.md: *align rider look/IA to RJM, not to the kit*; *never align to a retired
+screen*), recorded here because it is a copy change and copy changes need a ledger line first.
+
+`RJ topup_amount` itself is **current**, not retired — it is in the gallery at band R·, so the screen
+is a live alignment target and the rest of it is unchanged.
+
+**Retire this entry** when an export redraws the top-up screen with RJM's own back label.
+
+---
+
+## D-18 · Pushed food screens keep a back the standalone-board mocks never drew — APPROVED (2026-08-16)
+
+**In effect.** The generalisation of D-14, found by a navigation-blocker audit (`/design-review`,
+2026-08-16) after the `/send` fix showed the shape. Both stacks run `headerShown: false`
+(`app/_layout.tsx:87`, `app/food/_layout.tsx:10`), so **the only way off a pushed screen is one the
+screen draws itself**. Most kit screens are drawn as standalone boards — the screen as if it were the
+only thing on the phone — so "the mock draws no back" is not evidence that the shipped, pushed version
+needs none. Two food surfaces were taken literally and shipped as dead ends:
+
+**`/food/order/[orderId]` — the shared `OrderHeader` gains a back chevron.** The kit's `OrderHead`
+(`r-customer-b.jsx:10`) is restaurant name + status pill. The app matched it faithfully across every
+state, and the screen is pushed from the Orders tab (`app/(tabs)/orders.tsx:162`), so **eight of its
+twelve state views had no exit of any kind**: awaiting-accept, item-approval, preparing,
+ready-for-pickup, live-tracker, rider-dropped, refund-pending, and the safety-net fallback whose own
+comment claims it exists so the screen "never dead-ends". The back lives in the shared header rather
+than in eight views, so no future state can be added without it. The four views that already had an
+exit are untouched, including the pay screen's own `AppBar`, whose back deliberately un-forces the pay
+view rather than popping the order (see its note).
+
+**`/food/search` — a back-only `AppBar`.** `RC.search` (`r-customer-a.jsx:155`) draws a search field
+whose only control is a clear-x. The app shipped exactly that, pushed from `food/index.tsx:83`, with
+the `x` labelled "Clear search" and wired to clear the query — no dismiss. The bar is mounted
+**title-less**: the mock draws no header text, and adding a "Search" heading would trade one drift for
+another. Every sibling food screen (`index`, `[id]`, `cart`, `checkout`) already carries an `AppBar`,
+and the kit itself draws one on `RC.list_empty`, `RC.list_error` and `RCB.pay_failed` — search was the
+odd one out, not the rule.
+
+Both use the flipped-`chevron-right` glyph and wrapper-View rotation established by `shell/AppBar` and
+D-14 (`react-native-web` drops a transform set on the glyph itself), and both fall back to a sensible
+route when there is no stack to pop — `/orders` and `/food` — so a push notification or deep link
+cannot strand anyone either.
+
+**Retire this entry** if an export redraws these screens as pushed, with their own back affordances.
+Adopt whatever it draws.
+
+---
+
+## D-19 · Parcel-order screen gains back chrome; the on-hold wall gets its drawn "Sign out" back — APPROVED (2026-08-16)
+
+**In effect.** The remaining two findings of the 2026-08-16 navigation audit. Same root cause as D-14
+and D-18: `headerShown: false` on both stacks means a pushed screen's only exit is one it draws.
+
+**`/order/[id]` — a title-less `AppBar` above the heading.** Unlike the food cases this screen was not
+a total dead end: `Button label="Back home"` has always been there. It sits at the **bottom**, though,
+below the hand-off code card, the auction/rebroadcast cards, the cancel-confirm block, `GetHelpControl`
+and `ReportControl` — so on a live order the way out is a long scroll away. The error branches
+(`:607`, `:616`) place the same button near the top, which made the worst case the *normal* case. The
+bar is title-less because `LJ.track_active` draws its own "Order 8f3a91c2" heading and a bar title
+would duplicate it; "Back home" stays where it is, since it clears the stack rather than popping and
+is the right control at the end of a finished order.
+
+**The customer on-hold wall — restoring the mock's own "Sign out".** This one is drift, not a new
+affordance: the kit's `OnHold` (`screens.jsx:852`) draws a "Sign out" ghost button under the support
+call row and the app had dropped it. That omission is what made the wall a true dead end — `/send` is
+pushed so no tab bar shows; `app/send.tsx` returns `SendAccountOnHoldView` **before** the map top bar
+renders, so D-14's back puck never mounts for a held customer; and the manual "Refresh status" was
+removed on 2026-08-16, leaving a phone number as the only interactive thing on screen.
+
+**Noted, and deliberately not done:** a held customer still has no *non-destructive* way back to the
+tabs — signing out or calling support is the whole exit set the mock offers. That is arguably right
+(a hold is lifted by ops server-side, so there is nothing else the customer can do here) and the live
+`ActiveOrderBanner` still covers the mid-delivery case. If the owner wants a plain back as well, it is
+an undrawn affordance and needs its own line here.
+
+**Retire this entry** if an export redraws the tracking screen or the on-hold wall with their own
+navigation.
+
+---
+
+## D-20 · Rider wallet mocks print `\u2039` as literal text — UPSTREAM (2026-08-16)
+
+**A defect in the kit; the app is right.** `explorations/journey/rider-screens-wallet.jsx` writes the
+back chevron as a JSX **text node**:
+
+```jsx
+<span style={{ fontSize: 17, lineHeight: 1, marginRight: 2 }}>\u2039</span>Wallet
+```
+
+A `\uXXXX` escape is only interpreted inside a JavaScript *string literal*. In JSX text it is six
+literal characters, so the mock renders **`\u2039 Wallet`** instead of **`‹ Wallet`**. Three sites:
+`:62` and `:85` (`‹ Earnings` on the wallet screens) and `:111` (`‹ Wallet` on top-up). Visible in any
+`tools/parity` sheet that renders `RJ.topup_amount` — the mock column shows the raw escape.
+
+**Not fixed here.** `packages/design/` mirrors the design tool; editing it is how the repo's copy
+stopped being the design in the first place, and the `design-freeze` CI job blocks exactly that. The
+app renders a real rotated chevron (D-17), which is what the mock *means*, so nothing is shipped
+wrong — the only casualty is that parity sheets for these screens will keep showing an ugly mock
+column until Design fixes the source.
+
+**For Design:** the fix is `{"\u2039"}` (an expression container, where the escape is interpreted) or
+simply pasting the `‹` character.
+
+**Swept, so the scope is known rather than assumed.** `grep -rn '\\u[0-9a-fA-F]\{4\}' packages/design
+--include=*.jsx` returns every escape in the package; all of them except these three sit inside string
+literals (`"\u2212$"`, `"Tue 14:02 \u00b7 ref 8821"`, `screens.jsx:114`'s `btn("\u2212")`) and render
+correctly. Lines 62, 85 and 111 of `rider-screens-wallet.jsx` are the only bare-JSX-text cases, so this
+entry is complete, not a sample.
+
+**Retire this entry** when an export lands with the escapes fixed.
