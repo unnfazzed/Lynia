@@ -1,8 +1,9 @@
-import { COMMISSION } from "@lynia/shared";
+import { COMMISSION, tokens } from "@lynia/shared";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useCallback } from "react";
+import { Pressable, Text, View } from "react-native";
 import { useWalletConfig } from "../../src/query/use-wallet";
-import { Heading, Screen } from "../../src/ui";
+import { Heading, Icon, Screen } from "../../src/ui";
 import { TopUpFlow } from "../../src/ui/rider/TopUpFlow";
 
 /**
@@ -33,8 +34,38 @@ export default function TopUpScreen(): React.ReactElement {
   const router = useRouter();
   const { config } = useWalletConfig();
 
+  // The back row the kit draws above this heading (`rider-screens-wallet.jsx:111`) and the app had
+  // dropped. Without it the ENTRY state — amount + rail picker — had no exit at all: `TopUpFlow` only
+  // offers "Back to Money" once a request is pending, has succeeded, or has failed, this route is
+  // pushed from the Money tab so no tab bar shows, and both stacks run headerShown:false. A rider who
+  // opened Top up and changed their mind had to submit a payment to get out. Placed here rather than
+  // inside TopUpFlow so it covers every state of the flow, at the mock's own position.
+  const exit = useCallback((): void => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/rider/money");
+  }, [router]);
+
   return (
     <Screen>
+      {/* Kit geometry verbatim: 13px/600 muted label, 17px chevron 2px to its left, 12px below the row.
+          The kit labels the destination "Wallet"; the shipped rider IA is RJM (Jobs · Money · Account)
+          and `RJ wallet` is a RETIRED screen id, so the label follows the tab the rider actually
+          returns to — see ledger D-17. */}
+      <Pressable
+        onPress={exit}
+        accessibilityRole="button"
+        accessibilityLabel="Back to Money"
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", marginBottom: 12, alignSelf: "flex-start", opacity: pressed ? 0.6 : 1 })}
+      >
+        {/* Rotation on a wrapper View, not the glyph's own style: an SVG-level transform survives
+            react-native-svg but is dropped by the react-native-web build the parity renderer uses,
+            which would ship a chevron pointing the wrong way (same trap as D-14). */}
+        <View style={{ transform: [{ rotate: "180deg" }], marginRight: 2 }}>
+          <Icon name="chevron-right" size={17} color={tokens.color.muted} />
+        </View>
+        <Text style={{ fontSize: 13, fontWeight: "600", color: tokens.color.muted }}>Money</Text>
+      </Pressable>
       <Heading>Top up</Heading>
       <TopUpFlow
         minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}

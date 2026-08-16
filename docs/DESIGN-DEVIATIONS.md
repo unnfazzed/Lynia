@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -401,3 +401,26 @@ server-side. It is rendered as a bottom sheet (the `src/ui/safety.tsx` idiom), n
 inline Card. Pinned by `app/rider/(tabs)/__tests__/account.test.tsx`.
 
 **Revisit when** a design export draws a rider→customer bridge. Adopt whatever it draws and delete this.
+
+---
+
+## D-17 · Rider top-up back row says "Money", not the kit's "Wallet" — APPROVED (2026-08-16)
+
+**In effect, and small.** `rider-screens-wallet.jsx:111` draws a back row above the Top-up heading —
+`‹ Wallet`, a 13px/600 `--muted` label with a 17px chevron 2px to its left, 12px below the row. The
+app had dropped that row entirely, which is what left the top-up ENTRY state with no exit at all
+(`TopUpFlow` only offers "Back to Money" once a request is pending/succeeded/failed). Restoring it is
+not a deviation — it is the app paying back plain drift, and the geometry is adopted verbatim.
+
+The **label** is the deviation, and it is one word. The kit's destination "Wallet" is `RJ wallet`, a
+**retired** screen id (`gallery-map.js` header: *"RJ wallet — replaced by the merged Money tab (RJM
+money)"*). The rider IA that ships is RJM — Jobs · Money · Account — and `RIDER_TABS` labels that tab
+"Money". Sending a rider "back to Wallet" would name a screen the app does not have, so the row
+follows the tab the rider actually lands on. This is the same standing rule that governs the rest of
+the rider surface (CLAUDE.md: *align rider look/IA to RJM, not to the kit*; *never align to a retired
+screen*), recorded here because it is a copy change and copy changes need a ledger line first.
+
+`RJ topup_amount` itself is **current**, not retired — it is in the gallery at band R·, so the screen
+is a live alignment target and the rest of it is unchanged.
+
+**Retire this entry** when an export redraws the top-up screen with RJM's own back label.
