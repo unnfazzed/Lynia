@@ -481,6 +481,44 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 
     expect(notifyNewBroadcast).not.toHaveBeenCalled();
   });
+
+  // LM-01: the only status check ran at the TOP of the method, before two more async round-trips
+  // (nearbyRiders + claimBroadcastRecipients). A customer select (or a cancel) landing in that window
+  // must not still hand a widened ring of riders a "bid now" push for an auction that's already closed
+  // — distinct from DS17-01 above, which only bounds a push outliving the order's OWN natural window.
+  it("LM-01: does NOT push when the order left open_for_offers WHILE the tick was mid-flight (post-initial-read)", async () => {
+    // Records the actual call order, not just the call count — a re-check that ran BEFORE the geo
+    // lookup/recipient claim (rather than right before the send, where the race actually lives) would
+    // still pass a plain "called twice" assertion, so the order itself is the thing under test.
+    const events: string[] = [];
+    let readCount = 0;
+    const findUnique = vi.fn(async () => {
+      const n = ++readCount;
+      events.push(`findUnique-${n}`);
+      // 1st call: the method's opening read — still open, so it proceeds. 2nd call: the re-check right
+      // before the FCM send — a customer selected an offer in between.
+      return n === 1 ? openOrder : { status: "assigned" };
+    });
+    const prisma = { order: { findUnique } } as unknown as PrismaService;
+    const nearbyRiders = vi.fn(async () => {
+      events.push("nearbyRiders");
+      return [{ profileId: "r-ring", distanceM: 7_000 }];
+    });
+    const claimBroadcastRecipients = vi.fn(async () => {
+      events.push("claimBroadcastRecipients");
+      return ["r-ring"];
+    });
+    const tracking = { nearbyRiders, claimBroadcastRecipients } as unknown as TrackingService;
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
+    const gateway = { emitBoardNewOrderToCells: vi.fn() } as unknown as TrackingGateway;
+    const service = new MatchingService(prisma, noopTokens, notifications, fakeMetrics(), gateway, tracking);
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(notifyNewBroadcast).not.toHaveBeenCalled();
+    expect(events).toEqual(["findUnique-1", "nearbyRiders", "claimBroadcastRecipients", "findUnique-2"]);
+  });
 });
 
 describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {

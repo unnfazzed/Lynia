@@ -2243,3 +2243,27 @@ than from numbers.
 to draw is Google's network round trip on a Harare link — the app's lever there is `liteMode` or a
 cached static preview, both of which change what the mock draws and would need a
 `docs/DESIGN-DEVIATIONS.md` entry first. The two costs above are the ones that were the app's own.
+
+---
+
+## Logic-model audit 2026-08-16 — bid acceptance — `docs/LOGIC-MODEL-AUDIT-2026-08-16.md`
+
+First run of the new weekly logic-model-audit lane (`docs/routines/logic-model-audit.md`) — no prior
+`LM-` rows to dedup against. Modeled the Express/parcel bid-acceptance auction (`OffersService.makeOffer`,
+`MatchingService.selectOffer`/`expireOrder`/`expandBroadcast`, `OfferExpiryService`) end to end as a full
+(state × actor × action) truth table, including the Offer entity's own sub-state-machine (previously
+undocumented — `order-lifecycle.transitions.ts` only models `OrderStatus`). One GAP found and fixed
+same-run with a regression test confirmed failing pre-fix; one money-adjacent UNTESTED cell pinned.
+`pnpm typecheck` + `pnpm test` green (api 1729 tests incl. 2 new).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| LM-01 | `MatchingService.expandBroadcast`'s widening-broadcast tick checked `order.status !== "open_for_offers"` exactly once, before two more async round-trips (`nearbyRiders` geo lookup + `claimBroadcastRecipients`) that precede the FCM "bid now" push — a customer `selectOffer` or a cancel landing in that window was invisible to the already-passed check, so a widened ring of riders could still get pushed an invitation to bid on an auction that had already closed. Distinct from DS17-01 (which bounds a push from outliving the order's own *natural* window; this bounds one whose auction closed *early*, mid-tick). | `apps/api/src/matching/matching.service.ts` (`expandBroadcast`) | LOW (notification hygiene — the stale push's tap still 409s at `makeOffer`'s own `open_for_offers` guard, so no order can actually be double-taken; this is a false invite, not a money/security gap) | **FIXED** — re-reads `order.status` immediately before DS17-01's `remainingMs`/TTL computation and the `notifyNewBroadcast` call (the one genuinely disruptive side effect), deliberately in that order so the re-check's own round-trip can't itself go uncounted into a TTL meant to reflect the order's remaining life at send time (a first-pass version of this fix got that ordering backwards — caught by CodeRabbit's PR review before merge). The preceding best-effort board-cell re-emit is left as-is since WS clients already reconcile via `order:taken`/`bid:expired`. Regression: `matching.service.spec.ts` "LM-01: does NOT push when the order left open_for_offers WHILE the tick was mid-flight" — asserts the actual call order (opening read → geo lookup → recipient claim → re-check), confirmed failing against the pre-fix code (reverted, reran, red), passing after. |
+| LM-01-pin | `OffersService.makeOffer`'s accept-must-match-`proposedFare` guard is gated on `type==="accept"` — a `type:"counter"` offer bypasses it by design (the counter price becomes `agreedFare` verbatim if selected, the one place in the lane the bound money is NOT the customer's original ask). No test exercised offer creation at a counter fare that would have failed the accept guard — only downstream `admin-orders.service.spec.ts` display coverage of an already-selected counter. | `apps/api/src/offers/offers.service.ts` (`makeOffer`) | n/a (pinning test, no behavior change — passes unmodified against current code) | **PINNED** — `offers.service.spec.ts` "accepts a counter offer at a fare that would have failed the accept-match guard (LM-01)". |
+
+Full truth table (Offer sub-state-machine + the Order-state × actor × action grid, ~30 rows spanning
+makeOffer/selectOffer/expireOrder/expandBroadcast/admin cancel+adjustFare, each cell marked OK / GAP /
+UNTESTED with its source test or rationale) is in `docs/LOGIC-MODEL-AUDIT-2026-08-16.md` and verbatim in
+the PR body. No DUPLICATED logic found inside the lane itself; the pre-existing `X2-OBS-2` OPEN row (two
+divergent "live food offer" predicates) is a C3/merchant-dispatch concern adjacent to, not inside, this
+lane's Express/parcel scope and was left as-is.

@@ -244,6 +244,32 @@ describe("OffersService.makeOffer", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  // LM-01 pinning test: the accept-must-match-proposedFare guard (line ~107) is gated on
+  // `input.type === "accept"` — a "counter" offer is the rider's OWN price and must bypass it
+  // entirely, even at a fare that would have been rejected as an accept. Money-sensitive (this is
+  // the value selectOffer later binds into agreedFare), previously exercised only indirectly via
+  // admin fareProvenance display tests, never at the point the offer is actually created.
+  it("accepts a counter offer at a fare that would have failed the accept-match guard (LM-01)", async () => {
+    const create = vi.fn(async (args: { data: { type: string; offeredFare: number } }) => ({
+      id: "o1",
+      type: args.data.type,
+      offeredFare: { toString: () => args.data.offeredFare.toFixed(2) },
+      etaMinutes: 12,
+      status: "pending",
+    }));
+    const { service } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1", proposedFare: 3 }),
+        findFirst: async () => null,
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    const res = await service.makeOffer({ ...offerInput, type: "counter", offeredFare: 4.75 }, "rider-1");
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "counter", offeredFare: 4.75 }) }));
+    expect(res).toMatchObject({ type: "counter", offeredFare: "4.75" });
+  });
+
   // C3: a rider currently holding a live food dispatch offer can't also bid on a parcel — checked at
   // creation (not just at selectOffer) so the customer's board never even shows a bid the rider can't
   // take. common/food-dispatch-lock.ts's own query is exercised here via the fake `order.findFirst`.
