@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17.** D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18.** D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -424,3 +424,40 @@ screen*), recorded here because it is a copy change and copy changes need a ledg
 is a live alignment target and the rest of it is unchanged.
 
 **Retire this entry** when an export redraws the top-up screen with RJM's own back label.
+
+---
+
+## D-18 · Pushed food screens keep a back the standalone-board mocks never drew — APPROVED (2026-08-16)
+
+**In effect.** The generalisation of D-14, found by a navigation-blocker audit (`/design-review`,
+2026-08-16) after the `/send` fix showed the shape. Both stacks run `headerShown: false`
+(`app/_layout.tsx:87`, `app/food/_layout.tsx:10`), so **the only way off a pushed screen is one the
+screen draws itself**. Most kit screens are drawn as standalone boards — the screen as if it were the
+only thing on the phone — so "the mock draws no back" is not evidence that the shipped, pushed version
+needs none. Two food surfaces were taken literally and shipped as dead ends:
+
+**`/food/order/[orderId]` — the shared `OrderHeader` gains a back chevron.** The kit's `OrderHead`
+(`r-customer-b.jsx:10`) is restaurant name + status pill. The app matched it faithfully across every
+state, and the screen is pushed from the Orders tab (`app/(tabs)/orders.tsx:162`), so **eight of its
+twelve state views had no exit of any kind**: awaiting-accept, item-approval, preparing,
+ready-for-pickup, live-tracker, rider-dropped, refund-pending, and the safety-net fallback whose own
+comment claims it exists so the screen "never dead-ends". The back lives in the shared header rather
+than in eight views, so no future state can be added without it. The four views that already had an
+exit are untouched, including the pay screen's own `AppBar`, whose back deliberately un-forces the pay
+view rather than popping the order (see its note).
+
+**`/food/search` — a back-only `AppBar`.** `RC.search` (`r-customer-a.jsx:155`) draws a search field
+whose only control is a clear-x. The app shipped exactly that, pushed from `food/index.tsx:83`, with
+the `x` labelled "Clear search" and wired to clear the query — no dismiss. The bar is mounted
+**title-less**: the mock draws no header text, and adding a "Search" heading would trade one drift for
+another. Every sibling food screen (`index`, `[id]`, `cart`, `checkout`) already carries an `AppBar`,
+and the kit itself draws one on `RC.list_empty`, `RC.list_error` and `RCB.pay_failed` — search was the
+odd one out, not the rule.
+
+Both use the flipped-`chevron-right` glyph and wrapper-View rotation established by `shell/AppBar` and
+D-14 (`react-native-web` drops a transform set on the glyph itself), and both fall back to a sensible
+route when there is no stack to pop — `/orders` and `/food` — so a push notification or deep link can
+not strand anyone either.
+
+**Retire this entry** if an export redraws these screens as pushed, with their own back affordances.
+Adopt whatever it draws.
