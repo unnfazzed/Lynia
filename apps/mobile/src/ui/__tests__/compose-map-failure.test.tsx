@@ -48,6 +48,7 @@ jest.mock("react-native-maps", () => {
 });
 
 import { ComposeMap } from "../ComposeMap";
+import { controlInteractions, type InteractionControl } from "../../testing/interactions";
 
 const noop = (): void => {};
 const FAIL_TITLE = "The map didn't load";
@@ -57,6 +58,11 @@ function render(): renderer.ReactTestRenderer {
   act(() => {
     tree = renderer.create(<ComposeMap pickup={null} drop={null} active="pickup" onChangePickup={noop} onChangeDrop={noop} />);
   });
+  // PERF-SEND-01: the native map is mounted one interaction AFTER the screen's first commit, so these
+  // tests must let that interaction run before they can drive the map's own ready/loaded callbacks.
+  // Only the interaction is released here — the map's own 9s clock is a plain timer these tests still
+  // advance by hand, so every "before the timeout" assertion below means exactly what it says.
+  act(() => interactions.flush());
   return tree;
 }
 
@@ -67,12 +73,15 @@ function texts(tree: renderer.ReactTestRenderer): string[] {
   });
 }
 
+let interactions: InteractionControl;
 beforeEach(() => {
   jest.useFakeTimers();
+  interactions = controlInteractions();
   mounts.length = 0;
   mockCapture.mockReset();
 });
 afterEach(() => {
+  interactions.restore();
   jest.useRealTimers();
 });
 

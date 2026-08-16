@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { InteractionManager, Pressable, ScrollView, Text, View } from "react-native";
 import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
 import { loadDeliveryCode } from "../../src/auth/device-state";
 import { liveOrderCardModel, restaurantCardStatus } from "../../src/logic/home-feed";
@@ -24,6 +24,36 @@ import {
 
 const RESTAURANT_RAIL_LIMIT = 10;
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
+
+/**
+ * PERF-SEND-01 (second half). expo-router loads route components lazily — `useScreens` passes
+ * `getComponent={() => getQualifiedRouteComponent(route)}`, so a route's module graph is EVALUATED on
+ * the first navigation to it, not at launch. `/send` is the heaviest route in the customer app by that
+ * measure: 57 modules / ~140 KB of minified JS that no other screen pulls in (measured by diffing the
+ * production Metro graph with and without `app/send.tsx` — 1,815 → 1,872 modules), 29 of them
+ * `react-native-maps` + `expo-location`. All of it used to be evaluated synchronously inside the tap
+ * handler, which is why the FIRST "Send" tap of a session is the slow one and later taps are not.
+ *
+ * Warming it from the launcher's idle time moves that evaluation off the tap path entirely. It is a
+ * plain `require` inside `runAfterInteractions`, deliberately not a top-level import: Metro keeps the
+ * module in the same single bundle either way, so what changes is only WHEN it is evaluated — a
+ * top-level import here would drag all 57 modules back into the launch graph and re-open MOB-BOOT-03.
+ * The graph is therefore evaluated once per process and every later mount is a module-cache hit, so
+ * this needs no "already warmed" bookkeeping of its own. Best-effort by construction — a throw here
+ * must never take down the launcher, and the route still loads on tap the way it always did.
+ */
+function usePrewarmSendRoute(): void {
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      try {
+        require("../send");
+      } catch {
+        /* the tap path re-requires it and surfaces any real failure there */
+      }
+    });
+    return () => handle.cancel();
+  }, []);
+}
 
 /**
  * The customer's own delivery code per live PARCEL order, from the same per-order SecureStore the
@@ -129,6 +159,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
+  usePrewarmSendRoute();
 
   // Live-orders read, mirroring the old single-order query's rules: gated to poll only while this
   // screen is the visible route (PERF20-01's rule), refreshed on focus + app foreground so a status

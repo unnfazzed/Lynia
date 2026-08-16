@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { InteractionManager, Pressable, Text, View } from "react-native";
 import MapView, {
   type LatLng,
   type MapPressEvent,
@@ -85,18 +85,36 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   const [mapReady, setMapReady] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapTimedOut, setMapTimedOut] = useState(false);
+  // PERF-SEND-01: the native MapView is mounted ONE INTERACTION LATE, not in the screen's first commit.
+  //
+  // `/send` is a pushed route, so its first commit runs inside React Navigation's push transition —
+  // and that commit used to inflate a Google `MapView`, which initialises the Maps SDK on the UI
+  // thread. The whole screen (sheet, address rows, item/phone/price fields, CTA) was therefore held
+  // behind the single most expensive mount in the app: tapping "Send" sat on the launcher for a beat,
+  // then landed on a janky transition. Nothing on the critical path needs the map to exist — the
+  // composer's own controls are all inside the sheet — so the map now mounts after the transition
+  // settles and the form is interactive from the first frame. `runAfterInteractions` (the same
+  // deferral seam analytics.tsx uses) fires as soon as the push animation completes, so on a warm
+  // screen the map is only a frame or two behind and the customer never sees the placeholder linger.
+  const [mapMounted, setMapMounted] = useState(false);
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => setMapMounted(true));
+    return () => handle.cancel();
+  }, []);
   // Remount nonce for "Retry the map" — bumping it gives MapView a new key, which is the only way to
   // re-attempt the native map's own initialisation (a transient tile/auth failure is otherwise
   // permanent for the life of the screen, and this screen lives for a whole compose session).
   const [mapNonce, setMapNonce] = useState(0);
   useEffect(() => {
-    if (mapLoaded) return;
+    // The clock starts when the MAP does, not when the screen does — the deferral above must not eat
+    // into the tile budget and turn a merely slow map into a "didn't load" card.
+    if (!mapMounted || mapLoaded) return;
     // Longer than the old 6s: tiles on a constrained link are legitimately slow, and the card now
     // clears itself the moment they arrive, so erring late costs nothing while erring early would
     // accuse a working map. Both `mapLoaded` and `mapNonce` are inputs so a retry restarts the clock.
     const t = setTimeout(() => setMapTimedOut(true), MAP_LOAD_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [mapLoaded, mapNonce]);
+  }, [mapMounted, mapLoaded, mapNonce]);
   // Report it once per mount. A blank map is invisible to every existing signal — the previous
   // occurrence had to be diagnosed from a user's description — so this is the difference between
   // "somebody said the map was blank" and a dated, versioned event with a device attached.
@@ -145,10 +163,14 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   const key = `${pickup?.lat},${pickup?.lng}|${drop?.lat},${drop?.lng}|${active}`;
   const lastKey = useRef<string>("");
   useEffect(() => {
-    if (key === lastKey.current) return;
-    lastKey.current = key;
+    // Null-check BEFORE burning the key, and re-run when the deferred map arrives: a re-broadcast
+    // prefills both pins at mount, which is exactly when `mapRef` is still empty. Marking that pass as
+    // "done" would leave the framing permanently unapplied and the customer looking at a two-pin route
+    // framed on whatever `initialRegion` happened to be.
     const map = mapRef.current;
     if (!map) return;
+    if (key === lastKey.current) return;
+    lastKey.current = key;
     if (pickup && drop) {
       map.fitToCoordinates(
         [
@@ -164,7 +186,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on a stable string of the coords + active slot.
-  }, [key]);
+  }, [key, mapMounted]);
 
   const useMyLocation = async (): Promise<void> => {
     setLocating(true);
@@ -195,6 +217,12 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* The pre-mount canvas (see `mapMounted`). The map's ground colour, nothing drawn on it: this is
+          the same neutral field the tiles themselves fade in over, so the deferral reads as the map
+          loading rather than as a missing element. It carries no copy — a hint here would contradict
+          the `mapLoaded`-gated pin hint that takes this space a moment later. */}
+      {!mapMounted ? <View style={{ flex: 1, backgroundColor: tokens.color.surface }} /> : null}
+      {mapMounted ? (
       <MapView
         // `key` is the retry mechanism: a new nonce unmounts the failed native map and mounts a fresh
         // one. `lastKey` (the camera-framing guard below) is deliberately NOT reset with it — the
@@ -238,6 +266,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
           />
         ) : null}
       </MapView>
+      ) : null}
 
       {/* Floating "use my location" (kit Home screens.jsx:166 — top-right, just below the account
           avatar). The kit offers this for BOTH roles (`AddrSearch`'s onUseLocation handles pickup and
