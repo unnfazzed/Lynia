@@ -31,7 +31,7 @@ export function RiderAccountView({
   rows,
   onRowPress
 }: RiderAccountViewProps): React.ReactElement {
-  return <Screen><View>
+  return <Screen scroll><View>
     <AppBar title="Account" back={false} />
     <View style={{
         padding: tokens.space.screen,

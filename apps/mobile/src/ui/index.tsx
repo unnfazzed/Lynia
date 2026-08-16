@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared";
 import React from "react";
-import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, ScrollView, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { captureException, isSentryEnabled, nativeCrash } from "../telemetry/sentry";
 import { Icon, type IconName } from "./Icon";
@@ -98,7 +98,30 @@ export function TestBuildBanner(): React.ReactElement | null {
   );
 }
 
-export function Screen({ children, banner, footer }: { children: React.ReactNode; banner?: React.ReactNode; footer?: React.ReactNode }): React.ReactElement {
+export function Screen({
+  children,
+  banner,
+  footer,
+  scroll = false,
+}: {
+  children: React.ReactNode;
+  banner?: React.ReactNode;
+  footer?: React.ReactNode;
+  /**
+   * Scroll the body, the way the kit's own scaffold does — `packages/design/components/shell/
+   * AppScreen.jsx` gives its body `{ flex: 1, minHeight: 0, overflowY: "auto" }`, so every mock screen
+   * scrolls when its content is taller than the phone. This port did not, which is why a tall screen
+   * (the account cluster on the mandatory 320×640 entry phone) clipped its last rows instead of
+   * scrolling to them.
+   *
+   * OPT-IN rather than the default: 17 of the 45 `<Screen>` call sites already nest their own
+   * ScrollView/FlatList, and nesting a VirtualizedList inside a plain ScrollView breaks both. So the
+   * default stays a plain padded View, and a screen that owns its whole body asks for the scroll.
+   * `flexGrow: 1` on the content container keeps a SHORT body laid out exactly as the View branch did
+   * (a centred/`minHeight:"100%"` child still fills the phone) and lets a tall one grow past it.
+   */
+  scroll?: boolean;
+}): React.ReactElement {
   return (
     // Page surface is white (`bg`), per the kit's `--surface-page: var(--bg)` and its `AppScreen`
     // default. Grey (`surface`) is reserved for sunken/sheet elements that sit ON the page, not the
@@ -111,7 +134,13 @@ export function Screen({ children, banner, footer }: { children: React.ReactNode
           and unset for every screen that doesn't draw one, so existing call sites are unaffected. */}
       {banner}
       {/* 16px edge padding — designs must work at 320px wide (space.screen, not xl). */}
-      <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
+      {scroll ? (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: tokens.space.screen, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={{ flex: 1, padding: tokens.space.screen }}>{children}</View>
+      )}
       {/* Footer slot — the kit's `Screen`/`AppScreen` pins its `footer` BELOW the scrolling body
           (…body → footer → tab bar). The kit's footer chrome is a hairline top border on the bg
           surface with 8/16/12 padding — the cart "View cart" bar, the checkout pay bar, the menu

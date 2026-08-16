@@ -2,7 +2,7 @@ import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, Text } from "react-native";
+import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
@@ -26,6 +26,15 @@ import { AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type Account
  *  - the identity line is `phone · role`, the customer analogue of the rider's
  *    "★ 4.9 · 312 jobs · verified"; the bike/verification detail moved onto the "Bike & documents"
  *    row's sub-line, which is where the rider tab already carries it.
+ *
+ * The BODY GEOMETRY is mirrored from the generated rider view too (owner instruction 2026-08-16, from
+ * a photo of both tabs: "the customer options tab does not have same margins as the rider options
+ * cards .. align the customer cards so they have the same dimensions and design as the rider cards" —
+ * `docs/DESIGN-DEVIATIONS.md` D-22). D-15 harmonised what a row LOOKS like but left the two screens
+ * inset differently: the rider's generated view nests the mock's `Pad` inside `Screen`'s own 16px edge
+ * padding, so its cards sit 32px in, while this screen put its cards straight into `Screen` at 16px.
+ * Same rows, two different card widths. Both now draw `Screen scroll` → `Pad` → cards, so the cards
+ * are one width on both tabs.
  */
 export default function AccountTabScreen(): React.ReactElement {
   const router = useRouter();
@@ -60,33 +69,37 @@ export default function AccountTabScreen(): React.ReactElement {
   ];
 
   return (
-    <Screen>
+    // `scroll` — the body, not a ScrollView around the rows alone. The customer hub carries more rows
+    // than the rider's six and must still reach the last one on the mandatory 320×640 entry phone; the
+    // rider view earns the same scaffold from the codegen, so the two screens scroll identically.
+    <Screen scroll>
       <AppBar title="Account" back={false} />
 
-      {meQ.isLoading ? (
-        <SkeletonList count={1} />
-      ) : meQ.isError ? (
-        <Card>
-          <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn&apos;t load your details.</Text>
-          <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
-        </Card>
-      ) : (
-        <AccountIdentityCard
-          name={name}
-          line={identityLine}
-          // Owner decision 2026-08-16: the rider's online/offline slot carries VERIFICATION state here,
-          // and stays empty for a plain customer who has nothing to verify.
-          trailing={rider ? <KycPill status={rider.kycStatus} /> : undefined}
-          onPress={() => router.push("/profile")}
-          accessibilityLabel="Your details and session"
-        />
-      )}
+      {/* The mock's `Pad` — the SECOND 16px inset, copied from the generated rider view
+          (`app/rider/(tabs)/account.view.tsx`, its `Pad`→View). This is what makes the two tabs' cards
+          the same width; see D-22 and the header comment. */}
+      <View style={{ padding: tokens.space.screen, minHeight: "100%", paddingTop: 0 }}>
+        {meQ.isLoading ? (
+          <SkeletonList count={1} />
+        ) : meQ.isError ? (
+          <Card>
+            <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn&apos;t load your details.</Text>
+            <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
+          </Card>
+        ) : (
+          <AccountIdentityCard
+            name={name}
+            line={identityLine}
+            // Owner decision 2026-08-16: the rider's online/offline slot carries VERIFICATION state here,
+            // and stays empty for a plain customer who has nothing to verify.
+            trailing={rider ? <KycPill status={rider.kycStatus} /> : undefined}
+            onPress={() => router.push("/profile")}
+            accessibilityLabel="Your details and session"
+          />
+        )}
 
-      {/* Scrolls because the customer hub carries more rows than the rider's five and must still fit
-          the mandatory 320×640 entry phone. Not a visual element — nothing drawn changes. */}
-      <ScrollView showsVerticalScrollIndicator={false}>
         <AccountRowList rows={rows} />
-      </ScrollView>
+      </View>
     </Screen>
   );
 }

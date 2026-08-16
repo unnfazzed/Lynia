@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -563,3 +563,55 @@ shipped.
 **Retire this entry** when an export redraws `LJ on_hold` with its own navigation — `LJ.on_hold` is
 `PENDING` in `tools/parity/parity-status.mjs` (adopted, not yet wired to an app target), so there is no
 rendered-conformance assertion on this screen to update in the meantime.
+
+---
+
+## D-22 · The Account cluster's cards sit 32px in, not the mock's 16px — APPROVED (2026-08-16)
+
+**In effect.** `RJM.account` (`rider-one-app.jsx :: account`) draws its two cards inside a single
+`Pad` — `padding: "10px 16px 16px"` — so on a 360px phone the identity card and the settings card are
+**328px** wide, and their left edge lines up (within 4px) with the `AppBar` title above them. The app
+draws them **296px** wide, inset **32px**: the generated view nests that `Pad` inside the app
+`Screen`'s own `padding: tokens.space.screen`, and the kit's `AppScreen` — which `Screen` ports — adds
+no horizontal padding of its own. The double inset has been live on the rider tab since RJM.account
+was codegen-adopted.
+
+**How it surfaced.** Owner instruction (2026-08-16), from two handset photos: *"The customer options
+tab does not have same margins as the rider options cards.. Align the customer cards so they have the
+same dimensions and design as the rider cards."* D-15 had already harmonised the row GRAMMAR (same
+icon/label/sub/chevron geometry, from the same shared component) but not the screen-edge inset, so the
+two tabs drew identical rows at two different widths — customer 328, rider 296.
+
+**The decision.** Asked which side should move — the design says 16px, which is what the *customer*
+was already drawing, so the mock-faithful fix was to widen the rider — the owner chose the other
+direction: **match the rider's current look, both tabs at 32px.** So this entry records a deviation
+the app now makes deliberately on **both** Account tabs rather than accidentally on one:
+
+| | Mock `RJM.account` | App (both tabs) |
+|---|---|---|
+| Card inset | 16px (one `Pad`) | **32px** (`Screen` 16 + `Pad` 16) |
+| Card width @360 | 328px | **296px** |
+| Card width @320 (entry phone) | 288px | **256px** |
+
+**Scope — the two Account tabs only** (owner's answer to the scope question). `app/(tabs)/account.tsx`
+now nests the same `Pad`-equivalent body wrapper the generated `app/rider/(tabs)/account.view.tsx`
+carries, so both are `Screen` → `AppBar` → `Pad(padding: space.screen, paddingTop: 0)` → cards. The
+same `Screen`-plus-`Pad` double inset exists on `RC.cart_empty`; it is **out of scope here and
+unchanged**, and is NOT covered by this entry — if it is ever aligned, it aligns to the mock's 16px.
+
+**What is NOT deviating.** Every value inside the cards still comes from the kit and is still asserted:
+the shared row component (`apps/mobile/src/ui/account/AccountRows.tsx`) mirrors the generated rider
+view number-for-number, and `app/(tabs)/__tests__/account-harmony.test.tsx` fails if either the row
+geometry or the screen-edge inset splits the two tabs again. The `AppBar` title inset stays at the
+app's 16px (the mock draws 12px) — untouched, pre-existing, and app-wide rather than specific to this
+cluster.
+
+**Scroll came with it.** The kit's `AppScreen` body is `{ flex: 1, minHeight: 0, overflowY: "auto" }`
+— every mock screen scrolls when its content outgrows the phone. The app's `Screen` did not, so the
+customer tab had bolted its own `ScrollView` around just the row list and the rider tab could clip its
+last row on the 320×640 entry phone. `Screen` now takes an opt-in `scroll` prop that ports the kit's
+scrolling body, the codegen's `S()`→`<Screen>` lowering emits it (which is why the rider view changed
+by exactly one prop), and both tabs use it. This is a port of kit behaviour, not a deviation from it.
+
+**Retire this entry** by widening both tabs back to a single 16px inset — a one-line change on each
+side once the owner wants the mock's card width. Nothing else depends on 32px.
