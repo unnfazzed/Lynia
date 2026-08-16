@@ -1,5 +1,15 @@
 # Phase 3 — Customer account cluster alignment
 
+> **Superseded in part (2026-08-16) — read `docs/DESIGN-DEVIATIONS.md` D-14 first.** The
+> `LJ.profile → app/(tabs)/account.tsx` section below records this screen's alignment to the older
+> static `Profile` mock. That target has since been **retired by owner decision**: the customer
+> Account tab (and `app/profile/index.tsx`, and the row grammar of `app/settings/index.tsx`) now draw
+> the **rider** account language from `RJM.account`, so the two Account screens stop looking a design
+> generation apart. The two "honest deviations" this document flagged as candidates — the missing
+> masked-ID row and the load-bearing second "hub" action Card — are resolved by that decision: the hub
+> nav became the row list, and the ID row is moot on a screen no longer aligned to `Profile`. The
+> `LJ.notifications` / `LJ.help` sections below are unaffected and still current.
+
 Structure-first pixel-parity alignment of the five customer **Account / support** screens against the
 design mocks in `packages/design/explorations/journey/screens.jsx`. The gallery/mock wins over any code
 comment.

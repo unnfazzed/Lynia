@@ -179,12 +179,12 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
+| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`) · **target superseded** by `docs/DESIGN-DEVIATIONS.md` D-14 | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16 |
 | 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
-| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
+| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-14 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green |
 | ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
 | ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |
