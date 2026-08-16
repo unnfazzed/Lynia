@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/unnfazzed/Lynia/compare/v0.37.0...v0.38.0) (2026-08-16)
+
+
+### Features
+
+* **mobile:** settings adopts the Account tab's card design (D-25) ([#768](https://github.com/unnfazzed/Lynia/issues/768)) ([d3e9c47](https://github.com/unnfazzed/Lynia/commit/d3e9c47f1b656c6d651ee6f3afa17d548656ea67))
+
 ## [0.37.0](https://github.com/unnfazzed/Lynia/compare/v0.36.2...v0.37.0) (2026-08-16)
 
 
