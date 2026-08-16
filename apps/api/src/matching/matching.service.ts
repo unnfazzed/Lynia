@@ -345,6 +345,14 @@ export class MatchingService {
       // push at all — the expiry/reconciler owns closing the order out; a stale broadcast is pure noise.
       const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
       if (remainingMs <= 0) return;
+      // LM-01: the ONLY status check above (`order.status !== "open_for_offers"`) ran before the two
+      // async round-trips just above (nearbyRiders geo lookup + claimBroadcastRecipients) — a customer
+      // select or a cancel landing in that window is invisible to it. DS17-01 bounds a push outliving the
+      // order's OWN window; it does nothing for one that closed EARLY mid-tick. Re-read the status right
+      // before the actual disruptive side effect (the FCM send) so a dead auction never invites a rider
+      // to bid on it.
+      const stillOpen = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+      if (stillOpen?.status !== "open_for_offers") return;
       // best-effort, never throws, un-awaited — same contract as the create-time fan-out.
       void this.notifications.notifyNewBroadcast(
         orderId,

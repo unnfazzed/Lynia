@@ -481,6 +481,32 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 
     expect(notifyNewBroadcast).not.toHaveBeenCalled();
   });
+
+  // LM-01: the only status check ran at the TOP of the method, before two more async round-trips
+  // (nearbyRiders + claimBroadcastRecipients). A customer select (or a cancel) landing in that window
+  // must not still hand a widened ring of riders a "bid now" push for an auction that's already closed
+  // — distinct from DS17-01 above, which only bounds a push outliving the order's OWN natural window.
+  it("LM-01: does NOT push when the order left open_for_offers WHILE the tick was mid-flight (post-initial-read)", async () => {
+    const findUnique = vi
+      .fn()
+      // 1st call: the method's opening read — still open, so it proceeds.
+      .mockResolvedValueOnce(openOrder)
+      // 2nd call: the re-check right before the FCM send — a customer selected an offer in between.
+      .mockResolvedValueOnce({ status: "assigned" });
+    const prisma = { order: { findUnique } } as unknown as PrismaService;
+    const nearbyRiders = vi.fn(async () => [{ profileId: "r-ring", distanceM: 7_000 }]);
+    const claimBroadcastRecipients = vi.fn(async () => ["r-ring"]);
+    const tracking = { nearbyRiders, claimBroadcastRecipients } as unknown as TrackingService;
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const notifications = { notifyNewBroadcast } as unknown as NotificationsService;
+    const gateway = { emitBoardNewOrderToCells: vi.fn() } as unknown as TrackingGateway;
+    const service = new MatchingService(prisma, noopTokens, notifications, fakeMetrics(), gateway, tracking);
+
+    await service.expandBroadcast(expandOrderId, 0);
+
+    expect(findUnique).toHaveBeenCalledTimes(2);
+    expect(notifyNewBroadcast).not.toHaveBeenCalled();
+  });
 });
 
 describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {
