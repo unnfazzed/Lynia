@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -740,3 +740,75 @@ but it is NOT a one-line edit per side — the rider half is machine-generated, 
    `tokens.space.screen * 2`; it is meant to fail here, so update it to the new value in the same PR.
 
 Then re-run the guardrails: `structure-snapshot` proves the regenerated view still matches the mock.
+
+---
+
+## D-25 · Settings adopts the Account-tab card design; permissions move inside the card — APPROVED (2026-08-16)
+
+**In effect.** `app/settings/index.tsx` now draws the Account cluster's shape — identity card, then
+**one** `AccountRowList` card holding every row — at the Account tabs' 32px inset (D-24). The two
+`Settings` mocks (`screens.jsx :: Settings` and `screens-shipped.jsx :: SettingsPerms`, SH11) draw the
+screen with **no cards at all**: bare rows on the page, separated by hairlines, with the permissions
+under their own all-caps section header and a framing paragraph beneath them. That is the divergence
+this entry sanctions.
+
+**How it surfaced.** Owner instruction (2026-08-16), from a handset photo of Settings beside the
+Account tab: *"The settings page should have the same card design and dimensions as the Account Tab.
+Remove the 'edit profile coming soon' statement. These must be viewable. Permissions must fall under
+the same card and not be separate."* Followed by the owner's answers to four scoping questions — one
+card for everything; the permission VALUE stays on the right; header and paragraph both dropped; and
+*"if u click the tab with name it must open for viewing the details for editing.. Editing is locked
+for now and no need to display that."*
+
+**What changed.**
+
+| | Mock (`Settings` / `SettingsPerms`) | App (this entry) |
+|---|---|---|
+| Container | no card — bare rows on the page | identity card + **one** row card |
+| Card inset | n/a | **32px** (`Screen` 16 + `Pad` 16), matching D-24 |
+| Permissions | own section: header · rows · paragraph | rows **inside** the one card |
+| `PERMISSIONS — READ FROM YOUR PHONE` | drawn | **not rendered** |
+| `These show your phone's real settings…` | drawn | **not rendered** |
+| Edit profile | row, no value | row, no value, **opens `/profile`** |
+| Row value (`On` · `English` · `Cash`) | right-aligned, before the chevron | **unchanged** — right-aligned |
+
+**Why the two dropped strings are not a copy loss.** Both existed to frame a *separate section*. Once
+the rows sit in the same card as everything else there is no section for a header to name, and the
+paragraph's claim ("these are your phone's real settings") is made by the rows themselves: each reads
+the live OS permission, taps through to Android settings, and a **denied** permission still spells out
+its consequence inline — `You won't hear when a rider offers or when your parcel arrives. Open system
+settings` — which is the one piece of that framing that carries information rather than decoration.
+Recorded as `undrawn` entries against `tools/parity/expected/LJ.settings_perms{,_ok}.json` so the
+rendered-conformance guardrail accounts for them by name rather than by silence.
+
+**"These must be viewable" — no dead taps.** Every row on Settings now opens something:
+
+- **Edit profile** and the **identity card** → `/profile`, the account record (name, phone, national
+  ID + its verification tag). This is the "details for editing"; editing itself is still unbuilt, and
+  per the owner the screen does **not** say so — hence `Coming soon` is gone, and `docs/KNOWN_BUGS.md`
+  PXR-05 (which tracked that string) is resolved by this entry rather than by a profile-edit endpoint.
+- **Language** → `app/settings/language.tsx`, and **Payment** → `app/settings/payment.tsx`. Both are
+  **undrawn by the kit** — the mocks draw the settings ROW but nothing behind it — so they are covered
+  here too. Each is the same card grammar, so a screen pushed from that card doesn't change shape
+  under the user. Payment states the app's real behaviour rather than restating "Cash": parcels are
+  cash to the rider at the agreed price, food is cash at the door **or** mobile money at checkout
+  (`app/food/checkout.tsx` draws both, ungated) — a screen that said only "Cash" would contradict the
+  checkout one tab away.
+
+**What is NOT deviating.** Every value inside the card still comes from the kit: the rows are the
+shared `AccountRowList` grammar, which mirrors the generated rider view number-for-number
+(`app/(tabs)/__tests__/account-harmony.test.tsx` still gates that). The row VALUES are the mock's own
+strings in the mock's own right-hand slot — the `value`/`warn`/`consequence` slots added to
+`AccountRow` exist precisely so the move into the card did not have to restyle them into sub-lines.
+This entry is orthogonal to D-15 (row grammar) and D-22 (which rows each Account tab lists); it is the
+sibling of D-24, which set the inset this screen now shares.
+
+**Guarded by** `app/settings/__tests__/settings-card.test.tsx`: one row card (a second is the old
+split returning), every row inside it, the inset measured equal to the Account tab's, no `Coming soon`
+and no handler-less row. `app/settings/__tests__/permissions-section.test.tsx` keeps what the
+permission rows SAY and asserts the two dropped strings stay dropped.
+
+**Retire this entry** if an export redraws Settings in the card language (then align to it and delete
+this), or if the owner reverses the merge — in which case the permission rows go back to their own
+section, the header and paragraph come back, and the two `undrawn` entries come out of the expected
+JSONs. Language/Payment becoming drawn screens would retire only that half.

@@ -78,11 +78,6 @@
    "ref": "packages/design/explorations/journey/screens.jsx :: Settings"
   },
   {
-   "text": "Coming soon",
-   "reason": "Honest degraded value on the Edit-profile row: profile editing is not built yet, so the row shows 'Coming soon' rather than navigating nowhere. Drift from the base mock (which draws the row valueless); tracked, not sanctioned.",
-   "ref": "docs/KNOWN_BUGS.md#PXR-05"
-  },
-  {
    "text": "Privacy notice",
    "reason": "Entry row to the SH7 Privacy screen this lane built — the mock draws Privacy as a destination screen (screens-shipped.jsx Privacy), reached from settings; the settings_perms shipped-state omits the reachability row.",
    "ref": "packages/design/explorations/journey/screens-shipped.jsx :: Privacy"
@@ -98,7 +93,18 @@
    "ref": "packages/design/explorations/journey/screens-shipped.jsx :: DeleteAccount"
   }
  ],
- "undrawn": [],
+ "undrawn": [
+  {
+   "mock": "PERMISSIONS — READ FROM YOUR PHONE",
+   "reason": "Section header for a section that no longer exists: the permission rows moved INTO the single settings card (owner instruction 2026-08-16, 'Permissions must fall under the same card and not be separate'), so the all-caps label framed nothing and was dropped with the split it labelled.",
+   "ref": "docs/DESIGN-DEVIATIONS.md#D-25"
+  },
+  {
+   "mock": "These show your phone's real settings — LyniaGo re-checks them every time you come back to the app. Changing one opens Android settings.",
+   "reason": "Framing paragraph for the same retired section, dropped by the same owner decision. The behaviour it described is unchanged and still asserted: both rows read the live OS permission and tap through to Android settings, and a DENIED permission still spells out its consequence inline on the row.",
+   "ref": "docs/DESIGN-DEVIATIONS.md#D-25"
+  }
+ ],
  "tree": {
   "role": "container",
   "children": [
