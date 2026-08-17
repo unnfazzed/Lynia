@@ -5,7 +5,7 @@ import {
   MeterProvider,
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { bucketAppVersion, MetricsService } from "./metrics.service";
 
 /**
@@ -53,12 +53,14 @@ describe("MetricsService — NoopMeter safety (no provider registered)", () => {
     }).not.toThrow();
   });
 
-  it("startTimer returns a closure yielding a non-negative elapsed-ms number", () => {
+  it("startTimer's closure computes the real elapsed delta, not a fixed value (TP-02)", () => {
+    const nowSpy = vi.spyOn(performance, "now");
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_042);
     const m = new MetricsService();
     const done = m.startTimer();
     const elapsed = done();
-    expect(typeof elapsed).toBe("number");
-    expect(elapsed).toBeGreaterThanOrEqual(0);
+    expect(elapsed).toBe(42);
+    nowSpy.mockRestore();
   });
 });
 

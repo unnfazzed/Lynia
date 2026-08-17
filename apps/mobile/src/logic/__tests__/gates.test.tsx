@@ -16,7 +16,8 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     // The expired copy says "re-verify" (contains `verif`) — the sniff must not collapse it into `kyc`.
     expect(onlineGateReason({ message: "Your ID has expired — re-verify to keep riding" })).toBe("kyc_expired");
     expect(onlineGateReason({ code: "kyc_expired", message: "whatever" })).toBe("kyc_expired");
-    expect(ONLINE_GATE_COPY.kyc_expired.title).toBeTruthy();
+    // Pinned, not just non-empty (TP-07) — a wrong-but-nonempty-and-distinct string used to slip past.
+    expect(ONLINE_GATE_COPY.kyc_expired.title).toBe("Your ID has expired");
     expect(ONLINE_GATE_COPY.kyc_expired.title).not.toBe(ONLINE_GATE_COPY.kyc.title);
   });
 
@@ -77,8 +78,11 @@ describe("isAccountOnHold (customer account-on-hold gate, S·2)", () => {
     expect(isAccountOnHold({ code: "out_of_area" })).toBe(false);
     expect(isAccountOnHold({ message: "Couldn't create the order." })).toBe(false);
     expect(isAccountOnHold(null)).toBe(false);
-    expect(ACCOUNT_ON_HOLD_COPY.title).toBeTruthy();
-    expect(ACCOUNT_ON_HOLD_COPY.message).toBeTruthy();
+    // Verbatim from the mock (LJ.on_hold) — pinned, not just non-empty (TP-07).
+    expect(ACCOUNT_ON_HOLD_COPY.title).toBe("Your account is on hold");
+    expect(ACCOUNT_ON_HOLD_COPY.message).toBe(
+      "We've paused your account while we review recent activity. This usually takes 24 hours — call us if you think it's a mistake.",
+    );
   });
 });
 
