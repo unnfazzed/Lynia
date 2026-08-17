@@ -458,6 +458,53 @@
 > `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2 (closed test,
 > 14-day clock, production access) remains untouched.
 
+> **Status (2026-08-17, later — main's CI was red at request time; fixed forward, then v0.38.0
+> re-dispatched to the internal track on a newer main.)** A Claude session was asked to "make sure
+> everything is deployed to main successfully and create an EAS build and deploy to Play Store,
+> track it." Checking main before dispatching (rather than assuming the morning's build meant main
+> was still healthy) found `main`@`e7cc885` (#791) red: `osv-scanner`'s dependency-audit gate failed
+> on **`GHSA-ggr8-5vv4-36mx`, CVSS 8.2, in `deepmerge-ts@7.1.5`** — a transitive dep of
+> `@prisma/config@7.9.1` (Prisma's CLI config loader, exercised by `prisma migrate deploy` in
+> `release.yml`), pinned there to an *exact* version with no newer stable Prisma release available to
+> absorb a fix on its own.
+>
+> Fixed with a `pnpm.overrides` entry forcing `deepmerge-ts` to the patched `8.0.1` — the same
+> mechanism already used for every other transitive-dep CVE in this repo (PR #792). Verified before
+> pushing: `prisma validate` still loads `prisma.config.ts` cleanly against `8.0.1`, the CI-equivalent
+> `osv-scanner` gate re-run locally reports 0 High/Critical, and the full `pnpm typecheck && pnpm
+> build && pnpm test` (all 6 turbo packages plus `@lynia/admin` and `@lynia/merchant`, matching
+> `ci.yml`'s `build` job step-for-step including its `prisma:generate` step) is green. CI confirmed
+> green on `main`@`2b98457` (#792 squash-merged), and the PR was taken through the same
+> draft→CI-green→merge-on-green flow as any other Claude-authored PR here.
+>
+> **Main kept moving underneath the fix.** `dependabot-auto-merge.yml` merged three more PRs
+> (#785, #786, #788 — GitHub Actions + production-dependencies bumps) in the few minutes between
+> #792 merging and dispatch. Re-ran the ownership guards against the actual moving target rather than
+> the commit last observed: no other reachable Claude session (`ListAgents`), no in-flight
+> `mobile-release.yml` run, CI green on the new tip `main`@`7543239` (#788), `pnpm install
+> --frozen-lockfile` clean run against that exact tip (not the earlier, by-then-stale, checkout).
+>
+> Dispatched `mobile-release.yml` run `32045980556` (run #26) explicitly with **`profile: preview`,
+> `submit: true`**, ref `main`@`75432394036e069d71a8c0bccf0c4395bffb5d17`. GitHub-side job succeeded
+> in 67s (16:31:16–16:32:23 UTC). EAS build `98d1a388-de43-48c4-a755-32b1d02b6ace` (profile
+> `preview`, app version `0.38.0`, **versionCode 18**) reached **FINISHED**; its submission
+> `de358530-e095-44ac-8b59-652695edc2a2` reached **FINISHED**, track **`internal`**, no error —
+> confirmed on the *first* `eas-build-status.yml` check (run `32046972874`, ~13 minutes after
+> dispatch), no retries needed. `eas-build-status.yml`'s `runtime=?` gap (recorded 2026-08-16, a
+> jq-formatting issue reading null `runtimeVersion` from `eas build:list --json`) is still open and
+> not fixed here — out of scope for a ship-and-track request, same as last time.
+>
+> **Housekeeping left for a human/future session:** PR #787 (dev-dependencies bump) and #782
+> (release-please `chore(main): release 0.39.0`) are still open; the former will likely auto-merge via
+> `dependabot-auto-merge.yml`, the latter is not auto-merged by anything in this repo and needs an
+> explicit decision to cut the release. Neither blocks this entry's "deployed to main successfully"
+> claim — no open PR represented unmerged feature work, and both are routine/bot-owned. **What this
+> run does NOT establish** — unchanged from every entry since 2026-08-12: still the **internal** track
+> only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2 (closed
+> test, 14-day clock, production access) remains untouched; a FINISHED submission does not prove the
+> binary *runs* — the real exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a
+> handset, by a human.
+
 ---
 
 ## 1. App identity
