@@ -213,6 +213,18 @@ export async function detectHomePlace(): Promise<HomePlace | null> {
 // The hook
 // ---------------------------------------------------------------------------
 
+export interface HomeLocationOptions {
+  /**
+   * DETECT-ONLY. The stored slot is shared with the customer home, which persists a MANUAL pick
+   * there; a face that only ever answers "where am I" must neither believe that pick nor overwrite
+   * it. With this on the hook still paints the stored label instantly (it is a fine last-known) but
+   * always goes on to detect, and never writes back — so the customer's chosen deliver-to survives
+   * a rider re-detecting, and the rider never sees a customer-picked address labelled as their
+   * location. Off (the default) is the customer's behaviour, unchanged.
+   */
+  detectOnly?: boolean;
+}
+
 export interface HomeLocationApi extends HomeLocation {
   /** Re-detect from GPS, clearing any manual override. Resolves to the new place, or null. */
   useCurrentLocation: () => Promise<HomePlace | null>;
@@ -231,7 +243,7 @@ export interface HomeLocationApi extends HomeLocation {
  * Runs its detection ONCE per mount (ref-guarded, not dep-driven), like the pickup auto-locate hook:
  * nothing about a re-render may re-drive a location the customer has since overridden.
  */
-export function useHomeLocation(): HomeLocationApi {
+export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}): HomeLocationApi {
   const [place, setPlace] = useState<HomePlace | null>(null);
   const [source, setSource] = useState<HomeLocationSource>("none");
   const [locating, setLocating] = useState(true);
@@ -239,6 +251,9 @@ export function useHomeLocation(): HomeLocationApi {
   // Set the moment the customer picks a place in the sheet, so a GPS fix that resolves a beat later
   // cannot overwrite their explicit choice.
   const manualRef = useRef(false);
+  // Read through a ref so the one-shot detection effect below can stay dependency-free.
+  const detectOnlyRef = useRef(detectOnly);
+  detectOnlyRef.current = detectOnly;
   const alive = useRef(true);
   const started = useRef(false);
 
@@ -256,12 +271,15 @@ export function useHomeLocation(): HomeLocationApi {
       const stored = await loadStoredLocation();
       if (!alive.current) return;
       if (stored) {
-        manualRef.current = stored.manual;
+        // A stored MANUAL pick belongs to the customer face. Detect-only paints it as a last-known
+        // label (better than an empty row for the beat before the fix lands) but never adopts it as
+        // this face's answer, and never stops detecting because of it.
+        manualRef.current = stored.manual && !detectOnlyRef.current;
         setPlace(stored.place);
-        setSource(stored.manual ? "manual" : "last-known");
+        setSource(manualRef.current ? "manual" : "last-known");
       }
       // A manual choice is the customer's answer; do not go looking for a different one.
-      if (stored?.manual) {
+      if (manualRef.current) {
         setLocating(false);
         return;
       }
@@ -300,7 +318,9 @@ export function useHomeLocation(): HomeLocationApi {
         const next = { label, ...live };
         setPlace(next);
         setSource("gps");
-        void saveStoredLocation(next, false);
+        // Detect-only never writes: the slot holds the customer's deliver-to, and persisting a
+        // rider's GPS fix over it would silently discard a manual pick they made on the other face.
+        if (!detectOnlyRef.current) void saveStoredLocation(next, false);
       }
       setLocating(false);
     })();
@@ -319,7 +339,7 @@ export function useHomeLocation(): HomeLocationApi {
     setDenied(false);
     setPlace(detected);
     setSource("gps");
-    void saveStoredLocation(detected, false);
+    if (!detectOnlyRef.current) void saveStoredLocation(detected, false);
     return detected;
   }, []);
 

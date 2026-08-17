@@ -1125,8 +1125,8 @@ a real feature and a server-side change (list query *and* heartbeat targeting). 
 **Why the whole tab, not just the happy path.** The board has two returns — the virtualized open-orders
 list and the gated/offline fallback (KYC, expired ID, no-GPS, offline). Both now mount the same header,
 so a rider crossing between a live board and a wall never sees the tab's identity change underneath
-them. The walls keep their own recovery actions, and the offline path keeps its own go-online Card
-(RJM `offline`) — exactly as before.
+them. The walls keep their own recovery actions — but NONE of them carries a shift control any more,
+including the no-GPS wall, which was the last place in the app still drawing "Go offline".
 
 **Always online — what replaced the switch.** `online` stopped being user state and became machine
 state: being on this screen, past every wall, IS the shift. The app asserts `setOnline(true)` to the
@@ -1145,6 +1145,27 @@ obvious and are easy to regress:
 - **A response missing `online` counts as online.** The mutation now runs on every mount, so an older
   API or a proxy that ate the body would otherwise blank the board for a rider who is genuinely on
   shift. A real refusal arrives as a 403 and still lands on the gate wall.
+
+**Four defects this shipped with, found in review and fixed in the follow-up** — recorded because
+each is a trap the next always-online screen could fall into:
+
+1. **A customer's manual address shown as the rider's location.** `useHomeLocation` restores a stored
+   MANUAL pick and then stops detecting, and the slot is shared between the two faces — so a dual-role
+   user who set a deliver-to on the customer home saw it on the rider board labelled as where they
+   are, and a rider tapping refresh silently discarded that pick. The hook grew a `detectOnly` option:
+   it still paints the stored label as a last-known, but never adopts a manual pick as this face's
+   answer and never writes back.
+2. **The no-fix warning became unreachable.** `locHint` does not block going online, so the live board
+   renders while the rider has no position — and the one line explaining why the board may be empty
+   lived in the offline toggle Card, a screen state that no longer exists. It is now rendered at the
+   top of the board itself.
+3. **The no-GPS wall kept a "Go offline" button.** Removing a control everywhere except one wall is
+   worse than not removing it: it is the one screen still offering a switch the rest of the app says
+   does not exist.
+4. **A transient activation failure stranded the rider offline.** The auto-online effect consumes its
+   ref on the attempt, so a single network blip at launch left a verified rider off-shift for the life
+   of the screen. Now bounded-retried (3 attempts, 15s apart); a REFUSAL still goes straight to its
+   wall and is never retried.
 
 **The trade this makes, recorded honestly.** A rider can no longer stop receiving work from inside the
 app; closing it is the only way off shift, which works because the server ages riders out on heartbeat
