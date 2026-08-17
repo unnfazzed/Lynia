@@ -30,6 +30,14 @@ export const PERSISTED_KEY_ROOTS: ReadonlySet<string> = new Set([
   "earnings",
   "wallet",
   "notifications",
+  // Restaurant catalog (RCA §1.3/§5.2): listings are stale-safe browse data, not live marketplace
+  // state — persisting them warm-paints home's "Popular near you" and /food in the FIRST frame after
+  // a cold start. This replaced the hand-rolled `net/restaurant-list-store.ts` SecureStore snapshot,
+  // which (a) hydrated in a post-render effect so it could never reach the first frame, and (b)
+  // stored ~30 KB of signed-URL JSON against SecureStore's ~2 KB Android value advisory. The stale
+  // banner ("Showing what we had at HH:MM") now derives from the query's own persisted
+  // `dataUpdatedAt` — see use-restaurants.ts.
+  "restaurants",
 ]);
 
 /**

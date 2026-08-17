@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 /**
  * Restart-survival snapshot for a placed food order (RESTAURANTS-DECISIONS.md §3 "Survives an app
  * restart: live order id + last known status") — PII-free (id + status + two booleans), mirroring
- * `net/restaurant-list-store.ts`'s best-effort SecureStore pattern. Lets the order screen warm-paint
+ * `net/history-store.ts`'s best-effort SecureStore pattern. Lets the order screen warm-paint
  * a status pill immediately on mount (app kill mid-order, deep link, cold start) instead of a bare
  * skeleton while the live `GET /restaurants/orders/:id` round-trip is in flight. Full "land directly
  * on the live order" boot routing is D4's job (its own restart-tolerance bullet) — this is scoped to

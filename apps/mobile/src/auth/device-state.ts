@@ -12,7 +12,6 @@ import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
-import { RESTAURANT_LIST_SNAPSHOT_KEY } from "../net/restaurant-list-store";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
 import type { UndeliveredReason } from "@lynia/shared";
@@ -35,6 +34,15 @@ const codeAttemptsKey = (orderId: string): string => `lynia.deliveryCodeAttempts
 // high-water heuristic, which needs the client to have observed the elevated count first). Kept beside the
 // code and cleared with it. See reconcileDeliveryCode in logic/order-tracking.ts.
 const codeRotatedAtKey = (orderId: string): string => `lynia.deliveryCodeRotatedAt.${orderId}`;
+
+/**
+ * The DELETED restaurant-list snapshot store's key (`net/restaurant-list-store.ts`, removed by RCA
+ * 2026-08-17 §5.2 — the list warm-paints via the persisted query cache now). Kept as a literal here,
+ * not an import, purely so upgraded installs get the orphaned ~30 KB blob wiped: at sign-out (below)
+ * and opportunistically at boot (src/boot/prewarm.ts). Safe to delete this constant and both wipes
+ * once the ≤0.40.x install base is gone.
+ */
+export const LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY = "lynia.restaurants.list-snapshot.v1";
 
 // SecureStore can't enumerate keys, so we keep a tiny index of order ids that have a stored code.
 // That lets sign-out delete every per-order code on a shared device (S1). Best-effort like the rest.
@@ -561,10 +569,15 @@ export async function clearDeviceState(): Promise<void> {
       // rehydrate for the next user on a shared device — added alongside PICKUP_CHECKLIST_DRAFT_KEY
       // above, wired here from the start rather than repeating the BH-17/BH-23 gap.
       SecureStore.deleteItemAsync(PICKUP_PHOTO_DRAFT_KEY),
-      // D1 (browse): the cached restaurant list carries no PII, but the food cart draft is the
-      // customer's own in-progress basket + notes — must not rehydrate onto the next user's account
-      // on a shared device, same reasoning as HISTORY_SNAPSHOT_KEY above.
-      SecureStore.deleteItemAsync(RESTAURANT_LIST_SNAPSHOT_KEY),
+      // D1 (browse): the restaurant-list snapshot MODULE is gone (RCA 2026-08-17 §5.2 — the list
+      // now warm-paints through the persisted query cache, which clearPersistedQueries wipes on
+      // sign-out alongside this), but installs upgraded from ≤0.40.x still carry the old
+      // SecureStore blob (~30 KB of signed-URL JSON), so its literal key keeps being wiped here —
+      // and opportunistically at boot (src/boot/prewarm.ts) — until the install base has rolled
+      // past those versions. The food cart draft remains the customer's own in-progress basket +
+      // notes — must not rehydrate onto the next user's account on a shared device, same reasoning
+      // as HISTORY_SNAPSHOT_KEY above.
+      SecureStore.deleteItemAsync(LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY),
       SecureStore.deleteItemAsync(FOOD_CART_SNAPSHOT_KEY),
       // D2 (checkout): the last-placed food order's id/status snapshot (PII-free) must not rehydrate
       // onto the next user's account on a shared device, same reasoning as FOOD_CART_SNAPSHOT_KEY.

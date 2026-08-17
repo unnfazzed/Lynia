@@ -163,7 +163,7 @@ const bootEventsSent = new Set<ClientMetricEvent>();
  * like every other enqueue here) and no-op on a repeat of the same milestone. Filed under the app's
  * current role so a rider's launch isn't misattributed to "customer".
  */
-export function enqueueBoot(event: "boot_paint" | "boot_home"): void {
+export function enqueueBoot(event: "boot_paint" | "boot_home" | "boot_home_paint"): void {
   if (bootEventsSent.has(event)) return;
   bootEventsSent.add(event);
   enqueue(event, bootElapsedMs(), activeRole);

@@ -1,8 +1,6 @@
 import type { RestaurantListItem, RestaurantMenuResponse, RestaurantReopenReminderResponse } from "@lynia/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { clearReopenReminder, getReopenReminder, getRestaurantMenu, getRestaurants, setReopenReminder } from "../api/restaurants";
-import { loadRestaurantListSnapshot, saveRestaurantListSnapshot } from "../net/restaurant-list-store";
 
 export const RESTAURANTS_KEY = ["restaurants"] as const;
 export const restaurantMenuKey = (id: string): readonly ["restaurants", string, "menu"] => ["restaurants", id, "menu"];
@@ -25,9 +23,20 @@ export interface RestaurantListFeed {
 }
 
 /**
- * D1 (browse) restaurant list, warm-painted the same way `useHistoryFeed` warm-paints trips: live
- * data always wins; otherwise the last successful fetch is shown with its saved-at timestamp so an
- * offline customer sees *something* instead of a bare skeleton or a dead-end error.
+ * D1 (browse) restaurant list, warm-painted through the app-wide persisted query cache
+ * (`src/query/persist.ts` — `"restaurants"` is on the allowlist): on a cold start the pages
+ * hydrate from `rq-cache.json` before this hook's first read, so home's "Popular near you" and
+ * /food paint last-known cards in the FIRST frame and revalidate behind. This replaced the
+ * hand-rolled SecureStore snapshot (`net/restaurant-list-store.ts`, deleted — RCA 2026-08-17
+ * §1.3/§5.2): that store hydrated in a post-render effect (never the first frame) and pushed
+ * ~30 KB of signed-URL JSON against SecureStore's ~2 KB Android value advisory.
+ *
+ * The D-19 stale banner derives from query state instead of a hand-rolled `savedAt`:
+ * `isFetchedAfterMount` is false exactly while the painted data is a hydrated (or previous-
+ * session-cached) copy no fetch has confirmed since mount, and react-query persists
+ * `dataUpdatedAt`, so "Showing what we had at HH:MM" keeps its honest timestamp. A FAILED
+ * revalidation keeps the stale banner up too (`isError` — the data on screen is still the old
+ * copy, and food/index.tsx's banner grows its Retry in that state).
  *
  * B-O10: cursor-paginated (`useInfiniteQuery`, mirroring `useWalletLedger`) instead of one
  * unbounded fetch — `GET /restaurants` was the one list endpoint with no server-side cap, unlike
@@ -43,24 +52,16 @@ export function useRestaurantListFeed(enabled: boolean): RestaurantListFeed {
     enabled,
   });
 
-  const [cached, setCached] = useState<{ restaurants: RestaurantListItem[]; savedAt: string } | null>(null);
-  useEffect(() => {
-    if (!enabled) return;
-    void loadRestaurantListSnapshot().then(setCached);
-  }, [enabled]);
-  const liveRestaurants = q.data?.pages.flatMap((p) => p.restaurants) ?? null;
-  useEffect(() => {
-    if (liveRestaurants) void saveRestaurantListSnapshot(liveRestaurants);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- flatMap above builds a fresh array every render; compare on q.data itself
-  }, [q.data]);
+  const restaurants = q.data?.pages.flatMap((p) => p.restaurants) ?? null;
+  const showingStale = restaurants != null && (!q.isFetchedAfterMount || q.isError);
 
   return {
-    restaurants: liveRestaurants ?? cached?.restaurants ?? null,
-    showingStale: liveRestaurants == null && cached != null,
-    staleSavedAt: liveRestaurants == null ? (cached?.savedAt ?? null) : null,
+    restaurants,
+    showingStale,
+    staleSavedAt: showingStale && q.dataUpdatedAt > 0 ? new Date(q.dataUpdatedAt).toISOString() : null,
     isFetching: q.isFetching,
     isError: q.isError,
-    hasLiveData: liveRestaurants != null,
+    hasLiveData: restaurants != null && q.isFetchedAfterMount && !q.isError,
     refetch: () => void q.refetch(),
     hasMore: q.hasNextPage,
     isLoadingMore: q.isFetchingNextPage,

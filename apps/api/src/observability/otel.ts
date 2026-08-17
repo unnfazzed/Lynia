@@ -53,6 +53,7 @@ export async function buildOtelSdk(serviceName: string, endpoint?: string): Prom
     // Resolution below 500ms would be wasted — no launch has ever been that fast here.
     client_boot_paint_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
     client_boot_home_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
+    client_boot_home_paint_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
     // Rail-confirmation lag (money, not request latency): a mobile-money confirm is seconds→minutes,
     // and a late confirm on an already-expired intent is legitimately hours — 5s out to 1h.
     topup_confirm_lag_ms: [5000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000],

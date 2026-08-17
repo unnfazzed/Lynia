@@ -97,8 +97,10 @@ describe("(tabs)/home.tsx — /send route prewarm (PERF-SEND-01)", () => {
     const tree = mountHome();
 
     // Rendering the launcher must cost none of /send's 140 KB: the warm is scheduled, not executed.
+    // Two deferred interactions are pending on a fresh mount: this prewarm and the boot_home_paint
+    // RUM mark (useBootHomePaintMark — see home-boot-paint-mark.test.tsx for its own contract).
     expect(mockRequireSendRoute).not.toHaveBeenCalled();
-    expect(interactions.pending()).toBe(1);
+    expect(interactions.pending()).toBe(2);
 
     act(() => tree.unmount());
   });

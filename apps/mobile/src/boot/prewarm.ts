@@ -1,3 +1,4 @@
+import * as SecureStore from "expo-secure-store";
 import { loadOnboardingSeen, loadRolePreference, loadSession, type Session, type StartRole } from "../auth/session";
 import { consumeColdStartResponse } from "../push/push";
 
@@ -54,6 +55,13 @@ let reads: BootReads | null = null;
  */
 export function prewarmBootReads(): BootReads {
   if (reads) return reads;
+  // One-shot legacy cleanup (RCA 2026-08-17 §5.2): installs upgraded from ≤0.40.x carry the deleted
+  // restaurant-list store's ~30 KB SecureStore blob, which nothing reads any more and sign-out alone
+  // would leave in place for the app's whole signed-in life. Fire-and-forget — never awaited, never
+  // on the boot decision's critical path, and a keystore failure is silently irrelevant. The literal
+  // key mirrors LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY (auth/device-state.ts) — kept as a literal so the
+  // boot path doesn't grow a device-state import for a temporary janitor line.
+  void SecureStore.deleteItemAsync("lynia.restaurants.list-snapshot.v1").catch(() => undefined);
   reads = {
     session: loadSession().catch(() => null),
     onboardingSeen: loadOnboardingSeen().catch(() => false),
