@@ -10,7 +10,6 @@
  * SecureStore mock backing store is the only thing that "survives" a real app kill) and mounting a
  * fresh instance — it must offer a one-tap resume with the SAME captured asset, not force a re-shoot.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockReplace = jest.fn();

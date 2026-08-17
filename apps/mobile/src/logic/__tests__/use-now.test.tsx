@@ -4,7 +4,6 @@
  * never changed reference (e.g. TanStack Query's structural sharing keeping a no-change refetch's data
  * at the same reference), silently pinning open/closed and "closing in N min" displays.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { useNow } from "../use-now";
 

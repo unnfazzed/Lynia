@@ -23,7 +23,6 @@
  * react-query batches its store notifications on a `setTimeout(0)`; without fake timers those fire
  * outside `act(...)` on an unmounted renderer at teardown. We flush queries by advancing 1ms.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

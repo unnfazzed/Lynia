@@ -6,7 +6,6 @@
  * through with no interruption.
  */
 import { Alert } from "react-native";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { LeaveJobButton } from "../LeaveJobButton";
 

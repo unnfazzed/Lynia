@@ -3,7 +3,6 @@
  * a soft dead end for a rider who genuinely can't find the parcel. onCantCollect gives a discoverable
  * way out right where the rider is stuck, reusing the existing pre-pickup bail flow.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { PickupChecklist } from "../PickupChecklist";

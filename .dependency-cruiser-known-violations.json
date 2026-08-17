@@ -376,15 +376,6 @@
   },
   {
     "type": "module",
-    "from": "apps/api/src/riders/kyc-decline-reasons.ts",
-    "to": "apps/api/src/riders/kyc-decline-reasons.ts",
-    "rule": {
-      "severity": "info",
-      "name": "no-orphans"
-    }
-  },
-  {
-    "type": "module",
     "from": "apps/mobile/src/logic/fare-band.ts",
     "to": "apps/mobile/src/logic/fare-band.ts",
     "rule": {

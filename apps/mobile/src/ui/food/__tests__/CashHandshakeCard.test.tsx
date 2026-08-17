@@ -2,7 +2,6 @@
  * D4/R-04/R-05: the CASH doorstep handshake card — one component, four states, driven purely by
  * `HandshakeState` (see logic/food-doorstep.test.ts for the state derivation itself).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { CashHandshakeCard } from "../CashHandshakeCard";

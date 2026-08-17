@@ -12,7 +12,6 @@
  * with the handback read held open deliberately, so the pre-fix code fails them: with an empty Set it
  * renders the cancelled terminal immediately rather than the skeleton.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

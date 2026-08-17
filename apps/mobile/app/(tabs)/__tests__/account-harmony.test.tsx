@@ -24,7 +24,6 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 

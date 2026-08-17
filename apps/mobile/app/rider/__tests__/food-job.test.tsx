@@ -5,7 +5,6 @@
  * interval only starts while the main active-job render (the only place `nowMs` feeds the no-show
  * countdown / cash-handshake card) is actually reached.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

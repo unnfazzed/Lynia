@@ -8,7 +8,6 @@
  * `JobDetailsCard.test.tsx` already does (it mounts react-native-maps, a native module this test
  * environment can't render).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";

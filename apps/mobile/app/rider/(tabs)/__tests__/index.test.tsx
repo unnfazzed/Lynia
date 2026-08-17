@@ -9,7 +9,6 @@
  * data — confirming `showOpenOrdersList`'s early return can't leak the open-orders list into a screen
  * state that shouldn't show it.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { FlatList } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -33,10 +32,24 @@ jest.mock("expo-router", () => ({
     React_.useEffect(cb, []);
   },
 }));
+// Location behaviour is driven by these two switches rather than per-test `jest.spyOn`: a spy on a
+// module-factory mock did NOT reliably restore between tests, and a leaked "permission denied" made
+// every later test think the rider was gated. Reset in afterEach, set by the tests that need them.
+let mockLocPermission: "granted" | "denied" = "granted";
+let mockLocFixFails = false;
 jest.mock("expo-location", () => ({
-  requestForegroundPermissionsAsync: async () => ({ status: "granted" }),
-  getCurrentPositionAsync: async () => ({ coords: { latitude: -17.83, longitude: 31.05 } }),
+  requestForegroundPermissionsAsync: async () => ({ status: mockLocPermission }),
+  getForegroundPermissionsAsync: async () => ({
+    status: mockLocPermission,
+    granted: mockLocPermission === "granted",
+    canAskAgain: true,
+  }),
+  getCurrentPositionAsync: async () => {
+    if (mockLocFixFails) throw new Error("location-timeout");
+    return { coords: { latitude: -17.83, longitude: 31.05 } };
+  },
   getLastKnownPositionAsync: async () => null,
+  reverseGeocodeAsync: async () => [],
   Accuracy: { Balanced: 3 },
 }));
 jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
@@ -158,6 +171,8 @@ afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
   jest.clearAllMocks();
+  mockLocPermission = "granted";
+  mockLocFixFails = false;
 });
 
 describe("rider board (B-O1b: open-orders list must be virtualized, and only when it's actually shown)", () => {
@@ -789,6 +804,63 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     // point is that the ROW is there and never blank.
     expect(flatText(activeTree)).toMatch(/Set your location|Harare/);
   });
+
+  it("shows the no-fix warning on the LIVE board — the one place it matters", async () => {
+    // `locHint` (a timed-out fix with no cached last-known) does NOT block going online, so the
+    // board renders while the rider has no position — and this line is the only thing that explains
+    // why it may be empty. It used to live in the offline toggle Card, a state that no longer exists.
+    mockLocFixFails = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(flatText(activeTree)).toMatch(/Couldn't get your location/);
+  });
+
+  it("the location-denied wall offers no shift control — there is no shift to end", async () => {
+    // The last "Go offline" in the app lived on this wall. Always-online means it must be gone from
+    // here too, or this becomes the one screen still offering a switch removed everywhere else.
+    mockLocPermission = "denied";
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(flatText(activeTree)).toMatch(/Can't find your location/);
+    expect(activeTree.root.findAll((n) => n.props.label === "Go offline")).toHaveLength(0);
+  });
+
+  it(
+    "retries a TRANSIENT activation failure instead of stranding the rider offline",
+    async () => {
+      // One failed setOnline at launch used to leave the rider offline for the life of the screen:
+      // the auto-online effect had consumed its ref and nothing re-armed it. REAL timers here — fake
+      // ones deadlock against react-query's own scheduling and the act()/setTimeout settle helpers —
+      // so this test costs a real ACTIVATION_RETRY_MS. It is the only coverage of the recovery path,
+      // which is worth one slow test.
+      mockSetOnline.mockRejectedValueOnce(new Error("network down"));
+      mockGetMe.mockResolvedValue(meFixture());
+      mockGetActiveOrder.mockResolvedValue(null);
+      mockGetOpenOrders.mockResolvedValue([]);
+
+      activeTree = renderScreen();
+      await settle();
+      await settle();
+      const afterFirst = mockSetOnline.mock.calls.length;
+      expect(afterFirst).toBeGreaterThanOrEqual(1);
+
+      await wait(16_000);
+      expect(mockSetOnline.mock.calls.length).toBeGreaterThan(afterFirst);
+    },
+    30000,
+  );
 
   it("the location row is DETECT-only — it never offers a picker it could not honour", async () => {
     mockGetMe.mockResolvedValue(meFixture());

@@ -1,6 +1,5 @@
 import { WS_EVENTS } from "@lynia/shared";
 import * as Location from "expo-location";
-import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { handleBackgroundLocations, RIDER_LOCATION_TASK } from "../background-location-task";
 import { useRiderLocationStream } from "../use-rider-location";

@@ -10,7 +10,6 @@
  * confirms the order did NOT land on the rider whose offer was tapped. This drives the real screen
  * (mocking only the API/router/storage/socket edges, per the pattern in `app/rider/__tests__/job.test.tsx`).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

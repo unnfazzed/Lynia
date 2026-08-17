@@ -1,4 +1,3 @@
-import React from "react";
 import { act, create } from "react-test-renderer";
 import { isVersionBelow } from "../../config";
 import { fetchServerMinVersion, useServerMinVersion } from "../use-server-version-gate";

@@ -1,7 +1,6 @@
 /**
  * D5/N-16: the rider's pickup-code entry, plus R-12's PAID/NOT-PAID banner rendered on the same card.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { PickupCodeCard } from "../PickupCodeCard";

@@ -4,7 +4,6 @@
  * gesture. The reveal itself must work with `code` already in hand and no network involved (that's
  * what makes it the offline fallback too) — this test only exercises the pure gesture/prop contract.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { DeliveryCodeCard } from "../DeliveryCodeCard";

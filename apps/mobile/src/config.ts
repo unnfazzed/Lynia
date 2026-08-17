@@ -22,23 +22,13 @@ if (!isDev && API_URL.includes("localhost")) {
 /** Socket.IO connects to the same origin as the REST API. */
 export const WS_URL: string = API_URL;
 
-/**
- * The public privacy notice, served by the API itself (apps/api/src/legal/) because Lynia ships no
- * marketing site. It is a Google Play listing requirement — the "Privacy policy" URL in Play Console →
- * App content — and the Settings screen links it in-app. Derived from API_URL rather than hardcoded so
- * a staging/dev build links at its OWN backend's copy instead of silently opening production's — the
- * same reasoning as WS_URL above.
- *
- * The sibling `/legal/account-deletion` page (the "Data deletion" URL on the Data safety form) is a
- * Play Console *listing* field, entered by hand from `docs/PLAY-STORE-SUBMISSION.md` — the app never
- * links it, because Settings deletes the account in-app via `DELETE /auth/me`. It therefore has no
- * constant here.
- *
- * `replace(/\/+$/, "")` guards the one realistic mis-configuration: a trailing slash on
- * EXPO_PUBLIC_API_URL would otherwise produce `…//legal/privacy`.
+/*
+ * No PRIVACY_URL constant: the app never links the API-served `/legal/privacy` page. The Settings
+ * row opens the DRAWN in-app notice (`/settings/privacy`, LJ.privacy), and Play Console's "Privacy
+ * policy" field is a *listing* value entered by hand from `docs/PLAY-STORE-SUBMISSION.md` — exactly
+ * like its `/legal/account-deletion` sibling, which likewise has no constant here. The API still
+ * serves both pages (apps/api/src/legal/); only the unused client constant is gone (DC-01).
  */
-const apiOrigin = API_URL.replace(/\/+$/, "");
-export const PRIVACY_URL = `${apiOrigin}/legal/privacy`;
 
 /**
  * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the autocomplete path is
