@@ -43,10 +43,22 @@ you are looking for a *recent edit*, not an *omission*, and GCP shows you the ke
 
 ## Step 1 — Get the answer without a cable (2 minutes, from your phone)
 
-1. Open the Play Console → **Test and release → Setup → App integrity** → *App signing key certificate*
-   → copy the **SHA-1**. This is the certificate installed builds actually run under. (The EAS upload
-   keystore is a *different* certificate; allowlisting only that one is the documented re-signing trap
-   in `docs/SECURITY-OPS.md` §B.)
+1. Get the **Play app-signing SHA-1**. This is the certificate installed builds actually run under.
+   (The EAS upload keystore is a *different* certificate; allowlisting only that one is the documented
+   re-signing trap in `docs/SECURITY-OPS.md` §B.)
+
+   > **Can't find it?** Two things trip this up. The Play Console **mobile app does not have this page
+   > at all** — App integrity is web-only, so open `play.google.com/console` in a browser. And the left
+   > nav has been reshuffled repeatedly: "Setup" is a collapsible group under *Test and release*, and in
+   > some accounts App integrity now sits directly under *Test and release* with no "Setup" level.
+   > **Use the search box at the top of Play Console and type "app signing"** — it jumps straight there
+   > regardless of the menu layout. Then: *App signing* tab → **App signing key certificate** → SHA-1.
+
+   **Or skip Play Console entirely for a first pass.** `expo.dev → project → Credentials → Android`
+   shows the EAS-managed **upload** keystore's SHA-1 in a browser. That is not the app-signing cert, but
+   probing with it is still decisive: `OK` means the upload cert is allowlisted while Play-installed
+   builds are blank — the re-signing trap, so you then need the Play value; `ANDROID_RESTRICTION_REJECTED`
+   means not even the upload cert is on the allowlist, which you can fix without the Play value at all.
 2. GitHub → **Actions → "Maps Key Doctor" → Run workflow**, paste the SHA-1 into `sha1`, run it.
 3. Read the job log. It probes the real key against Google and names the cause:
 
@@ -116,8 +128,8 @@ binary is unchanged; only its server-side permissions were wrong.
 
 ## Step 3 — Confirm
 
-Re-run **Maps Key Doctor** with the same SHA-1 and expect `OK` (or `API_RESTRICTED_OR_DISABLED`, which
-is the healthy answer for a correctly API-restricted key). Then open `/send` on the handset and confirm
+Re-run **Maps Key Doctor** with the same SHA-1 and expect `OK` (or `API_RESTRICTED`, which is the
+healthy answer for a correctly API-restricted key). Then open `/send` on the handset and confirm
 Google tiles for Harare with the attribution baked into the tile surface — tiles are the only proof the
 key is accepted; a rendered map *frame* is not.
 
