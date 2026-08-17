@@ -8,11 +8,21 @@ name: Maps Key Doctor
 # which is why the cause has stayed a ranked list of candidates since 2026-08-16 rather than a fact.
 # `workflow_dispatch` is triggerable from the GitHub mobile app, and the job log is readable there.
 #
-# Deliberately NOT environment-gated (same reasoning as eas-build-status.yml): a read-only check must
-# not cost an approval click per look. It mutates nothing — no GCP write, no EAS call, no build.
+# WHICH KEY IT PROBES — this matters, and the first version of this workflow got it wrong.
+# There are TWO independent stores holding a variable called GOOGLE_MAPS_API_KEY:
+#   * the EAS environment variable — what `mobile-release.yml` builds the Play binary with. THIS is the
+#     key MOB-MAP-02 is about, and it is the default here (`key_source: eas`).
+#   * the GitHub Actions secret — used only by `android-test-apk.yml` for sideloaded QA APKs.
+# They can hold different values, and on this workflow's first run they demonstrably did: the GitHub
+# secret came back INVALID_KEY while the Play-installed app had rendered tiles as recently as
+# 2026-08-05. Probing the GitHub secret answers a real question (is the QA-APK lane armed?) but not the
+# one the blank map poses. `key_source: github` keeps that check available on purpose.
 #
-# The key never leaves the runner: it is passed to the script through the environment and the script
-# never prints it. Only Google's own error prose is echoed.
+# Deliberately NOT environment-gated (same reasoning as eas-build-status.yml): a read-only check must
+# not cost an approval click per look. It mutates nothing — no GCP write, no EAS write, no build.
+#
+# Neither key ever leaves the runner: the EAS value is `::add-mask::`ed before it is written anywhere,
+# and the probe script never prints a key or any value derived from one.
 
 on:
   workflow_dispatch:
@@ -24,6 +34,21 @@ on:
         description: "Signing certificate SHA-1 to test. Play Console → Test and release → Setup → App integrity → 'App signing key certificate'. Colons optional."
         type: string
         default: ""
+      key_source:
+        description: "Which GOOGLE_MAPS_API_KEY to probe: 'eas' (what the Play build uses — the default) or 'github' (the QA-APK lane's secret)"
+        type: choice
+        options:
+          - eas
+          - github
+        default: eas
+      eas_environment:
+        description: "EAS environment to read the key from (only when key_source is 'eas')"
+        type: choice
+        options:
+          - preview
+          - production
+          - development
+        default: preview
       package:
         description: "Android application id to test the fingerprint against"
         type: string
@@ -43,10 +68,22 @@ jobs:
         with:
           node-version: 22
 
-      # No install step: the script uses only Node's built-in fetch, so this stays a ~20s job that
-      # cannot be broken by a lockfile or a workspace build.
+      # ONE step, on purpose. An earlier version resolved the EAS key in a separate step and handed it
+      # on through `$GITHUB_ENV`. CodeQL flagged that (js/http-to-file-access) and was right to:
+      # `$GITHUB_ENV` is parsed as `KEY=VALUE` lines, so a value carrying a newline injects arbitrary
+      # environment variables into every later step. The key now stays in the probe process's memory and
+      # never touches the disk, which removes the whole class rather than sanitising around it.
+      #
+      # No install step either: both scripts use only Node's built-in fetch, so this stays a ~20s check
+      # that cannot be broken by a lockfile or a workspace build.
       - name: Diagnose
         env:
+          KEY_SOURCE: ${{ inputs.key_source }}
+          # Read only when key_source is 'eas'.
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_APP_ID: ${{ vars.EAS_PROJECT_ID }}
+          EAS_ENVIRONMENT: ${{ inputs.eas_environment }}
+          # Read only when key_source is 'github' — android-test-apk.yml's key, not the build's.
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           ANDROID_CERT_SHA1: ${{ inputs.sha1 }}
           ANDROID_PACKAGE: ${{ inputs.package }}
