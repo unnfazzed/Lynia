@@ -104,8 +104,30 @@ Maps APIs turned on, and nothing in this repo has ever guaranteed the Android SD
 `infra/terraform/apikeys.tf` would enable `maps-android-backend.googleapis.com`, and it is gated off and
 was never imported.
 
-**Next check, one screen:** GCP → **APIs & Services → Enabled APIs & services** → is **Maps SDK for
-Android** listed? If not, enable it — that is the blank map, and it needs no new build.
+**Checked 2026-08-17 — ❌ ELIMINATED.** `Maps SDK for Android` shows **API Enabled** on the `Lynia`
+project (owner-confirmed from the console). So the service is on, and the refusal above was genuinely
+just the static-maps API being absent — expected, and not the bug.
+
+### Where that leaves it — two candidates, both on ONE page
+
+Everything project-level is now cleared: **key valid, billing active, Maps SDK for Android enabled.**
+Both survivors are properties of the *key object itself*, and both are read off the same screen:
+
+**GCP → APIs & Services → Credentials → the Maps SDK key** (`https://console.cloud.google.com/apis/credentials`)
+
+| Block | What it must say | How it breaks the map |
+|---|---|---|
+| **Application restrictions** | *Android apps*, with `zw.co.lynia` listed against **both** SHA-1s (Play app-signing **and** EAS upload). *None* also works, less safely. | Set to **Websites** or **IP addresses** → every Android call is refused outright. Set to *Android apps* with only the upload SHA-1 → the documented re-signing trap: sideloaded APKs work, Play-installed builds are blank. |
+| **API restrictions** | *Don't restrict key*, or *Restrict key* with **Maps SDK for Android** ticked. | Restricted to a set that omits Maps SDK for Android → blank tiles even though the project has the API enabled. Project-enabled and key-allowed are different things. |
+
+This is exactly the shape of a `SECURITY-OPS.md` §B hardening pass applied with one field wrong, which
+matches the "what changed between 2026-08-05 and 2026-08-16" framing above.
+
+**Why the doctor cannot answer these two.** Google evaluates API activation before the application
+restriction, and the probe can only reach web-service APIs — so a key correctly restricted to
+`maps-android-backend.googleapis.com` refuses every probe on API grounds before the allowlist is ever
+consulted. That is an inherent ceiling of any curl-based check, not a gap to engineer around: the
+Maps SDK for Android channel is not reachable over HTTP. Read the two blocks by eye.
 
 > Separately, the **GitHub Actions** secret `GOOGLE_MAPS_API_KEY` (used only by `android-test-apk.yml`
 > for sideloaded QA APKs — a different store from the EAS variable) probes as `INVALID_KEY` and does not
