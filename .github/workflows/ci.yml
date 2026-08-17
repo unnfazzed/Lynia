@@ -156,7 +156,7 @@ jobs:
       - name: Render wired mobile screens
         working-directory: tools/parity
         run: node render-wired-mobile.mjs --out out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: parity-mobile-renders
           path: tools/parity/out/*.png
