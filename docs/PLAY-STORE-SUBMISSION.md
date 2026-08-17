@@ -440,6 +440,24 @@
 > tracking. Nothing else. Both other builds this session remain **FINISHED**/**FINISHED**, track
 > `internal`, as recorded above.
 
+> **Status (2026-08-17 — v0.38.0 dispatched to the internal track by a Claude session on explicit
+> user instruction, "dispatch an EAS build and updated google play app").** Ownership guards ran
+> first: no open PRs, no in-flight `mobile-release.yml` run, CI green on `main`@`962a38c` (#777, the
+> weekly test-prune routine — test/docs only, no mobile code change), `pnpm install
+> --frozen-lockfile` clean with the lockfile unmoved. Dispatched `mobile-release.yml` run
+> `31999990280` explicitly with **`profile: preview`, `submit: true`** — never the bare/default
+> dispatch, per the standing warning above and the incident it describes. GitHub-side job succeeded
+> in 58s (06:01:37–06:02:35 UTC), queuing the build on Expo's servers.
+>
+> EAS build `7cef4273-e999-42ff-8a8a-b2e41781778e` (profile `preview`, app version `0.38.0` per
+> `app.config.ts` on the built commit; exact versionCode not captured — `eas-build-status.yml`'s
+> recap doesn't query that field) reached **FINISHED**. Its submission
+> `151c0a0c-1fb9-4f95-8e8d-e02df2ed422a` reached **FINISHED**, track **`internal`** — confirmed via
+> `eas-build-status.yml` run `32002115999`. Dispatch-to-terminal: ~31 minutes (06:02–06:33 UTC),
+> consistent with the documented "tens of minutes." Still internal-testing only —
+> `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2 (closed test,
+> 14-day clock, production access) remains untouched.
+
 ---
 
 ## 1. App identity
