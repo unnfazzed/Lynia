@@ -1096,7 +1096,7 @@ deliberate extension of it rather than an alignment — hence a ledger entry, no
 | Search bar | not drawn | **still not drawn** — omitted by instruction, and `HomeHeader.search` is optional precisely so a face with nothing to search renders none |
 | Location | not drawn | the header's **`subRow`** — the DETECTED current location, the same `HomeAddressRow` the customer home draws, in **detect** mode (*"keep the location on the rider card just like the customer home"*, then *"Detect only"*) |
 | Connectivity banner | first element on the screen | **still first** — pinned into the header's `topSlot`, inside the mint block above the greeting, so it keeps the top of the screen (*"keep it at the top like before"*) while the header stays the one component owning the top inset |
-| Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline") | the same row, **minus the queue subtitle**, still above the cards |
+| Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline"), plus a go-online Card on the offline path | **gone entirely** — no pill, no switch. The rider is ALWAYS ONLINE (*"you are always online"*) |
 | "Jobs near you" | the screen's `Heading` | **removed** (*"Remove the text jobs near you"*) |
 | "Parcels and food · one queue" | beside the online pill | **removed** (*"And the parcels and food one home text as well"*) |
 | Job cards | `JobCard` list | **unchanged** |
@@ -1127,6 +1127,30 @@ list and the gated/offline fallback (KYC, expired ID, no-GPS, offline). Both now
 so a rider crossing between a live board and a wall never sees the tab's identity change underneath
 them. The walls keep their own recovery actions, and the offline path keeps its own go-online Card
 (RJM `offline`) — exactly as before.
+
+**Always online — what replaced the switch.** `online` stopped being user state and became machine
+state: being on this screen, past every wall, IS the shift. The app asserts `setOnline(true)` to the
+server once the gates are clear, and the walls (KYC, expired ID, no-GPS, a server refusal) are what
+hold a rider off — each of them re-arms the assertion for when it clears. Three details that are not
+obvious and are easy to regress:
+
+- **It waits for a position.** The server records a broadcast-eligible rider only `if (online &&
+  location)`, so firing the instant the gates clear — before the cold GPS fix lands — would put a
+  rider on shift *invisible to every broadcast* until the next 20s heartbeat carried a position. The
+  effect waits for `loc`, or for `locHint` (the "no fix is coming" signal), and going online
+  position-less is correct in that second case.
+- **It is not gated on the local flag.** That flag is seeded optimistically from the warm cache, so
+  skipping the call when it is already true would leave a locally-online / server-offline rider
+  silently deaf to broadcasts — the exact failure MOB-BOOT-02 was about, in the other direction.
+- **A response missing `online` counts as online.** The mutation now runs on every mount, so an older
+  API or a proxy that ate the body would otherwise blank the board for a rider who is genuinely on
+  shift. A real refusal arrives as a 403 and still lands on the gate wall.
+
+**The trade this makes, recorded honestly.** A rider can no longer stop receiving work from inside the
+app; closing it is the only way off shift, which works because the server ages riders out on heartbeat
+staleness (`heartbeatMaxAgeMsForPush`). The GPS heartbeat and the board socket also run for as long as
+the screen is open. That is the owner's call and it is deliberate; it is written down here so the next
+person to read this screen does not mistake it for an oversight.
 
 **Guardrails are unaffected and stayed green.** `RJM.board`'s codegen adoption anchors ONE region — the
 job list (`RiderBoardListView`) — which this does not touch, so the structural snapshot still reduces to

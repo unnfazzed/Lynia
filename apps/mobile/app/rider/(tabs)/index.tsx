@@ -6,7 +6,7 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { FlatList, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { makeOffer } from "../../../src/api/offers";
@@ -34,7 +34,7 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader, Icon, OfflineBanner, SkeletonList, statusPillLabel, Sub, useActionError } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
@@ -86,19 +86,20 @@ export default function RiderHome(): React.ReactElement {
   // dispatch-specific flag, not the whole-vertical one, so the board's copy doesn't promise food jobs
   // before dispatch itself is live; this stays a no-op read until that feed exists.
   const { merchantDispatchAutoEnabled } = useFeatureFlags();
-  // Seeded from an already-warm `["me"]` (persisted across launches — src/query/persist.ts — and
-  // pre-seeded by useBootstrap), not a flat `false`. The reconcile effect below already promotes a
-  // server-side `isOnline`, but it is a PASSIVE effect: with the cache warm, `meQ.isLoading` is false
-  // on the first render, so the offline presentation ("Go online to see and bid on nearby orders", no
-  // board) commits and paints before the effect can flip it. A rider relaunching mid-shift saw their
-  // own board blink through Offline. A cold cache still renders the meQ.isLoading skeleton instead, so
-  // this only ever fires when the answer is already known.
-  const [online, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.isOnline === true);
-  // Set once the rider explicitly toggles this session (a successful onlineM), so the server-reconcile
-  // below never overrides a deliberate go-offline by re-seeding from a stale `is_online`.
-  const userToggledRef = useRef(false);
-  // Runs the server-online reconcile at most once per mount (see the effect after meQ).
-  const didSeedOnlineRef = useRef(false);
+  // ALWAYS ONLINE (owner decision 2026-08-17): the rider no longer toggles a shift. Being on this
+  // screen, past every gate, IS the shift — so `online` is machine state now, not user state, and the
+  // only question left is whether the rider is ALLOWED to work (verified, located, not refused).
+  //
+  // Seeded from the warm `["me"]` (persisted across launches — src/query/persist.ts — and pre-seeded
+  // by useBootstrap) on the same test the gates apply, VERIFIED — not on the server's `is_online`,
+  // which no longer means anything, and not on merely being a rider, which would start the heartbeat
+  // and the board socket for someone the gates are about to block. With the cache warm `meQ.isLoading`
+  // is false on the first render, so a flat `false` would paint a boardless screen for a tick before
+  // the effect below flipped it; a cold cache still renders the meQ.isLoading skeleton instead.
+  const [online, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
+  // Lets the auto-online effect below try again after something took the rider offline (a heartbeat
+  // refusal, a gate that has since cleared). Reset wherever `online` is forced false.
+  const autoOnlineRef = useRef(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -338,21 +339,6 @@ export default function RiderHome(): React.ReactElement {
       return 60_000; // failed / expired — an ops reset or a fresh check clears it
     },
   });
-  // Reconcile the local toggle with the server's is_online on first load. is_online only flips on an
-  // explicit toggle call — there's no server-side staleness sweep — so if the app was killed mid-shift
-  // (Android kill) and relaunched, the server (and /home's "Online as a rider" chip) still believe the
-  // rider is on shift, but this board booted to `false`, running no heartbeat: the rider is silently
-  // deaf to broadcasts while a stale chip elsewhere says otherwise. Seed `online = true` once so the
-  // heartbeat resumes (and re-records position on its next beat). Runs at most once per mount and never
-  // after an explicit toggle, so a deliberate go-offline is never overridden and there's no loop.
-  useEffect(() => {
-    if (didSeedOnlineRef.current || userToggledRef.current) return;
-    const rider = meQ.data?.rider;
-    if (!rider) return; // wait for a real ["me"] resolve before deciding
-    didSeedOnlineRef.current = true;
-    if (rider.isOnline && !online) setOnlineState(true);
-  }, [meQ.data, online]);
-
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
   const rider = meQ.data?.rider;
   const kyc = rider?.kycStatus;
@@ -396,9 +382,12 @@ export default function RiderHome(): React.ReactElement {
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
     onSuccess: (res) => {
-      // An explicit toggle is authoritative for the rest of this session — freeze out the reconcile.
-      userToggledRef.current = true;
-      setOnlineState(res.online);
+      // Anything but an EXPLICIT `online: false` counts as online. We asked to be online and the call
+      // did not throw, so a response that omits the flag (an older API, a proxy that ate the body)
+      // must not read as a refusal — under "always online" this mutation now runs on every mount, so
+      // a missing field would silently blank the board for a rider who is, in fact, on shift. A real
+      // refusal arrives as a 403 and is handled in onError.
+      setOnlineState(res?.online ?? true);
       setGate(null);
       setError(null);
     },
@@ -418,6 +407,37 @@ export default function RiderHome(): React.ReactElement {
       setError(e instanceof ApiError ? e.message : "Couldn't change your status.");
     },
   });
+
+  // ALWAYS ONLINE: drive the server flag true the moment the rider is allowed to work, instead of
+  // waiting for a switch that no longer exists. Every wall still holds — KYC, no-GPS, a server
+  // refusal — and each of them resets `autoOnlineRef` so this retries the moment the wall clears.
+  //
+  // Guarded by the ref rather than by `online` alone: a failed `setOnline` flips `onlineM.isPending`
+  // back, which would otherwise re-run this effect and hammer the endpoint in a retry loop.
+  useEffect(() => {
+    const allowed = !meQ.isLoading && !meQ.isError && !knownUnverified && !locDenied && gate == null;
+    if (!allowed) {
+      autoOnlineRef.current = false; // re-arm: the next time the walls clear, try again
+      return;
+    }
+    // Deliberately NOT gated on the local `online` flag. That flag is seeded optimistically from the
+    // warm cache, so gating on it would skip the call for a rider the SERVER still has as off-shift —
+    // and a rider who is locally-online but server-offline is silently deaf to every broadcast, which
+    // is the exact failure MOB-BOOT-02 was about. One assertion per mount is the price of being sure.
+    if (autoOnlineRef.current) return;
+    // Wait for the position when one is still coming. The server records a broadcast-eligible
+    // position only `if (online && location)` (see LOCATE_TIMEOUT_MS at the top of this file), so
+    // going online the instant the gates clear — before the cold fix lands — would put the rider on
+    // shift INVISIBLE to every broadcast until the next 20s heartbeat carried a position. `locHint`
+    // is the "no fix is coming" signal (the cold fix timed out AND there was no cached last-known),
+    // and going online position-less is still right then: the rider is working, the hint says why
+    // the board may be thin, and the heartbeat keeps retrying.
+    if (loc == null && locHint == null) return;
+    autoOnlineRef.current = true;
+    onlineM.mutate(true);
+    // `onlineM` is stable for the life of the screen; listing it would re-run this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, gate, loc, locHint]);
 
   // Pending/failed riders re-run KYC: mint a FRESH Didit session and open it (no re-keying the form).
   const retryM = useMutation({
@@ -462,6 +482,7 @@ export default function RiderHome(): React.ReactElement {
         .catch((e: unknown) => {
           if (e instanceof ApiError && e.status === 403) {
             setOnlineState(false);
+            autoOnlineRef.current = false; // let the auto-online effect retry once the reason clears
             // Same gate-resolution as onlineM.onError — a heartbeat 403 means the server has already
             // taken the rider offline for a specific reason (cooldown/suspended/on_hold/kyc), so show
             // that reason instead of a vague "connection issue" that invites a retry that can't work.
@@ -472,7 +493,9 @@ export default function RiderHome(): React.ReactElement {
               if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
             } else {
               setGate(null);
-              setError("You were taken offline. Tap Go online to retry.");
+              // No "Go online" button exists any more — say what the app is doing instead of naming
+              // a control the rider cannot find.
+              setError("You were taken offline. Reconnecting…");
             }
           } else {
             failures += 1;
@@ -763,52 +786,14 @@ export default function RiderHome(): React.ReactElement {
     </Card>
   ) : null;
 
-  const onlineToggleCard = (
-    <Card>
-      {/* Persistent connection chip so a silent heartbeat-drop is glanceable, not a surprise
-          at offer time. Tap it while offline to go back online. */}
-      <Pressable
-        onPress={() => {
-          if (!online) onlineM.mutate(true);
-        }}
-        disabled={online || onlineM.isPending}
-        accessibilityRole="button"
-        accessibilityLabel={online ? "You are online" : "You are offline — tap to go online"}
-        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center", marginBottom: 4 }}
-      >
-        <StatusPill
-          status={online ? (board.connected && !beatStale ? "Online" : "Reconnecting") : "Offline"}
-          tone={online ? (board.connected && !beatStale ? "online" : "reconnecting") : "offline"}
-          dot
-        />
-      </Pressable>
-      <Button
-        label={online ? "Go offline" : "Go online"}
-        // Ghost while the compose card is open so "Send offer" is the screen's one primary.
-        variant={online || selected != null ? "ghost" : "primary"}
-        onPress={() => onlineM.mutate(!online)}
-        loading={pendingOrQueued(onlineM)}
-      />
-      <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 4 }}>
-        {online
-          ? board.connected
-            ? merchantDispatchAutoEnabled
-              ? // Honest to the real model: parcels land on the board below; a food job arrives as its
-                // own full-screen offer (/rider/food-offer) when it's this rider's turn — NOT as a card
-                // in this list. One online switch still covers both services.
-                "You're online — parcels arrive here, and a food offer pops up full-screen when one's yours."
-              : "You're online — new orders arrive live."
-            : "You're online — reconnecting to the live board…"
-          : merchantDispatchAutoEnabled
-            ? // RJM `offline`: one switch for everything — say so, so nobody hunts for a per-service toggle.
-              "Go online for parcels on the board and food offers as they come — one switch covers both."
-            : "Go online to see and bid on nearby orders."}
-      </Text>
-      {locHint ? (
-        <Text style={{ fontSize: 12, color: tokens.color.danger, marginTop: 4 }}>{locHint}</Text>
-      ) : null}
-    </Card>
-  );
+  // Was the online/offline toggle Card (a status pill, a Go online/Go offline button and a line of
+  // "what arrives when you're online" copy). All three went with the switch: the rider is always
+  // online, so the pill stated a constant, the button had nothing to do, and the copy explained a
+  // choice nobody makes any more. The location warning it carried is real and stays — it tells a
+  // rider why the board might be empty.
+  const locationWarning = locHint ? (
+    <Text style={{ fontSize: 12, color: tokens.color.danger, marginBottom: tokens.space.md }}>{locHint}</Text>
+  ) : null;
 
   const sentOffersSection =
     online && sentOffers.some((s) => s.order.id !== activeJob?.id) ? (
@@ -924,30 +909,9 @@ export default function RiderHome(): React.ReactElement {
     />
   );
 
-  // The shift: status + the way out of it. Back below the header now that the location owns the
-  // header's sub-row — this is where it sat before, and it is the one control on this screen with a
-  // cost attached, so it keeps a full row rather than being folded into a line of text. No queue
-  // subtitle: "Parcels and food · one queue" came off by owner instruction (2026-08-17).
-  const onlinePillRow = (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
-      <StatusPill
-        status={board.connected && !beatStale ? "Online" : "Reconnecting"}
-        tone={board.connected && !beatStale ? "online" : "reconnecting"}
-        dot
-      />
-      <View style={{ flex: 1 }} />
-      <Pressable
-        onPress={() => onlineM.mutate(false)}
-        disabled={onlineM.isPending}
-        accessibilityRole="button"
-        accessibilityLabel="Go offline"
-        hitSlop={8}
-        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center" }}
-      >
-        <Text style={{ fontSize: 12.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Go offline</Text>
-      </Pressable>
-    </View>
-  );
+  // No shift row: no status pill, no Go-offline (owner decision 2026-08-17, "you are always
+  // online"). Connection health is still visible — the reconnecting banner keeps the top of the
+  // screen — but there is nothing left to toggle, so there is nothing to draw.
 
   // No "Jobs near you" heading and no queue subtitle (owner instruction 2026-08-17): the greeting
   // names the screen, the tab bar names the tab, and the cards are self-evidently the jobs — a
@@ -973,7 +937,6 @@ export default function RiderHome(): React.ReactElement {
             renderItem={renderJobCard}
             ListHeaderComponent={
               <>
-                {onlinePillRow}
                 {activeJobBanner}
                 {sentOffersSection}
                 {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
@@ -1201,7 +1164,7 @@ export default function RiderHome(): React.ReactElement {
           </EmptyState>
         ) : (
           <>
-        {onlineToggleCard}
+        {locationWarning}
 
         {sentOffersSection}
 
