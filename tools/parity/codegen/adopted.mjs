@@ -1675,7 +1675,8 @@ export const ADOPTED = [
     //     is the DS_RENAME remap; both fold to the canonical MAP kind (normalize.mjs), so the fragment is
     //     congruent by construction. The container mounts `<SendMapView>` (a thin controlled wrapper) where
     //     it used to mount `<ComposeMap>` directly; every live prop flows straight through the seam.
-    //   • footer (submit bar) — the pinned "Broadcast request" CTA the mock draws in `K.MapSheet.footer`.
+    //   • footer (submit bar) — the pinned submit CTA the mock draws in `K.MapSheet.footer` (drawn as
+    //     "Broadcast request"; renamed "Proceed" by D-31, and its hint suppressed — see the region below).
     //     This is what the generalized non-`Screen` slot locator (Foundation-F.c) unlocked: `{slot:"footer"}`
     //     now anchors on the SHEET, not only a `<Screen>`. The mock footer is `div(hint?, Button)`; the app
     //     mounts `<SendComposeFooterView>` in `BottomSheet.footer`, keeping the live missing-requirements
@@ -1725,11 +1726,12 @@ export const ADOPTED = [
         }),
       },
       {
-        // Submit-footer region — the pinned "Broadcast request" bar the mock draws in `K.MapSheet.footer`
+        // Submit-footer region — the pinned submit bar the mock draws in `K.MapSheet.footer`
         // (`div(hint?, Button)`). Locator {slot:"footer"} folds the sheet's footer slot (the generalized
-        // non-`Screen` slot locator, Foundation-F.c). The hint COND stays (wired to the live
-        // missing-requirements summary); the Button keeps its verbatim 'Broadcast request' label and wires
-        // onPress→onBroadcast (the disclaimer gate + idempotent create), loading, disabled.
+        // non-`Screen` slot locator, Foundation-F.c). The hint COND stays in the TREE — the mock draws it,
+        // so removing the node would break the structural snapshot — but D-31 has the container pass
+        // showHint={false} forever, so it never renders. The Button wires onPress→onBroadcast (the
+        // disclaimer gate + idempotent create), loading, disabled, and takes D-31's 'Proceed' label.
         region: "footer",
         locator: { slot: "footer" },
         componentName: "SendComposeFooterView",
@@ -1737,9 +1739,13 @@ export const ADOPTED = [
         propsParam: "{ showHint, hint, onBroadcast, busy, disabled }: SendComposeFooterViewProps",
         propsType: [
           "export type SendComposeFooterViewProps = {",
-          "  /** Show the missing-requirements hint above the CTA (mock: shown until the pins are set). */",
+          "  /**",
+          "   * Show the missing-requirements hint above the CTA (mock: shown until the pins are set).",
+          "   * D-31: the container hard-codes this false — the hint is not shown at all any more. The branch",
+          "   * stays so this generated tree still matches the mock's `div(hint?, Button)`.",
+          "   */",
           "  showHint: boolean;",
-          "  /** The live 'Add … to broadcast' summary of what is still missing. */",
+          "  /** The live 'Add … to broadcast' summary of what is still missing. Unused while D-31 stands. */",
           "  hint: string;",
           "  onBroadcast: () => void;",
           "  busy?: boolean;",
@@ -1758,10 +1764,18 @@ export const ADOPTED = [
           JSXOpeningElement(path) {
             if (path.node.name.name !== "Button") return;
             // Kit web props (onClick, the frozen disabled={!pins}) → the app Button's onPress/loading/disabled.
-            // The 'Broadcast request' label stays verbatim (kit copy).
+            // The label is the ONE piece of kit copy this region no longer keeps verbatim: D-31 (owner
+            // instruction 2026-08-17) renames the mock's 'Broadcast request' to 'Proceed'. Rewritten here
+            // rather than hand-edited into the generated file, so a regeneration cannot silently restore
+            // the mock's word.
             path.node.attributes = path.node.attributes.filter(
               (a) => !(a.type === "JSXAttribute" && ["onClick", "disabled"].includes(a.name.name)),
             );
+            for (const a of path.node.attributes) {
+              if (a.type === "JSXAttribute" && a.name.name === "label" && a.value?.type === "StringLiteral") {
+                a.value = t.stringLiteral("Proceed");
+              }
+            }
             path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onBroadcast"))));
             path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("busy"))));
             path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("disabled"))));

@@ -38,7 +38,7 @@ graph LR
         a["<b>agreedFare</b><br/>the selected offer's fare<br/>set at assignment"]
     end
 
-    s -.->|"'Use suggested' button"| p
+    s -.->|"autofilled into the field (D-31)"| p
     p -->|broadcast| o
     o -->|customer selects| a
 
@@ -53,9 +53,14 @@ graph LR
 | `offeredFare` | Rider at `POST /orders/:id/offers` | `accept` → equals the proposed fare; `counter` → the rider's own number. |
 | `agreedFare` | Set by the guarded CAS at selection | Copied from the selected offer's `offeredFare` — the final price. |
 
-The customer is never forced onto the anchor: the mobile create screen shows
-`Suggested fare $X · N km` with a one-tap **"Use suggested"** button, but the "Your price" field is
-free-form (`apps/mobile/app/home.tsx`).
+The customer is never forced onto the anchor, but since **D-31** (2026-08-17) they do START on it: the
+compose screen **autofills** "Your price" with the suggested fare as soon as both pins are set, and
+re-writes it whenever a pin move changes the suggestion. The field stays free-form — type any positive
+number over it and it stands until the trip itself changes. The `Suggested fare $X · N km` line and the
+one-tap **"Use suggested"** button that used to carry the anchor into the field are gone with the same
+change (they restated a number the field now shows); what remains above the field is the acceptance-band
+hint, `Riders usually accept around $X–$Y` (`apps/mobile/app/send.tsx`,
+`src/ui/send/SendPriceQuote.tsx`).
 
 ---
 
@@ -114,7 +119,7 @@ sequenceDiagram
     Note over C,Shared: live preview as pins move
     C->>Shared: quoteFare(pickup, dropoff)
     Shared-->>C: { distanceKm, suggestedFare }
-    C->>C: shows anchor + "Use suggested"
+    C->>C: autofills "Your price" with the anchor (D-31)
 
     Note over C,API: on submit
     C->>API: POST /orders { proposedFare, pickup, dropoff }

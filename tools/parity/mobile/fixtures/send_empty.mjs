@@ -2,8 +2,9 @@
 // /auth/me (the account-on-hold pre-check — must NOT be held, or the blocking on-hold screen replaces
 // the whole composer) and GET /orders/mine/active-order (the live-order restore banner — null ⇒ no
 // banner). With no draft (SecureStore is inert in parity) both pins stay unset, so the map hero renders
-// with empty address rows and the docked sheet's footer shows the "Add pickup & drop-off pins … to
-// broadcast" hint. The map itself is the react-native-maps shim (a gray fill — expected/honest).
+// with empty address rows and the docked sheet's footer shows its CTA alone — since D-31 the mock's
+// "Add pickup & drop-off pins … to broadcast" hint is never rendered, and the CTA reads "Proceed".
+// The map itself is the react-native-maps shim (a gray fill — expected/honest).
 //
 // Location is seeded as hard-denied, and that is now what MAKES this the empty state. Since the pickup
 // auto-locate landed (owner instruction 2026-08-17: the pickup pin prefills from the device's own

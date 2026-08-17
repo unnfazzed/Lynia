@@ -17,6 +17,8 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 // center, drop-off a short distance away, both well within the 25km radius.
 const PICKUP: PickedPoint = { lat: -17.8292, lng: 31.0522 };
 const DROPOFF: PickedPoint = { lat: -17.82, lng: 31.06 };
+// A farther drop-off, still inside the corridor — a longer leg, so it quotes a HIGHER fare than DROPOFF.
+const DROPOFF_FAR: PickedPoint = { lat: -17.75, lng: 31.12 };
 
 const mockCreateOrder = jest.fn();
 const mockGetActiveCustomerOrder = jest.fn();
@@ -111,6 +113,15 @@ jest.mock("../../src/ui/ComposeMap", () => {
             props.onReverseGeocodeDrop?.("Test Drop Landmark");
           },
         }),
+        // A SECOND, farther drop-off — a longer leg quotes a different fare, which is what the D-31
+        // re-suggest rule keys on (moving a pin to a point that prices the same would prove nothing).
+        React_.createElement(Pressable, {
+          testID: "test-set-drop-far",
+          onPress: () => {
+            props.onChangeDrop(DROPOFF_FAR);
+            props.onReverseGeocodeDrop?.("Far Drop Landmark");
+          },
+        }),
       ),
   };
 });
@@ -147,11 +158,14 @@ function grantLocation(): void {
   mockGetCurrentPositionAsync.mockImplementation(async () => ({ coords: { latitude: PICKUP.lat, longitude: PICKUP.lng } }));
   mockReverseGeocodeAsync.mockImplementation(async () => [{ name: "My Current Spot", street: null, district: "Harare CBD" }]);
 }
+// The stub echoes `prefill` back through a testID so the SCREEN's half of D-31 (does send.tsx hand the
+// active slot's address to the search field?) is assertable here. The field's own half — seeding the
+// text, and not fighting what the customer types — is covered in src/ui/__tests__/address-search.test.tsx.
 jest.mock("../../src/ui/AddressSearch", () => ({
-  AddressSearch: () => {
+  AddressSearch: (props: { label: string; prefill?: string }) => {
     const React_ = require("react");
     const { Text } = require("react-native");
-    return React_.createElement(Text, null, "AddressSearch");
+    return React_.createElement(Text, { testID: `address-search-prefill-${props.label}` }, props.prefill ?? "");
   },
 }));
 
@@ -547,7 +561,10 @@ describe("send.tsx — Recipient-phone block (RF-21 characterization, pre-extrac
 });
 
 describe("send.tsx — Price/quote block (RF-21 characterization, pre-extraction)", () => {
-  it("shows no suggested-fare preview until both pins are set, then shows it with the acceptance-band hint, and 'Use suggested' fills the price", async () => {
+  // D-31 (owner instruction 2026-08-17): the suggestion reaches the price field by autofill, so the two
+  // things that used to carry it — the "Suggested fare $X · Y km" line and the "Use suggested $X" button
+  // — are gone. The acceptance band stays.
+  it("shows nothing until both pins are set, then fills the price with the suggestion and shows only the acceptance band", async () => {
     mockGetActiveCustomerOrder.mockResolvedValue(null);
     mockGetMe.mockResolvedValue({ onHold: false });
 
@@ -555,20 +572,50 @@ describe("send.tsx — Price/quote block (RF-21 characterization, pre-extraction
     await settle();
     const tree = activeTree!;
 
-    expect(tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children.join("").startsWith("Suggested fare $")).length).toBe(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)" && n.props.value === "").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.startsWith("Riders usually accept")).length).toBe(0);
 
     // PICKUP/DROPOFF (both inside the launch corridor) quote to a fixed $2.29 over 1.31 km — pinned
     // constants of packages/shared's quoteFare, not re-derived here.
     pressTestId(tree, "test-set-pickup");
     pressTestId(tree, "test-set-drop");
 
-    expect(
-      tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children.join("") === "Suggested fare $2.29 · 1.31 km").length,
-    ).toBeGreaterThan(0);
-    expect(tree.root.findAll((n) => n.props.children === "Riders usually accept around $1.90–$2.70").length).toBeGreaterThan(0);
-
-    pressByText(tree, "Use suggested $2.29");
+    // The suggestion lands in the field itself, with no button press …
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)" && n.props.value === "2.29").length).toBeGreaterThan(0);
+    // … the band hint stays, at its drawn 12px …
+    const band = tree.root.findAll((n) => n.props.children === "Riders usually accept around $1.90–$2.70");
+    expect(band.length).toBeGreaterThan(0);
+    expect(band[0]?.props.style?.fontSize).toBe(12);
+    // … and neither retired affordance is on screen.
+    expect(tree.root.findAll((n) => Array.isArray(n.props.children) && n.props.children.join("").startsWith("Suggested fare $")).length).toBe(0);
+    expect(tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.startsWith("Use suggested")).length).toBe(0);
+  });
+
+  // The owner's call when asked (2026-08-17): re-suggest always, over keep-what-you-typed. A price the
+  // customer typed survives everything EXCEPT the trip changing under it.
+  it("re-suggests over a typed price when a pin moves, but never while the trip stays put", async () => {
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-pickup");
+    pressTestId(tree, "test-set-drop");
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "6.00");
+    // Editing other fields leaves the typed price alone …
+    setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)" && n.props.value === "6.00").length).toBeGreaterThan(0);
+
+    // … but moving the drop pin is a new trip, so it earns the new suggestion. ELSEWHERE is a longer
+    // leg than DROPOFF, so the fare genuinely changes rather than re-writing the same number.
+    act(() => {
+      tree.root.findByProps({ testID: "test-set-drop-far" }).props.onPress();
+    });
+    const priced = tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)");
+    expect(priced[0]?.props.value).not.toBe("6.00");
+    expect(Number(priced[0]?.props.value)).toBeGreaterThan(2.29);
   });
 
   it("nudges a below-band price and clears the nudge once the price is back in band", async () => {
@@ -708,7 +755,7 @@ describe("send.tsx — no on-device draft (start afresh)", () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(secureStore["lynia.orderDraft"]).toBeUndefined();
 
-    pressByText(tree, "Broadcast request");
+    pressByText(tree, "Proceed");
     await settle();
 
     // The order still fired with the typed values (draft removal doesn't touch submit) …
@@ -751,11 +798,11 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
     mockGetMe.mockResolvedValue({ onHold: false });
   });
 
-  /** The footer's "Add … to broadcast." hint — it names every requirement still missing. */
-  function missingHint(tree: renderer.ReactTestRenderer): string {
-    const node = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.endsWith(" to broadcast."))[0];
-    if (!node) throw new Error("no missing-requirements hint on screen");
-    return node.props.children as string;
+  /** The price field's current text — empty until both pins are set, then the autofilled suggestion. */
+  function priceValue(tree: renderer.ReactTestRenderer): string {
+    const node = tree.root.findAll((n) => n.props.accessibilityLabel === "Your price (USD)")[0];
+    if (!node) throw new Error("no price field on screen");
+    return node.props.value as string;
   }
 
   // Owner instruction 2026-08-17: "on pickup, it must automatically prefill the pickup location with
@@ -767,15 +814,22 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
 
     // The pickup address row carries the reverse-geocoded name (AddressRows renders the landmark) …
     expect(tree.root.findAll((n) => n.props.children === "My Current Spot, Harare CBD").length).toBeGreaterThan(0);
-    // … and the pin itself is really set: the footer's pin requirement (a SINGLE "pickup & drop-off
-    // pins" clause, satisfied only when both are placed) clears on the drop-off tap alone, which it
-    // could not do if the customer still owed a pickup pin.
-    expect(missingHint(tree)).toContain("pickup & drop-off pins");
+    // … and the pin itself is really set. Since D-31 took the missing-requirements hint off the screen,
+    // the proof is the quote: a fare needs BOTH pins, so a price appearing on the drop-off tap alone
+    // could not have happened if the customer still owed a pickup pin.
+    expect(priceValue(tree)).toBe("");
     pressTestId(tree, "test-set-drop");
-    expect(missingHint(tree)).not.toContain("pins");
-    // The auto-filled pickup landmark also counts — only the drop-off's is outstanding, and that
-    // arrives with the drop pin, so no landmark is owed either.
-    expect(missingHint(tree)).not.toContain("landmarks");
+    expect(Number(priceValue(tree))).toBeGreaterThan(0);
+  });
+
+  // D-31 also feeds the search field the slot's address — the auto-located pickup must reach it, or the
+  // box under a filled PICKUP row reads as the drop-off's empty box (the report that prompted the fix).
+  it("carries the auto-located pickup into the pickup search field", async () => {
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(tree.root.findByProps({ testID: "address-search-prefill-Pickup" }).props.children).toBe("My Current Spot, Harare CBD");
   });
 
   it("submits the auto-located pickup when the customer completes the rest of the form", async () => {
@@ -789,7 +843,7 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
     setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
     setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
     setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
-    pressByText(tree, "Broadcast request");
+    pressByText(tree, "Proceed");
     await settle();
 
     expect(mockCreateOrder).toHaveBeenCalledTimes(1);
@@ -829,7 +883,7 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
     setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
     setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
     setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
-    pressByText(tree, "Broadcast request");
+    pressByText(tree, "Proceed");
     await settle();
 
     expect(mockCreateOrder.mock.calls[0]?.[0]?.pickup.point).toEqual({ lat: PICKUP.lat, lng: PICKUP.lng });
@@ -847,8 +901,10 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
 
     expect(mockRequestForegroundPermissionsAsync).not.toHaveBeenCalled();
     expect(mockGetCurrentPositionAsync).not.toHaveBeenCalled();
-    // Still the mock's `home_empty`: both pins owed, and no error raised for a fix nobody asked for.
-    expect(missingHint(tree)).toContain("pickup & drop-off pins");
+    // Still the mock's `home_empty`: the pickup row shows its placeholder, no pin was set (so nothing
+    // priced the trip), and no error was raised for a fix nobody asked for.
+    expect(tree.root.findAll((n) => n.props.children === "Set pickup location").length).toBeGreaterThan(0);
+    expect(priceValue(tree)).toBe("");
     expect(tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("Couldn't get your location")).length).toBe(0);
   });
 
@@ -874,5 +930,9 @@ describe("send.tsx — pickup prefilled from the customer's current location", (
     expect(mockGetForegroundPermissionsAsync).not.toHaveBeenCalled();
     expect(mockGetCurrentPositionAsync).not.toHaveBeenCalled();
     expect(tree.root.findAll((n) => n.props.children === "Avondale Shops").length).toBeGreaterThan(0);
+    // Same reasoning for the PRICE (D-31): a re-broadcast arrives with both pins AND the original
+    // order's fare, so the first suggestion computed for those pins must not overwrite the number the
+    // customer is re-sending. Only a pin they move afterwards re-prices it.
+    expect(priceValue(tree)).toBe("4.50");
   });
 });

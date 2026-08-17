@@ -214,3 +214,75 @@ describe("AddressSearch — a keyed search that returns nothing", () => {
     act(() => tree.unmount());
   });
 });
+
+/**
+ * D-31 (owner instruction 2026-08-17): the field carries the address its slot already holds.
+ *
+ * The pickup pin is auto-located on open, so the compose sheet used to show a FILLED pickup row above
+ * an EMPTY search box — and the empty box read as the drop-off's (the owner's own report). Seeding it
+ * makes the field say which address it belongs to. The rule that keeps it from becoming a nuisance:
+ * only a CHANGE of the underlying address writes to the field, so a customer typing over it, or
+ * clearing it outright, is never overruled by a re-render.
+ */
+describe("AddressSearch — prefilled from the slot's address (D-31)", () => {
+  beforeEach(() => {
+    mockKeyed = true;
+  });
+
+  it("opens carrying the address the slot already holds", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<AddressSearch label="Pickup" prefill="My Current Spot, Harare CBD" onResolved={jest.fn()} />);
+    });
+    expect(tree.root.findByType(TextInput).props.value).toBe("My Current Spot, Harare CBD");
+    act(() => tree.unmount());
+  });
+
+  it("re-seeds when the address behind the slot moves", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<AddressSearch label="Pickup" prefill="Old Spot" onResolved={jest.fn()} />);
+    });
+    act(() => {
+      tree.update(<AddressSearch label="Pickup" prefill="New Spot" onResolved={jest.fn()} />);
+    });
+    expect(tree.root.findByType(TextInput).props.value).toBe("New Spot");
+    act(() => tree.unmount());
+  });
+
+  it("never overrules what the customer typed, or a field they cleared", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<AddressSearch label="Pickup" prefill="My Current Spot" onResolved={jest.fn()} />);
+    });
+
+    act(() => {
+      tree.root.findByType(TextInput).props.onChangeText("Somewhere else entirely");
+    });
+    // A re-render with the SAME prefill must not put the old address back over their typing.
+    act(() => {
+      tree.update(<AddressSearch label="Pickup" prefill="My Current Spot" onResolved={jest.fn()} />);
+    });
+    expect(tree.root.findByType(TextInput).props.value).toBe("Somewhere else entirely");
+
+    // Same for an emptied field — clearing is a decision, not a gap to refill.
+    act(() => {
+      tree.root.findByType(TextInput).props.onChangeText("");
+    });
+    act(() => {
+      tree.update(<AddressSearch label="Pickup" prefill="My Current Spot" onResolved={jest.fn()} />);
+    });
+    expect(tree.root.findByType(TextInput).props.value).toBe("");
+    act(() => tree.unmount());
+  });
+
+  it("seeds the keyless field the same way", () => {
+    mockKeyed = false;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<AddressSearch label="Pickup" prefill="My Current Spot" onResolved={jest.fn()} />);
+    });
+    expect(tree.root.findByType(TextInput).props.value).toBe("My Current Spot");
+    act(() => tree.unmount());
+  });
+});

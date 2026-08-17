@@ -143,6 +143,13 @@ function PlaceRow(props: {
 export type AddressSearchProps = {
   label: string;
   placeholder?: string;
+  /**
+   * The address this slot currently holds (D-31). Seeds the field so it reads as "this is the PICKUP
+   * box, and here is the pickup" rather than as an anonymous empty box under a filled row — the
+   * confusion the auto-located pickup pin created. Applied on mount and whenever it CHANGES, so a pin
+   * move or a confirmed search updates the field, while anything the customer types in between stands.
+   */
+  prefill?: string;
   /** Called with the resolved place when the customer taps a suggestion. Feeds the picked-point flow. */
   onResolved: (place: ResolvedPlace) => void;
   /**
@@ -153,6 +160,25 @@ export type AddressSearchProps = {
    */
   focusSignal?: number;
 };
+
+/**
+ * The field's text, seeded from (and re-seeded by) the slot's current address — see `prefill`. Shared by
+ * both variants so the keyed and keyless fields behave identically. Tracking the last APPLIED prefill,
+ * rather than diffing against the live query, is what keeps the customer's own edits: clearing the field
+ * or typing over it changes `query` without changing `prefill`, so nothing re-writes it until the
+ * address behind the slot genuinely moves.
+ */
+function usePrefilledQuery(prefill: string | undefined): [string, React.Dispatch<React.SetStateAction<string>>] {
+  const [query, setQuery] = useState(prefill ?? "");
+  const applied = useRef(prefill ?? "");
+  useEffect(() => {
+    const next = prefill ?? "";
+    if (next === applied.current) return;
+    applied.current = next;
+    setQuery(next);
+  }, [prefill]);
+  return [query, setQuery];
+}
 
 export function AddressSearch(props: AddressSearchProps): React.ReactElement {
   // The gate: no Places key → no autocomplete. Fall back to the device geocoder rather than to a dead
@@ -183,7 +209,7 @@ function geocodeFailureMessage(reason: GeocodeFailure): string {
  * check the result and adjust it.
  */
 function AddressSearchDeviceGeocode(props: AddressSearchProps): React.ReactElement {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = usePrefilledQuery(props.prefill);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const input = useRef<TextInput>(null);
@@ -289,7 +315,7 @@ function AddressSearchDeviceGeocode(props: AddressSearchProps): React.ReactEleme
 }
 
 function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = usePrefilledQuery(props.prefill);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);

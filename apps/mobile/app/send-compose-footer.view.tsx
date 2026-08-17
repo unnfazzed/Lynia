@@ -11,9 +11,13 @@ import { tokens } from "@lynia/shared/tokens";
 import { Button } from "../src/ui";
 
 export type SendComposeFooterViewProps = {
-  /** Show the missing-requirements hint above the CTA (mock: shown until the pins are set). */
+  /**
+   * Show the missing-requirements hint above the CTA (mock: shown until the pins are set).
+   * D-31: the container hard-codes this false — the hint is not shown at all any more. The branch
+   * stays so this generated tree still matches the mock's `div(hint?, Button)`.
+   */
   showHint: boolean;
-  /** The live 'Add … to broadcast' summary of what is still missing. */
+  /** The live 'Add … to broadcast' summary of what is still missing. Unused while D-31 stands. */
   hint: string;
   onBroadcast: () => void;
   busy?: boolean;
@@ -33,6 +37,6 @@ export function SendComposeFooterView({
       color: tokens.color.muted,
       marginBottom: 4
     }}>{hint}</Text> : null}
-          <Button label="Broadcast request" onPress={onBroadcast} loading={busy} disabled={disabled} />
+          <Button label="Proceed" onPress={onBroadcast} loading={busy} disabled={disabled} />
         </View>;
 }
