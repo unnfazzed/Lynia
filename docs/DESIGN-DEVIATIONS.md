@@ -1094,20 +1094,27 @@ deliberate extension of it rather than an alignment — hence a ledger entry, no
 |---|---|---|
 | Header | plain white bar: `Heading` "Jobs near you" + a bell, with a green `BrandHeader` on the gated/offline path | the **8c mint top card** — two-line time-aware greeting, sun/moon sticker paired to the 42px bell (gold unread dot), on BOTH paths |
 | Search bar | not drawn | **still not drawn** — omitted by instruction, and `HomeHeader.search` is optional precisely so a face with nothing to search renders none |
-| Shift state | an `OnlinePill` row inside the list header (status pill · queue subtitle · "Go offline") | the header's **`subRow`** — the same slot the customer home fills with its detected address, because the two faces answer the equivalent live question there ("where is this going?" / "am I taking work?") |
-| "Jobs near you" | the screen's `Heading` | a **16/700 section heading**, in the same grammar the customer home gives "Popular near you", with the queue composition beside it |
+| Location | not drawn | the header's **`subRow`** — the DETECTED current location, the identical `HomeAddressRow` the customer home draws (*"keep the location on the rider card just like the customer home"*) |
+| Connectivity banner | first element on the screen | **still first** — pinned into the header's `topSlot`, inside the mint block above the greeting, so it keeps the top of the screen (*"keep it at the top like before"*) while the header stays the one component owning the top inset |
+| Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline") | the same row, **minus the queue subtitle**, still above the cards |
+| "Jobs near you" | the screen's `Heading` | **removed** (*"Remove the text jobs near you"*) |
+| "Parcels and food · one queue" | beside the online pill | **removed** (*"And the parcels and food one home text as well"*) |
 | Job cards | `JobCard` list | **unchanged** |
 
-**Why the queue subtitle moved to the heading and not the header.** It describes what is IN the list,
-not the shift — and on a 360px phone the status row truncated ("Reconnecting · Parcels an…") once the
-"Go offline" action was beside it. Splitting them fixed the truncation AND put each fact next to the
-thing it describes.
+**Why the two labels came off.** The greeting names the screen, the tab bar names the tab, and the
+cards are self-evidently the jobs — a heading over the only content on a screen labels the obvious.
+The queue composition was a build-time fact about dispatch, not something a rider acts on.
+
+**One honest limitation of the location row.** It is DISPLAY ONLY. The board ranks jobs off `loc` —
+the live GPS fix this screen requests itself — so a manual pick in the location sheet re-labels the
+row without re-ranking the board. The row is the customer's component by instruction; wiring a manual
+override into job ranking is a separate decision and is NOT claimed here.
 
 **Why the whole tab, not just the happy path.** The board has two returns — the virtualized open-orders
 list and the gated/offline fallback (KYC, expired ID, no-GPS, offline). Both now mount the same header,
 so a rider crossing between a live board and a wall never sees the tab's identity change underneath
-them. The walls keep their own recovery actions; the header's "Go online" appears only when
-`canGoOnline` is true, so it can never offer a shift the server would refuse.
+them. The walls keep their own recovery actions, and the offline path keeps its own go-online Card
+(RJM `offline`) — exactly as before.
 
 **Guardrails are unaffected and stayed green.** `RJM.board`'s codegen adoption anchors ONE region — the
 job list (`RiderBoardListView`) — which this does not touch, so the structural snapshot still reduces to

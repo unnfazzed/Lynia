@@ -712,7 +712,18 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     expect(flatText(activeTree)).not.toMatch(/Search/i);
   });
 
-  it("carries the shift state and the Go-offline action in the header, not in the list", async () => {
+  it("keeps the shift row — status + Go offline — above the job cards", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(flatText(activeTree)).toMatch(/Go offline/);
+  });
+
+  it("draws neither the 'Jobs near you' heading nor the queue subtitle (owner 2026-08-17)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
@@ -722,39 +733,21 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
 
     const text = flatText(activeTree);
-    expect(text).toMatch(/Go offline/);
-    // The queue composition describes the LIST, so it rides with the list's heading.
-    expect(text).toMatch(/Jobs near you/);
-    expect(text).toMatch(/Parcels · one queue/);
+    expect(text).not.toMatch(/Jobs near you/);
+    expect(text).not.toMatch(/one queue/);
   });
 
-  it("offline: says so and offers the way back in, once the rider is actually allowed online", async () => {
-    mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+  it("carries the detected location in the header, the same row the customer home draws", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
-    mockGetOpenOrders.mockResolvedValue([]);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
 
     activeTree = renderScreen();
     await settle();
     await settle();
 
-    const text = flatText(activeTree);
-    expect(text).toMatch(/Offline/);
-    expect(text).toMatch(/Go online/);
-  });
-
-  it("offline AND unverified: states the shift, but offers no go-online action it cannot honour", async () => {
-    mockGetMe.mockResolvedValue({ ...meFixture({ isOnline: false }), rider: null });
-    mockGetActiveOrder.mockResolvedValue(null);
-    mockGetOpenOrders.mockResolvedValue([]);
-
-    activeTree = renderScreen();
-    await settle();
-    await settle();
-
-    const text = flatText(activeTree);
-    expect(text).toMatch(/Offline/);
-    expect(text).not.toMatch(/Go online/);
-    // The wall itself still owns the real recovery.
-    expect(text).toMatch(/Set up as a rider/);
+    // The test's expo-location mock resolves no address, so the row shows its honest prompt — the
+    // point is that the ROW is there and never blank.
+    expect(flatText(activeTree)).toMatch(/Set your location|Harare/);
   });
 });

@@ -18,6 +18,7 @@ import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refet
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
+import { useHomeLocation } from "../../../src/logic/home-location";
 import { formatMoney } from "../../../src/logic/money";
 import { useNow } from "../../../src/logic/use-now";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
@@ -33,10 +34,12 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, Button, Card, EmptyState, haptic, HomeHeader, HomeStatusRow, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
+// Not from the src/ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back.
+import { LocationSheet } from "../../../src/ui/home/LocationSheet";
 import { RiderBoardListView, type RiderBoardJob } from "./board-list.view";
 import { RiderBoardEmptyView } from "./board-empty.view";
 import { RiderOfferParcelCardView } from "./offer-parcel-card.view";
@@ -251,6 +254,12 @@ export default function RiderHome(): React.ReactElement {
   // unread count behind the bell's gold dot (the same hook the customer home and Account row use).
   const clock = useNow();
   const unreadCount = useNotificationsUnreadCount();
+  // The detected current location, exactly as the customer home carries it (owner instruction
+  // 2026-08-17, "keep the location on the rider card just like the customer home"). Display only:
+  // the board's job ranking is keyed off `loc` below — the live GPS fix this screen requests
+  // itself — so a manual pick in the sheet re-labels the row without re-ranking the board.
+  const location = useHomeLocation();
+  const [locationOpen, setLocationOpen] = useState(false);
   // A-O4: unlike `openOrders` below (which is `enabled: online` outright — an offline rider can't be
   // offered new work), this poll can't just gate on `online`: the "Go offline" button has no
   // active-job guard, so a rider can go offline mid-delivery and still needs this to keep tracking
@@ -900,65 +909,55 @@ export default function RiderHome(): React.ReactElement {
       evening={greetingFor(clock).evening}
       unread={unreadCount > 0}
       onBell={() => router.push("/notifications")}
-      subRow={
-        online ? (
-          // Status + action ONLY. The queue composition ("Parcels and food · one queue") describes
-          // what is IN the list, not the shift, so it sits with the list's own heading below —
-          // crowding both into this row truncated the status on a 360px phone.
-          <HomeStatusRow
-            label={board.connected && !beatStale ? "Online" : "Reconnecting"}
-            connected={board.connected && !beatStale}
-            actionLabel="Go offline"
-            onAction={() => onlineM.mutate(false)}
-            busy={onlineM.isPending}
-          />
-        ) : (
-          // Offline is a state, not an absence — say so, and keep the way back in one tap. The
-          // gated walls below (KYC, no-GPS) own their own recovery, so no action is offered there.
-          <HomeStatusRow
-            label="Offline"
-            detail={canGoOnline ? "You're not receiving jobs" : undefined}
-            connected={false}
-            actionLabel={canGoOnline ? "Go online" : undefined}
-            onAction={canGoOnline ? () => onlineM.mutate(true) : undefined}
-            busy={onlineM.isPending}
-          />
-        )
-      }
+      // Same row, same component as the customer home. The rider's "where am I" is the equivalent
+      // of the customer's "where is this going".
+      subRow={<HomeAddressRow address={location.label} onPress={() => setLocationOpen(true)} />}
+      // A dropped board socket keeps the TOP of the screen, above the greeting, exactly where it sat
+      // before this header existed (owner instruction 2026-08-17).
+      topSlot={online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
     />
   );
 
-  // "Jobs near you" is now a SECTION heading under the mint header, in the same 16/700 grammar the
-  // customer home gives "Popular near you" — the bell that used to sit beside it moved into the
-  // header (owner instruction 2026-08-17), so the tab has exactly one notifications affordance.
-  const boardHeaderRow = (
-    <View style={{ flexDirection: "row", alignItems: "baseline", gap: tokens.space.sm, paddingBottom: tokens.space.sm }}>
-      <Text style={{ fontSize: 16, lineHeight: 19.36, fontWeight: "700", color: tokens.color.ink }}>Jobs near you</Text>
-      {/* What the queue is made of — it describes this list, so it rides with the list's heading,
-          where the customer home puts "See all →". Muted, because it is a fact and not an action. */}
-      <Text numberOfLines={1} style={{ flexShrink: 1, marginLeft: "auto", fontSize: 12.5, color: tokens.color.muted }}>
-        {merchantDispatchAutoEnabled ? "Parcels and food · one queue" : "Parcels · one queue"}
-      </Text>
+  // The shift: status + the way out of it. Back below the header now that the location owns the
+  // header's sub-row — this is where it sat before, and it is the one control on this screen with a
+  // cost attached, so it keeps a full row rather than being folded into a line of text. No queue
+  // subtitle: "Parcels and food · one queue" came off by owner instruction (2026-08-17).
+  const onlinePillRow = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
+      <StatusPill
+        status={board.connected && !beatStale ? "Online" : "Reconnecting"}
+        tone={board.connected && !beatStale ? "online" : "reconnecting"}
+        dot
+      />
+      <View style={{ flex: 1 }} />
+      <Pressable
+        onPress={() => onlineM.mutate(false)}
+        disabled={onlineM.isPending}
+        accessibilityRole="button"
+        accessibilityLabel="Go offline"
+        hitSlop={8}
+        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center" }}
+      >
+        <Text style={{ fontSize: 12.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Go offline</Text>
+      </Pressable>
     </View>
   );
+
+  // No "Jobs near you" heading and no queue subtitle (owner instruction 2026-08-17): the greeting
+  // names the screen, the tab bar names the tab, and the cards are self-evidently the jobs — a
+  // heading over the only content on the screen was labelling the obvious.
 
   // RJM `board` `OnlinePill`: a compact status row (online/reconnecting pill · "one queue" subtitle ·
   // a "Go offline" text action), not the big go-online Card — that Card is the OFFLINE presentation
   // (RJM `offline`), kept on the ScrollView path below. The reconnecting state is honest: the parity
   // socket is inert, so the chip reads "Reconnecting" rather than a faked "Online".
-  // The online pill, the queue subtitle and the "Go offline" action all moved INTO the mint header's
-  // `subRow` (owner instruction 2026-08-17) — one live-state line per screen, in the same slot the
-  // customer home puts its deliver-to address. Nothing replaces them here.
-
   if (showOpenOrdersList) {
     return (
-      // The Jobs tab's ONE header is the 8c mint block (owner instruction 2026-08-17); "Jobs near you"
-      // is now the section heading beneath it, and the shift state lives in the header's subRow. The
-      // tab bar below already carries Jobs/Money/Account.
+      // The Jobs tab's ONE header is the 8c mint block (owner instruction 2026-08-17): greeting,
+      // detected location, bell — with the connectivity banner pinned above the greeting inside it.
+      // The tab bar below already carries Jobs/Money/Account.
       <AppScreen banner={boardBanner}>
         <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
-          {/* A dropped board socket while online surfaces as the standard top banner. */}
-          {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
           <FlatList
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -968,7 +967,7 @@ export default function RiderHome(): React.ReactElement {
             renderItem={renderJobCard}
             ListHeaderComponent={
               <>
-                {boardHeaderRow}
+                {onlinePillRow}
                 {activeJobBanner}
                 {sentOffersSection}
                 {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
@@ -1012,6 +1011,13 @@ export default function RiderHome(): React.ReactElement {
             }
           />
         </View>
+      <LocationSheet
+        visible={locationOpen}
+        denied={location.denied}
+        onClose={() => setLocationOpen(false)}
+        onUseCurrentLocation={location.useCurrentLocation}
+        onPick={location.setManualPlace}
+      />
       </AppScreen>
     );
   }
@@ -1022,8 +1028,6 @@ export default function RiderHome(): React.ReactElement {
     // Inner screens (rider/job, rider/become, …) keep their plain white Screen bars, unchanged.
     <AppScreen banner={boardBanner}>
       <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
-      {/* A dropped board socket while online surfaces as the standard top banner. */}
-      {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: tokens.space.md }}>
         {activeJobBanner}
 
@@ -1265,6 +1269,13 @@ export default function RiderHome(): React.ReactElement {
         {trailingFooterContent}
       </ScrollView>
       </View>
+      <LocationSheet
+        visible={locationOpen}
+        denied={location.denied}
+        onClose={() => setLocationOpen(false)}
+        onUseCurrentLocation={location.useCurrentLocation}
+        onPick={location.setManualPlace}
+      />
     </AppScreen>
   );
 }

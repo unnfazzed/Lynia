@@ -26,6 +26,8 @@ const TIME_STICKER = BELL_SIZE;
  *     `HomeAddressRow` (the detected deliver-to); the rider passes `HomeStatusRow` (the shift).
  *     It is a SLOT rather than a fixed address row precisely because the two faces answer different
  *     questions in the same drawn shape: "where is this going?" vs "am I taking work?".
+ *   · `topSlot` — full-bleed content above the greeting (the connectivity banner), still inside the
+ *     mint block so the header keeps owning the top inset.
  *   · `search` — the deliberately quiet search bar: white, radius 12 (NOT a pill), padding 10×15,
  *     12.5px muted placeholder, and it must not outweigh the greeting or what follows. Omit the
  *     prop entirely for a face with nothing to search; the rider board does (owner instruction,
@@ -38,6 +40,7 @@ export function HomeHeader({
   greeting,
   evening = false,
   unread = false,
+  topSlot,
   subRow,
   search,
   onBell,
@@ -46,6 +49,13 @@ export function HomeHeader({
   greeting: string;
   evening?: boolean;
   unread?: boolean;
+  /**
+   * Full-bleed content pinned ABOVE the greeting, inside the mint block but below the status bar —
+   * the connectivity banner's home. It sits here rather than above the whole header so it keeps the
+   * top of the SCREEN (owner instruction 2026-08-17, "keep it at the top like before") while the
+   * header stays the one component that owns the top safe-area inset.
+   */
+  topSlot?: React.ReactNode;
   /** The live-state row under the greeting. Omitted → the greeting sits alone. */
   subRow?: React.ReactNode;
   /** The quiet search bar. Omitted → no search bar is rendered at all. */
@@ -57,6 +67,7 @@ export function HomeHeader({
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: tokens.color.accentWash, paddingTop: insets.top, paddingBottom: 24 }}>
+      {topSlot}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18, paddingTop: 16 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           {/* TWO LINES by construction — `greetingLine` puts the phrase on the first and the name on
