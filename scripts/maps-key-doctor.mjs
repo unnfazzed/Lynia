@@ -123,8 +123,12 @@ async function probe({ key, pkg, sha1 }) {
   const res = await fetch(`${PROBE_URL}?${PROBE_QUERY}&key=${encodeURIComponent(key)}`, { headers });
   // A success serves a PNG; only the error path carries prose worth reading.
   const type = res.headers.get("content-type") ?? "";
-  const body = type.startsWith("image/") ? "(binary image — the request succeeded)" : await res.text();
-  return { status: res.status, body: body.slice(0, 800) };
+  const raw = type.startsWith("image/") ? "(binary image — the request succeeded)" : await res.text();
+  // Defence in depth: this body is echoed verbatim into a CI log. Google's error prose does not quote
+  // the key today, but if that ever changes, drop the whole body rather than leak it — the key is used
+  // here only as a predicate, so nothing derived from it can reach the caller.
+  const safe = raw.includes(key) ? "(response withheld — it contained the API key)" : raw;
+  return { status: res.status, body: safe.slice(0, 800) };
 }
 
 async function main() {
@@ -143,7 +147,22 @@ async function main() {
   console.log("Maps key doctor — MOB-MAP-02\n");
   console.log(`  package : ${pkg}`);
   console.log(`  sha-1   : ${sha1 ? normalizeSha1(sha1) : "(none supplied — allowlist NOT tested)"}`);
-  console.log(`  key     : (${key.length} chars, never printed)\n`);
+  // Shape check reported as CONSTANT strings, never a value derived from the key.
+  //
+  // The first version of this line printed `key.length` — "safe", since a Google key is a fixed 39
+  // characters and the length discloses nothing. CodeQL flagged it anyway (js/clear-text-logging,
+  // high), and it was right to: this output goes to a CI log readable by anyone with repo read access,
+  // and "it's only a derived value" is the reasoning that turns into a real leak the next time someone
+  // extends the line. Branching on the key and logging fixed text keeps the diagnostic that actually
+  // matters — a truncated or whitespace-mangled secret is the real failure mode — with no data flow
+  // from the secret into the sink at all.
+  const looksLikeGoogleKey = /^AIza[0-9A-Za-z_-]{35}$/.test(key);
+  console.log(
+    looksLikeGoogleKey
+      ? "  key     : present, well-formed (never printed)\n"
+      : "  key     : present but NOT shaped like a Google API key — expected 'AIza' + 35 chars. " +
+          "Check the secret for truncation or stray whitespace.\n",
+  );
 
   if (sha1 && !isWellFormedSha1(sha1)) {
     console.error(
