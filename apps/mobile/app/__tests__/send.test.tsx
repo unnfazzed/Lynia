@@ -37,6 +37,9 @@ const mockBack = jest.fn();
 const mockSignOut = jest.fn();
 const mockReplace = jest.fn();
 let mockCanGoBack = true;
+// The `rb…` re-broadcast route params, when a test is exercising the "send this order again" entry.
+// Empty for a plain /send open (the overwhelmingly common case).
+let mockRebroadcastParams: Record<string, string> = {};
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({
@@ -45,7 +48,7 @@ jest.mock("expo-router", () => ({
     back: () => mockBack(),
     canGoBack: () => mockCanGoBack,
   }),
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => mockRebroadcastParams,
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
     React_.useEffect(cb, []);
@@ -112,6 +115,39 @@ jest.mock("../../src/ui/ComposeMap", () => {
       ),
   };
 });
+// The pickup auto-locate (usePickupAutolocate) runs FOR REAL on this screen — it is the behaviour the
+// last describe block is about — so the native location edge beneath it is stubbed here rather than the
+// hook itself.
+//
+// The default is a phone with NO location to give (hard-denied, so the hook doesn't even prompt),
+// because that is the device state every OTHER test in this file was written against: an empty
+// composer with both landmarks blank. The auto-locate block opts into a located phone explicitly via
+// `grantLocation()`. Making it the other way round would quietly re-point the characterization tests
+// at a screen that already has a pickup pin, which is not what any of them are checking.
+type LocationPermission = { granted: boolean; canAskAgain: boolean; status: string };
+type Fix = { coords: { latitude: number; longitude: number } } | null;
+const DENIED: LocationPermission = { granted: false, canAskAgain: false, status: "denied" };
+const GRANTED: LocationPermission = { granted: true, canAskAgain: true, status: "granted" };
+const mockGetForegroundPermissionsAsync = jest.fn(async (): Promise<LocationPermission> => DENIED);
+const mockRequestForegroundPermissionsAsync = jest.fn(async (): Promise<LocationPermission> => GRANTED);
+const mockGetLastKnownPositionAsync = jest.fn(async (): Promise<Fix> => null);
+const mockGetCurrentPositionAsync = jest.fn(async (): Promise<Fix> => null);
+const mockReverseGeocodeAsync = jest.fn(async () => [] as { name: string | null; street: string | null; district: string | null }[]);
+jest.mock("expo-location", () => ({
+  Accuracy: { Balanced: 3 },
+  getForegroundPermissionsAsync: () => mockGetForegroundPermissionsAsync(),
+  requestForegroundPermissionsAsync: () => mockRequestForegroundPermissionsAsync(),
+  getLastKnownPositionAsync: () => mockGetLastKnownPositionAsync(),
+  getCurrentPositionAsync: () => mockGetCurrentPositionAsync(),
+  reverseGeocodeAsync: () => mockReverseGeocodeAsync(),
+}));
+
+/** A phone standing at PICKUP with location granted and a geocoder that can name the spot. */
+function grantLocation(): void {
+  mockGetForegroundPermissionsAsync.mockImplementation(async () => GRANTED);
+  mockGetCurrentPositionAsync.mockImplementation(async () => ({ coords: { latitude: PICKUP.lat, longitude: PICKUP.lng } }));
+  mockReverseGeocodeAsync.mockImplementation(async () => [{ name: "My Current Spot", street: null, district: "Harare CBD" }]);
+}
 jest.mock("../../src/ui/AddressSearch", () => ({
   AddressSearch: () => {
     const React_ = require("react");
@@ -171,11 +207,21 @@ function renderSend(): renderer.ReactTestRenderer {
 }
 
 let activeTree: renderer.ReactTestRenderer | null = null;
+// `jest.clearAllMocks()` below clears CALLS but keeps implementations, so a `grantLocation()` (or any
+// per-test override) would otherwise leak into the next test. Restore the no-location device here.
+beforeEach(() => {
+  mockGetForegroundPermissionsAsync.mockImplementation(async () => DENIED);
+  mockRequestForegroundPermissionsAsync.mockImplementation(async () => GRANTED);
+  mockGetLastKnownPositionAsync.mockImplementation(async () => null);
+  mockGetCurrentPositionAsync.mockImplementation(async () => null);
+  mockReverseGeocodeAsync.mockImplementation(async () => []);
+});
 afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
   secureStore = {};
   mockCanGoBack = true;
+  mockRebroadcastParams = {};
   jest.clearAllMocks();
 });
 
@@ -696,5 +742,138 @@ describe("send.tsx — no on-device draft (start afresh)", () => {
     expect(tree.root.findAll((n) => n.props.children === "Draft restored").length).toBe(0);
     expect(tree.root.findAll((n) => n.props.value === "Old Pickup").length).toBe(0);
     expect(tree.root.findAll((n) => n.props.value === "9.99").length).toBe(0);
+  });
+});
+
+describe("send.tsx — pickup prefilled from the customer's current location", () => {
+  beforeEach(() => {
+    grantLocation();
+    mockGetActiveCustomerOrder.mockResolvedValue(null);
+    mockGetMe.mockResolvedValue({ onHold: false });
+  });
+
+  /** The footer's "Add … to broadcast." hint — it names every requirement still missing. */
+  function missingHint(tree: renderer.ReactTestRenderer): string {
+    const node = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.endsWith(" to broadcast."))[0];
+    if (!node) throw new Error("no missing-requirements hint on screen");
+    return node.props.children as string;
+  }
+
+  // Owner instruction 2026-08-17: "on pickup, it must automatically prefill the pickup location with
+  // your current location. You can edit but it must be prefilled when you open the tab."
+  it("drops the pickup pin and names it, with nothing tapped", async () => {
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    // The pickup address row carries the reverse-geocoded name (AddressRows renders the landmark) …
+    expect(tree.root.findAll((n) => n.props.children === "My Current Spot, Harare CBD").length).toBeGreaterThan(0);
+    // … and the pin itself is really set: the footer's pin requirement (a SINGLE "pickup & drop-off
+    // pins" clause, satisfied only when both are placed) clears on the drop-off tap alone, which it
+    // could not do if the customer still owed a pickup pin.
+    expect(missingHint(tree)).toContain("pickup & drop-off pins");
+    pressTestId(tree, "test-set-drop");
+    expect(missingHint(tree)).not.toContain("pins");
+    // The auto-filled pickup landmark also counts — only the drop-off's is outstanding, and that
+    // arrives with the drop pin, so no landmark is owed either.
+    expect(missingHint(tree)).not.toContain("landmarks");
+  });
+
+  it("submits the auto-located pickup when the customer completes the rest of the form", async () => {
+    mockCreateOrder.mockResolvedValue({ id: "order-9", status: "auction", proposedFare: "7.50", expiresAt: null });
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    pressTestId(tree, "test-set-drop");
+    setFieldByAccessibilityLabel(tree, "Your phone (sender)", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
+    setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
+    pressByText(tree, "Broadcast request");
+    await settle();
+
+    expect(mockCreateOrder).toHaveBeenCalledTimes(1);
+    expect(mockCreateOrder.mock.calls[0]?.[0]?.pickup).toEqual({
+      point: { lat: PICKUP.lat, lng: PICKUP.lng },
+      landmark: "My Current Spot, Harare CBD",
+      contactPhone: "+263771234567",
+    });
+  });
+
+  // "You can edit" — the prefill is a starting point, never a lock. A pin the customer places wins,
+  // and the late GPS fix that lands after it must not drag their pin away.
+  it("lets a customer-placed pickup pin override the prefill, and never re-writes it afterwards", async () => {
+    const ELSEWHERE = { lat: -17.79, lng: 31.09 };
+    let releaseFix: (v: { coords: { latitude: number; longitude: number } }) => void = () => {};
+    mockGetCurrentPositionAsync.mockImplementation(
+      () => new Promise((resolve) => (releaseFix = resolve)),
+    );
+    mockCreateOrder.mockResolvedValue({ id: "order-9", status: "auction", proposedFare: "7.50", expiresAt: null });
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    // The customer drops their own pickup pin while the fix is still in flight …
+    act(() => {
+      tree.root.findByProps({ testID: "test-set-pickup" }).props.onPress();
+    });
+    // … and only then does the GPS answer.
+    await act(async () => {
+      releaseFix({ coords: { latitude: ELSEWHERE.lat, longitude: ELSEWHERE.lng } });
+    });
+    await settle();
+
+    pressTestId(tree, "test-set-drop");
+    setFieldByAccessibilityLabel(tree, "Your phone (sender)", "0771234567");
+    setFieldByAccessibilityLabel(tree, "Recipient phone", "0779876543");
+    setFieldByAccessibilityLabel(tree, "Documents", "A parcel");
+    setFieldByAccessibilityLabel(tree, "Your price (USD)", "7.50");
+    pressByText(tree, "Broadcast request");
+    await settle();
+
+    expect(mockCreateOrder.mock.calls[0]?.[0]?.pickup.point).toEqual({ lat: PICKUP.lat, lng: PICKUP.lng });
+    expect(mockCreateOrder.mock.calls[0]?.[0]?.pickup.landmark).toBe("Test Pickup Landmark");
+  });
+
+  // Nobody asked for this fix, so a refused permission must leave the composer exactly as the mock's
+  // `home_empty` draws it — the tap-the-map path, no error card, no toast.
+  it("leaves the composer untouched and silent when location is unavailable", async () => {
+    mockGetForegroundPermissionsAsync.mockImplementation(async () => DENIED);
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(mockRequestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockGetCurrentPositionAsync).not.toHaveBeenCalled();
+    // Still the mock's `home_empty`: both pins owed, and no error raised for a fix nobody asked for.
+    expect(missingHint(tree)).toContain("pickup & drop-off pins");
+    expect(tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("Couldn't get your location")).length).toBe(0);
+  });
+
+  // A re-broadcast is "send THIS order again": its pickup is the whole point, so the device's current
+  // position must not overwrite it — the customer is often nowhere near the original pickup.
+  it("does not auto-locate over a re-broadcast's own pickup", async () => {
+    mockRebroadcastParams = {
+      rbPickupLat: "-17.8016",
+      rbPickupLng: "31.0431",
+      rbPickupLandmark: "Avondale Shops",
+      rbDropLat: String(DROPOFF.lat),
+      rbDropLng: String(DROPOFF.lng),
+      rbDropLandmark: "Drop Spot",
+      rbItems: JSON.stringify([{ description: "Documents envelope", quantity: 1 }]),
+      rbFare: "4.50",
+      rbNote: "",
+    };
+
+    activeTree = renderSend();
+    await settle();
+    const tree = activeTree!;
+
+    expect(mockGetForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockGetCurrentPositionAsync).not.toHaveBeenCalled();
+    expect(tree.root.findAll((n) => n.props.children === "Avondale Shops").length).toBeGreaterThan(0);
   });
 });

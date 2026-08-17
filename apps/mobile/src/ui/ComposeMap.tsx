@@ -10,6 +10,7 @@ import MapView, {
   Polyline,
   type Region,
 } from "react-native-maps";
+import { landmarkFromAddress } from "../logic/geocode";
 import { mapFallbackHint } from "../logic/map-fallback";
 import { mapLoadSignal } from "../logic/map-load-signal";
 import { addBreadcrumb, captureException } from "../telemetry/sentry";
@@ -46,10 +47,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
   // Clear the timer on the winning path so a resolved fix doesn't leave a dangling 9s timeout.
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
-
-function landmarkFrom(r: Location.LocationGeocodedAddress): string {
-  return [r.name, r.street, r.district ?? r.city].filter(Boolean).join(", ").trim().slice(0, 120);
 }
 
 export type ActiveSlot = "pickup" | "drop";
@@ -190,7 +187,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
         const results = await Location.reverseGeocodeAsync({ latitude: c.latitude, longitude: c.longitude });
         const first = results[0];
         if (!first) return;
-        const landmark = landmarkFrom(first);
+        const landmark = landmarkFromAddress(first);
         if (landmark) cb(landmark);
       } catch {
         /* offline / no geocoder — leave the field untouched */
