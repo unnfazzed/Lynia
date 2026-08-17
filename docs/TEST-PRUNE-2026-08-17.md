@@ -17,11 +17,14 @@ snapshot tests (the suite doesn't use `toMatchSnapshot` at all), no unreachable 
 literal mock-the-unit-under-test cases. 13 candidates were shortlisted across the three lanes. Every
 candidate below was proven or cleared by an actual mutation — the source was changed, the target test
 was run against the mutated code, the outcome was recorded, and the mutation was reverted (`git diff`
-confirms zero net source changes — every row below nets to a **test-only** diff). Three of the
-13 candidates turned out to be false positives: the hunt's static reading missed that vitest (api,
-shared) transpiles TypeScript without type-checking, so a "compile-time-only" argument for
-vacuousness doesn't hold at `pnpm test` time — only at `pnpm typecheck` time, a separate gate. Those
-three are recorded below with the mutation that refuted them.
+confirms zero net source changes — every row below nets to a **test-only** diff). Of the 13 candidates,
+9 were condemned (consolidated into 8 ledger entries below — TP-07 covers two originally-separate
+`gates.test.tsx` candidates) and **4 turned out to be false positives**, cleared with the mutation that
+refuted them. Two of the four false positives share one root cause: the hunt's static reading assumed
+a "compile-time-only" protection argument, missing that vitest/Babel transpile TypeScript without
+type-checking, so that argument doesn't hold at `pnpm test` time — only at the separate `pnpm
+typecheck` gate. The other two false positives were duplicate-coverage claims that mutation testing
+showed were not actually duplicates (distinct behavior, or a partial rather than full overlap).
 
 ## Verdicts
 
@@ -248,7 +251,9 @@ line that catches a shape regression the sibling assertion can't. Left unchanged
 | TP-08 | `apps/mobile/.../stepper.test.tsx` | 3 | Condemned | Strengthened (ordered glyph-sequence pin) |
 | — | `apps/mobile/.../order-offers.test.ts` | 1 (claimed) | Refuted | No change |
 
-8 condemned (7 strengthened, 1 deleted), 5 cleared by mutation evidence. Net diff: 8 test files
+9 original candidates condemned, consolidated into 8 ledger entries (7 strengthened, 1 deleted; TP-07
+covers 2 originally-separate `gates.test.tsx` candidates), 4 cleared by mutation evidence — 13 total.
+Net diff: 8 test files
 changed, 0 source files changed (every mutation used to prove a verdict was reverted). No guardrail
 suite (`design-tokens.drift.spec.ts` / `screen-inventory.spec.ts` / `check-design-freeze.mjs`) touched.
 No sensitive-lane test deleted — TP-04 (wallet-credit) was strengthened, not removed, consistent with

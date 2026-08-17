@@ -34,7 +34,7 @@ describe("StubPaymentRail — contract (roadmap 2.5 seam)", () => {
       useClass?: unknown;
     }>;
     const exportsList = Reflect.getMetadata("exports", PaymentsModule) as unknown[];
-    const binding = providers.find((p) => p && typeof p === "object" && "provide" in p);
+    const binding = providers.find((p) => p?.provide === PAYMENT_RAIL);
     expect(binding?.provide).toBe(PAYMENT_RAIL);
     expect(binding?.useClass).toBe(StubPaymentRail);
     expect(exportsList).toContain(PAYMENT_RAIL);

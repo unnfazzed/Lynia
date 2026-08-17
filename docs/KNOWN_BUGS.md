@@ -2293,10 +2293,13 @@ against. Three parallel read-only hunts (api; mobile; admin+merchant+shared) swe
 cannot-fail patterns (vacuous assertions, mocking the unit under test, copy-string greps posing as
 behavior, unreachable assertions, duplicate coverage). 13 candidates shortlisted; every one was PROVEN
 or CLEARED by an actual mutation (source changed, target test run against the mutation, outcome
-recorded, mutation reverted) — never condemned on reading alone. 8 condemned (7 strengthened, 1
-deleted); 5 cleared as false positives (the hunt's static reading missed that `pnpm test` runs
-untyped — vitest/Babel transpile without type-checking, so "compile-time-only protection" arguments
-don't hold at test time, only at the separate `pnpm typecheck` gate). `pnpm typecheck` + `pnpm test`
+recorded, mutation reverted) — never condemned on reading alone. 9 of the 13 candidates condemned,
+consolidated into 8 ledger entries below (TP-07 covers two originally-separate `gates.test.tsx`
+candidates); 4 cleared as false positives — 2 of those share one root cause (the hunt's static reading
+missed that `pnpm test` runs untyped: vitest/Babel transpile without type-checking, so
+"compile-time-only protection" arguments don't hold at test time, only at the separate `pnpm
+typecheck` gate), the other 2 were duplicate-coverage claims mutation testing showed weren't actually
+duplicates. `pnpm typecheck` + `pnpm test`
 green (api 100/1729, mobile 160/1201, admin 11, merchant 29, shared 12 — all unchanged counts except
 TP-05's one deleted assertion inside an existing test). Net diff: 8 test files changed, 0 source files
 (every proving mutation reverted). No guardrail-suite test touched; no sensitive-lane test deleted
@@ -2313,7 +2316,7 @@ TP-05's one deleted assertion inside an existing test). Net diff: 8 test files c
 | TP-07 | `gates.test.tsx` had two gate-copy assertions using `.toBeTruthy()` where the mocks specify exact drawn text (CLAUDE.md's mock-copy-verbatim mandate): `ONLINE_GATE_COPY.kyc_expired.title` and `ACCOUNT_ON_HOLD_COPY.{title,message}`. Mutations: both swapped to wrong-but-nonempty-and-distinct strings — both slipped through, including past the pre-existing `.not.toBe(kyc.title)` distinctness check on the first (a wrong string is still distinct from `kyc`'s). | `apps/mobile/src/logic/__tests__/gates.test.tsx` | LOW (copy correctness, not logic — but exactly the class of drift CLAUDE.md's pixel-parity mandate targets) | **FIXED**, both — pinned to the exact mock copy. Confirmed both failing against their mutations, passing after. |
 | TP-08 | `stepper.test.tsx`'s "marks a step live" test — guarding the exact regression its own file header documents (every step rendering "todo" when `currentIdx` was `-1`) — only asserted a checkmark exists SOMEWHERE in the tree. Mutation: `Stepper`'s `currentIdx` for the food-customer branch hardcoded to always the LAST step (ignoring real dispatch/kitchen state) — all 10 tests in the file still passed, since 6-of-7 steps wrongly marked "done" still contains "a ✓". | `apps/mobile/src/ui/index.tsx` (`Stepper`), test in `apps/mobile/src/ui/__tests__/stepper.test.tsx` | LOW (visual progress indicator, not a data/money path) | **FIXED** — replaced with a full ordered glyph+label sequence pin (`.toEqual([...])`) so the CORRECT step, not just any step, must carry the checkmark. Confirmed failing against the mutation (showing the exact wrong-shape diff), passing after. |
 
-Five additional candidates were investigated and CLEARED by mutation (not condemned — recorded in the
+Four additional candidates were investigated and CLEARED by mutation (not condemned — recorded in the
 report for completeness, no code changes): `stub-payment-rail.spec.ts`'s "satisfies the interface"
 callable-checks test (refuted — vitest has no type-checking at test time, so a real method removal
 DOES fail it); `apps/admin/app/error.test.tsx` vs `components/states.test.tsx` (refuted — the wrapper's
