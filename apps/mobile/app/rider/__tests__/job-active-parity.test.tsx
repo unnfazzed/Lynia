@@ -24,7 +24,6 @@
  * map-fused composite) and the safety controls can't mount here and are stubbed, mirroring job.test.tsx.
  */
 import { UndeliveredReason } from "@lynia/shared";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

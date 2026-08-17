@@ -13,7 +13,6 @@
  * react-test-renderer (the harness the sibling fonts.test.tsx already uses — this app has no
  * @testing-library/react-native).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockUseFonts = jest.fn();

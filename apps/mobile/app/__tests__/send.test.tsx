@@ -6,7 +6,6 @@
  * `(tabs)/__tests__/home.test.tsx`) and cover the on-hold wall, the compose/submit path, and the
  * no-draft guarantee.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";

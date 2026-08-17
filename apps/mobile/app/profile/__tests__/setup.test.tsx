@@ -13,7 +13,6 @@
  * from the persisted draft. Against the pre-fix code (no `profile-draft.ts` wiring) this fails: a fresh
  * mount always starts every field empty.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockUpdateProfile = jest.fn();

@@ -17,7 +17,6 @@
  * no marker ever written pre-response, a remount that sees no active order and no persisted
  * terminal just shows "No active job", not the acknowledgement screen.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

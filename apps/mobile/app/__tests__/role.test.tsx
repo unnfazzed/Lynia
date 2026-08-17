@@ -11,7 +11,6 @@
  * rev-2 flag-off mock is already food-safe ("more services soon", no food word), so these tests pin
  * both flag positions AND the no-food-leak guarantee.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 

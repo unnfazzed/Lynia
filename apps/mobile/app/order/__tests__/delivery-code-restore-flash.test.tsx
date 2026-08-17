@@ -13,7 +13,6 @@
  * The fix adds a `codeRestored` sentinel and renders neither card until the read settles. These tests
  * hold the SecureStore read open so that window can be asserted on; the first fails pre-fix.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrderSnapshot } from "../../../src/api/orders";

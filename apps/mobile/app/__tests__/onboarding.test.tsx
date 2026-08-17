@@ -7,7 +7,6 @@
  * while the vertical is dark. Both sets are the same length, so a flags fetch resolving mid-carousel
  * can never strand the slide index.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 

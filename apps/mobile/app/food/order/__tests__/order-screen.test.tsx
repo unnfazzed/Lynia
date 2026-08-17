@@ -5,7 +5,6 @@
  * Mocks the API layer only (mirrors settings/__tests__/delete-account.test.tsx's pattern) so the real
  * useFoodOrder/react-query polling logic is exercised, not stubbed out.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 

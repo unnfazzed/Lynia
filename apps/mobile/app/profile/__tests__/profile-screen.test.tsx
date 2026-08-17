@@ -15,7 +15,6 @@
  *     and its verification tag render only here, and only when the account has one.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import type { Me } from "../../../src/api/auth";
 

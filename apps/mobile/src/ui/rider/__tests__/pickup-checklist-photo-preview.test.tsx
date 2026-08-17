@@ -4,7 +4,6 @@
  * 3000-4000px camera capture — that capture stays mounted as a preview for the rest of the pickup
  * flow, and the full-resolution bitmap is real avoidable peak-memory pressure on a 1-2GB device.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { PickupChecklist } from "../PickupChecklist";

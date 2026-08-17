@@ -4,7 +4,6 @@
  * of each step (the notifications step draws the phone glyph, not an inbox), and the `initialStep`
  * seam the parity lane mounts step 2 through.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 jest.mock("expo-router", () => ({

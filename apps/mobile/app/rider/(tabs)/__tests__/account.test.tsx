@@ -12,7 +12,6 @@
  * and is NOT taken offline; and "Stay online as a rider" is a real escape that leaves everything alone.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { Me } from "../../../../src/api/auth";

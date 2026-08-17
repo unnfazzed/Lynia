@@ -11,7 +11,6 @@
  * fresh instance for the same order — it must offer a one-tap resume with the SAME captured asset,
  * not force a re-shoot.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { PickupChecklist } from "../PickupChecklist";

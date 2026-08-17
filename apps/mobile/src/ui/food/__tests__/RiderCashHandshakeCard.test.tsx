@@ -2,7 +2,6 @@
  * D5/R-04/R-05: the CASH doorstep handshake card, RIDER half — the mirror of CashHandshakeCard.test.tsx,
  * driven by the same HandshakeState (see logic/food-doorstep.test.ts for the state derivation itself).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { RiderCashHandshakeCard } from "../RiderCashHandshakeCard";

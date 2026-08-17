@@ -12,7 +12,6 @@
  * onboarding/role reads — and (2) once resolved, a cold-start deep link wins over the ordinary boot
  * destination in the SAME render, with no separate/racing navigation call involved.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockRedirect = jest.fn((_href: string) => null);

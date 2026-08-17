@@ -8,7 +8,6 @@
  */
 import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { raiseSos } from "../../api/safety";
 import { SosControl } from "../safety";

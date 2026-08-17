@@ -3,7 +3,6 @@
  * reachable from inside the app. Its copy IS the disclosure, so it is pinned verbatim, along with the
  * two action rows the mock draws at the bottom (data copy, then the red route into deletion).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockPush = jest.fn();
