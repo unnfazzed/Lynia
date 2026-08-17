@@ -26,6 +26,8 @@ const TIME_STICKER = BELL_SIZE;
  *     `HomeAddressRow` (the detected deliver-to); the rider passes `HomeStatusRow` (the shift).
  *     It is a SLOT rather than a fixed address row precisely because the two faces answer different
  *     questions in the same drawn shape: "where is this going?" vs "am I taking work?".
+ *   · `topSlot` — full-bleed content above the greeting (the connectivity banner), still inside the
+ *     mint block so the header keeps owning the top inset.
  *   · `search` — the deliberately quiet search bar: white, radius 12 (NOT a pill), padding 10×15,
  *     12.5px muted placeholder, and it must not outweigh the greeting or what follows. Omit the
  *     prop entirely for a face with nothing to search; the rider board does (owner instruction,
@@ -38,6 +40,7 @@ export function HomeHeader({
   greeting,
   evening = false,
   unread = false,
+  topSlot,
   subRow,
   search,
   onBell,
@@ -46,6 +49,13 @@ export function HomeHeader({
   greeting: string;
   evening?: boolean;
   unread?: boolean;
+  /**
+   * Full-bleed content pinned ABOVE the greeting, inside the mint block but below the status bar —
+   * the connectivity banner's home. It sits here rather than above the whole header so it keeps the
+   * top of the SCREEN (owner instruction 2026-08-17, "keep it at the top like before") while the
+   * header stays the one component that owns the top safe-area inset.
+   */
+  topSlot?: React.ReactNode;
   /** The live-state row under the greeting. Omitted → the greeting sits alone. */
   subRow?: React.ReactNode;
   /** The quiet search bar. Omitted → no search bar is rendered at all. */
@@ -57,6 +67,7 @@ export function HomeHeader({
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: tokens.color.accentWash, paddingTop: insets.top, paddingBottom: 24 }}>
+      {topSlot}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18, paddingTop: 16 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           {/* TWO LINES by construction — `greetingLine` puts the phrase on the first and the name on
@@ -137,24 +148,51 @@ export function HomeHeader({
 }
 
 /**
- * The CUSTOMER's `subRow` — the detected deliver-to address: a 13px map-pin, the street line in
- * 12.5/600 `accentText`, and a chevron; tapping it opens the location sheet. It lives beside the
- * header it fills rather than in the screen, so the two faces' sub-rows stay visibly one shape.
+ * The location row: a 13px map-pin, the street line in 12.5/600 `accentText`, and one trailing glyph.
+ * Shared by both faces so their sub-rows stay visibly one shape — but the TRAILING GLYPH is not
+ * decoration, it is the promise the row makes, and the two faces make different ones:
+ *
+ *   · `"pick"` (customer) — a chevron. Tapping opens the location sheet, and choosing a different
+ *     address genuinely changes the screen: it re-sorts the nearest venues and re-estimates the
+ *     delivery fees.
+ *   · `"detect"` (rider) — a refresh glyph. Tapping RE-DETECTS, and nothing else. The rider board
+ *     ranks jobs off the live GPS fix the board requests for itself, and the server pushes new jobs
+ *     using the heartbeat position — neither reads this row. A chevron here would promise a picker
+ *     that silently could not move the job list (owner decision 2026-08-17: detect only).
+ *
+ * The rule is worth keeping: give this row a picker ONLY on a screen where picking changes something.
  */
-export function HomeAddressRow({ address, onPress }: { address: string; onPress?: () => void }): React.ReactElement {
+export function HomeAddressRow({
+  address,
+  mode = "pick",
+  busy = false,
+  onPress,
+}: {
+  address: string;
+  mode?: "pick" | "detect";
+  /** A detection is in flight — the glyph dims rather than the row disappearing. */
+  busy?: boolean;
+  onPress?: () => void;
+}): React.ReactElement {
+  const detect = mode === "detect";
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
+      disabled={!onPress || busy}
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? `Deliver to ${address}. Change location` : undefined}
+      accessibilityState={{ busy }}
+      accessibilityLabel={
+        onPress ? (detect ? `Your location: ${address}. Update it` : `Deliver to ${address}. Change location`) : undefined
+      }
       style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
     >
       <Icon name="map-pin" size={13} color={tokens.color.accentText} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: tokens.color.accentText }}>
         {address}
       </Text>
-      <Icon name="chevron-down" size={13} color={tokens.color.accentText} />
+      <View style={{ opacity: busy ? 0.5 : 1 }}>
+        <Icon name={detect ? "refresh-cw" : "chevron-down"} size={detect ? 12 : 13} color={tokens.color.accentText} />
+      </View>
     </Pressable>
   );
 }

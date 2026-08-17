@@ -286,7 +286,7 @@ async function wait(ms: number): Promise<void> {
 
 describe("rider board (A-O4: activeJob self-heal poll must stop once offline confirms no active job)", () => {
   it(
-    "offline, no active job: fetches once on mount, then the 8s poll never fires again",
+    "gated (so not online), no active job: fetches once on mount, then the 8s poll never fires again",
     async () => {
       mockUseRiderBoard.mockReturnValue({
         connected: false,
@@ -294,7 +294,9 @@ describe("rider board (A-O4: activeJob self-heal poll must stop once offline con
         takenOrderIds: new Set<string>(),
         boardTakenNudge: 0,
       });
-      mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+      // Since "you are always online" (2026-08-17) a rider is offline ONLY behind a wall, so an
+      // unverified rider is how this state is reached now — `isOnline: false` no longer produces it.
+      mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending" }));
       mockGetActiveOrder.mockResolvedValue(null);
       mockGetOpenOrders.mockResolvedValue([]);
 
@@ -367,7 +369,7 @@ describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring m
     expect(mockGetOpenOrders.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
-  it("offline: the online toggle's 'Go online' still calls onlineM.mutate (setOnline(true))", async () => {
+  it("the shift is automatic — setOnline(true) fires with no toggle to press (owner 2026-08-17)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -376,19 +378,32 @@ describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring m
     await settle();
     await settle();
 
-    const goOnline = activeTree.root.findAll(
-      (n) => n.props.label === "Go online" && typeof n.props.onPress === "function",
-    );
-    expect(goOnline.length).toBeGreaterThan(0);
+    // The switch is gone in BOTH of its old forms — the Card's button and the board's pill row.
+    expect(activeTree.root.findAll((n) => n.props.label === "Go online")).toHaveLength(0);
+    expect(activeTree.root.findAll((n) => n.props.label === "Go offline")).toHaveLength(0);
+    expect(activeTree.root.findAll((n) => n.props.accessibilityLabel === "Go offline")).toHaveLength(0);
 
-    mockSetOnline.mockClear();
-    act(() => {
-      (goOnline[0]!.props as { onPress: () => void }).onPress();
-    });
-    await settle();
-
+    // …and the app did the work the rider used to do by hand — WITH a position, so the server
+    // records them as broadcast-eligible rather than on-shift-but-invisible.
     expect(mockSetOnline).toHaveBeenCalledTimes(1);
     expect(mockSetOnline.mock.calls[0]![0]).toBe(true);
+    expect(mockSetOnline.mock.calls[0]![1]).toEqual({ lat: -17.83, lng: 31.05 });
+  });
+
+  it("never re-fires setOnline in a loop when the server refuses", async () => {
+    // The auto-online effect is ref-guarded precisely because a failed mutation flips `isPending`
+    // back, which would otherwise re-run the effect and hammer the endpoint.
+    mockSetOnline.mockRejectedValueOnce(new Error("network down"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    await settle();
+
+    expect(mockSetOnline.mock.calls.length).toBeLessThanOrEqual(1);
   });
 });
 
@@ -519,8 +534,28 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
     expect(offlineCopyHits(activeTree)).toBe(0);
   });
 
-  it("still renders offline from a warm ['me'] that says the rider is off shift — the seed reads the cache, it doesn't assume online", async () => {
+  it("ignores a server 'off shift' — the rider is always online (owner 2026-08-17)", async () => {
+    // `is_online` only ever flipped on an explicit toggle, and there is no toggle any more. A warm
+    // cache saying "off shift" is therefore a stale fact about a control that no longer exists; the
+    // rider is online because they are VERIFIED, and the board must not blink through an offline
+    // presentation that has itself been removed.
     const me = meFixture({ isOnline: false });
+    mockGetMe.mockResolvedValue(me);
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], me));
+    expect(offlineCopyHits(activeTree)).toBe(0);
+
+    await settle();
+    await settle();
+    expect(offlineCopyHits(activeTree)).toBe(0);
+    // …and the app puts them online with the server rather than waiting for a tap.
+    expect(mockSetOnline.mock.calls.some((c) => c[0] === true)).toBe(true);
+  });
+
+  it("does NOT go online behind a wall — an unverified rider stays off", async () => {
+    const me = meFixture({ kycStatus: "pending" });
     mockGetMe.mockResolvedValue(me);
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -529,7 +564,7 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
     await settle();
     await settle();
 
-    expect(offlineCopyHits(activeTree)).toBeGreaterThan(0);
+    expect(mockSetOnline).not.toHaveBeenCalled();
   });
 });
 
@@ -712,7 +747,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     expect(flatText(activeTree)).not.toMatch(/Search/i);
   });
 
-  it("carries the shift state and the Go-offline action in the header, not in the list", async () => {
+  it("draws no shift row at all — no status pill, no Go offline (owner 2026-08-17)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
@@ -722,39 +757,58 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
 
     const text = flatText(activeTree);
-    expect(text).toMatch(/Go offline/);
-    // The queue composition describes the LIST, so it rides with the list's heading.
-    expect(text).toMatch(/Jobs near you/);
-    expect(text).toMatch(/Parcels · one queue/);
-  });
-
-  it("offline: says so and offers the way back in, once the rider is actually allowed online", async () => {
-    mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
-    mockGetActiveOrder.mockResolvedValue(null);
-    mockGetOpenOrders.mockResolvedValue([]);
-
-    activeTree = renderScreen();
-    await settle();
-    await settle();
-
-    const text = flatText(activeTree);
-    expect(text).toMatch(/Offline/);
-    expect(text).toMatch(/Go online/);
-  });
-
-  it("offline AND unverified: states the shift, but offers no go-online action it cannot honour", async () => {
-    mockGetMe.mockResolvedValue({ ...meFixture({ isOnline: false }), rider: null });
-    mockGetActiveOrder.mockResolvedValue(null);
-    mockGetOpenOrders.mockResolvedValue([]);
-
-    activeTree = renderScreen();
-    await settle();
-    await settle();
-
-    const text = flatText(activeTree);
-    expect(text).toMatch(/Offline/);
+    expect(text).not.toMatch(/Go offline/);
     expect(text).not.toMatch(/Go online/);
-    // The wall itself still owns the real recovery.
-    expect(text).toMatch(/Set up as a rider/);
+    // The connection is still honest — the reconnecting BANNER keeps the top of the screen — but
+    // there is nothing left to toggle, so no pill states a constant.
+    expect(text).not.toMatch(/You're online/);
+  });
+
+  it("draws neither the 'Jobs near you' heading nor the queue subtitle (owner 2026-08-17)", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const text = flatText(activeTree);
+    expect(text).not.toMatch(/Jobs near you/);
+    expect(text).not.toMatch(/one queue/);
+  });
+
+  it("carries the detected location in the header, the same row the customer home draws", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    // The test's expo-location mock resolves no address, so the row shows its honest prompt — the
+    // point is that the ROW is there and never blank.
+    expect(flatText(activeTree)).toMatch(/Set your location|Harare/);
+  });
+
+  it("the location row is DETECT-only — it never offers a picker it could not honour", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    // The board ranks jobs off its own live GPS fix and the server pushes off the heartbeat
+    // position — neither reads this row — so a picker here would silently fail to move the job
+    // list. The row's label says "update it", never "change location", and the sheet is absent.
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.accessibilityLabel === "string")
+      .map((n) => n.props.accessibilityLabel as string);
+    expect(labels.some((l) => /Your location: .*\. Update it/.test(l))).toBe(true);
+    expect(labels.some((l) => /Change location/.test(l))).toBe(false);
+    expect(flatText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
   });
 });
