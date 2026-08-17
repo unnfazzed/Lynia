@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Text, View } from "react-native";
 import { auctionHeaderText, formatClock, spokenRemaining } from "../../logic/order-labels";

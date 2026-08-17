@@ -1,4 +1,5 @@
-import { COMMISSION, tokens } from "@lynia/shared";
+import { COMMISSION } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";

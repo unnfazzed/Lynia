@@ -1,5 +1,5 @@
 import type { RestaurantListItem } from "@lynia/shared";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { isMerchantOpenNow, minutesUntilClose } from "@lynia/shared";
 import React from "react";
 import { Pressable, Text, View } from "react-native";

@@ -31,6 +31,9 @@ const posthogCoreEntry = require.resolve("@posthog/core", { paths: [path.dirname
 const posthogCoreDir = path.dirname(path.dirname(posthogCoreEntry));
 
 const zodLocalesRedirect = require("./metro-shims/zod-locales-redirect");
+// MOB-BOOT-03-SIB-1: stub Sentry's browser-only session-replay/feedback subtree (~195 KB evaluated
+// at every launch, none of it runnable on a phone). Scope + safety notes live in the shim files.
+const sentryBrowserRedirect = require("./metro-shims/sentry-browser-redirect");
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -44,6 +47,9 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   }
   if (zodLocalesRedirect.shouldRedirect(moduleName, context.originModulePath)) {
     return { type: "sourceFile", filePath: zodLocalesRedirect.stubPath };
+  }
+  if (sentryBrowserRedirect.shouldRedirect(moduleName, context.originModulePath)) {
+    return { type: "sourceFile", filePath: sentryBrowserRedirect.stubPath };
   }
   return defaultResolveRequest
     ? defaultResolveRequest(context, moduleName, platform)

@@ -1,4 +1,5 @@
-import { type UndeliveredReason, tokens } from "@lynia/shared";
+import { type UndeliveredReason } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import React, { useState } from "react";

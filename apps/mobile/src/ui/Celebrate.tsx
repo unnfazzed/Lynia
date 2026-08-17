@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, View } from "react-native";
 import { Icon } from "./Icon";

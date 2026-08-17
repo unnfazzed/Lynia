@@ -98,6 +98,11 @@ pass the DSN through (those lanes build on the runner, not on EAS servers).
 Keep the DSN unset in dev so local runs stay quiet — the seam is inert without it, by design.
 
 - [ ] Activate per the founder steps; **both** forced crashes visible and readable from a release build.
+- [ ] **MOB-BOOT-03-SIB-1 shim check (2026-08-17):** the forced-crash test above is ALSO the
+  verification gate for the Metro shim that stubs Sentry's browser-only replay/feedback subtree
+  (`metro-shims/sentry-browser-redirect.js` — jest cannot cover a Metro resolver redirect). On the
+  next EAS build: confirm the app boots, both forced crashes arrive symbolicated, and logcat shows no
+  Sentry integration errors — before that build is promoted.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
 > **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via

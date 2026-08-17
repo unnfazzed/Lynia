@@ -1,4 +1,5 @@
-import { RESTAURANTS_TIMING, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { RESTAURANTS_TIMING, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, View } from "react-native";
 import { OfflineBanner, Screen } from "../index";

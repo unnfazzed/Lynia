@@ -1,4 +1,5 @@
-import { formatPhoneDisplay, tokens } from "@lynia/shared";
+import { formatPhoneDisplay } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { AppState, Pressable, Text, View } from "react-native";

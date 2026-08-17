@@ -1,4 +1,5 @@
-import { formatPhoneLocal, TOPUP_WINDOW_MS, tokens, type TopupRail } from "@lynia/shared";
+import { formatPhoneLocal, TOPUP_WINDOW_MS, type TopupRail } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";

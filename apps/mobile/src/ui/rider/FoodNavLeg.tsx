@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";

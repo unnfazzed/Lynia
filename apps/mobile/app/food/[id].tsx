@@ -1,5 +1,5 @@
 import type { RestaurantMenuDish } from "@lynia/shared";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";

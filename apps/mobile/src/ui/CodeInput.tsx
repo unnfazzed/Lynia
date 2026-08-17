@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 

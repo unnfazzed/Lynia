@@ -1,4 +1,5 @@
-import { RIDER_STRIKE_LIMIT, tokens } from "@lynia/shared";
+import { RIDER_STRIKE_LIMIT } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, View } from "react-native";
 import { Button, Card, Field, Icon, Sub } from "../index";

@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, type StyleProp, type TextStyle } from "react-native";
 import { formatMoney } from "../logic/money";

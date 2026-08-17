@@ -1,5 +1,5 @@
 import type { RestaurantMenuDish } from "@lynia/shared";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { QtyStepper } from "../home/QtyStepper";

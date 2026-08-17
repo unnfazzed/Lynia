@@ -1,4 +1,7 @@
-import { VersionGateResponse } from "@lynia/shared";
+// The VersionGateResponse zod schema is lazy-required inside fetchServerMinVersion so the contracts
+// (~202 KB of schema construction, MOB-BOOT-03-SIB-2) load on the first fetch — behind its 250 ms
+// boot-priority timer — not at module evaluation. This module IS on the launch path (imported by
+// app/_layout.tsx for the force-update gate). Same lazy-require seam as PostHog in analytics.tsx.
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
@@ -25,7 +28,8 @@ export async function fetchServerMinVersion(
   try {
     const res = await fetchImpl(`${API_URL}/app/version-gate`, { signal: controller.signal });
     if (!res.ok) return null;
-    const parsed = VersionGateResponse.safeParse(await res.json());
+    const { VersionGateResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
+    const parsed = schema.safeParse(await res.json());
     return parsed.success ? parsed.data.minSupportedVersion : null;
   } catch {
     return null; // offline / timeout / bad JSON — fail open

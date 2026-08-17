@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";

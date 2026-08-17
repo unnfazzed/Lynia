@@ -44,7 +44,7 @@ jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 
 import AccountTabScreen from "../account";
 import { RiderAccountView, type RiderAccountRow } from "../../rider/(tabs)/account.view";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 
 const APP = resolve(__dirname, "../../..");
 const riderView = readFileSync(resolve(APP, "app/rider/(tabs)/account.view.tsx"), "utf8");

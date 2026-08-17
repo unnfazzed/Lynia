@@ -1,4 +1,5 @@
-import { haversineKm, isMerchantOpenNow, nextOpenDescription, normalizePhone, roundToCents, tokens, type MerchantPaymentMethod } from "@lynia/shared";
+import { haversineKm, isMerchantOpenNow, nextOpenDescription, normalizePhone, roundToCents, type MerchantPaymentMethod } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";

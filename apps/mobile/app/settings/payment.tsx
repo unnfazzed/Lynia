@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React from "react";
 import { View } from "react-native";

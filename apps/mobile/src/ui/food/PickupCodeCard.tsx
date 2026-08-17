@@ -1,4 +1,5 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, tokens } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text } from "react-native";
 import { formatMoney } from "../../logic/money";

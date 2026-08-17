@@ -1,4 +1,5 @@
-import { tokens, type WalletEntry } from "@lynia/shared";
+import { type WalletEntry } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";

@@ -1,4 +1,5 @@
-import { RESTAURANTS_DEBT, rejectionCopy, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { RESTAURANTS_DEBT, rejectionCopy, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";

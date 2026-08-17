@@ -3,7 +3,10 @@
  * cart itself lives in ../state/food-cart.tsx (React context + SecureStore persistence); this file
  * only shapes the data and totals it.
  */
-import { RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared";
+// Via the zod-free entry, not the barrel (MOB-BOOT-03-SIB-2): this module is EAGER at boot —
+// app/food/_layout.tsx → cart-context → here (expo-router evaluates every layout while building
+// the route tree) — and a barrel value import would put the API contracts back on the launch path.
+import { RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared/restaurants-order";
 
 export const MAX_ITEM_QTY = 20;
 

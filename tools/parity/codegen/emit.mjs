@@ -244,7 +244,9 @@ function assembleFile(spec, body) {
   lines.push(`import React from "react";`);
   if (rnPrims.length) lines.push(`import { ${rnPrims.join(", ")} } from "react-native";`);
   const typeImports = [...(usesIconName ? ["type IconName"] : []), ...uiTypes.map((tn) => `type ${tn}`)];
-  if (usesTokens) lines.push(`import { tokens } from "@lynia/shared";`);
+  // Tokens come from the zod-free entry (MOB-BOOT-03-SIB-2): generated views are eagerly imported
+  // by containers that can sit on the boot graph, and the barrel would drag the API contracts in.
+  if (usesTokens) lines.push(`import { tokens } from "@lynia/shared/tokens";`);
   // Map/sheet realizations import from their OWN modules, NOT the `src/ui` barrel: the barrel
   // (index.tsx) re-exporting a component that imports Icon/Button/Label back FROM the barrel forms a
   // `no-circular` dependency-cruiser violation. Everything else stays on the one barrel specifier.

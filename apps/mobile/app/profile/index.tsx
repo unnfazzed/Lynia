@@ -1,4 +1,5 @@
-import { formatPhoneDisplay, tokens } from "@lynia/shared";
+import { formatPhoneDisplay } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";

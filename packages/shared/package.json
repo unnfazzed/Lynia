@@ -13,11 +13,23 @@
     "./fixtures": {
       "types": "./dist/fixtures.d.ts",
       "default": "./dist/fixtures.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens-entry.d.ts",
+      "default": "./dist/tokens-entry.js"
+    },
+    "./restaurants-order": {
+      "types": "./dist/restaurants-order.d.ts",
+      "default": "./dist/restaurants-order.js"
     }
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "tokens.js",
+    "tokens.d.ts",
+    "restaurants-order.js",
+    "restaurants-order.d.ts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

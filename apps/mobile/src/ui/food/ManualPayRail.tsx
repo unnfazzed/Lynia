@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import * as Clipboard from "expo-clipboard";
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
