@@ -55,12 +55,50 @@ you are looking for a *recent edit*, not an *omission*, and GCP shows you the ke
 | `ANDROID_RESTRICTION_REJECTED` | **This is MOB-MAP-02 confirmed.** That certificate is not on the key's allowlist. | Step 2 |
 | `BILLING` | Billing is off or lapsed on the project. | GCP → Billing. Nothing else will work until this is fixed. |
 | `INVALID_KEY` | Google does not recognise the key — it was deleted or regenerated and EAS still holds the old string. | Re-create in EAS (Sensitive visibility) **and ship a new binary** — no OTA can carry it. |
-| `API_RESTRICTED_OR_DISABLED` | The key is alive and billing is fine, but it may not call the static-maps service. | Healthy if the key is correctly restricted to `maps-android-backend.googleapis.com`. It proves key + billing are good; verify the Android allowlist by eye in the console. |
+| `API_NOT_ACTIVATED` | Key valid, billing active, but this API isn't enabled **on the project**. | **This is what the 2026-08-17 run returned.** See §1.5 below. |
+| `API_RESTRICTED` | Key valid, billing active, but the **key's own** API restriction forbids the call. | Healthy if the key is correctly restricted to `maps-android-backend.googleapis.com`; verify the Android allowlist by eye in the console. |
 | `OK` | The certificate **is** allowlisted, key alive, billing active. | The remaining cause is the *Maps SDK for Android* service being disabled: GCP → APIs & Services → Enabled APIs. |
 
 > The probe reaches the Maps **web service**, which enforces the same key object — same application
 > restriction, same billing and enablement state — as the SDK. It cannot reach the Maps SDK for Android
 > itself, so it never claims to have tested that service. The script says which question it answered.
+
+## Step 1.5 — What the 2026-08-17 run actually found
+
+The doctor was run against the **EAS `preview`** key (the one `mobile-release.yml` builds the Play
+binary with) using the EAS-managed upload keystore's SHA-1. Result:
+
+```
+key     : present, well-formed (never printed)
+AS THE APP (X-Android-Package + X-Android-Cert) -> HTTP 403
+  raw: The Google Maps Platform server rejected your request. This API is not activated on your
+       API project. You may need to enable this API in the Google Cloud Console: ...
+```
+
+**Established:**
+
+- ✅ The EAS key is **well-formed and valid** — not truncated, not stale, not regenerated. An invalid
+  key returns "The provided API key is invalid"; this is a different message.
+- ✅ **Billing is active** on the project. A lapsed billing account returns a billing-specific message.
+  That retires candidate 2.
+- ❌ The Android **allowlist question is still unanswered** — Google evaluates API activation *before*
+  the application restriction, so the probe never reached it. Re-running with a different fingerprint
+  will return the same thing; don't bother.
+
+**The live hypothesis is now the one nobody had ranked first: `Maps SDK for Android` may not be enabled
+on the GCP project.** The probe calls the static-maps service, which this project has no reason to
+enable, so that refusal is expected in itself — but it proves the project has only a *narrow* set of
+Maps APIs turned on, and nothing in this repo has ever guaranteed the Android SDK is among them:
+`infra/terraform/apikeys.tf` would enable `maps-android-backend.googleapis.com`, and it is gated off and
+was never imported.
+
+**Next check, one screen:** GCP → **APIs & Services → Enabled APIs & services** → is **Maps SDK for
+Android** listed? If not, enable it — that is the blank map, and it needs no new build.
+
+> Separately, the **GitHub Actions** secret `GOOGLE_MAPS_API_KEY` (used only by `android-test-apk.yml`
+> for sideloaded QA APKs — a different store from the EAS variable) probes as `INVALID_KEY` and does not
+> even match the `AIza` + 35-character shape. That does not affect the Play build, but the QA-APK lane
+> would ship a mapless APK today. Re-run the doctor with `key_source: github` after fixing it.
 
 ## Step 2 — Fix the allowlist
 

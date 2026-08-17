@@ -77,15 +77,33 @@ export function classify({ status, body }) {
         "SHA-1 is not what installed builds run under.",
     };
   }
-  if (has("not authorized to use this API") || has("API not activated") || has("has not been used in project")) {
+  // Two different refusals that read alike but point at different places. Keep them apart: one is a
+  // property of the KEY, the other of the PROJECT, and they have different fixes.
+  if (has("not activated on your API project") || has("API not activated") || has("has not been used in project")) {
     return {
-      code: "API_RESTRICTED_OR_DISABLED",
-      verdict: "The key is alive and billing is fine, but it may not call the STATIC MAPS service.",
+      code: "API_NOT_ACTIVATED",
+      verdict: "The key is valid and billing is active, but THIS API is not enabled on the GCP project.",
       meaning:
-        "Expected and healthy if the key is correctly API-restricted to maps-android-backend.googleapis.com " +
-        "(docs/SECURITY-OPS.md §B / infra/terraform/apikeys.tf). It proves the key exists and billing is " +
-        "active, and it says NOTHING about the Android SDK. Note it also means the Android allowlist " +
-        "check above could not be reached, so re-run is not useful — verify the allowlist in the console.",
+        "Rules out two candidates outright: an invalid/regenerated key and lapsed billing both return a " +
+        "different message than this one. Expected in itself — the probe calls the static-maps service, " +
+        "which this project has no reason to enable. What it does NOT prove is the state of the Maps SDK " +
+        "for Android, and it means the Android allowlist could not be reached either, because Google " +
+        "checks API activation BEFORE the application restriction (so re-running with another " +
+        "fingerprint tells you nothing). >>> NEXT: GCP -> APIs & Services -> Enabled APIs, and confirm " +
+        "'Maps SDK for Android' is listed. If it is missing, that is the blank map — nothing in this " +
+        "repo has ever guaranteed it, since infra/terraform/apikeys.tf (which would enable " +
+        "maps-android-backend.googleapis.com) is gated off and was never imported.",
+    };
+  }
+  if (has("not authorized to use this API")) {
+    return {
+      code: "API_RESTRICTED",
+      verdict: "The key exists and billing is fine, but the KEY's own API restriction forbids this call.",
+      meaning:
+        "A key-level restriction, not a project-level one — healthy if the key is correctly restricted to " +
+        "maps-android-backend.googleapis.com (docs/SECURITY-OPS.md §B / infra/terraform/apikeys.tf). It " +
+        "says NOTHING about the Android SDK, and the Android allowlist could not be reached. Verify the " +
+        "allowlist by eye in the console.",
     };
   }
   if (has("billing")) {
