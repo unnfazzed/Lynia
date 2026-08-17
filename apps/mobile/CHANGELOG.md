@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.39.0](https://github.com/unnfazzed/Lynia/compare/v0.38.0...v0.39.0) (2026-08-17)
+
+
+### Features
+
+* **mobile:** give the rider board the 8c mint header ([19b89c0](https://github.com/unnfazzed/Lynia/commit/19b89c02461ecd6d399eb58811bdd8472af19446))
+* **mobile:** prefill the send composer's pickup pin from the customer's location ([#789](https://github.com/unnfazzed/Lynia/issues/789)) ([bbeada5](https://github.com/unnfazzed/Lynia/commit/bbeada5330cfafa3889548bbb3dc5aeb4089476b))
+* **mobile:** rebuild the customer home to the 8c design handoff ([732de11](https://github.com/unnfazzed/Lynia/commit/732de11529b1d4b94e29cf3121a6d50d13a55ead))
+* **mobile:** remove Settings' Edit profile row; make the profile card inert ([cba81ec](https://github.com/unnfazzed/Lynia/commit/cba81ecddd4d62e5366ce7462e8a275886372c75))
+* **notifications:** streamline the centre — one-day retention, real read state, dismissal ([aeab806](https://github.com/unnfazzed/Lynia/commit/aeab806e46fa602ee863ea628ff7cca04535e270))
+
+
+### Bug Fixes
+
+* **mobile:** stop condemning working iOS maps; make the Sentry map report diagnosable ([#781](https://github.com/unnfazzed/Lynia/issues/781)) ([e98c739](https://github.com/unnfazzed/Lynia/commit/e98c73944ad5f28bc3796685cf77babc6e780be1))
+* **mobile:** two-line greeting, bell-matched time sticker, exact mock boxes ([952d56c](https://github.com/unnfazzed/Lynia/commit/952d56cb23e1e0b459f2d61d2edbb962f1565bbe))
+* **notifications:** suppress the whole order on a self-cancel, not just the cancelled event ([76d38a4](https://github.com/unnfazzed/Lynia/commit/76d38a40d4b5910e2695a0dfee29a99261b2478c))
+
+
+### Performance Improvements
+
+* **mobile:** unify cold-start splash with the design mock and clear the boot graph's dead weight ([#779](https://github.com/unnfazzed/Lynia/issues/779)) ([0f8ccb3](https://github.com/unnfazzed/Lynia/commit/0f8ccb3a48a33437ea5fe1f69450732d12ad7f60))
+
 ## [0.38.0](https://github.com/unnfazzed/Lynia/compare/v0.37.0...v0.38.0) (2026-08-16)
 
 
