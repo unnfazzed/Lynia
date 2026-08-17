@@ -758,24 +758,25 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx), REGION-adopted through the composite
-    // resolver (composites.mjs): the mock chain `RC.home → HomeBody → <AppHome/>` is walked INTO the
-    // DS component (packages/design/components/home/AppHome.jsx), so regions anchor on the composite's
-    // internal tree — the former "KIT-COMPOSITE member-tag wall" deferral is retired (owner instruction
-    // 2026-08-12: guardrails verify structure first; the wall was the hole that let home drift ship).
-    // The app mounts same-named TWINS of the composite's members (BrandHeader / ServiceTiles /
+    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx), REGION-adopted directly against the
+    // home-8c redesign mock (2026-08-17). RC.home used to render the DS `AppHome` composite and was
+    // walked INTO via composites.mjs; 8c retires that composite as the home body, and the mock now
+    // declares its four members as named components in one file, so the regions anchor without a
+    // composite hop (the resolver stays available for the container's local helpers).
+    //
+    // The app mounts same-named TWINS of those four members (HomeHeader / ServiceTiles /
     // LiveOrderCard / RestaurantCard from src/ui), so the COMPOSITION check gates assembly: banner
-    // header → tiles → one live card per running job → restaurants rail, in mock order. The members'
-    // INTERNAL congruence (DS component ≡ app twin) is the referenced deferral below, adopted next.
+    // header → tiles → one live pill per running job → the venues grid, in mock order. The members'
+    // INTERNAL congruence (mock member ≡ app twin) is the referenced deferral below.
     key: "RC.home",
     container: "apps/mobile/app/(tabs)/home.tsx",
-    mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    // The registry member itself (`RC.home = () => <Screen…><HomeBody live ride/></Screen>`): the walk
-    // roots at the Screen and the resolver steps through HomeBody → AppHome into the DS tree.
-    mockComponent: "home",
+    mockFile: "packages/design/explorations/home-redesign/home-8c.jsx",
+    // `Home8c` is the whole screen (`<Screen tab="home" bg="--accent-wash">…`), so the walk roots at
+    // the Screen exactly like the app's `<AppScreen banner={<HomeHeader/>}>`.
+    mockComponent: "Home8c",
     uiImport: "../../src/ui",
     regions: [
-      { region: "header", locator: { el: "BrandHeader" }, componentName: "BrandHeader", compositionOnly: true },
+      { region: "header", locator: { el: "HomeHeader" }, componentName: "HomeHeader", compositionOnly: true },
       { region: "tiles", locator: { el: "ServiceTiles" }, componentName: "ServiceTiles", compositionOnly: true },
       { region: "livecards", locator: { map: "LiveOrderCard" }, componentName: "LiveOrderCard", compositionOnly: true },
       { region: "venues", locator: { map: "RestaurantCard" }, componentName: "RestaurantCard", compositionOnly: true },
@@ -785,7 +786,7 @@ export const ADOPTED = [
         state: "twin-internals",
         key: "RC.home",
         reason:
-          "Composition is GATED (four regions, mock order/nesting, via the composite resolver). The four members' INTERNAL trees (DS AppHome members ≡ app twins BrandHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds (e.g. the app LiveOrderCard inlines Card styling to avoid a barrel cycle) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
+          "Composition is GATED (four regions, mock order/nesting). The four members' INTERNAL trees (home-8c mock members ≡ app twins HomeHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds — the RN twins reach the mock's DOM shapes through different primitives (an <img> sticker is a react-native-svg tree, the mock's <button> tile is a Pressable, the ETA pill is an absolutely-positioned View) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
       },
     ],
   },

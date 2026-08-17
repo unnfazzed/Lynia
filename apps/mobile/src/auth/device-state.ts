@@ -7,6 +7,7 @@ import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { PROFILE_DRAFT_KEY } from "../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
+import { HOME_LOCATION_KEY } from "../logic/home-location";
 import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
@@ -527,6 +528,9 @@ export async function clearDeviceState(): Promise<void> {
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.
       SecureStore.deleteItemAsync(SAVED_PLACES_RECENTS_KEY),
       SecureStore.deleteItemAsync(SAVED_PLACES_SAVED_KEY),
+      // The customer home's deliver-to location (home 8c) — a street address + point, the same class
+      // of data as the saved places above, so it clears on the same shared-device rule.
+      SecureStore.deleteItemAsync(HOME_LOCATION_KEY),
       SecureStore.deleteItemAsync(RECIPIENTS_KEY),
       SecureStore.deleteItemAsync(MY_PICKUP_PHONE_KEY),
       // The KYC draft holds the rider's national ID — must never survive to the next user on a shared device.

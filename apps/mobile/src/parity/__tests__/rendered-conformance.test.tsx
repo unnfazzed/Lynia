@@ -66,6 +66,13 @@ jest.mock("expo-location", () => ({
   getCurrentPositionAsync: async () => ({ coords: { latitude: -17.8292, longitude: 31.0522, accuracy: 5 }, timestamp: 0 }),
   getLastKnownPositionAsync: async () => null,
   hasServicesEnabledAsync: async () => true,
+  // Mirrors the browser shim: the 8c customer home draws the DETECTED street address in its header,
+  // so this must resolve the mock's own sample address rather than leave the row on its
+  // "Set your location" prompt.
+  reverseGeocodeAsync: async () => [
+    { name: "12 Samora Machel Ave", streetNumber: "12", street: "Samora Machel Ave", district: "Harare", city: "Harare", subregion: "Harare", region: "Harare", country: "Zimbabwe", isoCountryCode: "ZW", postalCode: null, timezone: null },
+  ],
+  geocodeAsync: async () => [],
 }));
 
 // Mirrors tools/parity/mobile/shims/expo-notifications.js for the calls screens make at mount (the

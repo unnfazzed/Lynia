@@ -36,6 +36,19 @@
   --highlight-wash: #fffcf2;
   --highlight-ink: #6b5600;
   --highlight-border: #f2b70566;
+  /* Ink ON a solid --highlight gold chip (customer home 8c: the SOON chip and the ETA chip).
+     Distinct from --highlight-ink, which is gold TEXT on the pale --highlight-wash. */
+  --highlight-chip-ink: #3d3100;
+
+  /* ── Service-tile tints (customer home 8c, handoff/home-8c) ─── */
+  /* Each tile is a flat wash with a blob one shade deeper behind its sticker icon. Send reuses
+     --accent-wash / the mint blob; the other two verticals carry their own hue so three tiles read
+     apart at a glance without a border or a shadow between them. */
+  --tile-food-wash: #fdeadd;      /* Restaurants tile background */
+  --tile-pharmacy-wash: #dff4ee;  /* Pharmacy tile background */
+  --tile-send-blob: #cdeeda;      /* blob behind the Send sticker — also the tracker pill's unlit progress segment */
+  --tile-food-blob: #fbd9bd;
+  --tile-pharmacy-blob: #c5e9df;
 
   /* ── Semantic aliases ─────────────────────────────────────── */
   --text-body: var(--ink);

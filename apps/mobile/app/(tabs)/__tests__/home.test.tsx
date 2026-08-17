@@ -52,6 +52,27 @@ jest.mock("expo-router", () => ({
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
 }));
+// The 8c header reads the caller's first name and unread count. Both must be MOCKED, not merely
+// left to fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability`
+// -> react-query's `onlineManager` offline — and `onlineManager` is a process-wide singleton, so one
+// failed request PAUSES every query in every later test in this file (the active-orders query then
+// never fires and the whole suite reads as "the screen renders nothing").
+jest.mock("../../../src/api/auth", () => ({
+  getMe: async () => ({ profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." }),
+}));
+jest.mock("../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: async () => ({ count: 0 }),
+}));
+// The header address row is a live GPS value; a granted-but-unresolvable device keeps these tests
+// about the ORDER states without a real fix, a reverse-geocode, or a stray 9s timeout timer.
+jest.mock("expo-location", () => ({
+  Accuracy: { Balanced: 3 },
+  getForegroundPermissionsAsync: async () => ({ status: "denied", granted: false, canAskAgain: false }),
+  requestForegroundPermissionsAsync: async () => ({ status: "denied", granted: false, canAskAgain: false }),
+  getLastKnownPositionAsync: async () => null,
+  getCurrentPositionAsync: async () => null,
+  reverseGeocodeAsync: async () => [],
+}));
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
 }));
@@ -120,15 +141,19 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(loading.length).toBeGreaterThan(0);
   });
 
-  it("default: an active parcel renders the mock-grammar LiveOrderCard, not the reorder rail", async () => {
+  it("default: an active parcel renders the 8c tracker pill, not the reorder rail", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
     activeTree = renderHome();
     await settle();
-    // home.prompt.md grammar: who/where + status (no rider fix on this fixture, so no minutes).
-    expect(has(activeTree, /Parcel to Office · Heading to pickup/)).toBe(true);
+    // home-8c grammar: "‹who› · ‹phrase›" on ONE line. No rider identity is cached for this order,
+    // so `who` falls back to service copy; the phrase is the app's shipped status vocabulary because
+    // the rider is still heading to the PICKUP (the mock's drawn "on the way" is the drop-off leg).
+    expect(has(activeTree, /Your parcel · Heading to pickup/)).toBe(true);
+    // The pre-8c meta line is not drawn by 8c, so it is not rendered — the tracker screen owns it.
+    expect(has(activeTree, /Delivery code/)).toBe(false);
   });
 
-  it("RC.home: a food order and a parcel running side-by-side each render their own card, newest first", async () => {
+  it("RC.home: a food order and a parcel running side-by-side each render their own pill, newest first", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([
       activeOrderFixture({
         id: "order-food",
@@ -142,18 +167,21 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     ]);
     activeTree = renderHome();
     await settle();
-    // Food card: restaurant headline + design payment/total meta.
-    expect(has(activeTree, /Sadza Republic · /)).toBe(true);
-    expect(has(activeTree, /Cash at the door · \$15\.50/)).toBe(true);
-    // Parcel card alongside it — the two jobs never collapse into one card.
-    expect(has(activeTree, /Parcel to Office · /)).toBe(true);
+    // Food pill: the restaurant stands in for the rider's name (none is cached for this order), and
+    // a picked-up order is the mock's drawn state, so the phrase is its verbatim "on the way".
+    expect(has(activeTree, /Sadza Republic · on the way/)).toBe(true);
+    // Parcel pill alongside it — the two jobs never collapse into one pill.
+    expect(has(activeTree, /Your parcel · on the way/)).toBe(true);
+    // 8c draws no payment/total meta line on the home pill.
+    expect(has(activeTree, /Cash at the door/)).toBe(false);
   });
 
   it("empty: no active order renders neither card nor a send-again rail (tiles only)", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([]);
     activeTree = renderHome();
     await settle();
-    expect(has(activeTree, /Parcel to /)).toBe(false);
+    expect(has(activeTree, /on the way/)).toBe(false);
+    expect(has(activeTree, /Your parcel/)).toBe(false);
     // Owner decision 2026-08-12, per the design AppHome contract ("no order-again / send-again
     // rails"): the rail must never come back — reordering lives on the trip-history screen.
     expect(has(activeTree, /Send again/)).toBe(false);
