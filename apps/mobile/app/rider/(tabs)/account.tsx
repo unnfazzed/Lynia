@@ -21,7 +21,12 @@ import { RiderAccountView, type RiderAccountRow } from "./account.view";
  * SEAM only: it feeds the live `['me']` identity + the settings rows/routes, and early-returns a
  * loading skeleton (the static mock draws no loading variant, so that branch is glue, not gated).
  *
- * Personal details + sign-out live behind a tap on the identity card (`/profile?side=rider`).
+ * **The identity card is INERT** (owner instruction 2026-08-17: *"when I click the profile under
+ * accounts it must not be clickable to display another window for both rider and customer sides"*,
+ * ledgered as `docs/DESIGN-DEVIATIONS.md` D-26). It used to be a Pressable opening
+ * `/profile?side=rider`; the mock draws a plain Card, so the wrap is gone from the codegen bind and
+ * the regenerated view no longer takes an `onIdentityPress`. Sign-out and the rest of the account
+ * chrome are reached through the **Settings** row below, which is where they now live for both roles.
  *
  * TWO rows beyond the mock's five, both sanctioned and both fed through the same `rows` prop as every
  * other row — so the generated view's tree is untouched and the structure snapshot still matches the
@@ -66,7 +71,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder });
   const activeJob = activeQ.data ?? null;
   const offlineM = useMutation({ mutationFn: () => setOnline(false) });
-  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-26).
+  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
   const unreadCount = useNotificationsUnreadCount();
 
   const leaveForCustomer = (): void => {
@@ -86,10 +91,9 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     ["wallet", "Money", "Balance, cash held, commission"],
     ["bell", "Notifications", notificationsRowSub(unreadCount)],
     ["phone", "Help & support", "Call the safety line"],
-    // D-22's addition. Settings carries the two Play-listing REQUIREMENTS (Privacy notice, Delete
-    // account) plus permissions, language and payment; before this row a rider could only reach them
-    // by tapping the identity card into /profile — two taps, through a screen whose rows were the
-    // customer's. Same label, sub and icon as the customer tab's, so the two tails read identically.
+    // D-22's addition, and since D-26 the ONLY way off this tab into permissions, privacy, language,
+    // payment, sign-out and account deletion — the identity card above no longer opens anything. Same
+    // label, sub and icon as the customer tab's, so the two tails read identically.
     ["shield", "Settings", "Permissions, privacy and sign out"],
     ["shopping-bag", "Switch to customer", "Order food and send parcels"],
   ];
@@ -113,9 +117,6 @@ export default function RiderAccountTabScreen(): React.ReactElement {
         name={name}
         identityLine={identityLine}
         online={online}
-        // `side=rider` — /profile is shared with the customer tab and takes the side from whichever
-        // tab owned the tap rather than from the account's role (D-22).
-        onIdentityPress={() => router.push("/profile?side=rider")}
         rows={rows}
         onRowPress={(i) => {
           const route = routes[i];

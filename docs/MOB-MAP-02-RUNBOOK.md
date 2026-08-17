@@ -43,10 +43,22 @@ you are looking for a *recent edit*, not an *omission*, and GCP shows you the ke
 
 ## Step 1 — Get the answer without a cable (2 minutes, from your phone)
 
-1. Open the Play Console → **Test and release → Setup → App integrity** → *App signing key certificate*
-   → copy the **SHA-1**. This is the certificate installed builds actually run under. (The EAS upload
-   keystore is a *different* certificate; allowlisting only that one is the documented re-signing trap
-   in `docs/SECURITY-OPS.md` §B.)
+1. Get the **Play app-signing SHA-1**. This is the certificate installed builds actually run under.
+   (The EAS upload keystore is a *different* certificate; allowlisting only that one is the documented
+   re-signing trap in `docs/SECURITY-OPS.md` §B.)
+
+   > **Can't find it?** Two things trip this up. The Play Console **mobile app does not have this page
+   > at all** — App integrity is web-only, so open `play.google.com/console` in a browser. And the left
+   > nav has been reshuffled repeatedly: "Setup" is a collapsible group under *Test and release*, and in
+   > some accounts App integrity now sits directly under *Test and release* with no "Setup" level.
+   > **Use the search box at the top of Play Console and type "app signing"** — it jumps straight there
+   > regardless of the menu layout. Then: *App signing* tab → **App signing key certificate** → SHA-1.
+
+   **Or skip Play Console entirely for a first pass.** `expo.dev → project → Credentials → Android`
+   shows the EAS-managed **upload** keystore's SHA-1 in a browser. That is not the app-signing cert, but
+   probing with it is still decisive: `OK` means the upload cert is allowlisted while Play-installed
+   builds are blank — the re-signing trap, so you then need the Play value; `ANDROID_RESTRICTION_REJECTED`
+   means not even the upload cert is on the allowlist, which you can fix without the Play value at all.
 2. GitHub → **Actions → "Maps Key Doctor" → Run workflow**, paste the SHA-1 into `sha1`, run it.
 3. Read the job log. It probes the real key against Google and names the cause:
 
@@ -55,14 +67,99 @@ you are looking for a *recent edit*, not an *omission*, and GCP shows you the ke
 | `ANDROID_RESTRICTION_REJECTED` | **This is MOB-MAP-02 confirmed.** That certificate is not on the key's allowlist. | Step 2 |
 | `BILLING` | Billing is off or lapsed on the project. | GCP → Billing. Nothing else will work until this is fixed. |
 | `INVALID_KEY` | Google does not recognise the key — it was deleted or regenerated and EAS still holds the old string. | Re-create in EAS (Sensitive visibility) **and ship a new binary** — no OTA can carry it. |
-| `API_RESTRICTED_OR_DISABLED` | The key is alive and billing is fine, but it may not call the static-maps service. | Healthy if the key is correctly restricted to `maps-android-backend.googleapis.com`. It proves key + billing are good; verify the Android allowlist by eye in the console. |
+| `API_NOT_ACTIVATED` | Key valid, billing active, but this API isn't enabled **on the project**. | **This is what the 2026-08-17 run returned.** See §1.5 below. |
+| `API_RESTRICTED` | Key valid, billing active, but the **key's own** API restriction forbids the call. | Healthy if the key is correctly restricted to `maps-android-backend.googleapis.com`; verify the Android allowlist by eye in the console. |
 | `OK` | The certificate **is** allowlisted, key alive, billing active. | The remaining cause is the *Maps SDK for Android* service being disabled: GCP → APIs & Services → Enabled APIs. |
 
 > The probe reaches the Maps **web service**, which enforces the same key object — same application
 > restriction, same billing and enablement state — as the SDK. It cannot reach the Maps SDK for Android
 > itself, so it never claims to have tested that service. The script says which question it answered.
 
-## Step 2 — Fix the allowlist
+## Step 1.5 — What the 2026-08-17 run actually found
+
+The doctor was run against the **EAS `preview`** key (the one `mobile-release.yml` builds the Play
+binary with) using the EAS-managed upload keystore's SHA-1. Result:
+
+```
+key     : present, well-formed (never printed)
+AS THE APP (X-Android-Package + X-Android-Cert) -> HTTP 403
+  raw: The Google Maps Platform server rejected your request. This API is not activated on your
+       API project. You may need to enable this API in the Google Cloud Console: ...
+```
+
+**Established:**
+
+- ✅ The EAS key is **well-formed and valid** — not truncated, not stale, not regenerated. An invalid
+  key returns "The provided API key is invalid"; this is a different message.
+- ✅ **Billing is active** on the project. A lapsed billing account returns a billing-specific message.
+  That retires candidate 2.
+- ❌ The Android **allowlist question is still unanswered** — Google evaluates API activation *before*
+  the application restriction, so the probe never reached it. Re-running with a different fingerprint
+  will return the same thing; don't bother.
+
+**The live hypothesis is now the one nobody had ranked first: `Maps SDK for Android` may not be enabled
+on the GCP project.** The probe calls the static-maps service, which this project has no reason to
+enable, so that refusal is expected in itself — but it proves the project has only a *narrow* set of
+Maps APIs turned on, and nothing in this repo has ever guaranteed the Android SDK is among them:
+`infra/terraform/apikeys.tf` would enable `maps-android-backend.googleapis.com`, and it is gated off and
+was never imported.
+
+**Checked 2026-08-17 — ❌ ELIMINATED.** `Maps SDK for Android` shows **API Enabled** on the `Lynia`
+project (owner-confirmed from the console). So the service is on, and the refusal above was genuinely
+just the static-maps API being absent — expected, and not the bug.
+
+### Where that leaves it — two candidates, both on ONE page
+
+Everything project-level is now cleared: **key valid, billing active, Maps SDK for Android enabled.**
+Both survivors are properties of the *key object itself*, and both are read off the same screen:
+
+**GCP → APIs & Services → Credentials → the Maps SDK key** (`https://console.cloud.google.com/apis/credentials`)
+
+| Block | What it must say | How it breaks the map |
+|---|---|---|
+| **Application restrictions** | *Android apps*, with `zw.co.lynia` listed against **both** SHA-1s (Play app-signing **and** EAS upload). *None* also works, less safely. | Set to **Websites** or **IP addresses** → every Android call is refused outright. Set to *Android apps* with only the upload SHA-1 → the documented re-signing trap: sideloaded APKs work, Play-installed builds are blank. |
+| **API restrictions** | *Don't restrict key*, or *Restrict key* with **Maps SDK for Android** ticked. | Restricted to a set that omits Maps SDK for Android → blank tiles even though the project has the API enabled. Project-enabled and key-allowed are different things. |
+
+This is exactly the shape of a `SECURITY-OPS.md` §B hardening pass applied with one field wrong, which
+matches the "what changed between 2026-08-05 and 2026-08-16" framing above.
+
+**Checked 2026-08-17 — Application restrictions reads `None` (owner-confirmed).** That closes the
+allowlist branch completely: a key with no application restriction rejects nobody — no package check,
+no SHA-1 check — so the re-signing trap the 2026-08-16 review ranked most likely **cannot be causing
+this**, and neither can a Websites/IP misconfiguration. It also means the whole SHA-1 hunt (Play
+app-signing vs EAS upload certificate) is moot for this incident. Note in passing that `None` is *not*
+what §B specifies for the Maps key, so the §B hardening was either never applied to it or was reverted —
+worth fixing later for security, but it is not this bug.
+
+**Two things remain, and the second is the one this runbook under-weighted.**
+
+1. **The key's API restrictions** — the block below Application restrictions on the same page. Restricted
+   to a set omitting Maps SDK for Android ⇒ blank tiles despite the project having the API on.
+
+2. **The installed binary may not carry the key that is in EAS today.** The Maps key is **native**: it is
+   baked into the merged manifest at build time. Every probe in §1.5 tested the value sitting in the EAS
+   `preview` environment *now*. The handset runs whatever build was installed, which may have been built
+   from a different value — v0.36.1 in particular predates the `app.config.ts` guard, so it could have
+   been built with the key absent or stale and nothing would have stopped it. **"The EAS key is healthy"
+   does not prove "the key inside the installed app is healthy."**
+
+   Cheapest test in the whole runbook, and it needs no console at all: **install the current internal-track
+   build** (v0.38.0, EAS `333ebcda` → submission `fed0f9d3`, track `internal`, 2026-08-17). That binary
+   was built from the value verified above. If the map draws, the incident was a stale binary and nothing
+   is wrong with the key at all.
+
+**Why the doctor cannot answer these two.** Google evaluates API activation before the application
+restriction, and the probe can only reach web-service APIs — so a key correctly restricted to
+`maps-android-backend.googleapis.com` refuses every probe on API grounds before the allowlist is ever
+consulted. That is an inherent ceiling of any curl-based check, not a gap to engineer around: the
+Maps SDK for Android channel is not reachable over HTTP. Read the two blocks by eye.
+
+> Separately, the **GitHub Actions** secret `GOOGLE_MAPS_API_KEY` (used only by `android-test-apk.yml`
+> for sideloaded QA APKs — a different store from the EAS variable) probes as `INVALID_KEY` and does not
+> even match the `AIza` + 35-character shape. That does not affect the Play build, but the QA-APK lane
+> would ship a mapless APK today. Re-run the doctor with `key_source: github` after fixing it.
+
+## Step 2 — Fix the allowlist *(only if Application restrictions is NOT `None` — as of 2026-08-17 it is, so skip to the API-restrictions check and the build test above)*
 
 GCP → **APIs & Services → Credentials** → the Maps SDK key → **Application restrictions → Android apps**.
 List **both** fingerprints against `zw.co.lynia`:
@@ -78,8 +175,8 @@ binary is unchanged; only its server-side permissions were wrong.
 
 ## Step 3 — Confirm
 
-Re-run **Maps Key Doctor** with the same SHA-1 and expect `OK` (or `API_RESTRICTED_OR_DISABLED`, which
-is the healthy answer for a correctly API-restricted key). Then open `/send` on the handset and confirm
+Re-run **Maps Key Doctor** with the same SHA-1 and expect `OK` (or `API_RESTRICTED`, which is the
+healthy answer for a correctly API-restricted key). Then open `/send` on the handset and confirm
 Google tiles for Harare with the attribution baked into the tile surface — tiles are the only proof the
 key is accepted; a rendered map *frame* is not.
 

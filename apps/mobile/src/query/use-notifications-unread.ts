@@ -29,7 +29,7 @@ export function useNotificationsUnreadCount(): number {
 /**
  * The Notifications row's sub-line, with the unread count in front of it when there is one.
  *
- * The mock's string is preserved VERBATIM as the tail (`docs/DESIGN-DEVIATIONS.md` D-26 covers the
+ * The mock's string is preserved VERBATIM as the tail (`docs/DESIGN-DEVIATIONS.md` D-27 covers the
  * prefix) — the count is additive, and at zero unread the row reads exactly as the kit draws it. Shared
  * by both Account screens so the customer and rider tails cannot drift apart.
  */

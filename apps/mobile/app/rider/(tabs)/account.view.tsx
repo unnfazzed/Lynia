@@ -18,7 +18,6 @@ export type RiderAccountViewProps = {
   identityLine: string;
   /** Whether the rider is online now — drives the always-drawn status pill's tone + label. */
   online: boolean;
-  onIdentityPress: () => void;
   rows: RiderAccountRow[];
   onRowPress: (index: number) => void;
 };
@@ -27,7 +26,6 @@ export function RiderAccountView({
   name,
   identityLine,
   online,
-  onIdentityPress,
   rows,
   onRowPress
 }: RiderAccountViewProps): React.ReactElement {
@@ -38,38 +36,38 @@ export function RiderAccountView({
         minHeight: "100%",
         paddingTop: 0
       }}>
-      <Pressable onPress={onIdentityPress} accessibilityRole="button" accessibilityLabel="Your profile and settings"><Card style={{
-            padding: 12
-          }}>
+      <Card style={{
+          padding: 12
+        }}>
         <View style={{
+            alignItems: "center",
+            gap: 11,
+            flexDirection: "row"
+          }}>
+          <View style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: tokens.color.accentWash,
               alignItems: "center",
-              gap: 11,
-              flexDirection: "row"
+              justifyContent: "center"
+            }}><Icon name="user" size={22} color={tokens.color.accentText} /></View>
+          <View style={{
+              flex: 1
             }}>
-          <View style={{
-                width: 48,
-                height: 48,
-                borderRadius: 24,
-                backgroundColor: tokens.color.accentWash,
-                alignItems: "center",
-                justifyContent: "center"
-              }}><Icon name="user" size={22} color={tokens.color.accentText} /></View>
-          <View style={{
-                flex: 1
-              }}>
             <Text style={{
-                  fontSize: 15.5,
-                  fontWeight: "700"
-                }}>{name}</Text>
+                fontSize: 15.5,
+                fontWeight: "700"
+              }}>{name}</Text>
             <Text style={{
-                  fontSize: 12.5,
-                  color: tokens.color.muted,
-                  fontVariant: ["tabular-nums"]
-                }}>{identityLine}</Text>
+                fontSize: 12.5,
+                color: tokens.color.muted,
+                fontVariant: ["tabular-nums"]
+              }}>{identityLine}</Text>
           </View>
           <StatusPill status={online ? "Online" : "Offline"} tone={online ? "online" : "offline"} dot />
         </View>
-      </Card></Pressable>
+      </Card>
       <Card style={{
           padding: 4,
           marginTop: 10

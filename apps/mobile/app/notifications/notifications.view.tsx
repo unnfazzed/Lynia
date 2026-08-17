@@ -7,7 +7,7 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/notifications/index.tsx) — that is the ONLY hand-wired seam.
 //
-// STREAMLINE-01 (owner-approved deviation, docs/DESIGN-DEVIATIONS.md D-26): swipe-to-dismiss is an
+// STREAMLINE-01 (owner-approved deviation, docs/DESIGN-DEVIATIONS.md D-27): swipe-to-dismiss is an
 // INTERACTION the static mock could not draw, added here as handler props + a transform on the EXISTING
 // nodes — no element is added, removed or re-kinded, so the structural snapshot stays green by
 // construction and a regeneration of this file diffs only in these marked additions. Read that entry

@@ -41,6 +41,12 @@ const mockGetMe = jest.fn(async () => ({
   rider: null,
 }));
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
+// STREAMLINE-01: the Notifications row's sub-line now carries an unread count. Stubbed at zero — this
+// suite is about the row grammar and the card inset, and at zero unread the sub is byte-identical to the
+// kit's string (which is what the assertions below read), so the stub keeps them meaningful.
+jest.mock("../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }),
+}));
 
 import AccountTabScreen from "../account";
 import { RiderAccountView, type RiderAccountRow } from "../../rider/(tabs)/account.view";
@@ -228,7 +234,6 @@ describe("account harmony — both tabs inset their cards the same (D-24)", () =
           name="Shepherd Mahupa"
           identityLine="★ new · 0 jobs · verifying"
           online={false}
-          onIdentityPress={jest.fn()}
           rows={riderRows}
           onRowPress={jest.fn()}
         />,

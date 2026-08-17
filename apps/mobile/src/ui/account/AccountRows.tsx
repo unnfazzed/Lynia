@@ -60,15 +60,20 @@ export type AccountRow = {
 
 /**
  * The identity block: avatar disc · name · one identity line · an optional trailing pill.
- * `onPress` wraps it in the mock's Pressable (the rider's route into profile/settings).
+ *
+ * **Deliberately NOT pressable, and it takes no `onPress`** (owner instruction 2026-08-17: *"when I
+ * click the profile under accounts it must not be clickable to display another window for both rider
+ * and customer sides"* — `docs/DESIGN-DEVIATIONS.md` D-26). It used to accept a handler and wrap
+ * itself in a Pressable, which is how all three screens that draw it (both Account tabs and Settings)
+ * opened `/profile`. The capability is removed rather than merely unused on each caller, so the tap
+ * cannot be reintroduced one screen at a time — and it puts this card back on the mock, which draws a
+ * plain, inert Card on every screen it appears.
  */
 export function AccountIdentityCard({
   name,
   line,
   detail,
   trailing,
-  onPress,
-  accessibilityLabel,
 }: {
   name: string;
   line?: string;
@@ -76,10 +81,8 @@ export function AccountIdentityCard({
    *  ({@link AccountIdLine}). The two Account TABS pass nothing, so their card is unchanged. */
   detail?: React.ReactNode;
   trailing?: React.ReactNode;
-  onPress?: () => void;
-  accessibilityLabel?: string;
 }): React.ReactElement {
-  const body = (
+  return (
     <Card style={{ padding: 12 }}>
       <View style={{ alignItems: "center", gap: 11, flexDirection: "row" }}>
         <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
@@ -93,12 +96,6 @@ export function AccountIdentityCard({
         {trailing}
       </View>
     </Card>
-  );
-  if (!onPress) return body;
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? "Your profile and settings"}>
-      {body}
-    </Pressable>
   );
 }
 

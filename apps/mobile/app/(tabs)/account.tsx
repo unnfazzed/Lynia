@@ -6,6 +6,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
+import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/ui/account/AccountRows";
 
@@ -34,6 +35,12 @@ import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/
  * The bridge row is the counterpart of the rider tab's "Switch to customer" (D-16): one row, two
  * states — "Switch to rider" for someone who already is one, "Become a rider" for someone who isn't.
  *
+ * **The identity card is INERT** (owner instruction 2026-08-17: *"when I click the profile under
+ * accounts it must not be clickable to display another window for both rider and customer sides"* —
+ * `docs/DESIGN-DEVIATIONS.md` D-26). It used to open `/profile?side=customer`; `AccountIdentityCard`
+ * no longer accepts a handler at all, so this tab and the rider one are inert by construction rather
+ * than by each remembering not to pass one. Settings is the row that leads onward.
+ *
  * The BODY GEOMETRY is mirrored from the generated rider view (owner instruction 2026-08-16, from a
  * photo of both tabs: "the customer options tab does not have same margins as the rider options cards
  * .. align the customer cards so they have the same dimensions and design as the rider cards" —
@@ -50,13 +57,16 @@ export default function AccountTabScreen(): React.ReactElement {
   const me = meQ.data;
   const isRider = (me?.role ?? session?.role) === "rider";
 
+  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
+  const unreadCount = useNotificationsUnreadCount();
+
   const name = me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account";
   // The facts that identify THIS account on the customer side, one line, muted — the customer
   // analogue of the rider's "★ 4.9 · 312 jobs · verified".
   const identityLine = [me?.phone ? formatPhoneLocal(me.phone) : "", "Customer"].filter(Boolean).join(" · ");
 
   const rows: AccountRow[] = [
-    { icon: "bell", label: "Notifications", sub: "One inbox for both services", onPress: () => router.push("/notifications") },
+    { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },
     { icon: "phone", label: "Help & support", sub: "Call the safety line", onPress: () => router.push("/help") },
     // `shield` rather than a settings/cog glyph: the design kit's 38-icon subset has none, and this
     // row's contents ARE permissions, privacy and sign-out — so the shield is honest, not a stand-in.
@@ -88,15 +98,9 @@ export default function AccountTabScreen(): React.ReactElement {
             <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
           </Card>
         ) : (
-          <AccountIdentityCard
-            name={name}
-            line={identityLine}
-            // `side=customer`: /profile is shared by both tabs and would otherwise key its rows off the
-            // account's role, showing a dual-role user the RIDER list after they tapped their name on
-            // the customer hub. The tab that owns the tap names the side (D-22).
-            onPress={() => router.push("/profile?side=customer")}
-            accessibilityLabel="Your details and session"
-          />
+          // Inert — no handler, and since D-26 the card takes none. Everything it used to open is
+          // reached through the Settings row below.
+          <AccountIdentityCard name={name} line={identityLine} />
         )}
 
         <AccountRowList rows={rows} />
