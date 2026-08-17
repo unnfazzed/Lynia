@@ -401,6 +401,27 @@ export default function HomeScreen(): React.ReactElement {
   // Fat-finger guard: a price far above the band ($2.50 typed as $250) earns a calm confirm hint. Never
   // blocks (a genuinely high offer is the customer's right) — just makes an accidental extra digit visible.
   const farAboveBand = priceBand != null && isFarAboveBand(fare, priceBand);
+  // D-31 (owner instruction 2026-08-17): "Your price" carries the suggested fare rather than opening
+  // empty — the "Use suggested" button that used to type it is gone, so this IS how the suggestion
+  // reaches the field. The owner chose re-suggest-always over keep-what-you-typed when asked, so every
+  // NEW suggestion wins: move a pin, get the new number, even over a price already typed. It only fires
+  // when the suggestion itself changes, so typing is never fought mid-keystroke — the customer's number
+  // stands until the trip they priced stops being the trip on screen.
+  const suggestedFare = quote?.suggestedFare ?? null;
+  // A re-broadcast is the one exception, and not by preference: it opens with the ORIGINAL order's
+  // price already in the field (that price is the point of re-sending it), and its pins are set at
+  // mount — so the very first suggestion computed for those same pins would otherwise overwrite it
+  // before the customer has touched anything. Only the FIRST suggestion is skipped; move a pin
+  // afterwards and the rule above applies as normal.
+  const isRebroadcast = rbDraft != null;
+  const lastSuggestedFare = useRef<number | null>(null);
+  useEffect(() => {
+    if (suggestedFare == null || lastSuggestedFare.current === suggestedFare) return;
+    const isFirst = lastSuggestedFare.current === null;
+    lastSuggestedFare.current = suggestedFare;
+    if (isFirst && isRebroadcast) return;
+    setProposedFare(suggestedFare.toFixed(2));
+  }, [suggestedFare, isRebroadcast]);
   // Mirror the contract's contactPhone floor (both waypoints) so Broadcast can't enable and then
   // bounce off a raw Zod message on submit. A bare length check let a 6-character typo ("abcdef")
   // through silently — the failure only surfaced mid-delivery when a rider's dialer opened on garbage.
@@ -568,20 +589,14 @@ export default function HomeScreen(): React.ReactElement {
   };
 
   // The submit sheet-footer is region-adopted (LJ.home_empty#footer): the mock draws a single
-  // until-pins hint above the "Broadcast request" CTA. The app's hint names EVERY still-missing
-  // requirement (one noun each, matching the kit's single-line phrasing) so a disabled CTA is never a
-  // silent greyed dead-end — the same copy as before, hoisted here so SendComposeFooterView owns the
-  // hint+CTA sub-tree while the out-of-area notice stays live glue beside it.
-  const missingHint = `Add ${[
-    !coordsOk ? "pickup & drop-off pins" : null,
-    !itemsOk ? (items.length > 1 ? "a description for every item" : "an item") : null,
-    !pickupPhoneOk || !dropPhoneOk ? "both phones" : null,
-    !landmarksOk ? "both landmarks" : null,
-    !declaredValueOk ? "a declared value between 0 and 150" : null,
-    !(fare !== null && fare > 0) ? "a price" : null,
-  ]
-    .filter(Boolean)
-    .join(", ")} to broadcast.`;
+  // until-pins hint above the CTA, and the app used to render a live version of it naming every
+  // still-missing requirement. D-31 (owner instruction 2026-08-17) takes that line off the screen
+  // entirely — "remove the text that says Add pickup & drop off pins etc.. Leave that blank". The
+  // asked-for consequence, stated plainly so nobody re-adds it as a bug fix: the CTA is now a SILENT
+  // greyed control until the form is complete, with nothing on screen naming what is outstanding. The
+  // owner was offered the alternative (a tappable CTA that toasts what is missing) and chose the
+  // silent one. `submit()` still carries the same summary as an error toast — unreachable while the
+  // button is disabled, kept as the belt-and-braces path.
 
   // S·2: a held customer can't broadcast — show a calm, blocking screen (not the compose form) with a
   // real "contact support" affordance, matching the mockup's OnHold. Overrides the whole home so a
@@ -697,13 +712,15 @@ export default function HomeScreen(): React.ReactElement {
                   </View>
                 </View>
               ) : null}
-              {/* Region-adopted submit sheet-footer (LJ.home_empty#footer): the until-complete hint +
-                  the kit's verbatim "Broadcast request" CTA. onBroadcast runs the disclaimer gate + the
-                  idempotent create — unchanged. The out-of-area notice above stays live
-                  glue (pruned from the composition; the static mock draws neither). */}
+              {/* Region-adopted submit sheet-footer (LJ.home_empty#footer): the CTA, labelled "Proceed"
+                  since D-31. onBroadcast runs the disclaimer gate + the idempotent create — unchanged.
+                  The hint branch is kept in the generated tree (the mock draws it, so pruning the node
+                  would break the structural snapshot) but is pinned OFF — see D-31 above. The
+                  out-of-area notice above stays live glue (pruned from the composition; the static mock
+                  draws neither). */}
               <SendComposeFooterView
-                showHint={!canSubmit}
-                hint={missingHint}
+                showHint={false}
+                hint=""
                 onBroadcast={() => void onBroadcast()}
                 busy={busy}
                 disabled={!canSubmit}
@@ -721,11 +738,17 @@ export default function HomeScreen(): React.ReactElement {
               the search renders its honest disabled explainer rather than nothing. */}
           <AddressRows pickup={pickupLandmark} drop={dropLandmark} active={activePin} onPick={pickSlot} />
           <AddressHint />
+          {/* D-31 (owner instruction 2026-08-17): the search field carries the active slot's address
+              instead of sitting empty. With the pickup pin now auto-located on open, an EMPTY box
+              directly under a filled PICKUP row reads as the drop-off's box — the customer's own report.
+              Feeding it the slot's landmark makes the field say which address it belongs to; the
+              customer's own typing still wins until the underlying address changes. */}
           {activePin === "pickup" ? (
             <AddressSearch
               key="pickup-search"
               label="Pickup"
               placeholder="Search pickup address"
+              prefill={pickupLandmark}
               onResolved={onPickupResolved}
               focusSignal={searchFocus}
             />
@@ -734,6 +757,7 @@ export default function HomeScreen(): React.ReactElement {
               key="drop-search"
               label="Drop-off"
               placeholder="Search drop-off address"
+              prefill={dropLandmark}
               onResolved={onDropResolved}
               focusSignal={searchFocus}
             />

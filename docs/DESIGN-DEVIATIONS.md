@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -1252,3 +1252,103 @@ merely to pass without it:** re-adding it to the view reddened both suites; the 
 **Retire this entry** when an export redraws `board_empty` without the Refresh button — then the region
 is re-adoptable, the `undrawn` entry comes out of the expected tree, and the deferral baseline goes back
 to 76. Half 2 needs no retirement: no mock draws a pull-to-refresh, so an export cannot contradict it.
+
+---
+
+## D-31 · The compose screen's submit bar and price block — APPROVED (2026-08-17)
+
+**In effect.** Owner instruction 2026-08-17, from two photographs of the running app (`LJ home_empty`
+and the same screen with both pins set). Four changes to `LJ Home`'s sheet, all in the owner's words:
+*"Replace Broadcast request button text with Proceed. Also remove the text that says Add pickup & drop
+off pins etc.. Leave that blank... Since the pickup location is now autofilled, the field below for
+location must be autofilled to avoid confusing blank field with drop off location.. Also Autofill the
+suggested price on the Your price with that price.. Though it's editable.. Remove the text as shown in
+Pick that says suggested fair but keep the below which says Riders usually accept.. Keep that and
+maintain the small font.. Remove the button for suggested fair since we are now autocompleting the Your
+price."* The four open questions in it were put to the owner and answered before any code moved; each
+answer is recorded against its half below.
+
+These are **one change with one cause**: the pickup pin now auto-locates on open (owner instruction
+2026-08-17, the session before this one). That single addition is what made a blank search box read as
+the drop-off's, and what made a button whose only job was to type the suggested fare into an empty
+field redundant. The mocks were drawn for a composer that opened completely empty; this is the same
+composer with a position already in it.
+
+### Half 1 — the CTA reads "Proceed", not the mock's "Broadcast request"
+
+`screens.jsx :: Home` draws `<Button label="Broadcast request">`; the app draws `Proceed`. **Asked and
+answered:** the button still broadcasts immediately — same disclaimer gate, same idempotent create,
+same push to the auction screen. There is no new review step; only the word changed.
+
+Applied in the codegen **bind** (`tools/parity/codegen/adopted.mjs`, `LJ.home_empty#footer`), not by
+hand-editing `apps/mobile/app/send-compose-footer.view.tsx` — that file is generated, and a hand edit
+would be silently reverted the next time anyone regenerates it. The structural snapshot is unaffected:
+`normalize.mjs` drops text content by design, so the tree still matches the mock's.
+
+### Half 2 — the missing-requirements hint is not shown at all
+
+The mock draws `{!pins ? <div>Add pickup & drop-off pins, an item, a price and both phones to
+broadcast.</div> : null}` above the CTA; the app rendered a live version naming every outstanding
+requirement. It now renders nothing.
+
+**The cost is real and was accepted deliberately.** That line was the only thing on screen explaining a
+greyed-out CTA, so the button is now a silent dead end until the form is complete. The owner was offered
+the alternative — keep the space blank but make the button tappable, so tapping with something missing
+raises a brief toast naming it — and chose the silent one. Do not "fix" this as a bug; it is the
+instruction. `submit()` still carries the same summary as an error toast, unreachable while the button
+is disabled, kept as the belt-and-braces path.
+
+**The node stays in the tree.** `SendComposeFooterView` keeps its `showHint` branch and the container
+passes `showHint={false}` forever. Pruning the `<Text>` instead would have made the generated view one
+node shorter than the mock, which `normalize.mjs` has no way to express — the exact situation that cost
+D-30 its codegen adoption and bumped the deferral baseline. Nothing renders either way, so the honest
+cheap option is the one that keeps `LJ.home_empty#footer` adopted and the snapshot meaningful.
+
+### Half 3 — the address search field carries the slot's address
+
+The mock draws an empty search field under the address rows. The app seeds it with the address the
+active slot already holds. **Asked and answered:** fill the field (rather than switching the active slot
+to drop-off on open, the alternative offered). The rule that keeps it from becoming a nuisance: only a
+CHANGE of the underlying address writes to the field, so typing over it — or clearing it outright — is
+never overruled by a re-render. Both variants of `AddressSearch` (Places-keyed and the device-geocoder
+fallback) behave identically, via one shared `usePrefilledQuery` hook.
+
+This is the **live-vs-static rule** in `CLAUDE.md` working as written, not against it: the mock's
+element tree is unchanged — same field, same placeholder, same position — and the live behaviour is
+derived inside it.
+
+### Half 4 — "Your price" opens carrying the suggestion; the two affordances above it are gone
+
+The mock (and the app until now) drew `Suggested fare $X · N km`, then the acceptance band, then a
+ghost `Use suggested $X` button, above an empty price field. The app now draws **only** the band hint
+above a field that already contains the suggested fare. The band keeps its drawn 12px — the owner asked
+for the small font by name.
+
+Both removals follow from the autofill rather than standing on their own: a line announcing the number
+the field displays, and a button that types that number into the field, are both restating what is on
+screen. `docs/PRICING.md` is updated to match — the anchor still reaches the customer, by a different
+route.
+
+**Asked and answered — re-suggest always.** When the customer has typed their own price and then moves
+a pin, the NEW suggestion wins and overwrites what they typed. The owner chose this over
+keep-what-you-typed when both were offered. It only fires when the suggestion itself changes, so typing
+is never fought mid-keystroke: a typed price stands until the trip it was priced for stops being the
+trip on screen. **One carve-out, and not by preference:** a re-broadcast opens with the original order's
+fare AND both pins already set, so the first suggestion computed for those same pins would overwrite the
+very number the customer is re-sending. Only that first write is skipped; move a pin afterwards and the
+rule above applies.
+
+**Also worth stating:** the price field is never empty any more, so broadcasting at the suggested fare
+no longer requires the customer to consciously choose a number. This was flagged to the owner as part of
+the same question and left as designed.
+
+**Guarded by** `app/__tests__/send.test.tsx` (the price autofills on the second pin with no button
+press; a typed price survives unrelated edits and is re-suggested over when a pin moves; a re-broadcast's
+own fare survives its first quote; the retired "Suggested fare"/"Use suggested" strings are absent; the
+band hint renders at 12px; the CTA answers to "Proceed") and `src/ui/__tests__/address-search.test.tsx`
+(the field seeds from `prefill`, re-seeds when it changes, and never overrules typed or cleared text —
+keyed and keyless alike).
+
+**Retire this entry** when an export redraws `LJ Home` with a "Proceed" CTA, no submit hint, a prefilled
+search field and a prefilled price field — then all four halves are simply the mock, and the codegen
+label rewrite comes back out of `adopted.mjs`.
