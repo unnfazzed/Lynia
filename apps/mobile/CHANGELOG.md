@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/unnfazzed/Lynia/compare/v0.39.0...v0.40.0) (2026-08-17)
+
+
+### Features
+
+* **rider:** drop the last two manual refreshes — the empty-board button and the Money pull-to-refresh ([ba6be34](https://github.com/unnfazzed/Lynia/commit/ba6be34b12348c1276bf303163ac4fbbc9d15432))
+
+
+### Bug Fixes
+
+* **mobile:** four rider-board defects found reviewing the always-online change ([cc6a98f](https://github.com/unnfazzed/Lynia/commit/cc6a98f7d06185efb709bcb1a79b40f4ae55a1e5))
+
 ## [0.39.0](https://github.com/unnfazzed/Lynia/compare/v0.38.0...v0.39.0) (2026-08-17)
 
 
