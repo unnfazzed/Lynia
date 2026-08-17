@@ -228,7 +228,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
         {venues.length > 0 ? (
           <View>
             <View style={{ flexDirection: "row", alignItems: "baseline", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
-              <Text style={{ flex: 1, fontSize: 16, fontWeight: "700", color: tokens.color.ink }}>Popular near you</Text>
+              {/* `lineHeight` is Inter's own 16 x 1.21 — without it RN's default line box is 2px shorter
+                  than the reference's and the whole section header sits 2px short. */}
+              <Text style={{ flex: 1, fontSize: 16, lineHeight: 19.36, fontWeight: "700", color: tokens.color.ink }}>Popular near you</Text>
               <Pressable onPress={() => router.push("/food")} accessibilityRole="button" accessibilityLabel="See all restaurants">
                 <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>See all →</Text>
               </Pressable>

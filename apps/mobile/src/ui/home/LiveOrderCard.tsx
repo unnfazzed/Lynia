@@ -87,7 +87,7 @@ export function LiveOrderCard({
       </View>
       {etaMinutes != null ? (
         <View style={{ backgroundColor: tokens.color.highlight, borderRadius: tokens.radius.pill, paddingHorizontal: 9, paddingVertical: 4 }}>
-          <Text style={{ fontSize: 11.5, fontWeight: "800", color: tokens.color.highlightChipInk, fontVariant: ["tabular-nums"] }}>
+          <Text style={{ fontSize: 11.5, lineHeight: 13.92, fontWeight: "800", color: tokens.color.highlightChipInk, fontVariant: ["tabular-nums"] }}>
             {etaMinutes} min
           </Text>
         </View>

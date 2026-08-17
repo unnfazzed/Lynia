@@ -1041,6 +1041,33 @@ food_home.mjs`) was restaged to the mock's own sample data — venue distances c
 ETA arithmetic reproduces the drawn 25/30 min rather than the fixture asserting numbers the screen
 does not compute.
 
+### 4 · Two owner-directed departures from the drawn header (2026-08-17)
+
+Both are **explicit owner instructions**, given after seeing the first side-by-side sheet, and both
+change drawn geometry — so they are logged here rather than defended in a comment.
+
+- **The greeting always breaks over two lines** — the phrase on top, the name beneath
+  (`logic/greeting.ts`). The mock's COPY is untouched ("Good morning, Rudo"); what changes is where
+  it breaks. The reference wraps it only incidentally: the greeting column is ~216px wide, so
+  "Good morning, Rudo" happens to need two lines while "Good evening, Rudo" fits on one — meaning the
+  drawn header would change height with the time of day. An explicit newline makes the break
+  deliberate and the header a stable size. The newline lives inside ONE text node, so the
+  rendered-conformance lane (which whitespace-normalizes) still sees the mock's string verbatim.
+- **The time-of-day sticker is 42px, not the drawn 46px**, and sits in a row with the bell so the two
+  share a vertical centre — *"the icon for sun or moon must be same diameter or size as the
+  notifications icon and aligned with the notifications icon to look good."* Both now size off one
+  `BELL_SIZE` constant, so they cannot drift apart.
+
+**Everything else in the header keeps the drawn geometry.** Tile and card boxes were measured against
+the mock in the same browser and are identical — tiles **104×84**, venue cards **159×126**, the tile
+row **360×98**, the venue grid **360×262**, the tracker pill **328×54**. Three text line-boxes were
+pinned to Inter's own 1.21 ratio (the section header, and the two ETA chips) because React Native's
+default line box is ~2px shorter than the browser's and left those blocks short.
+
+One residual, not a choice: the gold ETA chip is ~6px narrower than drawn because the mock's page has
+a true Inter 800 while the app ships only 400/600/700 and aliases 800 → 700 (`tokens.font.weight`).
+Fixing it would mean adding a font weight to the bundle.
+
 ### What is NOT deviating
 
 The address row is the **detected current location** (`logic/home-location.ts`), not a saved profile

@@ -21,19 +21,27 @@ describe("greetingFor — the home 8c header's time-aware greeting", () => {
 });
 
 describe("greetingLine", () => {
-  it("draws the mock's line", () => {
-    expect(greetingLine("Good morning", "Rudo")).toBe("Good morning, Rudo");
+  it("draws the mock's copy, broken over two lines: phrase on top, name beneath", () => {
+    expect(greetingLine("Good morning", "Rudo")).toBe("Good morning,\nRudo");
+    // Whitespace-normalized (what the rendered-conformance lane compares) it is the mock's string.
+    expect(greetingLine("Good morning", "Rudo").replace(/\s+/g, " ")).toBe("Good morning, Rudo");
   });
 
-  it("uses the first word only, so a two-part first name can't wrap the header", () => {
-    expect(greetingLine("Good evening", "Anna Maria")).toBe("Good evening, Anna");
+  it("breaks in the SAME place whatever the time of day, so the header keeps one height", () => {
+    for (const phrase of ["Good morning", "Good afternoon", "Good evening"]) {
+      expect(greetingLine(phrase, "Rudo").split("\n")).toEqual([`${phrase},`, "Rudo"]);
+    }
   });
 
-  it("caps a long name at 14 characters rather than pushing the 25px line into a second row", () => {
-    expect(greetingLine("Good morning", "Bartholomewnathaniel")).toBe("Good morning, Bartholomewnat");
+  it("uses the first word only, so a two-part first name can't add a third line", () => {
+    expect(greetingLine("Good evening", "Anna Maria")).toBe("Good evening,\nAnna");
   });
 
-  it("degrades to the bare phrase with no name — never a dangling comma or a placeholder", () => {
+  it("caps a long name at 14 characters rather than overflowing its line", () => {
+    expect(greetingLine("Good morning", "Bartholomewnathaniel")).toBe("Good morning,\nBartholomewnat");
+  });
+
+  it("degrades to the bare phrase on ONE line with no name — never a dangling comma or a placeholder", () => {
     expect(greetingLine("Good morning", null)).toBe("Good morning");
     expect(greetingLine("Good morning", undefined)).toBe("Good morning");
     expect(greetingLine("Good morning", "   ")).toBe("Good morning");

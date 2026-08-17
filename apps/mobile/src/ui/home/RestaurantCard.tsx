@@ -99,7 +99,7 @@ export function RestaurantCard({
               paddingVertical: 4,
             }}
           >
-            <Text style={{ fontSize: 11.5, fontWeight: "800", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{etaMinutes} min</Text>
+            <Text style={{ fontSize: 11.5, lineHeight: 13.92, fontWeight: "800", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{etaMinutes} min</Text>
           </View>
         ) : null}
       </View>
