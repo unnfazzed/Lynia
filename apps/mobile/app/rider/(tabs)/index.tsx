@@ -17,7 +17,10 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { formatMoney } from "../../../src/logic/money";
+import { useNow } from "../../../src/logic/use-now";
+import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
 import {
   buildSentOfferEntry,
   clearRiderBidDraft,
@@ -30,7 +33,7 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, BrandHeader, Button, Card, EmptyState, haptic, Heading, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, haptic, HomeHeader, HomeStatusRow, Icon, OfflineBanner, SkeletonList, StatusPill, statusPillLabel, Sub, useActionError } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
@@ -244,6 +247,10 @@ export default function RiderHome(): React.ReactElement {
   // D5: a live food-dispatch offer takes the rider straight to the intake screen — gated on the same
   // dispatch-specific flag as the (still dormant) food-job-card board read above, dormant-off.
   const board = useRiderBoard(online, loc, bidIds, merchantDispatchAutoEnabled ? () => router.push("/rider/food-offer") : undefined);
+  // The 8c header's own inputs: a minute-granularity clock for the greeting + sticker, and the
+  // unread count behind the bell's gold dot (the same hook the customer home and Account row use).
+  const clock = useNow();
+  const unreadCount = useNotificationsUnreadCount();
   // A-O4: unlike `openOrders` below (which is `enabled: online` outright — an offline rider can't be
   // offered new work), this poll can't just gate on `online`: the "Go offline" button has no
   // active-job guard, so a rider can go offline mid-delivery and still needs this to keep tracking
@@ -719,7 +726,12 @@ export default function RiderHome(): React.ReactElement {
   // refusal / offline) still renders through the untouched ScrollView return further down — this
   // early return only ever fires for the one state that actually has a `ranked` list to virtualize,
   // so a gated screen can never see a stale `ranked` leak through a FlatList `data` prop.
-  const showOpenOrdersList = online && !meQ.isLoading && !meQ.isError && !knownUnverified && !locDenied && gate == null;
+  // Every wall between a rider and a shift, in one place: resolved identity, verified KYC, location,
+  // and no server-side gate refusal. The board list is exactly this, plus actually being online — so
+  // the header's "Go online" action and the list branch can never disagree about whether a shift is
+  // possible.
+  const canGoOnline = !meQ.isLoading && !meQ.isError && !knownUnverified && !locDenied && gate == null;
+  const showOpenOrdersList = online && canGoOnline;
 
   // Shared JSX, hoisted out of both returns below so the FlatList branch and the untouched ScrollView
   // branch render byte-identical markup for the pieces they have in common — a change to one can't
@@ -877,31 +889,56 @@ export default function RiderHome(): React.ReactElement {
     </>
   );
 
+  // The 8c mint header, shared with the customer home (owner instruction 2026-08-17): greeting +
+  // time-of-day sticker + bell, and NO search bar — a rider has nothing to search from here; the
+  // board IS the list. The `subRow` slot the customer fills with the deliver-to address carries the
+  // rider's equivalent live state: the shift. Rendered on BOTH return paths below, so the Jobs tab
+  // has ONE header whatever state it is in (open board, empty board, KYC wall, no-GPS wall).
   const boardBanner = (
-    <BrandHeader
-      label="RIDER"
-      address="Jobs near you"
-      showSearch={false}
+    <HomeHeader
+      greeting={greetingLine(greetingFor(clock).phrase, meQ.data?.firstName)}
+      evening={greetingFor(clock).evening}
+      unread={unreadCount > 0}
       onBell={() => router.push("/notifications")}
-      onProfile={() => router.push("/rider/account")}
+      subRow={
+        online ? (
+          // Status + action ONLY. The queue composition ("Parcels and food · one queue") describes
+          // what is IN the list, not the shift, so it sits with the list's own heading below —
+          // crowding both into this row truncated the status on a 360px phone.
+          <HomeStatusRow
+            label={board.connected && !beatStale ? "Online" : "Reconnecting"}
+            connected={board.connected && !beatStale}
+            actionLabel="Go offline"
+            onAction={() => onlineM.mutate(false)}
+            busy={onlineM.isPending}
+          />
+        ) : (
+          // Offline is a state, not an absence — say so, and keep the way back in one tap. The
+          // gated walls below (KYC, no-GPS) own their own recovery, so no action is offered there.
+          <HomeStatusRow
+            label="Offline"
+            detail={canGoOnline ? "You're not receiving jobs" : undefined}
+            connected={false}
+            actionLabel={canGoOnline ? "Go online" : undefined}
+            onAction={canGoOnline ? () => onlineM.mutate(true) : undefined}
+            busy={onlineM.isPending}
+          />
+        )
+      }
     />
   );
 
-  // RJM `board`: a plain white "Jobs near you" bar with only a bell on the right (the mock draws no
-  // green surface and no profile action here — profile lives on the Account tab). The title is a
-  // `Heading`, matching how the Money/Account tabs realise their mock AppBar titles.
+  // "Jobs near you" is now a SECTION heading under the mint header, in the same 16/700 grammar the
+  // customer home gives "Popular near you" — the bell that used to sit beside it moved into the
+  // header (owner instruction 2026-08-17), so the tab has exactly one notifications affordance.
   const boardHeaderRow = (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
-      <Heading>Jobs near you</Heading>
-      <Pressable
-        onPress={() => router.push("/notifications")}
-        accessibilityRole="button"
-        accessibilityLabel="Notifications"
-        hitSlop={8}
-        style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", marginRight: -8 }}
-      >
-        <Icon name="bell" size={20} color={tokens.color.ink} />
-      </Pressable>
+    <View style={{ flexDirection: "row", alignItems: "baseline", gap: tokens.space.sm, paddingBottom: tokens.space.sm }}>
+      <Text style={{ fontSize: 16, lineHeight: 19.36, fontWeight: "700", color: tokens.color.ink }}>Jobs near you</Text>
+      {/* What the queue is made of — it describes this list, so it rides with the list's heading,
+          where the customer home puts "See all →". Muted, because it is a fact and not an action. */}
+      <Text numberOfLines={1} style={{ flexShrink: 1, marginLeft: "auto", fontSize: 12.5, color: tokens.color.muted }}>
+        {merchantDispatchAutoEnabled ? "Parcels and food · one queue" : "Parcels · one queue"}
+      </Text>
     </View>
   );
 
@@ -909,36 +946,16 @@ export default function RiderHome(): React.ReactElement {
   // a "Go offline" text action), not the big go-online Card — that Card is the OFFLINE presentation
   // (RJM `offline`), kept on the ScrollView path below. The reconnecting state is honest: the parity
   // socket is inert, so the chip reads "Reconnecting" rather than a faked "Online".
-  const onlinePillRow = (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
-      <StatusPill
-        status={board.connected && !beatStale ? "Online" : "Reconnecting"}
-        tone={board.connected && !beatStale ? "online" : "reconnecting"}
-        dot
-      />
-      <Text style={{ fontSize: 12, color: tokens.color.muted }}>
-        {merchantDispatchAutoEnabled ? "Parcels and food · one queue" : "Parcels · one queue"}
-      </Text>
-      <View style={{ flex: 1 }} />
-      <Pressable
-        onPress={() => onlineM.mutate(false)}
-        disabled={onlineM.isPending}
-        accessibilityRole="button"
-        accessibilityLabel="Go offline"
-        hitSlop={8}
-        style={{ minHeight: tokens.touchTargetMin, justifyContent: "center" }}
-      >
-        <Text style={{ fontSize: 12.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Go offline</Text>
-      </Pressable>
-    </View>
-  );
+  // The online pill, the queue subtitle and the "Go offline" action all moved INTO the mint header's
+  // `subRow` (owner instruction 2026-08-17) — one live-state line per screen, in the same slot the
+  // customer home puts its deliver-to address. Nothing replaces them here.
 
   if (showOpenOrdersList) {
     return (
-      // RJM `board`: a plain white screen (no green BrandHeader — the mock draws none). The "Jobs near
-      // you" title + bell and the compact online pill live in the list header; the tab bar below
-      // already carries Jobs/Money/Account.
-      <AppScreen>
+      // The Jobs tab's ONE header is the 8c mint block (owner instruction 2026-08-17); "Jobs near you"
+      // is now the section heading beneath it, and the shift state lives in the header's subRow. The
+      // tab bar below already carries Jobs/Money/Account.
+      <AppScreen banner={boardBanner}>
         <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
           {/* A dropped board socket while online surfaces as the standard top banner. */}
           {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
@@ -952,7 +969,6 @@ export default function RiderHome(): React.ReactElement {
             ListHeaderComponent={
               <>
                 {boardHeaderRow}
-                {onlinePillRow}
                 {activeJobBanner}
                 {sentOffersSection}
                 {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
@@ -1001,11 +1017,10 @@ export default function RiderHome(): React.ReactElement {
   }
 
   return (
-    // Board root gets the one other sanctioned green BrandHeader surface (plan §5 B1) — the tab
-    // bar below already carries Jobs/Money/Account, so the old inline "Rider" heading + Trips/Rider
-    // setup buttons move to the Account tab bridge; inner screens (rider/job, rider/become, …) keep
-    // their plain white Screen bars, unchanged.
-    <AppScreen dark banner={boardBanner}>
+    // The same mint header as the list branch above, so a rider crossing between a live board and a
+    // gated wall (KYC, no-GPS, offline) never sees the tab's identity change underneath them.
+    // Inner screens (rider/job, rider/become, …) keep their plain white Screen bars, unchanged.
+    <AppScreen banner={boardBanner}>
       <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
       {/* A dropped board socket while online surfaces as the standard top banner. */}
       {online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}

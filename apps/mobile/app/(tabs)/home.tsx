@@ -18,6 +18,7 @@ import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch"
 import {
   AppScreen,
   getServiceTiles,
+  HomeAddressRow,
   HomeHeader,
   LiveOrderCard,
   RestaurantCard,
@@ -187,10 +188,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
         <HomeHeader
           greeting={greetingLine(greeting.phrase, meQ.data?.firstName)}
           evening={greeting.evening}
-          address={location.label}
           unread={unreadCount > 0}
-          onAddress={() => setLocationOpen(true)}
-          onSearch={() => router.push("/food/search")}
+          subRow={<HomeAddressRow address={location.label} onPress={() => setLocationOpen(true)} />}
+          search={{ placeholder: "Search food, or send a parcel", onPress: () => router.push("/food/search") }}
           onBell={() => router.push("/notifications")}
         />
       }

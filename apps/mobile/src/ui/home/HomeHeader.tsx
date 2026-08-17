@@ -10,50 +10,50 @@ const BELL_SIZE = 42;
 const TIME_STICKER = BELL_SIZE;
 
 /**
- * Customer home header — home 8c (`packages/design/handoff/home-8c`, DS card
- * `ui_kits/mobile/home-8c.html`), replacing the pre-8c accent-green `BrandHeader` on this screen.
- * `BrandHeader` itself is untouched: the rider board still uses it, and it is still the app's one
- * sanctioned accent-FILLED surface. This one is the mint block.
+ * The 8c mint header (`packages/design/handoff/home-8c`, DS card `ui_kits/mobile/home-8c.html`) —
+ * the shared TOP CARD for both root tabs: the customer home and the rider board (owner instruction
+ * 2026-08-17, "the same design language for the Rider home page"). It replaced the accent-green
+ * `BrandHeader` on both; inner screens keep their plain white app bars, unchanged.
  *
- * What the mock draws, top to bottom:
- *   · `accentWash` block with a SQUARE bottom edge and 24px of bottom padding. Nothing floats over
- *     the seam — the pre-8c search bar's `marginTop: -22` overhang is gone with the green.
- *   · Greeting 25px/700 ink, time-aware, broken over TWO lines (phrase, then name), with the
- *     time-of-day sticker (sun; moon after 18:00) beside it.
- *   · A 42px WHITE circle bell with a gold unread dot, and the sticker sized to match it. NO avatar
- *     button — the bell is the only round action in the header (the mock draws one; "not drawn ⇒
- *     not rendered").
- *   · The address row 11px under the greeting: 13px map-pin + the DETECTED CURRENT LOCATION in
- *     12.5px/600 `accentText` + a chevron. Tap opens the location sheet.
- *   · A deliberately quiet search bar: white, radius 12 (NOT a pill), padding 10×15, 12.5px muted
- *     placeholder. It must not outweigh the greeting or the tiles.
+ * What it draws, top to bottom:
+ *   · an `accentWash` block with a SQUARE bottom edge and 24px of bottom padding. Nothing floats
+ *     over the seam — the pre-8c search bar's `marginTop: -22` overhang is gone with the green.
+ *   · the greeting, 25px/700 ink, time-aware, broken over TWO lines (phrase, then name).
+ *   · a 42px WHITE circle bell with a gold unread dot, and the time-of-day sticker sized to match
+ *     it, the two in one row so they read as a pair. NO avatar button — the bell is the only round
+ *     action in the header (the mock draws one; "not drawn ⇒ not rendered").
+ *   · `subRow` — whatever live state that face puts 11px under the greeting. The customer passes
+ *     `HomeAddressRow` (the detected deliver-to); the rider passes `HomeStatusRow` (the shift).
+ *     It is a SLOT rather than a fixed address row precisely because the two faces answer different
+ *     questions in the same drawn shape: "where is this going?" vs "am I taking work?".
+ *   · `search` — the deliberately quiet search bar: white, radius 12 (NOT a pill), padding 10×15,
+ *     12.5px muted placeholder, and it must not outweigh the greeting or what follows. Omit the
+ *     prop entirely for a face with nothing to search; the rider board does (owner instruction,
+ *     same session).
  *
  * ZERO shadows anywhere on this screen (the handoff's hard rule, Android elevation included), so
  * nothing here spreads `tokens.shadow.*`.
  */
 export function HomeHeader({
   greeting,
-  address,
   evening = false,
   unread = false,
-  searchPlaceholder = "Search food, or send a parcel",
-  onAddress,
-  onSearch,
+  subRow,
+  search,
   onBell,
 }: {
-  /** The whole greeting line, name included ("Good morning, Rudo") — built by `logic/greeting.ts`. */
+  /** The whole greeting, newlines included ("Good morning,\nRudo") — built by `logic/greeting.ts`. */
   greeting: string;
-  /** The detected street address, or the "Set your location" prompt when there is nothing to show. */
-  address: string;
   evening?: boolean;
   unread?: boolean;
-  searchPlaceholder?: string;
-  onAddress?: () => void;
-  onSearch?: () => void;
+  /** The live-state row under the greeting. Omitted → the greeting sits alone. */
+  subRow?: React.ReactNode;
+  /** The quiet search bar. Omitted → no search bar is rendered at all. */
+  search?: { placeholder?: string; onPress?: () => void };
   onBell?: () => void;
 }): React.ReactElement {
   // Full-bleed: the mint block runs behind the status bar, so it owns the top inset rather than
-  // stopping at the safe-area edge (the same exception BrandHeader takes for the green block).
+  // stopping at the safe-area edge (the same exception BrandHeader took for the green block).
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: tokens.color.accentWash, paddingTop: insets.top, paddingBottom: 24 }}>
@@ -66,19 +66,7 @@ export function HomeHeader({
           <Text numberOfLines={2} style={{ fontSize: 25, lineHeight: 30.25, fontWeight: "700", letterSpacing: -0.25, color: tokens.color.ink }}>
             {greeting}
           </Text>
-          <Pressable
-            onPress={onAddress}
-            disabled={!onAddress}
-            accessibilityRole={onAddress ? "button" : undefined}
-            accessibilityLabel={onAddress ? `Deliver to ${address}. Change location` : undefined}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 11 }}
-          >
-            <Icon name="map-pin" size={13} color={tokens.color.accentText} />
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: tokens.color.accentText }}>
-              {address}
-            </Text>
-            <Icon name="chevron-down" size={13} color={tokens.color.accentText} />
-          </Pressable>
+          {subRow ? <View style={{ marginTop: 11 }}>{subRow}</View> : null}
         </View>
         {/* The sticker and the bell are ONE aligned pair (owner instruction 2026-08-17): the sticker
             is sized to the bell's 42px button — the reference draws it at 46 — and both sit in this
@@ -122,26 +110,97 @@ export function HomeHeader({
           </Pressable>
         </View>
       </View>
-      <Pressable
-        onPress={onSearch}
-        disabled={!onSearch}
-        accessibilityRole={onSearch ? "button" : undefined}
-        accessibilityLabel={searchPlaceholder}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          marginTop: 16,
-          marginHorizontal: 18,
-          backgroundColor: tokens.color.bg,
-          borderRadius: tokens.radius.input,
-          paddingHorizontal: 15,
-          paddingVertical: 10,
-        }}
-      >
-        <Icon name="search" size={16} color={tokens.color.muted} />
-        <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{searchPlaceholder}</Text>
-      </Pressable>
+      {search ? (
+        <Pressable
+          onPress={search.onPress}
+          disabled={!search.onPress}
+          accessibilityRole={search.onPress ? "button" : undefined}
+          accessibilityLabel={search.placeholder}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 16,
+            marginHorizontal: 18,
+            backgroundColor: tokens.color.bg,
+            borderRadius: tokens.radius.input,
+            paddingHorizontal: 15,
+            paddingVertical: 10,
+          }}
+        >
+          <Icon name="search" size={16} color={tokens.color.muted} />
+          <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{search.placeholder}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The CUSTOMER's `subRow` — the detected deliver-to address: a 13px map-pin, the street line in
+ * 12.5/600 `accentText`, and a chevron; tapping it opens the location sheet. It lives beside the
+ * header it fills rather than in the screen, so the two faces' sub-rows stay visibly one shape.
+ */
+export function HomeAddressRow({ address, onPress }: { address: string; onPress?: () => void }): React.ReactElement {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? `Deliver to ${address}. Change location` : undefined}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+    >
+      <Icon name="map-pin" size={13} color={tokens.color.accentText} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: tokens.color.accentText }}>
+        {address}
+      </Text>
+      <Icon name="chevron-down" size={13} color={tokens.color.accentText} />
+    </Pressable>
+  );
+}
+
+/**
+ * The RIDER's `subRow` — the same drawn shape, answering the rider's equivalent live question: am I
+ * taking work? A status dot, one line, and the shift action where the customer's chevron sits.
+ *
+ * The dot is honest about the connection: `accent` while the board socket is live, `muted` while
+ * reconnecting — a rider who has lost the socket must not read as fully online. The action carries
+ * a real label ("Go offline" / "Go online") rather than a glyph: ending a shift is not something to
+ * leave to an icon, and it is the one control on this screen with a cost attached.
+ */
+export function HomeStatusRow({
+  label,
+  detail,
+  connected,
+  actionLabel,
+  onAction,
+  busy = false,
+}: {
+  label: string;
+  detail?: string;
+  connected: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+  busy?: boolean;
+}): React.ReactElement {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: connected ? tokens.color.accent : tokens.color.muted }} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: tokens.color.accentText }}>
+        {detail ? `${label} · ${detail}` : label}
+      </Text>
+      {actionLabel && onAction ? (
+        <Pressable
+          onPress={onAction}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+          hitSlop={8}
+          style={{ marginLeft: "auto", opacity: busy ? 0.6 : 1 }}
+        >
+          <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>{actionLabel}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
