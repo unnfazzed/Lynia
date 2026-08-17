@@ -166,7 +166,12 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
 
   // Same reasoning the old wallet screen used: a support-credit is the rider's only working top-up
   // path at launch, so refetch on every focus rather than trusting the global refetchOnWindowFocus:false.
-  const [focused, setFocused] = React.useState(true);
+  // Starts FALSE, not true: the rider tab navigator does not set `unmountOnBlur`, so this screen stays
+  // mounted once visited, and a preloaded-but-never-focused mount would otherwise sit at `focused:true`
+  // forever — `useFocusEffect`'s cleanup only runs after a focus, so no blur would ever correct it.
+  // Mounting focused costs nothing to start false: the focus effect below runs immediately in that
+  // case, and it does the re-read itself.
+  const [focused, setFocused] = React.useState(false);
   useFocusEffect(
     React.useCallback(() => {
       setFocused(true);
@@ -186,10 +191,16 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   //     while the rider is looking at it instead of waiting for them to leave the tab and come back.
   //     Gated on `isError` on purpose: a healthy balance already refreshes on focus/foreground, and
   //     polling it on a metered link would buy nothing.
+  //
+  // BOTH are gated on `focused`, for the same reason. The tab navigator keeps blurred screens MOUNTED
+  // (no `unmountOnBlur`), so an ungated foreground subscription here would spend two wallet round trips
+  // on every app activation for a rider who is sitting on the Jobs tab and cannot see this screen —
+  // the metered-link waste the `isError` gate above exists to avoid. Re-focusing the tab re-reads
+  // anyway, so nothing is missed by staying quiet while blurred.
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: walletKey });
     void qc.invalidateQueries({ queryKey: walletLedgerKey });
-  });
+  }, focused);
   React.useEffect(() => {
     if (!focused || !isError) return;
     const t = setInterval(() => {
