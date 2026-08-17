@@ -124,7 +124,12 @@ jobs:
       - name: Fail if packages/design/** changed without a deviations-ledger entry
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          # NOT --depth=1: `checkout` above already fetched full history (fetch-depth: 0), and a
+          # shallow fetch here REPLACES origin/<base> with a single grafted commit that shares no
+          # ancestry with HEAD — so `origin/<base>...HEAD` dies with "no merge base" and this
+          # fail-closed guardrail reds a PR that never touched the design. It only surfaced once
+          # main advanced past the branch point, which is why it passed for months.
+          git fetch --no-tags origin "${{ github.base_ref }}"
           git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
             | node scripts/check-design-freeze.mjs
 
