@@ -532,9 +532,11 @@ export const ClientMetricEvent = z.enum([
    */
   "boot_home",
   /**
-   * Cold start, third mark: same origin → the customer home screen's first PRESENTED frame (the
-   * client enqueues it from a post-interaction callback after home's first commit, not a layout
-   * effect — layout effects run before the native frame is on glass and would understate the gap).
+   * Cold start, third mark: same origin → the customer home screen's first PRESENTED frame, as
+   * closely as JS can observe it (the client enqueues from a post-interaction callback after home's
+   * first commit, not a layout effect — layout effects run before the native frame is on glass and
+   * would understate the gap; the Paper architecture exposes no compositor-presentation callback,
+   * so this remains a LOWER BOUND on what the customer saw, never an overstatement).
    * `boot_home_paint - boot_home` is the redirect→home segment the RCA found unpainted and
    * unmeasured (docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md §1.2). SCOPE CAVEAT: only fires when
    * the boot lands on the customer home — deep-link cold starts (push-tap → order screen) and
