@@ -52,6 +52,12 @@ import { parseNum } from "../../../src/util";
 // (cached) fix. Mirrors the same helper in src/ui/MapPicker.tsx (duplicated per the "don't over-abstract"
 // convention — it's ~5 lines and this file may not reach across into ui/).
 const LOCATE_TIMEOUT_MS = 9_000;
+
+/** How many times a TRANSIENT activation failure is retried before the rider is left to reopen the
+ *  tab, and how long to wait between attempts. Three attempts over ~45s covers a lift-doors network
+ *  blip without turning a genuinely dead link into a request loop. */
+const ACTIVATION_MAX_RETRIES = 3;
+const ACTIVATION_RETRY_MS = 15_000;
 /** Reject if `p` doesn't settle within `ms`. Clears the timer once the race settles so a fast fix
  *  doesn't leave a dangling timeout firing against an already-settled race. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -100,6 +106,10 @@ export default function RiderHome(): React.ReactElement {
   // Lets the auto-online effect below try again after something took the rider offline (a heartbeat
   // refusal, a gate that has since cleared). Reset wherever `online` is forced false.
   const autoOnlineRef = useRef(false);
+  // Bumped by a TRANSIENT activation failure (a network blip, not a refusal) to schedule one more
+  // attempt. Without it a single failed `setOnline` at launch left the rider offline for the life of
+  // the screen: the auto-online effect had already consumed its ref and nothing else re-armed it.
+  const [activationRetry, setActivationRetry] = useState(0);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -257,7 +267,10 @@ export default function RiderHome(): React.ReactElement {
   // 2026-08-17). Detect-only here: the board's job ranking is keyed off `loc` below — the live GPS
   // fix this screen requests itself — and the server targets pushes off the heartbeat position, so
   // this row reports where the rider is rather than offering to change it.
-  const location = useHomeLocation();
+  // detectOnly: the stored slot is shared with the customer home, which persists a MANUAL deliver-to
+  // there. Without this the rider would see that customer-picked address labelled "Your location",
+  // and tapping refresh would overwrite the customer's choice.
+  const location = useHomeLocation({ detectOnly: true });
   // A-O4: unlike `openOrders` below (which is `enabled: online` outright — an offline rider can't be
   // offered new work), this poll can't just gate on `online`: the "Go offline" button has no
   // active-job guard, so a rider can go offline mid-delivery and still needs this to keep tracking
@@ -382,6 +395,7 @@ export default function RiderHome(): React.ReactElement {
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),
     onSuccess: (res) => {
+      setActivationRetry(0); // a good beat clears the retry budget
       // Anything but an EXPLICIT `online: false` counts as online. We asked to be online and the call
       // did not throw, so a response that omits the flag (an older API, a proxy that ate the body)
       // must not read as a refusal — under "always online" this mutation now runs on every mount, so
@@ -405,6 +419,10 @@ export default function RiderHome(): React.ReactElement {
       }
       setGate(null);
       setError(e instanceof ApiError ? e.message : "Couldn't change your status.");
+      // Transient, so try again shortly rather than stranding the rider offline. Bounded, and NOT a
+      // synchronous re-arm of `autoOnlineRef` — that would re-run the effect immediately and turn a
+      // dead link into a request loop.
+      setActivationRetry((n) => n + 1);
     },
   });
 
@@ -455,6 +473,21 @@ export default function RiderHome(): React.ReactElement {
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
   });
+
+  // The bounded retry itself. Each failure schedules exactly one more attempt, up to the cap, with a
+  // real timer that is cleared on unmount — so a rider who opens the tab on a dead link is put online
+  // as soon as it comes back, and a rider on a link that never comes back costs three requests, not a
+  // loop. A REFUSAL never lands here: `onError` returns early on a recognised gate reason, which puts
+  // the rider on the matching wall instead.
+  useEffect(() => {
+    if (activationRetry === 0 || activationRetry > ACTIVATION_MAX_RETRIES) return;
+    const t = setTimeout(() => {
+      autoOnlineRef.current = true; // this timer IS the attempt
+      onlineM.mutate(true);
+    }, ACTIVATION_RETRY_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activationRetry]);
 
   // Heartbeat: keep the rider selectable (ET3 liveness) while online by refreshing lastHeartbeatAt.
   // Only a 403 (server cooldown forced us offline) flips the switch — a network blip/timeout is a
@@ -937,6 +970,11 @@ export default function RiderHome(): React.ReactElement {
             renderItem={renderJobCard}
             ListHeaderComponent={
               <>
+                {/* Before anything else: a rider with no fix is online but may see an empty board,
+                    and this is the only line that says why. It used to live in the offline toggle
+                    Card — a screen state that no longer exists — so without this it became
+                    unreachable for precisely the rider who needs it. */}
+                {locationWarning}
                 {activeJobBanner}
                 {sentOffersSection}
                 {/* 2·b1: muted, self-clearing notice when a nearby order the rider hadn't bid on is
@@ -1099,11 +1137,9 @@ export default function RiderHome(): React.ReactElement {
           >
             <Button label="Open location settings" onPress={() => void Linking.openSettings()} />
             <Button label="I've turned it on" variant="ghost" onPress={() => void requestLocation()} />
-            {/* A rider done for the day who revoked location had no way to end their shift from this gate —
-                route it through the same offline toggle so state stays consistent with the normal path. */}
-            {online ? (
-              <Button label="Go offline" variant="ghost" onPress={() => onlineM.mutate(false)} loading={pendingOrQueued(onlineM)} />
-            ) : null}
+            {/* No "Go offline" here any more: the rider is always online (D-29), so a shift control on
+                this wall would be the one place in the app still offering a switch that was removed
+                everywhere else. Closing the app is what ends a shift. */}
           </EmptyState>
         ) : (
           <>
