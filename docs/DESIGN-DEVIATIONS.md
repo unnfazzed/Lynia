@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -371,7 +371,7 @@ still the source of truth — just a different (newer) screen of it. When a futu
 | Screen | Disposition |
 |---|---|
 | `app/(tabs)/account.tsx` (customer Account tab) | **Fully adopted.** AppBar, identity card + KYC pill, one row card. The `Heading`/`Sub`, both action Buttons and the standalone "Sign out" Button are gone — the actions became rows, and sign-out is on Settings and `/profile`, exactly as the rider reaches it. |
-| `app/profile/index.tsx` (details screen behind BOTH identity cards) | **Fully adopted**, same grammar. "Sign out" stays here as a danger row — the rider's documented route to it. |
+| `app/profile/index.tsx` (details screen behind BOTH identity cards) | **Fully adopted**, same grammar. "Sign out" stays here as a danger row — the rider's documented route to it. *(D-26 removed both identity-card taps, so this screen has no in-app entry point today; sign-out's live route is the Settings row.)* |
 | `app/settings/index.tsx` | **Grammar adopted, copy untouched.** Its rows now draw in the shared row component, but every string stays mock-verbatim: `Language`/`English` and `Payment`/`Cash` moved from a right-hand value into the sub-line slot, and rows the mock draws label-only stayed label-only. Its `PermissionRow` block is NOT harmonised — it aligns to its own drawn mock (SH11 `SettingsPerms`), so changing it would be drift. `LJ.settings_perms` / `LJ.settings_perms_ok` still pass. |
 | `app/help/index.tsx`, `app/notifications/index.tsx` | **Not touched — nothing to harmonise.** Both are codegen-ADOPTED (generated `*.view.tsx` locked to their mocks by `structure-snapshot.spec.ts`) **and** both are already SHARED: the rider Account's rows route to `/notifications` and `/help`, the same routes the customer uses. There is no customer-vs-rider divergence to remove, and un-adopting a screen that currently matches its mock would be a regression. |
 | `app/history/index.tsx` | **Not touched — same reason.** `/history` is the destination of the customer's "Trip history" row AND the rider's "Job history" row; it is one screen already. Its rows are money/status order cards, not settings rows, so the account row grammar does not apply to them. Its own divergence from `LJ.history` is unrelated and still tracked in `tools/parity/rendered-conformance.pending.json`. |
@@ -626,11 +626,13 @@ tap, with the account's role as the fallback for arrivals that carry no side (de
 Keying off `me.role` — the obvious implementation — is indistinguishable from correct until a
 dual-role user taps their name on the customer hub: their role is `"rider"` permanently, so they would
 get the rider list on the customer side, reintroducing on that screen exactly the bleed this entry
-removes from the tab above it.
+removes from the tab above it. *(**D-26** removed the taps that set `?side`; the mechanism is intact
+and correct for whatever entry point `/profile` is eventually given, but nothing sets the param today.)*
 
-**Settings is role-independent again.** Its first row is the mock's own "Edit profile" for every role;
-the rider-only "Bike & documents" swap is gone. That moves the screen CLOSER to `LJ.settings`, which
-draws "Edit profile" unconditionally — so this half is an alignment, not a deviation.
+**Settings is role-independent again.** The rider-only "Bike & documents" swap is gone, so every row is
+device, app or legal and both roles get the same screen. *(This paragraph originally led with the
+mock's own "Edit profile" row as the proof; **D-26** removed that row on the owner's instruction. The
+role-independence claim is unaffected — it was never about that row in particular.)*
 
 **Pinned by** `app/(tabs)/__tests__/account-role-separation.test.tsx`, which asserts ABSENCE in both
 directions for a dual-role account — the case a hand-check skips, because a plain customer's tab
@@ -642,7 +644,14 @@ and delete this.
 
 ---
 
-## D-23 · `/profile` draws the national ID unmasked — APPROVED (2026-08-16)
+## D-23 · `/profile` draws the national ID unmasked — APPROVED (2026-08-16) · DORMANT since D-26
+
+> **Dormant, not retired (2026-08-17).** D-26 removed every in-app tap into `/profile`, and the ID line
+> renders only there — so this deviation is still implemented and still guarded, but is not currently
+> drawn anywhere a user can reach. Nothing here is withdrawn; it simply has no live surface until
+> `/profile` is given an entry point or the ID line is given a drawn home elsewhere. If the owner
+> decides it should not come back, retire this entry and reconsider the `idNumber` widening on
+> `GET /auth/me` with it.
 
 **In effect.** `LJ.profile` (`screens.jsx :: Profile`) draws the account's national ID **masked**,
 paired with a tag: `ID 63•1234••••••42` `NOT VERIFIED`. The app draws the same line with the number in
@@ -745,6 +754,14 @@ Then re-run the guardrails: `structure-snapshot` proves the regenerated view sti
 
 ## D-25 · Settings adopts the Account-tab card design; permissions move inside the card — APPROVED (2026-08-16)
 
+> **Amended by D-26 (2026-08-17).** The "no dead taps" half below resolved the `Coming soon` problem by
+> routing **Edit profile** and the **identity card** into `/profile`. The owner has since chosen the
+> other resolution: *"Remove the edit profile for now.. Don't even put coming soon. Also when I click
+> the profile under accounts it must not be clickable to display another window."* So the row is gone
+> entirely and the identity card is inert — see D-26. Everything else in this entry (one card,
+> permissions inside it, the dropped header and paragraph, the right-hand values, the 32px inset,
+> Language/Payment as detail screens) stands unchanged.
+
 **In effect.** `app/settings/index.tsx` now draws the Account cluster's shape — identity card, then
 **one** `AccountRowList` card holding every row — at the Account tabs' 32px inset (D-24). The two
 `Settings` mocks (`screens.jsx :: Settings` and `screens-shipped.jsx :: SettingsPerms`, SH11) draw the
@@ -769,7 +786,7 @@ for now and no need to display that."*
 | Permissions | own section: header · rows · paragraph | rows **inside** the one card |
 | `PERMISSIONS — READ FROM YOUR PHONE` | drawn | **not rendered** |
 | `These show your phone's real settings…` | drawn | **not rendered** |
-| Edit profile | row, no value | row, no value, **opens `/profile`** |
+| Edit profile | row, no value | ~~row, no value, **opens `/profile`**~~ → **not rendered** (D-26) |
 | Row value (`On` · `English` · `Cash`) | right-aligned, before the chevron | **unchanged** — right-aligned |
 
 **Why the two dropped strings are not a copy loss.** Both existed to frame a *separate section*. Once
@@ -783,10 +800,12 @@ rendered-conformance guardrail accounts for them by name rather than by silence.
 
 **"These must be viewable" — no dead taps.** Every row on Settings now opens something:
 
-- **Edit profile** and the **identity card** → `/profile`, the account record (name, phone, national
+- ~~**Edit profile** and the **identity card** → `/profile`, the account record (name, phone, national
   ID + its verification tag). This is the "details for editing"; editing itself is still unbuilt, and
   per the owner the screen does **not** say so — hence `Coming soon` is gone, and `docs/KNOWN_BUGS.md`
-  PXR-05 (which tracked that string) is resolved by this entry rather than by a profile-edit endpoint.
+  PXR-05 (which tracked that string) is resolved by this entry rather than by a profile-edit
+  endpoint.~~ **Superseded by D-26**: the row is removed and the identity card is inert. `Coming soon`
+  stays gone and PXR-05 stays resolved — by removal of the row rather than by a route off it.
 - **Language** → `app/settings/language.tsx`, and **Payment** → `app/settings/payment.tsx`. Both are
   **undrawn by the kit** — the mocks draw the settings ROW but nothing behind it — so they are covered
   here too. Each is the same card grammar, so a screen pushed from that card doesn't change shape
@@ -806,9 +825,83 @@ sibling of D-24, which set the inset this screen now shares.
 **Guarded by** `app/settings/__tests__/settings-card.test.tsx`: one row card (a second is the old
 split returning), every row inside it, the inset measured equal to the Account tab's, no `Coming soon`
 and no handler-less row. `app/settings/__tests__/permissions-section.test.tsx` keeps what the
-permission rows SAY and asserts the two dropped strings stay dropped.
+permission rows SAY and asserts the two dropped strings stay dropped. Since D-26,
+`app/settings/__tests__/identity-card-inert.test.tsx` owns the negative half (no Edit-profile row, no
+tappable identity card).
 
 **Retire this entry** if an export redraws Settings in the card language (then align to it and delete
 this), or if the owner reverses the merge — in which case the permission rows go back to their own
 section, the header and paragraph come back, and the two `undrawn` entries come out of the expected
 JSONs. Language/Payment becoming drawn screens would retire only that half.
+
+---
+
+## D-26 · Settings drops the mock's "Edit profile" row; the identity card opens nothing — APPROVED (2026-08-17)
+
+**In effect.** Owner instruction (2026-08-17): *"On profile.. Remove the edit profile for now.. Don't
+even put coming soon. Also when I click the profile under accounts it must not be clickable to display
+another window for both rider and customer sides."*
+
+Two halves, and only the first is a deviation.
+
+**Half 1 — the "Edit profile" row is gone (DEVIATION).** `screens.jsx :: Settings` draws
+`Row icon="user" label="Edit profile"` as the first row of the settings list. `app/settings/index.tsx`
+no longer draws it in any form: not with a `Coming soon` value, not as a disabled-looking row, not as a
+row that opens a read-only record. Profile editing is unbuilt and the screen now says nothing about it
+at all. Recorded as an `undrawn` entry against `tools/parity/expected/LJ.settings.json`, so the
+rendered-conformance guardrail accounts for it by name rather than by silence.
+
+> This reverses one line of **D-25**, which had removed the `Coming soon` string by routing the row to
+> `/profile` instead ("no dead taps — every row opens something viewable"). The owner has now chosen
+> the other resolution of the same problem: no row. Everything else D-25 settled — one card,
+> permissions inside it, the dropped section header and paragraph, the right-hand values, the 32px
+> inset — is unchanged.
+
+**Half 2 — the identity card is inert (ALIGNMENT, not a deviation).** Three screens draw the
+identity card, and all three used to wrap it in a `Pressable` opening the account-record window:
+
+| Screen | Was | Now |
+|---|---|---|
+| `app/(tabs)/account.tsx` (customer tab) | `→ /profile?side=customer` | inert |
+| `app/rider/(tabs)/account.tsx` (rider tab) | `→ /profile?side=rider` | inert |
+| `app/settings/index.tsx` | `→ /profile` | inert |
+
+Every mock draws that card as a plain `Card` — `rider-one-app.jsx :: account` and `screens.jsx ::
+Settings` both draw identity as *information*, never as a control. So removing the tap moves all three
+screens **towards** the kit; there is nothing here to sanction. On the rider tab the wrap was added by
+the codegen bind (`tools/parity/codegen/adopted.mjs`, `RJM.account`), so it was removed there and the
+view regenerated — `account.view.tsx` now has no `onIdentityPress` prop at all, and the structural
+snapshot is closer to the mock than it was, not further.
+
+`AccountIdentityCard` (`src/ui/account/AccountRows.tsx`) **no longer accepts an `onPress`**. Removing
+the capability rather than the three call sites is deliberate: the tap cannot come back one screen at
+a time, and the customer/rider "both sides" half of the instruction is then true by construction
+rather than by each screen remembering.
+
+**What this leaves reachable.** Nothing is stranded. Sign out, permissions, language, payment, the
+privacy notice and account deletion are all on **Settings**, which both Account tabs list as a row
+(D-22 put it on the rider tab for exactly this reason). Notifications and Help & support are rows on
+both tabs. The rider's Bike & documents, Job history and Money are rows on the rider tab.
+
+**What this leaves UNREACHABLE, stated plainly.** `app/profile/index.tsx` — the account-record screen
+— now has **no in-app entry point**; it is reachable only by an explicit `/profile` deep link. The file
+is kept rather than deleted, because the instruction was scoped to the taps and said *"for now"*. The
+one thing that renders **only** there is `AccountIdLine`, the unmasked national ID of **D-23** — so
+D-23 is dormant in practice: still implemented, still guarded, currently not drawn anywhere a user can
+reach. If that display matters it needs a drawn home of its own, not the tap back; if it does not,
+D-23 should be retired and the `idNumber` widening on `GET /auth/me` reconsidered with it. Flagged
+here rather than decided, because both are the owner's call.
+
+**Guarded by** `app/settings/__tests__/identity-card-inert.test.tsx` — a negative suite over all three
+screens: the identity card has no pressable ancestor, no handler on any of the three routes to
+`/profile`, and Settings renders neither `Edit profile` nor `Coming soon`. **The suite was verified to
+FAIL without each half of the fix, not merely to pass with it:** re-wrapping the shared card in a
+`Pressable` failed the customer-tab and Settings cases, and restoring the codegen wrap and regenerating
+the view failed the rider case (in this suite and in the rider account suite). Both experiments were
+reverted. Also `app/rider/(tabs)/__tests__/account.test.tsx` (the rider card, on the real screen,
+because the generated view carries its own copy) and `app/settings/__tests__/settings-card.test.tsx`
+(the row set, minus Edit profile).
+
+**Retire this entry** when profile editing is built — the row comes back, drawn as the mock draws it,
+and the `undrawn` entry comes out of `LJ.settings.json`. Half 2 needs no retirement: it is alignment,
+and an export would have to start drawing the identity card as a control to change it.

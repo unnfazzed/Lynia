@@ -73,11 +73,6 @@
  "dynamic": [],
  "extra": [
   {
-   "text": "Edit profile",
-   "reason": "The base LJ.settings mock (screens.jsx Settings) draws an 'Edit profile' row; the SH11 settings_perms shipped-state focuses its gallery tile on the permissions section and omits it, but the real app settings screen is the union of both mocks.",
-   "ref": "packages/design/explorations/journey/screens.jsx :: Settings"
-  },
-  {
    "text": "Privacy notice",
    "reason": "Entry row to the SH7 Privacy screen this lane built — the mock draws Privacy as a destination screen (screens-shipped.jsx Privacy), reached from settings; the settings_perms shipped-state omits the reachability row.",
    "ref": "packages/design/explorations/journey/screens-shipped.jsx :: Privacy"

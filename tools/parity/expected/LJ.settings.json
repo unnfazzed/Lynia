@@ -64,7 +64,13 @@
   "note": "",
   "dynamic": [],
   "extra": [],
-  "undrawn": [],
+  "undrawn": [
+    {
+      "mock": "Edit profile",
+      "reason": "Removed outright by owner instruction 2026-08-17 — 'Remove the edit profile for now.. Don't even put coming soon.' Profile editing is unbuilt, and rather than draw the row against a 'Coming soon' value or route it to a read-only account record, the screen says nothing about it at all. Restore the row when an editor exists.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-26"
+    }
+  ],
   "tree": {
     "role": "container",
     "children": [

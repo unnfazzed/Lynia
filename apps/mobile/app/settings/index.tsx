@@ -41,10 +41,17 @@ import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/
  *     (owner's choice) — both existed to frame a separate section that no longer exists. The
  *     consequence line under a DENIED permission stays: that one is per-row, and it is the whole
  *     reason the rows read the OS instead of hardcoding "On".
- *  4. **Nothing here is a dead tap.** "Coming soon" is gone from Edit profile, and every row now
- *     opens something viewable — Edit profile and the identity card into `/profile` (the account
- *     record), Language and Payment into their own detail screens. Editing those is still locked,
- *     and per the owner the screen does not say so: it shows the details instead of apologising.
+ *  4. **Nothing here is a dead tap.** Every row opens something viewable — Language and Payment into
+ *     their own detail screens, Privacy and Delete account into theirs. Editing is still locked, and
+ *     per the owner the screen does not say so: it shows the details instead of apologising.
+ *
+ * **Superseded in part by D-26** (owner instruction 2026-08-17: *"Remove the edit profile for now..
+ * Don't even put coming soon. Also when I click the profile under accounts it must not be clickable to
+ * display another window for both rider and customer sides."*). D-25's fourth consequence routed both
+ * the **Edit profile** row and the **identity card** into `/profile`; both routes are gone. The row is
+ * removed entirely — no label, no "Coming soon", no disabled affordance — and the identity card is
+ * inert on this screen exactly as it now is on both Account tabs. Nothing else about D-25 changes: one
+ * card, permissions inside it, the dropped header and paragraph, the right-hand values, the inset.
  *
  * The 32px inset comes from the D-24 `Pad` body wrapper, mirroring both Account tabs — that is what
  * "same dimensions" means here, so this screen's cards are the same width as theirs.
@@ -92,11 +99,13 @@ export default function SettingsScreen(): React.ReactElement {
   const openOsSettings = (): void => void Linking.openSettings();
 
   const rows: AccountRow[] = [
-    // No sub-line and no value: the mock draws this row bare, and "Coming soon" — the string that
-    // used to sit here — is exactly what the owner asked be removed. It opens the account record
-    // instead, which is the detail the row promises.
-    { icon: "user", label: "Edit profile", onPress: () => router.push("/profile") },
-    // The permission rows, now inside the card. Both read the phone's real state and tap through to
+    // NOTE: no "Edit profile" row. The mock draws one and this screen carried it until the owner's
+    // 2026-08-17 instruction — *"Remove the edit profile for now.. Don't even put coming soon."* —
+    // removed it outright (`docs/DESIGN-DEVIATIONS.md` D-26). Not a row with a disabled look, not a
+    // "Coming soon" value, not a row that opens a read-only record: no row. Profile editing is
+    // unbuilt, and the screen says nothing about it at all until it is.
+
+    // The permission rows, inside the card. Both read the phone's real state and tap through to
     // OS settings, the only place either can be changed.
     { icon: "navigation", label: "Location", value: locationValue ?? "—", onPress: openOsSettings },
     {
@@ -132,13 +141,11 @@ export default function SettingsScreen(): React.ReactElement {
       {/* The Account cluster's `Pad` — the second 16px inset that sets the card width (D-24). */}
       <View style={{ padding: tokens.space.screen, minHeight: "100%", paddingTop: 0 }}>
         {/* Mock identity-row forms (SH11 `Settings` draws "Chipo M." + "+263 77 245 1180"): the short
-            name and the spaced-E.164 phone — mock copy verbatim, not the stored full forms. Tapping it
-            opens the account record, the way it already does on both Account tabs. */}
+            name and the spaced-E.164 phone — mock copy verbatim, not the stored full forms. Inert, like
+            the one on both Account tabs (D-26) — the mock draws it as plain identity, not as a control. */}
         <AccountIdentityCard
           name={me ? formatNameShort(`${me.firstName} ${me.lastName}`.trim()) || "Your account" : "Your account"}
           line={me?.phone ? formatPhoneDisplay(me.phone) : undefined}
-          onPress={() => router.push("/profile")}
-          accessibilityLabel="Your details"
         />
 
         <AccountRowList rows={rows} />

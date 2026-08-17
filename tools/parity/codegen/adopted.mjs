@@ -1985,8 +1985,10 @@ export const ADOPTED = [
     // `Screen( div( AppBar, Pad( Card(identity row), Card(settings.map) ) ) )` — an identity Card + a
     // 5-row settings Card, plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map. The data seam
     // wires the live `['me']` identity (name, rating/jobs/KYC line — honest-empty '★ new' until the first
-    // rating lands) and the settings rows + their route taps; the identity Card gains a transparent
-    // Pressable(→profile/settings+sign-out) and each settings row a Pressable(→its route). The always-
+    // rating lands) and the settings rows + their route taps; each settings row gains a transparent
+    // Pressable(→its route). The identity Card gains NOTHING — it stays the plain, inert Card the mock
+    // draws (D-26, owner 2026-08-17; it carried a Pressable into /profile until then, see the bind's
+    // NOTE below — do not re-add one). The always-
     // drawn status pill (the mock draws it) reflects the rider's REAL online/offline state, not a frozen
     // 'online'. The container early-returns a SkeletonList loading state (glue, not gated) — the static
     // mock draws no loading variant, so there is no separate state-view to guard for it.
@@ -2001,7 +2003,7 @@ export const ADOPTED = [
         component: "account",
         componentName: "RiderAccountView",
         viewFile: "apps/mobile/app/rider/(tabs)/account.view.tsx",
-        propsParam: "{ name, identityLine, online, onIdentityPress, rows, onRowPress }: RiderAccountViewProps",
+        propsParam: "{ name, identityLine, online, rows, onRowPress }: RiderAccountViewProps",
         propsType: [
           "/** A settings row: [icon, label, sub] — mirrors the mock's `[ic, l, s2]` tuple verbatim. */",
           "export type RiderAccountRow = [IconName, string, string];",
@@ -2011,28 +2013,11 @@ export const ADOPTED = [
           "  identityLine: string;",
           "  /** Whether the rider is online now — drives the always-drawn status pill's tone + label. */",
           "  online: boolean;",
-          "  onIdentityPress: () => void;",
           "  rows: RiderAccountRow[];",
           "  onRowPress: (index: number) => void;",
           "};",
         ].join("\n"),
         bind: ({ t, expr, wrap }) => {
-          // Does a (transpiled) JSX subtree contain an element with the given tag anywhere below it?
-          const hasDescendant = (node, tag) => {
-            let found = false;
-            const walk = (n) => {
-              if (found || !n || typeof n !== "object") return;
-              if (n.type === "JSXOpeningElement" && n.name && n.name.name === tag) { found = true; return; }
-              for (const k of Object.keys(n)) {
-                if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
-                const v = n[k];
-                if (Array.isArray(v)) v.forEach(walk);
-                else if (v && typeof v.type === "string") walk(v);
-              }
-            };
-            walk(node);
-            return found;
-          };
           return {
             // The mock's frozen identity text → the live name / rating line (leaf text swaps; the
             // structural normalizer drops text content, so these never move the tree).
@@ -2082,17 +2067,12 @@ export const ADOPTED = [
               if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
               arrow.body = wrapped;
             },
-            // The identity Card (the one carrying the StatusPill) → tappable, opening the shared
-            // profile/settings screen (where session + sign-out live). Transparent Pressable, and NOT
-            // skipped, so the traversal still descends to wire the name/rating/pill inside it — the
-            // parent-Pressable guard prevents a re-wrap.
-            JSXElement(path) {
-              const open = path.node.openingElement;
-              if (open.name.name !== "Card") return;
-              if (!hasDescendant(path.node, "StatusPill")) return;
-              if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
-              path.replaceWith(wrap(path.node, "Pressable", `onPress={onIdentityPress} accessibilityRole="button" accessibilityLabel="Your profile and settings"`));
-            },
+            // NOTE: the identity Card is deliberately NOT wrapped in a Pressable. It used to be — a
+            // transparent tap opening `/profile?side=rider` — until the owner's 2026-08-17 instruction
+            // ("when I click the profile under accounts it must not be clickable to display another
+            // window for both rider and customer sides"), ledgered as D-26. The mock draws a plain,
+            // inert Card, so dropping the wrap moves this view TOWARDS `rider-one-app.jsx :: account`,
+            // not away from it: there is no deviation left to sanction here.
           };
         },
       },

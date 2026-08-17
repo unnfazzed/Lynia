@@ -179,12 +179,12 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`) · **target superseded** by `docs/DESIGN-DEVIATIONS.md` D-15 · row set set by D-22 | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23) |
+| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`) · **target superseded** by `docs/DESIGN-DEVIATIONS.md` D-15 · row set set by D-22 | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23), which has had no in-app entry point since D-26 |
 | 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
-| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-15 · role-independent per D-22 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. First row is the mock's "Edit profile" for every role now — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock |
+| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-15 · role-independent per D-22 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
 | ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
 | ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |
@@ -342,7 +342,7 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | R7·1 | `RJM account` | Account | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) · +Settings row per D-22 | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Details/sign-out behind a tap on the identity card (`/profile?side=rider`) |
+| 👁 | R7·1 | `RJM account` | Account | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) · +Settings row per D-22 | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Since D-26 the identity card is INERT (the mock draws a plain Card); sign-out and the rest are reached through the `Settings` row |
 | 👁 | R7·2 | `RJ bike_docs` | Bike & documents | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
 | ⬜ | R7·3 | `RJ history` | Job history  [BOTH] | | |
 | ⬜ | R7·4 | `RJ settings` | Settings | | |
