@@ -85,6 +85,10 @@ export function aliasMap() {
     "expo-secure-store": join(SHIMS, "expo-secure-store.js"),
     "@lynia/shared": join(SHARED_SRC, "index.ts"),
     "@lynia/shared/fixtures": join(SHARED_SRC, "fixtures.ts"),
+    // Boot-graph entries (MOB-BOOT-03-SIB-2): without these exact-subpath aliases, esbuild appends
+    // the subpath to the "@lynia/shared" FILE alias above ("…/index.ts/tokens") and dies "not a dir".
+    "@lynia/shared/tokens": join(SHARED_SRC, "tokens-entry.ts"),
+    "@lynia/shared/restaurants-order": join(SHARED_SRC, "restaurants-order.ts"),
   };
   // react-query is pinned to the mobile app's copy so a fixture harness (tools/parity/mobile/fixtures)
   // and the screen share ONE QueryClient/context — otherwise the fixture's Provider and the screen's
