@@ -505,6 +505,68 @@
 > binary *runs* — the real exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a
 > handset, by a human.
 
+> **Status (2026-08-17, night — v0.40.1 shipped to the internal track; the whole deploy surface
+> checked first, and two of its three lanes needed nothing.)** A Claude session was asked to "check
+> all PRs properly deployed" and then build and ship. The check came first and is the reason this
+> entry can claim more than "the mobile build was green".
+>
+> **The deploy surface, lane by lane.** ① **Open PRs: none** — every PR was merged, so no unshipped
+> work was sitting in review. `main` = `a972733` (release-please `chore(main): release 0.40.1`).
+> ② **API** (`release.yml` run 633 = `32069637896`) — staging gate passed, image promoted from the
+> green staging build, migrations applied (the in-VPC Cloud Run job correctly skipped, the proxy path
+> having handled them), new revision deployed `--no-traffic` with the rollback target captured, then
+> the graduated canary passed and promoted at **21:19:53 UTC**; the roll-back-on-failed-canary step
+> skipped, as it should on a clean run. Verified independently through the LB rather than inferred
+> from the green tick: `GET https://lyniago.lyniafinance.com/healthz` → 200
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. ③ **Admin/merchant — deliberately not
+> dispatched.** Nothing under `apps/admin/**`, `apps/merchant/**` or `packages/shared/**` has changed
+> since `deploy-admin.yml` run #79 (`e768b7e`); the one `packages/shared/src/design-tokens.ts` change
+> in this window (`732de11`) was already carried by that deploy. A dispatch would have shipped a
+> byte-identical image, so this records the skip rather than the click — same call as the v0.31.0 entry.
+>
+> **Why the mobile build was genuinely due.** Since the last shipped build (`98d1a388`, v0.38.0
+> versionCode 18, at `7543239`), **91 files under `apps/mobile`** changed: the customer-home rebuild to
+> the 8c handoff, the rider board's mint header, the always-online rider change (pill and switch
+> removed), the rider location row going detect-only, and the removal of the last two manual refreshes.
+> This is a real UI delta, not a version-string bump.
+>
+> **Ownership guards ran rather than were assumed**, per `CLAUDE.md`: no reachable Claude session
+> (`ListAgents`), no in-flight `mobile-release.yml` run (last was #26, completed 16:31 UTC), CI green
+> on the dispatched commit (run `32069637526` on `main`@`a972733` — 7 jobs success, `design-freeze`
+> skipped as it is PR-only), and `pnpm install --frozen-lockfile` clean on pnpm 10.33.0 against that
+> exact tip with `pnpm-lock.yaml` unmoved afterward.
+>
+> Dispatched `mobile-release.yml` run #27 (`32070032517`) explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above and the
+> 2026-08-16 incident where an empty-input redispatch queued a live production submission. The
+> dispatcher job succeeded in 51 s (21:14:12 → 21:15:03 UTC), which under `--no-wait` proves only that
+> the build was queued.
+>
+> EAS build `7ecf82b4-805c-4eb0-93c0-0f1df7e49a0a` (profile `preview`, app version **0.40.1**,
+> **versionCode 19**, auto-incremented from 18) reached **FINISHED**. Its submission
+> `3ac2d711-43f6-4b1b-afc3-83fd219d5fec` reached **FINISHED**, track **`internal`**, no error —
+> confirmed on the *first* `eas-build-status.yml` check (run #32, `32071644611`), no retries.
+> Dispatch-to-terminal ≈ 19 minutes (21:14 → 21:33 UTC). The submit step logged `Rollout: undefined`
+> and `Release status: COMPLETED` against track `internal`, i.e. the preview lane's config, **not** the
+> production profile's 10% staged rollout — worth recording because it is the exact field that would
+> have differed had the dangerous default fired.
+>
+> **Two observations recorded rather than acted on.** ① Expo reported a **partial EAS Submit outage**
+> in the dispatch log ("iOS Submissions hanging on App Store Connect build uploads"). It did not affect
+> this Android submission, which finished clean — noted so a future session reading this log line does
+> not mistake it for a cause. ② The **`runtime=?` gap first recorded 2026-08-16 is still open**: the
+> Recap again rendered `runtime=?` for all three listed builds, so — as on 2026-08-16 and 2026-08-17
+> (16:31) — **this run cannot confirm the runtimeVersion fingerprint held**. The data was not returned;
+> that is not evidence it changed. Still out of scope for a ship-and-track request, and still worth a
+> follow-up session to fix `eas-build-status.yml`'s jq/query.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and nothing
+> here started that clock; and a FINISHED submission does not prove the binary *runs* — `MOB-BOOT-01`
+> was found on a green build, so the real exit test remains the device smoke in
+> `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
