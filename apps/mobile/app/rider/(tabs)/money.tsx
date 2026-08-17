@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { getFoodOrderAsRider } from "../../../src/api/food-rider";
 import { getActiveOrder } from "../../../src/api/orders";
 import { getTopup } from "../../../src/api/wallet";
@@ -11,6 +11,7 @@ import { clearPendingTopup, loadPendingTopup } from "../../../src/auth/session";
 import { fmtDateTime } from "../../../src/logic/format-time";
 import { formatMoney } from "../../../src/logic/money";
 import { reconcilePendingTopup } from "../../../src/logic/topup";
+import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { filterLedgerEntries, type LedgerFilter } from "../../../src/logic/wallet-ledger";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
 import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows } from "../../../src/ui";
@@ -144,7 +145,6 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const {
     entries: allEntries,
     isLoading: ledgerLoading,
-    refetch: refetchLedger,
     hasMore: hasMoreLedger,
     isLoadingMore: ledgerLoadingMore,
     loadMore: loadMoreLedger,
@@ -166,12 +166,38 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
 
   // Same reasoning the old wallet screen used: a support-credit is the rider's only working top-up
   // path at launch, so refetch on every focus rather than trusting the global refetchOnWindowFocus:false.
+  const [focused, setFocused] = React.useState(true);
   useFocusEffect(
     React.useCallback(() => {
+      setFocused(true);
       void qc.invalidateQueries({ queryKey: walletKey });
       void qc.invalidateQueries({ queryKey: walletLedgerKey });
+      return () => setFocused(false);
     }, [qc]),
   );
+
+  // This screen used to carry a pull-to-refresh; it is gone by owner instruction (no manual refreshing
+  // anywhere — DESIGN-DEVIATIONS D-30), so the recovery it provided has to happen without being asked
+  // for. Two inputs replace it, neither of them a gesture:
+  //   * an app-foreground re-read, which is what catches a support-credit that landed while the phone
+  //     was in a pocket — the exact case the gesture existed for (the same input that replaced the
+  //     rider board's "Refresh status" buttons in #755);
+  //   * a 20s re-read while the tab is focused AND the last read FAILED, so a stale balance self-heals
+  //     while the rider is looking at it instead of waiting for them to leave the tab and come back.
+  //     Gated on `isError` on purpose: a healthy balance already refreshes on focus/foreground, and
+  //     polling it on a metered link would buy nothing.
+  useForegroundRefetch(() => {
+    void qc.invalidateQueries({ queryKey: walletKey });
+    void qc.invalidateQueries({ queryKey: walletLedgerKey });
+  });
+  React.useEffect(() => {
+    if (!focused || !isError) return;
+    const t = setInterval(() => {
+      void qc.invalidateQueries({ queryKey: walletKey });
+      void qc.invalidateQueries({ queryKey: walletLedgerKey });
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [focused, isError, qc]);
 
   const floor = config?.floor ?? 2;
   const balance = wallet?.balance ?? 0;
@@ -203,22 +229,10 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
             <Button label="Retry" onPress={refetch} loading={isFetching} />
           </EmptyState>
         ) : (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={isFetching}
-                onRefresh={() => {
-                  refetch();
-                  refetchLedger();
-                }}
-                tintColor={tokens.color.muted}
-              />
-            }
-          >
+          <ScrollView showsVerticalScrollIndicator={false}>
             {isError && wallet != null ? (
               <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                Couldn&apos;t refresh just now — showing your last known balance. Pull down to try again.
+                Couldn&apos;t refresh just now — showing your last known balance. It&apos;ll update by itself.
               </Text>
             ) : null}
             {pendingTopupBanner ? (

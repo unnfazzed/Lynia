@@ -48,7 +48,13 @@
   "note": "",
   "dynamic": [],
   "extra": [],
-  "undrawn": [],
+  "undrawn": [
+    {
+      "mock": "Refresh",
+      "reason": "The mock draws a ghost 'Refresh' button inside the empty-state Card. Removed by the owner's standing instruction of 2026-08-16 — there is no manual refreshing anywhere in the app; #755 removed the eight 'Refresh status' buttons under that instruction and this one survived the sweep only because it is labelled plain 'Refresh' and lives in its own view file. Nothing replaces it: the board re-fetches on its own (focused refetchInterval, useForegroundRefetch on app resume, and the board socket). Restore the button only if an export redraws it.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-30"
+    }
+  ],
   "tree": {
     "role": "container",
     "children": [

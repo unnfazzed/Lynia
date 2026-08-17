@@ -337,14 +337,16 @@ describe("rider board (A-O4: activeJob self-heal poll must stop once offline con
 });
 
 /**
- * RJM.board_empty / RJM offline realignment (parity task #48, display-only pass). The empty-board state
- * was restructured to the mock's `Card(EmptyState(ghost "Refresh"))` (RiderBoardEmptyView) and the
- * offline toggle card kept its handler; this pins that NEITHER wiring regressed — the Refresh action
- * still forwards `openQ.refetch()` (re-fetches the open-orders board) and the online toggle still calls
- * `onlineM.mutate` (→ setOnline). A change that dropped a row or mis-wired either action would fail here.
+ * RJM.board_empty / RJM offline. The empty-board state draws the mock's `Card(EmptyState(…))` WITHOUT
+ * the mock's ghost "Refresh" (docs/DESIGN-DEVIATIONS.md D-30 — the owner's standing 2026-08-16
+ * no-manual-refreshing instruction), while the offline toggle card keeps its handler. This pins both
+ * halves on the real screen: the empty board offers NO refresh affordance, and the online toggle still
+ * calls `onlineM.mutate` (→ setOnline). The absence half is the one that can regress silently — this
+ * button already survived #755's sweep once, because it is labelled plain "Refresh" rather than
+ * "Refresh status".
  */
-describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring must survive the realignment)", () => {
-  it("online + verified + empty board: tapping the empty-state Refresh re-fetches the open-orders board (openQ.refetch)", async () => {
+describe("rider board (RJM.board_empty + offline: no manual refresh, online-toggle wiring intact)", () => {
+  it("online + verified + empty board: offers NO refresh affordance (D-30)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]); // empty board → RiderBoardEmptyView renders
@@ -353,20 +355,16 @@ describe("rider board (RJM.board_empty + offline: refetch/online-toggle wiring m
     await settle();
     await settle();
 
-    // The adopted empty view's ghost "Refresh" — the only action, wired to openQ.refetch().
-    const refresh = activeTree.root.findAll(
-      (n) => n.props.label === "Refresh" && typeof n.props.onPress === "function",
-    );
-    expect(refresh.length).toBeGreaterThan(0);
+    // The empty state renders...
+    const emptyText = activeTree.root
+      .findAll((n) => typeof n.props.title === "string")
+      .map((n) => n.props.title as string);
+    expect(emptyText).toContain("Nothing in range yet");
 
-    const callsBefore = mockGetOpenOrders.mock.calls.length;
-    act(() => {
-      (refresh[0]!.props as { onPress: () => void }).onPress();
-    });
-    await settle();
-
-    // Refresh re-runs the open-orders query (getOpenOrders is what openQ.refetch re-invokes).
-    expect(mockGetOpenOrders.mock.calls.length).toBeGreaterThan(callsBefore);
+    // ...and carries no Refresh button. Pinned by the exact label the sweep missed, and by the general
+    // "no refresh-shaped action anywhere on the empty board".
+    expect(activeTree.root.findAll((n) => n.props.label === "Refresh")).toHaveLength(0);
+    expect(activeTree.root.findAll((n) => n.props.label === "Refresh status")).toHaveLength(0);
   });
 
   it("the shift is automatic — setOnline(true) fires with no toggle to press (owner 2026-08-17)", async () => {

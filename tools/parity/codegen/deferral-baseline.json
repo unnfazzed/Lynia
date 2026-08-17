@@ -1,4 +1,5 @@
 {
   "//": "Structural-snapshot deferral RATCHET (owner instruction 2026-08-12: deferrals stopped being free). The spec asserts deferredStates().length EQUALS this count — adopting a state means lowering it (visible, welcome); ADDING a deferral means raising it, which this file makes an explicit, reviewable act instead of a silent prose escape. Target: 0.",
-  "count": 76
+  "count": 77,
+  "lastBump": "76 → 77 (2026-08-17, docs/DESIGN-DEVIATIONS.md D-30). RJM.board_empty was WITHDRAWN from region adoption: the mock draws Card(EmptyState(ghost 'Refresh')) and the app now draws Card(EmptyState), one node fewer, under the owner's standing 2026-08-16 instruction that there is no manual refreshing anywhere. snapshot.mjs compares the raw mock fragment to the committed view and normalize.mjs has no skip/undrawn concept, so an adopted region would be permanently red. Withdrawing it is the honest record; weakening the snapshot to tolerate a missing node would have blinded every other adopted screen. This bump is REVERSIBLE and should be reversed — back to 76 — the moment an export redraws board_empty without the button, or the codegen model learns to carry a ledgered undrawn node through the snapshot."
 }

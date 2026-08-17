@@ -2166,73 +2166,34 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RJM.board_empty — the "online, nothing in range yet" empty state of the SAME board container
-    // (app/rider/(tabs)/index.tsx `RiderHome`). DISPLAY-ONLY: it carries no accept/assignment/online-
-    // toggle logic — its only action is the ghost "Refresh", wired to `openQ.refetch()` BYTE-IDENTICAL.
-    // The mock `board_empty` is
+    // ── RJM.board_empty — the "online, nothing in range yet" empty state of the board container
+    // (app/rider/(tabs)/index.tsx `RiderHome`). DEFER-ONLY as of docs/DESIGN-DEVIATIONS.md D-30,
+    // because the app deliberately draws ONE NODE FEWER than the mock. The mock `board_empty` is
     //   S( div( AppBar "Jobs near you", OnlinePill, Pad( Card( EmptyState icon="inbox" … · ghost "Refresh" ) ) ), {tab:"jobs"} )
-    // — the same AppBar + online pill as `board`, then the empty state wrapped in a padded Card. The
-    // AppBar + pill are already region-adopted structure the board container draws (RJM.board), so only
-    // the CARD-wrapped empty state is region-adopted here (locator {el:"Card"} → CARD(EMPTYSTATE(BUTTON))).
-    // The structural WIN over the pre-adoption app is the Card WRAPPER: the app's `boardEmptyState` drew
-    // a bare `<EmptyState>` with NO Card around it; the adopted view restores the mock's `Card(padding:16)`
-    // wrapper. icon/title stay the mock's verbatim literals ("inbox" / "Nothing in range yet"); the
-    // MESSAGE is wired as a data-seam prop so the container keeps its flag-honest copy (parcels-only when
-    // food-dispatch is flag-off, parcels+food-offer when on) — the same live-vs-static leaf-copy treatment
-    // RJM.account used for its identity line. The structural normalizer drops text, so the wired message is
-    // invisible to the diff; the tree is CARD(EMPTYSTATE(BUTTON)) on both sides.
-    //
-    // SEPARATE entry (not a second region on RJM.board): `board_empty` is its OWN mock component, and the
-    // composition check keys every region to the screen-level `mockComponent`, so it must own its screen
-    // key. Its composition reduces — independently of RJM.board's — to SCREEN(REGION:empty): the container
-    // mounts <RiderBoardEmptyView/> INLINE in the board's fallback ScrollView (the last return, the one the
-    // composition walker reduces), where `ranked.length === 0` draws the empty state. RJM.board's own
-    // composition (anchored on RiderBoardListView) is unaffected — RiderBoardEmptyView is not one of its
-    // region components, so it is pruned there, and vice-versa.
+    // and this region WAS adopted as CARD(EMPTYSTATE(BUTTON)) — the BUTTON being that ghost "Refresh",
+    // wired to `openQ.refetch()`. The owner's standing 2026-08-16 instruction is that there is no manual
+    // refreshing anywhere in the app; #755 removed the eight "Refresh status" buttons under it, and this
+    // one survived that sweep only because it is labelled plain "Refresh" and lives in its own view file.
+    // With the button gone the committed view is CARD(EMPTYSTATE) while the mock still draws the BUTTON,
+    // and `snapshot.mjs` compares the RAW mock fragment against the committed view with no escape hatch
+    // for a deliberately-undrawn node (`normalize.mjs` has no skip/undrawn concept). An adopted region
+    // would therefore be permanently red, so the region is WITHDRAWN rather than the guardrail weakened:
+    // the honest record is this deferral plus the `undrawn` entry on tools/parity/expected/RJM.board_empty.json
+    // that the rendered-conformance lane reads. `board-empty.view.tsx` is hand-maintained from here and
+    // keeps the mock's Card wrapper — the structural win the region was adopted for — so only the button
+    // is lost, not the geometry. Re-adoptable the moment an export redraws `board_empty` without the
+    // Refresh button (then delete D-30), or once the codegen model can carry a ledgered undrawn node.
     key: "RJM.board_empty",
     container: "apps/mobile/app/rider/(tabs)/index.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "board_empty",
     uiImport: "../../../src/ui",
-    regions: [
+    states: [],
+    deferred: [
       {
-        region: "empty",
-        locator: { el: "Card" },
-        componentName: "RiderBoardEmptyView",
-        viewFile: "apps/mobile/app/rider/(tabs)/board-empty.view.tsx",
-        propsParam: "{ message, onRefresh, refreshing }: RiderBoardEmptyViewProps",
-        propsType: [
-          "export type RiderBoardEmptyViewProps = {",
-          "  /** The flag-honest empty-board copy (parcels-only vs parcels + food-offer) the container",
-          "   *  computes — wired as a leaf so the mock's Card+EmptyState STRUCTURE is adopted while the",
-          "   *  live copy stays container-owned (structurally invisible; the normalizer drops text). */",
-          "  message: string;",
-          '  /** The ghost "Refresh" action — the container\'s `openQ.refetch()`, preserved byte-identical. */',
-          "  onRefresh: () => void;",
-          "  /** Reflects the open-orders re-fetch in flight (openQ.isFetching). */",
-          "  refreshing?: boolean;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            const name = path.node.name.name;
-            if (name === "EmptyState") {
-              // Drop the mock's frozen message literal; wire the container's flag-honest copy. icon/title
-              // stay the mock's verbatim literals.
-              path.node.attributes = path.node.attributes.filter(
-                (a) => !(a.type === "JSXAttribute" && a.name.name === "message"),
-              );
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("message"), t.jsxExpressionContainer(expr("message"))));
-            }
-            if (name === "Button") {
-              // Kit web `onClick={nop}` → the app Button's `onPress`; wire the container's board refetch
-              // and reflect its in-flight state, preserving the existing Refresh behavior byte-identical.
-              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onRefresh"))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("refreshing"))));
-            }
-          },
-        }),
+        state: "board_empty",
+        key: "RJM.board_empty",
+        reason:
+          "the mock draws Card(EmptyState(ghost 'Refresh')) and the app draws Card(EmptyState) — one drawn node fewer, by the owner's standing 2026-08-16 instruction that there is NO manual refreshing anywhere (#755 removed the eight 'Refresh status' buttons under that instruction; this one survived only because it is labelled plain 'Refresh' and lives in its own view file). Ledgered as docs/DESIGN-DEVIATIONS.md D-30 and recorded as an `undrawn` entry on tools/parity/expected/RJM.board_empty.json. NOT expressible as an adopted region: snapshot.mjs compares the raw mock fragment to the committed view and normalize.mjs has no skip/undrawn concept, so the region would be permanently red — withdrawn rather than weakening the guardrail to fit. The mock's Card wrapper (the structural win of the original adoption) is kept in the now hand-maintained board-empty.view.tsx. Re-adoptable once an export redraws board_empty without the button, or once the codegen model can carry a ledgered undrawn node through the snapshot.",
       },
     ],
   },
