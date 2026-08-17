@@ -23,7 +23,19 @@ jest.mock("expo-location", () => ({
 }));
 
 const mockCapture = jest.fn();
-jest.mock("../../telemetry/sentry", () => ({ captureException: (e: unknown) => mockCapture(e) }));
+const mockBreadcrumb = jest.fn();
+jest.mock("../../telemetry/sentry", () => ({
+  captureException: (e: unknown, c?: unknown) => mockCapture(e, c),
+  addBreadcrumb: (m: string, d?: unknown) => mockBreadcrumb(m, d),
+}));
+
+/**
+ * The load signal is platform-derived (see `src/logic/map-load-signal.ts`), and the whole point of these
+ * tests is that it differs per platform — so it is injected rather than inferred from the jest
+ * environment. `mock`-prefixed so jest's module factory may close over it.
+ */
+let mockSignal: "onMapLoaded" | "onMapReady" = "onMapLoaded";
+jest.mock("../../logic/map-load-signal", () => ({ mapLoadSignal: () => mockSignal }));
 
 /** Per-mount callbacks the test fires by hand, so "ready but never loaded" is expressible. */
 type MapHandlers = { onMapReady?: () => void; onMapLoaded?: () => void };
@@ -79,6 +91,11 @@ beforeEach(() => {
   interactions = controlInteractions();
   mounts.length = 0;
   mockCapture.mockReset();
+  mockBreadcrumb.mockReset();
+  // Android unless a test says otherwise: every assertion in the first block below describes the
+  // Google-Maps-SDK behaviour (`onMapReady` fires even after the key is rejected) that this file exists
+  // to pin, and that behaviour only exists where `onMapLoaded` is the signal.
+  mockSignal = "onMapLoaded";
 });
 afterEach(() => {
   interactions.restore();
@@ -166,6 +183,160 @@ describe("ComposeMap — map didn't load", () => {
     const body = texts(tree).join(" ");
     expect(body).not.toMatch(/add details/i);
     expect(body).toMatch(/search the address above/i);
+
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The regression that made this file platform-aware, found from the Sentry issue
+ * `compose-map-not-loaded (onMapReady=true)`.
+ *
+ * react-native-maps annotates `onMapLoaded` as **`@platform iOS: Google Maps only`** — it is bridged
+ * from the Google Maps iOS SDK. This app passes no `provider` to any `MapView` and configures no
+ * `ios.config.googleMapsApiKey`, so every iOS map is an Apple `MKMapView` and that event is never
+ * emitted. Requiring it there did not weaken the check, it INVERTED it: the 9s timer expired on every
+ * single session, so iOS customers got "The map didn't load" over a working map, lost the pin hint that
+ * is gated on the same signal, and shipped a Sentry event each time — indistinguishable from the real
+ * Android key rejection it was added to catch.
+ */
+describe("ComposeMap — a platform that never emits onMapLoaded (iOS / Apple Maps)", () => {
+  beforeEach(() => {
+    mockSignal = "onMapReady";
+  });
+
+  it("does not accuse a working map when onMapReady is the only event the platform emits", () => {
+    const tree = render();
+    act(() => {
+      mounts[0]?.onMapReady?.();
+    });
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(texts(tree)).not.toContain(FAIL_TITLE);
+    expect(mockCapture).not.toHaveBeenCalled();
+
+    act(() => tree.unmount());
+  });
+
+  it("keeps the pin hint, the only cue that the map itself is the input", () => {
+    const tree = render();
+    act(() => {
+      mounts[0]?.onMapReady?.();
+    });
+    expect(texts(tree).join(" ")).toMatch(/tap the map to drop your pickup pin/i);
+
+    act(() => tree.unmount());
+  });
+
+  it("still catches a map that never initialises at all", () => {
+    const tree = render();
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(texts(tree)).toContain(FAIL_TITLE);
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+
+    act(() => tree.unmount());
+  });
+
+  it("honours a real onMapLoaded if the app ever adopts PROVIDER_GOOGLE on iOS", () => {
+    const tree = render();
+    act(() => {
+      mounts[0]?.onMapLoaded?.();
+    });
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(texts(tree)).not.toContain(FAIL_TITLE);
+
+    act(() => tree.unmount());
+  });
+});
+
+/** What the report has to carry to be actionable — the Sentry issue it replaces carried none of it. */
+describe("ComposeMap — the failure report", () => {
+  function firstReport(): [Error, { tags?: Record<string, string> }] {
+    const call = mockCapture.mock.calls[0];
+    return [call?.[0] as Error, call?.[1] as { tags?: Record<string, string> }];
+  }
+
+  it("keeps the message constant and moves the varying parts into tags", () => {
+    const tree = render();
+    act(() => {
+      mounts[0]?.onMapReady?.();
+    });
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+
+    const [error, context] = firstReport();
+    // Sentry fingerprints on the message, so a value interpolated into it opens a separate issue per
+    // value — which is exactly how one failure became `…(onMapReady=true)` and `…(onMapReady=false)`.
+    expect(error.message).toBe("compose-map-not-loaded");
+    expect(context.tags).toEqual(
+      expect.objectContaining({
+        map_load_signal: "onMapLoaded",
+        map_ready: "true",
+        map_attempt: "1",
+      }),
+    );
+    // The signal tag is the one that separates a rejected Android Maps key from the iOS false positive.
+    expect(context.tags?.map_platform).toBeTruthy();
+
+    act(() => tree.unmount());
+  });
+
+  it("reports every failed retry, then stops at the cap", () => {
+    const tree = render();
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+
+    const pressRetry = (): void => {
+      const btn = tree.root.findByProps({ accessibilityLabel: "Retry loading the map" });
+      act(() => {
+        (btn.props as { onPress: () => void }).onPress();
+      });
+      act(() => {
+        jest.advanceTimersByTime(10_000);
+      });
+    };
+
+    // A retry that also fails is its own event — the old flag was never cleared by `retryMap`, so
+    // "I pressed Retry four times" looked identical to "it failed once".
+    pressRetry();
+    expect(mockCapture).toHaveBeenCalledTimes(2);
+    expect(mockCapture.mock.calls[1]?.[1]).toEqual({
+      tags: expect.objectContaining({ map_attempt: "2" }),
+    });
+
+    // …but capped, because this app targets metered 2G/3G: a retry loop must not be an upload loop.
+    pressRetry();
+    pressRetry();
+    pressRetry();
+    expect(mockCapture).toHaveBeenCalledTimes(3);
+
+    act(() => tree.unmount());
+  });
+
+  it("leaves a breadcrumb on every retry, capped or not, so a native crash can be tied to a remount", () => {
+    // The cap above bounds EVENTS, not breadcrumbs: breadcrumbs cost nothing unless something is
+    // reported, and the whole point is that the 4th retry — the one past the cap — is still on the
+    // trail if the process dies right after it. This remount is the app's only `key`-driven native
+    // view teardown, which is what makes it worth pinning to an unexplained native AssertionError.
+    const tree = render();
+    act(() => {
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(mockBreadcrumb).not.toHaveBeenCalled();
+
+    const btn = tree.root.findByProps({ accessibilityLabel: "Retry loading the map" });
+    act(() => {
+      (btn.props as { onPress: () => void }).onPress();
+    });
+    expect(mockBreadcrumb).toHaveBeenCalledWith("compose-map-retry", { attempt: 1 });
 
     act(() => tree.unmount());
   });

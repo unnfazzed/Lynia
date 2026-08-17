@@ -4,6 +4,8 @@
 module.exports = {
   init: jest.fn(),
   captureException: jest.fn(),
+  // Breadcrumbs carry what the JS side was doing before a NATIVE crash — see src/telemetry/sentry.ts.
+  addBreadcrumb: jest.fn(),
   // Spied, never real: the actual SDK call hard-crashes the process, which would take jest with it.
   nativeCrash: jest.fn(),
   wrap: (component) => component,

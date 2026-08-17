@@ -56,9 +56,42 @@ export function isSentryEnabled(): boolean {
   return enabled;
 }
 
-/** Report an error to Sentry when enabled; a no-op otherwise. Safe to call unconditionally. */
-export function captureException(error: unknown): void {
-  if (enabled) Sentry.captureException(error);
+/**
+ * Structured detail to attach to one event. Exists because the alternative — encoding the varying part
+ * into the Error MESSAGE — is what made `compose-map-not-loaded (onMapReady=true)` hard to act on:
+ * Sentry fingerprints on the message, so every distinct value opens a SEPARATE issue (the same failure
+ * split across `…=true` and `…=false`), while the fields you actually want to filter and group by are
+ * buried in a string nobody can query. Tags are indexed and filterable; keep them low-cardinality.
+ */
+export interface CaptureContext {
+  /** Indexed + filterable in the Sentry UI. Low-cardinality values only (platform, a flag, a count). */
+  tags?: Record<string, string>;
+  /** Unindexed supporting detail, shown on the event body. Free-form. */
+  extra?: Record<string, unknown>;
+}
+
+/**
+ * Report an error to Sentry when enabled; a no-op otherwise. Safe to call unconditionally.
+ *
+ * `context` rides the SDK's `captureContext` argument rather than `withScope`, so the tags apply to
+ * this event only and there is no scope left pushed if the caller throws mid-report.
+ */
+export function captureException(error: unknown, context?: CaptureContext): void {
+  if (enabled) Sentry.captureException(error, context);
+}
+
+/**
+ * Leave a trail on the CURRENT event scope. Costs nothing on its own — breadcrumbs upload only if an
+ * event is later sent, which matters on this app's metered-2G target — and they are the only way a
+ * NATIVE crash can carry what the JS side was doing just before it.
+ *
+ * That gap is real: an unhandled Android `AssertionError` arrived from
+ * `com.facebook.infer.annotation.Assertions` with no message and no context, and nothing in this app
+ * sets a tag, a user, or a breadcrumb anywhere, so there was nothing to reconstruct it from. See
+ * `docs/SENTRY-TRIAGE-2026-08-17.md` §2.
+ */
+export function addBreadcrumb(message: string, data?: Record<string, unknown>): void {
+  if (enabled) Sentry.addBreadcrumb({ message, data, level: "info" });
 }
 
 /**
