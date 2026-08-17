@@ -228,7 +228,6 @@ describe("account harmony — both tabs inset their cards the same (D-24)", () =
           name="Shepherd Mahupa"
           identityLine="★ new · 0 jobs · verifying"
           online={false}
-          onIdentityPress={jest.fn()}
           rows={riderRows}
           onRowPress={jest.fn()}
         />,

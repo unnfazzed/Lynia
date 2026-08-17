@@ -12,6 +12,13 @@
  *  2. Every row inside it, permissions included.
  *  3. The card inset equals the Account tab's, so the two screens' cards are the same width.
  *  4. No dead taps and no "Coming soon".
+ *
+ * D-26 (owner instruction 2026-08-17: *"Remove the edit profile for now.. Don't even put coming soon.
+ * Also when I click the profile under accounts it must not be clickable to display another window"*)
+ * amends checks 2 and 4: "Edit profile" is out of the row set entirely, and the identity card is inert.
+ * The negative half of that has its own suite — `identity-card-inert.test.tsx` — because a removed row
+ * and a removed handler are exactly the kind of thing a later "restore the details view" change puts
+ * back by reflex.
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -86,7 +93,9 @@ function cardInset(tree: renderer.ReactTestRenderer): number {
   return body + (flatStyle(pad.props.style).padding as number);
 }
 
-const ROWS = ["Edit profile", "Location", "Notifications", "Language", "Payment", "Privacy notice", "Sign out", "Delete account"];
+// No "Edit profile": D-26 removed the row outright. See identity-card-inert.test.tsx for the guard
+// that it (and the identity card's handler) stay gone.
+const ROWS = ["Location", "Notifications", "Language", "Payment", "Privacy notice", "Sign out", "Delete account"];
 
 describe("settings draws the Account tab's card design (D-25)", () => {
   it("puts every row — permissions included — in ONE card", async () => {
@@ -111,9 +120,7 @@ describe("settings draws the Account tab's card design (D-25)", () => {
     const tree = await render(SettingsScreen);
     expect(JSON.stringify(tree.toJSON())).not.toContain("Coming soon");
 
-    // The identity card is a destination too: "if u click the tab with name it must open for viewing
-    // the details" (owner, 2026-08-16).
-    for (const label of [...ROWS, "Your details"]) {
+    for (const label of ROWS) {
       // First match only: a Pressable renders through several composite layers that all carry its
       // props, so counting nodes counts layers. One node per label with a real handler is the claim.
       const row = tree.root.find((n) => n.props?.accessibilityRole === "button" && n.props?.accessibilityLabel === label);
@@ -141,7 +148,6 @@ describe("settings draws the Account tab's card design (D-25)", () => {
   it("routes Language and Payment to their own detail screens", async () => {
     const tree = await render(SettingsScreen);
     for (const [label, route] of [
-      ["Edit profile", "/profile"],
       ["Language", "/settings/language"],
       ["Payment", "/settings/payment"],
     ]) {

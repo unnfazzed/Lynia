@@ -1,5 +1,7 @@
 /**
- * `/profile` — the screen behind BOTH Account tabs' identity cards (D-22, D-23).
+ * `/profile` — the account-record screen (D-22, D-23). It sat behind both Account tabs' identity cards
+ * until D-26 removed those taps (owner, 2026-08-17); the screen itself is unchanged and still rendered
+ * directly here, so these checks keep holding for whatever entry point it is eventually given.
  *
  * Two things are load-bearing here and neither is visible from the screen alone:
  *

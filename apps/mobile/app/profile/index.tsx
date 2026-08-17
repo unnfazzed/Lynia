@@ -10,8 +10,19 @@ import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdLine, AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type AccountRow } from "../../src/ui/account/AccountRows";
 
 /**
- * Account details — the screen BOTH Account tabs reach by tapping their identity card. Same row
- * grammar as the tabs (`docs/DESIGN-DEVIATIONS.md` D-15), role-separated by D-22.
+ * Account details. Same row grammar as the Account tabs (`docs/DESIGN-DEVIATIONS.md` D-15),
+ * role-separated by D-22.
+ *
+ * **⚠ NO IN-APP ENTRY POINT since D-26** (owner instruction 2026-08-17: *"Remove the edit profile for
+ * now.. Don't even put coming soon. Also when I click the profile under accounts it must not be
+ * clickable to display another window for both rider and customer sides."*). Both Account tabs' identity
+ * cards and Settings' identity card and "Edit profile" row all used to push here; all four routes are
+ * gone, so today this screen is reachable only by an explicit `/profile` deep link. It is kept — not
+ * deleted — because the instruction was scoped to the taps and said *"for now"*: everything it draws
+ * that a user still needs (sign out, notifications, help, settings, and the rider's documents/money)
+ * is on Settings or on that side's Account tab, so nothing is stranded behind it in the meantime.
+ * `AccountIdLine` (D-23, the unmasked national ID) renders ONLY here, and therefore is not currently
+ * rendered anywhere a user can reach — if that display matters, it needs a drawn home, not a tap back.
  *
  * **The side is the CALLER's, not the account's.** `?side=rider|customer` is set by whichever tab
  * owned the tap. Keying off `me.role` instead looks right until a dual-role user is holding the

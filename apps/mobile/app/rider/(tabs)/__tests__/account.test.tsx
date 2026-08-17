@@ -249,21 +249,30 @@ describe("rider Account tab — Settings row (D-22)", () => {
     expect(mockPush).toHaveBeenCalledWith("/settings");
   });
 
-  // /profile is shared with the customer tab and reads its side from the query string; without it a
-  // rider tapping their own identity card would fall back to role and get the right list by luck,
-  // while a dual-role user on the customer hub would get the wrong one.
-  it("names its side when opening /profile from the identity card", async () => {
+  // D-26 (owner, 2026-08-17): "when I click the profile under accounts it must not be clickable to
+  // display another window for both rider and customer sides." The identity card used to be a
+  // Pressable opening /profile?side=rider; the generated view no longer wraps it and no longer takes
+  // an onIdentityPress at all. Asserted here on the REAL screen, because the generated file carries
+  // its own copy of the card — the shared component's guard would not cover the rider.
+  it("draws an inert identity card — no tap, no /profile window", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
 
     activeTree = renderScreen();
     await settle();
 
-    const card = activeTree.root.findAll(
-      (n) => n.props.accessibilityLabel === "Your profile and settings" && typeof n.props.onPress === "function",
-    )[0];
-    expect(card).toBeDefined();
-    act(() => card!.props.onPress());
-    expect(mockPush).toHaveBeenCalledWith("/profile?side=rider");
+    // The old affordance, by its old label — gone.
+    expect(activeTree.root.findAll((n) => n.props.accessibilityLabel === "Your profile and settings")).toHaveLength(0);
+
+    // And the card is still drawn (only its tap was removed): the name is there, with no pressable
+    // ancestor anywhere above it.
+    const [nameNode] = activeTree.root.findAll((n) => n.props?.children === "Tapiwa R");
+    expect(nameNode).toBeDefined();
+    for (let node: typeof nameNode | null = nameNode; node; node = node.parent) {
+      expect(typeof node.props?.onPress).not.toBe("function");
+    }
+
+    // No route into the account-record window from anywhere on this tab.
+    for (const call of mockPush.mock.calls) expect(String(call[0])).not.toContain("/profile");
   });
 });
