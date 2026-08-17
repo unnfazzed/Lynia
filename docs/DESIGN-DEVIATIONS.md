@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -1077,3 +1077,47 @@ active-orders API carries a rider's `profileId` and GPS but no name, and the on-
 holds one order), the pill falls back to honest service copy inside the same drawn structure. The
 mock's second card line, the pre-8c payment/delivery-code meta, is **not drawn by 8c and therefore
 not rendered** — the tracker screen owns it.
+
+---
+
+## D-29 · The rider board adopts the 8c mint header — APPROVED (2026-08-17)
+
+**Owner instruction, this session:** *"Let's implement the same design language for the Rider home
+page.. I want the Top card, the greeting and notifications icon there... Remove the search bar."*
+
+The 8c export designs the CUSTOMER home only. There is no rider mock in that language, so this is a
+deliberate extension of it rather than an alignment — hence a ledger entry, not a parity claim.
+
+**What changed on `RJM board` (`app/rider/(tabs)/index.tsx`):**
+
+| | RJM mock / shipped | Now |
+|---|---|---|
+| Header | plain white bar: `Heading` "Jobs near you" + a bell, with a green `BrandHeader` on the gated/offline path | the **8c mint top card** — two-line time-aware greeting, sun/moon sticker paired to the 42px bell (gold unread dot), on BOTH paths |
+| Search bar | not drawn | **still not drawn** — omitted by instruction, and `HomeHeader.search` is optional precisely so a face with nothing to search renders none |
+| Shift state | an `OnlinePill` row inside the list header (status pill · queue subtitle · "Go offline") | the header's **`subRow`** — the same slot the customer home fills with its detected address, because the two faces answer the equivalent live question there ("where is this going?" / "am I taking work?") |
+| "Jobs near you" | the screen's `Heading` | a **16/700 section heading**, in the same grammar the customer home gives "Popular near you", with the queue composition beside it |
+| Job cards | `JobCard` list | **unchanged** |
+
+**Why the queue subtitle moved to the heading and not the header.** It describes what is IN the list,
+not the shift — and on a 360px phone the status row truncated ("Reconnecting · Parcels an…") once the
+"Go offline" action was beside it. Splitting them fixed the truncation AND put each fact next to the
+thing it describes.
+
+**Why the whole tab, not just the happy path.** The board has two returns — the virtualized open-orders
+list and the gated/offline fallback (KYC, expired ID, no-GPS, offline). Both now mount the same header,
+so a rider crossing between a live board and a wall never sees the tab's identity change underneath
+them. The walls keep their own recovery actions; the header's "Go online" appears only when
+`canGoOnline` is true, so it can never offer a shift the server would refuse.
+
+**Guardrails are unaffected and stayed green.** `RJM.board`'s codegen adoption anchors ONE region — the
+job list (`RiderBoardListView`) — which this does not touch, so the structural snapshot still reduces to
+`SCREEN(REGION:list)` on both sides. `RJM.board` was already in `tools/parity/rendered-conformance.pending.json`
+(the parity socket is inert, so the screen paints its reconnecting banner), so no copy assertion moves.
+
+**Retire this entry** when an export draws the rider board in the 8c language — then it stops being an
+extension and becomes an ordinary alignment target.
+
+**Evidence:** before/after render at 360×720 from the same `rider_board` fixture, produced by the new
+`tools/parity/old-vs-new.mjs` driver (the second lane beside `pair.mjs`: `pair` answers "does the app
+match the mock?", this answers "what did this change do?" — the only question available for a screen
+with no mock of its own).

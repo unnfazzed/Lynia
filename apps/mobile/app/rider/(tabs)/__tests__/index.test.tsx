@@ -53,6 +53,12 @@ jest.mock("../../../../src/api/orders", () => ({
   getOpenOrders: (...args: unknown[]) => mockGetOpenOrders(...args),
 }));
 jest.mock("../../../../src/api/offers", () => ({ makeOffer: jest.fn() }));
+// The 8c mint header reads the unread count for the bell's gold dot. Mock it rather than let it
+// fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability` — and so
+// react-query's PROCESS-WIDE `onlineManager` — offline, pausing every later query in this file.
+jest.mock("../../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: async () => ({ count: 0 }),
+}));
 jest.mock("../../../../src/api/riders", () => ({
   retryKyc: jest.fn(),
   sendHeartbeat: jest.fn(async () => ({ online: true })),
@@ -664,5 +670,91 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     expect(labelHits(activeTree, "Back to customer")).toBe(0);
     // The wall itself still renders — this is a removal, not a regression of the gate.
     expect(labelHits(activeTree, "Continue verification")).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The 8c mint header on the Jobs tab (owner instruction 2026-08-17, "the same design language for
+ * the Rider home page"): the top card, the greeting and the notifications icon — and NO search bar.
+ * The shift state moved off the list and into the header's sub-row, so these pin the pieces that
+ * would otherwise be easy to lose in a later refactor of this very large screen.
+ */
+describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
+  const flatText = (tree: renderer.ReactTestRenderer): string =>
+    tree.root
+      .findAll((n) => typeof n.type === "string")
+      .map((n) => {
+        const c = n.props.children;
+        return Array.isArray(c) ? c.filter((x) => typeof x === "string").join("") : typeof c === "string" ? c : "";
+      })
+      .join("|");
+
+  it("greets the rider by first name, on every screen state the tab can be in", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // greetingLine breaks the phrase and the name onto two lines inside one string.
+    expect(flatText(activeTree)).toMatch(/Good (morning|afternoon|evening),\nTapiwa/);
+  });
+
+  it("renders NO search bar — a rider has nothing to search from the board", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(flatText(activeTree)).not.toMatch(/Search/i);
+  });
+
+  it("carries the shift state and the Go-offline action in the header, not in the list", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const text = flatText(activeTree);
+    expect(text).toMatch(/Go offline/);
+    // The queue composition describes the LIST, so it rides with the list's heading.
+    expect(text).toMatch(/Jobs near you/);
+    expect(text).toMatch(/Parcels · one queue/);
+  });
+
+  it("offline: says so and offers the way back in, once the rider is actually allowed online", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const text = flatText(activeTree);
+    expect(text).toMatch(/Offline/);
+    expect(text).toMatch(/Go online/);
+  });
+
+  it("offline AND unverified: states the shift, but offers no go-online action it cannot honour", async () => {
+    mockGetMe.mockResolvedValue({ ...meFixture({ isOnline: false }), rider: null });
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const text = flatText(activeTree);
+    expect(text).toMatch(/Offline/);
+    expect(text).not.toMatch(/Go online/);
+    // The wall itself still owns the real recovery.
+    expect(text).toMatch(/Set up as a rider/);
   });
 });

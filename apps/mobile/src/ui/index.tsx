@@ -21,7 +21,7 @@ export { APP_TABS, RIDER_TABS, TabBar, type AppTab } from "./shell/TabBar";
 // BottomSheet / MapPicker are not (see the note below): LocationSheet imports AddressSearch, which
 // imports this barrel back, so re-exporting it forms a `no-circular` dependency-cruiser violation.
 // The home screen imports both from their own modules.
-export { HomeHeader } from "./home/HomeHeader";
+export { HomeAddressRow, HomeHeader, HomeStatusRow } from "./home/HomeHeader";
 export { LiveOrderCard } from "./home/LiveOrderCard";
 export { RestaurantCard } from "./home/RestaurantCard";
 export { FoodSticker, MoonSticker, PharmacySticker, SendSticker, SunSticker } from "./home/ServiceStickers";
