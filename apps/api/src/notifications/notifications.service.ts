@@ -24,7 +24,7 @@ interface Notice {
  * (e.g. `requested`, `open_for_offers`) are intentionally silent. The customer is the §5c "initiator"
  * watching the trip; the rider hears about being hired and being freed.
  */
-const STATUS_NOTICES: Record<string, Notice> = {
+export const STATUS_NOTICES: Record<string, Notice> = {
   assigned: { to: ["rider"], title: "You got the job", body: "You've been selected for a delivery — open it to confirm the details." },
   confirmed: { to: ["customer"], title: "Rider confirmed your items", body: "Your rider has reviewed the parcel details." },
   en_route_pickup: { to: ["customer"], title: "Rider on the way", body: "Your rider is heading to the pickup point." },

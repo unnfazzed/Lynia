@@ -235,6 +235,27 @@ export const RegisterDeviceTokenRequest = z.object({
 });
 export type RegisterDeviceTokenRequest = z.infer<typeof RegisterDeviceTokenRequest>;
 
+/**
+ * STREAMLINE-01: dismiss one row of the in-app notifications centre (the swipe).
+ *
+ * The centre is a DERIVED read model — there is no Notification table — so the client cannot send a
+ * database id. It sends back the row's stable SYNTHETIC id, exactly as the feed emitted it
+ * (`<orderId>:<status>:<iso>`, `offers:<offerId>`, `account:<auditId>`, `sos:<eventId>`, …). The API
+ * stores it opaquely and filters that id out of subsequent reads, so no format is parsed or trusted
+ * server-side; the bound just stops an unbounded string from being written. Composite ids run to a
+ * couple of UUIDs plus an ISO timestamp, so 200 is comfortable headroom over the longest real id.
+ */
+export const DismissNotificationRequest = z.object({
+  id: z.string().min(1).max(200),
+});
+export type DismissNotificationRequest = z.infer<typeof DismissNotificationRequest>;
+
+/** STREAMLINE-01: how many feed rows the caller has not seen — drives the Account row's "N new" hint. */
+export const NotificationsUnreadCountResponse = z.object({
+  count: z.number().int().min(0),
+});
+export type NotificationsUnreadCountResponse = z.infer<typeof NotificationsUnreadCountResponse>;
+
 /** A freshly-verified account has an empty name (verifyOtp creates the profile with firstName ""),
  *  so the app collects it once on the "Tell us who you are" step and PATCHes it here. Both names are
  *  required and length-capped — trimmed, non-empty, and bounded so a name can't grow unbounded text. */

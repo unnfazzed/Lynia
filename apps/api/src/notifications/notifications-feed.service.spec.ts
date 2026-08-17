@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
-import { NotificationsFeedService } from "./notifications-feed.service";
+import { FEED_STATUS_AUDIENCE, NotificationsFeedService } from "./notifications-feed.service";
+import { STATUS_NOTICES } from "./notifications.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects the service reads via Number(). */
 const dec = (s: string) => ({ toString: () => s, valueOf: () => Number(s) });
@@ -29,6 +30,18 @@ function makeDeps() {
     sosEvent: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // STREAMLINE-01: `unread` is now a real per-user watermark read off the Profile, not a recency proxy.
+    // Default: never opened the centre (null) → everything still in the window reads as unread.
+    profile: {
+      findUnique: vi.fn().mockResolvedValue({ notificationsReadAt: null }),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    // STREAMLINE-01: rows the viewer has swiped away, filtered out of every subsequent read.
+    notificationDismissal: {
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   };
   const service = new NotificationsFeedService(prisma as unknown as PrismaService);
   return { prisma, service };
@@ -44,7 +57,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         id: "o1",
         orderType: "parcel", events: [
           { status: "open_for_offers", createdAt: new Date("2026-07-06T09:00:00.000Z") }, // silent → skipped
-          { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+          { status: "confirmed", createdAt: new Date("2026-07-06T10:00:00.000Z") },
           { status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") },
         ],
       },
@@ -52,11 +65,54 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
 
     const feed = await service.feedForUser("me", NOW);
 
-    // Only the two mapped events surface; open_for_offers is silent (as it is for push).
-    expect(feed.map((r) => r.title)).toEqual(["Delivered", "Rider assigned"]);
+    // open_for_offers is silent (as it is for push); `confirmed` and `delivered` are both customer-voiced,
+    // so STREAMLINE-01's collapse keeps only the LATEST of them — the order's current news for this viewer.
+    expect(feed.map((r) => r.title)).toEqual(["Delivered"]);
     expect(feed[0]).toMatchObject({ icon: "check", at: "2026-07-06T11:00:00.000Z", unread: true });
     // Each row carries a stable, unique id keyed by order + status + time.
     expect(new Set(feed.map((r) => r.id)).size).toBe(feed.length);
+  });
+
+  // STREAMLINE-01: the feed's founding promise is that it reads like the pushes you got. It never held —
+  // every mapped status was rendered to BOTH parties, so a rider saw seven rows per job having been pushed
+  // two. FEED_AUDIENCE now gates rows on the same `to` the push table uses.
+  it("STREAMLINE-01: renders a status row only for the audience the push table addresses", async () => {
+    const { prisma, service } = makeDeps();
+    const order = {
+      id: "o1",
+      riderId: "rider",
+      orderType: "parcel",
+      events: [
+        // Every beat of a happy-path trip, in order.
+        { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+        { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
+        { status: "en_route_pickup", createdAt: new Date("2026-07-06T10:10:00.000Z") },
+        { status: "picked_up", createdAt: new Date("2026-07-06T10:20:00.000Z") },
+        { status: "en_route_dropoff", createdAt: new Date("2026-07-06T10:30:00.000Z") },
+        { status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") },
+      ],
+    };
+
+    // The CUSTOMER is pushed the transit beats and the delivery; collapse leaves the newest of them.
+    prisma.order.findMany.mockResolvedValue([order]);
+    const custFeed = await service.feedForUser("cust", NOW);
+    expect(custFeed.map((r) => r.title)).toEqual(["Delivered"]);
+
+    // The RIDER is pushed `assigned` (and later `completed`) — never the beats they performed themselves.
+    // Before this change they got all six of the rows above, in rider voice, for two pushes.
+    prisma.order.findMany.mockResolvedValue([order]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.map((r) => r.title)).toEqual(["You got the job"]);
+  });
+
+  // The two tables are duplicated (one is push copy + audience, one is audience only) so that they can be
+  // diffed as data. This is the write-time guard that keeps them from drifting: add a status to one without
+  // the other and this reddens, the same way FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS is enforced.
+  it("STREAMLINE-01: FEED_AUDIENCE agrees key-for-key with the push table's `to` arrays", () => {
+    expect(Object.keys(FEED_STATUS_AUDIENCE).sort()).toEqual(Object.keys(STATUS_NOTICES).sort());
+    for (const [status, notice] of Object.entries(STATUS_NOTICES)) {
+      expect([...(FEED_STATUS_AUDIENCE[status] ?? [])].sort()).toEqual([...notice.to].sort());
+    }
   });
 
   // UX19-03: `to` + `status` let the client (notificationRowDestination) replicate pushDestination's
@@ -64,17 +120,22 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   // always fell back to /order/:id, a dead-control detour the equivalent push doesn't take.
   it("stamps the viewer's per-order voice and the raw status on every order-status row", async () => {
     const { prisma, service } = makeDeps();
-    prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
-    ]);
+    // `cancelled` is the one status the push table addresses to BOTH parties, so it is the status that can
+    // show the same event rendered in each voice (STREAMLINE-01 gates every other one to a single audience).
+    const order = {
+      id: "o1",
+      riderId: "rider",
+      cancelledBy: "admin", // neither viewer is the actor, so no actor-suppression
+      orderType: "parcel",
+      events: [{ status: "cancelled", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+    };
+    prisma.order.findMany.mockResolvedValue([order]);
     const custFeed = await service.feedForUser("cust", NOW);
-    expect(custFeed[0]).toMatchObject({ to: "customer", status: "assigned" });
+    expect(custFeed[0]).toMatchObject({ to: "customer", status: "cancelled" });
 
-    prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
-    ]);
+    prisma.order.findMany.mockResolvedValue([order]);
     const riderFeed = await service.feedForUser("rider", NOW);
-    expect(riderFeed[0]).toMatchObject({ to: "rider", status: "assigned" });
+    expect(riderFeed[0]).toMatchObject({ to: "rider", status: "cancelled" });
   });
 
   it("carries the parent orderId on every row, so the client can navigate a tapped notification", async () => {
@@ -86,40 +147,148 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       },
       {
         id: "o2",
-        orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+        orderType: "parcel", events: [{ status: "en_route_pickup", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
       },
     ]);
 
     const feed = await service.feedForUser("me", NOW);
 
     expect(feed.find((r) => r.title === "Delivered")?.orderId).toBe("o1");
-    expect(feed.find((r) => r.title === "Rider assigned")?.orderId).toBe("o2");
+    expect(feed.find((r) => r.title === "Rider on the way")?.orderId).toBe("o2");
   });
 
   it("reads orders across both roles (customer OR rider), newest first, capped", async () => {
     const { prisma, service } = makeDeps();
     await service.feedForUser("me", NOW);
     const arg = prisma.order.findMany.mock.calls[0][0];
-    expect(arg.where).toEqual({ OR: [{ customerId: "me" }, { riderId: "me" }] });
+    expect(arg.where.OR).toEqual([{ customerId: "me" }, { riderId: "me" }]);
     expect(arg.orderBy).toEqual({ createdAt: "desc" });
     expect(arg.take).toBeGreaterThan(0);
   });
 
-  it("marks recent events unread and old events read (deterministic recency window)", async () => {
+  // STREAMLINE-01: retention is ONE DAY of wall-clock, replacing the old count-based reach (30 most recent
+  // orders / 30 rows). The old model made a row's lifetime a function of the viewer's own order volume: a
+  // busy rider saw days, a once-a-year customer saw rows from last January, neither predictably.
+  it("STREAMLINE-01: bounds every row SOURCE to the one-day retention window", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        orderType: "parcel", events: [
-          { status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }, // 30 min ago
-          { status: "cancelled", createdAt: new Date("2026-07-01T00:00:00.000Z") }, // days ago
-        ],
+        riderId: null,
+        orderType: "parcel",
+        status: "expired",
+        // An in-window `expired` event is what puts o1 into `expiredOrderIds` — without it the qualifier
+        // query below is never issued at all and its assertion passes vacuously (it would still pass if
+        // someone bounded that query, which is the regression it exists to catch).
+        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
+    await service.feedForUser("me", NOW);
+    const cutoff = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+
+    // Orders are in view only if something HAPPENED on them inside the window (event time, not order age —
+    // a week-old order delivered an hour ago is correctly still in view), and events are filtered to it.
+    const orderArg = prisma.order.findMany.mock.calls[0][0];
+    expect(orderArg.where.events).toEqual({ some: { createdAt: { gte: cutoff } } });
+    expect(orderArg.select.events.where).toEqual({ createdAt: { gte: cutoff } });
+
+    // The user-scoped row sources carry the same bound.
+    expect(prisma.auditLog.findMany.mock.calls[0][0].where.createdAt).toEqual({ gte: cutoff });
+    expect(prisma.issue.findMany.mock.calls[0][0].where.resolvedAt).toEqual({ gte: cutoff });
+    expect(prisma.notificationDismissal.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { profileId: "me", createdAt: { gte: cutoff } } }),
+    );
+
+    // …but a read that merely QUALIFIES an in-window row is deliberately NOT time-bounded: the "did this
+    // expired order attract bids" lookup must still find offers however old, or the honest "window closed"
+    // copy silently degrades back to the dishonest "raise your price" nudge.
+    const qualifier = prisma.offer.findMany.mock.calls
+      .map((c: unknown[]) => c[0] as { distinct?: string[]; where: { createdAt?: unknown } })
+      .find((arg) => arg.distinct !== undefined);
+    expect(qualifier).toBeDefined();
+    expect(qualifier?.where.createdAt).toBeUndefined();
+  });
+
+  it("STREAMLINE-01: the order's CURRENT status is read from the column, not the cutoff-filtered event tail", async () => {
+    const { prisma, service } = makeDeps();
+    // The order is long-since `completed`, but only a recent fare-adjust is inside the window — so `events`
+    // comes back empty and the old `events.at(-1)` derivation would have left `status` undefined.
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", riderId: "rider", status: "completed", agreedFare: dec("9.00"), orderType: "parcel", events: [] },
+    ]);
+    prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
+      where.action === "order.fare_adjust" ? [{ id: "au1", target: "o1", createdAt: new Date("2026-07-06T11:00:00.000Z") }] : [],
+    );
+    const feed = await service.feedForUser("cust", NOW);
+    expect(feed.find((r) => r.id === "fare-adjust:au1")?.status).toBe("completed");
+  });
+
+  // STREAMLINE-01: `unread` was `now - eventTime < 24h` — a recency proxy that reading could not clear and
+  // that silently marked a never-seen row read at the 24h mark. It is now a real per-user watermark.
+  it("STREAMLINE-01: derives unread from the read watermark, not from the row's age", async () => {
+    const { prisma, service } = makeDeps();
+    const orders = [
+      { id: "o1", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }] },
+      { id: "o2", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T09:00:00.000Z") }] },
+    ];
+
+    // Never opened the centre → everything in the window is unread, however old (the old proxy would have
+    // marked a >24h row read even though the user had never seen it).
+    prisma.order.findMany.mockResolvedValue(orders);
+    expect((await service.feedForUser("me", NOW)).map((r) => r.unread)).toEqual([true, true]);
+
+    // Opened at 10:00 → the 11:30 row is still unread; the 09:00 row was seen.
+    prisma.order.findMany.mockResolvedValue(orders);
+    prisma.profile.findUnique.mockResolvedValue({ notificationsReadAt: new Date("2026-07-06T10:00:00.000Z") });
     const feed = await service.feedForUser("me", NOW);
-    const byTitle = Object.fromEntries(feed.map((r) => [r.title, r.unread]));
-    expect(byTitle["Delivered"]).toBe(true);
-    expect(byTitle["Order cancelled"]).toBe(false);
+    expect(feed.find((r) => r.orderId === "o1")?.unread).toBe(true);
+    expect(feed.find((r) => r.orderId === "o2")?.unread).toBe(false);
+  });
+
+  it("STREAMLINE-01: markRead stamps the watermark, and unreadCountForUser counts only unread rows", async () => {
+    const { prisma, service } = makeDeps();
+    prisma.order.findMany.mockResolvedValue([
+      { id: "o1", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }] },
+      { id: "o2", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T09:00:00.000Z") }] },
+    ]);
+    prisma.profile.findUnique.mockResolvedValue({ notificationsReadAt: new Date("2026-07-06T10:00:00.000Z") });
+    expect(await service.unreadCountForUser("me", NOW)).toBe(1);
+
+    const res = await service.markRead("me", NOW);
+    expect(res).toEqual({ readAt: NOW.toISOString() });
+    expect(prisma.profile.update).toHaveBeenCalledWith({ where: { id: "me" }, data: { notificationsReadAt: NOW } });
+  });
+
+  // STREAMLINE-01: dismissal. The feed is derived, so there is no row to delete — the swipe is recorded
+  // against the row's stable synthetic id and filtered out of every later read.
+  it("STREAMLINE-01: filters dismissed rows out of the feed and its unread count", async () => {
+    const { prisma, service } = makeDeps();
+    const orders = [
+      { id: "o1", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T11:30:00.000Z") }] },
+      { id: "o2", orderType: "parcel", status: "delivered", events: [{ status: "delivered", createdAt: new Date("2026-07-06T09:00:00.000Z") }] },
+    ];
+    prisma.order.findMany.mockResolvedValue(orders);
+    prisma.notificationDismissal.findMany.mockResolvedValue([{ rowId: "o1:delivered:2026-07-06T11:30:00.000Z" }]);
+
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed.map((r) => r.orderId)).toEqual(["o2"]);
+
+    // A dismissed row cannot keep inflating the "N new" hint on the Account row either.
+    prisma.order.findMany.mockResolvedValue(orders);
+    expect(await service.unreadCountForUser("me", NOW)).toBe(1);
+  });
+
+  it("STREAMLINE-01: dismiss upserts (so a double-swipe is a no-op) and prunes dismissals past the window", async () => {
+    const { prisma, service } = makeDeps();
+    await service.dismiss("me", "offers:of1", NOW);
+    expect(prisma.notificationDismissal.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { profileId_rowId: { profileId: "me", rowId: "offers:of1" } } }),
+    );
+    // Nothing in the feed outlives the window, so a dismissal older than it can never match again —
+    // pruning on write is what keeps the table self-maintaining with no sweeper to own.
+    expect(prisma.notificationDismissal.deleteMany).toHaveBeenCalledWith({
+      where: { profileId: "me", createdAt: { lt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000) } },
+    });
   });
 
   it("returns an empty feed when the caller has no orders", async () => {
@@ -127,20 +296,57 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     await expect(service.feedForUser("me", NOW)).resolves.toEqual([]);
   });
 
-  it("caps the feed at 30 rows", async () => {
+  it("caps the feed at 50 rows", async () => {
     const { prisma, service } = makeDeps();
-    // One order with 60 delivered events → 60 candidate rows, capped to 30.
+    // 60 distinct orders, each with one customer-addressed event → 60 candidate rows, capped to 50.
+    prisma.order.findMany.mockResolvedValue(
+      Array.from({ length: 60 }, (_, i) => ({
+        id: `o${i}`,
+        orderType: "parcel",
+        status: "delivered",
+        events: [{ status: "delivered", createdAt: new Date(NOW.getTime() - i * 60_000) }],
+      })),
+    );
+    const feed = await service.feedForUser("me", NOW);
+    expect(feed).toHaveLength(50);
+  });
+
+  // STREAMLINE-01: the volume fix. One completed parcel order with three bids used to emit TEN rows (three
+  // "New offer" + seven status beats), so three orders could evict every account-level row from a 30-row
+  // feed. Collapsed, the same order emits two — and the offer read is no longer unbounded.
+  it("STREAMLINE-01: collapses a whole trip to one status row and one offer row", async () => {
+    const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
-        orderType: "parcel", events: Array.from({ length: 60 }, (_, i) => ({
-          status: "delivered",
-          createdAt: new Date(NOW.getTime() - i * 60_000),
-        })),
+        riderId: "rider",
+        orderType: "parcel",
+        status: "delivered",
+        events: [
+          { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+          { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
+          { status: "en_route_pickup", createdAt: new Date("2026-07-06T10:10:00.000Z") },
+          { status: "picked_up", createdAt: new Date("2026-07-06T10:20:00.000Z") },
+          { status: "en_route_dropoff", createdAt: new Date("2026-07-06T10:30:00.000Z") },
+          { status: "delivered", createdAt: new Date("2026-07-06T11:00:00.000Z") },
+        ],
       },
     ]);
-    const feed = await service.feedForUser("me", NOW);
-    expect(feed).toHaveLength(30);
+    prisma.offer.findMany.mockResolvedValue([
+      { id: "of1", orderId: "o1", createdAt: new Date("2026-07-06T09:50:00.000Z") },
+      { id: "of2", orderId: "o1", createdAt: new Date("2026-07-06T09:52:00.000Z") },
+      { id: "of3", orderId: "o1", createdAt: new Date("2026-07-06T09:55:00.000Z") },
+    ]);
+
+    const feed = await service.feedForUser("cust", NOW);
+    expect(feed.map((r) => r.title)).toEqual(["Delivered", "New offer"]);
+    // The offer row states the count instead of repeating the singular line three times, and is keyed +
+    // timed by the NEWEST bid — so a later bid produces a NEW id, re-sorting it up and surviving an
+    // earlier dismissal.
+    const offerRow = feed.find((r) => r.title === "New offer")!;
+    expect(offerRow.message).toBe("3 riders responded to your delivery — tap to compare offers.");
+    expect(offerRow.id).toBe("offers:of3");
+    expect(offerRow.at).toBe("2026-07-06T09:55:00.000Z");
   });
 
   it("rewrites a rider-bail cancel to the honest re-sent copy and points the tap at the live clone", async () => {
@@ -186,6 +392,38 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     ]);
     const feed = await service.feedForUser("me", NOW);
     expect(feed).toEqual([]);
+  });
+
+  // STREAMLINE-01 regression (CodeRabbit, PR #791): actor-suppression must suppress the ORDER's row, not
+  // just the cancelled EVENT. Filtering the event before the collapse pick lets `.at(-1)` fall through to
+  // the newest surviving beat — and under collapse that lone row reads as the order's CURRENT state, so a
+  // customer who cancels mid-trip was shown "Rider on the way" for an order they had just cancelled.
+  it("STREAMLINE-01: a self-cancel mid-trip shows NO row, never the superseded beat before it", async () => {
+    const { prisma, service } = makeDeps();
+    const order = {
+      id: "o1",
+      riderId: "rider",
+      cancelledBy: "cust", // the CUSTOMER cancelled, after the trip was already under way
+      orderType: "parcel",
+      status: "cancelled",
+      events: [
+        { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+        { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
+        { status: "en_route_pickup", createdAt: new Date("2026-07-06T10:10:00.000Z") },
+        { status: "cancelled", createdAt: new Date("2026-07-06T10:20:00.000Z") },
+      ],
+    };
+
+    // The actor gets nothing at all — NOT "Rider on the way", which would describe a cancelled order as
+    // still running.
+    prisma.order.findMany.mockResolvedValue([order]);
+    expect(await service.feedForUser("cust", NOW)).toEqual([]);
+
+    // The rider (not the actor) still gets the cancellation itself, in rider voice — and likewise not the
+    // stale "You got the job" beat that precedes it.
+    prisma.order.findMany.mockResolvedValue([order]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.map((r) => r.title)).toEqual(["Order cancelled"]);
   });
 
   it("suppresses a customer's self-cancel row, but the assigned rider still sees it", async () => {
@@ -255,6 +493,10 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(prisma.offer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { orderId: { in: ["o1"] } }, distinct: ["orderId"] }),
     );
+    // …and the offer row synthesized from the same bid keeps the singular push copy verbatim.
+    expect((await service.feedForUser("me", NOW)).find((r) => r.title === "New offer")?.message).toBe(
+      "A rider responded to your delivery — tap to compare offers.",
+    );
   });
 
   it("KB-FEED-SYNTH: synthesizes a 'New offer' row from the customer's own Offer rows, merged + sorted with the event rows", async () => {
@@ -263,7 +505,9 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       {
         id: "o1",
         riderId: null, // customer-view order
-        orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
+        orderType: "parcel",
+        status: "confirmed",
+        events: [{ status: "confirmed", createdAt: new Date("2026-07-06T10:00:00.000Z") }],
       },
     ]);
     // A rider bid on o1 at 10:30 — notifyNewOffer pushed the customer, but no feed row existed before.
@@ -272,11 +516,11 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const feed = await service.feedForUser("me", NOW);
     const offerRow = feed.find((r) => r.title === "New offer");
     expect(offerRow).toMatchObject({ orderId: "o1", message: expect.stringContaining("compare offers"), unread: true });
-    // Merged and sorted by time: the 10:30 offer sorts above the 10:00 assigned event.
-    expect(feed.map((r) => r.title)).toEqual(["New offer", "Rider assigned"]);
+    // Merged and sorted by time: the 10:30 offer sorts above the 10:00 confirmed event.
+    expect(feed.map((r) => r.title)).toEqual(["New offer", "Rider confirmed your items"]);
     // Batched query over the caller's own (customer-view) order ids — not N+1.
     expect(prisma.offer.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { orderId: { in: ["o1"] } } }),
+      expect.objectContaining({ where: expect.objectContaining({ orderId: { in: ["o1"] } }) }),
     );
   });
 
@@ -301,14 +545,15 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
 
   it("UX-2026-07-16: synthesizes a resolved-issue row from Issue, mirroring notifyIssueResolved's push copy, as a durable fallback for a missed push", async () => {
     const { prisma, service } = makeDeps();
-    prisma.order.findMany.mockResolvedValue([]); // the order may have long since aged out of the lookback
+    prisma.order.findMany.mockResolvedValue([]); // the order itself may have had no activity in the window
     prisma.issue.findMany.mockResolvedValue([
       { id: "i1", orderId: "o1", resolution: "refund", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
     ]);
 
     const feed = await service.feedForUser("me", NOW);
     const issueArg = prisma.issue.findMany.mock.calls[0][0];
-    expect(issueArg.where).toEqual({ openedByProfileId: "me", status: "resolved" });
+    expect(issueArg.where.openedByProfileId).toBe("me");
+    expect(issueArg.where.status).toBe("resolved");
     expect(feed[0]).toMatchObject({
       id: "issue:i1",
       orderId: "o1",
@@ -318,10 +563,10 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
   });
 
-  it("UX26-03 sibling: the resolved-issue row carries to/status for a rider opener still in the order lookback, routing them to /rider/job", async () => {
+  it("UX26-03 sibling: the resolved-issue row carries to/status for a rider opener whose order is still in the retention window, routing them to /rider/job", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "me", orderType: "parcel", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "me", orderType: "parcel", status: "assigned", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     prisma.issue.findMany.mockResolvedValue([
       { id: "i1", orderId: "o1", resolution: "close_no_action", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
@@ -331,9 +576,9 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(feed.find((r) => r.id === "issue:i1")).toMatchObject({ to: "rider", status: "assigned" });
   });
 
-  it("UX26-03 sibling: the resolved-issue row leaves to/status undefined when the order has aged out of the lookback (falls back to /order/:id)", async () => {
+  it("UX26-03 sibling: the resolved-issue row leaves to/status undefined when the order had no activity in the window (falls back to /order/:id)", async () => {
     const { prisma, service } = makeDeps();
-    prisma.order.findMany.mockResolvedValue([]); // order outside FEED_ORDER_LOOKBACK — not in view
+    prisma.order.findMany.mockResolvedValue([]); // nothing happened on the order inside the window
     prisma.issue.findMany.mockResolvedValue([
       { id: "i1", orderId: "o1", resolution: "close_no_action", resolvedAt: new Date("2026-07-06T11:30:00.000Z") },
     ]);
@@ -384,7 +629,9 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
     // The query excludes events the viewer raised (counterparty-only, mirroring the push's target).
     expect(prisma.sosEvent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { orderId: { in: ["o1"] }, raisedByProfileId: { not: "cust" } } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ orderId: { in: ["o1"] }, raisedByProfileId: { not: "cust" } }),
+      }),
     );
 
     // The RAISER (rider) never sees an SOS row for the trip they raised it on.
@@ -500,8 +747,8 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // deadline — `IssuesService.raise` has no time-based gating); the ordinary completion keeps the
     // generic FEED_NOTICES.completed copy.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "rider", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
-      { id: "o2", riderId: "rider", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
+      { id: "o1", riderId: "rider", orderType: "parcel", status: "completed", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o2", riderId: "rider", orderType: "parcel", status: "completed", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const custFeed = await service.feedForUser("cust", NOW);
     expect(custFeed.find((r) => r.orderId === "o1")).toMatchObject({
@@ -509,7 +756,12 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       message: expect.stringContaining("report a problem"),
     });
     expect(custFeed.find((r) => r.orderId === "o1")?.message).not.toMatch(/48 hours?/i);
-    expect(custFeed.find((r) => r.orderId === "o2")).toMatchObject({ title: "Delivery complete" });
+    // STREAMLINE-01: the ORDINARY completion gives the customer no row at all — `completed` is written when
+    // the customer themselves rates the trip, and the push table addresses it to the rider only. The
+    // adjudicated one above is the deliberate carve-out: `adjudicateDelivered` bypasses notifyOrderStatus
+    // and pushes BOTH parties directly, so gating it on the table would have dropped a row for a push the
+    // customer really did receive — on the one completion they are most likely to want a record of.
+    expect(custFeed.find((r) => r.orderId === "o2")).toBeUndefined();
     // It queried the durable adjudication audit rows for the in-view orders.
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { target: { in: ["o1", "o2"] }, action: "order.adjudicate_delivered" } }),
@@ -519,14 +771,17 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // the generic "Nice work", and (UX19-04) doesn't thank the rider for evidence that may never have been
     // submitted — proof-of-drop capture is optional and adjudicateDelivered has no evidence precondition.
     prisma.order.findMany.mockResolvedValue([
-      { id: "o1", riderId: "me", orderType: "parcel", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o1", riderId: "me", orderType: "parcel", status: "completed", events: [{ status: "completed", createdAt: new Date("2026-07-06T11:00:00.000Z") }] },
+      { id: "o2", riderId: "me", orderType: "parcel", status: "completed", events: [{ status: "completed", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
     ]);
     const riderFeed = await service.feedForUser("me", NOW);
-    expect(riderFeed[0]).toMatchObject({
+    expect(riderFeed.find((r) => r.orderId === "o1")).toMatchObject({
       title: "Delivery confirmed",
       message: expect.stringContaining("reviewed the delivery"),
     });
-    expect(riderFeed[0].message).not.toMatch(/your proof|the evidence/i);
+    expect(riderFeed.find((r) => r.orderId === "o1")?.message).not.toMatch(/your proof|the evidence/i);
+    // …and the rider — who IS the audience for an ordinary completion — still gets the generic copy.
+    expect(riderFeed.find((r) => r.orderId === "o2")).toMatchObject({ title: "Delivery complete" });
   });
 
   it("UX20-04: synthesizes a fare-updated row for BOTH parties from order.fare_adjust — adjustFare's push had no durable feed fallback", async () => {
@@ -561,18 +816,20 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
 
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.fare_adjust" } }),
+      expect.objectContaining({ where: expect.objectContaining({ target: { in: ["o1"] }, action: "order.fare_adjust" }) }),
     );
   });
 
-  it("UX26-03: the fare-adjust row carries the order's current status (last event), so a rider viewer routes straight to /rider/job", async () => {
+  it("UX26-03: the fare-adjust row carries the order's current status, so a rider viewer routes straight to /rider/job", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       {
         id: "o1",
         riderId: "rider",
         agreedFare: dec("12.50"),
-        orderType: "parcel", events: [
+        orderType: "parcel",
+        status: "confirmed",
+        events: [
           { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
           { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
         ],
@@ -585,9 +842,10 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     );
 
     const riderFeed = await service.feedForUser("rider", NOW);
-    // The LAST event ("confirmed"), not the first — notificationRowDestination only special-cases
-    // "assigned"/"cancelled" for `to === "rider"`, so this stays on the generic /order/:id route, but the
-    // field itself must reflect the order's live status, not a stale earlier one.
+    // The order's CURRENT status ("confirmed"), not a stale earlier beat — notificationRowDestination only
+    // special-cases "assigned"/"cancelled" for `to === "rider"`, so this stays on the generic /order/:id
+    // route, but the field itself must reflect the live status. STREAMLINE-01 reads it off the column, so
+    // it stays right even when the cutoff filters every event out of view.
     expect(riderFeed.find((r) => r.id === "fare-adjust:au1")).toMatchObject({ to: "rider", status: "confirmed" });
 
     const custFeed = await service.feedForUser("cust", NOW);
@@ -614,7 +872,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       unread: true,
     });
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { target: { in: ["o1"] }, action: "order.riders_available_notify" } }),
+      expect.objectContaining({ where: expect.objectContaining({ target: { in: ["o1"] }, action: "order.riders_available_notify" }) }),
     );
   });
 

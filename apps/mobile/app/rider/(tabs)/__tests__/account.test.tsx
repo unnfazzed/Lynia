@@ -35,6 +35,11 @@ jest.mock("expo-secure-store", () => ({
 }));
 jest.mock("../../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../../src/api/orders", () => ({ getActiveOrder: (...a: unknown[]) => mockGetActiveOrder(...a) }));
+// STREAMLINE-01: the Notifications row's sub-line now carries an unread count. Stubbed at zero — this
+// suite is about the customer bridge, and a live count would only add timing noise to it.
+jest.mock("../../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }),
+}));
 jest.mock("../../../../src/api/riders", () => ({
   setOnline: (online: boolean, loc?: unknown) => mockSetOnline(online, loc),
 }));

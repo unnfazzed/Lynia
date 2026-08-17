@@ -6,6 +6,7 @@ import React from "react";
 import { ScrollView, Text } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
+import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdLine, AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type AccountRow } from "../../src/ui/account/AccountRows";
 
@@ -51,6 +52,9 @@ export default function ProfileScreen(): React.ReactElement {
   // state (they tapped their name on the customer hub), not a mismatch to correct.
   const asRider = side === "rider" || (side !== "customer" && (me?.role ?? session?.role) === "rider");
 
+  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
+  const unreadCount = useNotificationsUnreadCount();
+
   const name = me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account";
   const identityLine = [me?.phone ? formatPhoneDisplay(me.phone) : "", asRider ? "Rider" : "Customer"].filter(Boolean).join(" · ");
 
@@ -61,12 +65,12 @@ export default function ProfileScreen(): React.ReactElement {
         { icon: "id-card", label: "Bike & documents", sub: bikeDocsSub(rider?.kycStatus, rider?.bikeReg), onPress: () => router.push("/rider/documents") },
         { icon: "history", label: "Job history", sub: "Parcels and food in one list", onPress: () => router.push("/history") },
         { icon: "wallet", label: "Money", sub: "Balance, cash held, commission", onPress: () => router.push("/rider/money") },
-        { icon: "bell", label: "Notifications", sub: "One inbox for both services", onPress: () => router.push("/notifications") },
+        { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },
         { icon: "phone", label: "Help & support", sub: "Call the safety line", onPress: () => router.push("/help") },
         { icon: "shield", label: "Settings", sub: "Permissions, privacy and sign out", onPress: () => router.push("/settings") },
       ]
     : [
-        { icon: "bell", label: "Notifications", sub: "One inbox for both services", onPress: () => router.push("/notifications") },
+        { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },
         { icon: "phone", label: "Help & support", sub: "Call the safety line", onPress: () => router.push("/help") },
         { icon: "shield", label: "Settings", sub: "Permissions, privacy and sign out", onPress: () => router.push("/settings") },
       ];

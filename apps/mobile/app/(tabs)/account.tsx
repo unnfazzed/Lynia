@@ -6,6 +6,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
+import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/ui/account/AccountRows";
 
@@ -56,13 +57,16 @@ export default function AccountTabScreen(): React.ReactElement {
   const me = meQ.data;
   const isRider = (me?.role ?? session?.role) === "rider";
 
+  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
+  const unreadCount = useNotificationsUnreadCount();
+
   const name = me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account";
   // The facts that identify THIS account on the customer side, one line, muted — the customer
   // analogue of the rider's "★ 4.9 · 312 jobs · verified".
   const identityLine = [me?.phone ? formatPhoneLocal(me.phone) : "", "Customer"].filter(Boolean).join(" · ");
 
   const rows: AccountRow[] = [
-    { icon: "bell", label: "Notifications", sub: "One inbox for both services", onPress: () => router.push("/notifications") },
+    { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },
     { icon: "phone", label: "Help & support", sub: "Call the safety line", onPress: () => router.push("/help") },
     // `shield` rather than a settings/cog glyph: the design kit's 38-icon subset has none, and this
     // row's contents ARE permissions, privacy and sign-out — so the shield is honest, not a stand-in.

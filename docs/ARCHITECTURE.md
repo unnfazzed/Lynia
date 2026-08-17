@@ -1159,6 +1159,10 @@ would be new admin product surface; deferred). Shipped switches:
   off the money path; when `false` the endpoint returns an empty feed instead of running the query, so
   a slow/broken feed can't take down checkout. The client already renders an empty feed as its ordinary
   "nothing yet" state, so the degrade is invisible beyond the missing rows.
+  `GET /notifications/unread-count` shares the switch (off ⇒ zero unread, which is what an empty feed
+  means). `POST /notifications/read` and `POST /notifications/dismiss` deliberately do **not**: both are
+  single-row writes that must keep working with the synthesis off, or flipping the switch would strand a
+  stale "N new" hint that nothing could clear.
 
 The rule: a new non-core surface ships with its kill switch from day one; core surfaces never get one.
 
@@ -1264,6 +1268,9 @@ require the `admin` role.
 | `POST /uploads/kyc-photo` | Uploads | Mint a signed PUT URL for a photo |
 | `POST /uploads/delivery-proof` | Uploads | Mint a signed PUT URL for the rider's proof-of-drop photo (`KB-POD-DISPUTE` Phase A, IR16-11) |
 | `GET /notifications/feed` | Notifications | Caller's in-app notifications feed (customer-journey A·3) |
+| `GET /notifications/unread-count` | Notifications | Unread row count, for the Account row's "N new" hint |
+| `POST /notifications/read` | Notifications | Stamp the read watermark (the centre gained focus) |
+| `POST /notifications/dismiss` | Notifications | Dismiss one feed row by its synthetic id (the swipe) |
 | `POST /notifications/device-token` | Notifications | Register an FCM device token |
 | `DELETE /notifications/device-token` | Notifications | Drop a device token |
 | `POST /client-metrics` | Observability | Client RUM ingest (glass-to-glass / REST latency samples) |
@@ -1328,6 +1335,7 @@ require the `admin` role.
 | WebSocket tracking | `apps/api/src/tracking/tracking.gateway.ts`, `tracking.service.ts` |
 | Push + device tokens | `apps/api/src/notifications/notifications.service.ts` |
 | In-app notifications feed | `apps/api/src/notifications/notifications-feed.service.ts` |
+| Feed retention / read state / dismissal | `notifications-feed.service.ts` (`FEED_RETENTION_MS`, `Profile.notificationsReadAt`, `NotificationDismissal`) |
 | Cloud adapters | `apps/api/src/adapters/{storage,push,secrets}/` |
 | Schema + hot-path constraints | `apps/api/prisma/schema.prisma`, `prisma/migrations/0001_init/` |
 | Shared contracts / enums / pricing | `packages/shared/src/` |

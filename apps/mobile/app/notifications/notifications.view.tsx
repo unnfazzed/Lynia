@@ -1,12 +1,19 @@
-// GENERATED — do not edit by hand. Structural-parity source of truth for LJ.notifications.
+// GENERATED — do not edit by hand, EXCEPT the interaction seam marked STREAMLINE-01 below.
+// Structural-parity source of truth for LJ.notifications.
 // Source mock: packages/design/explorations/journey/screens.jsx :: Notifications
 // Regenerate:  node tools/parity/codegen/cli.mjs gen LJ.notifications
 // Guardrail:   apps/api/src/parity/structure-snapshot.spec.ts asserts this tree ≡ the mock's.
 //
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/notifications/index.tsx) — that is the ONLY hand-wired seam.
+//
+// STREAMLINE-01 (owner-approved deviation, docs/DESIGN-DEVIATIONS.md D-27): swipe-to-dismiss is an
+// INTERACTION the static mock could not draw, added here as handler props + a transform on the EXISTING
+// nodes — no element is added, removed or re-kinded, so the structural snapshot stays green by
+// construction and a regeneration of this file diffs only in these marked additions. Read that entry
+// before touching this: the rule it bends ("not drawn ⇒ not rendered") is otherwise absolute.
 import React from "react";
-import { View, Text, Pressable, FlatList } from "react-native";
+import { View, Text, Pressable, FlatList, PanResponder } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
 import { AppBar, Icon, EmptyState, type IconName } from "../../src/ui";
 
@@ -28,14 +35,60 @@ export type NotificationsViewProps = {
   onBack: () => void;
   /** Open the row's order/destination — the container resolves the index to its live feed row. */
   onItemPress: (index: number) => void;
+  /** STREAMLINE-01: swipe the row away — the container owns the optimistic removal + the API call. */
+  onItemDismiss: (index: number) => void;
 };
+
+/**
+ * STREAMLINE-01: how far a horizontal drag must travel before the row is treated as dismissed, and how
+ * far a drag must travel before the gesture is claimed from the FlatList at all. The claim threshold is
+ * small (so the gesture feels responsive) but requires the drag to be more horizontal than vertical, so
+ * scrolling the list never starts a dismissal.
+ */
+const DISMISS_DISTANCE = 96;
+const CLAIM_DISTANCE = 10;
 
 export function NotificationsView({
   items,
   empty,
   onBack,
-  onItemPress
+  onItemPress,
+  onItemDismiss
 }: NotificationsViewProps): React.ReactElement {
+  // STREAMLINE-01 interaction seam. ONE PanResponder for the whole list rather than one per row: a
+  // touch device can only drag one row at a time, and a per-row responder would need a per-row hook —
+  // which `renderItem` (a plain function call, not a component) cannot host. The row being dragged is
+  // captured by its own `onTouchStart` into a ref, so the shared responder knows which index it owns.
+  const draggingIndex = React.useRef<number | null>(null);
+  const [drag, setDrag] = React.useState<{ index: number; dx: number } | null>(null);
+  const dragRef = React.useRef<{ index: number; dx: number } | null>(null);
+  const setBoth = (next: { index: number; dx: number } | null): void => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+  const pan = React.useMemo(
+    () =>
+      PanResponder.create({
+        // Vertical (or barely-moved) gestures are left to the FlatList; only a decidedly horizontal
+        // drag becomes a dismissal. Claiming on MOVE rather than START also keeps plain taps working —
+        // the Pressable's onPress still fires when the responder is never claimed.
+        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > CLAIM_DISTANCE && Math.abs(g.dx) > Math.abs(g.dy),
+        onPanResponderMove: (_e, g) => {
+          const index = draggingIndex.current;
+          if (index !== null) setBoth({ index, dx: g.dx });
+        },
+        onPanResponderRelease: () => {
+          const current = dragRef.current;
+          setBoth(null);
+          if (current && Math.abs(current.dx) >= DISMISS_DISTANCE) onItemDismiss(current.index);
+        },
+        // A cancelled gesture (an incoming call, a parent claiming the responder) must spring back, not
+        // dismiss — otherwise a notification disappears without the user having completed the swipe.
+        onPanResponderTerminate: () => setBoth(null),
+      }),
+    [onItemDismiss],
+  );
+
   return <View>
       <View style={{
       padding: tokens.space.screen,
@@ -54,7 +107,9 @@ export function NotificationsView({
           {<FlatList data={items} keyExtractor={n => n.id} showsVerticalScrollIndicator={false} renderItem={({
         item: n,
         index: i
-      }) => <Pressable onPress={() => onItemPress(i)} accessibilityRole="button"><View style={{
+      }) => <Pressable onPress={() => onItemPress(i)} accessibilityRole="button" onTouchStart={() => {
+        draggingIndex.current = i;
+      }} {...pan.panHandlers}><View style={{
           gap: 11,
           paddingTop: 12,
           paddingRight: 0,
@@ -62,7 +117,12 @@ export function NotificationsView({
           paddingLeft: 0,
           borderBottomWidth: 1,
           borderBottomColor: tokens.color.line,
-          flexDirection: "row"
+          flexDirection: "row",
+          // STREAMLINE-01: the drag follows the finger on the row being swiped, and only that row. A
+          // plain transform on the node the mock already draws — no wrapper element, so the structural
+          // snapshot is unaffected.
+          transform: [{ translateX: drag?.index === i ? drag.dx : 0 }],
+          opacity: drag?.index === i ? Math.max(0.35, 1 - Math.abs(drag.dx) / (DISMISS_DISTANCE * 2)) : 1
         }}>
               <View style={{
             width: 38,
