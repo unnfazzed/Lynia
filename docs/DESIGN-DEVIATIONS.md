@@ -1094,7 +1094,7 @@ deliberate extension of it rather than an alignment — hence a ledger entry, no
 |---|---|---|
 | Header | plain white bar: `Heading` "Jobs near you" + a bell, with a green `BrandHeader` on the gated/offline path | the **8c mint top card** — two-line time-aware greeting, sun/moon sticker paired to the 42px bell (gold unread dot), on BOTH paths |
 | Search bar | not drawn | **still not drawn** — omitted by instruction, and `HomeHeader.search` is optional precisely so a face with nothing to search renders none |
-| Location | not drawn | the header's **`subRow`** — the DETECTED current location, the identical `HomeAddressRow` the customer home draws (*"keep the location on the rider card just like the customer home"*) |
+| Location | not drawn | the header's **`subRow`** — the DETECTED current location, the same `HomeAddressRow` the customer home draws, in **detect** mode (*"keep the location on the rider card just like the customer home"*, then *"Detect only"*) |
 | Connectivity banner | first element on the screen | **still first** — pinned into the header's `topSlot`, inside the mint block above the greeting, so it keeps the top of the screen (*"keep it at the top like before"*) while the header stays the one component owning the top inset |
 | Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline") | the same row, **minus the queue subtitle**, still above the cards |
 | "Jobs near you" | the screen's `Heading` | **removed** (*"Remove the text jobs near you"*) |
@@ -1105,10 +1105,22 @@ deliberate extension of it rather than an alignment — hence a ledger entry, no
 cards are self-evidently the jobs — a heading over the only content on a screen labels the obvious.
 The queue composition was a build-time fact about dispatch, not something a rider acts on.
 
-**One honest limitation of the location row.** It is DISPLAY ONLY. The board ranks jobs off `loc` —
-the live GPS fix this screen requests itself — so a manual pick in the location sheet re-labels the
-row without re-ranking the board. The row is the customer's component by instruction; wiring a manual
-override into job ranking is a separate decision and is NOT claimed here.
+**Why the rider's location row is DETECT-ONLY.** Two location paths feed a rider, and neither reads
+this row: the board fetches with `getOpenOrders(loc, 5000)`, where `loc` is the live GPS fix the
+screen requests for itself, and the server targets new-job pushes off the heartbeat position
+(`broadcastToNearbyRiders`). A picker here would therefore have promised something it could not do —
+a rider choosing "Borrowdale" would have re-labelled the row while the list underneath kept showing
+Avondale parcels, with nothing to explain why. Wiring the pick into the list query alone would only
+have moved the mismatch (the list would say Borrowdale while the server kept pushing Avondale), and
+jobs are proximity-ranked for a physical reason: the rider has to ride there.
+
+So `HomeAddressRow` grew a `mode`: `"pick"` (customer — a chevron, opening the sheet, where choosing
+an address really does re-sort the venues and re-price delivery) and `"detect"` (rider — a refresh
+glyph, tapping re-detects, no sheet mounted). **The trailing glyph is the promise the row makes**;
+give this row a picker only on a screen where picking changes something. Owner decision 2026-08-17.
+
+Making the rider's location genuinely selectable — "I'm heading across town, show me work there" — is
+a real feature and a server-side change (list query *and* heartbeat targeting). It is not claimed here.
 
 **Why the whole tab, not just the happy path.** The board has two returns — the virtualized open-orders
 list and the gated/offline fallback (KYC, expired ID, no-GPS, offline). Both now mount the same header,

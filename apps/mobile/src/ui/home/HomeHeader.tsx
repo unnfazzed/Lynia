@@ -148,24 +148,51 @@ export function HomeHeader({
 }
 
 /**
- * The CUSTOMER's `subRow` — the detected deliver-to address: a 13px map-pin, the street line in
- * 12.5/600 `accentText`, and a chevron; tapping it opens the location sheet. It lives beside the
- * header it fills rather than in the screen, so the two faces' sub-rows stay visibly one shape.
+ * The location row: a 13px map-pin, the street line in 12.5/600 `accentText`, and one trailing glyph.
+ * Shared by both faces so their sub-rows stay visibly one shape — but the TRAILING GLYPH is not
+ * decoration, it is the promise the row makes, and the two faces make different ones:
+ *
+ *   · `"pick"` (customer) — a chevron. Tapping opens the location sheet, and choosing a different
+ *     address genuinely changes the screen: it re-sorts the nearest venues and re-estimates the
+ *     delivery fees.
+ *   · `"detect"` (rider) — a refresh glyph. Tapping RE-DETECTS, and nothing else. The rider board
+ *     ranks jobs off the live GPS fix the board requests for itself, and the server pushes new jobs
+ *     using the heartbeat position — neither reads this row. A chevron here would promise a picker
+ *     that silently could not move the job list (owner decision 2026-08-17: detect only).
+ *
+ * The rule is worth keeping: give this row a picker ONLY on a screen where picking changes something.
  */
-export function HomeAddressRow({ address, onPress }: { address: string; onPress?: () => void }): React.ReactElement {
+export function HomeAddressRow({
+  address,
+  mode = "pick",
+  busy = false,
+  onPress,
+}: {
+  address: string;
+  mode?: "pick" | "detect";
+  /** A detection is in flight — the glyph dims rather than the row disappearing. */
+  busy?: boolean;
+  onPress?: () => void;
+}): React.ReactElement {
+  const detect = mode === "detect";
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
+      disabled={!onPress || busy}
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? `Deliver to ${address}. Change location` : undefined}
+      accessibilityState={{ busy }}
+      accessibilityLabel={
+        onPress ? (detect ? `Your location: ${address}. Update it` : `Deliver to ${address}. Change location`) : undefined
+      }
       style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
     >
       <Icon name="map-pin" size={13} color={tokens.color.accentText} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12.5, fontWeight: "600", color: tokens.color.accentText }}>
         {address}
       </Text>
-      <Icon name="chevron-down" size={13} color={tokens.color.accentText} />
+      <View style={{ opacity: busy ? 0.5 : 1 }}>
+        <Icon name={detect ? "refresh-cw" : "chevron-down"} size={detect ? 12 : 13} color={tokens.color.accentText} />
+      </View>
     </Pressable>
   );
 }

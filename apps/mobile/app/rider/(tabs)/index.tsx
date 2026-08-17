@@ -38,8 +38,6 @@ import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
-// Not from the src/ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back.
-import { LocationSheet } from "../../../src/ui/home/LocationSheet";
 import { RiderBoardListView, type RiderBoardJob } from "./board-list.view";
 import { RiderBoardEmptyView } from "./board-empty.view";
 import { RiderOfferParcelCardView } from "./offer-parcel-card.view";
@@ -254,12 +252,11 @@ export default function RiderHome(): React.ReactElement {
   // unread count behind the bell's gold dot (the same hook the customer home and Account row use).
   const clock = useNow();
   const unreadCount = useNotificationsUnreadCount();
-  // The detected current location, exactly as the customer home carries it (owner instruction
-  // 2026-08-17, "keep the location on the rider card just like the customer home"). Display only:
-  // the board's job ranking is keyed off `loc` below — the live GPS fix this screen requests
-  // itself — so a manual pick in the sheet re-labels the row without re-ranking the board.
+  // The detected current location, the same row the customer home carries (owner instruction
+  // 2026-08-17). Detect-only here: the board's job ranking is keyed off `loc` below — the live GPS
+  // fix this screen requests itself — and the server targets pushes off the heartbeat position, so
+  // this row reports where the rider is rather than offering to change it.
   const location = useHomeLocation();
-  const [locationOpen, setLocationOpen] = useState(false);
   // A-O4: unlike `openOrders` below (which is `enabled: online` outright — an offline rider can't be
   // offered new work), this poll can't just gate on `online`: the "Go offline" button has no
   // active-job guard, so a rider can go offline mid-delivery and still needs this to keep tracking
@@ -909,9 +906,18 @@ export default function RiderHome(): React.ReactElement {
       evening={greetingFor(clock).evening}
       unread={unreadCount > 0}
       onBell={() => router.push("/notifications")}
-      // Same row, same component as the customer home. The rider's "where am I" is the equivalent
-      // of the customer's "where is this going".
-      subRow={<HomeAddressRow address={location.label} onPress={() => setLocationOpen(true)} />}
+      // Same row, same component as the customer home — in DETECT mode (owner decision 2026-08-17).
+      // Tapping re-detects; it does not open a picker. See HomeAddressRow: the board ranks jobs off
+      // the live GPS fix it requests itself and the server pushes off the heartbeat position, so a
+      // picked address could re-label this row without moving a single job.
+      subRow={
+        <HomeAddressRow
+          address={location.label}
+          mode="detect"
+          busy={location.locating}
+          onPress={() => void location.useCurrentLocation()}
+        />
+      }
       // A dropped board socket keeps the TOP of the screen, above the greeting, exactly where it sat
       // before this header existed (owner instruction 2026-08-17).
       topSlot={online && (!board.connected || beatStale) ? <OfflineBanner state="reconnecting" /> : null}
@@ -1011,13 +1017,6 @@ export default function RiderHome(): React.ReactElement {
             }
           />
         </View>
-      <LocationSheet
-        visible={locationOpen}
-        denied={location.denied}
-        onClose={() => setLocationOpen(false)}
-        onUseCurrentLocation={location.useCurrentLocation}
-        onPick={location.setManualPlace}
-      />
       </AppScreen>
     );
   }
@@ -1269,13 +1268,6 @@ export default function RiderHome(): React.ReactElement {
         {trailingFooterContent}
       </ScrollView>
       </View>
-      <LocationSheet
-        visible={locationOpen}
-        denied={location.denied}
-        onClose={() => setLocationOpen(false)}
-        onUseCurrentLocation={location.useCurrentLocation}
-        onPick={location.setManualPlace}
-      />
     </AppScreen>
   );
 }

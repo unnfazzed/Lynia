@@ -750,4 +750,24 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     // point is that the ROW is there and never blank.
     expect(flatText(activeTree)).toMatch(/Set your location|Harare/);
   });
+
+  it("the location row is DETECT-only — it never offers a picker it could not honour", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    // The board ranks jobs off its own live GPS fix and the server pushes off the heartbeat
+    // position — neither reads this row — so a picker here would silently fail to move the job
+    // list. The row's label says "update it", never "change location", and the sheet is absent.
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.accessibilityLabel === "string")
+      .map((n) => n.props.accessibilityLabel as string);
+    expect(labels.some((l) => /Your location: .*\. Update it/.test(l))).toBe(true);
+    expect(labels.some((l) => /Change location/.test(l))).toBe(false);
+    expect(flatText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
+  });
 });
