@@ -9,6 +9,7 @@ import MapView, {
   type MarkerDragStartEndEvent,
   type Region,
 } from "react-native-maps";
+import { landmarkFromAddress } from "../logic/geocode";
 import { Button, Label } from "./index";
 
 export interface PickedPoint {
@@ -44,15 +45,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  * chosen point so the parent keeps it in the order form. Needs the dev build + a Google Maps key on
  * Android (Apple Maps on iOS needs none) — see app.config.ts / PILOT-READINESS.
  */
-/** Build a short landmark string from a reverse-geocode result — the most human parts, capped. */
-function landmarkFrom(r: Location.LocationGeocodedAddress): string {
-  return [r.name, r.street, r.district ?? r.city]
-    .filter(Boolean)
-    .join(", ")
-    .trim()
-    .slice(0, 120);
-}
-
 export function MapPicker(props: {
   label: string;
   value: PickedPoint | null;
@@ -102,7 +94,7 @@ export function MapPicker(props: {
         const results = await Location.reverseGeocodeAsync({ latitude: c.latitude, longitude: c.longitude });
         const first = results[0];
         if (!first) return;
-        const landmark = landmarkFrom(first);
+        const landmark = landmarkFromAddress(first);
         if (landmark) onReverseGeocode(landmark);
       } catch {
         /* offline / no geocoder — leave the field untouched */

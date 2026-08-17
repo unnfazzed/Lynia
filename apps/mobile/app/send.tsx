@@ -17,6 +17,7 @@ import {
   MAX_ITEMS,
   type RebroadcastParams,
 } from "../src/logic/order-draft";
+import { usePickupAutolocate } from "../src/logic/use-pickup-autolocate";
 import { invalidateIfStale, orderKey } from "../src/query/client";
 import { invalidateCustomerOrderHistory } from "../src/query/use-history-feed";
 import { useForegroundRefetch } from "../src/realtime/use-foreground-refetch";
@@ -58,8 +59,12 @@ export default function HomeScreen(): React.ReactElement {
   const SHEET_PEEK = 0.58;
   const SHEET_EXPANDED = 0.88;
   // C5: re-broadcast params from the order screen (rb…). Read once at mount to prefill the form when
-  // the customer explicitly asked to re-send THIS order.
+  // the customer explicitly asked to re-send THIS order. `draftFromParams` is pure, so it is resolved
+  // in a lazy initializer rather than inside the prefill effect: the pickup auto-locate below needs
+  // the same answer BEFORE the first paint (a re-broadcast's own pickup wins over the device's
+  // position), and racing it against an effect would let the locate fire for one tick anyway.
   const rbParams = useLocalSearchParams<RebroadcastParams>();
+  const [rbDraft] = useState(() => draftFromParams(rbParams));
 
   // /send is a PUSHED route over the tab shell (home/orders/account/history/profile all router.push
   // it), so the tab bar is hidden while it is up — and the map-anchored composer, inheriting a mock
@@ -73,6 +78,15 @@ export default function HomeScreen(): React.ReactElement {
 
   const [pickupPoint, setPickupPoint] = useState<PickedPoint | null>(null);
   const [pickupLandmark, setPickupLandmark] = useState("");
+  // Has the customer taken ownership of the pickup pin — tapped/dragged the map, confirmed a searched
+  // address, or arrived on a re-broadcast? The auto-locate below never writes once this is true, so a
+  // slow GPS fix landing after the customer has already placed their own pin can't drag it away. A ref
+  // (nothing renders off it) so the guard reads the value at callback time, not at closure time.
+  const pickupPinTouched = useRef(rbDraft != null);
+  const editPickupPoint = useCallback((p: PickedPoint): void => {
+    pickupPinTouched.current = true;
+    setPickupPoint(p);
+  }, []);
   const [pickupPhone, setPickupPhone] = useState("");
   const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
   const [dropLandmark, setDropLandmark] = useState("");
@@ -240,21 +254,20 @@ export default function HomeScreen(): React.ReactElement {
   // plain home entry (or a killed-and-relaunched app) opens a blank form.
   useEffect(() => {
     let cancelled = false;
+    if (rbDraft) {
+      setPickupPoint(rbDraft.pickupPoint);
+      setPickupLandmark(rbDraft.pickupLandmark);
+      setDropPoint(rbDraft.dropPoint);
+      setDropLandmark(rbDraft.dropLandmark);
+      setItems(rbDraft.items);
+      setNote(rbDraft.note ?? "");
+      setDeclaredValue(rbDraft.declaredValue);
+      setProposedFare(rbDraft.proposedFare);
+      // Prefilled landmarks are user-owned text (not live from the map): treat them as typed.
+      if (rbDraft.pickupLandmark) setPickupLandmarkTouched(true);
+      if (rbDraft.dropLandmark) setDropLandmarkTouched(true);
+    }
     void (async () => {
-      const draft = draftFromParams(rbParams);
-      if (!cancelled && draft) {
-        setPickupPoint(draft.pickupPoint);
-        setPickupLandmark(draft.pickupLandmark);
-        setDropPoint(draft.dropPoint);
-        setDropLandmark(draft.dropLandmark);
-        setItems(draft.items);
-        setNote(draft.note ?? "");
-        setDeclaredValue(draft.declaredValue);
-        setProposedFare(draft.proposedFare);
-        // Prefilled landmarks are user-owned text (not live from the map): treat them as typed.
-        if (draft.pickupLandmark) setPickupLandmarkTouched(true);
-        if (draft.dropLandmark) setDropLandmarkTouched(true);
-      }
       // Prefill the sender's OWN pickup phone (their own number, not third-party PII) — a repeat send /
       // re-broadcast shouldn't make them re-type it. Only when the field is still empty, so an edited
       // value always wins.
@@ -313,6 +326,29 @@ export default function HomeScreen(): React.ReactElement {
     [dropLandmarkTouched],
   );
 
+  // Pickup auto-locate (owner instruction 2026-08-17): the pickup pin is prefilled from the device's
+  // own position the moment this screen opens, so the standing-at-the-parcel case — the common one —
+  // costs nothing but stays fully editable. Every existing way to change it still wins: these write
+  // only while `pickupPinTouched` is false, and the hook is skipped entirely for a re-broadcast (that
+  // order's pickup is the whole point of re-sending it). Failure is silent by design — see the hook's
+  // header: nobody asked for this fix, so a refused permission or a dead GPS must leave the composer
+  // exactly as the mock's `home_empty` draws it, tap-the-map hint and all.
+  const onAutoPickupPoint = useCallback((p: PickedPoint): void => {
+    if (pickupPinTouched.current) return;
+    setPickupPoint(p);
+  }, []);
+  const onAutoPickupLandmark = useCallback(
+    (landmark: string): void => {
+      // Re-check the pin: the reverse geocode resolves after the point, so a customer who moved the pin
+      // in that window must not be handed the OLD position's name. `onPickupReverseGeocode` then applies
+      // the usual "only while the field is untouched" rule and flags the value as map-derived.
+      if (pickupPinTouched.current) return;
+      onPickupReverseGeocode(landmark);
+    },
+    [onPickupReverseGeocode],
+  );
+  usePickupAutolocate({ enabled: rbDraft == null, onPoint: onAutoPickupPoint, onLandmark: onAutoPickupLandmark });
+
   // Search-first addressing (§1·2). A resolved place does NOT commit straight to the composer any
   // more: it opens the kit's `addr_map_confirm` step, where the customer nudges the rooftop pin to the
   // actual gate and names the landmark in context. See AddressConfirmSheet's header for why that step
@@ -334,7 +370,10 @@ export default function HomeScreen(): React.ReactElement {
       const slot = confirming?.slot;
       setConfirming(null);
       if (slot === "pickup") {
-        setPickupPoint(point);
+        // editPickupPoint, not setPickupPoint: a confirmed address is the customer choosing their
+        // pickup, so it must also close the auto-locate seam — otherwise a slow GPS fix arriving after
+        // the confirm sheet would silently replace the address they just searched for and accepted.
+        editPickupPoint(point);
         setPickupLandmark(landmark);
         setPickupLandmarkTouched(true);
         setPickupLandmarkFromMap(false);
@@ -345,7 +384,7 @@ export default function HomeScreen(): React.ReactElement {
         setDropLandmarkFromMap(false);
       }
     },
-    [confirming?.slot],
+    [confirming?.slot, editPickupPoint],
   );
 
   const fare = parseNum(proposedFare);
@@ -567,7 +606,7 @@ export default function HomeScreen(): React.ReactElement {
             pickup={pickupPoint}
             drop={dropPoint}
             active={activePin}
-            onChangePickup={setPickupPoint}
+            onChangePickup={editPickupPoint}
             onChangeDrop={setDropPoint}
             onReverseGeocodePickup={onPickupReverseGeocode}
             onReverseGeocodeDrop={onDropReverseGeocode}

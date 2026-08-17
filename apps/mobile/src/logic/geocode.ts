@@ -58,6 +58,19 @@ export function geocodeQueries(input: string): string[] {
   return [q, `${q}, ${CORRIDOR_SUFFIX}`];
 }
 
+/**
+ * Build a short landmark string from a REVERSE-geocode result — the most human parts, capped.
+ *
+ * The inverse direction to everything else in this file (point → words, not words → point), but the
+ * same platform geocoder and the same `LANDMARK_MAX` cap, so it belongs beside them rather than as a
+ * private copy in each caller. It was one: `ui/ComposeMap.tsx`, `ui/MapPicker.tsx` and the pickup
+ * auto-locate hook each need it, and three independently-maintained versions of "what do we call this
+ * pin" is exactly how the landmark the rider is handed starts differing by which control set it.
+ */
+export function landmarkFromAddress(r: Location.LocationGeocodedAddress): string {
+  return [r.name, r.street, r.district ?? r.city].filter(Boolean).join(", ").trim().slice(0, LANDMARK_MAX);
+}
+
 /** A finite coordinate inside the real lat/lng domain. Guards against a geocoder returning junk. */
 function isUsable(c: GeocodedLocation | undefined): c is GeocodedLocation {
   if (!c) return false;
