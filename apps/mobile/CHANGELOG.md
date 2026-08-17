@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.40.1](https://github.com/unnfazzed/Lynia/compare/v0.40.0...v0.40.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **rider:** gate the Money tab's foreground re-read on the tab actually being focused ([b43155f](https://github.com/unnfazzed/Lynia/commit/b43155fdf93de9d3d4e2563bcd0940bca1a2cedf))
+* **test:** drop the unused React import that noUnusedLocals now rejects ([e820e43](https://github.com/unnfazzed/Lynia/commit/e820e437a516df23fbeb4307620ddb227f40a396))
+
 ## [0.40.0](https://github.com/unnfazzed/Lynia/compare/v0.39.0...v0.40.0) (2026-08-17)
 
 
