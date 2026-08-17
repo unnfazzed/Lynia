@@ -70,9 +70,13 @@ So the user-visible sequence green → white → home is: splash (held) → navi
 1. Set `contentStyle: { backgroundColor: tokens.color.bg }` (or `accentWash`) in the root Stack's
    `screenOptions` so no navigation transition can ever paint framework-default white. One line;
    also covers every later push (e.g. `/send`, `/food`).
-2. Add a third boot event (`boot_home_paint`) enqueued from the home screen's first
-   mount/layout effect, so the white gap becomes a fleet number the weekly performance watch can
-   see and defend a fix against.
+2. Add a third boot event (`boot_home_paint`) enqueued from the home screen **after its first
+   frame is actually presented** — via a post-frame signal (`InteractionManager.runAfterInteractions`
+   or a `requestAnimationFrame` chained after the first commit), NOT a mount/layout effect: layout
+   effects run before the native frame presents, so an effect-timed event would understate the
+   customer-visible gap. (If only commit timing is practical, name the event for what it measures —
+   `boot_home_commit` — rather than letting the name overclaim.) Either way the white gap becomes
+   a fleet number the weekly performance watch can see and defend a fix against.
 3. Optional, bigger: hold the green splash until home's first frame (move the `SplashScreen.hideAsync`
    trigger — or keep `SplashView` mounted as an overlay until `/home` signals first layout). This
    converts green→white→home into green→home. Weigh against perceived total splash time.
@@ -84,9 +88,16 @@ Once home mounts, the app concurrently fires: `/app/bootstrap` (root), `/app/ver
 `GET /restaurants` page 1 (heavy — §4), notifications unread count, push-token registration, the
 socket handshake, and RUM flushes. On the target link (~600 ms RTT, few usable concurrent
 connections) these contend; the losers are what the customer sees as "initially failed, then
-worked" (§4.3). The B-O7 deferral pattern exists and is applied to flags/version-gate only —
-extending a small stagger to the *non-paint-critical* home calls (restaurants feed, notifications
-dot) would keep the first connections for bootstrap + active orders.
+worked" (§4.3).
+
+Important nuance: the restaurants feed is **paint-relevant on home** — "Popular near you" renders
+from `useRestaurantListFeed` — so a blind cold-boot stagger of that request would delay visible
+content. The right shape is the Swiggy/warm-boot pattern the app already uses elsewhere: **hydrate
+the `restaurant-list-store` snapshot before (or with) query initialization** so cached cards are in
+the *first* render — today `loadRestaurantListSnapshot` runs in a post-render effect, so the
+snapshot can never contribute to the first frame — and defer only the network *revalidation* until
+after first paint. A stagger remains appropriate only for genuinely non-paint content (the
+notifications dot), keeping the first connections for bootstrap + active orders.
 
 ---
 
@@ -134,22 +145,32 @@ That is exactly the reported "initially shows a failed to load". The card also c
 role and a Sentry event per attempt — so slow-link sessions are currently being *reported* as map
 failures, polluting the `MOB-MAP-02` signal.
 
-Fix options, cheapest first (all OTA-able):
+Fix options, cheapest first (all OTA-able) — with one constraint: **the true-failure path must not
+lose its recovery affordance**. If the card is simply delayed to 20-25 s across the board, a
+customer on a genuinely rejected key waits 11-16 s longer for the Retry pill; that trade-off must
+be measured (via the elapsed-time tagging below) before shipping, not assumed:
 
-- Lengthen the timeout and stage the copy: at ~9 s show a passive "Map is taking a while…" line
-  (no alert, no Sentry); only promote to the failure card + report at ~20-25 s. The card already
-  self-clears, so erring later costs nothing (the file's own comment argues this direction).
-- Gate the failure card on `onMapReady` *having* fired + no tiles: `onMapReady`-without-tiles for
-  20 s is the rejected-key signature; neither event at all for 20 s is more likely device/SDK slowness.
+- Stage the copy by *signature*, not by a single longer timer: at ~9 s show a passive "Map is
+  taking a while…" line (no alert, no Sentry). Promote to the actionable failure card early
+  (~the current 9-12 s) when the rejected-key signature is present — `onMapReady` fired, zero
+  tiles, network reachable — and only late-promote (~20-25 s) in the ambiguous slow-tiles case
+  (tiles trickling / reachability degraded). The card already self-clears, so erring later costs
+  nothing *in that ambiguous branch only*.
 - Tag the Sentry event with elapsed-time and reachability state so late-tiles sessions are
-  separable from never-tiles sessions.
+  separable from never-tiles sessions — this is also what makes the trade-off above measurable
+  from the fleet before and after.
 
 ### 3.2 The map may also be genuinely failing on this build (ops, not code)
 
 `docs/SENTRY-TRIAGE-2026-08-17.md`: real field events `compose-map-not-loaded` with
-`map_ready=true` — the ready-but-never-loaded signature of an Android Maps **key rejection**
-(`MOB-MAP-02`). Most likely cause (per `MAPS-LOADING-REVIEW-2026-08-16.md` §3): the key is
-restricted to the *upload* keystore's SHA-1, while Play re-signs with the *app-signing* key.
+`map_ready=true`. **This is evidence, not proof** — ready-but-never-loaded is *consistent with* an
+Android Maps key rejection (`MOB-MAP-02`), but §3.1 shows slow tile delivery produces the identical
+observed state before `onMapLoaded` fires. Treat key rejection as the leading *hypothesis*: confirm
+it by (a) checking the events carry `map_platform=android` + `map_load_signal=onMapLoaded` (the
+SEN-02 tags), and (b) the primary sources — `adb logcat | grep -i "Google Maps Android API"` on the
+handset (an `Authorization failure` line is conclusive) or the GCP key-restriction console. Most
+likely cause if confirmed (per `MAPS-LOADING-REVIEW-2026-08-16.md` §3): the key is restricted to
+the *upload* keystore's SHA-1, while Play re-signs with the *app-signing* key.
 **Action (founder, minutes):** Play Console → App integrity → copy the app-signing certificate
 SHA-1 → add it to the Maps key's Android restrictions alongside `zw.co.lynia`. No build needed —
 key-side changes take effect on the next map open. Until that is confirmed fixed, some sessions'
@@ -174,11 +195,18 @@ If the card shows and tiles never arrive without a retry → §3.2 (ops). Both a
 common case. Result: the pin appears instantly, the address row stays blank for ~3–10+ s — the
 reported "pickup address takes time to auto complete".
 
-Fix: reverse-geocode the cached fix immediately and let the live fix's geocode overwrite it only
-when the live point moved meaningfully (e.g. >75 m — below that, the landmark string is the same
-anyway). Worst case is two geocoder calls once per compose session; also bound
-`reverseGeocodeAsync` with the same `withTimeout` the fixes use (it currently has none, in both the
-hook and `ComposeMap.reverseGeocode`).
+Fix: reverse-geocode the cached fix immediately so the address row fills with the pin, and let the
+**live** fix's own geocode replace it when the live point is accepted. Two correctness rules for
+the implementation: (a) a distance threshold (e.g. skip the second lookup under ~75 m) is a *cost
+optimization only*, never an address-correctness rule — nearby points can sit across a road or
+property boundary, so when the live point differs at all, its geocode result wins; (b) each geocode
+result must stay associated with the point it was requested for, so an out-of-order completion
+(cached-point result landing after the live-point result) can never overwrite the newer landmark —
+the same monotonic-guard shape `AddressSearch.reqSeq` already uses. Cover both with tests
+(`geocode.test.ts` today covers only `geocodeAsync`, not `reverseGeocodeAsync`). Bounding
+`reverseGeocodeAsync` with `withTimeout` unblocks the *UI path* only — a `Promise.race` does not
+cancel the underlying native geocoder work — which is acceptable here (the guarded callbacks
+already ignore late results) but should be stated in the code, not discovered.
 
 ### 4.2 The search path pays two Google RTTs plus a second native map (JS fix)
 
@@ -200,8 +228,12 @@ tile batch is one zoom level, not a metro area.
 Unchanged from `MAPS-LOADING-REVIEW-2026-08-16.md`: no Places key → device geocoder (resolve on
 submit only, no predictions); a mis-restricted key (`REQUEST_DENIED`) → empty suggestions forever
 with the "look it up on this phone" escape. Sentry silence on `places-status-*` in the 08-17
-triage says the current build's key is *not* being denied — so autocomplete slowness on the
-handset today is RTT + the confirm step, not the key.
+triage is **suggestive, not conclusive**: the event only fires after a *qualifying* request (key
+present, ≥3 characters typed, an HTTP-OK body carrying a non-OK Places status) — a build with no
+key, or sessions where nobody typed a qualifying query, produce the same silence. Treat "the
+Places key is healthy" as unconfirmed until a suggestion list is actually seen on-device
+(`MAPS-LOADING-REVIEW-2026-08-16.md` §5.0's two-minute check); if it is healthy, autocomplete
+slowness on the handset today is RTT + the confirm step, not the key.
 
 ---
 
@@ -276,7 +308,8 @@ All four fit the existing batched-RUM shape (`src/telemetry/rum.ts`) and are OTA
 2. **API deploy:** signed-URL micro-cache for restaurant/menu/search photos (§5.1).
 3. **OTA batch (JS):** stack `contentStyle` background + `boot_home_paint` (§1.2); staged map
    timeout copy + report tagging (§3.1); cached-fix landmark geocode + geocoder timeout (§4.1);
-   cold-boot stagger for restaurants/notifications (§1.3); RUM events (§6).
+   snapshot-first hydration of the restaurants feed + stagger for non-paint calls only (§1.3);
+   RUM events (§6).
 4. **Next store-build train:** `expo-image` adoption (backlog #3); revisit confirm-sheet map
    strategy (§4.2) alongside the SEN-04 crash trail; consider Maps SDK pre-warm only with a
    device memory measurement (§2).
