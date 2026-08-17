@@ -1,0 +1,114 @@
+# MOB-MAP-02 — the Android map is blank on the installed build
+
+**Status: OPEN, ops-side.** The fix is a GCP console change; no code change or OTA can reach it (the
+Maps key is written into the native manifest, and expo-updates matches bundles to binaries by a
+fingerprint the key is part of — `REL-01`).
+
+This runbook exists because every previously written verification step for this bug ended in
+`adb logcat | grep "Google Maps Android API"` — a USB cable and a terminal. The owner of this repo
+codes from a phone, so the one person holding the broken handset could never run the check. **Step 1
+replaces it with something a phone can do.**
+
+---
+
+## What the evidence already rules in and out
+
+Three causes were listed in `docs/MAPS-LOADING-REVIEW-2026-08-16.md` §3. Two facts found on 2026-08-17
+(`docs/SENTRY-TRIAGE-2026-08-17.md`) change that ranking materially — read this before spending time on
+the wrong one.
+
+**❌ ELIMINATED — "the key never reached the manifest" (was candidate 3).** `apps/mobile/app.config.ts`
+now *throws* at config resolution on the EAS worker when `GOOGLE_MAPS_API_KEY` is unset for a
+`preview`/`production` profile. That guard is present in **v0.37.0 and v0.38.0** (absent in v0.36.1),
+and v0.38.0 **built and submitted successfully** on 2026-08-17 (EAS build `333ebcda` FINISHED →
+submission `fed0f9d3` FINISHED, track `internal`, `docs/PLAY-STORE-SUBMISSION.md`). A build that
+finished is a build whose key was present. **The key IS in the EAS `preview` environment.**
+
+**⚠️ RE-FRAMED — "the Play app-signing SHA-1 was never listed" (was candidate 1, ranked most likely).**
+This cannot be the whole story as originally written. The 2026-08-05 device audit
+(`docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) records a **photograph of the installed Android
+build showing Google tiles for Harare rendering, with the Google attribution baked into the tile
+surface** — and the Play internal track had been live since 2026-08-04 ~10:00 UTC. If the app-signing
+certificate had never been on the allowlist, that build would have been blank too.
+
+So the question is not "was the SHA-1 ever added" but **"what changed between 2026-08-05 and
+2026-08-16"**. The most likely answer is that the `SECURITY-OPS.md` §B restriction hardening was applied
+to the key in that window and listed only the **upload** keystore's SHA-1, or an API restriction was
+added that excludes the Maps SDK for Android. That still lands on the same console page — but it means
+you are looking for a *recent edit*, not an *omission*, and GCP shows you the key's edit history.
+
+**Still live — billing / API enablement (was candidate 2).** Unchanged, and step 1 tests it directly.
+
+---
+
+## Step 1 — Get the answer without a cable (2 minutes, from your phone)
+
+1. Open the Play Console → **Test and release → Setup → App integrity** → *App signing key certificate*
+   → copy the **SHA-1**. This is the certificate installed builds actually run under. (The EAS upload
+   keystore is a *different* certificate; allowlisting only that one is the documented re-signing trap
+   in `docs/SECURITY-OPS.md` §B.)
+2. GitHub → **Actions → "Maps Key Doctor" → Run workflow**, paste the SHA-1 into `sha1`, run it.
+3. Read the job log. It probes the real key against Google and names the cause:
+
+| Verdict | What it means | What to do |
+|---|---|---|
+| `ANDROID_RESTRICTION_REJECTED` | **This is MOB-MAP-02 confirmed.** That certificate is not on the key's allowlist. | Step 2 |
+| `BILLING` | Billing is off or lapsed on the project. | GCP → Billing. Nothing else will work until this is fixed. |
+| `INVALID_KEY` | Google does not recognise the key — it was deleted or regenerated and EAS still holds the old string. | Re-create in EAS (Sensitive visibility) **and ship a new binary** — no OTA can carry it. |
+| `API_RESTRICTED_OR_DISABLED` | The key is alive and billing is fine, but it may not call the static-maps service. | Healthy if the key is correctly restricted to `maps-android-backend.googleapis.com`. It proves key + billing are good; verify the Android allowlist by eye in the console. |
+| `OK` | The certificate **is** allowlisted, key alive, billing active. | The remaining cause is the *Maps SDK for Android* service being disabled: GCP → APIs & Services → Enabled APIs. |
+
+> The probe reaches the Maps **web service**, which enforces the same key object — same application
+> restriction, same billing and enablement state — as the SDK. It cannot reach the Maps SDK for Android
+> itself, so it never claims to have tested that service. The script says which question it answered.
+
+## Step 2 — Fix the allowlist
+
+GCP → **APIs & Services → Credentials** → the Maps SDK key → **Application restrictions → Android apps**.
+List **both** fingerprints against `zw.co.lynia`:
+
+- the Play **app signing** certificate SHA-1 (from step 1) — what installed builds run under;
+- the EAS-managed **upload** keystore SHA-1 — so sideloaded QA APKs keep working.
+
+Under **API restrictions**, the key must be allowed to call **Maps SDK for Android**
+(`maps-android-backend.googleapis.com`).
+
+Changes propagate within about 5 minutes. **No new build is required** — the key string in the installed
+binary is unchanged; only its server-side permissions were wrong.
+
+## Step 3 — Confirm
+
+Re-run **Maps Key Doctor** with the same SHA-1 and expect `OK` (or `API_RESTRICTED_OR_DISABLED`, which
+is the healthy answer for a correctly API-restricted key). Then open `/send` on the handset and confirm
+Google tiles for Harare with the attribution baked into the tile surface — tiles are the only proof the
+key is accepted; a rendered map *frame* is not.
+
+The app also reports itself now: a still-blank map sends `compose-map-not-loaded` to Sentry tagged
+`map_load_signal=onMapLoaded` (`docs/SENTRY-TRIAGE-2026-08-17.md`). No event after a successful send
+means the map is drawing.
+
+## Step 4 — Make it stick
+
+`infra/terraform/apikeys.tf` already encodes exactly the restrictions above, including listing both
+fingerprints — it is gated off (`maps_api_keys_enabled = false`) and was never imported. Arming it turns
+this from a console state that can silently drift into a reviewable plan diff. It needs three values you
+now have or can read once:
+
+- `maps_api_key_id` / `places_api_key_id` — `gcloud services api-keys list --format='table(name,displayName)'`,
+  taking the **final component of `name`** (not `uid`);
+- `android_cert_sha1_fingerprints` — both SHA-1s, colon-separated uppercase.
+
+**Import before applying.** Both keys already exist; applying without an import creates a second pair
+with new key strings, leaves the originals unmanaged, and reaches no device. Read the header of
+`apikeys.tf` first — it has the exact commands and the reason `name` is ForceNew.
+
+---
+
+## Why this cannot be fixed in the app
+
+The Maps key is written into the merged Android manifest by `android.config.googleMaps.apiKey`. It is
+not in the JS bundle, and `@expo/fingerprint` makes it part of the runtimeVersion, so an OTA carrying a
+different key would compute a version no installed binary has and reach zero devices (`REL-01`,
+`REL-02`). What the app *can* do — and now does — is fail honestly instead of silently: `/send` keeps a
+working address path via Places or the device geocoder, shows the `LJ.map_failed` card with a retry, and
+reports the failure to Sentry with the tags that distinguish this bug from a false alarm.
