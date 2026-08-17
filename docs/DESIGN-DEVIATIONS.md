@@ -894,9 +894,11 @@ here rather than decided, because both are the owner's call.
 
 **Guarded by** `app/settings/__tests__/identity-card-inert.test.tsx` — a negative suite over all three
 screens: the identity card has no pressable ancestor, no handler on any of the three routes to
-`/profile`, and Settings renders neither `Edit profile` nor `Coming soon`. Both halves were verified to
-redden it (the shared card re-wrapped, then the codegen wrap restored and the view regenerated) before
-being reverted. Also `app/rider/(tabs)/__tests__/account.test.tsx` (the rider card, on the real screen,
+`/profile`, and Settings renders neither `Edit profile` nor `Coming soon`. **The suite was verified to
+FAIL without each half of the fix, not merely to pass with it:** re-wrapping the shared card in a
+`Pressable` failed the customer-tab and Settings cases, and restoring the codegen wrap and regenerating
+the view failed the rider case (in this suite and in the rider account suite). Both experiments were
+reverted. Also `app/rider/(tabs)/__tests__/account.test.tsx` (the rider card, on the real screen,
 because the generated view carries its own copy) and `app/settings/__tests__/settings-card.test.tsx`
 (the row set, minus Edit profile).
 

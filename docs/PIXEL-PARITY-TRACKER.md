@@ -184,7 +184,7 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
-| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-15 · role-independent per D-22 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. First row is the mock's "Edit profile" for every role now — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock |
+| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-15 · role-independent per D-22 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
 | ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
 | ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |

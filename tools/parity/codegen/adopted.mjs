@@ -1985,8 +1985,10 @@ export const ADOPTED = [
     // `Screen( div( AppBar, Pad( Card(identity row), Card(settings.map) ) ) )` — an identity Card + a
     // 5-row settings Card, plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map. The data seam
     // wires the live `['me']` identity (name, rating/jobs/KYC line — honest-empty '★ new' until the first
-    // rating lands) and the settings rows + their route taps; the identity Card gains a transparent
-    // Pressable(→profile/settings+sign-out) and each settings row a Pressable(→its route). The always-
+    // rating lands) and the settings rows + their route taps; each settings row gains a transparent
+    // Pressable(→its route). The identity Card gains NOTHING — it stays the plain, inert Card the mock
+    // draws (D-26, owner 2026-08-17; it carried a Pressable into /profile until then, see the bind's
+    // NOTE below — do not re-add one). The always-
     // drawn status pill (the mock draws it) reflects the rider's REAL online/offline state, not a frozen
     // 'online'. The container early-returns a SkeletonList loading state (glue, not gated) — the static
     // mock draws no loading variant, so there is no separate state-view to guard for it.
