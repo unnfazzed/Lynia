@@ -1,15 +1,19 @@
 /**
- * RJM.board_empty `empty` region (mock→RN codegen). `RiderBoardEmptyView` is the adopted, structurally-
- * parity view for the rider board's "nothing in range yet" state: the mock's `Card(EmptyState(ghost
- * "Refresh"))`. It carries NO accept/assignment/online-toggle logic — its one action is the ghost
- * "Refresh", the container's `openQ.refetch()` forwarded byte-identical. This pins:
- *   (1) the empty state is wrapped in a Card (the structural WIN over the pre-adoption bare EmptyState);
- *   (2) tapping "Refresh" fires the passed `onRefresh` exactly once (the retry affordance is preserved);
- *   (3) the container-owned message renders (the flag-honest copy the container computes).
+ * RJM.board_empty `empty` region. `RiderBoardEmptyView` draws the rider board's "nothing in range yet"
+ * state as the mock's `Card(EmptyState(…))` MINUS the mock's ghost "Refresh" button, which is undrawn
+ * by the owner's standing 2026-08-16 no-manual-refreshing instruction (docs/DESIGN-DEVIATIONS.md D-30).
+ * This pins:
+ *   (1) the empty state is still wrapped in a Card — the structural win of the original adoption, which
+ *       must survive the view becoming hand-maintained;
+ *   (2) the container-owned message renders (the flag-honest copy the container computes);
+ *   (3) the view offers NO action of any kind — the ABSENCE assertion, and the only one here that can
+ *       regress silently. The button was missed by #755's sweep once already (it is labelled plain
+ *       "Refresh", not "Refresh status", and lives in its own file), so it is pinned by label AND by
+ *       the more general "nothing in this view is pressable".
  */
 import React from "react";
 import { Text } from "react-native";
-import renderer, { act } from "react-test-renderer";
+import renderer from "react-test-renderer";
 import { Card } from "../../../../src/ui";
 import { RiderBoardEmptyView } from "../board-empty.view";
 
@@ -18,30 +22,24 @@ function textOf(tree: renderer.ReactTestRenderer): string {
 }
 
 describe("RiderBoardEmptyView (RJM.board_empty empty region)", () => {
-  it("wraps the empty state in a Card and renders the container-owned message + ghost Refresh", () => {
+  it("wraps the empty state in a Card and renders the container-owned message", () => {
     const tree = renderer.create(
-      <RiderBoardEmptyView message="You'll see parcels here the moment they're posted near you." onRefresh={() => {}} />,
+      <RiderBoardEmptyView message="You'll see parcels here the moment they're posted near you." />,
     );
-    // The Card wrapper is the structural adoption (the app previously drew a bare EmptyState).
+    // The Card wrapper is the mock's structure — kept even though the region is no longer codegen-adopted.
     expect(tree.root.findAllByType(Card)).toHaveLength(1);
 
     const text = textOf(tree);
     expect(text).toContain("Nothing in range yet");
     expect(text).toContain("You'll see parcels here the moment they're posted near you.");
-
-    const refresh = tree.root.findAll((n) => n.props.label === "Refresh" && typeof n.props.onPress === "function");
-    expect(refresh).toHaveLength(1);
   });
 
-  it("fires onRefresh exactly once when the Refresh action is tapped (the openQ.refetch seam)", () => {
-    const onRefresh = jest.fn();
-    const tree = renderer.create(<RiderBoardEmptyView message="Nothing yet." onRefresh={onRefresh} />);
+  it("draws no Refresh button — and no pressable action at all (D-30: no manual refreshing)", () => {
+    const tree = renderer.create(<RiderBoardEmptyView message="Nothing yet." />);
 
-    const refresh = tree.root.findAll((n) => n.props.label === "Refresh" && typeof n.props.onPress === "function");
-    act(() => {
-      (refresh[0]!.props as { onPress: () => void }).onPress();
-    });
-
-    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(textOf(tree)).not.toContain("Refresh");
+    expect(tree.root.findAll((n) => n.props.label === "Refresh")).toHaveLength(0);
+    // The general form: a future edit that re-adds the affordance under any other label still fails.
+    expect(tree.root.findAll((n) => typeof n.props.onPress === "function")).toHaveLength(0);
   });
 });

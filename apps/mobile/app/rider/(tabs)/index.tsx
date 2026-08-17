@@ -1000,7 +1000,7 @@ export default function RiderHome(): React.ReactElement {
                 // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
                 <SkeletonList />
               ) : (
-                <RiderBoardEmptyView message={boardEmptyMessage} onRefresh={() => void openQ.refetch()} refreshing={openQ.isFetching} />
+                <RiderBoardEmptyView message={boardEmptyMessage} />
               )
             }
             ListFooterComponent={
@@ -1234,11 +1234,11 @@ export default function RiderHome(): React.ReactElement {
               // asserting the definitive "No open orders near you" conclusion before the first fetch returns.
               <SkeletonList />
             ) : ranked.length === 0 ? (
-              // RJM.board_empty#empty — the adopted `RiderBoardEmptyView` (board-empty.view.tsx),
-              // mounted INLINE here in the fallback ScrollView (the last return, the one the composition
-              // guardrail reduces) so the empty region is visible to the composition check. The Refresh
-              // action forwards `openQ.refetch()` byte-identical; the copy is the flag-honest leaf above.
-              <RiderBoardEmptyView message={boardEmptyMessage} onRefresh={() => void openQ.refetch()} refreshing={openQ.isFetching} />
+              // RJM.board_empty#empty — `RiderBoardEmptyView` (board-empty.view.tsx), mounted INLINE
+              // here in the fallback ScrollView as well as in the list branch above, so the empty state
+              // is the same on both paths. It carries NO action: the mock's ghost "Refresh" is undrawn
+              // by owner instruction (DESIGN-DEVIATIONS D-30) — the board re-fetches on its own.
+              <RiderBoardEmptyView message={boardEmptyMessage} />
             ) : null}
           </View>
         ) : null}

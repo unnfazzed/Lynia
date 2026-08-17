@@ -1121,3 +1121,70 @@ extension and becomes an ordinary alignment target.
 `tools/parity/old-vs-new.mjs` driver (the second lane beside `pair.mjs`: `pair` answers "does the app
 match the mock?", this answers "what did this change do?" — the only question available for a screen
 with no mock of its own).
+
+---
+
+## D-30 · The rider board's empty state drops the mock's ghost "Refresh"; the Money tab drops pull-to-refresh — APPROVED (2026-08-17)
+
+**In effect.** Owner instruction, standing since 2026-08-16 and restated this session: **there is no
+manual refreshing anywhere in the app.** The app notices on its own; the rider is never asked to ask.
+
+`#755` applied that instruction and removed eight buttons — all of them labelled **"Refresh status"**.
+Two manual-refresh affordances survived it, both because of how they were labelled rather than because
+anyone decided to keep them:
+
+| Where | What | Why it survived #755 |
+|---|---|---|
+| `app/rider/(tabs)/board-empty.view.tsx` | ghost **"Refresh"** button in the empty-board Card | labelled plain "Refresh", and in its own generated file — the sweep matched "Refresh status" |
+| `app/rider/(tabs)/money.tsx` | **pull-to-refresh** (`RefreshControl`) | a gesture, not a button; nothing to grep for |
+
+Both are gone. This entry sanctions the first (the mock draws it) and records the second (no mock does).
+
+**Half 1 — the empty-state "Refresh" is undrawn (DEVIATION).** `rider-one-app.jsx :: board_empty`
+draws `Card( EmptyState( ghost "Refresh" ) )`. The app now draws `Card( EmptyState )`. The Card wrapper
+stays — that was the structural win the region was adopted for, and it is unaffected. Recorded as an
+`undrawn` entry against `tools/parity/expected/RJM.board_empty.json`, so the rendered-conformance lane
+accounts for the omission by name rather than by silence (the D-26 mechanism).
+
+**Cost, stated plainly: `RJM.board_empty` is no longer codegen-adopted.** The app now draws one node
+fewer than the mock, and the structural snapshot has no way to express that — `snapshot.mjs` compares
+the RAW mock fragment against the committed view, and `normalize.mjs` has no skip/undrawn concept. The
+choice was to withdraw the region or to teach the snapshot to tolerate a missing node. Withdrawing is
+the honest one: a tolerance for missing nodes would have blinded **every** adopted screen, which is the
+exact hole the RC.home drift shipped through. So `adopted.mjs` carries `RJM.board_empty` as defer-only
+with its reason, `board-empty.view.tsx` becomes hand-maintained, and the deferral ratchet
+(`tools/parity/codegen/deferral-baseline.json`) is bumped **76 → 77** with the bump recorded in the file.
+That bump is a debt, not a settlement — reverse it the moment either escape opens.
+
+**Half 2 — the Money tab drops pull-to-refresh (NOT a deviation).** No mock draws a pull-to-refresh;
+it is an invisible gesture, so removing it moves nothing away from the kit. It is recorded here only
+because it was load-bearing: `ALR-06` (`docs/KNOWN_BUGS.md`) added it when a support-credit — the only
+working top-up path at launch — appeared not to land on an open wallet screen. Removing the gesture
+without replacing what it did would have re-opened that P1, so it is replaced by two inputs, neither a
+gesture:
+
+- an **app-foreground re-read**, which catches a credit that landed while the phone was in a pocket —
+  the exact case the gesture existed for, and the same input that replaced the "Refresh status" buttons;
+- a **20s re-read while the tab is focused AND the last read failed**, so a stale balance self-heals
+  while the rider is looking at it instead of waiting for them to leave the tab and come back. Gated on
+  `isError` deliberately: a healthy balance already refreshes on focus and foreground, and polling it on
+  a metered link would buy nothing.
+
+The stale-balance cue changes with it — "showing your last known balance. **Pull down to try again**"
+became "showing your last known balance. **It'll update by itself**", because the first sentence now
+instructs the rider to perform a gesture that no longer exists.
+
+**What is NOT touched.** Retries are not refreshes, and #755 already drew that line: "Try again" on the
+KYC wall (`index.tsx`) and the online gate re-run a **decision server-side**; "Retry" on a failed
+board/balance read re-runs a request the user is staring at the failure of; "Reload" on the root error
+boundary is crash recovery. None of these are a rider being asked to check whether the app is current.
+
+**Guarded by** `app/rider/(tabs)/__tests__/board-empty.view.test.tsx` (the view: Card kept, message
+renders, no "Refresh" label and **no pressable node at all** — so re-adding the affordance under any
+other label still fails) and `app/rider/(tabs)/__tests__/index.test.tsx` (the same absence on the real
+screen, where the button actually shipped). **Both were verified to FAIL with the button restored, not
+merely to pass without it:** re-adding it to the view reddened both suites; the experiment was reverted.
+
+**Retire this entry** when an export redraws `board_empty` without the Refresh button — then the region
+is re-adoptable, the `undrawn` entry comes out of the expected tree, and the deferral baseline goes back
+to 76. Half 2 needs no retirement: no mock draws a pull-to-refresh, so an export cannot contradict it.

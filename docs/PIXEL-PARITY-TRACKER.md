@@ -285,7 +285,7 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 |---|---|---|---|---|---|
 | ⬜ | R3·1 | `RJM offline` | Offline  [BOTH] | | |
 | 👁 | R3·2 | `RJM board` | Jobs · one list  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | white "Jobs near you" bar + bell (green BrandHeader removed), compact online pill, primary card actions; honest inert-socket "Reconnecting" + flag-off copy |
-| 👁 | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | |
+| 👁 | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`); **codegen adoption WITHDRAWN 2026-08-17 (D-30)** — the mock's ghost "Refresh" is undrawn per the owner's no-manual-refreshing instruction, one node fewer than the mock, which the structural snapshot cannot express | Card wrapper kept; omission recorded as `undrawn` on `tools/parity/expected/RJM.board_empty.json`; deferral baseline 76 → 77, reversible once an export redraws `board_empty` without the button |
 | ⬜ | R3·4 | `RJM notifications` | One inbox  [BOTH] | | |
 | ⬜ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | | |
 | ⬜ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | | |
