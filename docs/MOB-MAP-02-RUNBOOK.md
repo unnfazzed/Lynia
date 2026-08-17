@@ -123,6 +123,31 @@ Both survivors are properties of the *key object itself*, and both are read off 
 This is exactly the shape of a `SECURITY-OPS.md` §B hardening pass applied with one field wrong, which
 matches the "what changed between 2026-08-05 and 2026-08-16" framing above.
 
+**Checked 2026-08-17 — Application restrictions reads `None` (owner-confirmed).** That closes the
+allowlist branch completely: a key with no application restriction rejects nobody — no package check,
+no SHA-1 check — so the re-signing trap the 2026-08-16 review ranked most likely **cannot be causing
+this**, and neither can a Websites/IP misconfiguration. It also means the whole SHA-1 hunt (Play
+app-signing vs EAS upload certificate) is moot for this incident. Note in passing that `None` is *not*
+what §B specifies for the Maps key, so the §B hardening was either never applied to it or was reverted —
+worth fixing later for security, but it is not this bug.
+
+**Two things remain, and the second is the one this runbook under-weighted.**
+
+1. **The key's API restrictions** — the block below Application restrictions on the same page. Restricted
+   to a set omitting Maps SDK for Android ⇒ blank tiles despite the project having the API on.
+
+2. **The installed binary may not carry the key that is in EAS today.** The Maps key is **native**: it is
+   baked into the merged manifest at build time. Every probe in §1.5 tested the value sitting in the EAS
+   `preview` environment *now*. The handset runs whatever build was installed, which may have been built
+   from a different value — v0.36.1 in particular predates the `app.config.ts` guard, so it could have
+   been built with the key absent or stale and nothing would have stopped it. **"The EAS key is healthy"
+   does not prove "the key inside the installed app is healthy."**
+
+   Cheapest test in the whole runbook, and it needs no console at all: **install the current internal-track
+   build** (v0.38.0, EAS `333ebcda` → submission `fed0f9d3`, track `internal`, 2026-08-17). That binary
+   was built from the value verified above. If the map draws, the incident was a stale binary and nothing
+   is wrong with the key at all.
+
 **Why the doctor cannot answer these two.** Google evaluates API activation before the application
 restriction, and the probe can only reach web-service APIs — so a key correctly restricted to
 `maps-android-backend.googleapis.com` refuses every probe on API grounds before the allowlist is ever
@@ -134,7 +159,7 @@ Maps SDK for Android channel is not reachable over HTTP. Read the two blocks by 
 > even match the `AIza` + 35-character shape. That does not affect the Play build, but the QA-APK lane
 > would ship a mapless APK today. Re-run the doctor with `key_source: github` after fixing it.
 
-## Step 2 — Fix the allowlist
+## Step 2 — Fix the allowlist *(only if Application restrictions is NOT `None` — as of 2026-08-17 it is, so skip to the API-restrictions check and the build test above)*
 
 GCP → **APIs & Services → Credentials** → the Maps SDK key → **Application restrictions → Android apps**.
 List **both** fingerprints against `zw.co.lynia`:
