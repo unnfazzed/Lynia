@@ -264,27 +264,27 @@ only independent lane — not worth a worktree for one file + spec.
 
 Synthesized from this review's findings. Each task derives from a specific finding above.
 
-- [ ] **T1 (P1, human: ~½d / CC: ~20min)** — api/merchant — signed-URL MicroCache + 24 h TTL + metrics + kill-switch, catch outside the cache
+- [x] **T1 (P1, human: ~½d / CC: ~20min)** — api/merchant — signed-URL MicroCache + 24 h TTL + metrics + kill-switch, catch outside the cache
   - Surfaced by: Architecture A4 + outside-voice #4/#5/#6 — `merchant.service.ts:544-547` quote
   - Files: `apps/api/src/merchant/merchant.service.ts`, `apps/api/src/observability/metrics.service.ts`, `apps/api/src/config/env.ts`, merchant spec
   - Verify: merchant.service.spec cache cases; `pnpm --filter @lynia/api test`
-- [ ] **T2 (P1, human: ~1h / CC: ~5min)** — mobile/root — `contentStyle: accentWash` (NOT bg/#FFFFFF)
+- [x] **T2 (P1, human: ~1h / CC: ~5min)** — mobile/root — `contentStyle: accentWash` (NOT bg/#FFFFFF)
   - Surfaced by: outside-voice #1 (`design-tokens.ts:22 bg:"#FFFFFF"`)
   - Files: `apps/mobile/app/_layout.tsx` + pin test
   - Verify: new pin test red-if-white
-- [ ] **T3 (P1, human: ~½d / CC: ~20min)** — contracts+api+mobile — `boot_home_paint` end to end + snapshot + ordering note
+- [x] **T3 (P1, human: ~½d / CC: ~20min)** — contracts+api+mobile — `boot_home_paint` end to end + snapshot + ordering note
   - Surfaced by: Architecture A1 + outside-voice #3/#9 — `contracts.ts:510`, `metrics.service.ts:137`
   - Files: `packages/shared/src/contracts.ts`, `apps/api/src/observability/metrics.service.ts` (+int spec), `apps/mobile/src/telemetry/rum.ts`, `apps/mobile/app/(tabs)/home.tsx` (+test), contract snapshot
   - Verify: `pnpm contract:check` green after snapshot; int spec accepts event
-- [ ] **T4 (P1, human: ~½d / CC: ~25min)** — mobile/map — uniform staged failure card + bucketed tags
+- [x] **T4 (P1, human: ~½d / CC: ~25min)** — mobile/map — uniform staged failure card + bucketed tags
   - Surfaced by: Architecture A2 + outside-voice #2/#9 — `ComposeMap.tsx:96` quote
   - Files: `apps/mobile/src/ui/ComposeMap.tsx`, `compose-map-failure.test.tsx`
   - Verify: staged-timeline tests
-- [ ] **T5 (P1, human: ~½d / CC: ~25min)** — mobile/autolocate — concurrent cached-fix geocode, seq guard, no distance rule, timeout
+- [x] **T5 (P1, human: ~½d / CC: ~25min)** — mobile/autolocate — concurrent cached-fix geocode, seq guard, no distance rule, timeout
   - Surfaced by: Code-quality C2 + outside-voice #8 — `use-pickup-autolocate.ts:139-155` quote
   - Files: `apps/mobile/src/logic/use-pickup-autolocate.ts` (+test)
   - Verify: extended autolocate tests incl. out-of-order case
-- [ ] **T6 (P1, human: ~1d / CC: ~30min)** — mobile/restaurants — persist-layer warm paint; delete legacy snapshot store
+- [x] **T6 (P1, human: ~1d / CC: ~30min)** — mobile/restaurants — persist-layer warm paint; delete legacy snapshot store
   - Surfaced by: Architecture A3 + outside-voice #7 — `restaurant-list-store.ts:19`, `persist.ts:90-103`
   - Files: `apps/mobile/src/query/persist.ts`, `apps/mobile/src/query/use-restaurants.ts`, delete `apps/mobile/src/net/restaurant-list-store.ts`, `apps/mobile/src/auth/device-state.ts`, tests (feed/persist/session)
   - Verify: warm-first-render + stale-banner tests; `pnpm --filter @lynia/mobile test`
