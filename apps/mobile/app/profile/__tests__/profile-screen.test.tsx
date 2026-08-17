@@ -29,6 +29,12 @@ jest.mock("../../../src/auth/auth-context", () => ({
   useAuth: () => ({ session: { role: "rider" }, signOut: mockSignOut }),
 }));
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
+// STREAMLINE-01: the Notifications row's sub-line now carries an unread count, so the screen has a second
+// data dependency. Stubbed at zero — this suite is about the side param and the account record, and a live
+// count would only add timing noise to both.
+jest.mock("../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }),
+}));
 
 import ProfileScreen from "../index";
 

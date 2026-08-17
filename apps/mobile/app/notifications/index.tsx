@@ -1,9 +1,14 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import { SafeAreaView, View } from "react-native";
-import { getNotificationsFeed } from "../../src/api/notifications";
+import {
+  dismissNotification,
+  getNotificationsFeed,
+  markNotificationsRead,
+  type NotificationRow,
+} from "../../src/api/notifications";
 import { notificationRowDestination } from "../../src/push/push";
 import { AppBar, Button, EmptyState, SkeletonList } from "../../src/ui";
 import { NotificationsView, type NotificationItem } from "./notifications.view";
@@ -55,9 +60,41 @@ function TransientHeader({ onBack }: { onBack: () => void }): React.ReactElement
 
 export default function NotificationsScreen(): React.ReactElement {
   const router = useRouter();
+  const qc = useQueryClient();
   const feedQ = useQuery({ queryKey: ["notifications"], queryFn: getNotificationsFeed });
   const feed = feedQ.data ?? [];
   const onBack = (): void => router.back();
+
+  // STREAMLINE-01: stamp the read watermark when the screen gains focus. `unread` is now real per-user
+  // read state on the server (Profile.notificationsReadAt), not the old "younger than 24h" recency
+  // proxy — so this call is the ONLY thing that clears the dots, and opening the screen is the only
+  // honest moment to claim the list was seen. Best-effort: a failed stamp just leaves the rows unread,
+  // which is the safe direction to fail in. The unread-count query the Account rows read is invalidated
+  // so the "N new" hint clears with the dots rather than lagging a screen behind.
+  useFocusEffect(
+    React.useCallback(() => {
+      void markNotificationsRead()
+        .then(() => qc.invalidateQueries({ queryKey: ["notifications-unread-count"] }))
+        .catch(() => undefined);
+    }, [qc]),
+  );
+
+  // STREAMLINE-01: swipe-to-dismiss. The feed is derived server-side, so there is no row to delete —
+  // the API records the dismissal against the row's synthetic id and filters it out of later reads.
+  // Applied optimistically (the row must leave under the finger, not after a round-trip) and rolled
+  // back by refetching if the write fails, so a dismissal that didn't stick reappears rather than
+  // silently hiding a notification the server will keep sending.
+  const onItemDismiss = React.useCallback(
+    (index: number): void => {
+      const row = feed[index];
+      if (!row) return;
+      qc.setQueryData<NotificationRow[]>(["notifications"], (prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      void dismissNotification(row.id)
+        .then(() => qc.invalidateQueries({ queryKey: ["notifications-unread-count"] }))
+        .catch(() => void feedQ.refetch());
+    },
+    [feed, qc, feedQ],
+  );
 
   if (feedQ.isLoading) {
     return (
@@ -105,6 +142,7 @@ export default function NotificationsScreen(): React.ReactElement {
           const row = feed[i];
           if (row) router.push(notificationRowDestination(row));
         }}
+        onItemDismiss={onItemDismiss}
       />
     </SafeAreaView>
   );

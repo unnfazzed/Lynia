@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Inject, Post, UseGuards } from "@nestjs/common";
-import { RegisterDeviceTokenRequest } from "@lynia/shared";
+import { DismissNotificationRequest, RegisterDeviceTokenRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
@@ -33,6 +33,46 @@ export class NotificationsController {
   feed(@CurrentUser() profileId: string): Promise<NotificationRow[]> | NotificationRow[] {
     if (this.env.NOTIFICATIONS_FEED_ENABLED === "false") return [];
     return this.feedService.feedForUser(profileId);
+  }
+
+  /**
+   * STREAMLINE-01: the caller's unread row count, for the Account row's "N new" hint — unread used to be
+   * invisible until you were already inside the centre. Same kill switch and same fail-soft posture as
+   * the feed it summarises (an off switch reports zero unread, which is what an empty feed means).
+   */
+  @Get("unread-count")
+  async unreadCount(@CurrentUser() profileId: string): Promise<{ count: number }> {
+    if (this.env.NOTIFICATIONS_FEED_ENABLED === "false") return { count: 0 };
+    return { count: await this.feedService.unreadCountForUser(profileId) };
+  }
+
+  /**
+   * STREAMLINE-01: stamp the read watermark — the client calls this when the centre gains focus. Not
+   * kill-switch-gated: it is a single-column write that must keep working even with the (non-core) feed
+   * synthesis switched off, so flipping the switch can never leave a stale "N new" hint behind.
+   *
+   * Throttled like the other authenticated writes on this controller. A focus event per screen open is
+   * a handful per minute at worst; the cap only bounds a client stuck in a focus loop.
+   */
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "notifications-read" })
+  @Post("read")
+  markRead(@CurrentUser() profileId: string): Promise<{ readAt: string }> {
+    return this.feedService.markRead(profileId);
+  }
+
+  /**
+   * STREAMLINE-01: dismiss one feed row (the swipe). The body carries the feed's own synthetic row id;
+   * dismissals are scoped to the authenticated profile, so one user can never dismiss another's row (the
+   * id is stored opaquely against `profileId` and only ever filtered against that same profile's feed).
+   * Idempotent upsert, so a retry over a flaky link is a no-op rather than an error.
+   */
+  @Throttle({ limit: 60, windowSec: 60, keyPrefix: "notifications-dismiss" })
+  @Post("dismiss")
+  dismiss(
+    @Body(new ZodBody(DismissNotificationRequest)) body: DismissNotificationRequest,
+    @CurrentUser() profileId: string,
+  ): Promise<{ ok: true }> {
+    return this.feedService.dismiss(profileId, body.id);
   }
 
   /** Mobile posts its FCM device token after login (and on token refresh). */

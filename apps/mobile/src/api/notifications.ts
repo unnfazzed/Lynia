@@ -32,6 +32,32 @@ export function getNotificationsFeed(): Promise<NotificationRow[]> {
   return apiFetch<NotificationRow[]>("/notifications/feed");
 }
 
+/**
+ * STREAMLINE-01: how many feed rows the caller hasn't seen — the Account row's "N new" hint. Cheap
+ * enough to sit on the Account screens because the feed synthesis behind it is bounded to one day.
+ */
+export function getNotificationsUnreadCount(): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>("/notifications/unread-count");
+}
+
+/**
+ * STREAMLINE-01: stamp the read watermark. Called when the centre gains focus, which is the only
+ * honest moment to claim the list was seen — `unread` is derived from this server-side, so a row the
+ * user never opened the screen for stays unread however old it gets (the old 24h recency proxy silently
+ * marked it read instead).
+ */
+export function markNotificationsRead(): Promise<{ readAt: string }> {
+  return apiFetch<{ readAt: string }>("/notifications/read", { method: "POST" });
+}
+
+/**
+ * STREAMLINE-01: dismiss one row (the swipe). Sends back the row's own synthetic `id` — the feed is
+ * derived server-side, so there is no database id to send.
+ */
+export function dismissNotification(id: string): Promise<{ ok: true }> {
+  return apiFetch("/notifications/dismiss", { method: "POST", body: { id } });
+}
+
 /** Bind this device's FCM token to the signed-in profile (called after login + on token refresh). */
 export function registerDeviceToken(token: string, platform?: Platform): Promise<{ ok: true }> {
   return apiFetch("/notifications/device-token", { method: "POST", body: { token, platform } });

@@ -69,6 +69,39 @@ const FEED_NOTICES_RIDER: Record<string, { icon: string; title: string; message:
 };
 
 /**
+ * STREAMLINE-01 (owner decision 2026-08-17): which AUDIENCE each order-status row is for — a verbatim
+ * mirror of the `to` arrays in NotificationsService's {@link STATUS_NOTICES}, which is the table that
+ * decides who actually receives the push.
+ *
+ * The feed's founding contract is "the in-app centre reads the same as the push the user already saw"
+ * (see FEED_NOTICES above). It never held: the synthesizer rendered EVERY mapped status to BOTH parties
+ * in their own voice, while the push table sends 6 of the 10 statuses to ONE party only. A rider was
+ * shown seven rows per job (`assigned` → `completed`) having been pushed two; a customer was shown
+ * `assigned`/`completed` rows for pushes that only ever went to the rider. That gap was the single
+ * largest source of feed volume, and it is why a couple of trips could evict every account-level row.
+ *
+ * Gating the feed on the same audience the push uses closes it. The table is duplicated rather than
+ * imported-and-mapped so the two can be diffed as data; `notifications-feed.service.spec.ts` asserts
+ * key-for-key + audience-for-audience equality with STATUS_NOTICES, so the next status added to one
+ * table without the other fails at test time (the same write-time-guard idiom FEED_READ_ACTIONS uses).
+ */
+const FEED_AUDIENCE: Record<string, readonly ("customer" | "rider")[]> = {
+  assigned: ["rider"],
+  confirmed: ["customer"],
+  en_route_pickup: ["customer"],
+  picked_up: ["customer"],
+  en_route_dropoff: ["customer"],
+  delivered: ["customer"],
+  completed: ["rider"],
+  expired: ["customer"],
+  undelivered: ["customer"],
+  cancelled: ["customer", "rider"],
+};
+
+/** Exported for the colocated audience-agreement guardrail (see {@link FEED_AUDIENCE}). */
+export const FEED_STATUS_AUDIENCE = FEED_AUDIENCE;
+
+/**
  * KB-FEED-SYNTH: account-status feed rows, synthesized from the generic `AuditLog` (no Notification
  * table). Keyed by the exact `auditData(...)` action strings the admin standing changes
  * (admin-riders.service) and KYC decisions (rider.service adminSetKyc / applyKycResult) already write,
@@ -137,13 +170,33 @@ const ISSUE_RESOLUTION_FEED_COPY: Record<"refund" | "rider_strike" | "close_no_a
   close_no_action: { title: "Your report was resolved", message: "We looked into this trip and closed it out — tap for details." },
 };
 
-/** How recent an event must be to count as "unread" in the derived feed — a deterministic window over
- *  the event time (there is no per-user read state to persist). */
-const FEED_UNREAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+/**
+ * STREAMLINE-01 (owner decision 2026-08-17): **notifications live for exactly one day.**
+ *
+ * The previous model had no time-based retention at all — a row's life was implied by two COUNT caps
+ * (30 most recent orders, 30 merged rows), which made retention a function of the viewer's own order
+ * volume rather than of time: a busy rider saw five days, a once-a-year customer saw rows from last
+ * January, and neither could predict which. This is the single window that replaces both reaches, and
+ * it is applied UNIFORMLY — there are deliberately no long-lived carve-outs, so an account-standing or
+ * resolved-issue row ages out at 24h like everything else. Those states all have a durable home of
+ * their own (account standing on the Account/rider screens, KYC on Bike & documents, money in Money,
+ * trips in Orders); the feed is the "what happened since yesterday" inbox, not the archive.
+ *
+ * Because nothing in the feed outlives the window, a dismissal never has to outlive it either — see
+ * {@link NotificationsFeedService.dismiss}, which prunes on write against this same constant.
+ */
+const FEED_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-/** How many orders back the feed reaches, and the cap on rows returned (A·3 shows the most recent). */
-const FEED_ORDER_LOOKBACK = 30;
-const FEED_ROW_CAP = 30;
+/**
+ * How many of the caller's recent orders the synthesizer scans, and the cap on rows returned.
+ *
+ * The order scan is now a SAFETY bound, not the retention mechanism: the query also requires at least
+ * one in-window event, so on real data it returns far fewer than this. The row cap rises from 30 to 50
+ * because the collapse rules below (one status row per order, one offer row per order) cut rows per
+ * order from as many as ten to two — the visible list gets shorter, not longer, despite the bigger cap.
+ */
+const FEED_ORDER_SCAN_CAP = 50;
+const FEED_ROW_CAP = 50;
 
 /**
  * The caller's read-only, derived in-app notifications feed (customer-journey A·3). Split out of
@@ -158,24 +211,50 @@ export class NotificationsFeedService {
    * The caller's in-app notifications feed (customer-journey A·3) — a READ-ONLY view derived from the
    * events of their own recent orders (across both roles), newest first and capped at
    * {@link FEED_ROW_CAP}. There is no Notification table: this reconstructs the same lifecycle beats
-   * the user was pushed. `now` is injectable so unread-recency is deterministic under test.
+   * the user was pushed. `now` is injectable so the retention cutoff is deterministic under test.
+   *
+   * STREAMLINE-01 shapes the output three ways on top of the synthesis itself:
+   *  - **retention** — every row SOURCE is bounded to {@link FEED_RETENTION_MS} (one day). Reads that
+   *    merely look a FACT up about an in-window row (did this expired order have offers? was this
+   *    completion an ops adjudication?) are deliberately NOT time-bounded: they qualify a row that is
+   *    already in window rather than producing one.
+   *  - **collapse** — at most one order-status row and one offer row per order (see below).
+   *  - **read state** — `unread` is now a real per-user watermark (`Profile.notificationsReadAt`),
+   *    not the old "younger than 24h" recency proxy, which could neither be cleared by reading nor
+   *    kept for something never seen.
+   *
+   * Dismissed rows (see {@link dismiss}) are filtered out at the end, after the merge.
    */
   async feedForUser(userId: string, now: Date = new Date()): Promise<NotificationRow[]> {
+    const cutoff = new Date(now.getTime() - FEED_RETENTION_MS);
+
     // Wave-2 perf: this method synthesizes the feed from ~9 reads that used to run strictly
     // sequentially — nine serial DB round-trips per open. They form exactly two dependency levels:
-    // three are USER-scoped (orders, account audits, resolved issues) and run together right here;
-    // the other six need only the id lists derived from `orders`, so they run together next. Every
-    // row-building loop below is byte-identical to the sequential version — the final newest-first
-    // sort + cap make append order irrelevant to the output.
-    const [orders, accountAudits, resolvedIssues] = await Promise.all([
+    // the USER-scoped ones (orders, account audits, resolved issues, plus STREAMLINE-01's read
+    // watermark and dismissal set) run together right here; the ones that need only the id lists
+    // derived from `orders` run together next. The final newest-first sort + cap make append order
+    // irrelevant to the output.
+    const [orders, accountAudits, resolvedIssues, profile, dismissals] = await Promise.all([
       this.prisma.order.findMany({
-        where: { OR: [{ customerId: userId }, { riderId: userId }] },
+        // STREAMLINE-01: `events.some` is the retention reach. The old query took the 30 most recent
+        // orders regardless of age, so a dormant account's year-old orders still furnished rows; now an
+        // order is in view only if something actually HAPPENED on it inside the window. Note this keys
+        // off event time, not order age — a week-old order delivered an hour ago is correctly in view.
+        where: {
+          OR: [{ customerId: userId }, { riderId: userId }],
+          events: { some: { createdAt: { gte: cutoff } } },
+        },
         orderBy: { createdAt: "desc" },
-        take: FEED_ORDER_LOOKBACK,
+        take: FEED_ORDER_SCAN_CAP,
         select: {
           id: true,
           riderId: true,
           orderType: true,
+          // The order's CURRENT status, used to stamp `status` on the non-status rows (fare-adjust,
+          // resolved-issue) that need it for routing. Read from the column rather than the last element
+          // of `events` — that list is now cutoff-filtered, so its tail is the newest RECENT event, not
+          // necessarily the order's actual state.
+          status: true,
           // `rebroadcastOfId` links a rider-bail clone back to the order it replaced; `expiryNoSupply`
           // flags a genuine "nobody was online" expiry; `cancelledBy` is the canceller's profile id (used
           // for actor-suppression below — a row about your OWN action is noise, mirroring the push).
@@ -186,6 +265,7 @@ export class NotificationsFeedService {
           // exactly like the push does.
           agreedFare: true,
           events: {
+            where: { createdAt: { gte: cutoff } },
             select: { status: true, createdAt: true },
             orderBy: { createdAt: "asc" },
           },
@@ -194,26 +274,42 @@ export class NotificationsFeedService {
       // KB-FEED-SYNTH account-status rows (KYC decision + admin standing changes) — consumed by the
       // account loop below; user-scoped, so it needs nothing from `orders`.
       this.prisma.auditLog.findMany({
-        where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS } },
+        where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS }, createdAt: { gte: cutoff } },
         orderBy: { createdAt: "desc" },
         take: FEED_ROW_CAP,
         select: { id: true, action: true, createdAt: true },
       }),
-      // UX-2026-07-16 resolved-issue rows — consumed by the issues loop below; also user-scoped, and
-      // deliberately NOT bounded by the order lookback (a resolution can land long after the order
-      // ages out of FEED_ORDER_LOOKBACK).
+      // UX-2026-07-16 resolved-issue rows — consumed by the issues loop below; also user-scoped.
+      // STREAMLINE-01: this read used to be deliberately UNBOUNDED by the order lookback so a late
+      // resolution still surfaced. Under a wall-clock window that special case disappears — the row is
+      // in view for a day after `resolvedAt` however old the order is, which is what that exemption was
+      // reaching for in the first place.
       this.prisma.issue.findMany({
-        where: { openedByProfileId: userId, status: "resolved" },
+        where: { openedByProfileId: userId, status: "resolved", resolvedAt: { gte: cutoff } },
         orderBy: { resolvedAt: "desc" },
         take: FEED_ROW_CAP,
         select: { id: true, orderId: true, resolution: true, resolvedAt: true },
       }),
+      // STREAMLINE-01 read watermark: the last time this profile OPENED the notifications centre.
+      // `unread` is derived from it below.
+      this.prisma.profile.findUnique({ where: { id: userId }, select: { notificationsReadAt: true } }),
+      // STREAMLINE-01 dismissals: rows this profile swiped away. Bounded by the same window as the rows
+      // themselves — a dismissal for a row that has already aged out can never match anything again.
+      this.prisma.notificationDismissal.findMany({
+        where: { profileId: userId, createdAt: { gte: cutoff } },
+        select: { rowId: true },
+      }),
     ]);
 
+    const readAt = profile?.notificationsReadAt ?? null;
+    const dismissed = new Set<string>(dismissals.map((d) => d.rowId));
+    /** A row is unread until the viewer has opened the centre at or after the row's own time. */
+    const isUnread = (at: Date): boolean => readAt === null || at.getTime() > readAt.getTime();
+
     // Map an original (cancelled) order id → the fresh clone auto-broadcast in its place (F-01). The
-    // clone shares the customer and is strictly newer than the original, so whenever the cancelled
-    // original is inside the take-30 (newest-first) window the clone — sorting above it — is too; this
-    // in-memory map is therefore complete without a second query.
+    // clone shares the customer and is strictly newer than the original; both sides of a rider-bail
+    // rebroadcast emit an event at the moment of the bail, so whenever the cancelled original is in the
+    // retention window the clone is too — this in-memory map is complete without a second query.
     const cloneByOriginal = new Map<string, string>();
     for (const order of orders) {
       if (order.rebroadcastOfId) cloneByOriginal.set(order.rebroadcastOfId, order.id);
@@ -231,7 +327,8 @@ export class NotificationsFeedService {
       // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
       // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
       // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
-      // ever bid" on a cold read, long after the window closed.
+      // ever bid" on a cold read, long after the window closed. NOT time-bounded: this QUALIFIES an
+      // in-window expiry row (the offers precede it by seconds anyway), it never produces a row.
       expiredOrderIds.length > 0
         ? this.prisma.offer.findMany({
             where: { orderId: { in: expiredOrderIds } },
@@ -243,38 +340,42 @@ export class NotificationsFeedService {
       // (indistinguishable from an ordinary completion) but pushes bespoke copy — "marked complete
       // after review" (customer) and "delivery confirmed" (rider). The action is durably recorded as
       // an AuditLog row targeted at the order id; the per-order loop below swaps in role-appropriate
-      // copy for a `completed` event on these.
+      // copy for a `completed` event on these. Also a qualifier, so also not time-bounded.
       orderIds.length > 0
         ? this.prisma.auditLog.findMany({
             where: { target: { in: orderIds }, action: "order.adjudicate_delivered" },
             select: { target: true },
           })
         : [],
-      // KB-FEED-SYNTH "New offer" rows — consumed by the offers loop below.
+      // KB-FEED-SYNTH "New offer" rows. notifyNewOffer pushes the customer when a rider bids on their
+      // order, but that push never produced a feed row (the feed was derived from order-status events
+      // only). Recovered from the durable Offer rows on the caller's own (customer-view) orders.
+      // STREAMLINE-01: time-bounded (a row source), and `createdAt` is now selected so the collapsed
+      // row below can key off, and be timed by, the NEWEST bid.
       customerViewOrderIds.length > 0
         ? this.prisma.offer.findMany({
-            where: { orderId: { in: customerViewOrderIds } },
+            where: { orderId: { in: customerViewOrderIds }, createdAt: { gte: cutoff } },
             select: { id: true, orderId: true, createdAt: true },
           })
         : [],
       // UX17-01 SOS counterparty fallback — consumed by the SOS loop below.
       orderIds.length > 0
         ? this.prisma.sosEvent.findMany({
-            where: { orderId: { in: orderIds }, raisedByProfileId: { not: userId } },
+            where: { orderId: { in: orderIds }, raisedByProfileId: { not: userId }, createdAt: { gte: cutoff } },
             select: { id: true, orderId: true, createdAt: true },
           })
         : [],
       // UX17-02 rider-standing notice fallback — consumed by the standing loop below.
       customerViewOrderIds.length > 0
         ? this.prisma.auditLog.findMany({
-            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_notice" },
+            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_notice", createdAt: { gte: cutoff } },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
       // UX18-05 standing-resolved counterpart — consumed right after the notice loop.
       customerViewOrderIds.length > 0
         ? this.prisma.auditLog.findMany({
-            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved" },
+            where: { target: { in: customerViewOrderIds }, action: "order.rider_standing_resolved", createdAt: { gte: cutoff } },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
@@ -282,7 +383,7 @@ export class NotificationsFeedService {
       // (adjustFare pushes both parties), so it belongs to this order-scoped level like the SOS read.
       orderIds.length > 0
         ? this.prisma.auditLog.findMany({
-            where: { target: { in: orderIds }, action: "order.fare_adjust" },
+            where: { target: { in: orderIds }, action: "order.fare_adjust", createdAt: { gte: cutoff } },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
@@ -291,7 +392,7 @@ export class NotificationsFeedService {
       // to customerViewOrderIds like the standing-notice reads, not all orderIds.
       customerViewOrderIds.length > 0
         ? this.prisma.auditLog.findMany({
-            where: { target: { in: customerViewOrderIds }, action: "order.riders_available_notify" },
+            where: { target: { in: customerViewOrderIds }, action: "order.riders_available_notify", createdAt: { gte: cutoff } },
             select: { id: true, target: true, createdAt: true },
           })
         : [],
@@ -299,7 +400,7 @@ export class NotificationsFeedService {
     const orderIdsWithOffers = new Set<string>(withOffers.map((o) => o.orderId));
     const adjudicatedOrderIds = new Set<string>(adjudicated.map((a) => a.target));
     // UX26-03: shared by the fare-adjust and resolved-issue rows below — both need to look an orderId
-    // back up against the already-fetched, lookback-bounded `orders` list to derive `to`/`status`.
+    // back up against the already-fetched, window-bounded `orders` list to derive `to`/`status`.
     const orderById = new Map(orders.map((o) => [o.id, o]));
 
     const rows: NotificationRow[] = [];
@@ -312,15 +413,36 @@ export class NotificationsFeedService {
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
       // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
       const isCustomerView = order.riderId !== userId;
+      const audience = isCustomerView ? "customer" : "rider";
       const notices = isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
-      for (const event of order.events) {
-        let notice = notices[event.status];
-        if (!notice) continue; // silent statuses (requested/open_for_offers) never surface, as with push
 
+      /**
+       * Is this status addressed to the viewer? Normally {@link FEED_AUDIENCE} decides, mirroring the
+       * push table. The ONE exception is an ops-adjudicated completion: `adjudicateDelivered` does not
+       * go through `notifyOrderStatus` at all — it pushes BOTH parties directly via `notifyProfiles`
+       * ("Delivery marked complete after review" to the customer, "Delivery confirmed" to the rider) —
+       * so gating it on `completed: ["rider"]` would drop the customer's row for a push the customer
+       * demonstrably received, on the one completion they are most likely to want a record of (a
+       * disputed hand-off resolved against them). The override copy is applied further down.
+       */
+      const isAdjudicated = adjudicatedOrderIds.has(order.id);
+      const addressesViewer = (status: string): boolean =>
+        (status === "completed" && isAdjudicated) || (FEED_AUDIENCE[status]?.includes(audience) ?? false);
+
+      // STREAMLINE-01 collapse: ONE status row per order, not one per beat. `events` is ascending, so
+      // the last event that both has copy and is addressed to THIS viewer is the order's latest news
+      // for them — which is exactly what the mock draws (a single live "Rider on the way" row, a single
+      // terminal "Delivered" row), and what the push tray already shows after collapseKey folding.
+      // Superseded intermediate beats are pure history and belong to the tracker / Orders list.
+      const event = order.events
+        .filter((e) => notices[e.status] !== undefined && addressesViewer(e.status))
         // Actor suppression (both voices): drop the `cancelled` row when the viewer is the one who
         // cancelled — a row about your own action is noise. `cancelledBy` is the canceller's profile
         // id, so a direct id match identifies the actor. Mirrors the push's excludeProfileId exclusion.
-        if (event.status === "cancelled" && order.cancelledBy === userId) continue;
+        .filter((e) => !(e.status === "cancelled" && order.cancelledBy === userId))
+        .at(-1);
+      if (event) {
+        let notice = notices[event.status]!;
 
         // The order id this row navigates to on tap (mobile routes every row to /order/<orderId>).
         // Only the rider-bail rebroadcast below redirects it to the live clone.
@@ -386,39 +508,54 @@ export class NotificationsFeedService {
         const at = event.createdAt.toISOString();
         rows.push({
           // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
+          // The collapse above changes WHICH beat is rendered, never how a rendered beat is keyed — so
+          // a dismissal stays attached to the exact beat it was made against, and the order's NEXT
+          // transition surfaces as a fresh, undismissed row.
           id: `${order.id}:${event.status}:${at}`,
           orderId,
           // UX19-03: the raw status routes the tap (see notificationRowDestination); `to` carries the
           // SAME per-order voice used to pick FEED_NOTICES vs. FEED_NOTICES_RIDER above, not the
           // (possibly redirected) `orderId` — a rider viewing their own `assigned`/`cancelled` row must
           // route to /rider/job exactly like the push does, matching event.status, not any copy override.
-          to: isCustomerView ? "customer" : "rider",
+          to: audience,
           status: event.status,
           icon: notice.icon,
           title: notice.title,
           message: notice.message,
           at,
-          unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+          unread: isUnread(event.createdAt),
         });
       }
     }
 
-    // KB-FEED-SYNTH: "New offer" rows. notifyNewOffer pushes the customer when a rider bids on their
-    // order, but that push never produced a feed row (the feed was derived from order-status events
-    // only). Recovered from the durable Offer rows on the caller's own (customer-view) orders —
-    // prefetched in the parallel level above. An offer and its order's own status events are
-    // DIFFERENT events, so no dedup is needed. Copy mirrors notifyNewOffer's push (the feed↔push
-    // contract).
+    // STREAMLINE-01 collapse: ONE offer row per order. The old loop emitted a row per Offer, so a
+    // popular auction alone could fill the feed with identical "New offer" rows (and the read had no
+    // `take` at all, so every bid on every in-view order was materialised before the cap). The mock
+    // draws a single offer row too. Keyed by the NEWEST bid so a later bid produces a NEW row id —
+    // which both re-sorts it to the top and lets it survive a dismissal of the earlier state.
+    const offersByOrder = new Map<string, { id: string; createdAt: Date }[]>();
     for (const offer of offers) {
-      const at = offer.createdAt.toISOString();
+      const bucket = offersByOrder.get(offer.orderId);
+      if (bucket) bucket.push(offer);
+      else offersByOrder.set(offer.orderId, [offer]);
+    }
+    for (const [orderId, bucket] of offersByOrder) {
+      const newest = bucket.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+      const at = newest.createdAt.toISOString();
       rows.push({
-        id: `offer:${offer.id}`,
-        orderId: offer.orderId,
+        id: `offers:${newest.id}`,
+        orderId,
+        to: "customer",
         icon: "banknote",
         title: "New offer",
-        message: "A rider responded to your delivery — tap to compare offers.",
+        // Single-bid copy is notifyNewOffer's push verbatim (the feed↔push contract); the plural form
+        // states the count instead of repeating the singular line N times.
+        message:
+          bucket.length === 1
+            ? "A rider responded to your delivery — tap to compare offers."
+            : `${bucket.length} riders responded to your delivery — tap to compare offers.`,
         at,
-        unread: now.getTime() - offer.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(newest.createdAt),
       });
     }
 
@@ -426,36 +563,30 @@ export class NotificationsFeedService {
     // delivery's fare was updated") had no durable feed fallback — order.fare_adjust's AuditLog is
     // targeted at orderId, but adjustFare writes no OrderEvent (so it never surfaces via FEED_NOTICES
     // above) and the audit's target doesn't match ACCOUNT_FEED_ACTIONS (which key off a profileId
-    // target), so a missed push left zero durable trace for either party. Recover it the same way
-    // order.rider_standing_notice does below — one batched query over the orders already in view — but
-    // scoped to ALL orderIds (not just customerViewOrderIds), since adjustFare pushes both parties.
-    if (fareAdjustments.length > 0) {
-      for (const a of fareAdjustments) {
-        const order = orderById.get(a.target);
-        if (!order) continue; // defensive: target always one of the queried orders
-        const isCustomerView = order.riderId !== userId;
-        const fare = order.agreedFare != null ? Number(order.agreedFare).toFixed(2) : null;
-        const at = a.createdAt.toISOString();
-        rows.push({
-          id: `fare-adjust:${a.id}`,
-          orderId: a.target,
-          to: isCustomerView ? "customer" : "rider",
-          // UX26-03: the order's CURRENT status (the last event in the ascending-ordered `events` list
-          // this query selects — there's no top-level `status` column on this projection), so
-          // notificationRowDestination can route a rider still on the exact `assigned`/`cancelled` job
-          // straight to `/rider/job` (gated on `to === "rider"` there, so this is safe to stamp
-          // unconditionally — unlike pushDestination's ungated equivalent check).
-          status: order.events.at(-1)?.status,
-          icon: "banknote",
-          title: "Fare updated",
-          message:
-            (isCustomerView ? "Your fare was corrected" : "The fare for this delivery was corrected") +
-            (fare ? ` to $${fare}` : "") +
-            " by our team.",
-          at,
-          unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
-        });
-      }
+    // target), so a missed push left zero durable trace for either party.
+    for (const a of fareAdjustments) {
+      const order = orderById.get(a.target);
+      if (!order) continue; // defensive: target always one of the queried orders
+      const isCustomerView = order.riderId !== userId;
+      const fare = order.agreedFare != null ? Number(order.agreedFare).toFixed(2) : null;
+      const at = a.createdAt.toISOString();
+      rows.push({
+        id: `fare-adjust:${a.id}`,
+        orderId: a.target,
+        to: isCustomerView ? "customer" : "rider",
+        // UX26-03: the order's CURRENT status, so notificationRowDestination can route a rider still on
+        // the exact `assigned`/`cancelled` job straight to `/rider/job` (gated on `to === "rider"`
+        // there, so this is safe to stamp unconditionally — unlike pushDestination's ungated check).
+        status: order.status,
+        icon: "banknote",
+        title: "Fare updated",
+        message:
+          (isCustomerView ? "Your fare was corrected" : "The fare for this delivery was corrected") +
+          (fare ? ` to $${fare}` : "") +
+          " by our team.",
+        at,
+        unread: isUnread(a.createdAt),
+      });
     }
 
     // UX21-02: "notify me when a rider's online" (live-order case) feed fallback. notifyRidersAvailable
@@ -473,7 +604,7 @@ export class NotificationsFeedService {
         title: "A rider's online near you",
         message: "Riders are being pinged on your live request — tap to follow the offers.",
         at,
-        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(a.createdAt),
       });
     }
 
@@ -497,7 +628,7 @@ export class NotificationsFeedService {
         title: copy.title,
         message: copy.message,
         at,
-        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(a.createdAt),
       });
     }
 
@@ -517,7 +648,7 @@ export class NotificationsFeedService {
         title: "SOS on your delivery",
         message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
         at,
-        unread: now.getTime() - event.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(event.createdAt),
       });
     }
 
@@ -538,7 +669,7 @@ export class NotificationsFeedService {
         title: "An update on your delivery",
         message: "There's a change with your assigned rider — our team is reviewing this trip.",
         at,
-        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(a.createdAt),
       });
     }
 
@@ -556,39 +687,89 @@ export class NotificationsFeedService {
         title: "Your delivery is back on track",
         message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
         at,
-        unread: now.getTime() - a.createdAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(a.createdAt),
       });
     }
 
     // UX-2026-07-16: resolved-issue rows, mirroring the KB-FEED-SYNTH pattern above. `notifyIssueResolved`
     // is best-effort and can be missed; this is the durable fallback so "did anyone act on my problem" is
-    // always answerable from the feed, not just a push that may never have landed. Not scoped to the
-    // order-lookback window (like the account rows above) since a resolution can land long after the
-    // order itself ages out of FEED_ORDER_LOOKBACK.
+    // answerable from the feed for a day after the resolution, whatever the age of the order itself.
     for (const issue of resolvedIssues) {
       if (!issue.resolution || !issue.resolvedAt) continue; // defensive: resolved rows always carry both
       const copy = ISSUE_RESOLUTION_FEED_COPY[issue.resolution];
       const at = issue.resolvedAt.toISOString();
-      // UX26-03 sibling: the order may be outside FEED_ORDER_LOOKBACK (this loop is deliberately not
-      // bounded by it, per the comment above) — `order` is undefined in that case and `to`/`status`
-      // stay unset, falling back to the existing `/order/:id` routing rather than guessing.
+      // UX26-03 sibling: the order may have had no activity inside the retention window, so it is not in
+      // `orders` — `order` is undefined in that case and `to`/`status` stay unset, falling back to the
+      // existing `/order/:id` routing rather than guessing.
       const order = orderById.get(issue.orderId);
       rows.push({
         id: `issue:${issue.id}`,
         orderId: issue.orderId,
         to: order ? (order.riderId === userId ? "rider" : "customer") : undefined,
-        status: order ? order.events.at(-1)?.status : undefined,
+        status: order ? order.status : undefined,
         icon: "check",
         title: copy.title,
         message: copy.message,
         at,
-        unread: now.getTime() - issue.resolvedAt.getTime() < FEED_UNREAD_WINDOW_MS,
+        unread: isUnread(issue.resolvedAt),
       });
     }
 
     // Newest first. ISO-8601 UTC strings sort lexicographically in time order. The synthesized offer/
     // account rows merge with the order-event rows here and the shared cap applies to the whole set.
+    // STREAMLINE-01: dismissed rows drop out AFTER the merge and BEFORE the cap, so swiping a row
+    // promotes the next one into view rather than leaving a hole at the bottom of the list.
     rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-    return rows.slice(0, FEED_ROW_CAP);
+    return rows.filter((r) => !dismissed.has(r.id)).slice(0, FEED_ROW_CAP);
+  }
+
+  /**
+   * STREAMLINE-01: how many rows the caller has not yet seen — what the Account row's "N new" hint is
+   * drawn from, so unread is legible BEFORE opening the centre (it used to be invisible until you were
+   * already inside, since the only unread affordance was the per-row dot).
+   *
+   * Deliberately derived from {@link feedForUser} rather than counted with a second, cheaper query: a
+   * count that disagrees with the list it summarises is worse than no count, and the synthesis is now
+   * bounded to a single day of activity. Dismissed rows are already gone from that list, so a swipe
+   * lowers the count exactly as a reader would expect.
+   */
+  async unreadCountForUser(userId: string, now: Date = new Date()): Promise<number> {
+    const feed = await this.feedForUser(userId, now);
+    return feed.reduce((n, r) => n + (r.unread ? 1 : 0), 0);
+  }
+
+  /**
+   * STREAMLINE-01: stamp the read watermark — called when the caller opens the notifications centre.
+   * One column, not per-row read state: the feed is a single chronological list that is always read
+   * top-down, so "everything up to now has been seen" is the only distinction the screen can honestly
+   * make. Idempotent, and monotonic in practice (the clock only moves forward).
+   */
+  async markRead(userId: string, now: Date = new Date()): Promise<{ readAt: string }> {
+    await this.prisma.profile.update({ where: { id: userId }, data: { notificationsReadAt: now } });
+    return { readAt: now.toISOString() };
+  }
+
+  /**
+   * STREAMLINE-01: dismiss one row (the swipe). The feed is derived, so there is no row to delete —
+   * instead the dismissal is recorded against the row's stable synthetic id and filtered out on every
+   * subsequent read. Upsert, so a double-swipe (two devices, or a retry over a flaky link) is a no-op
+   * rather than a unique-constraint error.
+   *
+   * The write also prunes this profile's dismissals older than the retention window. Nothing in the
+   * feed outlives {@link FEED_RETENTION_MS}, so a dismissal older than that can never match a row
+   * again — keeping it would grow the table forever and slow the read that loads the set. Pruning here
+   * (rather than in a sweeper) keeps it a self-maintaining table with no scheduled job to own.
+   */
+  async dismiss(userId: string, rowId: string, now: Date = new Date()): Promise<{ ok: true }> {
+    const cutoff = new Date(now.getTime() - FEED_RETENTION_MS);
+    await this.prisma.notificationDismissal.upsert({
+      where: { profileId_rowId: { profileId: userId, rowId } },
+      create: { profileId: userId, rowId, createdAt: now },
+      update: {},
+    });
+    await this.prisma.notificationDismissal.deleteMany({
+      where: { profileId: userId, createdAt: { lt: cutoff } },
+    });
+    return { ok: true };
   }
 }

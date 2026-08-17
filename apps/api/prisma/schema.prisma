@@ -220,6 +220,11 @@ model Profile {
   cashBanned      Boolean   @default(false) @map("cash_banned")
   cashBanReason   String?   @map("cash_ban_reason")
   cashBannedAt    DateTime? @map("cash_banned_at")
+  // STREAMLINE-01: when this profile last OPENED the in-app notifications centre. The feed is derived
+  // (no Notification table), so there is nowhere to store per-row read state — and nothing to store,
+  // since the centre is one chronological list read top-down. `unread` is "newer than this watermark".
+  // NULL = never opened, so everything still in the one-day window reads as unread.
+  notificationsReadAt DateTime? @map("notifications_read_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -232,9 +237,35 @@ model Profile {
   ratingsGiven    Rating[]                   @relation("ratingBy")
   deviceTokens    DeviceToken[]
   reopenReminders RestaurantReopenReminder[]
+  notificationDismissals NotificationDismissal[]
 
   @@index([idNumberHash])
   @@map("profiles")
+}
+
+/// STREAMLINE-01: one row per notification the profile has swiped away.
+///
+/// The notifications centre is a DERIVED read model over orders/offers/audits/issues/SOS — there is no
+/// Notification table and therefore no row to delete when the user dismisses one. This records the
+/// dismissal against the feed row's stable synthetic id (`<orderId>:<status>:<at>`, `offers:<id>`,
+/// `account:<id>`, …) and `NotificationsFeedService.feedForUser` filters those ids out on every read.
+///
+/// Self-pruning rather than swept: nothing in the feed outlives the one-day retention window, so a
+/// dismissal older than that can never match a row again and is deleted on the next dismissal write.
+model NotificationDismissal {
+  id        String   @id @default(uuid()) @db.Uuid
+  profileId String   @map("profile_id") @db.Uuid
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// The feed row's synthetic id. Opaque text, not a foreign key — the row it names is synthesized on
+  /// read and may already have aged out.
+  rowId     String   @map("row_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // A double-swipe (two devices, or a retry over a flaky link) must be a no-op, not a 500.
+  @@unique([profileId, rowId])
+  // The read loads one profile's in-window dismissals; the prune deletes one profile's stale ones.
+  @@index([profileId, createdAt])
+  @@map("notification_dismissals")
 }
 
 // FCM device push tokens. A profile can have many (multiple devices); a token is globally unique and

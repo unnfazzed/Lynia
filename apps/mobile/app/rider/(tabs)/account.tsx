@@ -8,6 +8,7 @@ import { getMe } from "../../../src/api/auth";
 import { getActiveOrder } from "../../../src/api/orders";
 import { setOnline } from "../../../src/api/riders";
 import { pendingOrQueued } from "../../../src/query/client";
+import { notificationsRowSub, useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
 import { AppScreen, Button, SkeletonList, Sub } from "../../../src/ui";
 import { RiderAccountView, type RiderAccountRow } from "./account.view";
 
@@ -65,6 +66,8 @@ export default function RiderAccountTabScreen(): React.ReactElement {
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder });
   const activeJob = activeQ.data ?? null;
   const offlineM = useMutation({ mutationFn: () => setOnline(false) });
+  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-26).
+  const unreadCount = useNotificationsUnreadCount();
 
   const leaveForCustomer = (): void => {
     // No-active-job path: the copy promises this takes you offline, so make it true — fire the offline
@@ -81,7 +84,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     ["id-card", "Bike & documents", rider?.kycStatus === "verified" ? "Verified · view your documents" : "Verify your ID and register your bike."],
     ["history", "Job history", "Parcels and food in one list"],
     ["wallet", "Money", "Balance, cash held, commission"],
-    ["bell", "Notifications", "One inbox for both services"],
+    ["bell", "Notifications", notificationsRowSub(unreadCount)],
     ["phone", "Help & support", "Call the safety line"],
     // D-22's addition. Settings carries the two Play-listing REQUIREMENTS (Privacy notice, Delete
     // account) plus permissions, language and payment; before this row a rider could only reach them

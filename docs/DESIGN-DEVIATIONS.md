@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -812,3 +812,62 @@ permission rows SAY and asserts the two dropped strings stay dropped.
 this), or if the owner reverses the merge — in which case the permission rows go back to their own
 section, the header and paragraph come back, and the two `undrawn` entries come out of the expected
 JSONs. Language/Payment becoming drawn screens would retire only that half.
+
+---
+
+## D-26 · Notifications gains swipe-to-dismiss and an unread count on the Account row — APPROVED (2026-08-17)
+
+**In effect.** Two additions to the notifications cluster that no mock draws:
+
+1. **Swipe-to-dismiss** on the rows of `LJ notifications` (`app/notifications/notifications.view.tsx`).
+2. **An unread count** in front of the Notifications row's sub-line on both Account screens —
+   `3 new · One inbox for both services` (`src/query/use-notifications-unread.ts`,
+   `notificationsRowSub`).
+
+Both bend "not drawn ⇒ not rendered", which is why they are here.
+
+**How it surfaced.** Owner instruction (2026-08-17): *"Let's streamline notifications tab. How long
+should notifications stay. How should they disappear."* On the answer to the scoping question the owner
+chose the fullest option — retention **must be 1 day**, and *"Everything incl. dismiss + badge"*, whose
+option text stated plainly that those two need a ledger entry. This is that entry.
+
+**What the mocks draw, and what the app now adds.**
+
+| | Mock (`screens.jsx :: Notifications`, `rider-one-app.jsx :: notifications`) | App (this entry) |
+|---|---|---|
+| Row gesture | tap only (static mock; a gesture cannot be drawn) | tap **or** horizontal swipe to dismiss |
+| Row element tree | icon disc · title · message · relative time · unread dot | **unchanged** — no node added or removed |
+| Account row sub | `One inbox for both services` | `N new · One inbox for both services` when N > 0; **byte-identical at N = 0** |
+| Bell badge / "Clear all" / filter tabs | not drawn | **still not rendered** — deliberately out of scope |
+
+**Why this is the smallest possible bend.** Neither addition changes a drawn structure:
+
+- The swipe is `PanResponder` handler props spread onto the row's **existing** `Pressable`, plus a
+  `transform`/`opacity` on the **existing** row `View`. No wrapper element, no re-kinded node — so
+  `apps/api/src/parity/structure-snapshot.spec.ts` (guardrail #4) stays green *by construction*, and a
+  regeneration of the codegen view diffs only in the lines marked `STREAMLINE-01`. It also adds no
+  dependency: `PanResponder` is React Native core, so there is no `react-native-gesture-handler` in the
+  bundle and nothing for `docs/APP-SIZE.md` to absorb.
+- The count is a **prefix**; the mock's string survives verbatim as the tail, and an account with
+  nothing unread reads exactly as the kit draws it. The structural normalizer drops text, so the
+  Account tab's own snapshot (`RJM.account`) is unaffected either way.
+
+**Why not the alternatives.** A bell badge on the board AppBar and a "Clear all" action were both
+considered and **rejected** for now: a badge would add a drawn node to a generated view (a real
+structural deviation, not a text one), and with a one-day retention window and honest read state
+"Clear all" solves a problem that ageing already solves an hour later. If either is wanted, it needs its
+own entry — not this one.
+
+**The retention half needs no deviation.** How long a row lives (now one day — see
+`FEED_RETENTION_MS`) and what makes it unread (now a real `Profile.notificationsReadAt` watermark rather
+than a "younger than 24h" proxy) are invisible to the mocks: the kit draws a row **with** and
+**without** the unread dot and says nothing about either lifetime or read semantics. Same for the row
+collapse — the mock's own sample data is already one status row and one offer row per order, so
+collapsing moves the app *toward* the drawing, not away from it.
+
+**Guarded by** `app/notifications/__tests__/index.test.tsx` (the read stamp fires on focus, a dismissal
+is optimistic and posts the row's synthetic id, a failed write rolls back by refetching) and the
+existing structural snapshot, which is what proves the row tree did not move.
+
+**Retire this entry** if an export draws a dismissal affordance on the notification row (align to it and
+delete this half) or an unread count on the Account row's Notifications entry (delete the other half).
