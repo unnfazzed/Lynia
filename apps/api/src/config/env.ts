@@ -71,6 +71,10 @@ export const envSchema = z.object({
   // Ceiling 600s = the code default: a cached signed URL must always reach the client with ≥5 min of
   // its 15-min validity left (photo download headroom on 2G) — a higher override would break that.
   MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL: z.coerce.number().int().min(0).max(600_000).optional(),
+  // Merchant photo read-URLs (RCA 2026-08-17 §5.1): ceiling 14 h = the code default — with the
+  // cache's ±10% TTL jitter the worst-case entry lives 15.4 h of the URL's 24 h validity, so any
+  // served URL keeps ≥8.6 h of signed life; a higher override would erode that jitter-aware margin.
+  MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: z.coerce.number().int().min(0).max(50_400_000).optional(),
   // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
   // cloud would slot in.
   CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),

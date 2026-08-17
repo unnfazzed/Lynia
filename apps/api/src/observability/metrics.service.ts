@@ -76,7 +76,7 @@ export type ClientRole = "rider" | "customer";
  *  cached surface adds its name here, never a dynamic string (cardinality). Outcomes come from
  *  `MicroCacheOutcome` (hit | l2_hit | miss | coalesced | error), also closed. Together they make
  *  hit rates first-class observable — the DoorDash caching lesson wave 2 adopts. */
-export type MicroCacheName = "nearby_count" | "pickup_photo_url";
+export type MicroCacheName = "nearby_count" | "pickup_photo_url" | "merchant_photo_url";
 
 /** The completeness invariants the nightly wallet integrity job asserts (roadmap 1.3). CLOSED
  *  vocabulary — one label per invariant class, never an id/rider, so the drift counter stays low

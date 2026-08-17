@@ -86,15 +86,68 @@ describe("usePickupAutolocate", () => {
     ]);
   });
 
-  it("reverse-geocodes the FINAL point only, and reports the landmark", async () => {
+  it("names the cached fix immediately, then the live fix's own geocode replaces it (RCA §4.1)", async () => {
     lastKnown.mockResolvedValue(CACHED);
-    reverse.mockResolvedValue([{ name: "Joina City", street: "Jason Moyo Ave", district: "Harare CBD" }]);
+    reverse.mockImplementation(async ({ latitude }: { latitude: number }) =>
+      latitude === CACHED.coords.latitude
+        ? [{ name: "Cached Corner", street: "Old St", district: "Harare CBD" }]
+        : [{ name: "Joina City", street: "Jason Moyo Ave", district: "Harare CBD" }],
+    );
+    const onLandmark = jest.fn();
+    await run({ onPoint: jest.fn(), onLandmark });
+
+    // BOTH points geocode — the address follows the pin's cached-then-refined rule, and there is no
+    // distance threshold: a differing live point always gets its own lookup (a near neighbour can be
+    // a different address across a road).
+    expect(reverse).toHaveBeenCalledWith({ latitude: CACHED.coords.latitude, longitude: CACHED.coords.longitude });
+    expect(reverse).toHaveBeenCalledWith({ latitude: LIVE.coords.latitude, longitude: LIVE.coords.longitude });
+    expect(onLandmark.mock.calls.map(([l]) => l)).toEqual([
+      "Cached Corner, Old St, Harare CBD",
+      "Joina City, Jason Moyo Ave, Harare CBD",
+    ]);
+  });
+
+  it("the cached-fix geocode starts WITHOUT waiting for the live fix (concurrent, not sequential)", async () => {
+    lastKnown.mockResolvedValue(CACHED);
+    // The live fix never settles — the cached name must still land (a sequential chain would wait).
+    current.mockReturnValue(new Promise(() => {}));
+    reverse.mockResolvedValue([{ name: "Cached Corner", street: null, district: "Harare CBD" }]);
+    const onLandmark = jest.fn();
+    await run({ onPoint: jest.fn(), onLandmark });
+
+    expect(onLandmark).toHaveBeenCalledWith("Cached Corner, Harare CBD");
+  });
+
+  it("a slow cached geocode can never overwrite the live fix's landmark (generation guard)", async () => {
+    lastKnown.mockResolvedValue(CACHED);
+    let releaseCached: (v: unknown) => void = () => {};
+    reverse.mockImplementation(({ latitude }: { latitude: number }) =>
+      latitude === CACHED.coords.latitude
+        ? new Promise((resolve) => (releaseCached = resolve)) // cached lookup stalls…
+        : Promise.resolve([{ name: "Joina City", street: null, district: "Harare CBD" }]),
+    );
+    const onLandmark = jest.fn();
+    await run({ onPoint: jest.fn(), onLandmark });
+
+    expect(onLandmark.mock.calls.map(([l]) => l)).toEqual(["Joina City, Harare CBD"]);
+    // …and resolves only AFTER the live landmark landed: it must be discarded, not applied.
+    await act(async () => {
+      releaseCached([{ name: "Cached Corner", street: null, district: "Harare CBD" }]);
+    });
+    await act(async () => undefined);
+    expect(onLandmark.mock.calls.map(([l]) => l)).toEqual(["Joina City, Harare CBD"]);
+  });
+
+  it("identical cached and live coordinates pay for exactly one geocoder lookup", async () => {
+    lastKnown.mockResolvedValue(CACHED);
+    current.mockResolvedValue(CACHED);
+    reverse.mockResolvedValue([{ name: "Joina City", street: null, district: "Harare CBD" }]);
     const onLandmark = jest.fn();
     await run({ onPoint: jest.fn(), onLandmark });
 
     expect(reverse).toHaveBeenCalledTimes(1);
-    expect(reverse).toHaveBeenCalledWith({ latitude: LIVE.coords.latitude, longitude: LIVE.coords.longitude });
-    expect(onLandmark).toHaveBeenCalledWith("Joina City, Jason Moyo Ave, Harare CBD");
+    expect(onLandmark).toHaveBeenCalledTimes(1);
+    expect(onLandmark).toHaveBeenCalledWith("Joina City, Harare CBD");
   });
 
   it("falls back to the cached point for the landmark when the live fix never arrives", async () => {

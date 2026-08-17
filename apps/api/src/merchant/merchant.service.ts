@@ -29,7 +29,11 @@ import type {
 } from "@lynia/shared";
 import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { MicroCache } from "../common/micro-cache";
 import { maskPhone } from "../common/phone-mask";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
@@ -41,10 +45,26 @@ type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>
 // E4/D-32: `coverPhotoUrl`/`logoUrl`/dish `photoUrl` persist the raw GCS object KEY (the bucket has
 // no public objects — infra/terraform/storage.tf enforces `public_access_prevention = "enforced"`,
 // every read goes through a V4 signed URL), the same shape rider KYC photos already use
-// (admin-kyc-review.service.ts). Long enough that a merchant editing their menu for a while doesn't
-// see photos expire mid-session; short enough that a leaked/cached tablet response can't be replayed
-// indefinitely.
-const PHOTO_READ_URL_TTL_SECONDS = 60 * 60;
+// (admin-kyc-review.service.ts).
+//
+// 24 HOURS, deliberately (RCA 2026-08-17 §5.1): these are PUBLIC menu/marketing photos, not KYC
+// documents — the old 1 h validity was inherited from the leaked-URL reasoning of the KYC lane, and
+// it is what made the phone's image cache miss across sessions (a lunchtime and an evening open
+// never shared a URL). A leaked menu-photo URL replayable for a day is a non-risk; the bound still
+// exists so a cached tablet response can't be replayed indefinitely.
+const PHOTO_READ_URL_TTL_SECONDS = 24 * 60 * 60;
+
+// Serve each minted URL from cache for 14 h of its 24 h validity: with the cache's ±10% TTL jitter
+// the worst-case entry lives 15.4 h, so any URL a client is handed still has ≥8.6 h of signed life
+// (the jitter-aware bound the plan review demanded — a naive 16 h cache would have left only 6.4 h).
+// Byte-stable URLs are the whole point: the device image cache and the JSON ETag/304 machinery both
+// key on the exact string, and a fresh V4 signature per response defeated both (plus one IAM
+// `signBlob` RPC per photo per response — up to ~40 per list page). L1-only and per-instance
+// (documented limitation): 2-3 Cloud Run instances mint independently, so a phone can still see a
+// few URL variants per photo per window — each variant caches for hours, which is what matters.
+// Cross-instance byte-stability needs the shared Redis L2 (TODO — requires extracting
+// OrdersService's private L2 provider into a shared seam).
+const MERCHANT_PHOTO_URL_CACHE_TTL_MS = 14 * 60 * 60 * 1000;
 
 // B-O10: `GET /restaurants` had no server-side cap — every other list endpoint (history 50, board
 // 50, notifications 30) does. 20 keeps a single page's DB round-trip + payload small on a metered
@@ -66,10 +86,31 @@ function endOfToday(): Date {
 
 @Injectable()
 export class MerchantService {
+  // Read-through micro-cache for photo read-URLs (RCA 2026-08-17 §5.1) — same shape as
+  // OrdersService.pickupPhotoUrlCache: L1, single-flight (a 20-merchant list page fires up to ~40
+  // concurrent mints that coalesce per key), bounded FIFO, ±10% TTL jitter, hit rates observable
+  // under the closed "merchant_photo_url" label. The onEvent closure resolves `this.metricsSvc` at
+  // CALL time, so field-initializer order vs constructor params is never a hazard.
+  private readonly photoUrlCache = new MicroCache<string>(500, {
+    ttlJitterRatio: 0.1,
+    onEvent: (o) => this.metricsSvc?.recordMicroCache("merchant_photo_url", o),
+  });
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE) private readonly storage: StorageAdapter,
+    // Both @Global-provided (ConfigModule / ObservabilityModule) so Nest always injects them in
+    // production; TS-optional keeps the existing 2-arg spec constructions valid — with them absent
+    // the cache runs flagless and metrics are a no-op (the OrdersService convention).
+    @Inject(ENV) private readonly env?: Env,
+    private readonly metricsSvc?: MetricsService,
   ) {}
+
+  /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule —
+   *  mirrors OrdersService.microCacheBypassed. */
+  private microCacheBypassed(ttlMs: number): boolean {
+    return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
+  }
 
   /** Upgrade a customer profile to a merchant owner + create the Merchant row — mirrors
    *  RiderService.becomeRider exactly (same conflict shape, same atomic role+row transaction). */
@@ -538,12 +579,18 @@ export class MerchantService {
     return dish;
   }
 
-  /** Best-effort read-URL mint (mirrors admin-kyc-review.service.ts's photoUrl handling): a signing
-   *  hiccup shouldn't block the rest of the response from loading, it just means the photo doesn't
-   *  render this once. `null`/missing key never calls storage at all. */
+  /** Best-effort read-URL mint, micro-cached by object key so the URL is byte-stable across
+   *  responses for MERCHANT_PHOTO_URL_CACHE_TTL_MS (see the constant's comment for why that is the
+   *  whole fix). The `.catch(() => null)` sits OUTSIDE the cache ON PURPOSE: inside the loader it
+   *  would make `null` a *resolved value* and one signing hiccup would blank a photo everywhere for
+   *  14 h — outside, a rejected mint is never cached (the MicroCache contract) and degrades to a
+   *  one-response miss, exactly the old behavior. `null`/missing key never calls storage at all;
+   *  MICRO_CACHE_DISABLED / a TTL-0 override route straight to the mint. */
   private async signPhoto(key: string | null | undefined): Promise<string | null> {
     if (!key) return null;
-    return this.storage.createReadUrl(key, PHOTO_READ_URL_TTL_SECONDS).catch(() => null);
+    const ttlMs = this.env?.MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL ?? MERCHANT_PHOTO_URL_CACHE_TTL_MS;
+    const mint = (): Promise<string> => this.storage.createReadUrl(key, PHOTO_READ_URL_TTL_SECONDS);
+    return (this.microCacheBypassed(ttlMs) ? mint() : this.photoUrlCache.getOrLoad(key, ttlMs, mint)).catch(() => null);
   }
 
   private async toProfileResponse(merchant: MerchantWithOwner): Promise<MerchantProfileResponse> {

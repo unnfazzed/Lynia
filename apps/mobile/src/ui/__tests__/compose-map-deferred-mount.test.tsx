@@ -118,13 +118,19 @@ describe("ComposeMap — deferred native map mount (PERF-SEND-01)", () => {
     expect(mounts).toHaveLength(1);
     expect(texts(tree)).not.toContain(FAIL_TITLE);
 
-    // ...and it still gets its full budget from that point.
+    // ...and it still gets its full staged budget from that point (RCA §3.1: passive line at 9 s,
+    // the actionable card only at the 22 s promote).
     act(() => {
       jest.advanceTimersByTime(8_000);
     });
     expect(texts(tree)).not.toContain(FAIL_TITLE);
     act(() => {
       jest.advanceTimersByTime(2_000);
+    });
+    expect(texts(tree).join(" ")).toMatch(/taking a while/i);
+    expect(texts(tree)).not.toContain(FAIL_TITLE);
+    act(() => {
+      jest.advanceTimersByTime(13_000);
     });
     expect(texts(tree)).toContain(FAIL_TITLE);
 

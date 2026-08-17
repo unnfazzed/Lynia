@@ -17,9 +17,11 @@ L2-provider extraction — TODO). Everything below is an API deploy + OTA-able J
 - **Raise `PHOTO_READ_URL_TTL_SECONDS` from 1 h to 24 h** (outside-voice #6). These are public
   menu/marketing photos, not KYC documents — the 1 h validity was inherited reasoning, and it is
   what makes the phone's image cache miss across sessions (lunchtime vs evening opens) no matter
-  how well one response window caches. 24 h validity + a 16 h URL cache (⅔ margin, mirroring
-  `PICKUP_PHOTO_URL_CACHE_TTL_MS`'s convention) gives ≥8 h of remaining life on any served URL and
-  makes the common daily-usage pattern hit the device cache.
+  how well one response window caches. 24 h validity + a **14 h** URL cache: with the cache's ±10%
+  TTL jitter the worst-case entry lives 15.4 h, so any served URL keeps **≥8.6 h** of signed life
+  (jitter-aware bound per PR review — a naive 16 h cache would have left only 6.4 h). The env
+  override (`MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL`) is capped at the same 14 h so an operator
+  can only tighten the margin, never erode it.
 - **`MicroCache<string>` for photo URLs**, wired exactly like `OrdersService`'s
   `pickupPhotoUrlCache` (`orders.service.ts:135-140, 888-894`): 500 entries, `ttlJitterRatio: 0.1`,
   `onEvent → metricsSvc?.recordMicroCache("merchant_photo_url", o)` (new closed-vocabulary member
@@ -30,15 +32,15 @@ L2-provider extraction — TODO). Everything below is an API deploy + OTA-able J
   specs' constructions stay valid).
 - **The `.catch(() => null)` moves OUTSIDE the cache** (outside-voice #5, and exactly how
   orders.service wires it): `getOrLoad(key, ttl, () => storage.createReadUrl(key, TTL)).catch(() => null)`.
-  A rejected mint is never cached; a cached `null` blanking photos for 16 h is impossible by
+  A rejected mint is never cached; a cached `null` blanking photos for 14 h is impossible by
   construction, and the spec exercises this through the real service wiring.
 - **Known limitation (documented, accepted):** L1 is per-instance; 2-3 Cloud Run instances mint
-  independent URLs, so a phone can see up to ~3 URL variants per photo per 16 h window and JSON
+  independent URLs, so a phone can see up to ~3 URL variants per photo per 14 h window and JSON
   ETag hits are per-instance. The 24 h validity keeps the device image cache effective regardless
   (variants are stable for hours and each caches); full cross-instance stability needs the Redis
   L2 (TODO) or the `/media/:key` route (TODO).
 - **Failure mode (documented, accepted):** a photo object purged while its URL is cached serves a
-  404 image for ≤16 h; `FoodThumb`/covers degrade to their fallback tiles, non-blocking. Dish
+  404 image for ≤15.4 h (worst-case jittered cache life); `FoodThumb`/covers degrade to their fallback tiles, non-blocking. Dish
   edits mint NEW object keys (uploads are `randomUUID()`-keyed), so stale-key reuse cannot occur.
 
 **Tests:** merchant.service spec — consecutive `listRestaurants` calls mint each object key once
@@ -79,9 +81,15 @@ unknown event 400s the whole batch, losing the other samples riding in it.
   enqueues it from a mount effect wrapped in `runAfterInteractions` (post-frame, per the
   presented-frame semantics; idempotent via the existing `bootEventsSent` set).
 - **Deploy ordering (hard requirement, outside-voice #3):** the API must be live with the enum
-  before any OTA carries the client half. This is structurally satisfied here — `release.yml`
-  deploys the API on every merge to `main` while mobile reaches devices only via a later manual
-  `mobile-ota.yml` dispatch — and is recorded in the PR body so a future cherry-pick can't invert it.
+  before any OTA carries the client half. Concretely: **dispatch `mobile-ota.yml` only after the
+  `release.yml` run for the merging commit has gone green through its production deploy** —
+  release.yml deploys the API on every merge to `main`, so ordering is structurally satisfied on
+  the normal path; if `GCP_DEPLOY_ENABLED` is off (deploys dormant) or the release run failed,
+  verify the serving API first (POST a `boot_home_paint` sample batch to `/client-metrics` and
+  check for 204 vs 400) before publishing the OTA. Worst case on a violated ordering is bounded
+  and self-healing — RUM batches carrying the new event 400 and their samples are lost until the
+  API deploys; no user-facing behavior is affected — which is why this is an operational check,
+  not a new workflow gate. Recorded in the PR body so a future cherry-pick can't invert it.
 
 ## 4. Mobile — map failure card staged uniformly (RCA §3.1, revised)
 
@@ -92,13 +100,18 @@ Google's tile servers. So `mapReady && !mapLoaded && reachable` at 9 s describes
 session AND the rejected-key session identically; branching on it keeps today's false positive.
 The staging is therefore **uniform**, `apps/mobile/src/ui/ComposeMap.tsx`:
 
-- 9 s (`MAP_LOAD_TIMEOUT_MS`, unchanged): passive "The map is taking a while…" line — no alert
+- 9 s (`MAP_SLOW_TIMEOUT_MS`): passive "The map is taking a while…" line — no alert
   role, no Sentry, locate pill + search unaffected.
-- 22 s (`MAP_FAIL_TIMEOUT_MS`, new): the existing actionable failure card + Retry + one Sentry
+- 22 s (`MAP_FAIL_TIMEOUT_MS`): the existing actionable failure card + Retry + one Sentry
   report per attempt. Self-clear on late `onMapLoaded` unchanged at both stages.
-- Sentry event gains `map_elapsed_bucket` (`"9-15s" | "15-22s" | ">22s"` — bucketed, not raw ms,
-  outside-voice #9: tags must stay bounded-cardinality; raw ms goes in `extra`) and
-  `map_reachable` tags, making the delayed-Retry trade-off measurable from the fleet.
+- Sentry event gains `map_elapsed_bucket` and `map_reachable` tags (bucketed, not raw ms —
+  outside-voice #9: tags must stay bounded-cardinality; raw ms goes in `extra`). Bucket boundaries
+  are **half-open on the left edge** (PR review): `<9s` = [0, 9 s), `9-15s` = [9 s, 15 s),
+  `15-22s` = [15 s, 22 s), `>=22s` = [22 s, ∞) — exactly 15 s lands in `15-22s` and exactly 22 s in
+  `>=22s`, pinned by boundary tests on the exported `mapElapsedBucket` helper. Because the failure
+  report fires at a fixed 22 s, the *varying* elapsed values live on a `compose-map-recovered`
+  breadcrumb recorded when tiles land after the slow stage began — slow links recover, rejected
+  keys never do, and that breadcrumb is what separates them in the field.
 - Trade-off recorded: the true-failure case sees Retry 13 s later than today. Accepted because a
   remount cannot repair a rejected key (Retry is not a fix there, only an affordance), while the
   9 s card is a false accusation in every slow-tile session — and the tags exist precisely to
@@ -149,9 +162,11 @@ today's save may already be failing silently on exactly the target devices.
   history/notifications, not live marketplace state, so the file's "never persist live state"
   rule is respected.
 - **Delete `src/net/restaurant-list-store.ts`** and its save/load effects in
-  `use-restaurants.ts`; drop the `RESTAURANT_LIST_SNAPSHOT_KEY` cleanup from
-  `auth/device-state.ts:567` and the pin in `session.test.ts` (the persisted query cache is
-  already sign-out-cleared via `clearPersistedQueries`).
+  `use-restaurants.ts`. The legacy SecureStore blob is NOT orphaned on upgraded installs (PR
+  review): its literal key survives as `LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY` in
+  `auth/device-state.ts`, wiped at sign-out exactly as before AND opportunistically once per boot
+  (`src/boot/prewarm.ts`, fire-and-forget), removable once the ≤0.40.x install base is gone. The
+  new persisted entry itself is sign-out-cleared via `clearPersistedQueries`.
 - `useRestaurantListFeed` derives the D-19 stale banner from query state instead of the
   hand-rolled snapshot: `showingStale = data != null && !q.isFetchedAfterMount`, extended by
   `q.isError` after a failed revalidation; `staleSavedAt = new Date(q.dataUpdatedAt).toISOString()`
@@ -203,7 +218,7 @@ wire-contract change is additive (§3).
 
 ## Test coverage map
 
-```
+```text
 CODE PATHS                                                USER FLOWS
 [1] merchant.service signPhoto→MicroCache                 [H] Cold start → home
   ├── cache hit (same key, 2nd call)      [test: spec]      ├── hydrated restaurants first frame [test]
@@ -223,13 +238,14 @@ CODE PATHS                                                USER FLOWS
   └── sign-out clears (persist layer)     [existing]
 ```
 
-Every listed gap ships WITH its test in this PR — no deferred coverage.
+Every listed gap ships WITH its test on this branch — the implementation lands in the same PR as
+this plan (#805), not a follow-up — so there is no deferred coverage.
 
 ## Failure modes
 
 | Codepath | Production failure | Test | Handling | User sees |
 |---|---|---|---|---|
-| §1 cache | purged object's URL cached ≤16 h | doc'd | image error → fallback tile | placeholder, not a break |
+| §1 cache | purged object's URL cached ≤15.4 h | doc'd | image error → fallback tile | placeholder, not a break |
 | §1 cache | signing outage | spec | not cached; per-response null | photos missing this response |
 | §3 skew | OTA before API deploy | ordering doc | batch 400, samples lost until API live | nothing (telemetry-only) |
 | §4 staging | genuine key rejection | tags | card at 22 s instead of 9 s | later, honest failure card |
@@ -290,7 +306,7 @@ Synthesized from this review's findings. Each task derives from a specific findi
 question; every per-finding decision is recorded inline above with its rationale.
 
 **OUTSIDE VOICE (Claude subagent, fresh context):** 9 findings. Accepted: #1 (bg token is
-#FFFFFF — contentStyle switched to accentWash), #3 (deploy-skew ordering made a hard, documented
+`#FFFFFF` — contentStyle switched to accentWash), #3 (deploy-skew ordering made a hard, documented
 requirement), #4 (MicroCache conventions + per-instance limitation documented), #5 (catch outside
 the cache), #6 (24 h photo-URL validity), #7 (persist-layer warm paint replaces both the memo
 design and the SecureStore migration; legacy store deleted), #8 (concurrent cached-fix geocode +

@@ -763,3 +763,113 @@ describe("MerchantService.getTodaySummary (E3, M4·6)", () => {
     expect(res.walletTaken).toBe(0);
   });
 });
+
+/**
+ * RCA 2026-08-17 §5.1: photo read-URLs are micro-cached by object key so they are byte-stable
+ * across responses — the device image cache and the JSON ETag/304 machinery both key on the exact
+ * string, and a fresh V4 signature per response defeated both (plus ~2 IAM signBlob RPCs per
+ * merchant per list page). These exercise the REAL service wiring, not a bare MicroCache — in
+ * particular the review-caught trap that a `.catch(() => null)` INSIDE the cached loader would make
+ * one signing hiccup a cached null that blanks a photo for 14 h.
+ */
+describe("MerchantService photo-URL micro-cache (RCA 2026-08-17 §5.1)", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: "m1",
+    name: "Nandos",
+    coverPhotoUrl: "merchant/m1/cover.jpg",
+    logoUrl: null,
+    cuisineTags: [],
+    priceLevel: 2,
+    hours: null,
+    location: null,
+    foodRatingAvg: 0,
+    foodRatingCount: 0,
+    prepBaselineMinutes: null,
+    ...over,
+  });
+
+  function cachedSvc(opts: { env?: Record<string, string>; mint?: (key: string) => Promise<string> } = {}) {
+    const mint = opts.mint ?? (async (key: string) => `https://signed.example/${key}`);
+    const calls: string[] = [];
+    const storage = {
+      createReadUrl: async (key: string, expiresInSeconds?: number) => {
+        calls.push(`${key}@${expiresInSeconds}`);
+        return mint(key);
+      },
+    };
+    const prisma = {
+      merchant: { findMany: async () => [row()] },
+      $transaction: async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg),
+    };
+    const s = new MerchantService(
+      prisma as unknown as PrismaService,
+      storage as never,
+      (opts.env ?? {}) as never,
+      undefined,
+    );
+    return { s, calls };
+  }
+
+  it("mints each object key ONCE across consecutive list responses (byte-stable URL, no re-sign)", async () => {
+    const { s, calls } = cachedSvc();
+    const first = await s.listRestaurants();
+    const second = await s.listRestaurants();
+    expect(first.restaurants[0]!.coverPhotoUrl).toBe("https://signed.example/merchant/m1/cover.jpg");
+    // The SAME string, from the SAME single mint — this equality is the entire ETag/image-cache fix.
+    expect(second.restaurants[0]!.coverPhotoUrl).toBe(first.restaurants[0]!.coverPhotoUrl);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("signs with the 24 h validity (public menu media, not the KYC lane's 15 min)", async () => {
+    const { s, calls } = cachedSvc();
+    await s.listRestaurants();
+    expect(calls[0]).toBe(`merchant/m1/cover.jpg@${24 * 60 * 60}`);
+  });
+
+  it("never caches a rejected mint: the failed response serves null, the next one re-mints", async () => {
+    let fail = true;
+    const { s, calls } = cachedSvc({
+      mint: async (key: string) => {
+        if (fail) throw new Error("GCS unavailable");
+        return `https://signed.example/${key}`;
+      },
+    });
+    const first = await s.listRestaurants();
+    expect(first.restaurants[0]!.coverPhotoUrl).toBeNull(); // degraded THIS response only
+
+    fail = false;
+    const second = await s.listRestaurants();
+    // The trap this pins shut: were the catch inside the cached loader, this would still be null.
+    expect(second.restaurants[0]!.coverPhotoUrl).toBe("https://signed.example/merchant/m1/cover.jpg");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("MICRO_CACHE_DISABLED routes every response straight to the mint (the ops escape hatch)", async () => {
+    const { s, calls } = cachedSvc({ env: { MICRO_CACHE_DISABLED: "true" } });
+    await s.listRestaurants();
+    await s.listRestaurants();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a TTL-0 override disables just this cache", async () => {
+    const { s, calls } = cachedSvc({ env: { MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: 0 as unknown as string } });
+    await s.listRestaurants();
+    await s.listRestaurants();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("distinct object keys are distinct cache entries", async () => {
+    const mint = async (key: string) => `https://signed.example/${key}`;
+    const calls: string[] = [];
+    const storage = { createReadUrl: async (key: string) => { calls.push(key); return mint(key); } };
+    const prisma = {
+      merchant: { findMany: async () => [row({ logoUrl: "merchant/m1/logo.jpg" })] },
+      $transaction: async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg),
+    };
+    const s = new MerchantService(prisma as unknown as PrismaService, storage as never, {} as never, undefined);
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.coverPhotoUrl).toContain("cover.jpg");
+    expect(res.restaurants[0]!.logoUrl).toContain("logo.jpg");
+    expect(calls.sort()).toEqual(["merchant/m1/cover.jpg", "merchant/m1/logo.jpg"]);
+  });
+});

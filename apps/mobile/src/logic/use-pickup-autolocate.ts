@@ -13,7 +13,7 @@ import { landmarkFromAddress } from "./geocode";
  * opens; it stays fully editable (tap the map, drag the marker, search an address, or hit the locate
  * pill), and this hook never writes again once the customer has taken it over.
  *
- * Three deliberate properties, each of which the explicit "Use my location" button does NOT have:
+ * Four deliberate properties, each of which the explicit "Use my location" button does NOT have:
  *
  * 1. **Silent on failure.** Nobody asked for this fix, so a refused permission / dead GPS / offline
  *    geocoder must leave the screen exactly as it was — the tap-the-map hint is already the right
@@ -24,7 +24,18 @@ import { landmarkFromAddress } from "./geocode";
  *    is instant when the platform has anything cached, so the pin lands right away and is refined in
  *    place when the real fix arrives. `onPoint` may therefore fire twice; the caller treats the second
  *    as a correction of the first.
- * 3. **One shot per mount.** Guarded by a ref rather than effect deps, so nothing about a re-render
+ * 3. **The ADDRESS follows the same rule as the pin** (RCA 2026-08-17 §4.1). The cached fix's
+ *    reverse geocode starts CONCURRENTLY with the live-fix request — never sequentially ahead of it,
+ *    which would delay the pin's correction behind a geocoder that can burn its whole timeout — so
+ *    the landmark text lands with the provisional pin instead of seconds later. When the live fix is
+ *    accepted, ITS geocode replaces the cached one; `onLandmark` may therefore fire twice (cached,
+ *    then live), and the caller treats the second as a correction exactly like `onPoint`. There is
+ *    deliberately NO distance threshold deciding whether to re-geocode: nearby points can sit across
+ *    a road or property boundary, so the live point always gets its own lookup unless it is
+ *    literally the same coordinates as the cached one (then the one result serves both). Every
+ *    result is bound to a monotonic generation (cached=1, live=2), so an out-of-order completion —
+ *    the cached lookup resolving after the live one — can never overwrite the newer landmark.
+ * 4. **One shot per mount.** Guarded by a ref rather than effect deps, so nothing about a re-render
  *    (or a caller re-creating its callbacks) can re-drive the pin after the customer has moved it.
  *
  * Permission is CHECKED before it is requested, and requested only when the OS will actually show the
@@ -54,7 +65,9 @@ export interface PickupAutolocateOptions {
   enabled: boolean;
   /** A point for the pickup slot. May fire twice (cached fix, then the refined live one). */
   onPoint: (p: PickedPoint) => void;
-  /** The reverse-geocoded landmark for the final point. Fires at most once, and only on success. */
+  /** The reverse-geocoded landmark. May fire twice — the cached fix's name, then the live fix's
+   *  replacing it — and only ever on success; the caller treats a second call as a correction (the
+   *  same contract as `onPoint`, see header property 3). */
   onLandmark: (landmark: string) => void;
 }
 
@@ -107,10 +120,16 @@ async function livePoint(): Promise<PickedPoint | null> {
   }
 }
 
-/** Best-effort landmark for a point. Empty string (never a throw) when the geocoder can't help. */
+/** Best-effort landmark for a point, bounded by the same 9 s ceiling as the fixes. Empty string
+ *  (never a throw) when the geocoder can't help or doesn't answer in time — the timeout unblocks
+ *  the UI path only (`Promise.race` cannot cancel the native geocoder's work; a late result is
+ *  discarded by the caller's generation guard). */
 async function landmarkFor(p: PickedPoint): Promise<string> {
   try {
-    const results = await Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng });
+    const results = await withTimeout(
+      Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng }),
+      FIX_TIMEOUT_MS,
+    );
     const first = results[0];
     return first ? landmarkFromAddress(first) : "";
   } catch {
@@ -131,6 +150,16 @@ export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAuto
     if (!enabled || started.current) return;
     started.current = true;
     let cancelled = false;
+    // Landmark generations (header property 3): cached=1, live=2. A result only applies while it is
+    // at least as new as the newest already applied, so the cached lookup resolving AFTER the live
+    // one — geocoder answers are not ordered — can never overwrite the fresher name. An empty result
+    // never applies at all: the last good landmark stands.
+    let appliedGeneration = 0;
+    const applyLandmark = (generation: number, landmark: string): void => {
+      if (cancelled || !landmark || generation < appliedGeneration) return;
+      appliedGeneration = generation;
+      handlers.current.onLandmark(landmark);
+    };
     void (async () => {
       if (!(await ensureForegroundPermission()) || cancelled) return;
 
@@ -140,19 +169,26 @@ export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAuto
       if (cancelled) return;
       if (cached) handlers.current.onPoint(cached);
 
+      // The cached fix's NAME starts resolving concurrently with the live fix — sequenced, it could
+      // burn its whole timeout before `getCurrentPositionAsync` even started, making the pin's
+      // correction slower than having no prefill at all. The landmark is contract-required
+      // (`Waypoint.landmark`), so filling it is what makes the prefilled pin actually submittable.
+      const cachedLandmark = cached ? landmarkFor(cached) : Promise.resolve("");
+      void cachedLandmark.then((landmark) => applyLandmark(1, landmark));
+
       const live = await livePoint();
       if (cancelled) return;
       if (live) handlers.current.onPoint(live);
+      if (!live) return; // cached-only session: the generation-1 landmark (if any) stands.
 
-      // Landmark comes from the FINAL point only — geocoding the cached one too would spend a second
-      // lookup to write a name that the live fix is about to make wrong. It is contract-required
-      // (`Waypoint.landmark`), so filling it here is what makes the prefilled pin actually submittable
-      // rather than a pin the customer still has to name.
-      const point = live ?? cached;
-      if (!point) return;
-      const landmark = await landmarkFor(point);
-      if (cancelled || !landmark) return;
-      handlers.current.onLandmark(landmark);
+      if (cached && live.lat === cached.lat && live.lng === cached.lng) {
+        // Literally the same point — one lookup serves both generations, and there is nothing newer
+        // to replace. (Deliberately NOT a distance threshold: any differing point re-geocodes, since
+        // near neighbours can carry different addresses across a road or boundary.)
+        return;
+      }
+      const landmark = await landmarkFor(live);
+      applyLandmark(2, landmark);
     })();
     return () => {
       cancelled = true;
