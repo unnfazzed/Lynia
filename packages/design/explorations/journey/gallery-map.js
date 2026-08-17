@@ -7,6 +7,13 @@
 
    Retired here because the flow no longer contains them:
    · LJ home_launcher — the Food home IS the app home (RC home).
+   · The PRE-8c customer home body (DS AppHome: green brand header, 62px round-square service tiles,
+     bordered live-order cards, horizontal venues rail) — retired 2026-08-17 by the home-8c redesign.
+     RC home is UNCHANGED as a screen id and keeps its badge; what it DRAWS is now
+     explorations/home-redesign/home-8c.jsx (handoff/home-8c/, DS card ui_kits/mobile/home-8c.html).
+     Never align to the pre-8c body, which survives only as the exploration's lineage record.
+     LJ home_flag_off still draws the pre-8c body: the 8c wave shipped no flag-off mock, so that
+     screen is out of scope until one is exported (docs/DESIGN-DEVIATIONS.md D-28).
    · RJ rider_offline / online_empty / board — replaced by the merged one-app board (RJM).
    · RJ offer_compose — replaced by RJM offer_parcel.
    · RJ earnings / earnings_new — the weekly-settlement model is retired (prepaid wallet for both).

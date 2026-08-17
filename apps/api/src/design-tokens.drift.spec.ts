@@ -72,6 +72,13 @@ const TS_PAIRS: Array<[designVar: string, tsValue: string | number]> = [
   ["highlight-wash", tokens.color.highlightWash],
   ["highlight-ink", tokens.color.highlightInk],
   ["highlight-border", tokens.color.highlightBorder],
+  ["highlight-chip-ink", tokens.color.highlightChipInk],
+  // Customer home 8c service-tile tints (packages/design/handoff/home-8c).
+  ["tile-food-wash", tokens.color.tileFoodWash],
+  ["tile-pharmacy-wash", tokens.color.tilePharmacyWash],
+  ["tile-send-blob", tokens.color.tileSendBlob],
+  ["tile-food-blob", tokens.color.tileFoodBlob],
+  ["tile-pharmacy-blob", tokens.color.tilePharmacyBlob],
   ["danger", tokens.color.danger],
   ["danger-wash", tokens.color.dangerWash],
   ["danger-ink", tokens.color.dangerInk],

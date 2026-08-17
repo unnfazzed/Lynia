@@ -25,7 +25,13 @@ export async function hasStartedLocationUpdatesAsync() { return false; }
 export async function hasServicesEnabledAsync() { return true; }
 export async function enableNetworkProviderAsync() {}
 export async function geocodeAsync() { return []; }
-export async function reverseGeocodeAsync() { return []; }
+// The 8c customer home draws the DETECTED street address in its header, so a render that resolves
+// no address would paint the "Set your location" prompt instead of the drawn row. Answers with the
+// mock's own sample address (home-8c.jsx), the same way the fixed HARARE point above answers the
+// position calls.
+export async function reverseGeocodeAsync() {
+  return [{ name: "12 Samora Machel Ave", streetNumber: "12", street: "Samora Machel Ave", district: "Harare", city: "Harare", subregion: "Harare", region: "Harare", country: "Zimbabwe", isoCountryCode: "ZW", postalCode: null, timezone: null }];
+}
 export default {
   Accuracy, ActivityType, requestForegroundPermissionsAsync, getForegroundPermissionsAsync,
   requestBackgroundPermissionsAsync, getBackgroundPermissionsAsync, getCurrentPositionAsync,

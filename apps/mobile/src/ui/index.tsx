@@ -13,10 +13,18 @@ export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
-export { getServiceTiles, ServiceTiles, SERVICES, type ServiceTile } from "./shell/ServiceTiles";
+export { getServiceTiles, ServiceTiles, SERVICES, type ServiceSticker, type ServiceTile } from "./shell/ServiceTiles";
 export { APP_TABS, RIDER_TABS, TabBar, type AppTab } from "./shell/TabBar";
+// Customer home 8c (packages/design/handoff/home-8c) — the four members the structural guardrail
+// anchors RC.home's regions on. The two sheets the header/tiles open (LocationSheet,
+// ServiceSoonSheet) are deliberately NOT re-exported here, for the same reason ComposeMap /
+// BottomSheet / MapPicker are not (see the note below): LocationSheet imports AddressSearch, which
+// imports this barrel back, so re-exporting it forms a `no-circular` dependency-cruiser violation.
+// The home screen imports both from their own modules.
+export { HomeHeader } from "./home/HomeHeader";
 export { LiveOrderCard } from "./home/LiveOrderCard";
 export { RestaurantCard } from "./home/RestaurantCard";
+export { FoodSticker, MoonSticker, PharmacySticker, SendSticker, SunSticker } from "./home/ServiceStickers";
 
 export { CodeInput } from "./CodeInput";
 export { Money } from "./Money";

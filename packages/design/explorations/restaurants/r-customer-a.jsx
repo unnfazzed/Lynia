@@ -26,9 +26,12 @@ const RC_HOME_VENUES = REST.slice(0, 3).map((r) => ({ ...r, photo: <Slot id={`hx
 const RC_LIVE_FOOD = { id: "food", title: "Sadza Republic · 6 min away", meta: "Cash at the door · $15.50", step: 4, icon: "utensils" };
 const RC_LIVE_RIDE = { id: "ride", title: "Parcel to Msasa · rider 4 min away", meta: "Delivery code 4192 · $3.36", step: 5 };
 
-/* Home body — THE home, and the source of truth for every other surface: the DS AppHome component.
-   Brand header → service tiles → a live-order card per running job (rides and food alike) →
-   restaurants near you. No order-again / send-again rails. */
+/* Home body — the PRE-8c home (DS AppHome: green brand header → 62px round-square service tiles →
+   a bordered live-order card per running job → a horizontal restaurants rail).
+
+   RETIRED 2026-08-17 by the home-8c redesign (see RC.home below). Kept, unreferenced by any gallery
+   tile, purely as the lineage record for the 2a → 7a/7b → 8a → 8b → 8c exploration: nothing may be
+   aligned to it, and a screen that renders it is by definition off-design. */
 function HomeBody({ live, ride }) {
   const jobs = [];
   if (live) jobs.push(RC_LIVE_FOOD);
@@ -37,8 +40,21 @@ function HomeBody({ live, ride }) {
 }
 
 /* R0·1 — home. THE home screen for the app: both Send and Food ship at launch, so services are
-   tiles from day one (Pharmacies lands as a fourth tile later; nothing moves). */
-RC.home = () => <Screen tab="home" dark bg="var(--accent)"><HomeBody live ride /></Screen>;
+   tiles from day one (Pharmacy is already the third tile, carrying its SOON chip).
+
+   2026-08-17: this is now **home 8c** (explorations/home-redesign/home-8c.jsx, handoff package at
+   handoff/home-8c/, DS card ui_kits/mobile/home-8c.html) — a mint header with a time-aware greeting
+   and the DETECTED CURRENT LOCATION, flat-sticker service tiles with the label inside, a single
+   mint tracker pill, and a two-column "Popular near you" grid. The screen root is --accent-wash so
+   the status bar sits on mint; `dark` is off because the mint header carries dark ink. */
+RC.home = () =>
+  window.HOME8C ? (
+    <window.HOME8C.Home8c />
+  ) : (
+    <Screen tab="home" bg="var(--accent-wash)">
+      <div style={{ padding: 20, fontSize: 12, color: "var(--muted)" }}>Home 8c needs explorations/home-redesign/home-8c.jsx on the page.</div>
+    </Screen>
+  );
 
 /* R0·2 — Orders: one list across every service, so a vertical never needs its own history. */
 RC.orders = () => (

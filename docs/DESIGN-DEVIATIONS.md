@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -964,3 +964,116 @@ existing structural snapshot, which is what proves the row tree did not move.
 
 **Retire this entry** if an export draws a dismissal affordance on the notification row (align to it and
 delete this half) or an unread count on the Account row's Notifications entry (delete the other half).
+
+---
+
+## D-28 · Customer home 8c — the design-package sync, and the two sheets the export specifies but does not draw — APPROVED (2026-08-17)
+
+**What arrived.** A new design-tool export, `Lynia_Design_System.zip → home-8c/`, marked
+**SELECTED (2026-08-17)**: the redesigned customer home, lineage 2a → 7a/7b → 8a → 8b → **8c**. It
+replaces the pre-8c home body wholesale — the accent-green `BrandHeader` block becomes a mint header
+with a time-aware greeting and the **detected current location**, the 62px round-square icon tiles
+become Chowdeck-scale sticker tiles with the label inside, the bordered live-order cards become a
+single mint tracker pill, and the horizontal venues rail becomes a two-column "Popular near you"
+grid. Zero box-shadows anywhere; gold only on the unread dot, the SOON chip, the ETA chip and stars.
+
+**This entry exists because the work necessarily touches `packages/design/**`,** which the
+reverse-drift freeze (`scripts/check-design-freeze.mjs`) gates. Nothing here is the app being
+"fixed into" the design — it is the design package absorbing a new export, plus two surfaces the
+export names but does not draw.
+
+### 1 · The design-package sync (not a deviation — the record of what landed)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/home-8c/` | the export, **verbatim** (pixel reference `home-8c.html`, the work order, the three sticker SVGs, the placeholder venue photos, the Lucide subset) |
+| `packages/design/assets/service-icons/{send,food,pharmacy}.svg` | the canonical copies the export's own README specifies |
+| `packages/design/ui_kits/mobile/home-8c.html` | the DS card the export's README names |
+| `packages/design/explorations/home-redesign/home-8c.jsx` | the gallery-renderable transcription (four named members: `HomeHeader` · `ServiceTiles` · `LiveOrderCard` · `RestaurantCard`) |
+| `packages/design/explorations/restaurants/r-customer-a.jsx` | `RC.home` now renders 8c; the pre-8c `HomeBody` survives **unreferenced**, as the lineage record only |
+| `packages/design/tokens/colors.css` | six values 8c introduces: `--highlight-chip-ink` and the five `--tile-*` service-tile tints |
+| `packages/design/explorations/journey/gallery-map.js` | header note retiring the pre-8c home body. **No tile changed**, so `tools/parity/screens.generated.json` regenerates byte-identical — `RC home` keeps its id, title, tag and badge |
+
+**Never align to the pre-8c body.** It is retired the same way `LJ home_launcher` is: still on disk,
+never a target.
+
+**`LJ home_flag_off` still draws the pre-8c body**, and that is correct for now — the 8c wave shipped
+no flag-off mock, so there is nothing to align that screen to. It stays ⬜ until one is exported. The
+app's flag-off path is not left inconsistent: with the restaurants kill switch off, the Restaurants
+tile takes the same SOON treatment Pharmacy carries (chip + notify-me sheet), so the grid never
+reflows and the tile is never inert.
+
+### 2 · Two undrawn surfaces the export REQUIRES — APPROVED
+
+The export specifies both by name and says what they must do, but designs neither:
+
+- **The location sheet.** README §1: *"Tap → address/location sheet."* Built as
+  `src/ui/home/LocationSheet.tsx` from parts that already exist — `DisclaimerSheet`'s modal grammar
+  and the send composer's `AddressSearch` — offering exactly the three things a *detected* value
+  needs: re-detect ("Use my current location"), the saved Home/Work slots, and a free address search.
+- **The notify-me sheet.** README §2: *"tap opens the notify-me sheet — never dead."* Built as
+  `src/ui/home/ServiceSoonSheet.tsx`, a REVERSIBLE toggle (the `RemindWhenOpen` precedent: the second
+  most likely thing a customer does after asking is change their mind). There is no pharmacy backend,
+  so the intent is recorded on-device (`logic/service-interest.ts`) and the notification permission is
+  asked for at the same moment — which is the part that has to be true before any launch notification
+  can arrive. When the vertical gets a backend this becomes the local half of a sync; the call site
+  does not change.
+
+Both are deliberately plain, so a future mock has nothing to undo. **Retire this half** the moment an
+export draws either sheet.
+
+### 3 · Two per-string escapes on the rendered-conformance lane
+
+Recorded in `tools/parity/expected/RC.home.json` as `dynamic` (the element must exist; the value is
+live), not as sanctioned drift:
+
+- **The greeting.** A static mock can only draw one half of the day; the app's greeting is
+  time-aware *by the export's own instruction*, so the string is asserted by regex
+  (`^Good (morning|afternoon|evening), Rudo$`).
+- **`$1.00` delivery fee.** The mock draws sample fees; the app computes the real one with the same
+  `haversineKm → deliveryFeeForDistance` path the server charges with, and
+  `RESTAURANTS_PRICING.deliveryFeeMin` is **$1.50** — so $1.00 is below the shipped floor and no
+  honest fixture can produce it. Quoting the drawn figure would mean showing a fee the customer would
+  not be charged.
+
+The rest of the mock's copy is asserted **verbatim**, and the fixture (`tools/parity/mobile/fixtures/
+food_home.mjs`) was restaged to the mock's own sample data — venue distances chosen so the app's own
+ETA arithmetic reproduces the drawn 25/30 min rather than the fixture asserting numbers the screen
+does not compute.
+
+### 4 · Two owner-directed departures from the drawn header (2026-08-17)
+
+Both are **explicit owner instructions**, given after seeing the first side-by-side sheet, and both
+change drawn geometry — so they are logged here rather than defended in a comment.
+
+- **The greeting always breaks over two lines** — the phrase on top, the name beneath
+  (`logic/greeting.ts`). The mock's COPY is untouched ("Good morning, Rudo"); what changes is where
+  it breaks. The reference wraps it only incidentally: the greeting column is ~216px wide, so
+  "Good morning, Rudo" happens to need two lines while "Good evening, Rudo" fits on one — meaning the
+  drawn header would change height with the time of day. An explicit newline makes the break
+  deliberate and the header a stable size. The newline lives inside ONE text node, so the
+  rendered-conformance lane (which whitespace-normalizes) still sees the mock's string verbatim.
+- **The time-of-day sticker is 42px, not the drawn 46px**, and sits in a row with the bell so the two
+  share a vertical centre — *"the icon for sun or moon must be same diameter or size as the
+  notifications icon and aligned with the notifications icon to look good."* Both now size off one
+  `BELL_SIZE` constant, so they cannot drift apart.
+
+**Everything else in the header keeps the drawn geometry.** Tile and card boxes were measured against
+the mock in the same browser and are identical — tiles **104×84**, venue cards **159×126**, the tile
+row **360×98**, the venue grid **360×262**, the tracker pill **328×54**. Three text line-boxes were
+pinned to Inter's own 1.21 ratio (the section header, and the two ETA chips) because React Native's
+default line box is ~2px shorter than the browser's and left those blocks short.
+
+One residual, not a choice: the gold ETA chip is ~6px narrower than drawn because the mock's page has
+a true Inter 800 while the app ships only 400/600/700 and aliases 800 → 700 (`tokens.font.weight`).
+Fixing it would mean adding a font weight to the bundle.
+
+### What is NOT deviating
+
+The address row is the **detected current location** (`logic/home-location.ts`), not a saved profile
+address — the export is explicit, and the pre-8c hardcoded "Harare" is gone. The rider name on the
+tracker pill is the mock's drawn `"Tendai M."` whenever the app knows it; where it does not (the
+active-orders API carries a rider's `profileId` and GPS but no name, and the on-device identity cache
+holds one order), the pill falls back to honest service copy inside the same drawn structure. The
+mock's second card line, the pre-8c payment/delivery-code meta, is **not drawn by 8c and therefore
+not rendered** — the tracker screen owns it.

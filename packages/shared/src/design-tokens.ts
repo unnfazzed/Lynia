@@ -48,6 +48,22 @@ export const color = {
   highlightInk: "#6B5600",
   /** 40%-alpha gold border for highlight cards (mirrors --highlight-border). */
   highlightBorder: "#F2B70566",
+  /** Ink ON a solid `highlight` gold chip — the home 8c SOON and ETA chips. Not `highlightInk`,
+   *  which is gold TEXT on the pale `highlightWash` (mirrors --highlight-chip-ink). */
+  highlightChipInk: "#3D3100",
+
+  /**
+   * Service-tile tints — the customer home 8c launcher grid (`packages/design/handoff/home-8c`).
+   * Each tile is a flat wash with a blob one shade deeper behind its sticker icon; Send reuses
+   * `accentWash` with `tileSendBlob`, the other two verticals carry their own hue so three tiles
+   * read apart at a glance with no border and no shadow between them. `tileSendBlob` doubles as the
+   * live-order pill's UNLIT progress segment (an unlit bar on mint, where `line` would vanish).
+   */
+  tileFoodWash: "#FDEADD",
+  tilePharmacyWash: "#DFF4EE",
+  tileSendBlob: "#CDEEDA",
+  tileFoodBlob: "#FBD9BD",
+  tilePharmacyBlob: "#C5E9DF",
 
   danger: "#C0392B",
   /** Danger tint (mirrors --danger-wash) — 'bad' status pills, warn bars, danger hover states. */
