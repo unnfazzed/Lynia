@@ -9,12 +9,15 @@
 * **mobile:** prefill the send composer's pickup pin from the customer's location ([#789](https://github.com/unnfazzed/Lynia/issues/789)) ([bbeada5](https://github.com/unnfazzed/Lynia/commit/bbeada5330cfafa3889548bbb3dc5aeb4089476b))
 * **mobile:** rebuild the customer home to the 8c design handoff ([732de11](https://github.com/unnfazzed/Lynia/commit/732de11529b1d4b94e29cf3121a6d50d13a55ead))
 * **mobile:** remove Settings' Edit profile row; make the profile card inert ([cba81ec](https://github.com/unnfazzed/Lynia/commit/cba81ecddd4d62e5366ce7462e8a275886372c75))
+* **mobile:** the rider is always online — remove the pill and the switch ([520cf14](https://github.com/unnfazzed/Lynia/commit/520cf148284290f76b48a68efc31373bb082dfa4))
 * **notifications:** streamline the centre — one-day retention, real read state, dismissal ([aeab806](https://github.com/unnfazzed/Lynia/commit/aeab806e46fa602ee863ea628ff7cca04535e270))
 
 
 ### Bug Fixes
 
+* **mobile:** rider header carries the location; drop the two labels ([a9b478b](https://github.com/unnfazzed/Lynia/commit/a9b478b049526281be1b18c939b8d4791c53dd83))
 * **mobile:** stop condemning working iOS maps; make the Sentry map report diagnosable ([#781](https://github.com/unnfazzed/Lynia/issues/781)) ([e98c739](https://github.com/unnfazzed/Lynia/commit/e98c73944ad5f28bc3796685cf77babc6e780be1))
+* **mobile:** the rider's location row is detect-only ([3d9037c](https://github.com/unnfazzed/Lynia/commit/3d9037cdf7d9f0fd4d5ff7425b37dfdeba96ea35))
 * **mobile:** two-line greeting, bell-matched time sticker, exact mock boxes ([952d56c](https://github.com/unnfazzed/Lynia/commit/952d56cb23e1e0b459f2d61d2edbb962f1565bbe))
 * **notifications:** suppress the whole order on a self-cancel, not just the cancelled event ([76d38a4](https://github.com/unnfazzed/Lynia/commit/76d38a40d4b5910e2695a0dfee29a99261b2478c))
 
