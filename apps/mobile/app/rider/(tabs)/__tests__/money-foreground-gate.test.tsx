@@ -14,7 +14,9 @@
  * preloaded-but-never-focused mount could never correct, since `useFocusEffect`'s cleanup only runs
  * after a focus).
  */
-import React from "react";
+// No `React` import: `jsx: react-jsx` needs none for the JSX below, and the expo-router mock does its
+// own `require("react")` inside the factory (jest hoists these above imports). An unused one now fails
+// typecheck outright — `noUnusedLocals` landed in tsconfig.base.json with #801.
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
