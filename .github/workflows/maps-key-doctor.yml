@@ -68,26 +68,23 @@ jobs:
         with:
           node-version: 22
 
-      # No install step anywhere in this job: both scripts use only Node's built-in fetch, so this
-      # stays a ~20s check that cannot be broken by a lockfile or a workspace build.
-      - name: Resolve the key EAS builds with
-        if: ${{ inputs.key_source == 'eas' }}
+      # ONE step, on purpose. An earlier version resolved the EAS key in a separate step and handed it
+      # on through `$GITHUB_ENV`. CodeQL flagged that (js/http-to-file-access) and was right to:
+      # `$GITHUB_ENV` is parsed as `KEY=VALUE` lines, so a value carrying a newline injects arbitrary
+      # environment variables into every later step. The key now stays in the probe process's memory and
+      # never touches the disk, which removes the whole class rather than sanitising around it.
+      #
+      # No install step either: both scripts use only Node's built-in fetch, so this stays a ~20s check
+      # that cannot be broken by a lockfile or a workspace build.
+      - name: Diagnose
         env:
+          KEY_SOURCE: ${{ inputs.key_source }}
+          # Read only when key_source is 'eas'.
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_APP_ID: ${{ vars.EAS_PROJECT_ID }}
           EAS_ENVIRONMENT: ${{ inputs.eas_environment }}
-        run: node scripts/eas-read-maps-key.mjs
-
-      - name: Use the QA-APK lane's secret instead
-        if: ${{ inputs.key_source == 'github' }}
-        env:
-          GH_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-        run: |
-          echo "Probing the GitHub Actions secret (android-test-apk.yml's key), NOT the EAS build key."
-          echo "GOOGLE_MAPS_API_KEY=${GH_MAPS_KEY}" >> "$GITHUB_ENV"
-
-      - name: Diagnose
-        env:
+          # Read only when key_source is 'github' — android-test-apk.yml's key, not the build's.
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           ANDROID_CERT_SHA1: ${{ inputs.sha1 }}
           ANDROID_PACKAGE: ${{ inputs.package }}
         run: node scripts/maps-key-doctor.mjs

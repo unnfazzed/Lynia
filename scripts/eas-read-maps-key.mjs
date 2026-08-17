@@ -1,28 +1,24 @@
-#!/usr/bin/env node
 /**
- * Resolve the Maps key that EAS actually BUILDS WITH, and hand it to the doctor — masked.
+ * Resolve the Maps key that EAS actually BUILDS WITH — in memory, for the doctor to probe.
  *
  * WHY: `maps-key-doctor.yml` first shipped reading `secrets.GOOGLE_MAPS_API_KEY`, the GitHub secret.
  * That is the wrong key for MOB-MAP-02. The GitHub secret feeds only `android-test-apk.yml` (sideloaded
  * QA APKs); the Play build is produced by EAS, which reads the EAS *environment variable* of the same
- * name. They are two independent stores that can hold different values — and on the first run of the
- * doctor they demonstrably did, because the GitHub one came back INVALID_KEY while the Play-installed
- * app had been rendering tiles as recently as 2026-08-05. Probing the GitHub secret answers a real
- * question (is the QA lane armed?) but not the one MOB-MAP-02 asks.
+ * name. They are two independent stores that can hold different values — and they demonstrably do: the
+ * GitHub one probes INVALID_KEY while the EAS one is well-formed and valid.
  *
- * The key is SENSITIVE, not SECRET, in the EAS environment (`eas env:list`), which is exactly what makes
- * this possible: Expo's rule is that config-consumed variables must be Sensitive so the CLI can read
- * them back (docs/PLAY-STORE-SUBMISSION.md, 2026-08-04). Secret-visibility variables are unreadable and
- * this script says so rather than failing obscurely.
+ * WHY THIS IS A MODULE AND NOT A STEP THAT EXPORTS TO `$GITHUB_ENV`.
+ * The first version wrote the resolved key to `$GITHUB_ENV` for a later step to pick up. CodeQL flagged
+ * it (js/http-to-file-access, "network data written to file") and was right to: `$GITHUB_ENV` is parsed
+ * as `KEY=VALUE` lines, so a value containing a newline injects arbitrary environment variables into
+ * every subsequent step of the job — a known Actions injection class. Validating the value would have
+ * silenced the alert, but the better answer is that the secret never needs to touch the disk at all.
+ * The doctor now imports this function and holds the key in memory for the length of one fetch.
  *
- * The value is masked with `::add-mask::` BEFORE it is written anywhere, so it is redacted in the job
- * log even if a later step echoes it, and it is passed on through `$GITHUB_ENV` rather than stdout.
+ * Reading it back is possible only because the variable is SENSITIVE rather than SECRET in the EAS
+ * environment — which is required anyway for a config-consumed variable, since the CLI must be able to
+ * see it (docs/PLAY-STORE-SUBMISSION.md, 2026-08-04). The SECRET case is reported explicitly.
  */
-import { appendFileSync } from "node:fs";
-
-const APP_ID = process.env.EAS_APP_ID?.trim();
-const ENVIRONMENT = (process.env.EAS_ENVIRONMENT || "preview").trim().toUpperCase();
-const TOKEN = process.env.EXPO_TOKEN?.trim();
 
 const QUERY = `
   query ($appId: String!, $environment: EnvironmentVariableEnvironment!) {
@@ -38,60 +34,49 @@ const QUERY = `
   }
 `;
 
-async function main() {
-  if (!TOKEN) {
-    console.error("EXPO_TOKEN is not set — cannot read the EAS environment. Re-run with key_source: github.");
-    process.exit(2);
+/** Thrown with an operator-readable reason; the caller prints it and exits. Never carries the value. */
+export class EasKeyError extends Error {}
+
+/**
+ * @returns {Promise<string>} the raw key value, for immediate use. Never logged, never persisted.
+ */
+export async function readMapsKeyFromEas({ appId, environment = "preview", token } = {}) {
+  if (!token) {
+    throw new EasKeyError("EXPO_TOKEN is not set — cannot read the EAS environment. Re-run with key_source: github.");
   }
-  if (!APP_ID) {
-    console.error("EAS_APP_ID is not set. It is the EAS project id (repository variable EAS_PROJECT_ID).");
-    process.exit(2);
+  if (!appId) {
+    throw new EasKeyError("EAS_APP_ID is not set. It is the EAS project id (repository variable EAS_PROJECT_ID).");
   }
 
+  const env = String(environment).trim().toUpperCase();
   const res = await fetch("https://api.expo.dev/graphql", {
     method: "POST",
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ query: QUERY, variables: { appId: APP_ID, environment: ENVIRONMENT } }),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: QUERY, variables: { appId, environment: env } }),
   });
 
   const json = await res.json();
   if (json.errors?.length) {
-    console.error(`EAS API error: ${json.errors.map((e) => e.message).join("; ")}`);
-    process.exit(1);
+    throw new EasKeyError(`EAS API error: ${json.errors.map((e) => e.message).join("; ")}`);
   }
 
   const vars = json?.data?.app?.byId?.environmentVariablesIncludingSensitive ?? [];
   const found = vars.find((v) => v.name === "GOOGLE_MAPS_API_KEY");
 
   if (!found) {
-    console.error(
-      `GOOGLE_MAPS_API_KEY is not defined in the EAS "${ENVIRONMENT}" environment. That alone would ` +
-        "block a release build: app.config.ts throws rather than ship a mapless binary.",
+    throw new EasKeyError(
+      `GOOGLE_MAPS_API_KEY is not defined in the EAS "${env}" environment. That alone would block a ` +
+        "release build: app.config.ts throws rather than ship a mapless binary.",
     );
-    process.exit(1);
   }
   if (!found.value) {
-    console.error(
-      `GOOGLE_MAPS_API_KEY exists in "${ENVIRONMENT}" but its value is not readable (visibility: ` +
+    throw new EasKeyError(
+      `GOOGLE_MAPS_API_KEY exists in "${env}" but its value is not readable (visibility: ` +
         `${found.visibility}). Only SENSITIVE and PUBLIC values can be read back; a SECRET cannot — ` +
-        "which is itself a problem for a config-consumed variable (see docs/PLAY-STORE-SUBMISSION.md, " +
+        "which is itself a problem for a config-consumed variable (docs/PLAY-STORE-SUBMISSION.md, " +
         "2026-08-04: a Secret desynchronises the fingerprint because the CLI cannot see it).",
     );
-    process.exit(1);
   }
 
-  // Mask BEFORE the value can reach any log line, including this script's own diagnostics.
-  console.log(`::add-mask::${found.value}`);
-  console.log(`Resolved GOOGLE_MAPS_API_KEY from the EAS "${ENVIRONMENT}" environment (visibility: ${found.visibility}).`);
-
-  if (!process.env.GITHUB_ENV) {
-    console.error("GITHUB_ENV is unset — this script is meant to run inside GitHub Actions.");
-    process.exit(2);
-  }
-  appendFileSync(process.env.GITHUB_ENV, `GOOGLE_MAPS_API_KEY=${found.value}\n`);
+  return { value: found.value, visibility: found.visibility, environment: env };
 }
-
-main().catch((err) => {
-  console.error(`Failed to read the EAS environment: ${err?.message ?? err}`);
-  process.exit(1);
-});
