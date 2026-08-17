@@ -1,0 +1,53 @@
+name: Maps Key Doctor
+
+# Read-only diagnosis for MOB-MAP-02 — "why is the Android map blank on the installed build?"
+#
+# WHY A WORKFLOW AND NOT A DOC. Every verification step written for MOB-MAP-02 so far ends in
+# `adb logcat | grep "Google Maps Android API"` — a USB cable and a terminal. The owner of this repo
+# codes from a phone, so the one person holding the broken handset has never been able to run the check,
+# which is why the cause has stayed a ranked list of candidates since 2026-08-16 rather than a fact.
+# `workflow_dispatch` is triggerable from the GitHub mobile app, and the job log is readable there.
+#
+# Deliberately NOT environment-gated (same reasoning as eas-build-status.yml): a read-only check must
+# not cost an approval click per look. It mutates nothing — no GCP write, no EAS call, no build.
+#
+# The key never leaves the runner: it is passed to the script through the environment and the script
+# never prints it. Only Google's own error prose is echoed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha1:
+        # THE input. Without it the job can still say whether the key is alive and billed, but not
+        # whether the certificate installed builds actually run under is on the allowlist — which is
+        # the MOB-MAP-02 question.
+        description: "Signing certificate SHA-1 to test. Play Console → Test and release → Setup → App integrity → 'App signing key certificate'. Colons optional."
+        type: string
+        default: ""
+      package:
+        description: "Android application id to test the fingerprint against"
+        type: string
+        default: "zw.co.lynia"
+
+permissions:
+  contents: read
+
+jobs:
+  doctor:
+    name: probe the Maps key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # No install step: the script uses only Node's built-in fetch, so this stays a ~20s job that
+      # cannot be broken by a lockfile or a workspace build.
+      - name: Diagnose
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          ANDROID_CERT_SHA1: ${{ inputs.sha1 }}
+          ANDROID_PACKAGE: ${{ inputs.package }}
+        run: node scripts/maps-key-doctor.mjs

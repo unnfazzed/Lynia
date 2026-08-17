@@ -81,7 +81,11 @@ Contain them in the GCP console:
    > fingerprints against `zw.co.lynia`: Play Console → Test and release → Setup → **App integrity** →
    > *App signing key certificate* SHA-1 (the one devices actually run), plus the upload key SHA-1 for
    > sideloaded QA APKs. Confirm from the handset with
-   > `adb logcat | grep -i "Google Maps Android API"`. See MOB-MAP-02 in `docs/KNOWN_BUGS.md` and
+   > **Confirm without a cable:** GitHub → Actions → **Maps Key Doctor** → Run workflow, pasting that
+   > app-signing SHA-1. It probes the live key and names the cause (allowlist / billing / invalid /
+   > API restriction) in the job log — `workflow_dispatch`, so it runs from a phone. (`adb logcat |
+   > grep -i "Google Maps Android API"` says the same thing if you have a terminal and a cable.)
+   > Ordered fix: `docs/MOB-MAP-02-RUNBOOK.md`. See also MOB-MAP-02 in `docs/KNOWN_BUGS.md` and
    > `docs/MAPS-LOADING-REVIEW-2026-08-16.md`.
 2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
    Compensate with a tight **API restriction** (Places API *only*) and a hard **quota cap**.
