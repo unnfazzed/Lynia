@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native";
@@ -63,7 +63,14 @@ export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenP
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const [index, setIndex] = useState(initialSlide);
-  const slides = restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES;
+  // Once the user ADVANCES, the set they started reading is locked so the flags fetch (deferred
+  // ~250ms, so it can resolve mid-carousel) can never swap the deck under their thumb — a 3-slide
+  // joint-launch deck silently becoming the 2-slide flag-off deck mid-read looked like a glitch.
+  // While still on slide 1 the set stays live (the flag-off launch must show flag-off copy), and
+  // the length clamp below still guards the residual race of flags resolving in the same frame as
+  // the first Next.
+  const [lockedSlides, setLockedSlides] = useState<Slide[] | null>(null);
+  const slides = lockedSlides ?? (restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES);
   // The two sets differ in length (3 joint-launch, 2 food-off), so a flags fetch resolving mid-
   // carousel could otherwise strand the index past the end: clamp it into the live set. The `?? [0]!`
   // fallback additionally keeps the lookup honest under noUncheckedIndexedAccess.
@@ -78,6 +85,7 @@ export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenP
     router.replace("/phone");
   };
   const next = (): void => {
+    if (lockedSlides === null) setLockedSlides(slides);
     if (last) finish();
     else setIndex(active + 1);
   };

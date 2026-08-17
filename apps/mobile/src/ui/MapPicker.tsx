@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";

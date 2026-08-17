@@ -1,5 +1,5 @@
 import { RESTAURANTS_PRICING } from "@lynia/shared";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";

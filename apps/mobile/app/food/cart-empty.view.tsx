@@ -7,7 +7,7 @@
 // props from the container (apps/mobile/app/food/cart.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
 import { View } from "react-native";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { AppBar, Screen, Card, Button, EmptyState } from "../../src/ui";
 
 export type CartEmptyViewProps = {

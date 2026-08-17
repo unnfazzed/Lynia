@@ -1,4 +1,5 @@
-import { type AdvanceStatusRequest, UndeliveredReason, tokens } from "@lynia/shared";
+import { type AdvanceStatusRequest, UndeliveredReason } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";

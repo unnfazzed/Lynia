@@ -1,4 +1,5 @@
-import { type UndeliveredReason, tokens } from "@lynia/shared";
+import { type UndeliveredReason } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";

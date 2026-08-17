@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { View, type ViewStyle } from "react-native";

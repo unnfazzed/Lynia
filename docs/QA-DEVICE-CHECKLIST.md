@@ -10,8 +10,11 @@
 > the *shipped* configuration matters — it is the R8-shrunk, Play-signed artifact real users will get,
 > whereas the QA APK is a debug-ish build installed with `--config.node-linker=hoisted` and a throwaway
 > keystore. Two caveats: the release build has **no `/qa` mode** (LR16 below still needs the dev build),
-> and it has **no Sentry**, so a crash on it leaves no trace beyond Play Console vitals — write down
-> what you did by hand.
+> and builds made **before Sentry was provisioned** (the DSN-less era — every internal-track build up to
+> the point `EXPO_PUBLIC_SENTRY_DSN` was set per LR20 below) have **no Sentry**, so a crash on one leaves
+> no trace beyond Play Console vitals — write down what you did by hand. Builds made after provisioning
+> fail fast at build time without the DSN (`app.config.ts`), ship crash telemetry, and MUST pass the
+> LR20 forced-crash gate below — the "no Sentry" caveat does not excuse them.
 
 ## 🔴 First pass on the API-35 build — do this before promoting anything
 
@@ -98,6 +101,11 @@ pass the DSN through (those lanes build on the runner, not on EAS servers).
 Keep the DSN unset in dev so local runs stay quiet — the seam is inert without it, by design.
 
 - [ ] Activate per the founder steps; **both** forced crashes visible and readable from a release build.
+- [ ] **MOB-BOOT-03-SIB-1 shim check (2026-08-17):** the forced-crash test above is ALSO the
+  verification gate for the Metro shim that stubs Sentry's browser-only replay/feedback subtree
+  (`metro-shims/sentry-browser-redirect.js` — jest cannot cover a Metro resolver redirect). On the
+  next EAS build: confirm the app boots, both forced crashes arrive symbolicated, and logcat shows no
+  Sentry integration errors — before that build is promoted.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
 
 > **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via

@@ -1,4 +1,5 @@
-import { tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, View } from "react-native";
 import { Card, Icon, OfflineBanner, Screen, Skeleton, Stepper } from "../index";

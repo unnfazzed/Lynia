@@ -1,4 +1,5 @@
-import { haversineKm, tokens } from "@lynia/shared";
+import { haversineKm } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";

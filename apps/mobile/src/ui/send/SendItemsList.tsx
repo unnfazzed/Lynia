@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemRow } from "../../logic/order-draft";

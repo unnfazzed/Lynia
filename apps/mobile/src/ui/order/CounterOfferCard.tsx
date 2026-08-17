@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
 import { Animated, Text, View } from "react-native";
 import type { OfferRow } from "../../api/offers";

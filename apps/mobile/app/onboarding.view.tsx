@@ -7,7 +7,7 @@
 // props from the container (apps/mobile/app/onboarding.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
 import { View, Text, Pressable } from "react-native";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { Icon, Button, DoveMark, Wordmark, type IconName } from "../src/ui";
 
 export type OnboardingViewProps = {

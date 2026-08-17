@@ -1,4 +1,5 @@
-import { formatPhoneLocal, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { formatPhoneLocal, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { isStillUnpaidReminderDue } from "../../logic/food-checkout";

@@ -1,4 +1,5 @@
-import { normalizeNationalId, tokens } from "@lynia/shared";
+import { normalizeNationalId } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";

@@ -1,4 +1,5 @@
-import { CUSTOMER_CANCELLABLE_STATUSES, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { CUSTOMER_CANCELLABLE_STATUSES, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";

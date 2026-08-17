@@ -1,4 +1,5 @@
-import { formatPhoneLocal, normalizeNationalId, tokens } from "@lynia/shared";
+import { formatPhoneLocal, normalizeNationalId } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";

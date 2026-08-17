@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Linking, Text } from "react-native";
 import { DELIVERY_OTP_MAX_ATTEMPTS } from "../../logic/rider-job";

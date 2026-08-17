@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, ScrollView, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";

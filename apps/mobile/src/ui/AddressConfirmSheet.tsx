@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import MapView, { type LatLng, type MapPressEvent, Marker, type MarkerDragStartEndEvent, type Region } from "react-native-maps";

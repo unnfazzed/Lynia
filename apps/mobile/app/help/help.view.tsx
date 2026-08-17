@@ -7,7 +7,7 @@
 // props from the container (apps/mobile/app/help/index.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
 import { View, Text, Pressable } from "react-native";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { AppBar, Field, Card, Icon, type IconName } from "../../src/ui";
 
 /** A help topic, tuple-shaped to mirror the mock's `[icon, title, sub]` rows verbatim. */

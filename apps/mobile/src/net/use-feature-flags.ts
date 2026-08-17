@@ -1,4 +1,8 @@
-import { MerchantFeatureFlagsResponse } from "@lynia/shared";
+// Type-only from the barrel (erased at compile time); the zod VALUE twin is lazy-required inside
+// fetchFeatureFlags so the contracts (~202 KB of schema construction, MOB-BOOT-03-SIB-2) load on
+// the first fetch — which already runs behind a 250 ms boot-priority timer — not at module
+// evaluation on the launch path. Same lazy-require seam as PostHog in src/telemetry/analytics.tsx.
+import type { MerchantFeatureFlagsResponse } from "@lynia/shared";
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
@@ -38,7 +42,8 @@ export async function fetchFeatureFlags(
   try {
     const res = await fetchImpl(`${API_URL}/app/feature-flags`, { signal: controller.signal });
     if (!res.ok) return DEFAULT_FEATURE_FLAGS;
-    const parsed = MerchantFeatureFlagsResponse.safeParse(await res.json());
+    const { MerchantFeatureFlagsResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
+    const parsed = schema.safeParse(await res.json());
     return parsed.success ? parsed.data : DEFAULT_FEATURE_FLAGS;
   } catch {
     return DEFAULT_FEATURE_FLAGS; // offline / timeout / bad JSON — per-flag defaults (see above)

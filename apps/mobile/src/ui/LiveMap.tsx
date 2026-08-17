@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Modal, Pressable, Text, View } from "react-native";
 import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, type Region } from "react-native-maps";

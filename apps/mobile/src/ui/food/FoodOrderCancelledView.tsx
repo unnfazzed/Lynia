@@ -1,4 +1,5 @@
-import { rejectionCopy, tokens, type MerchantOrderResponse } from "@lynia/shared";
+import { rejectionCopy, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { Text, View } from "react-native";
 import { fmtClock } from "../../logic/format-time";

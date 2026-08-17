@@ -7,7 +7,7 @@
 // props from the container (apps/mobile/app/notifications/index.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
 import { View, Text, Pressable, FlatList } from "react-native";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { AppBar, Icon, EmptyState, type IconName } from "../../src/ui";
 
 /** A feed row, shaped to mirror the mock's `{ icon, t, m, w, unread }` keys verbatim, plus the

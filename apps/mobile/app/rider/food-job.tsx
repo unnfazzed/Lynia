@@ -1,4 +1,5 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, formatPhoneLocal, tokens, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, formatPhoneLocal, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";

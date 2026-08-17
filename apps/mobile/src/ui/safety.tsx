@@ -1,4 +1,5 @@
-import { formatPhoneLocal, SOS_POLICY, tokens } from "@lynia/shared";
+import { formatPhoneLocal, SOS_POLICY } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
 import * as Location from "expo-location";

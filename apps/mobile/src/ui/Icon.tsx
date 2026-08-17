@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 // Lucide ships its entire icon set from the "lucide-react-native" barrel. Metro does NOT tree-shake
 // and Expo SDK 52 keeps package `exports` resolution OFF (see metro.config.js), so a barrel import
 // (`import { X } from "lucide-react-native"`) drags every glyph's bytecode into the Hermes bundle —

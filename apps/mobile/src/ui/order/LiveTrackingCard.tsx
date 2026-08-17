@@ -1,4 +1,5 @@
-import { formatPhoneLocal, PRESENCE_ESCALATION_MS, tokens } from "@lynia/shared";
+import { formatPhoneLocal, PRESENCE_ESCALATION_MS } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";

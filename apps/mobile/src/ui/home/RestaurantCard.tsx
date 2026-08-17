@@ -1,5 +1,5 @@
 import type { RestaurantListItem } from "@lynia/shared";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import { avatarTint } from "../../logic/avatar";

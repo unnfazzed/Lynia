@@ -7,7 +7,7 @@
 // props from the container (apps/mobile/app/food/[id].tsx) — that is the ONLY hand-wired seam.
 import React from "react";
 import { View, Text } from "react-native";
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { Card, Icon, Button } from "../../src/ui";
 
 export type ClosedInterruptViewProps = {

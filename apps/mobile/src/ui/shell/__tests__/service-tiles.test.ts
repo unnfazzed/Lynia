@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { getServiceTiles, SERVICES } from "../ServiceTiles";
 
 describe("getServiceTiles (RESTAURANTS_ENABLED escape hatch)", () => {

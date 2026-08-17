@@ -4,7 +4,7 @@
  * The wordmark is the OUTLINED Fredoka-600 vector (src/ui/Brand.tsx) because no Fredoka font file
  * ships — a plain <Text> would silently substitute Inter and stop matching the drawn letterforms.
  */
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 

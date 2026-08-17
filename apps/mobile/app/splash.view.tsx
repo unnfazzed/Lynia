@@ -1,4 +1,5 @@
-import { tokens } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
+import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { View } from "react-native";
 import { DoveMark, Wordmark } from "../src/ui/Brand";
@@ -23,6 +24,10 @@ import { DoveMark, Wordmark } from "../src/ui/Brand";
 export function SplashView(): React.ReactElement {
   return (
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center", gap: 18, backgroundColor: tokens.color.accent }}>
+      {/* Light status-bar icons while the green frame is up (dark-on-green is near-invisible).
+          expo-status-bar renders RN's StatusBar, whose props STACK pops on unmount — so the root
+          layout's style="dark" is restored the moment the splash gives way to a real screen. */}
+      <StatusBar style="light" />
       <DoveMark size={104} on="green" />
       <Wordmark size={32} color={tokens.color.onAccent} />
     </View>

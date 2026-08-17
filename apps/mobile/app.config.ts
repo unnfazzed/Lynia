@@ -124,8 +124,9 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "light",
   platforms: ["android", "ios"],
-  // Launcher icon + splash source, copied from packages/design/assets/brand/icon/ (the design
-  // system owns the artwork). Light background only — the design defers dark mode.
+  // Launcher icon copied from packages/design/assets/brand/icon/ (the design system owns the
+  // artwork); splash-icon.png is the bare Paper Dove (Brand.tsx geometry) rendered white for the
+  // green splash below. Light UI only — the design defers dark mode.
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
@@ -157,7 +158,14 @@ const config: ExpoConfig = {
     ],
     [
       "expo-splash-screen",
-      { image: "./assets/splash-icon.png", imageWidth: 120, resizeMode: "contain", backgroundColor: "#FFFFFF" },
+      // The native splash IS the design's splash (journey 0·1, screens.jsx `Splash`): full-bleed
+      // brand green with the white dove — the same frame app/splash.view.tsx paints once JS is up,
+      // so the native→JS handoff is a visual no-op instead of the old white→green hard cut.
+      // splash-icon.png is the DoveMark `on="green"` variant (white body, translucent keel, green
+      // creases) on transparency; imageWidth 104 matches SplashView's <DoveMark size={104}/> so the
+      // mark doesn't jump size at the handoff. #00B14F = tokens.color.accent (native config can't
+      // read the TS tokens; same literal convention as expo-notifications' color below).
+      { image: "./assets/splash-icon.png", imageWidth: 104, resizeMode: "contain", backgroundColor: "#00B14F" },
     ],
     [
       "expo-location",
