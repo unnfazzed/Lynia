@@ -5,7 +5,6 @@
  * form, and the full-resolution bitmap is real avoidable peak-memory pressure on a 1-2GB device
  * (this screen's own OOM-kill comment already flags camera capture as the risk here).
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockReplace = jest.fn();

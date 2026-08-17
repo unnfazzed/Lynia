@@ -4,7 +4,6 @@
  * query (or a large corridor catalog) used to mount every matching row's Image concurrently via
  * ScrollView + `.map()`. Pins the FlatList conversion.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { FlatList } from "react-native";
 

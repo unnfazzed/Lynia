@@ -5,7 +5,6 @@
  * 0:00), the taken/expired resolutions show their exact copy (taken wins when both arrive), and the
  * card schedules exactly one interval while live — torn down the moment the offer resolves.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { SentOfferCard } from "../SentOfferCard";

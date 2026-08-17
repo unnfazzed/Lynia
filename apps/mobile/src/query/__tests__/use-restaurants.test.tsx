@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import { act, create } from "react-test-renderer";
 import type { RestaurantListResponse } from "@lynia/shared";
 import { useRestaurantListFeed } from "../use-restaurants";

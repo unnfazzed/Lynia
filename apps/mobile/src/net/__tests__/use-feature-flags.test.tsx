@@ -1,4 +1,3 @@
-import React from "react";
 import { act, create } from "react-test-renderer";
 import { DEFAULT_FEATURE_FLAGS, fetchFeatureFlags, useFeatureFlags } from "../use-feature-flags";
 

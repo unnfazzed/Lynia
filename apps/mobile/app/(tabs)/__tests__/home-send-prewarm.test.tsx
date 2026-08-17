@@ -17,7 +17,6 @@
  * The mock factory records EVALUATIONS, not calls: a jest.mock factory body runs on the first
  * `require` of that module and never if the module is never reached.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";

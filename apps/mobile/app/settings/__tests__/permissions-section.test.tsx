@@ -10,7 +10,6 @@
  * unchanged and still asserted here; the third case below is what keeps the section from creeping
  * back.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 

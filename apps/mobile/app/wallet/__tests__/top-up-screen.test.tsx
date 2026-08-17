@@ -8,7 +8,6 @@
  * a history-less entry — a rider opening this from a push notification about a top-up outcome — which
  * is exactly what the `/rider/money` fallback is for.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockBack = jest.fn();

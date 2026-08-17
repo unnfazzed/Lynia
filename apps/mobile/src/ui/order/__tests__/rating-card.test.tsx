@@ -4,7 +4,6 @@
  * (unmount) while a rating is still armed FLUSHES it rather than silently dropping the rating the
  * customer already saw as "Submitting {n}★".
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { RatingCard } from "../RatingCard";

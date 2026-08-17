@@ -3,7 +3,6 @@
  * with the snapshot's `pickupPhotoUrl`, so it MUST render nothing for photo-less pickups, old
  * orders, and an older API (field absent) — and the actual image only when a URL arrives.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { PickupPhoto } from "../PickupPhoto";

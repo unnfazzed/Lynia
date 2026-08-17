@@ -9,7 +9,6 @@
  * data — confirming `showOpenOrdersList`'s early return can't leak the open-orders list into a screen
  * state that shouldn't show it.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { FlatList } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

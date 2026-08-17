@@ -13,7 +13,6 @@
  * The hint is drawn ONLY in the idle mock — the countdown row / banner / lockout card are the guidance
  * in the other three — so its absence there is asserted, not incidental ("not drawn ⇒ not rendered").
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 jest.mock("expo-router", () => ({

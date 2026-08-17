@@ -5,7 +5,6 @@
  * structural fix (FlatList, so only what's on-screen is mounted) so a future "just add a row here"
  * edit can't quietly revert to an unbounded ScrollView.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FlatList } from "react-native";

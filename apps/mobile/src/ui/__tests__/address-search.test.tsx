@@ -18,7 +18,6 @@
  * between tests. (Re-requiring the module under `jest.resetModules()` would hand the component a
  * second copy of React and break hooks.)
  */
-import React from "react";
 import { Text, TextInput } from "react-native";
 import renderer, { act } from "react-test-renderer";
 import { AddressSearch } from "../AddressSearch";

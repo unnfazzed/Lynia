@@ -13,7 +13,6 @@
  *  4. the mock's mint "No delivery is running" strip carries the LIVE answer — a running delivery
  *     turns it into the blocking reason and disables "Continue to delete".
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // The API's refusal copy now reaches the user as an auto-dismissing toast rather than a persistent red

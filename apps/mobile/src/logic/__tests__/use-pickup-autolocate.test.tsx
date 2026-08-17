@@ -8,7 +8,6 @@
  * dialog, it paints the cached fix before the live one so the pin is there on open rather than
  * seconds later, it geocodes the FINAL point only, and every failure path is silent.
  */
-import React from "react";
 import * as Location from "expo-location";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { PickedPoint } from "../../ui/MapPicker";

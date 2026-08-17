@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { Topup } from "@lynia/shared";
 import { TopUpFlow } from "../TopUpFlow";

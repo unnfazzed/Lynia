@@ -8,7 +8,6 @@
  *   3. tapping a topic opens WhatsApp with that topic's prompt prefilled;
  *   4. tapping the WhatsApp card opens WhatsApp.
  */
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 const mockBack = jest.fn();
