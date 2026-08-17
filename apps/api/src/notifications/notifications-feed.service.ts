@@ -434,13 +434,21 @@ export class NotificationsFeedService {
       // for them — which is exactly what the mock draws (a single live "Rider on the way" row, a single
       // terminal "Delivered" row), and what the push tray already shows after collapseKey folding.
       // Superseded intermediate beats are pure history and belong to the tracker / Orders list.
-      const event = order.events
-        .filter((e) => notices[e.status] !== undefined && addressesViewer(e.status))
-        // Actor suppression (both voices): drop the `cancelled` row when the viewer is the one who
-        // cancelled — a row about your own action is noise. `cancelledBy` is the canceller's profile
-        // id, so a direct id match identifies the actor. Mirrors the push's excludeProfileId exclusion.
-        .filter((e) => !(e.status === "cancelled" && order.cancelledBy === userId))
-        .at(-1);
+      const latest = order.events.filter((e) => notices[e.status] !== undefined && addressesViewer(e.status)).at(-1);
+
+      // Actor suppression (both voices): a row about your OWN action is noise, mirroring the push's
+      // excludeProfileId exclusion. `cancelledBy` is the canceller's profile id, so a direct id match
+      // identifies the actor.
+      //
+      // This MUST be applied to the collapsed pick, not to the candidate list. Filtering the
+      // cancellation out BEFORE the pick (how this first shipped) makes `.at(-1)` fall through to the
+      // newest surviving beat — so a customer who cancels after `en_route_pickup` gets a lone "Rider
+      // on the way" row for an order that is cancelled. Under the old row-per-event model that beat
+      // was one row among several and read as history; under collapse the single row reads as the
+      // order's CURRENT state, which turns a redundant row into a false one. Suppressing the actor's
+      // cancellation therefore suppresses the ORDER's row entirely, which is what "not news to you"
+      // meant in the first place. `cancelled` is terminal, so it is always the last event when present.
+      const event = latest && latest.status === "cancelled" && order.cancelledBy === userId ? undefined : latest;
       if (event) {
         let notice = notices[event.status]!;
 

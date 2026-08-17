@@ -18,7 +18,9 @@ const mockRows: NotificationRow[] = Array.from({ length: 35 }, (_, i) => ({
   icon: "bell",
   title: `Notification ${i}`,
   message: "Your delivery update.",
-  at: new Date().toISOString(),
+  // Distinct, descending timestamps — the shape the server actually returns (newest first). Identical
+  // times would make any position assertion vacuous, since a stable sort can't distinguish them.
+  at: new Date(Date.UTC(2026, 7, 17, 12, 0) - i * 60_000).toISOString(),
   unread: false,
 }));
 
@@ -44,8 +46,12 @@ jest.mock("../../../src/api/notifications", () => ({
 
 import NotificationsScreen from "../index";
 
+/** The client the most recent renderScreen() built — lets a test read the cache the screen writes. */
+let currentQc: QueryClient;
+
 function renderScreen(): renderer.ReactTestRenderer {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  currentQc = qc;
   let tree!: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(
@@ -154,6 +160,30 @@ describe("NotificationsScreen — STREAMLINE-01 read state + dismissal", () => {
     const ids = tree.root.findByType(FlatList).props.data.map((n: NotificationRow) => n.id);
     expect(ids).not.toContain(mockRows[1]!.id);
     expect(ids).toHaveLength(mockRows.length - 1);
+  });
+
+  it("restores the row when BOTH the dismiss write and the recovery refetch fail", async () => {
+    const tree = renderScreen();
+    await settle();
+    // Both requests fail for the same reason a real one would — the connection is gone. Without the
+    // restore, the optimistic filter would survive and hide a notification the server never dismissed.
+    mockDismissNotification.mockRejectedValue(new Error("offline"));
+    mockGetNotificationsFeed.mockRejectedValue(new Error("offline"));
+
+    const dismiss = dismissVia(tree);
+    await act(async () => {
+      dismiss(2);
+    });
+    await settle();
+
+    // Asserted on the CACHE, not the tree: a failed refetch puts the query in its error state, so the
+    // screen swaps the list for the retry branch. The guarantee under test is that the row is back in
+    // the cache the retry will paint from — otherwise it would stay filtered out for the whole session.
+    const cached = currentQc.getQueryData<NotificationRow[]>(["notifications"]) ?? [];
+    const ids = cached.map((n) => n.id);
+    expect(ids).toContain(mockRows[2]!.id);
+    // …back in its original position, not appended to the end (rows are newest-first by `at`).
+    expect(ids).toEqual(mockRows.map((n) => n.id));
   });
 
   it("rolls the row back by refetching when the dismiss write fails", async () => {

@@ -171,7 +171,18 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   // busy rider saw days, a once-a-year customer saw rows from last January, neither predictably.
   it("STREAMLINE-01: bounds every row SOURCE to the one-day retention window", async () => {
     const { prisma, service } = makeDeps();
-    prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, orderType: "parcel", status: "expired", events: [] }]);
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: "o1",
+        riderId: null,
+        orderType: "parcel",
+        status: "expired",
+        // An in-window `expired` event is what puts o1 into `expiredOrderIds` — without it the qualifier
+        // query below is never issued at all and its assertion passes vacuously (it would still pass if
+        // someone bounded that query, which is the regression it exists to catch).
+        events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
+      },
+    ]);
     await service.feedForUser("me", NOW);
     const cutoff = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
 
@@ -194,6 +205,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const qualifier = prisma.offer.findMany.mock.calls
       .map((c: unknown[]) => c[0] as { distinct?: string[]; where: { createdAt?: unknown } })
       .find((arg) => arg.distinct !== undefined);
+    expect(qualifier).toBeDefined();
     expect(qualifier?.where.createdAt).toBeUndefined();
   });
 
@@ -380,6 +392,38 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     ]);
     const feed = await service.feedForUser("me", NOW);
     expect(feed).toEqual([]);
+  });
+
+  // STREAMLINE-01 regression (CodeRabbit, PR #791): actor-suppression must suppress the ORDER's row, not
+  // just the cancelled EVENT. Filtering the event before the collapse pick lets `.at(-1)` fall through to
+  // the newest surviving beat — and under collapse that lone row reads as the order's CURRENT state, so a
+  // customer who cancels mid-trip was shown "Rider on the way" for an order they had just cancelled.
+  it("STREAMLINE-01: a self-cancel mid-trip shows NO row, never the superseded beat before it", async () => {
+    const { prisma, service } = makeDeps();
+    const order = {
+      id: "o1",
+      riderId: "rider",
+      cancelledBy: "cust", // the CUSTOMER cancelled, after the trip was already under way
+      orderType: "parcel",
+      status: "cancelled",
+      events: [
+        { status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") },
+        { status: "confirmed", createdAt: new Date("2026-07-06T10:05:00.000Z") },
+        { status: "en_route_pickup", createdAt: new Date("2026-07-06T10:10:00.000Z") },
+        { status: "cancelled", createdAt: new Date("2026-07-06T10:20:00.000Z") },
+      ],
+    };
+
+    // The actor gets nothing at all — NOT "Rider on the way", which would describe a cancelled order as
+    // still running.
+    prisma.order.findMany.mockResolvedValue([order]);
+    expect(await service.feedForUser("cust", NOW)).toEqual([]);
+
+    // The rider (not the actor) still gets the cancellation itself, in rider voice — and likewise not the
+    // stale "You got the job" beat that precedes it.
+    prisma.order.findMany.mockResolvedValue([order]);
+    const riderFeed = await service.feedForUser("rider", NOW);
+    expect(riderFeed.map((r) => r.title)).toEqual(["Order cancelled"]);
   });
 
   it("suppresses a customer's self-cancel row, but the assigned rider still sees it", async () => {
