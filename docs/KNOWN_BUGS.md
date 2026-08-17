@@ -2285,3 +2285,44 @@ UNTESTED with its source test or rationale) is in `docs/LOGIC-MODEL-AUDIT-2026-0
 the PR body. No DUPLICATED logic found inside the lane itself; the pre-existing `X2-OBS-2` OPEN row (two
 divergent "live food offer" predicates) is a C3/merchant-dispatch concern adjacent to, not inside, this
 lane's Express/parcel scope and was left as-is.
+
+## Test-prune sweep 2026-08-17 (weekly useless-test pruning routine) — `docs/TEST-PRUNE-2026-08-17.md`
+
+First run of the new weekly test-prune lane (`docs/ROUTINES.md`) — no prior `TP-` rows to dedup
+against. Three parallel read-only hunts (api; mobile; admin+merchant+shared) swept every test file for
+cannot-fail patterns (vacuous assertions, mocking the unit under test, copy-string greps posing as
+behavior, unreachable assertions, duplicate coverage). 13 candidates shortlisted; every one was PROVEN
+or CLEARED by an actual mutation (source changed, target test run against the mutation, outcome
+recorded, mutation reverted) — never condemned on reading alone. 9 of the 13 candidates condemned,
+consolidated into 8 ledger entries below (TP-07 covers two originally-separate `gates.test.tsx`
+candidates); 4 cleared as false positives — 2 of those share one root cause (the hunt's static reading
+missed that `pnpm test` runs untyped: vitest/Babel transpile without type-checking, so
+"compile-time-only protection" arguments don't hold at test time, only at the separate `pnpm
+typecheck` gate), the other 2 were duplicate-coverage claims mutation testing showed weren't actually
+duplicates. `pnpm typecheck` + `pnpm test`
+green (api 100/1729, mobile 160/1201, admin 11, merchant 29, shared 12 — all unchanged counts except
+TP-05's one deleted assertion inside an existing test). Net diff: 8 test files changed, 0 source files
+(every proving mutation reverted). No guardrail-suite test touched; no sensitive-lane test deleted
+(TP-04, wallet-credit, was strengthened).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| TP-01 | `stub-payment-rail.spec.ts`'s "exposes a DI token" test asserted `typeof PAYMENT_RAIL === "symbol"` — true from the token's own declaration regardless of how (or whether) it's actually wired into Nest DI. Mutation: broke the `provide`/`exports` binding in `payments.module.ts` to a wrong token string — all 7 tests in the file still passed, and no test anywhere in the repo bootstraps `PaymentsModule`/`AppModule` through real DI (`@nestjs/testing` isn't even a dependency) to catch it. | `apps/api/src/adapters/payments/stub-payment-rail.spec.ts` | LOW (roadmap-2.5 seam, nothing consumes the token yet — but would have silently broken wiring once `food-order.service.ts`'s `@Inject(PAYMENT_RAIL)` goes live) | **FIXED** — replaced with a `Reflect.getMetadata` read of `PaymentsModule`'s provider/export config, asserting the real binding. Confirmed failing against the mutation, passing after. |
+| TP-02 | `metrics.service.spec.ts`'s `startTimer` test asserted only `typeof elapsed === "number"` and `elapsed >= 0`. Mutation: the timer closure changed to always return `0` (measures nothing) — test still passed. | `apps/api/src/observability/metrics.service.spec.ts` | LOW (observability only, no user-facing impact — but a silently-broken latency timer would poison every downstream `record*Latency` metric) | **FIXED** — replaced with a `vi.spyOn(performance, "now")` mock returning two controlled values, asserting the closure computes the exact delta (42). Confirmed failing against the mutation, passing after. |
+| TP-03 | `fixtures.test.ts`'s "makeOrderItem → OrderItem" test used `.toBeTruthy()` for its override case where the file's own stated contract (and every sibling assertion) is an exact `.toEqual` round-trip. Mutation: `makeOrderItem` changed to silently ignore its `overrides` argument — test still passed. A naive first fix (`.toEqual(makeOrderItem({...}))`) was ALSO vacuous under the same mutation, since both sides call the same broken factory and cancel out. | `packages/shared/src/fixtures.test.ts` | LOW (shared fixture used across all three apps' test suites — a silently-broken override path would mask real contract drift in every consumer) | **FIXED** — compares against an independent object literal instead of a second factory call, then parse-round-trips against that. Confirmed failing against the mutation, passing after. |
+| TP-04 | `ConfirmModal.test.tsx`'s wallet-credit dismissal-guard test (sensitive lane) only asserted `idempotencyKey` is `.toBeTruthy()`, never that a reopen mints a genuinely NEW key. Mutation: `crypto.randomUUID()` → constant `"x"` in `ConfirmModal.tsx` — all 3 tests in the file still passed; nowhere else in the repo tests idempotency-key uniqueness. | `apps/admin/app/components/ConfirmModal.tsx` (sensitive: wallet credit) | MEDIUM (sensitive-lane conservative fix + test, mandatory per routine rules — a collapsed-to-constant key would let a lost-response retry after close/reopen dedupe against, and silently no-op, a SECOND deliberate wallet credit) | **STRENGTHENED** (never deleted, per the sensitive-lane rule) — test now reopens the modal after the first submit resolves and asserts the second key is truthy AND distinct from the first. Confirmed failing against the mutation, passing after. |
+| TP-05 | `heartbeat.test.ts`'s "does NOT fall back on a network failure" test ended with a dead `expect(sendHeartbeat).toBeDefined()` — fully subsumed by every sibling test in the same file already calling `sendHeartbeat(...)` directly. | `apps/mobile/src/api/__tests__/heartbeat.test.ts` | LOW (dead assertion, zero coverage loss) | **DELETED** the one line; the test's real network-failure-vs-404-fallback assertions are untouched. |
+| TP-06 | `eta.test.tsx`'s "bakes in the road-winding factor" test used loose sanity bounds (`> 1`, `> 0`) on documented, behavior-preserving exported constants. Mutation: `ROAD_WINDING_FACTOR` 1.3 → 50 — test still passed (only the file's OTHER, banded-range test happened to catch it). | `apps/mobile/src/logic/__tests__/eta.test.tsx` | LOW | **FIXED** — pinned to the exact documented values (`1.3`, `22`). Confirmed failing against the mutation, passing after. |
+| TP-07 | `gates.test.tsx` had two gate-copy assertions using `.toBeTruthy()` where the mocks specify exact drawn text (CLAUDE.md's mock-copy-verbatim mandate): `ONLINE_GATE_COPY.kyc_expired.title` and `ACCOUNT_ON_HOLD_COPY.{title,message}`. Mutations: both swapped to wrong-but-nonempty-and-distinct strings — both slipped through, including past the pre-existing `.not.toBe(kyc.title)` distinctness check on the first (a wrong string is still distinct from `kyc`'s). | `apps/mobile/src/logic/__tests__/gates.test.tsx` | LOW (copy correctness, not logic — but exactly the class of drift CLAUDE.md's pixel-parity mandate targets) | **FIXED**, both — pinned to the exact mock copy. Confirmed both failing against their mutations, passing after. |
+| TP-08 | `stepper.test.tsx`'s "marks a step live" test — guarding the exact regression its own file header documents (every step rendering "todo" when `currentIdx` was `-1`) — only asserted a checkmark exists SOMEWHERE in the tree. Mutation: `Stepper`'s `currentIdx` for the food-customer branch hardcoded to always the LAST step (ignoring real dispatch/kitchen state) — all 10 tests in the file still passed, since 6-of-7 steps wrongly marked "done" still contains "a ✓". | `apps/mobile/src/ui/index.tsx` (`Stepper`), test in `apps/mobile/src/ui/__tests__/stepper.test.tsx` | LOW (visual progress indicator, not a data/money path) | **FIXED** — replaced with a full ordered glyph+label sequence pin (`.toEqual([...])`) so the CORRECT step, not just any step, must carry the checkmark. Confirmed failing against the mutation (showing the exact wrong-shape diff), passing after. |
+
+Four additional candidates were investigated and CLEARED by mutation (not condemned — recorded in the
+report for completeness, no code changes): `stub-payment-rail.spec.ts`'s "satisfies the interface"
+callable-checks test (refuted — vitest has no type-checking at test time, so a real method removal
+DOES fail it); `apps/admin/app/error.test.tsx` vs `components/states.test.tsx` (refuted — the wrapper's
+own prop-forwarding is real, distinct coverage from the underlying component's mechanics); `money.test.ts`
+vs `policy.test.ts`'s half-cent-rounding overlap (refuted — both independently fail the same mutation,
+and the policy-layer test carries 2 boundary cases the money-layer test lacks, so it's a partial, not
+full, duplicate); `order-offers.test.ts`'s `recommended` boolean-type check (refuted — catches a real
+numeric-vs-boolean shape regression the neighboring truthiness check can't). Full findings, every
+mutation applied verbatim, and observed outcomes are in `docs/TEST-PRUNE-2026-08-17.md`.

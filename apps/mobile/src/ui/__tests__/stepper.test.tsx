@@ -88,8 +88,25 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
 
   it("marks a step live rather than leaving the whole timeline inert during the kitchen phase", () => {
     const tree = renderer.create(<Stepper events={[]} currentStatus="requested" view="customer" jobType="food" merchantPhase="preparing" />);
-    // "now" renders the step index as its node glyph; a done step renders the check.
-    expect(textOf(tree)).toContain("✓");
+    // "now" renders the step index as its node glyph; a done step renders the check. Pin the FULL
+    // ordered sequence (TP-08) — a build that marks the wrong step live/done still contains "some ✓"
+    // and would slip past a bare `.toContain("✓")`.
+    expect(textOf(tree)).toEqual([
+      "✓",
+      "Order placed",
+      "2",
+      "Restaurant accepted",
+      "3",
+      "Rider secured",
+      "4",
+      "Rider at the restaurant",
+      "5",
+      "Picked up",
+      "6",
+      "On the way",
+      "7",
+      "Delivered",
+    ]);
   });
 
   it("leaves the parcel and rider timelines on the dispatch model untouched", () => {

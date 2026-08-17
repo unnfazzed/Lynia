@@ -70,7 +70,6 @@ describe("sendHeartbeat — lightweight beat with legacy fallback", () => {
 
     await expect(sendHeartbeat()).rejects.toMatchObject({ status: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(sendHeartbeat).toBeDefined();
   });
 
   it("propagates an ApiError instance (the beat handler branches on instanceof)", async () => {

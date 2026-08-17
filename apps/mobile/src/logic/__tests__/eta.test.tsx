@@ -44,9 +44,9 @@ describe("liveEta", () => {
     expect((slow?.minutes ?? 0)).toBeGreaterThan(fast?.minutes ?? 0);
   });
 
-  it("bakes in the road-winding factor (constants exported and sane)", () => {
-    expect(ROAD_WINDING_FACTOR).toBeGreaterThan(1);
-    expect(ETA_SPEED_KMH).toBeGreaterThan(0);
+  it("bakes in the exact road-winding factor and average speed (TP-06)", () => {
+    expect(ROAD_WINDING_FACTOR).toBe(1.3);
+    expect(ETA_SPEED_KMH).toBe(22);
   });
 });
 

@@ -1,6 +1,8 @@
+import "reflect-metadata";
 import { describe, expect, it } from "vitest";
 import type { PaymentRail, PaymentRailResult } from "./payment-rail.interface";
 import { PAYMENT_RAIL, PAYMENT_RAIL_DEFAULT_TIMEOUT_MS } from "./payment-rail.interface";
+import { PaymentsModule } from "./payments.module";
 import { StubPaymentRail } from "./stub-payment-rail";
 
 // Typed as the interface — this alone proves StubPaymentRail structurally satisfies PaymentRail.
@@ -22,9 +24,20 @@ describe("StubPaymentRail — contract (roadmap 2.5 seam)", () => {
     expect(typeof rail.reconcile).toBe("function");
   });
 
-  it("exposes a DI token and a documented default timeout", () => {
-    expect(typeof PAYMENT_RAIL).toBe("symbol");
+  it("exposes a documented default timeout", () => {
     expect(PAYMENT_RAIL_DEFAULT_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it("PaymentsModule binds PAYMENT_RAIL to StubPaymentRail (DI wiring, TP-01)", () => {
+    const providers = Reflect.getMetadata("providers", PaymentsModule) as Array<{
+      provide?: unknown;
+      useClass?: unknown;
+    }>;
+    const exportsList = Reflect.getMetadata("exports", PaymentsModule) as unknown[];
+    const binding = providers.find((p) => p?.provide === PAYMENT_RAIL);
+    expect(binding?.provide).toBe(PAYMENT_RAIL);
+    expect(binding?.useClass).toBe(StubPaymentRail);
+    expect(exportsList).toContain(PAYMENT_RAIL);
   });
 
   it("initiate returns a pending result with a deterministic providerRef derived from topUpId", async () => {

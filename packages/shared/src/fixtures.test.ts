@@ -52,7 +52,11 @@ describe("fixtures parse against their shared zod contracts", () => {
 
   it("makeOrderItem → OrderItem", () => {
     expect(OrderItem.parse(makeOrderItem())).toEqual(makeOrderItem());
-    expect(OrderItem.parse(makeOrderItem({ description: "Phone charger", quantity: 3 }))).toBeTruthy();
+    const overridden = makeOrderItem({ description: "Phone charger", quantity: 3 });
+    // TP-03: independent literal, not a second factory call — so a factory that silently ignores overrides
+    // can't pass by comparing two equally-broken outputs to each other.
+    expect(overridden).toEqual({ description: "Phone charger", quantity: 3 });
+    expect(OrderItem.parse(overridden)).toEqual(overridden);
   });
 
   it("makeCreateOrderRequest → CreateOrderRequest (modern items path)", () => {

@@ -73,6 +73,20 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
     gate.resolve();
     await screen.findByRole("button", { name: "Credit account…" });
     expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Reopening mints a NEW idempotency key (TP-04) — if the key generator ever collapsed to a
+    // constant, a lost-response retry after this close/reopen would dedupe against the FIRST
+    // credit instead of landing as the deliberate second one.
+    const gate2 = deferred<void>();
+    onConfirm.mockReturnValue(gate2.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Credit account…" }));
+    fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: "5.00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Credit account" }));
+    const secondKey = onConfirm.mock.calls[1]![0].idempotencyKey;
+    expect(secondKey).toBeTruthy();
+    expect(secondKey).not.toBe(firstKey);
+    gate2.resolve();
+    await screen.findByRole("button", { name: "Credit account…" });
   });
 
   it("CF-02: a same-tick double-click on Confirm calls onConfirm only once (rider.suspend double-recorded an audit row, ~190ms apart, from one crash-fuzz double-tap)", async () => {
