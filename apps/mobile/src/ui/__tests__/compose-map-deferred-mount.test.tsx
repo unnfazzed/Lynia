@@ -27,7 +27,7 @@ jest.mock("expo-location", () => ({
   Accuracy: { Balanced: 3 },
 }));
 
-jest.mock("../../telemetry/sentry", () => ({ captureException: () => {} }));
+jest.mock("../../telemetry/sentry", () => ({ captureException: () => {}, addBreadcrumb: () => {} }));
 
 type MapHandlers = { onMapReady?: () => void; onMapLoaded?: () => void };
 const mounts: MapHandlers[] = [];

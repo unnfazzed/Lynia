@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { InteractionManager, Pressable, Text, View } from "react-native";
+import { InteractionManager, Platform, Pressable, Text, View } from "react-native";
 import MapView, {
   type LatLng,
   type MapPressEvent,
@@ -11,7 +11,8 @@ import MapView, {
   type Region,
 } from "react-native-maps";
 import { mapFallbackHint } from "../logic/map-fallback";
-import { captureException } from "../telemetry/sentry";
+import { mapLoadSignal } from "../logic/map-load-signal";
+import { addBreadcrumb, captureException } from "../telemetry/sentry";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
 
@@ -35,6 +36,8 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 const LOCATE_TIMEOUT_MS = 9_000;
 /** How long tiles get to render before the screen admits the map didn't load. See the state below. */
 const MAP_LOAD_TIMEOUT_MS = 9_000;
+/** Ceiling on failure reports per compose session — see the reporting effect. */
+const MAX_MAP_FAILURE_REPORTS = 3;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -72,19 +75,28 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   const mapRef = useRef<MapView>(null);
   const [locating, setLocating] = useState(false);
   const [locateMsg, setLocateMsg] = useState<string | null>(null);
-  // Map-load fallback (C1 / kit `LJ.map_failed`). The signal here is `onMapLoaded` — "the map finished
-  // rendering all tiles" — NOT `onMapReady`.
+  // Map-load fallback (C1 / kit `LJ.map_failed`). On Android the signal is `onMapLoaded` — "the map
+  // finished rendering all tiles" — NOT `onMapReady`.
   //
   // That distinction is the whole fix. `onMapReady` fires when the native view has a `GoogleMap`
   // object, which it does even when the Maps SDK rejects the API key: an unrestricted-package /
   // wrong-SHA-1 / billing-disabled key produces an authorization failure whose only symptom is that
   // tiles never draw. Keyed on `onMapReady`, this fallback therefore stayed silent through exactly the
   // failure that was reported — a blank grey canvas under a "tap the map to drop your pin" hint, with
-  // the pin tap doing nothing and no explanation on screen. `onMapLoaded` is Android-supported
-  // (react-native-maps 1.18 `MapView.d.ts`) and does not fire in that state.
+  // the pin tap doing nothing and no explanation on screen.
+  //
+  // WHICH event that is, though, is platform-dependent: `onMapLoaded` is `@platform iOS: Google Maps
+  // only`, and this app renders Apple Maps on iOS, so requiring it there fired the card on every
+  // session over a working map. `mapLoadSignal` picks the event the running platform actually emits —
+  // see the full reasoning in `src/logic/map-load-signal.ts`.
   const [mapReady, setMapReady] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapTimedOut, setMapTimedOut] = useState(false);
+  const loadSignal = mapLoadSignal();
+  // A real `onMapLoaded` is honoured on every platform (it is the stronger proof, and would start
+  // arriving on iOS the day this app adopts `PROVIDER_GOOGLE`); `onMapReady` only stands in for it
+  // where the platform never emits it.
+  const considerLoaded = mapLoaded || (loadSignal === "onMapReady" && mapReady);
   // PERF-SEND-01: the native MapView is mounted ONE INTERACTION LATE, not in the screen's first commit.
   //
   // `/send` is a pushed route, so its first commit runs inside React Navigation's push transition —
@@ -108,30 +120,58 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   useEffect(() => {
     // The clock starts when the MAP does, not when the screen does — the deferral above must not eat
     // into the tile budget and turn a merely slow map into a "didn't load" card.
-    if (!mapMounted || mapLoaded) return;
+    if (!mapMounted || considerLoaded) return;
     // Longer than the old 6s: tiles on a constrained link are legitimately slow, and the card now
     // clears itself the moment they arrive, so erring late costs nothing while erring early would
-    // accuse a working map. Both `mapLoaded` and `mapNonce` are inputs so a retry restarts the clock.
+    // accuse a working map. Both `considerLoaded` and `mapNonce` are inputs so a retry restarts the clock.
     const t = setTimeout(() => setMapTimedOut(true), MAP_LOAD_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [mapMounted, mapLoaded, mapNonce]);
-  // Report it once per mount. A blank map is invisible to every existing signal — the previous
-  // occurrence had to be diagnosed from a user's description — so this is the difference between
-  // "somebody said the map was blank" and a dated, versioned event with a device attached.
-  const reported = useRef(false);
-  const mapFailed = !mapLoaded && mapTimedOut;
+  }, [mapMounted, considerLoaded, mapNonce]);
+  // Report it. A blank map is invisible to every existing signal — the previous occurrence had to be
+  // diagnosed from a user's description — so this is the difference between "somebody said the map was
+  // blank" and a dated, versioned event with a device attached.
+  //
+  // Reported once per ATTEMPT rather than once per mount, because "I pressed Retry four times and it
+  // never came back" and "it failed once" are different bugs and the old counter could not tell them
+  // apart: `retryMap` never cleared the flag, so every retry after the first was silent and the retry
+  // pill's effectiveness was unmeasurable. Capped, because this app targets metered 2G/3G and an
+  // unbounded loop of retries must not turn into an unbounded loop of uploads.
+  const reportedAttempts = useRef<Set<number>>(new Set());
+  const mapFailed = !considerLoaded && mapTimedOut;
   useEffect(() => {
-    if (!mapFailed || reported.current) return;
-    reported.current = true;
-    captureException(new Error(`compose-map-not-loaded (onMapReady=${mapReady})`));
-  }, [mapFailed, mapReady]);
+    if (!mapFailed) return;
+    if (reportedAttempts.current.has(mapNonce)) return;
+    if (reportedAttempts.current.size >= MAX_MAP_FAILURE_REPORTS) return;
+    reportedAttempts.current.add(mapNonce);
+    // The message is CONSTANT and the varying parts are tags. Sentry fingerprints on the message, so
+    // the old `compose-map-not-loaded (onMapReady=${mapReady})` split one failure across an issue per
+    // value and hid the fields worth filtering on inside a string. In particular `map_load_signal`
+    // separates the two causes that produced an identical event: an Android build whose Maps key was
+    // rejected (`onMapLoaded`, tiles never drew) from an iOS session where the required event is simply
+    // never emitted (`onMapReady` — the false positive this change removes).
+    captureException(new Error("compose-map-not-loaded"), {
+      tags: {
+        map_platform: Platform.OS,
+        map_load_signal: loadSignal,
+        map_ready: String(mapReady),
+        map_attempt: String(mapNonce + 1),
+      },
+    });
+  }, [mapFailed, mapReady, mapNonce, loadSignal]);
 
   const retryMap = useCallback((): void => {
+    // Breadcrumb, not an event: this is the ONE place in the app that tears down and rebuilds a native
+    // view by changing its `key`, and on the old architecture that runs through the Paper
+    // child-management path. An unhandled `com.facebook.infer.annotation.Assertions` AssertionError was
+    // reported from this app with no message and no context, and a native crash carries no JS state on
+    // its own — so if a remount preceded the next one, this is what will say so, at zero upload cost
+    // when nothing is reported. See docs/SENTRY-TRIAGE-2026-08-17.md §2.
+    addBreadcrumb("compose-map-retry", { attempt: mapNonce + 1 });
     setMapReady(false);
     setMapLoaded(false);
     setMapTimedOut(false);
     setMapNonce((n) => n + 1);
-  }, []);
+  }, [mapNonce]);
 
   const activePoint = active === "pickup" ? pickup : drop;
   const setActive = (c: LatLng): void => {
@@ -314,10 +354,12 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
           white it had drifted to — it was rendering as the faintest thing on the screen while being the
           instruction the composer turns on.
 
-          Gated on `mapLoaded`, not `mapReady`: inviting someone to tap a canvas that never drew a tile is
-          the exact dead end this file's fallback exists to replace, and the failure card takes this slot
-          in that state. */}
-      {mapLoaded && !activePoint ? (
+          Gated on the platform's load signal, not raw `mapReady`: inviting someone to tap a canvas that
+          never drew a tile is the exact dead end this file's fallback exists to replace, and the failure
+          card takes this slot in that state. (Gating it on `mapLoaded` alone meant iOS — where that event
+          is never emitted — lost the hint entirely, so the one cue that the map IS the input was missing
+          on every iOS session.) */}
+      {considerLoaded && !activePoint ? (
         <View
           pointerEvents="none"
           style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}

@@ -59,4 +59,41 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
     expect(mod.nativeCrash()).toBe(true);
     expect(sentry.nativeCrash).toHaveBeenCalledTimes(1);
   });
+
+  // Structured detail, added after the Sentry issue `compose-map-not-loaded (onMapReady=true)` proved
+  // undiagnosable: the varying part rode in the MESSAGE, which Sentry fingerprints on, so one failure
+  // opened an issue per value and the fields worth filtering by were stuck inside a string.
+  it("forwards tags/extra as the per-event capture context, leaving no scope pushed", () => {
+    const { mod, sentry } = load();
+    mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+    const err = new Error("compose-map-not-loaded");
+    mod.captureException(err, { tags: { map_load_signal: "onMapLoaded" } });
+    expect(sentry.captureException).toHaveBeenCalledWith(err, {
+      tags: { map_load_signal: "onMapLoaded" },
+    });
+  });
+
+  it("captures without context when none is given, so existing callers are unaffected", () => {
+    const { mod, sentry } = load();
+    mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+    const err = new Error("boom");
+    mod.captureException(err);
+    expect(sentry.captureException).toHaveBeenCalledWith(err, undefined);
+  });
+
+  // A native crash carries no JS state of its own — breadcrumbs are the only trail it gets.
+  it("records breadcrumbs once armed, and drops them silently when inert", () => {
+    const inert = load();
+    inert.mod.addBreadcrumb("compose-map-retry", { attempt: 2 });
+    expect(inert.sentry.addBreadcrumb).not.toHaveBeenCalled();
+
+    const { mod, sentry } = load();
+    mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+    mod.addBreadcrumb("compose-map-retry", { attempt: 2 });
+    expect(sentry.addBreadcrumb).toHaveBeenCalledWith({
+      message: "compose-map-retry",
+      data: { attempt: 2 },
+      level: "info",
+    });
+  });
 });
