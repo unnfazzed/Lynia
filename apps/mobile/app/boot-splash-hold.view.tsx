@@ -1,6 +1,7 @@
 import { usePathname } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { InteractionManager, StyleSheet, View } from "react-native";
+import { useBootPhase } from "../src/boot/boot-phase";
 import { SplashView } from "./splash.view";
 
 /**
@@ -9,12 +10,12 @@ import { SplashView } from "./splash.view";
  * brand-green splash frame on screen until the FIRST real screen has actually presented a frame, so
  * the boot reads green → destination with no between-screens gap at all.
  *
- * It still earns its place now that the root Stack runs `animation: "none"` (owner instruction
- * 2026-08-18 — one screen, no animations). Killing the transition removed the MOVING frame between
- * the splash and the destination; it did not remove the gap between the route committing and that
- * screen's first painted frame, which is what this covers. The two fixes are complementary: without
- * the overlay the cut would expose an unpainted scene, and without `animation: "none"` the overlay's
- * timer-based release could uncover a transition still in flight.
+ * It works together with the boot-phase transition suppression (src/boot/boot-phase.tsx): while this
+ * overlay is up the navigator runs `bootStackScreenOptions`, so the splash → destination handoff has
+ * no transition at all. The two are complementary — without the overlay the cut would expose an
+ * unpainted scene, and without the suppression this overlay's timer-based release could uncover a
+ * transition still in flight. Releasing here is also what ENDS the boot phase, so every navigation
+ * after the cold start animates normally again (owner instruction: keep the in-app animation).
  *
  * Mechanics, and the two failure modes they close:
  *
@@ -44,8 +45,16 @@ export const BOOT_HOLD_SETTLE_CAP_MS = 2_000;
 
 export function BootSplashHold(): React.ReactElement | null {
   const pathname = usePathname();
+  const { endBoot } = useBootPhase();
   const [held, setHeld] = useState(true);
-  const release = useCallback(() => setHeld(false), []);
+  // One release path for both effects below: drop the overlay AND end the boot phase, so the
+  // navigator's animation comes back on exactly the frame the green screen goes away. `endBoot` is
+  // idempotent (a plain setState to false) and the default context's is a no-op, so a BootSplashHold
+  // mounted without the provider still behaves like a standalone overlay.
+  const release = useCallback(() => {
+    setHeld(false);
+    endBoot();
+  }, [endBoot]);
 
   useEffect(() => {
     const t = setTimeout(release, BOOT_HOLD_ABS_CAP_MS);

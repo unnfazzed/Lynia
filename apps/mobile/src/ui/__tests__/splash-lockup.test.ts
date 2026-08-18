@@ -64,8 +64,10 @@ describe("splash lockup — the native launch image and the JS frame are one pic
   });
 });
 
-// The root Stack's `animation: "none"` — the other half of "no animations" — is pinned on the
-// exported options object in app/__tests__/stack-content-style.test.tsx.
+// The screen-transition half of "no animations" is pinned elsewhere, because it is scoped rather
+// than global: `bootStackScreenOptions.animation === "none"` applies only while the boot phase is
+// live (app/__tests__/stack-content-style.test.tsx), and the phase ends when BootSplashHold releases
+// (app/__tests__/boot-splash-hold.test.tsx) so in-app navigation keeps its animation.
 describe("cold start does not animate", () => {
   it("pins the native splash to hide without a fade", () => {
     expect(read("app/_layout.tsx")).toContain("SplashScreen.setOptions({ fade: false });");

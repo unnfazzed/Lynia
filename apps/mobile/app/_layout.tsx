@@ -9,6 +9,7 @@ import { View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { SessionGate } from "../src/auth/session-gate";
+import { BootPhaseProvider, useBootPhase } from "../src/boot/boot-phase";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useReachability } from "../src/net/use-reachability";
@@ -90,13 +91,25 @@ function ConnectivityBanner(): React.ReactElement | null {
 export const stackScreenOptions = {
   headerShown: false,
   contentStyle: { backgroundColor: tokens.color.accentWash },
-  // No screen transition, anywhere. The boot sequence is meant to read as ONE green screen that is
-  // simply replaced by the destination (owner instruction 2026-08-18), and the native-stack default
-  // slide/fade is what put a moving frame between them — the `contentStyle` above exists only
-  // because that transition exposed a scene background at all. With the animation gone the splash →
-  // destination handoff is a hard cut and the wash is never on screen during boot; it stays as the
-  // ground for anything that still composites a scene (it costs nothing and removing it would
-  // re-open the white flash if a future screen re-enables an animation locally).
+} as const;
+
+/**
+ * The same options with the screen transition suppressed — used ONLY while the process is still cold
+ * starting (`useBootPhase().booting`), then dropped for {@link stackScreenOptions}.
+ *
+ * The boot sequence has to read as ONE green screen replaced by the destination, with nothing moving
+ * (owner instruction 2026-08-18), and the native-stack default slide/fade is that moving frame. But
+ * the owner also asked to KEEP the in-app animation, so this cannot live on the navigator
+ * permanently: the transition belongs to the screen being presented, and a cold start can land on any
+ * route (including a push-tap deep link), so scoping by route name would be a list that rots. Scoping
+ * by PHASE covers every destination and expires on its own — see src/boot/boot-phase.tsx.
+ *
+ * `BootSplashHold` covers this handoff with an identical green frame either way; the suppression is
+ * what makes it deterministic rather than a race between that overlay's release and a transition
+ * still in flight.
+ */
+export const bootStackScreenOptions = {
+  ...stackScreenOptions,
   animation: "none",
 } as const;
 
@@ -111,8 +124,10 @@ export const stackScreenOptions = {
 function AppNavigator(): React.ReactElement {
   const serverMin = useServerMinVersion();
   const current = Constants.expoConfig?.version ?? "0.0.0";
+  // Cold-start handoff runs without a transition; every navigation after it animates normally.
+  const { booting } = useBootPhase();
   if (isUpdateRequired(current) || isVersionBelow(current, serverMin)) return <ForceUpdateScreen />;
-  return <Stack screenOptions={stackScreenOptions} />;
+  return <Stack screenOptions={booting ? bootStackScreenOptions : stackScreenOptions} />;
 }
 
 /**
@@ -222,17 +237,22 @@ function RootLayout(): React.ReactElement | null {
                 absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits
                 over the connectivity ink bar for the toast's few seconds, then clears itself. */}
             <ToastProvider>
-              <View style={{ flex: 1 }}>
-                <ConnectivityBanner />
+              {/* Scopes the no-transition rule to the cold start: AppNavigator reads `booting` for
+                  its screenOptions and BootSplashHold ends the phase when it releases, so in-app
+                  navigation keeps its animation. */}
+              <BootPhaseProvider>
                 <View style={{ flex: 1 }}>
-                  <AppNavigator />
+                  <ConnectivityBanner />
+                  <View style={{ flex: 1 }}>
+                    <AppNavigator />
+                  </View>
+                  {/* Cold-start splash hold (RCA §1.2 full fix): the brand-green frame stays up until
+                      the first REAL screen's frame is presented, so boot reads green → destination with
+                      no gap. Last sibling → stacks above the navigator; renders null forever once
+                      released. Dismisses on ANY route + a hard cap — see the component's header. */}
+                  <BootSplashHold />
                 </View>
-                {/* Cold-start splash hold (RCA §1.2 full fix): the brand-green frame stays up until
-                    the first REAL screen's frame is presented, so boot reads green → destination with
-                    no gap. Last sibling → stacks above the navigator; renders null forever once
-                    released. Dismisses on ANY route + a hard cap — see the component's header. */}
-                <BootSplashHold />
-              </View>
+              </BootPhaseProvider>
             </ToastProvider>
           </AuthProvider>
         </PersistQueryClientProvider>

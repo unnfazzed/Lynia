@@ -38,7 +38,7 @@ jest.mock("../../src/telemetry/sentry", () => ({
   wrap: (c: unknown) => c,
 }));
 
-import { stackScreenOptions } from "../_layout";
+import { bootStackScreenOptions, stackScreenOptions } from "../_layout";
 
 describe("root Stack contentStyle (splash→home transition ground)", () => {
   it("paints transitions in accentWash, never the native default white", () => {
@@ -54,13 +54,25 @@ describe("root Stack contentStyle (splash→home transition ground)", () => {
   });
 
   /**
-   * Owner instruction 2026-08-18: the cold start is ONE screen and it does not animate. The
-   * native-stack default transition is a slide/fade, and it is the moving frame between the splash
-   * and the destination — the contentStyle above only ever mattered because that transition exposed
-   * a scene background at all. Pinned here because "no animations" is a product decision that a
-   * routine navigation tweak could silently undo.
+   * Owner instruction 2026-08-18, in two halves that pull against each other: the cold start is ONE
+   * screen and does not animate, AND the in-app animation is kept. So the suppression is scoped to
+   * the boot phase (src/boot/boot-phase.tsx) instead of sitting on the navigator forever.
+   *
+   * Both halves are pinned because either one can be undone by a plausible-looking edit: hoisting
+   * `animation: "none"` onto the shared object to "simplify" would flatten every in-app transition,
+   * and dropping it from the boot variant would put the moving frame back into the cold start.
    */
-  it("runs no screen transition, so splash → destination is a hard cut", () => {
-    expect(stackScreenOptions.animation).toBe("none");
+  it("suppresses the transition for the cold-start handoff only", () => {
+    expect(bootStackScreenOptions.animation).toBe("none");
+  });
+
+  it("leaves in-app navigation animated — the boot variant is the only exception", () => {
+    expect(stackScreenOptions).not.toHaveProperty("animation");
+  });
+
+  it("changes nothing but the animation between the two variants", () => {
+    const { animation, ...rest } = bootStackScreenOptions;
+    expect(animation).toBe("none");
+    expect(rest).toEqual(stackScreenOptions);
   });
 });
