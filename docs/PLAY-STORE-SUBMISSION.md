@@ -567,6 +567,53 @@
 > was found on a green build, so the real exit test remains the device smoke in
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
+> **Status (2026-08-18 — v0.41.1 shipped to the internal track; clean single-session run covering PRs,
+> GCP, and mobile in one pass.)** A Claude session was asked to "make sure all PRs merged and in GCP,
+> then build expo and push to google play, track rollout completion."
+>
+> **The deploy surface, checked before dispatching anything.** ① **Open PRs: none** —
+> `list_pull_requests` returned empty; `main` = `83b3a5a` (release-please `chore(main): release 0.41.1`,
+> merging #810), CI green (run 1811). ② **API** (`release.yml` run 640) — green at that exact sha;
+> independently verified through the LB rather than inferred from the tick: `GET
+> https://lyniago.lyniafinance.com/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> ③ **Admin console — deliberately not dispatched.** Nothing under `apps/admin/**`, `apps/merchant/**`
+> or `packages/shared/**` changed since `deploy-admin.yml` run #80 (`9b5e0de`); a dispatch would have
+> shipped a byte-identical image, so this records the skip rather than the click.
+>
+> **Why the mobile build was genuinely due.** Since the last shipped build (`7ecf82b4`, v0.38.0, at
+> `7543239`), 49 files under `apps/mobile` changed — the customer-journey load-perf work (RCA + D1-D6,
+> #805/#806), including a new `RemoteImage.tsx` and touches to `Avatar`, `ComposeMap`, `CoverPhoto`,
+> `FoodThumb`, `MapPicker`, `MenuRow`, `ShopLogo`, `RestaurantCard`, `PickupPhoto`, `SendPriceQuote`,
+> `util.ts`. A real UI/perf delta, not a version-string bump.
+>
+> **Ownership guards ran rather than were assumed**, per `CLAUDE.md`: no reachable Claude session
+> (`ListAgents`), no in-flight `mobile-release.yml` run (last was run #27, completed 2026-08-17
+> 21:14 UTC), CI green on the dispatched commit, and `pnpm install --frozen-lockfile` clean on
+> pnpm 10.33.0 with `pnpm-lock.yaml`/`eas.json` unmoved against `origin/main`.
+>
+> Dispatched `mobile-release.yml` run #28 (`32118917055`) explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above and the
+> 2026-08-16 incident. Ref `main`@`83b3a5a5cfb9e8da37b568a52a573c582f24de22` (app version **0.41.1**).
+> The dispatcher job succeeded in 47 s (08:55:57 → 08:56:44 UTC), which under `--no-wait` proves only
+> that the build was queued.
+>
+> EAS build `834ab6d1-f86b-4e7e-813a-62c88d5e2296` (profile `preview`, created 08:56:39 UTC) reached
+> **FINISHED**. Its submission `ac6ddbc6-2ba5-40ed-afe3-7a90e3a33f90` reached **FINISHED**, track
+> **`internal`**, no error — confirmed on the *first* `eas-build-status.yml` check (run #33,
+> `32120920844`, dispatched ~23 minutes after the release dispatch), no retries needed. Exact
+> versionCode not captured — `eas-build-status.yml`'s recap doesn't query that field.
+>
+> **The `runtime=?` gap first recorded 2026-08-16 is still open.** This run's Recap again rendered
+> `runtime=?` for every listed build, so — as on every check since — this run cannot confirm the
+> runtimeVersion fingerprint held. The data was not returned; that is not evidence it changed. Still
+> out of scope for a ship-and-track request.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and nothing
+> here started that clock; a FINISHED submission does not prove the binary *runs* — the real exit test
+> remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
