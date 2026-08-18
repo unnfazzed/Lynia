@@ -26,6 +26,7 @@ jest.mock("react-native-maps", () => {
   return { __esModule: true, default: MapView, Marker: () => null };
 });
 
+import MockMapView from "react-native-maps";
 import { AddressConfirmSheet } from "../AddressConfirmSheet";
 
 const PLACE = { lat: -17.8292, lng: 31.0522, landmark: "Joina City, Harare CBD", placeId: "p-1" };
@@ -84,7 +85,9 @@ describe("AddressConfirmSheet — deferred native map mount (D4)", () => {
         </SafeAreaProvider>,
       );
     });
-    // The new selection must pay the deferral again, not inherit the previous sheet's mounted map…
+    // The new selection must pay the deferral again, not inherit the previous sheet's mounted map:
+    // the FIRST map is gone from the tree while the replacement's mount waits in the queue.
+    expect(tree.root.findAllByType(MockMapView as never)).toHaveLength(0);
     expect(interactions.pending()).toBe(1);
     // …and mounts again once its own open animation settles.
     act(() => interactions.flush());
