@@ -446,6 +446,7 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
+          MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
         run: |
           set -euo pipefail
           TRAFFIC_FLAGS="--no-traffic --tag canary"
@@ -493,7 +494,10 @@ jobs:
           # sink. Do NOT write the literal expression token in this block, not even inside a `#`
           # comment: Actions interpolates the whole script before bash ever sees it, so an empty one
           # is a syntax error that fails the ENTIRE workflow to parse (KB-CI-EXPR-EMPTY).
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
+          # MICRO_CACHE_REDIS_L2 rides the same true|false Variable lane: it turns on the shared
+          # Redis L2 behind the read-through micro-caches (PR #809) over the REDIS_URL the service
+          # already mounts — no new infra. Unset yields "false" (the env schema's own default).
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;
