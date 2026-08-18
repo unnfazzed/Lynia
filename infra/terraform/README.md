@@ -27,6 +27,12 @@ and re-runnable. It went through an engineering/cloud review pass —
 | Secrets | `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET` | generated + populated |
 | Cloud Scheduler jobs | `lynia-retention-purge` (+ `lynia-settlement-autopause`, gated) | daily crons in `europe-west1` (Scheduler doesn't exist in africa-south1); OIDC as the runtime SA, audience pinned to the route URL (`scheduler.tf`) |
 
+> **The Maps Platform client keys take their four inputs from Actions *variables*, not from this
+> file.** `TF_MAPS_KEY_ID`, `TF_PLACES_KEY_ID`, `TF_MAPS_SHA1_PLAY` and `TF_MAPS_SHA1_UPLOAD` are
+> rendered into `maps.auto.tfvars` by `scripts/tf-maps-tfvars.mjs` at plan time (and therefore
+> override anything `terraform.tfvars` says about them). Unset = `apikeys.tf` stays gated off and the
+> diff is zero. Arming sequence, all dispatchable from a phone: `docs/MOB-MAP-02-RUNBOOK.md` §4.
+
 > **Live state ≠ committed defaults.** The applied `terraform.tfvars` is gitignored, so
 > flag defaults in `variables.tf` (e.g. `staging_enabled = false`) do NOT describe the
 > live project — staging is applied and armed in `lynia-500911` despite the `false`

@@ -42,6 +42,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Authenticate to Google Cloud (read-only)
         uses: google-github-actions/auth@v3
         with:
@@ -70,6 +74,14 @@ jobs:
         id: plan
         env:
           TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          # Mirrors terraform-apply.yml: apikeys.tf's inputs live in repo variables, not the blob.
+          # Unset = zero diff, exactly as before. Once armed, planning WITHOUT them would report the
+          # keys' restrictions as permanent drift every night.
+          TF_MAPS_KEY_ID: ${{ vars.TF_MAPS_KEY_ID }}
+          TF_PLACES_KEY_ID: ${{ vars.TF_PLACES_KEY_ID }}
+          TF_MAPS_SHA1_PLAY: ${{ vars.TF_MAPS_SHA1_PLAY }}
+          TF_MAPS_SHA1_UPLOAD: ${{ vars.TF_MAPS_SHA1_UPLOAD }}
+          TF_MAPS_PACKAGE: ${{ vars.TF_MAPS_PACKAGE }}
         run: |
           set +e
           if [ -z "$TF_PROD_TFVARS" ]; then
@@ -79,6 +91,12 @@ jobs:
           fi
           cd infra/terraform
           printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+          # Best-effort by design: this probe must never fail the nightly run. A malformed TF_MAPS_*
+          # set produces no file (and a warning), so the plan simply reports the drift instead.
+          if ! node ../../scripts/tf-maps-tfvars.mjs > maps.auto.tfvars; then
+            echo "::warning::TF_MAPS_* variables are malformed — see scripts/tf-maps-tfvars.mjs. Planning without them."
+          fi
+          [ -s maps.auto.tfvars ] || rm -f maps.auto.tfvars
           if ! terraform init -input=false -no-color > init.log 2>&1; then
             echo "::warning::terraform init failed — treating as drift (state unreadable is itself a finding)."
             tail -n 60 init.log | tee ../../plan-tail.txt

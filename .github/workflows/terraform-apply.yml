@@ -31,6 +31,11 @@ name: Terraform Apply (gated)
 #     attribute_condition pinning the ref (infra/terraform/wif.tf). Arming step 2 is not optional.
 #  5. DESTROY GUARD. A plan containing any `delete` action fails unless `allow_destroy` is typed.
 #     Terraform destroying infrastructure should never be a surprise inside a routine apply.
+#  6. APIKEYS CREATE GUARD (added with the MOB-MAP-02 Route-B work). A plan that CREATES a
+#     `google_apikeys_key` always fails, with no override input. Both Maps Platform client keys
+#     already exist; creating rather than importing them mints a second pair with new key strings
+#     that no installed build reads, and the Maps key is native so no OTA can carry the fix
+#     (`REL-01`). Importing is `.github/workflows/maps-keys-arm.yml`'s job, not this workflow's.
 #
 # DORMANT UNTIL ARMED — gated on the repo variable GCP_PROVISIONER_ENABLED == 'true'.
 #
@@ -87,6 +92,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       # Defence-in-depth only (this file is editable on the branch being dispatched) — the binding
       # controls are the environment's deployment-branch policy and the WIF ref condition.
       - name: Guard — main only, and validated inputs
@@ -129,6 +138,13 @@ jobs:
         working-directory: infra/terraform
         env:
           TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          # apikeys.tf's four inputs, as repo VARIABLES rather than part of the tfvars blob — see
+          # scripts/tf-maps-tfvars.mjs. Unset = apikeys.tf stays gated off and this is a zero diff.
+          TF_MAPS_KEY_ID: ${{ vars.TF_MAPS_KEY_ID }}
+          TF_PLACES_KEY_ID: ${{ vars.TF_PLACES_KEY_ID }}
+          TF_MAPS_SHA1_PLAY: ${{ vars.TF_MAPS_SHA1_PLAY }}
+          TF_MAPS_SHA1_UPLOAD: ${{ vars.TF_MAPS_SHA1_UPLOAD }}
+          TF_MAPS_PACKAGE: ${{ vars.TF_MAPS_PACKAGE }}
           TF_TARGET: ${{ inputs.target }}
           ALLOW_DESTROY: ${{ inputs.allow_destroy }}
         run: |
@@ -140,6 +156,12 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+          # Terraform reads *.auto.tfvars AFTER terraform.tfvars, so these four assignments win.
+          # Emits nothing (and removes the file) when the TF_MAPS_* variables are unset; exits
+          # non-zero on a half-armed set, which is the config that would restrict the live Maps key
+          # to no certificate at all. See scripts/tf-maps-tfvars.mjs.
+          node ../../scripts/tf-maps-tfvars.mjs > maps.auto.tfvars
+          [ -s maps.auto.tfvars ] || rm -f maps.auto.tfvars
 
           args=(-input=false -no-color -lock=false -detailed-exitcode -out=tfplan)
           [ -n "$TF_TARGET" ] && args+=(-target="$TF_TARGET")
@@ -168,6 +190,19 @@ jobs:
           fi
           if [ "$destroys" -gt 0 ]; then
             echo "::warning title=DESTRUCTIVE APPLY QUEUED::${destroys} resource(s) will be deleted/forgotten — read the plan summary before approving."
+          fi
+
+          # APIKEYS CREATE GUARD (MOB-MAP-02). The two Maps Platform client keys already exist and
+          # are imported by maps-keys-arm.yml; a plan that CREATES one means the TF_MAPS_* key ids
+          # do not match a live key, and applying it would mint a second pair with new key strings
+          # while the app keeps reading the old values from EAS — the exact outcome apikeys.tf's
+          # header exists to prevent, and one no OTA can undo (the Maps key is native — REL-01).
+          # Not covered by the destroy guard above: creating is not deleting.
+          new_keys="$(jq -r '[.resource_changes[]? | select(.type == "google_apikeys_key") | select(.change.actions[]? == "create") | .address] | .[]' plan.json)"
+          if [ -n "$new_keys" ]; then
+            echo "::error::plan CREATES Maps Platform API key(s) — refusing. Both keys already exist and must be imported (run the 'Maps Keys — arm Terraform' workflow), never created."
+            printf '%s\n' "$new_keys"
+            exit 1
           fi
 
           {
@@ -202,6 +237,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Guard — main only
         env:
           REF: ${{ github.ref }}
@@ -224,6 +263,13 @@ jobs:
         working-directory: infra/terraform
         env:
           TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          # apikeys.tf's four inputs, as repo VARIABLES rather than part of the tfvars blob — see
+          # scripts/tf-maps-tfvars.mjs. Unset = apikeys.tf stays gated off and this is a zero diff.
+          TF_MAPS_KEY_ID: ${{ vars.TF_MAPS_KEY_ID }}
+          TF_PLACES_KEY_ID: ${{ vars.TF_PLACES_KEY_ID }}
+          TF_MAPS_SHA1_PLAY: ${{ vars.TF_MAPS_SHA1_PLAY }}
+          TF_MAPS_SHA1_UPLOAD: ${{ vars.TF_MAPS_SHA1_UPLOAD }}
+          TF_MAPS_PACKAGE: ${{ vars.TF_MAPS_PACKAGE }}
           TF_TARGET: ${{ inputs.target }}
           ALLOW_DESTROY: ${{ inputs.allow_destroy }}
         run: |
@@ -232,6 +278,12 @@ jobs:
             echo "::error::TF_PROD_TFVARS secret is unset — refusing to apply."; exit 1
           fi
           printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+          # Terraform reads *.auto.tfvars AFTER terraform.tfvars, so these four assignments win.
+          # Emits nothing (and removes the file) when the TF_MAPS_* variables are unset; exits
+          # non-zero on a half-armed set, which is the config that would restrict the live Maps key
+          # to no certificate at all. See scripts/tf-maps-tfvars.mjs.
+          node ../../scripts/tf-maps-tfvars.mjs > maps.auto.tfvars
+          [ -s maps.auto.tfvars ] || rm -f maps.auto.tfvars
           terraform init -input=false -no-color
 
           # Fresh plan inside the gated job (the reviewed plan is never persisted — it embeds
@@ -247,6 +299,19 @@ jobs:
           if [ "$destroys" -gt 0 ] && [ "$ALLOW_DESTROY" != "destroy" ]; then
             echo "::error::plan now deletes/forgets ${destroys} resource(s) (state may have moved since review); re-run with allow_destroy=destroy if intended."
             jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
+            exit 1
+          fi
+
+          # APIKEYS CREATE GUARD (MOB-MAP-02). The two Maps Platform client keys already exist and
+          # are imported by maps-keys-arm.yml; a plan that CREATES one means the TF_MAPS_* key ids
+          # do not match a live key, and applying it would mint a second pair with new key strings
+          # while the app keeps reading the old values from EAS — the exact outcome apikeys.tf's
+          # header exists to prevent, and one no OTA can undo (the Maps key is native — REL-01).
+          # Not covered by the destroy guard above: creating is not deleting.
+          new_keys="$(jq -r '[.resource_changes[]? | select(.type == "google_apikeys_key") | select(.change.actions[]? == "create") | .address] | .[]' plan.json)"
+          if [ -n "$new_keys" ]; then
+            echo "::error::plan CREATES Maps Platform API key(s) — refusing. Both keys already exist and must be imported (run the 'Maps Keys — arm Terraform' workflow), never created."
+            printf '%s\n' "$new_keys"
             exit 1
           fi
 

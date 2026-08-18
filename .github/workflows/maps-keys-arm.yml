@@ -1,0 +1,259 @@
+name: Maps Keys — arm Terraform (import + plan + apply)
+
+# Brings the two live Google Maps Platform client keys under Terraform, applying the
+# docs/SECURITY-OPS.md §B restrictions — the Route-B fix for MOB-MAP-02 (docs/MOB-MAP-02-RUNBOOK.md
+# §4). It is the ONLY safe way to arm infra/terraform/apikeys.tf, and it exists because every other
+# way to do it needs a laptop:
+#
+#   * `terraform import` has never been runnable from CI here — terraform-apply.yml plans and
+#     applies, nothing imports — and importing is not optional for these two resources. Both keys
+#     already exist. An apply without an import CREATES A SECOND PAIR with new key strings, leaves
+#     the live keys unmanaged, and reaches no device (the app reads the old values from EAS). That
+#     is the failure apikeys.tf's entire header is about.
+#   * the four values it needs used to live in the gitignored terraform.tfvars, reachable from CI
+#     only through the TF_PROD_TFVARS *secret* — which the web UI can overwrite but never show. They
+#     now come from four ordinary repo VARIABLES instead (readable and editable on a phone), and
+#     scripts/tf-maps-tfvars.mjs turns them into maps.auto.tfvars. See that file's header for why
+#     variables and not secrets.
+#
+# ORDER OF OPERATIONS (all of it dispatchable from the GitHub mobile app):
+#   1. GCP Diagnose (read-only) -> "API keys inventory" step prints both KEY_IDs and both keys'
+#      current restrictions. No console, no gcloud.
+#   2. Set the repo variables: TF_MAPS_KEY_ID, TF_PLACES_KEY_ID, TF_MAPS_SHA1_PLAY,
+#      TF_MAPS_SHA1_UPLOAD  (Settings -> Secrets and variables -> Actions -> Variables).
+#   3. Run this workflow with confirm = "arm". It imports what is missing, plans, and REFUSES any
+#      plan that is not a pure in-place update of the two keys. Read the plan in the job summary.
+#   4. Run it again with apply = "apply" to execute that plan.
+#
+# WHY THE APPLY IS A SECOND DISPATCH rather than a second click in the same run: the plan is the
+# review artefact, and the reviewer has to be able to read it BEFORE deciding. Two dispatches make
+# "I read it" a real step. Step 3 is idempotent, so re-running it costs nothing.
+#
+# SECURITY CONTROLS — these mirror terraform-apply.yml, which was rewritten after an adversarial
+# review found 5 P1 issues in its first draft. Do not relax them here:
+#   * NO `${{ }}` INTERPOLATION INSIDE ANY `run:` BLOCK. Inputs and variables arrive via `env:`.
+#   * main-ONLY, plus the `infra` environment's deployment-branch policy and the WIF ref condition
+#     (workflow_dispatch runs the *branch's* copy of this file, so the in-file check is
+#     defence-in-depth only).
+#   * THE PLAN IS NEVER PERSISTED as an artifact — a binary plan embeds the prior state snapshot
+#     unredacted, and this repo's state holds random_password values in plaintext.
+#   * Shares terraform-apply.yml's concurrency group, so an import can never race an apply.
+#   * prevent_destroy on both resources is the last line of defence; the guards below are meant to
+#     fail first, with the reason.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "arm" to import the existing Maps + Places keys and plan the restrictions'
+        required: true
+        default: ""
+      apply:
+        description: 'Type "apply" to EXECUTE the plan (leave blank to import + plan only)'
+        required: false
+        default: ""
+
+concurrency:
+  # Deliberately terraform-apply's group: both write Terraform state.
+  group: terraform-apply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  arm:
+    name: import + plan (requires approval — writes Terraform state)
+    if: ${{ vars.GCP_PROVISIONER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: infra
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Guard — main only, confirmed
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          APPLY: ${{ inputs.apply }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::maps-keys-arm may only run from main (got ${REF})."; exit 1
+          fi
+          if [ "$CONFIRM" != "arm" ]; then
+            echo "::error::confirm input must be exactly 'arm'."; exit 1
+          fi
+          if [ -n "$APPLY" ] && [ "$APPLY" != "apply" ]; then
+            echo "::error::apply input must be exactly 'apply' or empty."; exit 1
+          fi
+
+      - name: Authenticate to GCP (provisioner SA — bindable only from this environment)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PROVISIONER_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Materialise tfvars (fails closed on a half-armed config)
+        working-directory: infra/terraform
+        env:
+          TF_PROD_TFVARS: ${{ secrets.TF_PROD_TFVARS }}
+          TF_MAPS_KEY_ID: ${{ vars.TF_MAPS_KEY_ID }}
+          TF_PLACES_KEY_ID: ${{ vars.TF_PLACES_KEY_ID }}
+          TF_MAPS_SHA1_PLAY: ${{ vars.TF_MAPS_SHA1_PLAY }}
+          TF_MAPS_SHA1_UPLOAD: ${{ vars.TF_MAPS_SHA1_UPLOAD }}
+          TF_MAPS_PACKAGE: ${{ vars.TF_MAPS_PACKAGE }}
+        run: |
+          set -euo pipefail
+          # Same fail-closed reasoning as terraform-apply.yml: without the real tfvars, terraform
+          # plans against variables.tf DEFAULTS, which reads as "destroy every armed tier".
+          if [ -z "$TF_PROD_TFVARS" ]; then
+            echo "::error::TF_PROD_TFVARS secret is unset — refusing to plan against variables.tf defaults."
+            exit 1
+          fi
+          printf '%s\n' "$TF_PROD_TFVARS" > terraform.tfvars
+
+          node ../../scripts/tf-maps-tfvars.mjs > maps.auto.tfvars
+          if [ ! -s maps.auto.tfvars ]; then
+            rm -f maps.auto.tfvars
+            echo "::error::The TF_MAPS_* repo variables are unset, so apikeys.tf is still gated off and there is nothing to arm. Set TF_MAPS_KEY_ID, TF_PLACES_KEY_ID and TF_MAPS_SHA1_PLAY first — the ids come from the 'API keys inventory' step of the GCP Diagnose workflow."
+            exit 1
+          fi
+          echo "--- maps.auto.tfvars (generated; no credential in it)"
+          cat maps.auto.tfvars
+
+      - name: terraform init
+        working-directory: infra/terraform
+        run: terraform init -input=false -no-color
+
+      - name: Import the two EXISTING keys (idempotent)
+        working-directory: infra/terraform
+        env:
+          FALLBACK_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          # The import id's project component must be spelled the way the CONFIG spells it. `project`
+          # is ForceNew on google_apikeys_key, so importing with the project NUMBER into a config that
+          # uses the project ID plans a replacement — i.e. deleting the live key and minting a key
+          # string nothing has. Ask the config itself rather than guessing.
+          PROJECT="$(echo 'local.project_id' | terraform console 2>/dev/null | tr -d '"' | tail -n1 || true)"
+          case "$PROJECT" in
+            ""|*[!A-Za-z0-9-]*) PROJECT="$FALLBACK_PROJECT" ;;
+          esac
+          if [ -z "$PROJECT" ]; then
+            echo "::error::Could not resolve the Terraform project id (local.project_id) and GCP_PROJECT_ID is unset."
+            exit 1
+          fi
+          echo "project: $PROJECT"
+
+          MAPS_ID="$(grep -E '^maps_api_key_id'   maps.auto.tfvars | cut -d'"' -f2)"
+          PLACES_ID="$(grep -E '^places_api_key_id' maps.auto.tfvars | cut -d'"' -f2)"
+
+          terraform state list > state.txt 2>/dev/null || : > state.txt
+
+          import_once() {
+            addr="$1"; key_id="$2"
+            if grep -qxF "$addr" state.txt; then
+              echo "already in state: $addr"
+              return 0
+            fi
+            echo "importing $addr <- projects/${PROJECT}/locations/global/keys/${key_id}"
+            terraform import -input=false -no-color "$addr" \
+              "projects/${PROJECT}/locations/global/keys/${key_id}"
+          }
+
+          import_once 'google_apikeys_key.maps[0]'   "$MAPS_ID"
+          import_once 'google_apikeys_key.places[0]' "$PLACES_ID"
+
+          terraform state list | grep -E '^google_apikeys_key\.' > imported.txt || : > imported.txt
+          for addr in 'google_apikeys_key.maps[0]' 'google_apikeys_key.places[0]'; do
+            grep -qxF "$addr" imported.txt || { echo "::error::${addr} is not in state after import."; exit 1; }
+          done
+
+      - name: Plan the two keys — and refuse anything that is not an in-place update
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          terraform plan -input=false -no-color -out=tfplan \
+            -target='google_apikeys_key.maps[0]' \
+            -target='google_apikeys_key.places[0]'
+          terraform show -json tfplan > plan.json
+
+          # THE GUARD. After an import, the ONLY legitimate plan for these two addresses is
+          # update or no-op. create = the id did not match an existing key, so terraform would mint a
+          # second key the app never reads. delete/replace = the live key goes away and every
+          # installed build loses its map, unrepairable by OTA (the key is native — REL-01).
+          # prevent_destroy would also error, but it errors at apply time with a stack trace; this
+          # errors here, with the reason.
+          bad="$(jq -r '
+            [ .resource_changes[]?
+              | select(.address | startswith("google_apikeys_key."))
+              | select((.change.actions - ["update","no-op"]) | length > 0)
+              | .address + " -> " + (.change.actions | join("+"))
+            ] | .[]' plan.json)"
+          if [ -n "$bad" ]; then
+            echo "::error::The plan does not just update restrictions — STOP. It proposes:"
+            printf '%s\n' "$bad"
+            echo "Almost always this means a key id variable does not match an existing key (or the"
+            echo "project component differs — id vs number). Fix TF_MAPS_KEY_ID / TF_PLACES_KEY_ID,"
+            echo "'terraform state rm' the wrongly-imported address, and re-run. Never apply this plan."
+            exit 1
+          fi
+
+          {
+            echo "### Maps keys — planned restriction changes"
+            echo ""
+            echo "Only in-place updates, as required. Re-run this workflow with \`apply = apply\` to execute."
+            echo '```'
+            terraform show -no-color tfplan | head -c 60000
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The binary plan (which embeds unredacted prior state) dies with this runner.
+
+      - name: Apply (only when apply == "apply")
+        if: ${{ inputs.apply == 'apply' }}
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          # Re-plan and re-guard inside the same step rather than reusing tfplan: state can have moved
+          # while the run waited on the environment gate, and the guard must bind what is APPLIED.
+          terraform plan -input=false -no-color -out=tfplan.apply \
+            -target='google_apikeys_key.maps[0]' \
+            -target='google_apikeys_key.places[0]'
+          terraform show -json tfplan.apply > plan.apply.json
+          bad="$(jq -r '
+            [ .resource_changes[]?
+              | select(.address | startswith("google_apikeys_key."))
+              | select((.change.actions - ["update","no-op"]) | length > 0)
+              | .address ] | .[]' plan.apply.json)"
+          if [ -n "$bad" ]; then
+            echo "::error::plan changed since review and is no longer update-only; refusing to apply."
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          terraform apply -input=false -no-color tfplan.apply
+          {
+            echo "### Applied"
+            echo ""
+            echo "The Maps key now carries the §B Android restriction. Google propagates key changes in"
+            echo "about 5 minutes, and NO new build is needed — the key string in the installed binary is"
+            echo "unchanged, only its server-side permissions."
+            echo ""
+            echo "Verify: run **Maps Key Doctor** with the Play app-signing SHA-1 (expect \`OK\` or"
+            echo "\`API_RESTRICTED\`), then re-run it with a junk SHA-1 and expect"
+            echo "\`ANDROID_RESTRICTION_REJECTED\` — that second run is what proves the allowlist is"
+            echo "actually enforcing. Then open /send on the handset and confirm Google tiles for Harare."
+          } >> "$GITHUB_STEP_SUMMARY"
