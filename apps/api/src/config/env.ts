@@ -1,3 +1,4 @@
+import { normalizePhone } from "@lynia/shared";
 import { z } from "zod";
 
 /** The dev/CI default JWT secret. Booting production with this (or any short secret) means tokens are
@@ -414,6 +415,30 @@ export const envSchema = z.object({
       demoPhoneSet ? "DEMO_OTP_CODE" : "DEMO_OTP_PHONE",
       "DEMO_OTP_PHONE and DEMO_OTP_CODE must be set together (both or neither) — one without the other cannot authenticate the reviewer demo account",
     );
+  }
+  // DEMO_OTP_PHONE is a comma-separated list (one reserved number per demo identity — a profile has
+  // exactly one role, so the app demo and the kitchen demo cannot be the same number). Every entry
+  // must be a well-formed phone, because `AuthService.demoPhones()` DROPS anything normalizePhone
+  // rejects: a single typo would otherwise silently disarm that demo account, with the service
+  // booting green and the only symptom being "Invalid code" for a reviewer holding the right code.
+  // Duplicates are rejected too — harmless at runtime, but always a mistake worth naming at boot.
+  if (demoPhoneSet) {
+    const entries = (env.DEMO_OTP_PHONE ?? "").split(",");
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const normalized = normalizePhone(entry);
+      if (!normalized) {
+        reject(
+          "DEMO_OTP_PHONE",
+          `DEMO_OTP_PHONE entry ${JSON.stringify(entry.trim())} is not a valid phone number — it would be silently dropped, disarming that demo account (comma-separate multiple reserved numbers)`,
+        );
+        continue;
+      }
+      if (seen.has(normalized)) {
+        reject("DEMO_OTP_PHONE", `DEMO_OTP_PHONE lists ${normalized} more than once`);
+      }
+      seen.add(normalized);
+    }
   }
   if (demoCodeSet) {
     const c = (env.DEMO_OTP_CODE ?? "").trim();

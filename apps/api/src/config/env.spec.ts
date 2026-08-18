@@ -301,6 +301,29 @@ describe("loadEnv — Play-review demo account (§7.1)", () => {
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "abcdef" })).toThrow(/6 digits/);
   });
 
+  it("accepts several comma-separated reserved numbers (app demo + kitchen demo)", () => {
+    const env = loadEnv({
+      ...prodBase,
+      DEMO_OTP_PHONE: "+263778831938,0770000001",
+      DEMO_OTP_CODE: "846201",
+    });
+    expect(env.DEMO_OTP_PHONE).toBe("+263778831938,0770000001");
+  });
+
+  // A dropped entry is the dangerous case: demoPhones() filters what normalizePhone rejects, so
+  // without this guard a typo boots green and simply stops authenticating that demo account.
+  it("rejects a malformed entry rather than silently disarming that demo account", () => {
+    expect(() =>
+      loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263778831938,not-a-number", DEMO_OTP_CODE: "846201" }),
+    ).toThrow(/DEMO_OTP_PHONE/);
+  });
+
+  it("rejects the same number listed twice, however it is written", () => {
+    expect(() =>
+      loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000001,0770000001", DEMO_OTP_CODE: "846201" }),
+    ).toThrow(/more than once/);
+  });
+
   it("rejects a trivially guessable code (sequential or repeated)", () => {
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "123456" })).toThrow(/guessable/);
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "999999" })).toThrow(/guessable/);

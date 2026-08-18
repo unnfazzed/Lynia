@@ -161,6 +161,60 @@ describe("AuthService — Play-review demo account (§7.1)", () => {
     // A different number with the demo code must NOT sign in — it has no stored OTP, so it 'expired'.
     await expect(svc.verifyOtp("+263779999999", "846201")).rejects.toThrow(/expired or never/i);
   });
+
+  // A profile carries exactly ONE role, so the app demo (rider/customer) and the merchant kitchen
+  // demo can never be the same number. DEMO_OTP_PHONE is therefore a LIST: every entry is its own
+  // reserved identity sharing the one fixed code.
+  describe("multiple reserved demo numbers", () => {
+    const multiEnv = { ...baseEnv, DEMO_OTP_PHONE: "+263770000777,0770000001", DEMO_OTP_CODE: "846201" } as Env;
+
+    it("signs in on every listed number", async () => {
+      for (const phone of ["+263770000777", "+263770000001"]) {
+        const { svc } = make(multiEnv, demoPrisma());
+        await expect(svc.verifyOtp(phone, "846201", "ua", "dev-1")).resolves.toBeTruthy();
+      }
+    });
+
+    it("normalizes each entry, so a list entry written in local form matches an international sign-in", async () => {
+      const { svc } = make(multiEnv, demoPrisma());
+      // "0770000001" is configured in LOCAL form; the caller arrives in international form.
+      await expect(svc.verifyOtp("+263770000001", "846201", "ua", "dev-1")).resolves.toBeTruthy();
+    });
+
+    it("still refuses a number that is not on the list", async () => {
+      const { svc } = make(multiEnv, demoPrisma());
+      await expect(svc.verifyOtp("+263779999999", "846201")).rejects.toThrow(/expired or never/i);
+    });
+
+    it("never sends on any listed number (each short-circuits before the sender)", async () => {
+      // Mirrors the single-number case above: the demo branch returns before the rate limiters, the
+      // OTP store and the sender, so no SMS/BSP call is made and no code is ever echoed.
+      for (const [typed, normalized] of [
+        ["+263770000777", "+263770000777"],
+        ["0770000001", "+263770000001"],
+      ]) {
+        let sent = 0;
+        const sender = new ConsoleOtpSender();
+        vi.spyOn(sender, "send").mockImplementation(async () => { sent++; });
+        const store = new InMemoryOtpStore();
+        const svc = new AuthService(multiEnv, demoPrisma() as unknown as PrismaService, new TokenService(multiEnv), store, sender, fakeMetrics(), pii);
+        const res = await svc.requestOtp(typed, "1.1.1.1");
+        expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
+        expect(sent).toBe(0);
+        expect(await store.get(normalized)).toBeNull();
+      }
+    });
+
+    it("caps guesses PER phone — one listed number's budget does not spend another's", async () => {
+      const { svc } = make(multiEnv, demoPrisma());
+      for (let i = 0; i < 10; i++) {
+        await expect(svc.verifyOtp("+263770000777", "000000")).rejects.toThrow(/invalid code/i);
+      }
+      await expect(svc.verifyOtp("+263770000777", "846201")).rejects.toThrow(/too many/i);
+      // The second demo number is untouched by the first's exhausted budget.
+      await expect(svc.verifyOtp("+263770000001", "846201", "ua", "dev-1")).resolves.toBeTruthy();
+    });
+  });
 });
 
 describe("AuthService phone identity is E.164-normalized", () => {
