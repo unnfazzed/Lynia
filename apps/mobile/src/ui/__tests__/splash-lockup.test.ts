@@ -46,7 +46,11 @@ describe("splash lockup — the native launch image and the JS frame are one pic
     // plain-Node context. That half lives in `build-splash-icon.mjs --check`, run by `pnpm lint` —
     // without it a reverted or hand-edited splash-icon.png would pass every test here while changing
     // the launch screen users actually see.
-    expect(read("package.json")).toContain("build-splash-icon.mjs --check");
+    // Asserted through the parsed `scripts.lint` value, not a raw substring search: the string also
+    // appears in this file and in the script's own docs, so a text match would still pass if the
+    // check were dropped from lint entirely.
+    const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts;
+    expect(scripts.lint).toContain("node scripts/build-splash-icon.mjs --check");
     expect(read("app.config.ts")).toContain('image: "./assets/splash-icon.png"');
   });
 

@@ -94,22 +94,41 @@ const png = await sharp(Buffer.from(svg), { density: 72 * RASTER_SCALE })
   .png()
   .toBuffer();
 
-/** Decode to raw RGBA over the splash ground — what a user sees, minus encoder-level detail. */
+/**
+ * Decode to raw RGBA over the splash ground — what a user sees, minus encoder-level detail.
+ *
+ * `toColourspace("srgb")` is belt-and-braces: on sharp 0.35.3 `flatten()` already promotes a
+ * single-channel (b-w) PNG to 4 channels, so this is a no-op today — verified against a forged
+ * grayscale asset. It is here so the channel count is a property of the pipeline rather than an
+ * incidental behaviour of one libvips build, because the comparison below is only meaningful if both
+ * sides decode to the same shape.
+ */
 async function pixels(source) {
   return sharp(source)
     .flatten({ background: SPLASH_BACKGROUND })
+    .toColourspace("srgb")
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
 }
 
-/** Mean absolute per-channel difference between two same-sized images; Infinity if they differ in size. */
+/**
+ * Mean absolute per-channel difference between two images, or Infinity if they are not comparable
+ * at all (different dimensions, or decoded to different buffer shapes).
+ *
+ * The Infinity returns matter more than they look. Without the length guard the loop would read past
+ * the shorter buffer, `Math.abs(undefined)` would poison the sum with NaN, and the caller's
+ * `drift > PIXEL_TOLERANCE` would be FALSE — so a mismatched asset would pass the very check that
+ * exists to stop one shipping. Every incomparable case therefore has to fail loudly, not average out.
+ */
 export async function pixelDrift(a, b) {
   const [x, y] = await Promise.all([pixels(a), pixels(b)]);
   if (x.info.width !== y.info.width || x.info.height !== y.info.height) return Infinity;
+  if (x.data.length !== y.data.length) return Infinity;
   let sum = 0;
   for (let i = 0; i < x.data.length; i++) sum += Math.abs(x.data[i] - y.data[i]);
-  return sum / x.data.length;
+  const drift = sum / x.data.length;
+  return Number.isFinite(drift) ? drift : Infinity;
 }
 
 function fail(message) {
@@ -127,10 +146,12 @@ if (CHECK_ONLY) {
   if (committedPng === null) fail("assets/splash-icon.png is missing");
 
   const drift = await pixelDrift(png, committedPng);
-  if (drift === Infinity) {
-    const { width: w, height: h } = await sharp(committedPng).metadata();
-    const { width: ew, height: eh } = await sharp(png).metadata();
-    fail(`assets/splash-icon.png is ${w}×${h}px, expected ${ew}×${eh}px`);
+  if (!Number.isFinite(drift)) {
+    const [got, want] = await Promise.all([sharp(committedPng).metadata(), sharp(png).metadata()]);
+    fail(
+      `assets/splash-icon.png is not comparable to the lockup — committed ${got.width}×${got.height}px ` +
+        `(${got.channels}ch), expected ${want.width}×${want.height}px (${want.channels}ch)`,
+    );
   }
   if (drift > PIXEL_TOLERANCE) {
     fail(`assets/splash-icon.png does not match the lockup (mean channel drift ${drift.toFixed(3)})`);
