@@ -1,5 +1,19 @@
 # Merchant Dashboard Deployment Plan — "take apps/merchant to its URL"
 
+> **Post-deploy addendum (2026-08-18, discovered live at first sign-in):** the dashboard deployed and
+> served its `/login` page correctly, but OTP sign-in failed with a generic "Couldn't reach the
+> server" error. Root cause: `apps/api`'s CORS policy (`apps/api/src/common/cors.ts`) default-denies
+> every cross-origin *browser* request, and the merchant dashboard is the first client that is one —
+> `apps/admin` proxies API calls server-side (no browser `Origin` header, nothing to allow-list) and
+> `apps/mobile` is native (CORS is a browser-only protection). A blocked CORS response and a genuine
+> network failure look identical to `fetch()`, so this surfaced as a networking symptom, not an
+> access-control one. Fixed by wiring `CORS_ALLOWED_ORIGINS` (already read by `main.ts` +
+> `tracking.gateway.ts`, previously never populated by any deploy workflow) into `release.yml`, gated
+> behind a repo Variable exactly like `REFRESH_TTL_SECONDS`. **Requires setting the repo Variable
+> `CORS_ALLOWED_ORIGINS = https://lyniagomerchant.lyniafinance.com` and a fresh API deploy** (rides
+> the existing canary pipeline — `release.yml` fires on every push to `main`) before merchant sign-in
+> works end to end. Folded into the founder checklist below as step 5.
+
 **Goal:** stand up the `apps/merchant` Next.js dashboard at a stable public URL
 (`https://lyniagomerchant.lyniafinance.com`), reusing the GCP/ALB topology the API and admin console
 already run on. Parent plan: `docs/plans/2026-07-26-merchant-verticals-plan.md` §2.3 ("own Cloud Run
@@ -101,13 +115,23 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
    under `apps/merchant/**`. Wait for the managed cert to go `ACTIVE` (can take up to ~30 min after DNS
    resolves; the first run's boot smoke tests the *container*, not the public URL, so it isn't blocked
    on the cert — but the public URL itself won't answer until the cert is active).
-5. **Verify:**
+5. **Allow the merchant origin through the API's CORS policy** — discovered live, see the addendum at
+   the top of this doc. Set the repo Variable `CORS_ALLOWED_ORIGINS =
+   https://lyniagomerchant.lyniafinance.com` (Settings → Secrets and variables → Actions → Variables
+   on the API's repo config, same place as step 2). This alone does nothing until a fresh API deploy
+   picks it up — `release.yml` fires automatically on the next push to `main` that isn't docs-only,
+   riding its existing staging-gate → canary 10→50→100 → auto-rollback pipeline. If you need it live
+   sooner than the next merge, `workflow_dispatch` on `release.yml` directly. Without this step, the
+   dashboard loads but OTP sign-in and the live-queue WebSocket both fail with a generic "Couldn't
+   reach the server" — the browser blocks the response before the app ever sees it, so this looks
+   like a network problem rather than a CORS one.
+6. **Verify:**
    - `curl -I https://lyniagomerchant.lyniafinance.com/` → `307`/`308` to `/login` (unauthenticated,
      fail-closed).
    - `curl https://lyniagomerchant.lyniafinance.com/api/healthz` → `{"status":"ok","app":"merchant"}`.
    - Plain HTTP redirects to HTTPS (existing `:80` redirect rule covers every hostname on the shared
      IP — no per-tier work needed).
-   - Sign in with a real merchant OTP account end-to-end once one exists in this environment.
+   - Sign in with a real merchant OTP account end-to-end (step 5 must be live first).
 
 ## Rollback
 
