@@ -41,6 +41,19 @@ describe("splash lockup — the native launch image and the JS frame are one pic
     expect(read("assets/splash-icon.svg")).toBe(splashLockupSvg());
   });
 
+  it("names the PNG that actually ships, so the --check lane knows what to validate", () => {
+    // This suite can only reach the SVG: comparing the PNG means rasterising, which needs sharp and a
+    // plain-Node context. That half lives in `build-splash-icon.mjs --check`, run by `pnpm lint` —
+    // without it a reverted or hand-edited splash-icon.png would pass every test here while changing
+    // the launch screen users actually see.
+    // Asserted through the parsed `scripts.lint` value, not a raw substring search: the string also
+    // appears in this file and in the script's own docs, so a text match would still pass if the
+    // check were dropped from lint entirely.
+    const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts;
+    expect(scripts.lint).toContain("node scripts/build-splash-icon.mjs --check");
+    expect(read("app.config.ts")).toContain('image: "./assets/splash-icon.png"');
+  });
+
   it("draws the wordmark, not just the mark — the pop-in this whole file exists to prevent", () => {
     const svg = splashLockupSvg();
     // Two wordmark glyph paths ("Lynia" and "Go"), both white on the green ground.
