@@ -39,6 +39,10 @@ describe("shouldPersistQuery — the persistence allowlist", () => {
     [["wallet", "balance"]],
     [["wallet", "ledger"]],
     [["notifications"]],
+    // RCA 2026-08-17 §5.2: the restaurant catalog (list pages + menus) is stale-safe browse data —
+    // persisting it is what warm-paints home's "Popular near you" in the first frame.
+    [["restaurants"]],
+    [["restaurants", "m-1", "menu"]],
   ])("persists successful %j (stale-safe, expensive-to-refetch data)", (key) => {
     expect(shouldPersistQuery(asQuery(key, "success"))).toBe(true);
   });
@@ -61,7 +65,7 @@ describe("shouldPersistQuery — the persistence allowlist", () => {
 
   it("the allowlist stays an explicit, reviewed set", () => {
     // Adding a root here is a product decision (see persist.ts) — this pins the current contract.
-    expect([...PERSISTED_KEY_ROOTS].sort()).toEqual(["earnings", "history", "me", "notifications", "wallet"]);
+    expect([...PERSISTED_KEY_ROOTS].sort()).toEqual(["earnings", "history", "me", "notifications", "restaurants", "wallet"]);
   });
 });
 

@@ -15,6 +15,7 @@ import { invalidateIfStale, orderKey } from "../../src/query/client";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
+import { enqueueBoot } from "../../src/telemetry/rum";
 import {
   AppScreen,
   getServiceTiles,
@@ -95,12 +96,29 @@ function useRiderNames(orders: OrderSnapshot[]): Record<string, string | null> {
   return names;
 }
 
+/**
+ * The third cold-start mark (`boot_home_paint`): the redirect→home segment was the one part of the
+ * launch RUM never covered — `boot_home` fires at the redirect DECISION (app/index.tsx), so the
+ * time from there to home actually being on glass was invisible (RCA §1.2). Enqueued from
+ * `runAfterInteractions`, not the mount/layout effect itself: a layout effect runs before the
+ * native frame is presented and would understate the customer-visible gap (review decision).
+ * `enqueueBoot` is idempotent per process, so later remounts of home are no-ops, and on a warm
+ * navigation back to home nothing fires at all.
+ */
+function useBootHomePaintMark(): void {
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => enqueueBoot("boot_home_paint"));
+    return () => handle.cancel();
+  }, []);
+}
+
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
   usePrewarmSendRoute();
+  useBootHomePaintMark();
 
   // ── Header state: greeting (device clock), name (["me"]), unread bell dot, detected location ──
   const now = useNow();

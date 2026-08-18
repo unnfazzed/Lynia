@@ -65,6 +65,23 @@ describe("POST /client-metrics — guard + ZodBody + controller", () => {
     ).toEqual({ ok: true });
   });
 
+  it("accepts the three cold-start boot events, including boot_home_paint (RCA §1.2 wire addition)", () => {
+    // boot_home_paint is the newest ClientMetricEvent member; the batch schema is .strict() with a
+    // closed enum, so an API missing this mapping 400s the WHOLE batch — this pins the vocabulary
+    // AND the histogram Record (compile-enforced) end to end.
+    expect(
+      ingest({
+        role: "customer",
+        appVersion: "0.40.1",
+        samples: [
+          { event: "boot_paint", ms: 2100 },
+          { event: "boot_home", ms: 2600 },
+          { event: "boot_home_paint", ms: 3400 },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
   it("accepts an optional `dropped` count", () => {
     expect(
       ingest({

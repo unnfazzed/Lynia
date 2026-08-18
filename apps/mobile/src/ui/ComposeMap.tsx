@@ -13,6 +13,7 @@ import MapView, {
 import { landmarkFromAddress } from "../logic/geocode";
 import { mapFallbackHint } from "../logic/map-fallback";
 import { mapLoadSignal } from "../logic/map-load-signal";
+import { isReachable } from "../net/reachability";
 import { addBreadcrumb, captureException } from "../telemetry/sentry";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
@@ -35,10 +36,35 @@ import { Icon } from "./index";
  */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const LOCATE_TIMEOUT_MS = 9_000;
-/** How long tiles get to render before the screen admits the map didn't load. See the state below. */
-const MAP_LOAD_TIMEOUT_MS = 9_000;
+/**
+ * The staged load-watch (RCA 2026-08-17 §3.1). On the program's own 600 ms-RTT design link, a full
+ * Harare tile set legitimately takes longer than the old single 9 s deadline — so the failure card
+ * was a false accusation in every slow-tile session (it showed, then self-cleared when tiles landed),
+ * and each occurrence filed a Sentry event that polluted the real MOB-MAP-02 key-rejection signal.
+ * Staging is UNIFORM by design: the "rejected-key signature" is not client-observable
+ * (react-native-maps exposes no tile-progress event; `onMapReady` is local SDK init that fires in
+ * ~1-2 s on any link; API reachability says nothing about Google's tile servers), so at 9 s the
+ * screen only admits slowness — a passive line, no alert role, no Sentry — and the actionable card
+ * + report wait for MAP_FAIL_TIMEOUT_MS. Trade-off, measured via the tags below: a genuine key
+ * rejection sees Retry 13 s later than before, but a remount cannot repair a rejected key anyway,
+ * while the early card wrongly accused every slow 2G session.
+ */
+const MAP_SLOW_TIMEOUT_MS = 9_000;
+const MAP_FAIL_TIMEOUT_MS = 22_000;
 /** Ceiling on failure reports per compose session — see the reporting effect. */
 const MAX_MAP_FAILURE_REPORTS = 3;
+
+/**
+ * Bounded-cardinality elapsed bucket for the map telemetry (a Sentry TAG must never carry raw ms).
+ * Half-open on the left edge of each range: [9 s, 15 s) → "9-15s", [15 s, 22 s) → "15-22s",
+ * ≥22 s → ">=22s"; anything under the slow threshold is "<9s". Exported pure for the boundary tests.
+ */
+export function mapElapsedBucket(ms: number): "<9s" | "9-15s" | "15-22s" | ">=22s" {
+  if (ms < MAP_SLOW_TIMEOUT_MS) return "<9s";
+  if (ms < 15_000) return "9-15s";
+  if (ms < MAP_FAIL_TIMEOUT_MS) return "15-22s";
+  return ">=22s";
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -110,20 +136,46 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     const handle = InteractionManager.runAfterInteractions(() => setMapMounted(true));
     return () => handle.cancel();
   }, []);
+  // The 9 s "taking a while" stage — see the staged-load-watch comment on the constants. Passive by
+  // construction: it renders a muted line, carries no alert role, and reports nothing.
+  const [mapSlow, setMapSlow] = useState(false);
   // Remount nonce for "Retry the map" — bumping it gives MapView a new key, which is the only way to
   // re-attempt the native map's own initialisation (a transient tile/auth failure is otherwise
   // permanent for the life of the screen, and this screen lives for a whole compose session).
   const [mapNonce, setMapNonce] = useState(0);
+  // When THIS attempt's clock started — set as the timers arm, read for the recovery breadcrumb's
+  // elapsed bucket and the failure report's raw-ms extra. A ref: nothing renders off it.
+  const attemptStartedAt = useRef(Date.now());
   useEffect(() => {
-    // The clock starts when the MAP does, not when the screen does — the deferral above must not eat
+    // The clocks start when the MAP does, not when the screen does — the deferral above must not eat
     // into the tile budget and turn a merely slow map into a "didn't load" card.
     if (!mapMounted || considerLoaded) return;
-    // Longer than the old 6s: tiles on a constrained link are legitimately slow, and the card now
-    // clears itself the moment they arrive, so erring late costs nothing while erring early would
-    // accuse a working map. Both `considerLoaded` and `mapNonce` are inputs so a retry restarts the clock.
-    const t = setTimeout(() => setMapTimedOut(true), MAP_LOAD_TIMEOUT_MS);
-    return () => clearTimeout(t);
+    attemptStartedAt.current = Date.now();
+    // Two stages, one attempt: the passive admission at 9 s, the actionable card at 22 s. The card
+    // still clears itself the moment tiles arrive, so erring late costs nothing while erring early
+    // would accuse a working map. `considerLoaded` and `mapNonce` are inputs so a retry restarts both.
+    const slow = setTimeout(() => setMapSlow(true), MAP_SLOW_TIMEOUT_MS);
+    const fail = setTimeout(() => setMapTimedOut(true), MAP_FAIL_TIMEOUT_MS);
+    return () => {
+      clearTimeout(slow);
+      clearTimeout(fail);
+    };
   }, [mapMounted, considerLoaded, mapNonce]);
+  // Recovery trail: tiles arriving AFTER the screen admitted slowness is the datum that separates
+  // "slow link" from "never loads" in the field — the failure event alone can't (it fires at a fixed
+  // elapsed by construction). A breadcrumb, not an event: it costs nothing unless something else is
+  // reported, and it rides along on any later failure with the bucketed elapsed attached.
+  const wasSlowRef = useRef(false);
+  wasSlowRef.current = mapSlow || mapTimedOut;
+  useEffect(() => {
+    if (!considerLoaded || !wasSlowRef.current) return;
+    addBreadcrumb("compose-map-recovered", {
+      elapsed_bucket: mapElapsedBucket(Date.now() - attemptStartedAt.current),
+      attempt: mapNonce + 1,
+    });
+    setMapSlow(false);
+    setMapTimedOut(false);
+  }, [considerLoaded, mapNonce]);
   // Report it. A blank map is invisible to every existing signal — the previous occurrence had to be
   // diagnosed from a user's description — so this is the difference between "somebody said the map was
   // blank" and a dated, versioned event with a device attached.
@@ -145,14 +197,23 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     // value and hid the fields worth filtering on inside a string. In particular `map_load_signal`
     // separates the two causes that produced an identical event: an Android build whose Maps key was
     // rejected (`onMapLoaded`, tiles never drew) from an iOS session where the required event is simply
-    // never emitted (`onMapReady` — the false positive this change removes).
+    // never emitted (`onMapReady` — the false positive this change removes). `map_reachable` records
+    // whether the LYNIA API round-trips at report time — not proof about Google's tile servers, but it
+    // separates fully-offline sessions from online-with-dead-tiles ones. Elapsed rides as a BOUNDED
+    // bucket in the tag (cardinality) with the raw ms in `extra`; on this one-shot report it reads
+    // ">=22s" by construction — the interesting elapsed values live on the `compose-map-recovered`
+    // breadcrumb, which is what separates late-tiles sessions from never-tiles ones.
+    const elapsedMs = Date.now() - attemptStartedAt.current;
     captureException(new Error("compose-map-not-loaded"), {
       tags: {
         map_platform: Platform.OS,
         map_load_signal: loadSignal,
         map_ready: String(mapReady),
         map_attempt: String(mapNonce + 1),
+        map_reachable: String(isReachable()),
+        map_elapsed_bucket: mapElapsedBucket(elapsedMs),
       },
+      extra: { map_elapsed_ms: elapsedMs },
     });
   }, [mapFailed, mapReady, mapNonce, loadSignal]);
 
@@ -166,6 +227,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     addBreadcrumb("compose-map-retry", { attempt: mapNonce + 1 });
     setMapReady(false);
     setMapLoaded(false);
+    setMapSlow(false);
     setMapTimedOut(false);
     setMapNonce((n) => n + 1);
   }, [mapNonce]);
@@ -366,6 +428,21 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
               just the pin instruction the mock draws. */}
           <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, textAlign: "center" }}>
             {`Tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin`}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* The 9 s stage: a passive admission that tiles are slow — deliberately NOT the failure card
+          (no alert role, no retry, no Sentry) because on the target 2G/3G link this state is usually
+          just a link being a link, and the old card here accused every slow session (RCA §3.1). It
+          gives way to the failure card at 22 s, or clears with the tiles. */}
+      {mapSlow && !mapFailed && !considerLoaded ? (
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
+        >
+          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center" }}>
+            The map is taking a while — you can search the address above meanwhile.
           </Text>
         </View>
       ) : null}

@@ -73,6 +73,20 @@ function ConnectivityBanner(): React.ReactElement | null {
 }
 
 /**
+ * Root Stack screenOptions, exported so the pin test can assert the exact object the navigator
+ * consumes. `contentStyle`: the native-stack's default scene background is WHITE, and it is what
+ * paints during every transition gap — most visibly the cold-start splash→home redirect, where it
+ * produced the reported green→white flash. accentWash (deliberately NOT `tokens.color.bg`, which is
+ * literally #FFFFFF — using it here would be a no-op) keeps every between-screens frame on the brand
+ * wash the home header already uses, so the boot sequence reads green → pale green → home instead of
+ * a hard white cut.
+ */
+export const stackScreenOptions = {
+  headerShown: false,
+  contentStyle: { backgroundColor: tokens.color.accentWash },
+} as const;
+
+/**
  * The navigation tree, gated by the hard version check (customer/rider S·3) — two minimums, one
  * screen: the build-time MIN_SUPPORTED_VERSION (inlined at build) and the SERVER-driven
  * /app/version-gate minimum, which reaches binaries already in the field. When either sits above
@@ -84,7 +98,7 @@ function AppNavigator(): React.ReactElement {
   const serverMin = useServerMinVersion();
   const current = Constants.expoConfig?.version ?? "0.0.0";
   if (isUpdateRequired(current) || isVersionBelow(current, serverMin)) return <ForceUpdateScreen />;
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return <Stack screenOptions={stackScreenOptions} />;
 }
 
 /**

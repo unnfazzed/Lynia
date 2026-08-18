@@ -37,6 +37,7 @@ type HistogramName =
   // whole-launch durations (seconds, not milliseconds) and the gap between the two IS the signal.
   | "client_boot_paint_ms"
   | "client_boot_home_ms"
+  | "client_boot_home_paint_ms"
   // Top-up rail confirmation lag (initiatedAt → confirmed). MUCH wider buckets than the request
   // metrics — a mobile-money confirm is minutes, and a late confirm on an expired intent is hours.
   | "topup_confirm_lag_ms";
@@ -75,7 +76,7 @@ export type ClientRole = "rider" | "customer";
  *  cached surface adds its name here, never a dynamic string (cardinality). Outcomes come from
  *  `MicroCacheOutcome` (hit | l2_hit | miss | coalesced | error), also closed. Together they make
  *  hit rates first-class observable — the DoorDash caching lesson wave 2 adopts. */
-export type MicroCacheName = "nearby_count" | "pickup_photo_url";
+export type MicroCacheName = "nearby_count" | "pickup_photo_url" | "merchant_photo_url";
 
 /** The completeness invariants the nightly wallet integrity job asserts (roadmap 1.3). CLOSED
  *  vocabulary — one label per invariant class, never an id/rider, so the drift counter stays low
@@ -141,6 +142,7 @@ const CLIENT_EVENT_HISTOGRAM: Record<ClientMetricEvent, HistogramName> = {
   apifetch: "client_apifetch_latency_ms",
   boot_paint: "client_boot_paint_ms",
   boot_home: "client_boot_home_ms",
+  boot_home_paint: "client_boot_home_paint_ms",
 };
 
 /**
