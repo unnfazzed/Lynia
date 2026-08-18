@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.2](https://github.com/unnfazzed/Lynia/compare/v0.41.1...v0.41.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **mobile:** keep in-app animation, suppress it only during the cold start ([530b571](https://github.com/unnfazzed/Lynia/commit/530b57182086c0f0d462138890f02aaa55c546f9))
+* **mobile:** make the cold start one static green screen ([89058e5](https://github.com/unnfazzed/Lynia/commit/89058e579a0bbc100b0033252968a1ab664a3705))
+
 ## [0.41.1](https://github.com/unnfazzed/Lynia/compare/v0.41.0...v0.41.1) (2026-08-18)
 
 
