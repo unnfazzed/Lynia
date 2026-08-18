@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { RemoteImage } from "./RemoteImage";
 
 /**
  * Restaurant cover band — the RN port of the design kit's `CoverPhoto` (r-parts.jsx :: CoverPhoto). A
@@ -41,7 +42,7 @@ export function CoverPhoto({
   return (
     <View style={{ position: "relative" }}>
       {showPhoto ? (
-        <Image
+        <RemoteImage
           source={{ uri: uri! }}
           onError={() => setFailed(true)}
           accessibilityLabel={label}

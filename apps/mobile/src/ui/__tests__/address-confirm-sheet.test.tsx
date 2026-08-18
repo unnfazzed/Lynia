@@ -12,6 +12,7 @@
 import React from "react";
 import { Text } from "react-native";
 import renderer, { act } from "react-test-renderer";
+import { controlInteractions, type InteractionControl } from "../../testing/interactions";
 import { AddressConfirmSheet } from "../AddressConfirmSheet";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -49,8 +50,16 @@ function press(tree: renderer.ReactTestRenderer, label: string): void {
 }
 
 describe("AddressConfirmSheet", () => {
+  // The map mounts one interaction after the modal opens (D4 deferral) — drive the queue by hand so
+  // the drag tests can flush it deterministically. Coverage of the deferral itself lives in
+  // address-confirm-deferred-map.test.tsx.
+  let interactions: InteractionControl;
   beforeEach(() => {
     mockDragEnd = null;
+    interactions = controlInteractions();
+  });
+  afterEach(() => {
+    interactions.restore();
   });
 
   it("keeps the placeId when the customer confirms the resolved point untouched", () => {
@@ -76,6 +85,9 @@ describe("AddressConfirmSheet", () => {
       tree = renderer.create(<AddressConfirmSheet place={PLACE} slot="pickup" onConfirm={onConfirm} onCancel={jest.fn()} />);
     });
 
+    // Dragging needs the Marker on screen, and the map mounts one interaction after the open.
+    act(() => interactions.flush());
+    expect(mockDragEnd).not.toBeNull();
     act(() => {
       mockDragEnd?.({ nativeEvent: { coordinate: { latitude: -17.84, longitude: 31.06 } } });
     });

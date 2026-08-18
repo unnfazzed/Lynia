@@ -1,5 +1,23 @@
 # Plan — customer-journey load-perf fixes (code lanes of the 2026-08-17 RCA)
 
+> **Revision 3 addendum (2026-08-18, owner instruction "execute the deferred items — I ship full EAS
+> builds, not OTA-only"):** the ship model being full EAS store builds dissolved the native/OTA split
+> that justified most of the "NOT in scope" list, and every code-executable deferral shipped in the
+> follow-up PR: **D1** `withTimeout` deduped into `src/util.ts` (6 copies → 1); **D2** cold-start
+> splash HOLD (`app/boot-splash-hold.view.tsx` — green frame until the first real screen's presented
+> frame, dismiss-on-any-route + settle/absolute caps); **D3** Android Maps SDK pre-warmed from
+> launcher idle (transient 1×1 map, unmounts on ready/cap); **D4** the AddressConfirmSheet's map
+> mounts one interaction after the modal opens (PERF-SEND-01's deferral — confirm/landmark were
+> never tile-dependent); **D5** `expo-image` (~2.0.7) behind the new `RemoteImage` seam for all
+> eight remote-photo components (disk cache + downsampling; bundle measured WITHIN budget, 268 KiB
+> headroom; native → ships with the next EAS build); **D6** the shared Redis L2
+> (`common/micro-cache-l2.provider.ts`, @Global) now backs BOTH the merchant photo cache and
+> OrdersService's caches — OrdersService's private client deleted, cross-instance byte-stable URLs
+> when `MICRO_CACHE_REDIS_L2` is on. Still open, with reasons: the **Maps-key SHA-1 restriction**
+> (ops/GCP console — not reachable from the repo), and **`/media/:key`** — now REJECTED rather than
+> deferred: with 24 h URLs + the L2 it would add Cloud Run egress/CPU on every image byte to solve a
+> problem that no longer exists.
+
 **Revision 2 — post /plan-eng-review.** Implements the code-fixable findings of
 `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§7 items 2–3), as revised by the engineering
 review below (4 architecture + 2 code-quality findings folded in) and the outside-voice challenge
@@ -7,8 +25,9 @@ review below (4 architecture + 2 code-quality findings folded in) and the outsid
 Maps-key SHA-1 restriction (§3.2 — ops/GCP, no code); `expo-image` adoption and Maps SDK pre-warm
 (native → store-build train); the AddressConfirmSheet second-map rework (entangled with the SEN-04
 crash trail — owner call); a stable `/media/:key` authenticated media route (bigger fix for
-cross-session image caching — TODO); Redis L2 for the merchant photo cache (needs a shared
-L2-provider extraction — TODO). Everything below is an API deploy + OTA-able JS.
+cross-session image caching — since REJECTED, see rev 3 above); Redis L2 for the merchant photo
+cache (needs a shared L2-provider extraction — DONE in rev 3, D6). Everything below is an API
+deploy + OTA-able JS.
 
 ## 1. API — byte-stable signed photo URLs (RCA §5.1, biggest win)
 
@@ -38,7 +57,8 @@ L2-provider extraction — TODO). Everything below is an API deploy + OTA-able J
   independent URLs, so a phone can see up to ~3 URL variants per photo per 14 h window and JSON
   ETag hits are per-instance. The 24 h validity keeps the device image cache effective regardless
   (variants are stable for hours and each caches); full cross-instance stability needs the Redis
-  L2 (TODO) or the `/media/:key` route (TODO).
+  L2 (DONE in rev 3, D6 — activates with `MICRO_CACHE_REDIS_L2`) or the `/media/:key` route
+  (REJECTED in rev 3).
 - **Failure mode (documented, accepted):** a photo object purged while its URL is cached serves a
   404 image for ≤15.4 h (worst-case jittered cache life); `FoodThumb`/covers degrade to their fallback tiles, non-blocking. Dish
   edits mint NEW object keys (uploads are `randomUUID()`-keyed), so stale-key reuse cannot occur.
@@ -200,7 +220,8 @@ wire-contract change is additive (§3).
 - **Redis L2 for the merchant photo cache** — needs extracting OrdersService's private L2 provider
   into a shared seam; L1 + 24 h validity captures most of the win meanwhile.
 - **Stable `/media/:key` authenticated media route** — the complete fix for cross-session image
-  caching; new endpoint + client change, tracked as a TODO.
+  caching; new endpoint + client change. (Rev 3: REJECTED — with 24 h URLs + the shared L2 it
+  would add Cloud Run egress/CPU per image byte to solve a problem that no longer exists.)
 - **`withTimeout` dedupe (6 copies)** — cross-model resolution: pure churn inside an auto-merging
   perf PR; land separately (Beck: never structural + behavioral together).
 

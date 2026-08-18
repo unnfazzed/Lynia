@@ -1,6 +1,7 @@
 import * as Location from "expo-location";
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
 import type { ResolvedPlace } from "./places";
+import { withTimeout } from "../util";
 
 /**
  * Device-geocoder address resolution — the KEYLESS address→coordinates path.
@@ -113,16 +114,6 @@ export type GeocodeFailure = "permission" | "not-found" | "unavailable";
 
 export type GeocodeOutcome = { ok: true; place: ResolvedPlace } | { ok: false; reason: GeocodeFailure };
 
-/** Reject if `p` doesn't settle in time. Mirrors ComposeMap/MapPicker's own GPS bound: the platform
- *  geocoder is a network call with no timeout of its own, and a stalled one must fail into the
- *  tap-the-map path rather than sit behind a spinner. Clears the timer on the winning path. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("geocode-timeout")), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Resolve a typed address to a point using the device's own geocoder.
@@ -145,7 +136,7 @@ export async function geocodeAddress(query: string): Promise<GeocodeOutcome> {
 
   for (const q of queries) {
     try {
-      const results = await withTimeout(Location.geocodeAsync(q), FAST_TIMEOUT_MS);
+      const results = await withTimeout(Location.geocodeAsync(q), FAST_TIMEOUT_MS, "geocode-timeout");
       const place = toResolvedPlace(results, query);
       if (place) return { ok: true, place };
     } catch {

@@ -50,3 +50,20 @@ export function uuidV4FromSeed(seed: string): string {
   const s = chars.join("");
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
 }
+
+/**
+ * Bound a promise's WAIT (not its work) to `ms`, rejecting with `new Error(label)` on expiry.
+ * The one copy of a helper that had drifted into six per-file duplicates (T7,
+ * docs/plans/2026-08-17-customer-journey-load-perf-fixes.md) — GPS fixes, geocoder lookups and the
+ * rider board's locate all share it now. Two properties every caller relies on:
+ *  - the timer is cleared on the winning path, so a resolved fix never leaves a dangling timeout;
+ *  - `Promise.race` cannot cancel the underlying native work — a late result still settles the
+ *    original promise, and callers discard it (sequence guards / cancelled flags), never re-use it.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number, label = "location-timeout"): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}

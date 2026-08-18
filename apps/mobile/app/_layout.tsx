@@ -22,6 +22,7 @@ import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
+import { BootSplashHold } from "./boot-splash-hold.view";
 import ForceUpdateScreen from "./force-update";
 
 // Crash reporting (roadmap 1.1 / LR20) — first thing at module load so native + JS handlers are armed
@@ -213,6 +214,11 @@ function RootLayout(): React.ReactElement | null {
                 <View style={{ flex: 1 }}>
                   <AppNavigator />
                 </View>
+                {/* Cold-start splash hold (RCA §1.2 full fix): the brand-green frame stays up until
+                    the first REAL screen's frame is presented, so boot reads green → destination with
+                    no gap. Last sibling → stacks above the navigator; renders null forever once
+                    released. Dismisses on ANY route + a hard cap — see the component's header. */}
+                <BootSplashHold />
               </View>
             </ToastProvider>
           </AuthProvider>

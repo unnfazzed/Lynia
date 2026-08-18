@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Image, Text } from "react-native";
+import { Text } from "react-native";
+import { RemoteImage } from "../RemoteImage";
 import { Card } from "../index";
 
 /**
@@ -21,10 +22,14 @@ export function PickupPhoto({ url }: { url?: string | null }): React.ReactElemen
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 2 }}>
         Taken at pickup — your parcel is with the rider.
       </Text>
-      <Image
+      <RemoteImage
         source={{ uri: url }}
         accessibilityLabel="Photo of your parcel, taken by the rider at pickup"
         resizeMode="cover"
+        // Private imagery: memory-only, so the proof photo's bytes never land in the shared
+        // on-device disk cache. It re-fetches per session — fine, the tracker mints a fresh
+        // signed URL on every poll anyway.
+        cachePolicy="memory"
         // Fixed card-image height (like become.tsx's preview); surface behind it while it loads
         // over slow data instead of a white hole.
         style={{ width: "100%", height: 160, borderRadius: tokens.radius.input, marginTop: tokens.space.sm, backgroundColor: tokens.color.surface }}

@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { RemoteImage } from "./RemoteImage";
 import { avatarTint, initials } from "../logic/avatar";
 
 /**
@@ -32,7 +33,7 @@ export function Avatar({
 
   if (showPhoto) {
     return (
-      <Image
+      <RemoteImage
         source={{ uri: photoUrl! }}
         onError={() => setFailed(true)}
         accessibilityElementsHidden

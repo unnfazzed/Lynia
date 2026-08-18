@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, Text, View, type ViewStyle } from "react-native";
+import { Text, View, type ViewStyle } from "react-native";
+import { RemoteImage } from "./RemoteImage";
 
 /**
  * Round shop logo — the RN port of the design kit's `ShopLogo` (r-parts.jsx :: ShopLogo): a circular
@@ -52,7 +53,7 @@ export function ShopLogo({
       ]}
     >
       {showPhoto ? (
-        <Image source={{ uri: uri! }} onError={() => setFailed(true)} accessibilityElementsHidden importantForAccessibility="no" style={{ width: "100%", height: "100%" }} />
+        <RemoteImage source={{ uri: uri! }} onError={() => setFailed(true)} accessibilityElementsHidden importantForAccessibility="no" style={{ width: "100%", height: "100%" }} />
       ) : (
         <Text style={{ fontSize: size * 0.42, fontWeight: "800", color: tokens.color.onAccent }}>{initial}</Text>
       )}

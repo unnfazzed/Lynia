@@ -8,6 +8,7 @@ import { PaymentsModule } from "./adapters/payments/payments.module";
 import { PushModule } from "./adapters/push/push.module";
 import { SecretsModule } from "./adapters/secrets/secrets.module";
 import { StorageModule } from "./adapters/storage/storage.module";
+import { MicroCacheL2Module } from "./common/micro-cache-l2.provider";
 import { ConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { IssuesModule } from "./issues/issues.module";
@@ -35,6 +36,9 @@ import { WalletModule } from "./wallet/wallet.module";
 @Module({
   imports: [
     ConfigModule,
+    // @Global shared Redis L2 for the read-through micro-caches (D6) — resolves null until
+    // MICRO_CACHE_REDIS_L2 + REDIS_URL are set, so registering it costs nothing when off.
+    MicroCacheL2Module,
     // @Global PII at-rest crypto (national-ID encrypt/decrypt + dedup hash) — injectable app-wide.
     PiiCryptoModule,
     // Latency/SLO metrics (@Global) — MetricsService is injectable app-wide with no per-module import.

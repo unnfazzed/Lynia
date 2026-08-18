@@ -43,7 +43,7 @@ import { RiderBoardEmptyView } from "./board-empty.view";
 import { RiderOfferParcelCardView } from "./offer-parcel-card.view";
 import { SentOfferCard } from "../../../src/ui/rider/SentOfferCard";
 import { SupportCallRow } from "../../../src/ui/safety";
-import { parseNum } from "../../../src/util";
+import { parseNum, withTimeout } from "../../../src/util";
 
 // GPS fix bound: `getCurrentPositionAsync` has no timeout of its own and a cold fix can hang forever,
 // which matters here more than cosmetically — the server records a broadcast-eligible position only
@@ -58,17 +58,6 @@ const LOCATE_TIMEOUT_MS = 9_000;
  *  blip without turning a genuinely dead link into a request loop. */
 const ACTIVATION_MAX_RETRIES = 3;
 const ACTIVATION_RETRY_MS = 15_000;
-/** Reject if `p` doesn't settle within `ms`. Clears the timer once the race settles so a fast fix
- *  doesn't leave a dangling timeout firing against an already-settled race. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("location-timeout")), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
 
 // SentOffer moved to src/logic/rider-bid-draft.ts (buildSentOfferEntry) so its construction — using
 // the SENT fare/eta, never live form state — is unit-testable without mounting this screen.

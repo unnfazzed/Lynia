@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { withTimeout } from "../util";
 import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
@@ -26,18 +27,6 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 // GPS fix bound (C9): every REST call is capped at 15s, but `getCurrentPositionAsync` has no timeout of
 // its own and a cold fix can hang forever. Race it against this and fall back to the tap-the-map hint.
 const LOCATE_TIMEOUT_MS = 9_000;
-/** Reject if `p` doesn't settle within `ms` — used to bound the GPS fix so "Locating…" can't hang.
- *  Clears the timer once the race settles (mirrors ComposeMap) so a fast fix doesn't leave a dangling
- *  9s timeout that still fires against an already-settled race. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("location-timeout")), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Tap-to-pin location picker (DESIGN.md D-b: map-anchored). Tap the map to drop a pin, drag the pin to

@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { InteractionManager, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import MapView, { type LatLng, type MapPressEvent, Marker, type MarkerDragStartEndEvent, type Region } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ResolvedPlace } from "../api/places";
@@ -58,6 +58,25 @@ export function AddressConfirmSheet(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-seed on a NEW place only.
   }, [place?.placeId, place?.lat, place?.lng]);
 
+  // PERF-SEND-01's deferral, applied to the confirm step (RCA 2026-08-17 §4.2, deferred-item D4):
+  // this Modal used to inflate its native MapView in the same commit as the slide-in animation, so
+  // "tap a suggestion" paid the map surface before the sheet — the landmark field and Confirm, the
+  // parts the customer actually came for — was even on screen. The map now mounts one interaction
+  // after the modal opens: the sheet is interactive from its first frame, the surface-coloured canvas
+  // reads as the map loading, and confirm/landmark never depended on tiles at all (the working point
+  // is state, not a map read). Reset per place so a re-opened sheet defers again rather than paying
+  // the mount inside the open animation.
+  const [mapMounted, setMapMounted] = useState(false);
+  useEffect(() => {
+    // Reset FIRST, for every identity change — a non-null place replaced directly by another
+    // non-null place must re-defer too, not inherit the previous sheet's mounted map.
+    setMapMounted(false);
+    if (!place) return;
+    const handle = InteractionManager.runAfterInteractions(() => setMapMounted(true));
+    return () => handle.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-defer per NEW place, like the re-seed above.
+  }, [place?.placeId, place?.lat, place?.lng]);
+
   const confirm = useCallback((): void => {
     if (!place || !point) return;
     // The placeId only describes the ORIGINAL resolved point. Once the customer drags the pin the
@@ -86,6 +105,11 @@ export function AddressConfirmSheet(props: {
     <Modal visible animationType="slide" onRequestClose={props.onCancel} transparent={false}>
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         <View style={{ flex: 1 }}>
+          {/* Pre-mount canvas (same convention as ComposeMap's deferral): the map's ground colour,
+              nothing drawn — the tiles fade in over it a beat later, so the deferral reads as the map
+              loading rather than a missing element. The sheet below is fully usable meanwhile. */}
+          {!mapMounted ? <View style={{ flex: 1, backgroundColor: tokens.color.surface }} /> : null}
+          {mapMounted ? (
           <MapView
             style={{ flex: 1 }}
             initialRegion={region}
@@ -99,6 +123,7 @@ export function AddressConfirmSheet(props: {
               pinColor={accent}
             />
           </MapView>
+          ) : null}
 
           {/* Dismiss — a full-bleed map with no way out is a trap. The kit draws a back ARROW here
               because its confirm is a routed screen; this is a modal over the composer, so a close
