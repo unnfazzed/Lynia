@@ -33,6 +33,10 @@ export function RemoteImage(props: {
   accessibilityLabel?: string;
   /** Stable per-row identity for virtualized lists — lets expo-image recycle the native view. */
   recyclingKey?: string;
+  /** Default "memory-disk" fits the public catalog imagery this seam mostly serves. PRIVATE
+   *  imagery (e.g. proof-of-pickup photos) must pass "memory" so its bytes never persist to the
+   *  on-device disk cache. */
+  cachePolicy?: "memory" | "memory-disk";
 }): React.ReactElement {
   // expo-image has no "center"; "none" (natural size, centered) is its closest equivalent.
   const contentFit =
@@ -42,7 +46,7 @@ export function RemoteImage(props: {
       source={{ uri: props.source.uri }}
       style={props.style as never}
       contentFit={contentFit}
-      cachePolicy="memory-disk"
+      cachePolicy={props.cachePolicy ?? "memory-disk"}
       recyclingKey={props.recyclingKey}
       onError={props.onError ? () => props.onError?.() : undefined}
       accessibilityElementsHidden={props.accessibilityElementsHidden}

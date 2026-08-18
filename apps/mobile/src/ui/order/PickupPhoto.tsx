@@ -26,6 +26,10 @@ export function PickupPhoto({ url }: { url?: string | null }): React.ReactElemen
         source={{ uri: url }}
         accessibilityLabel="Photo of your parcel, taken by the rider at pickup"
         resizeMode="cover"
+        // Private imagery: memory-only, so the proof photo's bytes never land in the shared
+        // on-device disk cache. It re-fetches per session — fine, the tracker mints a fresh
+        // signed URL on every poll anyway.
+        cachePolicy="memory"
         // Fixed card-image height (like become.tsx's preview); surface behind it while it loads
         // over slow data instead of a white hole.
         style={{ width: "100%", height: 160, borderRadius: tokens.radius.input, marginTop: tokens.space.sm, backgroundColor: tokens.color.surface }}

@@ -68,10 +68,10 @@ export function AddressConfirmSheet(props: {
   // the mount inside the open animation.
   const [mapMounted, setMapMounted] = useState(false);
   useEffect(() => {
-    if (!place) {
-      setMapMounted(false);
-      return;
-    }
+    // Reset FIRST, for every identity change — a non-null place replaced directly by another
+    // non-null place must re-defer too, not inherit the previous sheet's mounted map.
+    setMapMounted(false);
+    if (!place) return;
     const handle = InteractionManager.runAfterInteractions(() => setMapMounted(true));
     return () => handle.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-defer per NEW place, like the re-seed above.

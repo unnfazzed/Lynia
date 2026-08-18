@@ -25,8 +25,9 @@ review below (4 architecture + 2 code-quality findings folded in) and the outsid
 Maps-key SHA-1 restriction (§3.2 — ops/GCP, no code); `expo-image` adoption and Maps SDK pre-warm
 (native → store-build train); the AddressConfirmSheet second-map rework (entangled with the SEN-04
 crash trail — owner call); a stable `/media/:key` authenticated media route (bigger fix for
-cross-session image caching — TODO); Redis L2 for the merchant photo cache (needs a shared
-L2-provider extraction — TODO). Everything below is an API deploy + OTA-able JS.
+cross-session image caching — since REJECTED, see rev 3 above); Redis L2 for the merchant photo
+cache (needs a shared L2-provider extraction — DONE in rev 3, D6). Everything below is an API
+deploy + OTA-able JS.
 
 ## 1. API — byte-stable signed photo URLs (RCA §5.1, biggest win)
 
@@ -56,7 +57,8 @@ L2-provider extraction — TODO). Everything below is an API deploy + OTA-able J
   independent URLs, so a phone can see up to ~3 URL variants per photo per 14 h window and JSON
   ETag hits are per-instance. The 24 h validity keeps the device image cache effective regardless
   (variants are stable for hours and each caches); full cross-instance stability needs the Redis
-  L2 (TODO) or the `/media/:key` route (TODO).
+  L2 (DONE in rev 3, D6 — activates with `MICRO_CACHE_REDIS_L2`) or the `/media/:key` route
+  (REJECTED in rev 3).
 - **Failure mode (documented, accepted):** a photo object purged while its URL is cached serves a
   404 image for ≤15.4 h (worst-case jittered cache life); `FoodThumb`/covers degrade to their fallback tiles, non-blocking. Dish
   edits mint NEW object keys (uploads are `randomUUID()`-keyed), so stale-key reuse cannot occur.
@@ -218,7 +220,8 @@ wire-contract change is additive (§3).
 - **Redis L2 for the merchant photo cache** — needs extracting OrdersService's private L2 provider
   into a shared seam; L1 + 24 h validity captures most of the win meanwhile.
 - **Stable `/media/:key` authenticated media route** — the complete fix for cross-session image
-  caching; new endpoint + client change, tracked as a TODO.
+  caching; new endpoint + client change. (Rev 3: REJECTED — with 24 h URLs + the shared L2 it
+  would add Cloud Run egress/CPU per image byte to solve a problem that no longer exists.)
 - **`withTimeout` dedupe (6 copies)** — cross-model resolution: pure churn inside an auto-merging
   perf PR; land separately (Beck: never structural + behavioral together).
 

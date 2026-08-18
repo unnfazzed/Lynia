@@ -71,6 +71,27 @@ describe("AddressConfirmSheet — deferred native map mount (D4)", () => {
     act(() => tree.unmount());
   });
 
+  it("re-defers when one place is REPLACED by another without an intermediate null", () => {
+    const { tree } = render();
+    act(() => interactions.flush());
+    expect(mounts).toHaveLength(1);
+
+    const NEXT = { lat: -17.8632, lng: 31.0299, landmark: "Sam Levy's Village, Borrowdale", placeId: "p-2" };
+    act(() => {
+      tree.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <AddressConfirmSheet place={NEXT} slot="pickup" onConfirm={jest.fn()} onCancel={jest.fn()} />
+        </SafeAreaProvider>,
+      );
+    });
+    // The new selection must pay the deferral again, not inherit the previous sheet's mounted map…
+    expect(interactions.pending()).toBe(1);
+    // …and mounts again once its own open animation settles.
+    act(() => interactions.flush());
+    expect(mounts).toHaveLength(2);
+    act(() => tree.unmount());
+  });
+
   it("Confirm works BEFORE the map ever mounts — tiles were never a dependency", () => {
     const { tree, onConfirm } = render();
     const btn = tree.root.findByProps({ label: "Confirm pickup" });
