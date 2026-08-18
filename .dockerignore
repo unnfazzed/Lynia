@@ -11,6 +11,7 @@ docs
 infra
 apps/mobile
 apps/admin
+apps/merchant
 *.md
 .env
 .env.*

@@ -116,6 +116,24 @@ resource "google_compute_url_map" "api" {
       default_service = google_compute_backend_service.admin[0].id
     }
   }
+
+  # Merchant dashboard rides the same ALB/IP under its own hostname → the public merchant backend
+  # (merchant.tf, no IAP). Zero-diff until merchant_enabled.
+  dynamic "host_rule" {
+    for_each = var.merchant_enabled ? [1] : []
+    content {
+      hosts        = [var.merchant_domain]
+      path_matcher = "merchant"
+    }
+  }
+
+  dynamic "path_matcher" {
+    for_each = var.merchant_enabled ? [1] : []
+    content {
+      name            = "merchant"
+      default_service = google_compute_backend_service.merchant[0].id
+    }
+  }
 }
 
 # --- Google-managed TLS certificate for the API domain ---
@@ -141,6 +159,7 @@ resource "google_compute_target_https_proxy" "api" {
     [google_compute_managed_ssl_certificate.api.id],
     var.staging_enabled ? [google_compute_managed_ssl_certificate.staging[0].id] : [],
     var.admin_enabled ? [google_compute_managed_ssl_certificate.admin[0].id] : [],
+    var.merchant_enabled ? [google_compute_managed_ssl_certificate.merchant[0].id] : [],
   )
 }
 

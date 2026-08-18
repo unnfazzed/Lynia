@@ -311,8 +311,15 @@ Layered so that money-safety and Express safety are proven before any UI exists.
 
 ## 5. Deployment strategy
 
+> **`apps/merchant`'s own Cloud Run deploy pipeline (the §2.3 "own deploy workflow" piece) is now built
+> — see `docs/plans/2026-merchant-console-deployment.md`.** Dockerfile, `deploy-merchant.yml`, and the
+> Terraform edge (mirroring the admin console's, but public — no IAP) are merged and dormant behind
+> `GCP_MERCHANT_ENABLED` / `merchant_enabled` until the founder arms them. This is orthogonal to the
+> backend flags below: standing up the dashboard's URL is not the same as flipping the vertical live.
+
 The pipeline already has the tiers — `deploy-staging.yml` → release-please → prod canary → `rollback.yml` +
-`deploy-autoheal.yml`. Merchant work rides these rails rather than inventing new ones.
+`deploy-autoheal.yml`. Merchant *backend* work (the NestJS modules behind `apps/api`) rides these rails
+rather than inventing new ones.
 
 - **Dark launch continuously.** Merchant code deploys to production behind OFF flags from week 2. It is *in*
   production, reachable by nobody. **Launch day is therefore a config flip, not a deploy** — the risky code has

@@ -262,6 +262,25 @@ variable "admin_iap_members" {
   default     = []
 }
 
+# --- Merchant dashboard tier (merchant.tf) — all gated off by default ---
+variable "merchant_enabled" {
+  description = "Provision the merchant dashboard tier (merchant.tf): the lynia-merchant serverless NEG + PUBLIC backend (no IAP — see merchant.tf header) + managed cert + runtime SA, exposed via the existing ALB at merchant_domain. Off by default — zero diff until armed. Arming: docs/plans/2026-merchant-console-deployment.md."
+  type        = bool
+  default     = false
+}
+
+variable "merchant_domain" {
+  description = "Hostname for the merchant dashboard on the shared load balancer (own managed cert; same LB IP as api_domain — add another A record)."
+  type        = string
+  default     = "lyniagomerchant.lyniafinance.com"
+}
+
+variable "merchant_cloud_run_service" {
+  description = "Name of the merchant Cloud Run service (created by deploy-merchant.yml, referenced by the merchant serverless NEG). Must equal the MERCHANT_CLOUD_RUN_SERVICE repo variable."
+  type        = string
+  default     = "lynia-merchant"
+}
+
 # --- Staging stack (staging.tf) — all gated off by default ---
 variable "staging_enabled" {
   description = "Provision the staging tier (staging.tf): its own Cloud SQL + Redis + secrets + runtime SA + media bucket, exposed via the existing ALB at staging_api_domain. Off by default — zero diff until armed. Arming guide: docs/LAUNCH-EXECUTION-RUNBOOK.md §8e."

@@ -118,5 +118,6 @@ output "cloudflare_dns_records" {
     [for r in cloudflare_dns_record.api : r.name],
     [for r in cloudflare_dns_record.staging : r.name],
     [for r in cloudflare_dns_record.admin : r.name],
+    [for r in cloudflare_dns_record.merchant : r.name],
   )
 }
