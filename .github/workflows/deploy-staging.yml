@@ -137,6 +137,7 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
+          MICRO_CACHE_REDIS_L2: ${{ vars.STAGING_MICRO_CACHE_REDIS_L2 }}
         run: |
           set -euo pipefail
           # "^;^" sets ; as the env delimiter — values may contain commas (OTP_TEST_PHONES) and @
@@ -151,7 +152,9 @@ jobs:
           # shell-injection sink. Do NOT write the literal expression token in this block, not even
           # inside a `#` comment: Actions interpolates the whole script before bash ever sees it, so
           # an empty one is a syntax error that fails the ENTIRE workflow to parse (KB-CI-EXPR-EMPTY).
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED; do
+          # MICRO_CACHE_REDIS_L2 rides the same lane (STAGING_MICRO_CACHE_REDIS_L2 Variable): the
+          # shared micro-cache Redis L2 (PR #809) over the staging REDIS_URL — no new infra.
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;
