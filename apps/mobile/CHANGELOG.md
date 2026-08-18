@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/unnfazzed/Lynia/compare/v0.41.0...v0.41.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* **mobile,docs:** address review findings on the D1-D6 PR ([c61e5f7](https://github.com/unnfazzed/Lynia/commit/c61e5f70bfb71db59064de5ed87019ba4f74ab8e))
+
 ## [0.41.0](https://github.com/unnfazzed/Lynia/compare/v0.40.1...v0.41.0) (2026-08-18)
 
 
