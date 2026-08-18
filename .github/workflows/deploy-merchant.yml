@@ -1,0 +1,202 @@
+name: Deploy Merchant Dashboard (Cloud Run)
+
+# Builds the merchant dashboard (apps/merchant) container, pushes it to Artifact Registry, and deploys
+# it to a Cloud Run service (lynia-merchant) fronted by the shared external HTTPS ALB. See
+# docs/plans/2026-merchant-console-deployment.md.
+#
+# WHY separate from release.yml / deploy-admin.yml: the merchant dashboard is a PUBLIC, client-driven
+# Next.js app (a merchant signs in with their own phone+OTP session; the browser holds the bearer
+# token — apps/merchant/app/lib/session.ts) with no DB/Redis/secret of its own, so it gets a minimal
+# boot-gated no-traffic deploy + promote, same shape as deploy-admin.yml but WITHOUT IAP: no
+# `--no-allow-unauthenticated`, no IAP-invoker grant, no Secret Manager `--set-secrets`. Cloud Armor +
+# TLS at the edge is the perimeter; the app's own fail-closed middleware is the auth boundary.
+#
+# NEXT_PUBLIC_API_BASE_URL is inlined into the browser bundle at BUILD time (Next.js contract), so it
+# is a `docker buildx --build-arg`, not a `gcloud run deploy --set-env-vars` — see the Dockerfile.
+#
+# DORMANT UNTIL ARMED. Gated on the repo variable GCP_MERCHANT_ENABLED == 'true'; until a maintainer
+# arms it this workflow is a clean no-op and never fails a push. Arming (founder, after terraform
+# apply — docs/plans/2026-merchant-console-deployment.md):
+#   Variables:
+#     GCP_MERCHANT_ENABLED               "true" to arm this workflow
+#     GCP_PROJECT_ID, GCP_REGION, GCP_ARTIFACT_REPO           (shared with release.yml / deploy-admin.yml)
+#     GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT     (shared WIF deployer)
+#     MERCHANT_CLOUD_RUN_SERVICE          Cloud Run service name (default lynia-merchant)
+#     MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT  merchant runtime SA email (terraform output)
+#     MERCHANT_API_BASE_URL               public API URL the dashboard's browser bundle calls
+#                                          (e.g. https://<api_domain> — baked in at build time)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/merchant/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-merchant.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-merchant
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · smoke · deploy
+    runs-on: ubuntu-latest
+    # The arming switch: no-op until a maintainer sets the variable post-provisioning.
+    if: ${{ vars.GCP_MERCHANT_ENABLED == 'true' }}
+    environment: production
+    permissions:
+      contents: read
+      id-token: write # mints the OIDC token the Authenticate step federates via Workload Identity
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/lynia-merchant
+      SERVICE: ${{ vars.MERCHANT_CLOUD_RUN_SERVICE || 'lynia-merchant' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required deploy config
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
+          MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT }}
+          MERCHANT_API_BASE_URL: ${{ vars.MERCHANT_API_BASE_URL }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT MERCHANT_API_BASE_URL GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          for v in $required; do
+            if [ -z "${!v:-}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::GCP_MERCHANT_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-merchant-console-deployment.md." >&2
+            exit 1
+          fi
+          echo "Merchant deploy config OK."
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build once and LOAD into the local docker so the boot smoke can run the exact image that ships.
+      # Single-platform (amd64) matches both the runner and Cloud Run. Registry layer cache keeps the
+      # pnpm install + next build warm across deploys. NEXT_PUBLIC_API_BASE_URL is a build arg (not a
+      # runtime env var) — Next.js inlines NEXT_PUBLIC_ vars into the browser bundle at build time.
+      - name: Build merchant image (load for smoke)
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/merchant/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${{ vars.MERCHANT_API_BASE_URL }}" \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true" \
+            -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" \
+            --load .
+
+      # Boot smoke: run the real container and prove THREE things `next build` alone can't catch —
+      # (1) the server actually serves, (2) the standalone copy layout didn't drop a static asset
+      # (asset-404s from a bad standalone layout — the same footgun documented in apps/admin's plan),
+      # and (3) the fail-closed middleware is wired: an unauthenticated request to `/` must redirect to
+      # /login (apps/merchant/app/lib/merchant-access.ts), never render the dashboard.
+      - name: Container boot smoke
+        run: |
+          set -euo pipefail
+          docker run -d --name merchant-smoke -p 8080:8080 "$IMAGE:${GITHUB_SHA}"
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8080/api/healthz"; then break; fi
+            sleep 1
+            if [ "$i" = "30" ]; then echo "::error::merchant container never served /api/healthz"; docker logs merchant-smoke || true; exit 1; fi
+          done
+          # Liveness probe (public by design — apps/merchant/app/api/healthz/route.ts).
+          healthz_body="$(curl -sf "http://127.0.0.1:8080/api/healthz")"
+          # A traced-but-unlisted static asset must 200 (proves the .next/static + public/ copy layout).
+          code_asset=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/brand/lyniago-mark.svg")
+          # An unauthenticated request to `/` must fail closed to /login, never render the dashboard.
+          headers="$(curl -s -D - -o /dev/null "http://127.0.0.1:8080/")"
+          code_root="$(printf '%s' "$headers" | head -1 | awk '{print $2}')"
+          echo "healthz -> $healthz_body ; asset -> $code_asset ; gated / -> $code_root"
+          docker logs merchant-smoke || true
+          docker rm -f merchant-smoke || true
+          if ! printf '%s' "$healthz_body" | grep -q '"app":"merchant"'; then echo "::error::/api/healthz did not report the expected body"; exit 1; fi
+          if [ "$code_asset" != "200" ]; then echo "::error::static asset did not 200 ($code_asset) — standalone static/public copy layout is likely wrong"; exit 1; fi
+          case "$code_root" in
+            307|308) ;;
+            *) echo "::error::unauthenticated / did not redirect ($code_root) — the merchant-access middleware is not enforcing"; exit 1 ;;
+          esac
+          if ! printf '%s' "$headers" | grep -qi '^location: */login'; then
+            echo "::error::unauthenticated / did not redirect to /login: $headers"
+            exit 1
+          fi
+
+      - name: Push merchant image
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+
+      # Remember the currently-serving revision so a failed deploy can be rolled back in seconds. Empty
+      # on the first-ever deploy (then the new revision must take 100%).
+      - name: Capture current serving revision (rollback target)
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(gcloud run services describe "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --format json 2>/dev/null \
+            | jq -r '([.status.traffic[]? | select((.percent // 0) > 0)] | max_by(.percent) | .revisionName) // empty' \
+            || true)"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Current serving revision: ${PREV:-<none — first deploy>}"
+
+      # Deploy a NO-TRAFFIC revision first (when one already serves): gcloud waits for Ready, so a
+      # crash-on-boot revision fails HERE while the old revision keeps serving. Traffic is promoted in
+      # the next step. First-ever deploy takes 100% (a new service must route somewhere).
+      #
+      # --ingress internal-and-cloud-load-balancing: only the shared ALB (+ internal) reaches the
+      # service; the org disables *.run.app at the edge, same as the API and admin services.
+      # --allow-unauthenticated: unlike admin (IAP-gated), the merchant dashboard is public — its own
+      # OTP-session middleware is the auth boundary, not Cloud Run IAM. No --set-secrets: this service
+      # holds no privileged token (NEXT_PUBLIC_API_BASE_URL is already baked into the image).
+      - name: Deploy to Cloud Run (new revision, no traffic)
+        run: |
+          set -euo pipefail
+          TRAFFIC_FLAGS="--no-traffic --tag candidate"
+          if [ -z "${{ steps.prev.outputs.revision }}" ]; then
+            TRAFFIC_FLAGS=""
+          fi
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:${GITHUB_SHA}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --platform managed \
+            --port 8080 \
+            --service-account "${{ vars.MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT }}" \
+            --ingress internal-and-cloud-load-balancing \
+            --set-env-vars "NODE_ENV=production" \
+            --allow-unauthenticated \
+            $TRAFFIC_FLAGS
+
+      - name: Promote new revision to 100%
+        if: ${{ steps.prev.outputs.revision != '' }}
+        run: |
+          set -euo pipefail
+          gcloud run services update-traffic "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
+            --to-latest

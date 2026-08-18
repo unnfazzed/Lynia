@@ -1,0 +1,19 @@
+# Build-context filter for the MERCHANT image (apps/merchant/Dockerfile). BuildKit prefers
+# <dockerfile>.dockerignore over the repo-root .dockerignore, which is tuned for the API image and
+# excludes apps/merchant. Keep root config + packages/shared + apps/merchant; drop everything else so
+# the context stays small and the layer cache stable.
+.git
+.github
+**/node_modules
+**/dist
+**/.turbo
+**/.expo
+**/.next
+docs
+infra
+apps/api
+apps/admin
+apps/mobile
+*.md
+.env
+.env.*
