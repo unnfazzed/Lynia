@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.41.0](https://github.com/unnfazzed/Lynia/compare/v0.40.1...v0.41.0) (2026-08-18)
+
+
+### Features
+
+* **mobile:** Proceed CTA, no submit hint, prefilled search + price (D-31) ([#806](https://github.com/unnfazzed/Lynia/issues/806)) ([d8bf6bf](https://github.com/unnfazzed/Lynia/commit/d8bf6bf90341d51601f550e7163063442133741c))
+
+
+### Performance Improvements
+
+* fix the customer-journey load times (RCA + reviewed plan + implementation) ([#805](https://github.com/unnfazzed/Lynia/issues/805)) ([9b5e0de](https://github.com/unnfazzed/Lynia/commit/9b5e0de78e6882016677a6d63df5dbb6275fdf74))
+
 ## [0.40.1](https://github.com/unnfazzed/Lynia/compare/v0.40.0...v0.40.1) (2026-08-17)
 
 
