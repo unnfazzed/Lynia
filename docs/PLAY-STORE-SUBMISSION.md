@@ -920,12 +920,22 @@ receive a Zimbabwean OTP, so they cannot open the app past the phone screen, and
 rejected under "App access". The QA escape hatch does **not** solve it: `OTP_TEST_PHONES` returns the
 live code in the HTTP response and is boot-rejected in production (an account-takeover vector).
 
-**The mechanism (implemented).** A single allowlisted **demo account with a fixed code**, gated on two
+**The mechanism (implemented).** Allowlisted **demo accounts with a fixed code**, gated on two
 secrets — `DEMO_OTP_PHONE` and `DEMO_OTP_CODE` (`apps/api/src/auth/auth.service.ts`,
 `apps/api/src/config/env.ts`). Properties, all covered by tests:
 
 - **Both secrets or nothing.** Either unset → the path is entirely inert and the ordinary OTP flow is
   untouched. Boot rejects one-without-the-other, a non-6-digit code, and trivially guessable codes.
+- **`DEMO_OTP_PHONE` is a comma-separated LIST**, one reserved number per demo identity, all sharing
+  the single `DEMO_OTP_CODE`. This exists because a profile carries exactly **one** `role`: the same
+  number cannot demo both the rider/customer app and the merchant kitchen dashboard. Without a list
+  the only ways to add a kitchen demo were to repoint the secret (losing the app demo) or to convert
+  a real account's role — which is **irreversible**, since `POST /riders/become` throws
+  `already_rider` before it writes a role and nothing else restores one. Boot validates every entry
+  and rejects duplicates: `demoPhones()` silently DROPS anything `normalizePhone` rejects, so an
+  unvalidated typo would boot green and simply stop authenticating that demo account.
+- **Adding a number adds no guessing budget to any other** — the fixed-code brute-force cap
+  (10/hour) is keyed per phone.
 - **Never echoes the code.** Unlike `OTP_TEST_PHONES`, no response ever carries it — the reviewer gets
   it out-of-band from the App-access form. `requestOtp` on the demo number sends nothing (no BSP cost)
   and stores nothing.
@@ -942,7 +952,8 @@ Variable to arm the deploy wiring, and enter the phone + code in Play Console �
 
 ```bash
 # 1. Create the secrets (values are yours; the code must be non-obvious — boot rejects 123456/111111)
-printf '%s' '+2637XXXXXXXX' | gcloud secrets create DEMO_OTP_PHONE --data-file=- --project=lynia-500911
+# DEMO_OTP_PHONE is comma-separated — one reserved number per demo identity (app demo, kitchen demo).
+printf '%s' '+2637XXXXXXXX,+2637YYYYYYYY' | gcloud secrets create DEMO_OTP_PHONE --data-file=- --project=lynia-500911
 printf '%s' '<6 digits>'    | gcloud secrets create DEMO_OTP_CODE  --data-file=- --project=lynia-500911
 # 2. Arm the deploy wiring (release.yml references the secrets only when this is true)
 gh variable set DEMO_ACCOUNT_ENABLED --body true
@@ -953,6 +964,13 @@ gh variable set DEMO_ACCOUNT_ENABLED --body true
 `DEMO_ACCOUNT_ENABLED=true` — the same opt-in pattern as Bird/WhatsApp/Sentry, so a missing secret
 can never fail an un-armed deploy. The runtime SA needs `secretAccessor` on both secrets.
 
+> **Adding a number later** is `gcloud secrets versions add DEMO_OTP_PHONE --data-file=-` with the
+> full new list (secret versions replace, they do not append), then a redeploy. A **kitchen** demo
+> additionally needs its profile upgraded once: sign in on the merchant dashboard with that number +
+> the fixed code, then `POST /merchant/become {"name":"…"}` with the resulting bearer token. Do that
+> on a reserved number, never on one whose role you would miss — the upgrade cannot be undone through
+> any API.
+>
 > ⚠️ **The demo number must not be a real user's account.** Sign-in resolves the account by phone, so
 > if `DEMO_OTP_PHONE` is a number that already has (or later gets) a real profile, anyone holding the
 > fixed code signs in **as that person**. Use a reserved number you control that will never be a

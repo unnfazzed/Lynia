@@ -314,22 +314,34 @@ export class AuthService {
   }
 
   /**
-   * Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). Armed ONLY when BOTH env vars are
-   * set (enforced well-formed by the config boot-guard); either unset → the whole path is inert and
-   * `isDemoPhone` is always false, so the ordinary OTP flow is completely unaffected. `phone` is
-   * already E.164-normalized by the callers, so the configured number is normalized the same way for
-   * an apples-to-apples compare (accepts it written as "+263…", "0…", or "263…").
+   * The reserved demo accounts (docs/PLAY-STORE-SUBMISSION.md §7.1), E.164-normalized. Armed ONLY
+   * when BOTH env vars are set (each entry enforced well-formed by the config boot-guard); either
+   * unset → the whole path is inert and `isDemoPhone` is always false, so the ordinary OTP flow is
+   * completely unaffected.
    */
-  private demoPhone(): string | null {
+  private demoPhones(): string[] {
     const configured = (this.env.DEMO_OTP_PHONE ?? "").trim();
     const code = (this.env.DEMO_OTP_CODE ?? "").trim();
-    if (!configured || !code) return null;
-    return normalizePhone(configured);
+    if (!configured || !code) return [];
+    // Comma-separated so ONE deployment can carry more than one reserved demo identity. A profile
+    // holds exactly one `role`, so a single demo number can demo the rider/customer app OR the
+    // merchant kitchen dashboard — never both. Before this, standing up a kitchen demo meant
+    // repointing DEMO_OTP_PHONE and losing the Play-review app demo, or converting a real account's
+    // role irreversibly (`/riders/become` refuses with `already_rider` before it writes a role, so
+    // nothing puts it back). Each entry is an independently reserved number; they share the one
+    // DEMO_OTP_CODE, and the brute-force cap in verifyOtp is keyed PER PHONE, so adding a number
+    // adds no guessing budget against any other.
+    return configured
+      .split(",")
+      .map((entry) => normalizePhone(entry))
+      .filter((phone): phone is string => phone !== null);
   }
 
   private isDemoPhone(phone: string): boolean {
-    const demo = this.demoPhone();
-    return demo !== null && demo === phone;
+    // `phone` is already E.164-normalized by the callers and every configured entry is normalized
+    // above, so this compares like with like — a number written "+263…", "0…" or "263…" in the
+    // secret matches the same caller either way.
+    return this.demoPhones().includes(phone);
   }
 
   /**
