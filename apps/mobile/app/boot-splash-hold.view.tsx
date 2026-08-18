@@ -1,14 +1,21 @@
 import { usePathname } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { InteractionManager, StyleSheet, View } from "react-native";
+import { useBootPhase } from "../src/boot/boot-phase";
 import { SplashView } from "./splash.view";
 
 /**
  * The cold-start splash HOLD (RCA 2026-08-17 §1.2, the "full fix" the first pass deferred until
  * `boot_home_paint` existed to measure it — owner instruction 2026-08-18 pulled it forward): keep the
  * brand-green splash frame on screen until the FIRST real screen has actually presented a frame, so
- * the boot reads green → destination with no between-screens gap at all (the accentWash contentStyle
- * remains underneath as the ground for every LATER transition; this overlay exists only for the boot).
+ * the boot reads green → destination with no between-screens gap at all.
+ *
+ * It works together with the boot-phase transition suppression (src/boot/boot-phase.tsx): while this
+ * overlay is up the navigator runs `bootStackScreenOptions`, so the splash → destination handoff has
+ * no transition at all. The two are complementary — without the overlay the cut would expose an
+ * unpainted scene, and without the suppression this overlay's timer-based release could uncover a
+ * transition still in flight. Releasing here is also what ENDS the boot phase, so every navigation
+ * after the cold start animates normally again (owner instruction: keep the in-app animation).
  *
  * Mechanics, and the two failure modes they close:
  *
@@ -38,8 +45,16 @@ export const BOOT_HOLD_SETTLE_CAP_MS = 2_000;
 
 export function BootSplashHold(): React.ReactElement | null {
   const pathname = usePathname();
+  const { endBoot } = useBootPhase();
   const [held, setHeld] = useState(true);
-  const release = useCallback(() => setHeld(false), []);
+  // One release path for both effects below: drop the overlay AND end the boot phase, so the
+  // navigator's animation comes back on exactly the frame the green screen goes away. `endBoot` is
+  // idempotent (a plain setState to false) and the default context's is a no-op, so a BootSplashHold
+  // mounted without the provider still behaves like a standalone overlay.
+  const release = useCallback(() => {
+    setHeld(false);
+    endBoot();
+  }, [endBoot]);
 
   useEffect(() => {
     const t = setTimeout(release, BOOT_HOLD_ABS_CAP_MS);

@@ -11,7 +11,11 @@ import { tokens } from "@lynia/shared/tokens";
 // _layout.tsx runs module-scope boot work (Sentry init, splash hold, font/boot prewarm). All of it
 // is inert or mocked under jest-expo, but pin the seams explicitly so this test can't start
 // depending on their real behavior.
-jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(async () => true), hideAsync: jest.fn(async () => true) }));
+jest.mock("expo-splash-screen", () => ({
+  preventAutoHideAsync: jest.fn(async () => true),
+  hideAsync: jest.fn(async () => true),
+  setOptions: jest.fn(),
+}));
 jest.mock("../../src/boot/prewarm", () => ({
   prewarmBootReads: jest.fn(() => ({
     session: Promise.resolve(null),
@@ -34,7 +38,7 @@ jest.mock("../../src/telemetry/sentry", () => ({
   wrap: (c: unknown) => c,
 }));
 
-import { stackScreenOptions } from "../_layout";
+import { bootStackScreenOptions, stackScreenOptions } from "../_layout";
 
 describe("root Stack contentStyle (splash→home transition ground)", () => {
   it("paints transitions in accentWash, never the native default white", () => {
@@ -47,5 +51,28 @@ describe("root Stack contentStyle (splash→home transition ground)", () => {
 
   it("keeps headers hidden (the app draws its own chrome)", () => {
     expect(stackScreenOptions.headerShown).toBe(false);
+  });
+
+  /**
+   * Owner instruction 2026-08-18, in two halves that pull against each other: the cold start is ONE
+   * screen and does not animate, AND the in-app animation is kept. So the suppression is scoped to
+   * the boot phase (src/boot/boot-phase.tsx) instead of sitting on the navigator forever.
+   *
+   * Both halves are pinned because either one can be undone by a plausible-looking edit: hoisting
+   * `animation: "none"` onto the shared object to "simplify" would flatten every in-app transition,
+   * and dropping it from the boot variant would put the moving frame back into the cold start.
+   */
+  it("suppresses the transition for the cold-start handoff only", () => {
+    expect(bootStackScreenOptions.animation).toBe("none");
+  });
+
+  it("leaves in-app navigation animated — the boot variant is the only exception", () => {
+    expect(stackScreenOptions).not.toHaveProperty("animation");
+  });
+
+  it("changes nothing but the animation between the two variants", () => {
+    const { animation, ...rest } = bootStackScreenOptions;
+    expect(animation).toBe("none");
+    expect(rest).toEqual(stackScreenOptions);
   });
 });

@@ -159,13 +159,25 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       // The native splash IS the design's splash (journey 0·1, screens.jsx `Splash`): full-bleed
-      // brand green with the white dove — the same frame app/splash.view.tsx paints once JS is up,
-      // so the native→JS handoff is a visual no-op instead of the old white→green hard cut.
-      // splash-icon.png is the DoveMark `on="green"` variant (white body, translucent keel, green
-      // creases) on transparency; imageWidth 104 matches SplashView's <DoveMark size={104}/> so the
-      // mark doesn't jump size at the handoff. #00B14F = tokens.color.accent (native config can't
-      // read the TS tokens; same literal convention as expo-notifications' color below).
-      { image: "./assets/splash-icon.png", imageWidth: 104, resizeMode: "contain", backgroundColor: "#00B14F" },
+      // brand green with the white dove AND the LyniaGo wordmark under it — the identical picture
+      // app/splash.view.tsx paints once JS is up, so the native→JS handoff is a visual no-op.
+      //
+      // It did not used to be. splash-icon.png was the bare dove, so the wordmark APPEARED at the
+      // handoff and the (vertically centred) mark jumped up by half the wordmark block — an
+      // animation in a boot sequence that is supposed to have none. The asset is now the whole
+      // lockup, generated from the same geometry the RN tree renders
+      // (src/ui/splash-lockup.ts → scripts/build-splash-icon.mjs), with a test failing on drift.
+      //
+      // imageWidth is the lockup's HEIGHT (154), not its width, and that is not a typo: the plugin
+      // fits the image `contain` into a SQUARE imageWidth×imageWidth box centred on a 288dp canvas
+      // (@expo/prebuild-config .../withAndroidSplashImages.js). The lockup is taller than it is
+      // wide, so its height is what the box side has to be; passing the width would render every
+      // element ~22% small against the JS frame that replaces it. Keep it equal to
+      // SPLASH_IMAGE_WIDTH — the splash-lockup test pins the pair.
+      //
+      // #00B14F = tokens.color.accent (native config can't read the TS tokens; same literal
+      // convention as expo-notifications' color below).
+      { image: "./assets/splash-icon.png", imageWidth: 154, resizeMode: "contain", backgroundColor: "#00B14F" },
     ],
     [
       "expo-location",
