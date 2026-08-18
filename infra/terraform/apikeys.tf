@@ -70,6 +70,27 @@
 #   terraform import 'google_apikeys_key.places[0]' projects/<project>/locations/global/keys/<KEY_ID>
 #   terraform plan    # the diff IS the fix — read it before applying
 #
+# ⚠️ YOU PROBABLY DO NOT NEED THE COMMANDS ABOVE. They are the laptop route, kept because they are
+# what the workflow runs. The supported way to arm this file is dispatchable from a phone and does
+# every step above with the guards attached — docs/MOB-MAP-02-RUNBOOK.md §4:
+#
+#   1. Actions -> "GCP Diagnose (read-only)"  ........ prints both KEY_IDs (labelled against `uid`,
+#                                                      which the import path rejects) and both keys'
+#                                                      current restrictions.
+#   2. Set four repo VARIABLES ...................... TF_MAPS_KEY_ID, TF_PLACES_KEY_ID,
+#                                                      TF_MAPS_SHA1_PLAY, TF_MAPS_SHA1_UPLOAD.
+#                                                      scripts/tf-maps-tfvars.mjs turns them into
+#                                                      maps.auto.tfvars at plan time and refuses a
+#                                                      half-armed set, a SHA-256, the placeholders
+#                                                      below, or one fingerprint entered twice.
+#   3. Actions -> "Maps Keys — arm Terraform" ....... imports what is missing, plans, and REFUSES
+#                                                      any plan that is not a pure in-place update.
+#                                                      Re-dispatch with apply=apply to execute it.
+#
+# terraform-apply.yml additionally refuses, with no override, any plan that CREATES a
+# google_apikeys_key — so the second-pair disaster described above cannot happen through a routine
+# full apply either.
+#
 # The plan after import is the review artefact. It should show ONLY in-place restriction
 # (and possibly display_name) changes. If it proposes creating, destroying or replacing a
 # key, stop — the id does not match, and prevent_destroy will refuse the apply anyway.

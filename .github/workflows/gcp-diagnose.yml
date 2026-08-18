@@ -65,6 +65,65 @@ jobs:
             --format 'value(timestamp, severity, textPayload, jsonPayload.message)' \
             || echo "RESULT: logging.read DENIED for the deployer SA (grant roles/logging.viewer to read crash logs from CI)"
 
+      # MOB-MAP-02 / docs/MOB-MAP-02-RUNBOOK.md. Two questions this answers that previously needed
+      # either the GCP console on a desktop or `gcloud` on a laptop:
+      #
+      #   1. WHAT ARE THE KEY IDS? Arming infra/terraform/apikeys.tf needs the final component of
+      #      each key's resource `name` — and NOT the `uid` field, which the terraform import path
+      #      rejects. Both are UUIDs, so they are indistinguishable by shape; printing them side by
+      #      side and labelling which is which is the whole point of this step.
+      #   2. WHAT DO THE KEYS CURRENTLY ALLOW? The runbook's last open cause is the Maps key's own
+      #      API restriction omitting Maps SDK for Android — which the Maps Key Doctor structurally
+      #      cannot see (Google evaluates API activation before the application restriction, and the
+      #      SDK's channel is not reachable over HTTP). It is readable here.
+      #
+      # NO KEY STRING IS PRINTED. `api-keys list` returns metadata only; the string needs
+      # `apikeys.keys.getKeyString`, which the read-only deployer SA does not hold and which this
+      # step never calls. `roles/viewer` (iam.tf) covers the list itself.
+      - name: API keys inventory — ids + restrictions (MOB-MAP-02; needs apikeys.keys.list)
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -uo pipefail
+          echo "=== Maps Platform client keys on $PROJECT (metadata only — no key string is readable here)"
+          if ! gcloud services api-keys list --project "$PROJECT" --format=json > keys.json 2>keys.err; then
+            echo "RESULT: apikeys.keys.list DENIED for the deployer SA."
+            echo "        Grant roles/serviceusage.apiKeysViewer (or roles/viewer) to read this from CI."
+            sed -e 's/[A-Za-z0-9_-]\{30,\}/<redacted>/g' keys.err | head -n 5
+            exit 0
+          fi
+          # Raw first: gcloud's field spellings have moved between releases, so the summary below is
+          # a convenience and this dump is the source of truth.
+          cat keys.json
+          echo ""
+          echo "=== summary — use KEY_ID (not uid) for TF_MAPS_KEY_ID / TF_PLACES_KEY_ID"
+          jq -r '
+            def r: .restrictions // {};
+            def android: (r.androidKeyRestrictions // r.android_key_restrictions // {});
+            def apis: [ (r.apiTargets // r.api_targets // [])[] | .service ];
+            .[] |
+            "- display name : " + (.displayName // .display_name // "(none)")   + "\n" +
+            "  KEY_ID       : " + ((.name // "") | split("/") | last)           + "\n" +
+            "  uid (NOT it) : " + (.uid // "(none)")                            + "\n" +
+            "  application  : " + (
+              if (android.allowedApplications // android.allowed_applications // []) | length > 0
+              then ([ (android.allowedApplications // android.allowed_applications)[]
+                      | (.packageName // .package_name) + " @ " + (.sha1Fingerprint // .sha1_fingerprint) ] | join(", "))
+              elif (r.browserKeyRestrictions // r.browser_key_restrictions) then "WEBSITES — an Android app cannot use this key"
+              elif (r.serverKeyRestrictions // r.server_key_restrictions) then "IP ADDRESSES — an Android app cannot use this key"
+              elif (r.iosKeyRestrictions // r.ios_key_restrictions) then "iOS apps"
+              else "None (no package/SHA-1 check at all)" end
+            ) + "\n" +
+            "  api targets  : " + (if (apis | length) > 0 then (apis | join(", ")) else "unrestricted (key may call any enabled API)" end)
+          ' keys.json
+          echo ""
+          echo "Reading this (docs/SECURITY-OPS.md §B):"
+          echo "  Maps SDK key   -> application: zw.co.lynia against BOTH SHA-1s (Play app-signing + EAS upload)"
+          echo "                    api targets: must include maps-android-backend.googleapis.com, or tiles stay blank"
+          echo "  Places key     -> application: None is CORRECT (an Android restriction returns REQUEST_DENIED"
+          echo "                    for every web-service call, which the app flattens into an empty result list)"
+          echo "                    api targets: places-backend.googleapis.com only"
+
       - name: Secret version freshness (needs secretmanager viewer — may be denied)
         run: |
           set -uo pipefail

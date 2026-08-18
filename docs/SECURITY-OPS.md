@@ -58,6 +58,14 @@ encodes, and after arming they are a reviewable plan diff rather than console cl
 (quota) is still manual; step 4 is a separate key this repo does not manage. The console steps
 remain the source of truth until the import lands.
 
+> **Arming no longer needs a laptop.** `GCP Diagnose (read-only)` prints the key ids and each key's
+> current restrictions; four Actions *variables* (`TF_MAPS_KEY_ID`, `TF_PLACES_KEY_ID`,
+> `TF_MAPS_SHA1_PLAY`, `TF_MAPS_SHA1_UPLOAD`) supply the values; and `Maps Keys — arm Terraform`
+> imports, plans and applies, refusing any plan that is not a pure in-place update. Step-by-step:
+> `docs/MOB-MAP-02-RUNBOOK.md` §4. **Prefer it to hand-editing the console** — a hand-edit is what
+> left the Maps key at `Application restrictions: None` from at least 2026-08-16 to 2026-08-17 with
+> no diff, no alert and no record.
+
 > ⚠️ **Read the header of `apikeys.tf` before enabling.** Both keys already exist, and Terraform's
 > `name` is the key's **immutable id** (the last component of
 > `projects/<n>/locations/global/keys/<KEY_ID>`), not a label — the API cannot patch it, so it is

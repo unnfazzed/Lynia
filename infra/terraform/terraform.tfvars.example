@@ -97,6 +97,12 @@
 # The fingerprints below are syntactically valid PLACEHOLDERS so the shape is
 # unambiguous — they are not real and must both be replaced, or the map will be
 # restricted to certificates that do not exist.
+# ⚠️ PREFER THE REPO VARIABLES over filling these four in here. CI reads this file through the
+# write-only TF_PROD_TFVARS secret, so editing it from a phone means re-pasting the whole blob you
+# cannot read back. Set TF_MAPS_KEY_ID / TF_PLACES_KEY_ID / TF_MAPS_SHA1_PLAY / TF_MAPS_SHA1_UPLOAD
+# as Actions *variables* instead; scripts/tf-maps-tfvars.mjs emits maps.auto.tfvars from them, which
+# Terraform loads AFTER this file and which therefore WINS over anything set here. Full sequence:
+# docs/MOB-MAP-02-RUNBOOK.md §4.
 # maps_api_keys_enabled          = true
 # The real ids look like UUIDs. They are NOT written here even as examples: a
 # UUID-shaped value next to a *_key_id assignment trips gitleaks' generic-api-key

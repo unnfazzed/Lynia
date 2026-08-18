@@ -1,13 +1,22 @@
 # MOB-MAP-02 — the Android map is blank on the installed build
 
-**Status: OPEN, ops-side.** The fix is a GCP console change; no code change or OTA can reach it (the
-Maps key is written into the native manifest, and expo-updates matches bundles to binaries by a
-fingerprint the key is part of — `REL-01`).
+**Status: OPEN, ops-side.** The fix changes the key's server-side permissions; no code change or OTA
+can reach it (the Maps key is written into the native manifest, and expo-updates matches bundles to
+binaries by a fingerprint the key is part of — `REL-01`).
 
 This runbook exists because every previously written verification step for this bug ended in
 `adb logcat | grep "Google Maps Android API"` — a USB cable and a terminal. The owner of this repo
 codes from a phone, so the one person holding the broken handset could never run the check. **Step 1
-replaces it with something a phone can do.**
+replaces it with something a phone can do**, and **step 4 does the same for the fix itself** — the
+restriction is now applied by Terraform through two dispatchable workflows, not by console clicks.
+
+> **Do not confuse this with the transient "map failed to load" card.** That symptom —
+> the failure card appearing and then clearing itself once tiles arrive — was a *false positive*
+> caused by a 9 s `onMapLoaded` deadline on a 600 ms-RTT link, diagnosed in
+> `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` §3.1 and **fixed in code** (staged 9 s passive line
+> / 22 s actionable card, `apps/mobile/src/ui/ComposeMap.tsx`). MOB-MAP-02 is the *other* half: a card
+> that shows and tiles that never arrive. Fixing the key does not remove the flash, and fixing the
+> flash does not repair a rejected key.
 
 ---
 
@@ -159,7 +168,11 @@ Maps SDK for Android channel is not reachable over HTTP. Read the two blocks by 
 > even match the `AIza` + 35-character shape. That does not affect the Play build, but the QA-APK lane
 > would ship a mapless APK today. Re-run the doctor with `key_source: github` after fixing it.
 
-## Step 2 — Fix the allowlist *(only if Application restrictions is NOT `None` — as of 2026-08-17 it is, so skip to the API-restrictions check and the build test above)*
+## Step 2 — Fix the allowlist by hand *(the console route — prefer step 4)*
+
+> Read this for what the fields must say; **apply it via step 4**, which encodes exactly this in Terraform
+> and can be driven from a phone. Hand-editing is what left the key at `Application restrictions: None`
+> with nobody able to tell for eleven days.
 
 GCP → **APIs & Services → Credentials** → the Maps SDK key → **Application restrictions → Android apps**.
 List **both** fingerprints against `zw.co.lynia`:
@@ -184,22 +197,103 @@ The app also reports itself now: a still-blank map sends `compose-map-not-loaded
 `map_load_signal=onMapLoaded` (`docs/SENTRY-TRIAGE-2026-08-17.md`). No event after a successful send
 means the map is drawing.
 
-## Step 4 — Make it stick
+## Step 4 — Make it stick (Route B: Terraform, and it runs from a phone)
 
-`infra/terraform/apikeys.tf` already encodes exactly the restrictions above, including listing both
-fingerprints — it is gated off (`maps_api_keys_enabled = false`) and was never imported. Arming it turns
-this from a console state that can silently drift into a reviewable plan diff. It needs three values you
-now have or can read once:
+**This is now the recommended way to change the restrictions at all**, not just a follow-up to a
+console edit. The console route works, but it leaves the key's state as something only a screenshot
+records — which is how the §B hardening came to be applied with `Application restrictions: None` and
+nobody noticed for eleven days. Under Terraform the restriction is a reviewable plan diff, and
+`gcp-drift-detect.yml` reports it every night if someone changes it in the console.
 
-- `maps_api_key_id` / `places_api_key_id` — `gcloud services api-keys list --format='table(name,displayName)'`,
-  taking the **final component of `name`** (not `uid`);
-- `android_cert_sha1_fingerprints` — both SHA-1s, colon-separated uppercase.
+`infra/terraform/apikeys.tf` has encoded exactly the §B restrictions since 2026-08-17 — both
+fingerprints against `zw.co.lynia`, `maps-android-backend.googleapis.com` as the only api target,
+`prevent_destroy` on both keys. It was never armed, for one reason: arming it meant editing
+`infra/terraform/terraform.tfvars`, a gitignored file on a laptop, reachable from CI only through the
+**write-only** `TF_PROD_TFVARS` secret. That is now fixed. The four values live in ordinary repo
+variables, and two workflows do the rest.
 
-**Import before applying.** Both keys already exist; applying without an import creates a second pair
-with new key strings, leaves the originals unmanaged, and reaches no device. Read the header of
-`apikeys.tf` first — it has the exact commands and the reason `name` is ForceNew.
+### 4.1 — Read the key ids and the current restrictions
 
----
+GitHub → Actions → **GCP Diagnose (read-only)** → Run workflow. Its **API keys inventory** step
+prints, for every key on the project:
+
+- the **KEY_ID** — the value Terraform's `name` wants — next to the **`uid`**, labelled, because both
+  are UUIDs and the import path rejects `uid`;
+- the current **application restriction** and **api targets**.
+
+That second line is worth the run on its own: it is the only phone-readable answer to the runbook's
+last open cause — *is `maps-android-backend.googleapis.com` on the Maps key's api-target list?* The
+Maps Key Doctor structurally cannot see it (Google evaluates API activation before the application
+restriction, and the SDK's own channel is not reachable over HTTP).
+
+No key string is printed anywhere. Reading one needs `apikeys.keys.getKeyString`, which no CI identity
+here holds and no step calls.
+
+### 4.2 — Set four repo variables
+
+Settings → Secrets and variables → **Actions → Variables**. Variables, not secrets, so the plan stays
+readable — GitHub masks secret values in logs, and a `***` where a fingerprint should be is
+unreviewable in exactly the place a wrong fingerprint has to be caught.
+
+| Variable | Value | Where |
+|---|---|---|
+| `TF_MAPS_KEY_ID` | Maps SDK key's KEY_ID | step 4.1 |
+| `TF_PLACES_KEY_ID` | Places key's KEY_ID | step 4.1 |
+| `TF_MAPS_SHA1_PLAY` | **Play app-signing** certificate SHA-1 | Play Console (web) → search "app signing" → *App signing key certificate* |
+| `TF_MAPS_SHA1_UPLOAD` | **EAS upload** keystore SHA-1 | expo.dev → project → Credentials → Android |
+
+`scripts/tf-maps-tfvars.mjs` turns them into `maps.auto.tfvars` at plan time and refuses, with the
+reason, anything that would produce a broken restriction: a half-set trio (which yields an empty
+fingerprint list — a key no certificate matches), a SHA-256 pasted where a SHA-1 belongs, the
+`terraform.tfvars.example` placeholders, or the same fingerprint entered as both certificates. Leaving
+`TF_MAPS_SHA1_UPLOAD` unset is allowed and warns: Play-installed builds keep working, sideloaded QA
+APKs (`android-test-apk.yml`) go blank.
+
+Set none of them and nothing changes anywhere — `apikeys.tf` stays gated off and every terraform run
+is the zero diff it is today.
+
+### 4.3 — Import and read the plan
+
+Actions → **Maps Keys — arm Terraform** → Run workflow, `confirm` = `arm`, leave `apply` blank.
+
+It imports whichever of the two keys is not already in state, plans them, and **refuses any plan that
+is not a pure in-place update**. That guard is the point of the workflow: both keys already exist, and
+a plan that *creates* one means a key id does not match a live key — applying it would mint a second
+pair with new key strings while the app keeps reading the old values from EAS, which no OTA can undo
+(the Maps key is native — `REL-01`). `terraform-apply.yml` now refuses to create a
+`google_apikeys_key` too, with no override input, so a routine full apply cannot do it by accident
+either.
+
+Read the plan in the job summary. It should change restrictions and nothing else.
+
+### 4.4 — Apply
+
+Same workflow, `confirm` = `arm`, `apply` = `apply`. It re-plans, re-runs the guard against what it is
+about to apply, and applies. Both dispatches need the `infra` environment's approval — they write
+Terraform state.
+
+Google propagates key changes in about 5 minutes, and **no new build is needed**: the key string in the
+installed binary is unchanged, only its server-side permissions.
+
+### 4.5 — Prove the allowlist is enforcing
+
+Two Key Doctor runs, not one:
+
+1. with the Play app-signing SHA-1 → expect `OK` (or `API_RESTRICTED`, the healthy answer for a
+   correctly api-restricted key);
+2. with a junk SHA-1 → expect `ANDROID_RESTRICTION_REJECTED`.
+
+Run 1 alone proves nothing about the restriction — it returned `OK` against a key with no application
+restriction at all, which is what `None` means. Run 2 is what distinguishes "allowlisted" from
+"allowlist absent". Then open `/send` on the handset: **tiles with the Google attribution baked into
+them**, not a rendered map frame.
+
+### Afterwards
+
+`gcp-drift-detect.yml` plans with the same variables nightly, so a console edit to either key opens a
+`gcp-drift` issue. Disarming is **`terraform state rm`**, never flipping `maps_api_keys_enabled` back
+to `false` — `count = 0` on a resource in state means destroy, and `prevent_destroy` will turn that
+mistake into an error rather than an outage.
 
 ## Why this cannot be fixed in the app
 
