@@ -125,6 +125,20 @@ async function bootstrap(): Promise<void> {
     `Lynia API listening on :${env.PORT} (cloud=${env.CLOUD_PROVIDER}, trustProxy=${env.TRUST_PROXY})`,
     "Bootstrap",
   );
+
+  // Surface the resolved CORS allow-list too. A browser origin that is NOT on it is refused with
+  // total silence — Nest's CORS middleware just declines to add the header, the preflight OPTIONS
+  // falls through to the router and 404s, and the browser reports a generic network failure to the
+  // page. `apps/merchant` renders that as "Couldn't reach the server", which reads as an outage and
+  // sends you looking at DNS, TLS and the API's health (all green) instead of at one env var. This
+  // line is the only place the deployed value is observable, so it is logged at boot, and an empty
+  // list says so in words rather than printing an empty bracket pair.
+  Logger.log(
+    `CORS browser origins allowed: ${
+      allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "<none — CORS_ALLOWED_ORIGINS is empty; every browser origin is refused>"
+    }`,
+    "Bootstrap",
+  );
 }
 
 void bootstrap();

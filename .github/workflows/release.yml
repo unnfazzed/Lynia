@@ -447,6 +447,10 @@ jobs:
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
           MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
+          # Same reasoning as the flags above: these two land inside ENV_VARS, so they must not be
+          # interpolated into the script (delimiter breakout + injection). Validated below.
+          MERCHANT_DASHBOARD_ORIGIN: ${{ vars.MERCHANT_DASHBOARD_ORIGIN }}
+          CORS_EXTRA_ORIGINS: ${{ vars.CORS_EXTRA_ORIGINS }}
         run: |
           set -euo pipefail
           TRAFFIC_FLAGS="--no-traffic --tag canary"
@@ -505,6 +509,47 @@ jobs:
             esac
             ENV_VARS="${ENV_VARS};${_flag}=${_val}"
           done
+
+          # Browser origins allowed to call this API cross-origin (apps/api/src/common/cors.ts).
+          # Default-deny is the right policy for the native apps — they send no Origin at all — but
+          # the merchant kitchen dashboard (apps/merchant, on its OWN hostname) is a browser client:
+          # sign-in, every queue mutation and the Socket.IO queue socket are cross-origin requests
+          # from https://lyniagomerchant.lyniafinance.com to this service. Until now this workflow
+          # never set the variable, so the deployed list was empty and the dashboard's very first
+          # call — POST /auth/otp/request from the login screen — was blocked by the browser at
+          # preflight, surfacing as "Couldn't reach the server" over a perfectly healthy API
+          # (2026-08-18; docs/KNOWN_BUGS.md OPS-CORS-01). Nothing server-side logs a refused
+          # preflight, which is why it reads as an outage and not as a config gap.
+          #
+          # The merchant origin is therefore ALWAYS present, defaulted here to the same hostname
+          # infra/terraform/variables.tf defaults `merchant_domain` to (override in place with the
+          # MERCHANT_DASHBOARD_ORIGIN Variable if that domain ever changes). Anything else goes in
+          # CORS_EXTRA_ORIGINS, which APPENDS — so adding one origin can never silently drop the one
+          # the dashboard cannot work without. The admin console deliberately needs no entry: it
+          # proxies server-side (apps/admin/app/lib/api.ts) and its browser never touches this API.
+          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://lyniagomerchant.lyniafinance.com}"
+          if [ -n "${CORS_EXTRA_ORIGINS:-}" ]; then
+            CORS_ORIGINS="${CORS_ORIGINS},${CORS_EXTRA_ORIGINS}"
+          fi
+          # Origins never contain whitespace; strip it so a Variable pasted with a stray space can't
+          # produce an entry that silently matches nothing.
+          CORS_ORIGINS="$(printf '%s' "$CORS_ORIGINS" | tr -d '[:space:]')"
+          # Each entry must be a bare origin — scheme://host[:port], no path, no trailing slash, no
+          # ';' (the ENV_VARS delimiter). cors.ts normalises a trailing slash away at runtime, but it
+          # is rejected here too so the value in the Cloud Run console is literally what a browser
+          # sends: a list you can compare by eye is the whole point of having it visible.
+          IFS=',' read -ra _origins <<< "$CORS_ORIGINS" || true
+          for _o in "${_origins[@]:-}"; do
+            [ -z "$_o" ] && continue
+            case "$_o" in
+              *';'*) echo "::error::CORS origin '$_o' contains ';', the ENV_VARS delimiter"; exit 1 ;;
+              https://*/*|http://*/*) echo "::error::CORS origin '$_o' has a path or trailing slash — use scheme://host[:port] only"; exit 1 ;;
+              https://?*|http://?*) ;;
+              *) echo "::error::CORS origin '$_o' must be an absolute origin starting with https:// (http:// only for a local origin)"; exit 1 ;;
+            esac
+          done
+          echo "CORS_ALLOWED_ORIGINS=$CORS_ORIGINS"
+          ENV_VARS="${ENV_VARS};CORS_ALLOWED_ORIGINS=${CORS_ORIGINS}"
 
           SECRETS="DATABASE_URL=DATABASE_URL:latest,REDIS_URL=REDIS_URL:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY:latest"
 

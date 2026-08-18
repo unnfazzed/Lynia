@@ -97,16 +97,62 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
    to step 4. Otherwise, by hand: `merchant_domain` (default `lyniagomerchant.lyniafinance.com`) → the
    **same** `load_balancer_ip` output the API and admin domains already point at (one shared anycast
    IP, a second/third/fourth A record — no new IP).
-4. **Trigger the first deploy** — `workflow_dispatch` on `deploy-merchant.yml`, or push a no-op change
+4. **Allow the dashboard's origin on the API — the step this plan originally missed.** The dashboard
+   is a *browser* client of `apps/api`: sign-in (`POST /auth/otp/request`), every queue mutation and
+   the Socket.IO queue socket are cross-origin requests from `https://lyniagomerchant.lyniafinance.com`
+   to `https://lyniago.lyniafinance.com`. `apps/api` is default-deny (`CORS_ALLOWED_ORIGINS`,
+   `src/common/cors.ts`), and until 2026-08-18 `release.yml` never set that variable at all — so the
+   first real sign-in attempt failed at preflight and the login screen said **"Couldn't reach the
+   server — check the connection and try again."** with the API green, DNS correct, the cert active
+   and the right `NEXT_PUBLIC_API_BASE_URL` baked into the bundle. Nothing is logged server-side when
+   a preflight is refused; only the browser sees it. Ledgered as `OPS-CORS-01`.
+
+   `release.yml` now always deploys the merchant origin, so **the next API deploy fixes this with no
+   configuration at all**. Two knobs exist if the topology changes: `MERCHANT_DASHBOARD_ORIGIN`
+   (overrides the default hostname in place) and `CORS_EXTRA_ORIGINS` (appends; it cannot drop the
+   merchant origin). To apply it *without* a redeploy — which is what an already-live dashboard
+   wants — update the running service directly:
+   ```
+   gcloud run services update <CLOUD_RUN_SERVICE> --region <GCP_REGION> --project <GCP_PROJECT_ID> \
+     --update-env-vars CORS_ALLOWED_ORIGINS=https://lyniagomerchant.lyniafinance.com
+   ```
+   That `gcloud` command is a stop-gap, not the fix: `release.yml` deploys with **`--set-env-vars`**,
+   which replaces the service's entire env set, so a hand-added variable the workflow does not also
+   set is silently wiped by the next API deploy. It survives now only because the workflow sets it
+   too — which is why the workflow change is the actual repair and the command is just the way to
+   stop the bleeding before the next deploy.
+
+   Bare origins only — `scheme://host[:port]`, no path and no trailing slash. (A trailing slash is
+   the classic silent-denial typo: the value looks right in the console and matches nothing. `cors.ts`
+   normalises it away at runtime and both deploy workflows reject it outright, but a hand-run `gcloud`
+   command bypasses the workflow check.) The **admin** console needs no entry — it proxies
+   server-side and its browser never calls the API.
+
+5. **Trigger the first deploy** — `workflow_dispatch` on `deploy-merchant.yml`, or push a no-op change
    under `apps/merchant/**`. Wait for the managed cert to go `ACTIVE` (can take up to ~30 min after DNS
    resolves; the first run's boot smoke tests the *container*, not the public URL, so it isn't blocked
    on the cert — but the public URL itself won't answer until the cert is active).
-5. **Verify:**
+6. **Verify:**
    - `curl -I https://lyniagomerchant.lyniafinance.com/` → `307`/`308` to `/login` (unauthenticated,
      fail-closed).
    - `curl https://lyniagomerchant.lyniafinance.com/api/healthz` → `{"status":"ok","app":"merchant"}`.
    - Plain HTTP redirects to HTTPS (existing `:80` redirect rule covers every hostname on the shared
      IP — no per-tier work needed).
+   - **CORS preflight from the dashboard's origin is accepted** — the check that would have caught
+     `OPS-CORS-01` before a human did, and the one to run first if sign-in reports a connection
+     error:
+     ```
+     curl -si -X OPTIONS https://lyniago.lyniafinance.com/auth/otp/request \
+       -H 'Origin: https://lyniagomerchant.lyniafinance.com' \
+       -H 'Access-Control-Request-Method: POST' \
+       -H 'Access-Control-Request-Headers: content-type' | head -1
+     ```
+     Expect `204` with an `access-control-allow-origin` header echoing that origin. A **`404`** is
+     the failure signature: the origin is not allow-listed, so Nest's CORS middleware never handles
+     the preflight and it falls through to the router. Note the API itself answers normally to a
+     request with **no** `Origin` header (`curl https://lyniago.lyniafinance.com/healthz` → `ok`) —
+     which is exactly why this looks like an outage from the browser and like perfect health from a
+     terminal.
    - Sign in with a real merchant OTP account end-to-end once one exists in this environment.
 
 ## Rollback
