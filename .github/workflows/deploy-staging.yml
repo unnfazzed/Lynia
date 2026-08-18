@@ -138,6 +138,8 @@ jobs:
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
           MICRO_CACHE_REDIS_L2: ${{ vars.STAGING_MICRO_CACHE_REDIS_L2 }}
+          # Same lane, same reason: lands inside ENV_VARS, so never interpolated into the script.
+          CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
         run: |
           set -euo pipefail
           # "^;^" sets ; as the env delimiter — values may contain commas (OTP_TEST_PHONES) and @
@@ -162,6 +164,27 @@ jobs:
             esac
             ENV_VARS="${ENV_VARS};${_flag}=${_val}"
           done
+
+          # Browser origins allowed to call this API cross-origin (apps/api/src/common/cors.ts).
+          # Empty by default — unlike prod, no browser client points at staging today (there is no
+          # staging merchant dashboard tier), and default-deny is the correct resting state. The knob
+          # exists so that standing one up is a Variable, not a scramble: the prod tier lost a day to
+          # exactly this being unsettable without a code change (docs/KNOWN_BUGS.md OPS-CORS-01).
+          # Same bare-origin validation as release.yml; the whole value must survive the ';' delimiter.
+          if [ -n "${CORS_ALLOWED_ORIGINS:-}" ]; then
+            _cors="$(printf '%s' "$CORS_ALLOWED_ORIGINS" | tr -d '[:space:]')"
+            IFS=',' read -ra _origins <<< "$_cors" || true
+            for _o in "${_origins[@]:-}"; do
+              [ -z "$_o" ] && continue
+              case "$_o" in
+                *';'*) echo "::error::CORS origin '$_o' contains ';', the ENV_VARS delimiter"; exit 1 ;;
+                https://*/*|http://*/*) echo "::error::CORS origin '$_o' has a path or trailing slash — use scheme://host[:port] only"; exit 1 ;;
+                https://?*|http://?*) ;;
+                *) echo "::error::CORS origin '$_o' must be an absolute origin starting with https:// (http:// only for a local origin)"; exit 1 ;;
+              esac
+            done
+            ENV_VARS="${ENV_VARS};CORS_ALLOWED_ORIGINS=${_cors}"
+          fi
 
           SECRETS="DATABASE_URL=DATABASE_URL_STAGING:latest,REDIS_URL=REDIS_URL_STAGING:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET_STAGING:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY_STAGING:latest"
 
