@@ -1,6 +1,7 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { withTimeout } from "../util";
 
 /**
  * The customer home's DELIVER-TO location (home 8c header address row).
@@ -144,14 +145,6 @@ export async function saveStoredLocation(place: HomePlace, manual: boolean): Pro
   }
 }
 
-/** Reject if `p` doesn't settle in time, clearing the timer on the winning path. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("location-timeout")), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Granted, or granted after asking — and never asking when the OS would refuse to show the dialog.

@@ -1,5 +1,23 @@
 # Plan — customer-journey load-perf fixes (code lanes of the 2026-08-17 RCA)
 
+> **Revision 3 addendum (2026-08-18, owner instruction "execute the deferred items — I ship full EAS
+> builds, not OTA-only"):** the ship model being full EAS store builds dissolved the native/OTA split
+> that justified most of the "NOT in scope" list, and every code-executable deferral shipped in the
+> follow-up PR: **D1** `withTimeout` deduped into `src/util.ts` (6 copies → 1); **D2** cold-start
+> splash HOLD (`app/boot-splash-hold.view.tsx` — green frame until the first real screen's presented
+> frame, dismiss-on-any-route + settle/absolute caps); **D3** Android Maps SDK pre-warmed from
+> launcher idle (transient 1×1 map, unmounts on ready/cap); **D4** the AddressConfirmSheet's map
+> mounts one interaction after the modal opens (PERF-SEND-01's deferral — confirm/landmark were
+> never tile-dependent); **D5** `expo-image` (~2.0.7) behind the new `RemoteImage` seam for all
+> eight remote-photo components (disk cache + downsampling; bundle measured WITHIN budget, 268 KiB
+> headroom; native → ships with the next EAS build); **D6** the shared Redis L2
+> (`common/micro-cache-l2.provider.ts`, @Global) now backs BOTH the merchant photo cache and
+> OrdersService's caches — OrdersService's private client deleted, cross-instance byte-stable URLs
+> when `MICRO_CACHE_REDIS_L2` is on. Still open, with reasons: the **Maps-key SHA-1 restriction**
+> (ops/GCP console — not reachable from the repo), and **`/media/:key`** — now REJECTED rather than
+> deferred: with 24 h URLs + the L2 it would add Cloud Run egress/CPU on every image byte to solve a
+> problem that no longer exists.
+
 **Revision 2 — post /plan-eng-review.** Implements the code-fixable findings of
 `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§7 items 2–3), as revised by the engineering
 review below (4 architecture + 2 code-quality findings folded in) and the outside-voice challenge

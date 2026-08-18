@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { RemoteImage } from "./RemoteImage";
 import { Icon } from "./Icon";
 import { Money } from "./Money";
 
@@ -49,7 +50,7 @@ function Thumb({ name, cat, photo }: { name: string; cat: MenuCategory; photo?: 
   const uri = typeof photo === "string" && photo.length > 0 ? photo : null;
   if (uri && !failed) {
     return (
-      <Image
+      <RemoteImage
         source={{ uri }}
         onError={() => setFailed(true)}
         accessibilityElementsHidden

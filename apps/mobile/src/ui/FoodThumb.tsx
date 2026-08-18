@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, type ImageStyle, Text, View, type ViewStyle } from "react-native";
+import { type ImageStyle, Text, View, type ViewStyle } from "react-native";
+import { RemoteImage } from "./RemoteImage";
 import { Icon } from "./Icon";
 
 /**
@@ -49,7 +50,7 @@ export function FoodThumb({
   const uri = typeof photo === "string" && photo.length > 0 ? photo : null;
   if (uri && !failed) {
     return (
-      <Image
+      <RemoteImage
         source={{ uri }}
         onError={() => setFailed(true)}
         accessibilityElementsHidden

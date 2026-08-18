@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Image, Text } from "react-native";
+import { Text } from "react-native";
+import { RemoteImage } from "../RemoteImage";
 import { Card } from "../index";
 
 /**
@@ -21,7 +22,7 @@ export function PickupPhoto({ url }: { url?: string | null }): React.ReactElemen
       <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18, marginTop: 2 }}>
         Taken at pickup — your parcel is with the rider.
       </Text>
-      <Image
+      <RemoteImage
         source={{ uri: url }}
         accessibilityLabel="Photo of your parcel, taken by the rider at pickup"
         resizeMode="cover"

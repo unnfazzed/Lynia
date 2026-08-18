@@ -1,11 +1,10 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import type IORedis from "ioredis";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
-import { MicroCache, type MicroCacheL2 } from "../common/micro-cache";
-import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
+import { MicroCache } from "../common/micro-cache";
+import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -115,7 +114,7 @@ function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown
 }
 
 @Injectable()
-export class OrdersService implements OnModuleDestroy {
+export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
   // Read-through micro-caches on the snapshot hot path (DoorDash-style request coalescing, scaled to
@@ -129,21 +128,15 @@ export class OrdersService implements OnModuleDestroy {
   private readonly nearbyCountCache = new MicroCache<number>(200, {
     ttlJitterRatio: 0.1,
     onEvent: (o) => this.metricsSvc?.recordMicroCache("nearby_count", o),
-    l2: () => this.microCacheL2(),
+    l2: () => this.l2?.resolve() ?? null,
     l2KeyPrefix: "mc:nearby:",
   });
   private readonly pickupPhotoUrlCache = new MicroCache<string>(500, {
     ttlJitterRatio: 0.1,
     onEvent: (o) => this.metricsSvc?.recordMicroCache("pickup_photo_url", o),
-    l2: () => this.microCacheL2(),
+    l2: () => this.l2?.resolve() ?? null,
     l2KeyPrefix: "mc:photo:",
   });
-
-  // Lazy, optional Redis client backing the micro-cache L2 (its OWN client, deliberately not
-  // TrackingService's — that one carries the live-position/waitlist planes and must never queue
-  // behind cache traffic). Created on first use only when BOTH flags allow; quit on shutdown.
-  private microCacheL2Client: IORedis | null = null;
-  private microCacheL2Started = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -160,38 +153,14 @@ export class OrdersService implements OnModuleDestroy {
     // the caches run flagless (wave-1 behavior) and metrics are a no-op.
     @Inject(ENV) private readonly env?: Env,
     private readonly metricsSvc?: MetricsService,
+    // D6: the shared Redis L2 (common/micro-cache-l2.provider.ts) — replaces this service's private
+    // lazy client verbatim; @Global-provided, TS-optional so existing spec constructions stay valid.
+    private readonly l2?: MicroCacheL2Provider,
   ) {}
-
-  /** Resolve the shared L2 adapter, or null when not enabled/configured. Every command the adapter
-   *  runs is best-effort inside MicroCache — a Redis blip degrades to L1-only, never to an error. */
-  private microCacheL2(): MicroCacheL2 | null {
-    if (this.env?.MICRO_CACHE_REDIS_L2 !== "true" || !this.env.REDIS_URL) return null;
-    if (!this.microCacheL2Started) {
-      this.microCacheL2Started = true;
-      // LC-C01: request-path client (MicroCache L2) fails fast so a Redis blip degrades to L1-only
-      // immediately instead of hanging the coalesced snapshot flight until reconnect.
-      this.microCacheL2Client = createRedisClient(this.env.REDIS_URL, REDIS_FAIL_FAST);
-      this.microCacheL2Client.on("error", (err: Error) =>
-        this.logger.warn(`micro-cache L2 redis error: ${err.message}`),
-      );
-    }
-    const client = this.microCacheL2Client;
-    if (!client) return null;
-    return {
-      get: (key) => client.get(key),
-      set: async (key, value, ttlMs) => {
-        await client.set(key, value, "PX", Math.max(1, Math.round(ttlMs)));
-      },
-    };
-  }
 
   /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule. */
   private microCacheBypassed(ttlMs: number): boolean {
     return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.microCacheL2Client) await this.microCacheL2Client.quit().catch(() => {});
   }
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */

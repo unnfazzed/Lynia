@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { RemoteImage } from "../RemoteImage";
 import { avatarTint } from "../../logic/avatar";
 
 /** The mock's photo band. The card itself is a grid cell, so it takes its width from the column. */
@@ -67,7 +68,7 @@ export function RestaurantCard({
     >
       <View style={{ height: PHOTO_HEIGHT }}>
         {showPhoto ? (
-          <Image
+          <RemoteImage
             source={{ uri: photoUrl! }}
             onError={() => setPhotoFailed(true)}
             accessibilityElementsHidden

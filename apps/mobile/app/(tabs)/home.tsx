@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { InteractionManager, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { InteractionManager, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
 import { greetingFor, greetingLine } from "../../src/logic/greeting";
@@ -63,6 +63,60 @@ function usePrewarmSendRoute(): void {
     });
     return () => handle.cancel();
   }, []);
+}
+
+/**
+ * PERF-SEND-01, third half (deferred item D3, plan rev 2 "NOT in scope" → pulled forward by owner
+ * instruction 2026-08-18): warm the ANDROID GOOGLE MAPS SDK itself from the launcher's idle time.
+ * `usePrewarmSendRoute` above already evaluates /send's JS module graph off the tap path, but the
+ * native SDK's first-in-process initialisation (renderer setup, key authorization) still ran on the
+ * UI thread at the first real MapView mount — right as /send's transition settles, which is the
+ * remaining "screen arrives, then visibly finishes loading" beat. That init is process-global, so a
+ * throwaway 1×1 invisible map mounted here pays it during idle and every later map is warm.
+ *
+ * Deliberately bounded on every axis:
+ *  - **Android only, checked BEFORE anything is scheduled** — iOS renders Apple Maps (cheap init, no
+ *    key), and the check-first shape also means jest (which runs as iOS) and iOS sessions schedule
+ *    zero extra interactions.
+ *  - **Lazy `require`, same as the route prewarm** — a top-level react-native-maps import here would
+ *    drag its 29 modules back into the LAUNCH graph and re-open MOB-BOOT-03.
+ *  - **Transient** — the 1×1 map unmounts the moment `onMapReady` fires (SDK initialised; the native
+ *    view's memory is released) or at a hard cap, so a Go-class handset never carries a hidden live
+ *    map. Best-effort: any throw leaves the launcher untouched and /send simply pays the init as
+ *    it did before.
+ */
+const MAPS_SDK_PREWARM_CAP_MS = 15_000;
+
+function MapsSdkPrewarm(): React.ReactElement | null {
+  const [MapComp, setMapComp] = useState<React.ComponentType<{
+    style?: object;
+    pointerEvents?: "none";
+    onMapReady?: () => void;
+    liteMode?: boolean;
+  }> | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== "android") return; // nothing scheduled at all off-Android (incl. jest)
+    const handle = InteractionManager.runAfterInteractions(() => {
+      try {
+        setMapComp(() => (require("react-native-maps") as { default: React.ComponentType<never> }).default as never);
+      } catch {
+        /* best-effort — /send pays the init on first mount, exactly as before */
+      }
+    });
+    return () => handle.cancel();
+  }, []);
+  useEffect(() => {
+    if (!MapComp || done) return;
+    const t = setTimeout(() => setDone(true), MAPS_SDK_PREWARM_CAP_MS);
+    return () => clearTimeout(t);
+  }, [MapComp, done]);
+  if (!MapComp || done) return null;
+  return (
+    <View pointerEvents="none" style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}>
+      <MapComp style={{ width: 1, height: 1 }} onMapReady={() => setDone(true)} />
+    </View>
+  );
 }
 
 /**
@@ -271,6 +325,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
           </View>
         ) : null}
       </ScrollView>
+      {/* D3: throwaway 1×1 map that pays the Android Maps SDK's first-in-process init during launcher
+          idle, then unmounts — see MapsSdkPrewarm's header. Renders null off-Android and after warm. */}
+      <MapsSdkPrewarm />
       <LocationSheet
         visible={locationOpen}
         denied={location.denied}

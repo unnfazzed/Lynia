@@ -15,6 +15,7 @@ import { mapFallbackHint } from "../logic/map-fallback";
 import { mapLoadSignal } from "../logic/map-load-signal";
 import { isReachable } from "../net/reachability";
 import { addBreadcrumb, captureException } from "../telemetry/sentry";
+import { withTimeout } from "../util";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
 
@@ -66,14 +67,6 @@ export function mapElapsedBucket(ms: number): "<9s" | "9-15s" | "15-22s" | ">=22
   return ">=22s";
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("location-timeout")), ms);
-  });
-  // Clear the timer on the winning path so a resolved fix doesn't leave a dangling 9s timeout.
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
 
 export type ActiveSlot = "pickup" | "drop";
 

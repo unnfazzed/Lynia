@@ -2,6 +2,7 @@ import * as Location from "expo-location";
 import { useEffect, useRef } from "react";
 import type { PickedPoint } from "../ui/MapPicker";
 import { landmarkFromAddress } from "./geocode";
+import { withTimeout } from "../util";
 
 /**
  * Prefill the compose screen's PICKUP pin from the device's own position, once, when the screen opens.
@@ -71,14 +72,6 @@ export interface PickupAutolocateOptions {
   onLandmark: (landmark: string) => void;
 }
 
-/** Reject if `p` doesn't settle in time, clearing the timer on the winning path (mirrors ComposeMap). */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("location-timeout")), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Granted, or granted after asking. Never throws, and never asks when the OS would silently refuse to

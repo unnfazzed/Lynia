@@ -30,6 +30,7 @@ import type {
 import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { MicroCache } from "../common/micro-cache";
+import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { maskPhone } from "../common/phone-mask";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -94,6 +95,11 @@ export class MerchantService {
   private readonly photoUrlCache = new MicroCache<string>(500, {
     ttlJitterRatio: 0.1,
     onEvent: (o) => this.metricsSvc?.recordMicroCache("merchant_photo_url", o),
+    // D6: the shared Redis L2 (common/micro-cache-l2.provider.ts) — the cross-instance half of
+    // byte-stable URLs. Resolved at CALL time (thunk) and TS-optional like every dep below, so the
+    // existing spec constructions and an L2-less deploy both run L1-only unchanged.
+    l2: () => this.l2?.resolve() ?? null,
+    l2KeyPrefix: "mc:mphoto:",
   });
 
   constructor(
@@ -104,6 +110,7 @@ export class MerchantService {
     // the cache runs flagless and metrics are a no-op (the OrdersService convention).
     @Inject(ENV) private readonly env?: Env,
     private readonly metricsSvc?: MetricsService,
+    private readonly l2?: MicroCacheL2Provider,
   ) {}
 
   /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule —

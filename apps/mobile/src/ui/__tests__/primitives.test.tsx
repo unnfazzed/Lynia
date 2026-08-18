@@ -1,6 +1,9 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
+// D5 (RCA 2026-08-17 follow-through): remote photos render through the RemoteImage seam (expo-image
+// with disk caching) — the "real image vs fallback tile" contract is now pinned on that seam.
+import { RemoteImage } from "../RemoteImage";
 import renderer from "react-test-renderer";
 import { Banner, CoverPhoto, EtaLine, FoodThumb, MenuRow, PriceMath, Screen, ShopLogo } from "../index";
 
@@ -81,12 +84,12 @@ describe("CoverPhoto (kit CoverPhoto)", () => {
   it("renders the tinted name band when there is no photo", () => {
     const tree = renderer.create(<CoverPhoto name="Sadza Republic" photo={false} />);
     expect(texts(tree)).toContain("Sadza Republic");
-    expect(tree.root.findAllByType(Image).length).toBe(0);
+    expect(tree.root.findAllByType(RemoteImage).length).toBe(0);
   });
 
   it("renders a real Image when given a URI", () => {
     const tree = renderer.create(<CoverPhoto name="Sadza Republic" photo="https://example.com/cover.jpg" />);
-    expect(tree.root.findAllByType(Image).length).toBe(1);
+    expect(tree.root.findAllByType(RemoteImage).length).toBe(1);
   });
 });
 
@@ -116,7 +119,7 @@ describe("ShopLogo (kit ShopLogo · Foundation-D)", () => {
   it("renders the accent-circle initial fallback (photoless), taking the ring/fill from tokens", () => {
     const tree = renderer.create(<ShopLogo name="Sadza Republic" photo={false} size={52} />);
     expect(texts(tree)).toContain("S");
-    expect(tree.root.findAllByType(Image).length).toBe(0);
+    expect(tree.root.findAllByType(RemoteImage).length).toBe(0);
     const ring = tree.root.findAllByType(View).map(flatStyle).find((s) => s.borderColor === tokens.color.bg && s.borderWidth === 3);
     expect(ring?.backgroundColor).toBe(tokens.color.accent);
     expect(ring?.borderRadius).toBe(26);
@@ -124,7 +127,7 @@ describe("ShopLogo (kit ShopLogo · Foundation-D)", () => {
 
   it("renders a real Image when given a logo URI", () => {
     const tree = renderer.create(<ShopLogo name="Sadza Republic" photo="https://example.com/logo.jpg" />);
-    expect(tree.root.findAllByType(Image).length).toBe(1);
+    expect(tree.root.findAllByType(RemoteImage).length).toBe(1);
   });
 });
 
@@ -132,14 +135,14 @@ describe("FoodThumb (kit FoodThumb · Foundation-D)", () => {
   it("renders the tinted-initial block (photoless default) with the category tint from tokens", () => {
     const tree = renderer.create(<FoodThumb name="Mazoe orange" cat="drinks" />);
     expect(texts(tree)).toContain("M");
-    expect(tree.root.findAllByType(Image).length).toBe(0);
+    expect(tree.root.findAllByType(RemoteImage).length).toBe(0);
     const tile = tree.root.findAllByType(View).map(flatStyle).find((s) => s.backgroundColor === tokens.color.highlightWash);
     expect(tile).toBeTruthy();
   });
 
   it("renders a real Image when given a photo URI, sized by the caller", () => {
     const tree = renderer.create(<FoodThumb name="Sadza" photo="https://example.com/dish.jpg" size={116} radius={9} />);
-    const img = tree.root.findAllByType(Image);
+    const img = tree.root.findAllByType(RemoteImage);
     expect(img.length).toBe(1);
     expect(flatStyle(img[0]!).borderRadius).toBe(9);
   });
