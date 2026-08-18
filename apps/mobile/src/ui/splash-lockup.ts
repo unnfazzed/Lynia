@@ -53,6 +53,20 @@ export const SPLASH_LOCKUP_HEIGHT = SPLASH_DOVE_SIZE + SPLASH_GAP + SPLASH_WORDM
  * (@expo/prebuild-config .../withAndroidSplashImages.js), and the lockup is taller than it is wide.
  * So the value that makes the native frame render the lockup at the mock's size is its HEIGHT — pass
  * the width and every element would come out ~22% small against the JS frame that replaces it.
+ *
+ * ANDROID 12+ FIT, measured not guessed. The system splash draws this drawable against a 288dp
+ * canvas whose design-guideline safe area is a 192dp circle. The lockup's actual ink measures
+ * 120.38 × 147.50dp sitting 3.25dp below the image centre, so its bounding-box corners reach 97.73dp
+ * from that centre — 1.73dp outside the 96dp guideline radius. That is a GUIDELINE, not a clip: this
+ * plugin never sets `windowSplashScreenIconBackgroundColor`, and the circular mask AOSP applies is
+ * on the icon-background layer, so the worst case here is the system scaling the mark slightly, not
+ * cropping the wordmark.
+ *
+ * Do not "fix" it by shrinking the lockup. Scaling to fit 96dp means a 102.2px dove, which both
+ * breaks the mock's drawn 104 (a `docs/DESIGN-DEVIATIONS.md` matter) and makes the native frame a
+ * different size from the JS frame that replaces it — reintroducing the exact size jump this module
+ * exists to remove. Left as measured; confirm on a physical Android 12+ device before the next
+ * store build.
  */
 export const SPLASH_IMAGE_WIDTH = Math.round(SPLASH_LOCKUP_HEIGHT);
 
