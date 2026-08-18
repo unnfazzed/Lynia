@@ -2,6 +2,15 @@ import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { View } from "react-native";
 import Svg, { Path, Polygon } from "react-native-svg";
+import {
+  DOVE_BODY_POLYGONS,
+  DOVE_CREASE_MIN_SIZE,
+  DOVE_CREASE_PATHS,
+  DOVE_CREASE_WIDTH,
+  DOVE_KEEL_POLYGON,
+  DOVE_VIEWBOX,
+  doveFills,
+} from "./dove-paths";
 import { WORDMARK_ASPECT, WORDMARK_GO_D, WORDMARK_LYNIA_D, WORDMARK_VIEWBOX } from "./wordmark-paths";
 
 /**
@@ -10,23 +19,21 @@ import { WORDMARK_ASPECT, WORDMARK_GO_D, WORDMARK_LYNIA_D, WORDMARK_VIEWBOX } fr
  * the creases (and the cross) only render at ≥ 32px — below that use the silhouette alone.
  */
 export function DoveMark({ size = 28, on = "white" }: { size?: number; on?: "white" | "green" }): React.ReactElement {
-  const showCrease = size >= 32;
+  const showCrease = size >= DOVE_CREASE_MIN_SIZE;
   // On the brand-green splash the mark inverts (DS Dove `on="green"`): white body, translucent-white
   // keel, and the crease switches to the accent green so it stays visible against the white body.
-  const body = on === "green" ? tokens.color.onAccent : tokens.color.accent;
-  const keel = on === "green" ? "rgba(255,255,255,0.62)" : tokens.color.accentPressed;
-  const crease = on === "green" ? tokens.color.accent : tokens.color.onAccent;
+  // `doveFills` is the same helper the native splash lockup is generated from (src/ui/splash-lockup.ts),
+  // so the JS frame and the baked launch-screen image can never disagree about the mark's colours.
+  const { body, keel, crease } = doveFills(on);
   return (
-    <Svg width={size} height={size} viewBox="0 0 96 96">
-      <Polygon points="28,6 58,32 38,42" fill={body} />
-      <Polygon points="90,26 14,52 48,60" fill={body} />
-      <Polygon points="90,26 48,60 42,84" fill={keel} />
-      {showCrease ? (
-        <>
-          <Path d="M90 26 L48 60" stroke={crease} strokeWidth={2.4} fill="none" />
-          <Path d="M70.5 30.2 L81.5 43.8" stroke={crease} strokeWidth={2.4} fill="none" />
-        </>
-      ) : null}
+    <Svg width={size} height={size} viewBox={DOVE_VIEWBOX}>
+      {DOVE_BODY_POLYGONS.map((points) => (
+        <Polygon key={points} points={points} fill={body} />
+      ))}
+      <Polygon points={DOVE_KEEL_POLYGON} fill={keel} />
+      {showCrease
+        ? DOVE_CREASE_PATHS.map((d) => <Path key={d} d={d} stroke={crease} strokeWidth={DOVE_CREASE_WIDTH} fill="none" />)
+        : null}
     </Svg>
   );
 }

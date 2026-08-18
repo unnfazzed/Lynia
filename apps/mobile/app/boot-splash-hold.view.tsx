@@ -7,8 +7,14 @@ import { SplashView } from "./splash.view";
  * The cold-start splash HOLD (RCA 2026-08-17 §1.2, the "full fix" the first pass deferred until
  * `boot_home_paint` existed to measure it — owner instruction 2026-08-18 pulled it forward): keep the
  * brand-green splash frame on screen until the FIRST real screen has actually presented a frame, so
- * the boot reads green → destination with no between-screens gap at all (the accentWash contentStyle
- * remains underneath as the ground for every LATER transition; this overlay exists only for the boot).
+ * the boot reads green → destination with no between-screens gap at all.
+ *
+ * It still earns its place now that the root Stack runs `animation: "none"` (owner instruction
+ * 2026-08-18 — one screen, no animations). Killing the transition removed the MOVING frame between
+ * the splash and the destination; it did not remove the gap between the route committing and that
+ * screen's first painted frame, which is what this covers. The two fixes are complementary: without
+ * the overlay the cut would expose an unpainted scene, and without `animation: "none"` the overlay's
+ * timer-based release could uncover a transition still in flight.
  *
  * Mechanics, and the two failure modes they close:
  *

@@ -32,6 +32,11 @@ initSentry();
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
 SplashScreen.preventAutoHideAsync().catch(() => {});
+// The cold start is ONE screen and it does not animate (owner instruction 2026-08-18). `fade` is
+// already the library default on both platforms, but it is a DEFAULT — pin it, because the frame it
+// would cross-fade to is the identical picture (app/splash.view.tsx), so a fade here could only ever
+// render as the brand mark dipping in opacity against itself for no reason.
+SplashScreen.setOptions({ fade: false });
 
 // Start the fonts and every device-local boot read NOW, at module evaluation, so the native side works
 // on them while the JS thread finishes evaluating the startup graph. Previously all of this began only
@@ -85,6 +90,14 @@ function ConnectivityBanner(): React.ReactElement | null {
 export const stackScreenOptions = {
   headerShown: false,
   contentStyle: { backgroundColor: tokens.color.accentWash },
+  // No screen transition, anywhere. The boot sequence is meant to read as ONE green screen that is
+  // simply replaced by the destination (owner instruction 2026-08-18), and the native-stack default
+  // slide/fade is what put a moving frame between them — the `contentStyle` above exists only
+  // because that transition exposed a scene background at all. With the animation gone the splash →
+  // destination handoff is a hard cut and the wash is never on screen during boot; it stays as the
+  // ground for anything that still composites a scene (it costs nothing and removing it would
+  // re-open the white flash if a future screen re-enables an animation locally).
+  animation: "none",
 } as const;
 
 /**

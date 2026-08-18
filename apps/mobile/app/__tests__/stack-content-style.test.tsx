@@ -11,7 +11,11 @@ import { tokens } from "@lynia/shared/tokens";
 // _layout.tsx runs module-scope boot work (Sentry init, splash hold, font/boot prewarm). All of it
 // is inert or mocked under jest-expo, but pin the seams explicitly so this test can't start
 // depending on their real behavior.
-jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(async () => true), hideAsync: jest.fn(async () => true) }));
+jest.mock("expo-splash-screen", () => ({
+  preventAutoHideAsync: jest.fn(async () => true),
+  hideAsync: jest.fn(async () => true),
+  setOptions: jest.fn(),
+}));
 jest.mock("../../src/boot/prewarm", () => ({
   prewarmBootReads: jest.fn(() => ({
     session: Promise.resolve(null),
@@ -47,5 +51,16 @@ describe("root Stack contentStyle (splash→home transition ground)", () => {
 
   it("keeps headers hidden (the app draws its own chrome)", () => {
     expect(stackScreenOptions.headerShown).toBe(false);
+  });
+
+  /**
+   * Owner instruction 2026-08-18: the cold start is ONE screen and it does not animate. The
+   * native-stack default transition is a slide/fade, and it is the moving frame between the splash
+   * and the destination — the contentStyle above only ever mattered because that transition exposed
+   * a scene background at all. Pinned here because "no animations" is a product decision that a
+   * routine navigation tweak could silently undo.
+   */
+  it("runs no screen transition, so splash → destination is a hard cut", () => {
+    expect(stackScreenOptions.animation).toBe("none");
   });
 });
