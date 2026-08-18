@@ -447,6 +447,7 @@ jobs:
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
           MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
         run: |
           set -euo pipefail
           TRAFFIC_FLAGS="--no-traffic --tag canary"
@@ -486,8 +487,21 @@ jobs:
           # this same allow-list, common/cors.ts) stop being silently blocked by the browser — that
           # failure surfaces client-side as a generic "Couldn't reach the server", not a CORS error,
           # so it is easy to misread as a networking problem instead of a missing origin.
-          if [ -n "${{ vars.CORS_ALLOWED_ORIGINS }}" ]; then
-            ENV_VARS="${ENV_VARS};CORS_ALLOWED_ORIGINS=${{ vars.CORS_ALLOWED_ORIGINS }}"
+          # Comes in via env (above), never as a raw GHA expression inside this script, same reason as
+          # the merchant flags below: raw interpolation here would splice repo-Variable text straight into a script
+          # that already holds live GCP credentials at this point — a template-injection sink, not
+          # just a delimiter-breakout one. A semicolon would also corrupt the "^;^"-delimited
+          # ENV_VARS payload below, so reject one outright rather than let it silently inject an
+          # extra key (a stray semicolon is far more likely to be a copy-paste slip than malice, but
+          # the fail-closed behavior is identical either way).
+          if [ -n "${CORS_ALLOWED_ORIGINS:-}" ]; then
+            case "$CORS_ALLOWED_ORIGINS" in
+              *";"*|*$'\r'*|*$'\n'*)
+                echo "::error::CORS_ALLOWED_ORIGINS must not contain ';' or a newline (got '${CORS_ALLOWED_ORIGINS}') — it is spliced into the '^;^'-delimited ENV_VARS payload below."
+                exit 1
+                ;;
+            esac
+            ENV_VARS="${ENV_VARS};CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}"
           fi
 
           # Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
