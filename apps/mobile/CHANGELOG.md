@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.42.0](https://github.com/unnfazzed/Lynia/compare/v0.41.2...v0.42.0) (2026-08-19)
+
+
+### Features
+
+* **mobile:** make every tap acknowledge itself, and measure tap latency ([85b77df](https://github.com/unnfazzed/Lynia/commit/85b77df07210976531794bab5e34f6ee50dba21b))
+
+
+### Bug Fixes
+
+* **mobile:** address review — nav key, prewarm yield, guardrail hole ([eb3d983](https://github.com/unnfazzed/Lynia/commit/eb3d983e9fa71bf4e124fcb48ee9dfcfcc9fc99f))
+
 ## [0.41.2](https://github.com/unnfazzed/Lynia/compare/v0.41.1...v0.41.2) (2026-08-18)
 
 
