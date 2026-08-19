@@ -8,7 +8,9 @@ long a screen takes to **load** once it is on its way. This analyses the earlier
 between the finger landing on a control and the app **acknowledging** it. Each finding names the
 mechanism, the evidence in the repo, and the delivery lane.
 
-**Status: findings 1, 2, 4, 5(part), 7(part), 9, 10 and 11 are IMPLEMENTED — see §5.** The owner
+**Status: findings 1, 2, 4, 5(part), 7(part), 9, 10 and 11 are IMPLEMENTED IN THIS BRANCH — see §5.**
+Nothing here has reached a handset: merging is not shipping, and both mobile workflows are
+`workflow_dispatch`-only (CLAUDE.md, "Nothing auto-ships"). The owner
 removed the OTA constraint on 2026-08-19 ("we are not doing OTA builds"), so the lane column below
 records how each fix would have shipped rather than gating it. Finding 3 (the New Architecture) is
 deliberately NOT implemented; §5.3 says why and what it would take.
@@ -48,6 +50,11 @@ Findings 1, 2, 4 and 11 are where I would spend the effort. 3 is the largest sin
 only one that cannot be shipped by OTA.
 
 ---
+
+> **Sections 1–4 are the PRE-IMPLEMENTATION baseline** — the app as it was found on 2026-08-19,
+> kept in the past tense it was written in so the diagnosis stays readable against the code it
+> describes. What changed, and what deliberately did not, is §5. Where the two disagree, §5 is the
+> current state.
 
 ## 1. Acknowledgement — why the tap looks ignored
 
@@ -268,8 +275,8 @@ Two events would close it, both fitting the existing batched-RUM shape and both 
 
 | Event | Measures | Catches |
 |---|---|---|
-| `tap_ack_ms` | `onPressIn` → the frame that paints the press state | §1 — JS-thread contention at press time |
-| `nav_open_ms` | `onPress` → destination screen's first presented frame (same post-interaction technique as `boot_home_paint`, with the same lower-bound caveat) | §2.1 — first-tap route evaluation |
+| `tap_ack` (proposed here as `tap_ack_ms`; shipped without the suffix, matching the existing `boot_paint`/`apifetch` naming) | `onPressIn` → the next frame the JS thread can run | §1 — JS-thread contention at press time |
+| `nav_open` (same note on the suffix) | the touch that preceded a route change → the destination's first presented frame (same post-interaction technique as `boot_home_paint`, with the same lower-bound caveat) | §2.1 — first-tap route evaluation |
 
 Without these, every fix below is judged by feel, and a regression is invisible until the owner
 notices it again.
@@ -307,11 +314,11 @@ and steps 1–2 are the whole answer.
 Owner instruction, same day: *"we are not doing OTA builds. Proceed to implement the fixes and test
 them."* Everything below is on branch `claude/android-button-responsiveness-ocymrf`.
 
-### 5.1 Shipped
+### 5.1 Implemented in this branch
 
 | # | Change | Where |
 |---|---|---|
-| 1, 2 | **`Tappable` — the one tappable primitive.** Every control now acknowledges the touch. On **Android the feedback is the platform ripple and nothing else**, so a press costs **zero JavaScript**: `RippleDrawable` paints on the UI thread from the touch event and cannot be delayed by a busy JS thread, whereas the `({ pressed })` style it replaces required a bridge hop, a `setState` and a re-render. Other platforms fall back to a pressed opacity. 92 call sites migrated. | `src/ui/Tappable.tsx` + 57 files |
+| 1, 2 | **`Tappable` — the one tappable primitive.** Every control now acknowledges the touch. On **Android the feedback is the platform ripple and nothing else**, so the **press-state update costs no JavaScript at all**: `RippleDrawable` paints on the UI thread from the touch event and cannot be delayed by a busy JS thread, whereas the `({ pressed })` style it replaces required a bridge hop, a `setState` and a re-render. (Not literally zero JS per press — `onPressIn` still records the touch and advances the `tap_ack` sample counter, scheduling one `requestAnimationFrame` on a quarter of presses. That is a few microseconds of bookkeeping against a re-render, and it is what makes the improvement measurable at all.) Other platforms fall back to a pressed opacity. 92 call sites migrated. | `src/ui/Tappable.tsx` + 57 files |
 | 1 | **Guardrail so it cannot rot.** A source scan fails CI if any `<Pressable>` carries neither a `pressed` style nor a real `android_ripple`, naming the exact file and line. Verified to fail on an injected regression before being kept. | `src/ui/__tests__/press-feedback-guardrail.test.ts` |
 | 1 | **Codegen emits it too.** The mock→RN transpiler now wraps interactions in `Tappable`, and the structural checker treats it as transparent (it renders exactly one `Pressable` and adds no layout box) — so a regenerated view keeps its press feedback instead of silently reverting. | `tools/parity/codegen/{adopted,emit,normalize}.mjs` |
 | 11 | **`tap_ack` + `nav_open` RUM events**, with tight frame-scale histogram buckets on the API. `tap_ack` measures JS-thread headroom at press time (`onPressIn` → next frame), sampled 1-in-4; `nav_open` pairs the last touch with the route change it caused, so redirects, deep links and socket-driven navigations never enter the histogram. | `packages/shared/src/contracts.ts`, `apps/api/src/observability/*`, `src/telemetry/{rum,tap-signal,nav-timing}` |
@@ -320,10 +327,40 @@ them."* Everything below is on branch `claude/android-button-responsiveness-ocym
 | 10 | **Auth context value memoised**, with `signIn`/`signOut` stabilised so the memo actually holds. | `src/auth/auth-context.tsx` |
 | 5, 7 | **Style hoisting in the tab bar** — on screen for the whole session and re-rendered on every route change. | `src/ui/shell/TabBar.tsx` |
 
+**Release order — API FIRST.** `tap_ack` and `nav_open` are new `ClientMetricEvent` values, and the
+ingest endpoint validates with a strict Zod enum (`ZodBody(ClientMetricsBatch)`), so an API that
+predates them rejects the WHOLE batch — every sample in it, not just the new ones. Deploy the API
+before any binary that emits them. Merging to `main` does that, and the EAS build is a separate
+manual dispatch, so the natural order is already the safe one; it is written down here so nobody
+reverses it. The opposite direction is harmless: an older app on the new API is unaffected.
+
 Tests: **1392 mobile** (35 new) and **1786 API**, all green, plus `pnpm typecheck` and `pnpm lint`
 across the workspace. The prewarm test found and fixed a real gap while it was being written: the
 scheduled callback did not re-check the cancel flag, so a screen the user had already left could keep
 evaluating route graphs.
+
+### 5.1b Fixed during review (2026-08-19, CodeRabbit on PR #825)
+
+Three real defects in the first implementation, all found by review rather than by the suite:
+
+| What | Why it mattered |
+|---|---|
+| `NavOpenProbe` keyed on `useSegments()` | That yields the route **pattern** (`["order","[id]"]`), so tapping from one order straight into another produced an identical key and the effect never re-ran — every such navigation would have been silently missing from `nav_open`. Now keyed on `usePathname()`, with a regression test for exactly that move. |
+| The prewarm chain did not actually yield | `runAfterInteractions` drains its whole queue in ONE `setImmediate` batch (no `setDeadline` is configured), so scheduling the next route from inside the previous route's callback put every graph in a single uninterrupted block — the stall the registry exists to remove, relocated. There is now a `setTimeout(0)` before each route, including the first, so nothing is warmed while the mounting screen is still committing its own frame. **This was also the CI failure**: the rider-board suite's FlatList test measured 464 ms with the prewarm against 285 ms without, and on a loaded runner that crossed the 5 s per-test budget. |
+| The press-feedback guardrail accepted `android_ripple={undefined}` | And any conditional that can land on `null` — a control written that way looks instrumented and is silently inert, which is the exact class of bug the guardrail exists to catch. It now accepts only an inline object literal or a bare identifier, with regression cases for every shape that used to slip through. |
+
+Also gated: the cart warms `/food/checkout` only when the basket is non-empty, since from an empty
+cart that route is unreachable and warming it spends a Go-class handset's idle time on nothing.
+
+One review point was declined, with the reasoning on the thread: that `Tappable`'s press feedback
+violates CLAUDE.md's "not drawn ⇒ not rendered". That rule governs the RESTING frame — the cosmetic
+extras it lists (confetti, invented headings, extra top-bar actions, SOON badges, section labels) are
+all elements the gallery either draws or does not. A ripple is transient platform chrome during the
+touch: it changes no resting pixel, the structural-parity snapshot and the parity render lane both
+pass unchanged, and the design authority chain names INTERACTION (the `ui_kits`) as its own layer.
+The mocks do draw press states where they have an opinion (`Button`'s `cta → ctaPressed`,
+`ServiceTiles`' scale 0.97), and both keep their own treatment rather than this primitive's. Removing
+the feedback would restore the reported bug.
 
 ### 5.2 Deliberately not done
 

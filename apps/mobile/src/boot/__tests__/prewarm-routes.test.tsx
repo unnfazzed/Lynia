@@ -14,14 +14,27 @@ import { prewarmedRoutes, prewarmRoute, usePrewarmRoutes, __resetPrewarmedRoutes
  * it really evaluates a route's module graph, and a stubbed react-native would make every `require`
  * throw and every assertion below vacuous. The interaction scheduler is spied on instead, so the
  * routes load for real while the test still controls when each idle slot runs.
+ *
+ * The hook interleaves a `setTimeout(0)` before every route — see `usePrewarmRoutes` for why that
+ * yield is load-bearing rather than incidental (`runAfterInteractions` drains its whole queue in one
+ * `setImmediate` batch, so without it every graph lands in a single block). Fake timers drive that
+ * yield here, so "one graph per turn" is asserted, not assumed.
  */
 
 let slots: (() => void)[] = [];
 const cancels: jest.Mock[] = [];
 let runAfterInteractions: jest.SpyInstance;
 
-/** Run one queued interaction slot; returns whether there was one. */
+/** Flush the pending `setTimeout(0)` yield so the next route's interaction slot gets queued. */
+function flushYield(): void {
+  act(() => {
+    jest.advanceTimersByTime(0);
+  });
+}
+
+/** Flush the yield, then run the interaction slot it queued. Returns false when nothing was pending. */
 function runNextSlot(): boolean {
+  flushYield();
   const next = slots.shift();
   if (!next) return false;
   act(() => {
@@ -55,6 +68,7 @@ function renderHook(hook: () => void): { unmount: () => void } {
 }
 
 beforeEach(() => {
+  jest.useFakeTimers();
   slots = [];
   cancels.length = 0;
   __resetPrewarmedRoutes();
@@ -65,7 +79,10 @@ beforeEach(() => {
     return { cancel };
   }) as never);
 });
-afterEach(() => runAfterInteractions.mockRestore());
+afterEach(() => {
+  runAfterInteractions.mockRestore();
+  jest.useRealTimers();
+});
 
 describe("prewarmRoute", () => {
   it("evaluates a real route module and records it as warm", () => {
@@ -90,14 +107,17 @@ describe("usePrewarmRoutes", () => {
   it("warms ONE route per interaction slot, not all of them in one block", () => {
     renderHook(() => usePrewarmRoutes(["order", "foodCheckout"]));
 
-    // Only the first is scheduled up front; evaluating both inside one callback would hand the JS
-    // thread a single long block — the stall this program removes, just moved off the tap.
+    // NOTHING is queued on mount — the first route waits behind a yield, so prewarming can never
+    // compete with the first frame of the screen that mounted it.
+    expect(slots).toHaveLength(0);
+    flushYield();
     expect(slots).toHaveLength(1);
     runNextSlot();
     expect(prewarmedRoutes()).toEqual(["order"]);
 
-    // ...and finishing the first schedules the second.
-    expect(slots).toHaveLength(1);
+    // ...and finishing the first yields again before queueing the second, so the two module graphs
+    // land in different turns of the event loop rather than one uninterrupted block.
+    expect(slots).toHaveLength(0);
     runNextSlot();
     expect(prewarmedRoutes()).toEqual(["order", "foodCheckout"]);
   });
@@ -105,6 +125,7 @@ describe("usePrewarmRoutes", () => {
   it("schedules nothing at all when every route is already warm", () => {
     prewarmRoute("order");
     renderHook(() => usePrewarmRoutes(["order"]));
+    flushYield();
     expect(slots).toHaveLength(0);
   });
 

@@ -1,4 +1,4 @@
-import { useSegments } from "expo-router";
+import { usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
 import { InteractionManager } from "react-native";
 import { enqueueNavOpen } from "./rum";
@@ -12,8 +12,14 @@ import { consumeTouch } from "./tap-signal";
  * to a route's module graph being evaluated inside the tap handler. Timing that from the call sites
  * would mean editing all 111 `router.push` calls and keeping them edited forever. Instead this pairs
  * two things the app already has in exactly one place each: the LAST TOUCH (recorded by the one
- * tappable primitive, src/ui/Tappable.tsx) and the ROUTE CHANGE (expo-router's `useSegments`, the
- * same signal the analytics ScreenTracker keys off).
+ * tappable primitive, src/ui/Tappable.tsx) and the ROUTE CHANGE (expo-router's `usePathname`).
+ *
+ * `usePathname`, NOT `useSegments` — and that distinction is load-bearing. `useSegments` yields the
+ * route PATTERN (`["order", "[id]"]`), so tapping from one order straight into another produces the
+ * identical key and the effect never re-runs: every such navigation would be silently missing from
+ * the histogram. The analytics ScreenTracker deliberately uses the pattern for the opposite reason
+ * (keeping screen names low-cardinality and order ids off the wire); this needs resolved identity,
+ * and it only ever compares the path locally — the pathname is never sent anywhere.
  *
  * The pairing is also the filter. A route change with no recent touch is a redirect, a deep link, a
  * push-notification hand-off or a socket-driven navigation — none of which a person is waiting on
@@ -36,8 +42,7 @@ export const NAV_TOUCH_MAX_AGE_MS = 10_000;
 
 /** Mounted once at the app root. Renders nothing. */
 export function NavOpenProbe(): null {
-  const segments = useSegments();
-  const path = segments.join("/");
+  const path = usePathname();
   const firstRun = useRef(true);
 
   useEffect(() => {

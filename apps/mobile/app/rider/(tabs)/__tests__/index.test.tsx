@@ -10,6 +10,7 @@
  * state that shouldn't show it.
  */
 import renderer, { act } from "react-test-renderer";
+import { controlInteractions, type InteractionControl } from "../../../../src/testing/interactions";
 import { FlatList } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -159,7 +160,19 @@ async function settle(): Promise<void> {
 }
 
 let activeTree: renderer.ReactTestRenderer | null = null;
+/**
+ * Idle-time work is held, never flushed. The board warms `/rider/job` and `/rider/food-job` from its
+ * own idle time (src/boot/prewarm-routes.ts) — 36 and 39 modules, plus react-native-maps,
+ * socket.io-client and the image-picker pair — and jest runs `runAfterInteractions` inside the
+ * test's own await, so every case here was paying to evaluate both graphs before asserting on a
+ * FlatList. That is not what these tests are about (the registry has its own suite), and it is not
+ * free: it measured 464 ms against 285 ms on the case below, which is what tipped this file over
+ * the 5 s per-test budget on a loaded CI runner. Holding the queue keeps the cost out and each test
+ * independent of what the previous one left scheduled — the reason this seam exists at all.
+ */
+let interactions: InteractionControl;
 beforeEach(() => {
+  interactions = controlInteractions();
   mockUseRiderBoard.mockReturnValue({
     connected: true,
     expiredOrderIds: new Set<string>(),
@@ -170,6 +183,7 @@ beforeEach(() => {
 afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
+  interactions.restore();
   jest.clearAllMocks();
   mockLocPermission = "granted";
   mockLocFixFails = false;

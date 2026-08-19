@@ -1,7 +1,7 @@
 import TestRenderer, { act } from "react-test-renderer";
 
-let mockSegments: string[] = ["(tabs)", "home"];
-jest.mock("expo-router", () => ({ useSegments: () => mockSegments }));
+let mockPathname = "/home";
+jest.mock("expo-router", () => ({ usePathname: () => mockPathname }));
 
 const mockEnqueueNavOpen = jest.fn();
 jest.mock("../rum", () => ({ enqueueNavOpen: (ms: number) => mockEnqueueNavOpen(ms) }));
@@ -44,8 +44,8 @@ function mountProbe(): TestRenderer.ReactTestRenderer {
   return tree;
 }
 
-function navigateTo(segments: string[], tree: TestRenderer.ReactTestRenderer): void {
-  mockSegments = segments;
+function navigateTo(pathname: string, tree: TestRenderer.ReactTestRenderer): void {
+  mockPathname = pathname;
   act(() => {
     tree.update(<NavOpenProbe />);
   });
@@ -54,7 +54,7 @@ function navigateTo(segments: string[], tree: TestRenderer.ReactTestRenderer): v
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date("2026-08-19T09:00:00Z"));
-  mockSegments = ["(tabs)", "home"];
+  mockPathname = "/home";
   mockEnqueueNavOpen.mockClear();
   mockInteractionCallbacks = [];
   __resetTapSignal();
@@ -70,7 +70,7 @@ describe("NavOpenProbe", () => {
     const tree = mountProbe();
     noteTouch(Date.now());
     jest.setSystemTime(Date.now() + 120);
-    navigateTo(["order", "[id]"], tree);
+    navigateTo("/order/abc", tree);
     jest.setSystemTime(Date.now() + 260); // the rest of the mount, up to the frame
     settleFrame();
     expect(mockEnqueueNavOpen).toHaveBeenCalledWith(380);
@@ -85,7 +85,7 @@ describe("NavOpenProbe", () => {
 
   it("ignores a route change no touch preceded (redirect, deep link, socket push)", () => {
     const tree = mountProbe();
-    navigateTo(["order", "[id]"], tree);
+    navigateTo("/order/abc", tree);
     settleFrame();
     expect(mockEnqueueNavOpen).not.toHaveBeenCalled();
   });
@@ -93,20 +93,35 @@ describe("NavOpenProbe", () => {
   it("consumes the touch, so one press cannot be credited with two navigations", () => {
     const tree = mountProbe();
     noteTouch(Date.now());
-    navigateTo(["order", "[id]"], tree);
+    navigateTo("/order/abc", tree);
     settleFrame();
     expect(mockEnqueueNavOpen).toHaveBeenCalledTimes(1);
 
-    navigateTo(["food", "cart"], tree);
+    navigateTo("/food/cart", tree);
     settleFrame();
     expect(mockEnqueueNavOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("times a move between two orders — the case a route-PATTERN key would silently miss", () => {
+    const tree = mountProbe();
+    noteTouch(Date.now());
+    navigateTo("/order/abc", tree);
+    settleFrame();
+    expect(mockEnqueueNavOpen).toHaveBeenCalledTimes(1);
+
+    // `useSegments()` yields ["order","[id]"] for BOTH of these, so a key built from it never
+    // changes and this second navigation never gets sampled at all.
+    noteTouch(Date.now());
+    navigateTo("/order/def", tree);
+    settleFrame();
+    expect(mockEnqueueNavOpen).toHaveBeenCalledTimes(2);
   });
 
   it("drops a touch too stale to have caused this navigation", () => {
     const tree = mountProbe();
     noteTouch(Date.now());
     jest.setSystemTime(Date.now() + NAV_TOUCH_MAX_AGE_MS + 1);
-    navigateTo(["order", "[id]"], tree);
+    navigateTo("/order/abc", tree);
     settleFrame();
     expect(mockEnqueueNavOpen).not.toHaveBeenCalled();
   });

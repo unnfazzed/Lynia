@@ -77,9 +77,27 @@ function openingTag(src: string, from: number): string {
   return src.slice(from);
 }
 
-/** A `<Pressable>` acknowledges the touch if it styles on `pressed` or sets a non-null ripple. */
-function hasFeedback(tag: string): boolean {
-  return /\(\s*\{\s*pressed/.test(tag) || /android_ripple=\{(?!null\})/.test(tag);
+/**
+ * A `<Pressable>` acknowledges the touch if it styles on `pressed` or sets a DEFINITE ripple.
+ *
+ * "Definite" is the whole point: `android_ripple={null}` and `android_ripple={undefined}` both reach
+ * React Native as no ripple at all, and so does any conditional that can evaluate to either — a
+ * control written that way looks instrumented and is silently inert. Accept only an inline object
+ * literal (`{{ … }}`) or a bare identifier/member expression (`{RIPPLE.row}`), which is every shape
+ * a real ripple config takes in this codebase; reject the rest and let the author use `Tappable`.
+ */
+export function hasFeedback(tag: string): boolean {
+  if (/\(\s*\{\s*pressed/.test(tag)) return true;
+  const ripple = tag.match(/android_ripple=\{([\s\S]*?)\}\s*(?=[\s/>])/);
+  if (!ripple) return false;
+  const value = (ripple[1] ?? "").trim();
+  // An inline object literal is always a real ripple config.
+  if (/^\{[\s\S]*\}$/.test(value)) return true;
+  // Otherwise only a bare identifier or member expression counts. One rule rejects the empty value,
+  // every conditional shape (`a ? b : null`, `x ?? null`) and any other expression whose result this
+  // scan cannot vouch for; `null`/`undefined` are then excluded by name.
+  if (!/^[A-Za-z_$][\w$.]*$/.test(value)) return false;
+  return value !== "null" && value !== "undefined";
 }
 
 describe("press-feedback guardrail", () => {
@@ -105,6 +123,21 @@ describe("press-feedback guardrail", () => {
     }
     // Named in full so a failure says exactly which control went silent, not just how many.
     expect(offenders).toEqual([]);
+  });
+
+  it("rejects every ripple value that reaches React Native as no ripple", () => {
+    // These are the shapes the first version of this guardrail let through.
+    expect(hasFeedback('<Pressable android_ripple={undefined} />')).toBe(false);
+    expect(hasFeedback("<Pressable android_ripple={null} />")).toBe(false);
+    expect(hasFeedback("<Pressable android_ripple={enabled ? RIPPLE.row : null} />")).toBe(false);
+    expect(hasFeedback("<Pressable android_ripple={maybeRipple ?? null} />")).toBe(false);
+    expect(hasFeedback("<Pressable onPress={x} style={{ padding: 4 }} />")).toBe(false);
+  });
+
+  it("still accepts the shapes that really do render a ripple or a press state", () => {
+    expect(hasFeedback('<Pressable android_ripple={{ color: "#0001", foreground: true }} />')).toBe(true);
+    expect(hasFeedback("<Pressable android_ripple={RIPPLE.row} />")).toBe(true);
+    expect(hasFeedback("<Pressable style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })} />")).toBe(true);
   });
 
   it("routes the great majority of controls through the Tappable primitive", () => {

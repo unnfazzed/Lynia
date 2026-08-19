@@ -21,7 +21,12 @@ import { noteTouch } from "../telemetry/tap-signal";
  * itself, so it lands immediately and is unaffected by JS-thread load. Adding a `pressed` style on
  * top of the ripple would reintroduce the very re-render the ripple exists to avoid, and would be
  * strictly worse than the ripple alone — so on Android the feedback IS the ripple, full stop, and
- * pressing a control costs ZERO JavaScript.
+ * the PRESS-STATE UPDATE costs no JavaScript at all.
+ *
+ * Not literally zero JS per press, and the difference is worth stating precisely: `onPressIn` below
+ * still records the touch (one clock read) and advances the `tap_ack` sample counter, which schedules
+ * a single `requestAnimationFrame` on one press in four. That is a few microseconds of bookkeeping
+ * where there used to be a React re-render, and it is what makes the improvement measurable at all.
  *
  * Other platforms have no ripple, so they fall back to a pressed opacity (which does cost a render —
  * there is no alternative there). Zimbabwe is ~90% Android and iOS is a later platform, so the cheap

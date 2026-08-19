@@ -49,13 +49,16 @@ function reconcile(lines: FoodCartLine[], latest: Map<string, { priceUsd: number
 }
 
 /** The cart has exactly one forward exit, and it drags react-native-maps in through the address
- *  confirm step (19 new modules). Warm it while the customer is still reviewing their basket. */
+ *  confirm step (19 new modules). Warm it while the customer is still reviewing their basket —
+ *  but only when there IS a basket: from an empty cart checkout is unreachable, so warming it would
+ *  spend a Go-class handset's idle time and memory on a route this visit cannot open. */
 const CART_PREWARM: readonly PrewarmRoute[] = ["foodCheckout"];
+const NO_PREWARM: readonly PrewarmRoute[] = [];
 
 export default function FoodCartScreen(): React.ReactElement {
-  usePrewarmRoutes(CART_PREWARM);
   const router = useRouter();
   const cart = useFoodCart();
+  usePrewarmRoutes(cart.cart.lines.length > 0 ? CART_PREWARM : NO_PREWARM);
   const { menu } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
 
   const latestByDish = useMemo(() => {

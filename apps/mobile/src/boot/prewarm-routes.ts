@@ -82,39 +82,52 @@ export function prewarmRoute(route: PrewarmRoute): boolean {
 }
 
 /**
- * Warm `routes` from this screen's idle time, ONE PER INTERACTION SLOT.
+ * Warm `routes` from this screen's idle time, ONE GRAPH PER TURN OF THE EVENT LOOP.
  *
- * The sequencing matters: evaluating 44 modules is not free, and doing several graphs inside a single
- * `runAfterInteractions` callback would hand the JS thread one long block — the exact stall this
- * program exists to remove, just moved from the tap to the scroll. Chaining one route per slot lets
- * anything the user actually does interleave between them.
+ * THE YIELD IS THE WHOLE DESIGN, and it is not what a first reading of `runAfterInteractions`
+ * suggests. That API does NOT hand out one slot per call: with no `setDeadline` configured (this app
+ * sets none) it drains its entire task queue inside a single `setImmediate` batch. So a chain that
+ * scheduled the next route from inside the previous route's callback would put every module graph in
+ * ONE uninterrupted block — 36 + 39 modules back to back on the rider board — which is precisely the
+ * long stall this program exists to remove, just relocated from the tap to the scroll.
  *
- * `routes` is read from a ref-free closure on purpose: callers pass a literal array, and re-warming
- * is a no-op anyway, so the effect deliberately does not depend on the array's identity.
+ * Hence the `setTimeout` before EACH route, including the first. Two things fall out of it:
+ *
+ *  - each graph gets its own turn, so a touch, a frame or a network callback can land in between;
+ *  - nothing is warmed while the screen that mounted us is still committing its own first frame.
+ *    Prewarming is idle work by definition; it must never compete with the paint it rides behind.
+ *
+ * Both handles are cancellable, and the callback re-checks `cancelled` on the way in — cancelling an
+ * interaction handle is best-effort, and an unmount can land after the callback is already queued.
+ *
+ * `routes` is keyed by value, not identity: callers pass a literal array, and re-warming is a no-op
+ * anyway, so the effect deliberately does not depend on the array's reference.
  */
 export function usePrewarmRoutes(routes: readonly PrewarmRoute[]): void {
   const key = routes.join(",");
   useEffect(() => {
     let cancelled = false;
-    let handle: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const pending = routes.filter((r) => !warmed.has(r));
 
     const step = (i: number): void => {
       if (cancelled || i >= pending.length) return;
-      handle = InteractionManager.runAfterInteractions(() => {
-        // Re-check on the way IN, not only when scheduling: cancelling a handle is best-effort and
-        // an unmount can land after the callback is already queued to run. Without this a screen the
-        // user has left carries on evaluating route graphs it no longer has any reason to want.
+      timer = setTimeout(() => {
         if (cancelled) return;
-        prewarmRoute(pending[i] as PrewarmRoute);
-        step(i + 1);
-      });
+        interaction = InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          prewarmRoute(pending[i] as PrewarmRoute);
+          step(i + 1);
+        });
+      }, 0);
     };
     step(0);
 
     return () => {
       cancelled = true;
-      handle?.cancel();
+      if (timer) clearTimeout(timer);
+      interaction?.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the stable identity of `routes`.
   }, [key]);
