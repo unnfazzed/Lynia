@@ -33,8 +33,8 @@ export function PaymentConfirmSheet({
   const canConfirm = reference.trim().length > 0 && amount != null && !disabled && !submitting;
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 420 }}>
         {/* M3·2 (r-merchant.jsx:650-656): the sub-line names the claim being checked, and the number
          *  the merchant is looking for is set large above the fields — the kit's money-confirm grammar. */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Confirm the payment landed</div>
@@ -126,8 +126,8 @@ export function RefundSheet({
   const canConfirm = reference.trim().length > 0 && amount != null && !disabled && !submitting;
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 420 }}>
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Refund before you reject</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
           {orderLabel} already paid ${formatMoney(expectedAmount)} — LyniaGo never held the money, so you send it back.
@@ -200,8 +200,8 @@ export function ReturnCashSheet({
   const canConfirm = acknowledged && amount != null && !disabled && !submitting;
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 420 }}>
         {/* M3·4 (r-merchant.jsx:781-790): label, the number set large, then count-and-acknowledge. */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Count the returned cash</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>{orderLabel} · owed ${formatMoney(expectedAmount)}</div>
@@ -301,8 +301,8 @@ export function NonReturnSheet({
   const [note, setNote] = useState("");
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 420 }}>
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Report the cash as not returned</div>
         <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
           {orderLabel} · ${formatMoney(expectedAmount)} owed. This loss is yours by your own cash-rule choice (R-07) —
@@ -334,17 +334,7 @@ export function NonReturnSheet({
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 70,
-};
 
-const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 18, padding: 24, width: 420, maxWidth: "92vw" };
 
 const labelStyle: React.CSSProperties = {
   display: "flex",

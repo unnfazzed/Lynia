@@ -26,26 +26,19 @@ vi.mock("next/navigation", () => ({
 vi.mock("./alarm-singleton", () => {
   class FakeAlarmController {
     private armedState = false;
-    private mutedState = false;
     private ringingState = false;
     isArmed(): boolean {
       return this.armedState;
     }
-    isMuted(): boolean {
-      return this.mutedState;
-    }
     isRinging(): boolean {
       return this.ringingState;
-    }
-    setMuted(muted: boolean): void {
-      this.mutedState = muted;
     }
     arm(): void {
       this.armedState = true;
     }
     resume(): void {}
     start(): void {
-      if (this.ringingState || this.mutedState) return;
+      if (this.ringingState) return;
       this.ringingState = true;
     }
     stop(): void {

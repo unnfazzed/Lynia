@@ -55,14 +55,14 @@ export function DishEditorSheet({
   const isDraft = dish?.isDraft ?? (!photoKey && !dish?.photoUrl);
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 640 }}>
         <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{dish ? "Edit dish" : "Add a dish"}</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
           Changes apply to new orders only — never to an order already placed.
         </div>
 
-        <div style={{ display: "flex", gap: 18 }}>
+        <div className="kitchen-split">
           <div style={{ flex: 1 }}>
             <label style={labelStyle}>
               Name
@@ -78,7 +78,7 @@ export function DishEditorSheet({
                 disabled={disabled || submitting}
               />
             </label>
-            <label style={{ ...labelStyle, width: 140 }}>
+            <label style={{ ...labelStyle, width: 140, maxWidth: "100%" }}>
               Price (USD)
               <input value={priceText} onChange={(e) => setPriceText(e.target.value)} inputMode="decimal" style={inputStyle} disabled={disabled || submitting} />
             </label>
@@ -152,7 +152,7 @@ export function DishEditorSheet({
             )}
           </div>
 
-          <div style={{ width: 260 }}>
+          <div className="kitchen-aside" style={{ width: 260 }}>
             {/* M4·5 labels the slot, with REQUIRED beside it (r-merchant.jsx:1134-1136 — the pill
              *  itself lives in PhotoPicker). */}
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>DISH PHOTO</div>
@@ -179,17 +179,7 @@ export function DishEditorSheet({
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 70,
-};
 
-const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 18, padding: 24, width: 640, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto" };
 
 const labelStyle: React.CSSProperties = {
   display: "flex",

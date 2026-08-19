@@ -68,7 +68,7 @@ export function PickupDoneTakeover({ order, onDismiss }: { order: MerchantOrderR
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "var(--surface)", zIndex: 56, display: "grid", placeItems: "center", padding: 24, overflow: "auto" }}>
-      <div style={{ ...cardStyle, padding: 30, textAlign: "center", maxWidth: 560 }} role="status" aria-live="polite">
+      <div style={{ ...cardStyle, padding: "clamp(20px, 6vw, 30px)", textAlign: "center", maxWidth: 560, width: "100%" }} role="status" aria-live="polite">
         <div style={{ width: 76, height: 76, borderRadius: "50%", background: "var(--accent-wash)", display: "grid", placeItems: "center", margin: "0 auto 14px" }}>
           <Icon name="circle-check" size={34} color="var(--accent-text)" />
         </div>

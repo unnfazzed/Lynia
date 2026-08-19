@@ -69,7 +69,7 @@ export function NoRiderHoldTakeover({
         NO RIDER FOUND YET — Order #{order.id.slice(0, 8).toUpperCase()}
       </div>
       <div style={{ flex: 1, display: "flex", gap: 24, padding: 24, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
           <div style={{ fontSize: 15, marginBottom: 10 }}>
             We searched for {formatCountdown(searchingMs)} of the {formatCountdown(NO_RIDER_CAP_MS)} we allow before giving up — nobody
             picked it up yet. The food is ready; nothing is charged either way.
@@ -78,7 +78,7 @@ export function NoRiderHoldTakeover({
             Cancelling here doesn&apos;t count against your acceptance rate — it&apos;s on us.
           </div>
         </div>
-        <div style={{ width: 300, display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
+        <div className="kitchen-aside" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: "var(--highlight-ink)", marginBottom: 4 }}>WHAT DO YOU WANT TO DO?</div>
           {error && <div style={{ fontSize: 13, background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 10, padding: "8px 12px" }}>{error}</div>}
           <button

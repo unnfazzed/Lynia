@@ -24,8 +24,8 @@ export function OosSheet({
   onCancel: () => void;
 }) {
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 460 }}>
         <div style={{ fontSize: 20, fontWeight: 800 }}>Mark &ldquo;{dishName}&rdquo; out of stock</div>
         <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 4, marginBottom: 16 }}>
           Customers still see it, greyed out, so they know you normally have it. It comes back automatically at the
@@ -49,14 +49,4 @@ export function OosSheet({
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 70,
-};
 
-const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 18, padding: 24, width: 460, maxWidth: "92vw" };

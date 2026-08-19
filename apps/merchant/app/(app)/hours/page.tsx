@@ -96,7 +96,7 @@ export default function HoursPage() {
 
   return (
     <Kitchen active="hours">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your hours…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
@@ -108,17 +108,21 @@ export default function HoursPage() {
               <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Customers can browse when you&apos;re closed, but can&apos;t order.</div>
             </div>
 
-            <div style={{ display: "flex", gap: 18 }}>
+            <div className="kitchen-split">
               <div style={{ ...cardStyle, flex: 1, padding: "4px 18px" }}>
                 {DAY_KEYS.map((day) => {
                   const window = draft[day];
                   const on = !!window;
                   const invalid = on && !isValidWindow(window!);
                   return (
-                    <div key={day} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
-                      <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{DAY_LABELS[day]}</span>
+                    <div key={day} className="kitchen-row" style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600 }}>{DAY_LABELS[day]}</span>
                       {on ? (
-                        <>
+                        // Grouped so the open–close pair wraps as one unit onto its own line under
+                        // the day name on a phone, instead of splitting across two lines with the
+                        // dash left dangling. `display: contents` on the tablet, so the drawn row is
+                        // unchanged there.
+                        <span className="hours-window">
                           <input
                             type="time"
                             value={window!.open}
@@ -134,7 +138,7 @@ export default function HoursPage() {
                             disabled={disabled}
                             style={timeInputStyle}
                           />
-                        </>
+                        </span>
                       ) : (
                         <span style={{ fontSize: 15, color: "var(--muted)" }}>Closed</span>
                       )}
@@ -147,7 +151,7 @@ export default function HoursPage() {
                       >
                         <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
                       </button>
-                      {invalid && <span style={{ fontSize: 11.5, color: "var(--danger-ink)", whiteSpace: "nowrap" }}>Start before end</span>}
+                      {invalid && <span className="hours-invalid" style={{ fontSize: 11.5, color: "var(--danger-ink)", whiteSpace: "nowrap" }}>Start before end</span>}
                     </div>
                   );
                 })}
@@ -166,7 +170,7 @@ export default function HoursPage() {
                 </div>
               </div>
 
-              <div style={{ width: 300, flexShrink: 0 }}>
+              <div className="kitchen-aside">
                 <div style={{ ...cardStyle, marginBottom: 14 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>RIGHT NOW</div>
                   {(() => {

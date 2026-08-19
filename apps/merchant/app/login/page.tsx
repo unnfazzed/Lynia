@@ -86,7 +86,7 @@ export default function LoginPage() {
 
   return (
     <div style={{ height: "100dvh", display: "grid", placeItems: "center", background: "var(--surface)" }}>
-      <div style={{ width: 420, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: 28 }}>
+      <div style={{ width: 420, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "clamp(20px, 6vw, 28px)" }}>
         {/* M0·1 opens with the dove + wordmark lockup above the title (r-merchant.jsx:84).
          *  eslint-disable: a static brand SVG from /public, not a content image. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
@@ -139,7 +139,9 @@ export default function LoginPage() {
                     <span
                       key={i}
                       style={{
-                        width: 52,
+                        flex: "1 1 0",
+                        minWidth: 0,
+                        maxWidth: 52,
                         height: 60,
                         borderRadius: 12,
                         border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,

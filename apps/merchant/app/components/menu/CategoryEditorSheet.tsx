@@ -47,8 +47,8 @@ export function CategoryEditorSheet({
   const canDelete = !!category && category.dishCount === 0 && !disabled && !submitting;
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 420 }}>
         {/* M4·3/M4·4 carry different sub-lines for the create and the edit variants
          *  (r-merchant.jsx:1052-1053). */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>{category ? "Edit category" : "New category"}</div>
@@ -189,17 +189,7 @@ export function CategoryEditorSheet({
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 70,
-};
 
-const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 18, padding: 24, width: 420, maxWidth: "92vw" };
 
 const labelStyle: React.CSSProperties = {
   display: "flex",

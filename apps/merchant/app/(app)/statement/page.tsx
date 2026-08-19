@@ -36,7 +36,7 @@ function SectionHeading({ title, sub }: { title: string; sub?: string | null }) 
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div style={{ ...cardStyle, flex: 1 }}>
+    <div style={{ ...cardStyle, flex: "1 1 150px" }}>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</div>
       {sub && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
@@ -73,7 +73,7 @@ export default function StatementPage() {
 
   return (
     <Kitchen active="money">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 24, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your statement…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
@@ -134,16 +134,19 @@ export default function StatementPage() {
                 {state.statement.lineItems.map((li) => (
                   <div
                     key={li.orderId}
-                    style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: "1px solid var(--line)", fontSize: 14, fontVariantNumeric: "tabular-nums" }}
+                    className="kitchen-row"
+                    style={{ gap: 16, padding: "12px 0", borderBottom: "1px solid var(--line)", fontSize: 14, fontVariantNumeric: "tabular-nums" }}
                   >
                     <span style={{ fontWeight: 700, minWidth: 90 }}>#{li.orderId.slice(0, 8).toUpperCase()}</span>
-                    <span style={{ color: "var(--muted)", minWidth: 140 }}>{new Date(li.deliveredAt).toLocaleString()}</span>
+                    <span style={{ color: "var(--muted)", minWidth: "min(140px, 100%)" }}>{new Date(li.deliveredAt).toLocaleString()}</span>
                     {/* The statement's own rows carry the PayTag too (r-merchant.jsx:1229). */}
                     <span style={{ flex: 1 }}>
                       <PayTag pay={li.paymentMethod} />
                     </span>
-                    <span style={{ fontWeight: 700 }}>${formatMoney(li.amount)}</span>
-                    <span style={{ color: "var(--muted)", minWidth: 70, textAlign: "right" }}>−${formatMoney(li.commission)}</span>
+                    <span className="kitchen-row-actions">
+                      <span style={{ fontWeight: 700 }}>${formatMoney(li.amount)}</span>
+                      <span style={{ color: "var(--muted)", minWidth: 70, textAlign: "right" }}>−${formatMoney(li.commission)}</span>
+                    </span>
                   </div>
                 ))}
               </div>
