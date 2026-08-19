@@ -50,7 +50,7 @@ export function RiderSecuredTakeover({ order, onDismiss }: { order: MerchantOrde
       <div style={{ fontSize: 15, maxWidth: 420, opacity: 0.92 }}>
         A rider has been assigned to Order #{order.id.slice(0, 8).toUpperCase()} and is on the way to collect it.
       </div>
-      <div style={{ background: "#fff", color: "var(--ink)", borderRadius: 18, padding: "20px 28px", minWidth: 220 }}>
+      <div style={{ background: "#fff", color: "var(--ink)", borderRadius: 18, padding: "20px 28px", minWidth: "min(220px, 100%)" }}>
         <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>PICKUP CODE</div>
         <div style={{ fontSize: 34, fontWeight: 900, fontVariantNumeric: "tabular-nums", letterSpacing: ".08em" }}>
           {pickupCode ?? (error ? "----" : "····")}

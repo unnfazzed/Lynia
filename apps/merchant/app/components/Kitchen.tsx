@@ -1,6 +1,5 @@
 import { KitchenBar } from "./KitchenBar";
 import { KitchenNav } from "./KitchenNav";
-import { RearmBanner } from "./RearmBanner";
 import { ReconnectBanner } from "./ReconnectBanner";
 
 /** The authenticated app shell — tablet-first 1024×680, degrades to phone (see .kitchen-shell in
@@ -19,7 +18,6 @@ export function Kitchen({
   return (
     <div className="kitchen-shell">
       <KitchenBar />
-      <RearmBanner />
       <ReconnectBanner backfillCount={backfillCount} />
       <div className="kitchen-shell-body">
         <KitchenNav active={active} />

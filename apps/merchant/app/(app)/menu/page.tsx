@@ -148,7 +148,7 @@ export default function MenuPage() {
 
   return (
     <Kitchen active="catalog">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your menu…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
@@ -160,7 +160,7 @@ export default function MenuPage() {
         )}
 
         {state.status === "ready" && state.categories.length === 0 && (
-          <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: 32 }}>
+          <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: "clamp(20px, 6vw, 32px)" }}>
             <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>Start with a category</div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 }}>
               Dishes live inside categories — Mains, Sides, Drinks, whatever fits your kitchen. Create one and you can
@@ -186,18 +186,19 @@ export default function MenuPage() {
 
         {state.status === "ready" && state.categories.length > 0 && (
           <>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-              <div style={{ flex: 1 }}>
+            <div className="kitchen-head" style={{ alignItems: "baseline", gap: 14 }}>
+              <div className="kitchen-head-title">
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Menu</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{menuSummary(state.categories, state.dishes)}</div>
               </div>
               {/* M4·2's own screen (r-merchant.jsx:998) — reorder, show/hide, delete-when-empty and
                *  the customer-tab preview all live there rather than crowding this list. */}
-              <Link href="/menu/categories" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+              <Link href="/menu/categories" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
                 Manage categories
               </Link>
               <button
                 type="button"
+                className="kitchen-head-action"
                 disabled={actionsDisabled}
                 onClick={() => setSheet({ kind: "category", category: null })}
                 style={{ ...ghostButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
@@ -206,6 +207,7 @@ export default function MenuPage() {
               </button>
               <button
                 type="button"
+                className="kitchen-head-action"
                 disabled={actionsDisabled}
                 onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: state.categories[0]?.id })}
                 style={{ ...primaryButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
@@ -216,33 +218,36 @@ export default function MenuPage() {
 
             {groupDishesByCategory(state.categories, state.dishes).map(({ category, dishes }) => (
               <div key={category.id} style={cardStyle}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <div style={{ flex: 1, fontSize: 16, fontWeight: 800, opacity: category.hidden ? 0.5 : 1 }}>
+                <div className="kitchen-row" style={{ gap: 10, marginBottom: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, opacity: category.hidden ? 0.5 : 1 }}>
                     {category.name}
                     {category.hidden && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginLeft: 8 }}>HIDDEN</span>}
                   </div>
-                  <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-                    {dishes.length} dish{dishes.length === 1 ? "" : "es"} ·{" "}
-                    {category.availableFrom && category.availableTo ? `${category.availableFrom} – ${category.availableTo}` : "All day"}
+                  <span className="kitchen-row-actions">
+                    <span style={{ fontSize: 12.5, color: "var(--muted)", flex: "1 1 auto" }}>
+                      {dishes.length} dish{dishes.length === 1 ? "" : "es"} ·{" "}
+                      {category.availableFrom && category.availableTo ? `${category.availableFrom} – ${category.availableTo}` : "All day"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={actionsDisabled}
+                      onClick={() => setSheet({ kind: "category", category })}
+                      style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1, whiteSpace: "nowrap" }}
+                    >
+                      Edit category
+                    </button>
                   </span>
-                  <button
-                    type="button"
-                    disabled={actionsDisabled}
-                    onClick={() => setSheet({ kind: "category", category })}
-                    style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
-                  >
-                    Edit category
-                  </button>
                 </div>
 
                 {dishes.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 0" }}>No dishes yet.</div>}
 
                 {dishes.map((dish) => (
-                  <div key={dish.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0", borderTop: "1px solid var(--line)" }}>
+                  <div key={dish.id} className="kitchen-row" style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
                     <div
                       style={{
                         width: 44,
                         height: 44,
+                        alignSelf: "flex-start",
                         borderRadius: 10,
                         background: "var(--surface)",
                         overflow: "hidden",
@@ -300,22 +305,24 @@ export default function MenuPage() {
                     </div>
                     {/* Kit's ItemRow puts the price on the right at 16/700, tabular (r-merchant.jsx:937). */}
                     <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>${formatMoney(dish.priceUsd)}</div>
-                    <button
-                      type="button"
-                      disabled={actionsDisabled || submitting}
-                      onClick={() => (dish.outOfStock ? onClearOos(dish.id) : setSheet({ kind: "oos", dish }))}
-                      style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled || submitting ? 0.5 : 1 }}
-                    >
-                      {dish.outOfStock ? "Back in stock" : "Mark out of stock"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={actionsDisabled}
-                      onClick={() => setSheet({ kind: "dish", dish })}
-                      style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
-                    >
-                      Edit
-                    </button>
+                    <span className="kitchen-row-actions kitchen-row-actions-fill">
+                      <button
+                        type="button"
+                        disabled={actionsDisabled || submitting}
+                        onClick={() => (dish.outOfStock ? onClearOos(dish.id) : setSheet({ kind: "oos", dish }))}
+                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled || submitting ? 0.5 : 1 }}
+                      >
+                        {dish.outOfStock ? "Back in stock" : "Mark out of stock"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={actionsDisabled}
+                        onClick={() => setSheet({ kind: "dish", dish })}
+                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
+                      >
+                        Edit
+                      </button>
+                    </span>
                   </div>
                 ))}
 

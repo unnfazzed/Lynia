@@ -99,7 +99,7 @@ export default function QueuePage() {
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
-      <div style={{ padding: 20, height: "100%", display: "flex", flexDirection: "column" }}>
+      <div className="kitchen-page queue-page">
         {state.status === "loading" && (
           <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your kitchen…</div>
         )}
@@ -112,6 +112,7 @@ export default function QueuePage() {
               boxShadow: "var(--shadow-card)",
               padding: 24,
               maxWidth: 480,
+              width: "100%",
             }}
           >
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>This number isn't set up as a merchant yet</div>
@@ -131,7 +132,7 @@ export default function QueuePage() {
           <>
             {/* M1·1's heading grammar: the screen is "Orders", the kitchen's own name is the sub-line
              *  (r-merchant.jsx:148 `<H sub="Sunday 27 July · open since 09:00">Orders</H>`). */}
-            <div style={{ marginBottom: 14, display: "flex", alignItems: "baseline", gap: 12 }}>
+            <div style={{ marginBottom: 14, display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Orders</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{state.merchant.name}</div>
@@ -142,14 +143,16 @@ export default function QueuePage() {
             </div>
             {/* M0·2's way in — renders nothing once the checklist is done (SetupBanner). */}
             <SetupBanner />
-            <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <div className="queue-board-slot">
               <QueueBoard orders={orders} disabled={actionsDisabled} refetch={refetch} />
             </div>
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {/* Testing the alarm is not switching it on — it is always on (see lib/alarm.ts). This
+               *  only plays it so a merchant can check the device volume before a shift. */}
               <button type="button" onClick={alarm.testRing} style={ghostButtonStyle}>
                 Play the alarm to test it
               </button>
-              <button type="button" onClick={signOut} style={{ ...ghostButtonStyle, marginLeft: 10 }}>
+              <button type="button" onClick={signOut} style={ghostButtonStyle}>
                 Sign out
               </button>
             </div>

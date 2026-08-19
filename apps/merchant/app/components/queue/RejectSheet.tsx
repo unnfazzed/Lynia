@@ -29,18 +29,8 @@ export function RejectSheet({
   const [selected, setSelected] = useState<MerchantRejectionReasonCode | null>(null);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(20,24,27,.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 70,
-      }}
-    >
-      <div style={{ background: "#fff", borderRadius: 18, padding: 24, width: 380, maxWidth: "92vw" }}>
+    <div className="kitchen-sheet-overlay">
+      <div className="kitchen-sheet" style={{ maxWidth: 380 }}>
         {/* M2·2 (r-merchant.jsx:410-417): the order is named in the question, the sub-line explains
          *  why an honest reason costs nothing, and each choice is a radio row. */}
         <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Why can&apos;t you take {orderLabel}?</div>

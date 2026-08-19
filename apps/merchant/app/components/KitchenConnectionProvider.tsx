@@ -14,13 +14,14 @@ export interface KitchenConnectionValue {
   session: MerchantSession | null;
   signOut: () => void;
   alarm: {
+    /** Whether this page load has had the user gesture browsers require before they will loop
+     *  audio. Not a merchant-facing switch — the shell arms it from the first tap anywhere (see the
+     *  gesture effect below), so there is nothing to turn on and nothing to turn off. */
     armed: boolean;
-    muted: boolean;
     ringing: boolean;
     arm: () => void;
-    toggleMuted: () => void;
     testRing: () => void;
-    /** Unbounded ring — a real NEW ORDER. Idempotent (no-ops if already ringing/muted); the caller
+    /** Unbounded ring — a real NEW ORDER. Idempotent (no-ops if already ringing); the caller
      *  (the queue screen) calls this whenever an unanswered `awaiting_accept` order exists and
      *  `silence()` the instant it no longer does — D-05: "stops only on Accept/Can't-take-it." */
     ring: () => void;
@@ -40,7 +41,7 @@ const TEST_RING_DURATION_MS = 3 * 1200 + 2 * 800; // three chime cycles, long en
 export function KitchenConnectionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<MerchantSession | null>(null);
-  const [alarmTick, setAlarmTick] = useState(0); // bump to re-render on mute/arm/ring changes
+  const [alarmTick, setAlarmTick] = useState(0); // bump to re-render on arm/ring changes
   const [reachState, setReachState] = useState<ReachabilityState>({
     reachable: true,
     attempt: 0,
@@ -79,21 +80,6 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     };
   }, [session]);
 
-  // Resume the AudioContext on every gesture in the tab (§3: "AudioContext resumed on every user
-  // gesture in case Chrome suspends it") — cheap no-op once already running.
-  useEffect(() => {
-    const controller = getAlarmController();
-    const onGesture = () => controller.resume();
-    document.addEventListener("pointerdown", onGesture);
-    document.addEventListener("keydown", onGesture);
-    return () => {
-      document.removeEventListener("pointerdown", onGesture);
-      document.removeEventListener("keydown", onGesture);
-    };
-  }, []);
-
-  const wakeLock = useWakeLock(getAlarmController().isArmed());
-
   // Each of these only bumps `alarmTick` when the controller's state actually transitioned — NOT
   // unconditionally. B-D0: the queue screen's alarm-sync effect depends on `alarm` (KitchenBar and
   // friends read it too), so an unconditional bump here made `ring()` (called every render while an
@@ -107,11 +93,23 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     if (!wasArmed) setAlarmTick((t) => t + 1);
   }, []);
 
-  const toggleMuted = useCallback(() => {
-    const controller = getAlarmController();
-    controller.setMuted(!controller.isMuted());
-    setAlarmTick((t) => t + 1);
-  }, []);
+  // Every gesture in the tab arms the alarm and resumes the AudioContext (§3: "AudioContext resumed
+  // on every user gesture in case Chrome suspends it"). `arm()` rather than `resume()` is what makes
+  // the alarm always-on (owner instruction 2026-08-19): browsers still require one gesture per page
+  // load before they will loop audio, but the merchant no longer has to aim that gesture at a
+  // control — the first tap on any screen, anywhere, satisfies it. Cheap no-op once already running,
+  // and `arm` only re-renders on the false→true transition.
+  useEffect(() => {
+    const onGesture = () => arm();
+    document.addEventListener("pointerdown", onGesture);
+    document.addEventListener("keydown", onGesture);
+    return () => {
+      document.removeEventListener("pointerdown", onGesture);
+      document.removeEventListener("keydown", onGesture);
+    };
+  }, [arm]);
+
+  const wakeLock = useWakeLock(getAlarmController().isArmed());
 
   const testRing = useCallback(() => {
     const controller = getAlarmController();
@@ -141,17 +139,15 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   }, [router]);
 
   // Memoized so a re-render that doesn't touch alarm/session/reachability/wakeLock state (e.g. a
-  // parent re-render) doesn't hand every context consumer — KitchenBar, RearmBanner,
-  // ReconnectBanner, the queue screen — a brand-new object identity, which would defeat their own
-  // memoization and any effect keyed on this value (B-D0).
+  // parent re-render) doesn't hand every context consumer — KitchenBar, ReconnectBanner, the queue
+  // screen — a brand-new object identity, which would defeat their own memoization and any effect
+  // keyed on this value (B-D0).
   const alarm = useMemo(() => {
     const controller = getAlarmController();
     return {
       armed: controller.isArmed(),
-      muted: controller.isMuted(),
       ringing: controller.isRinging(),
       arm,
-      toggleMuted,
       testRing,
       ring,
       silence,
@@ -159,7 +155,7 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     // alarmTick is the trigger for re-reading the controller's (otherwise untracked) mutable state;
     // the callbacks are stable across renders (useCallback, no deps).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alarmTick, arm, toggleMuted, testRing, ring, silence]);
+  }, [alarmTick, arm, testRing, ring, silence]);
 
   const value = useMemo<KitchenConnectionValue>(
     () => ({

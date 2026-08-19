@@ -52,11 +52,23 @@ interface View {
 
 const INITIAL_VIEW: View = { zoom: 1, panX: 0, panY: 0 };
 
+/** Geometry of the crop row: the gap between the frame and the live preview, and the narrowest the
+ *  preview column is allowed to get before the row wraps instead. */
+const CROP_ROW_GAP = 22;
+const CROP_PREVIEW_MIN = 240;
+
 /** The dashed viewport's own display size. 3:1 gets the kit's 430-wide banner frame, 1:1 its 240
  *  square (`r-merchant.jsx:1387`, `1461`); height always follows from the ratio so the frame IS the
- *  aspect it claims. */
-function frameSize(aspect: number): { width: number; height: number } {
-  const width = aspect >= 2 ? 420 : 240;
+ *  aspect it claims.
+ *
+ *  `available` is the measured width of the column the frame sits in, and only ever shrinks it: on a
+ *  tablet the sheet is far wider than 420 so the drawn size wins, while on a phone the 420-wide
+ *  banner frame would otherwise be wider than the whole screen. It has to be a real number rather
+ *  than a CSS clamp because the crop maths converts drag distances through `frame.width` — a frame
+ *  whose true width the component could not read would pan at the wrong rate. */
+function frameSize(aspect: number, available?: number | null): { width: number; height: number } {
+  const drawn = aspect >= 2 ? 420 : 240;
+  const width = available != null && available > 0 ? Math.max(160, Math.min(drawn, Math.round(available))) : drawn;
   return { width, height: Math.round(width / aspect) };
 }
 
@@ -109,7 +121,27 @@ export function PhotoCropSheet({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  const frame = frameSize(aspect);
+  // Measured rather than assumed. The row is what gets measured, never the frame's own column: the
+  // column is content-sized, so measuring it and then sizing the frame from the result would be a
+  // loop. The row's width comes from the sheet above it and is independent of anything below.
+  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setRowWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const drawnFrame = frameSize(aspect);
+  // Wide enough for the drawn frame (plus its pad and the gap) AND the preview beside it? Then
+  // nothing changes — this is the tablet, and the kit's geometry stands. Otherwise the row has
+  // already wrapped, the frame column owns the full row, and the frame shrinks to fit it.
+  const fitsBesidePreview = rowWidth == null || rowWidth >= drawnFrame.width + 16 + CROP_ROW_GAP + CROP_PREVIEW_MIN;
+  const frame = frameSize(aspect, fitsBesidePreview ? null : (rowWidth ?? 0) - 16);
   const crop = natural ? cropRectFromView(natural.width, natural.height, aspect, view) : null;
 
   // How much source slack each axis has at the current zoom — 0 means that axis is already flush with
@@ -171,8 +203,8 @@ export function PhotoCropSheet({
   const ready = !!objectUrl && !!natural && !!crop && !failed;
 
   return (
-    <div style={overlayStyle} role="dialog" aria-modal="true" aria-label={COPY[kind].title}>
-      <div style={{ ...cardStyle, width: kind === "banner" ? 800 : 660 }}>
+    <div className="kitchen-sheet-overlay" role="dialog" aria-modal="true" aria-label={COPY[kind].title}>
+      <div className="kitchen-sheet" style={{ maxWidth: kind === "banner" ? 800 : 660 }}>
         <div style={{ fontSize: 20, fontWeight: 800 }}>{COPY[kind].title}</div>
         <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 4, marginBottom: 16 }}>{COPY[kind].sub}</div>
 
@@ -182,8 +214,8 @@ export function PhotoCropSheet({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
-          <div style={{ flex: "0 0 auto" }}>
+        <div ref={rowRef} style={{ display: "flex", gap: CROP_ROW_GAP, flexWrap: "wrap" }}>
+          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: "100%" }}>
             {/* Kit's CropFrame: the surface pad, the dashed accent boundary, the ratio badge and the
              *  "Drag to move" chip (r-merchant.jsx:1279-1285). The dashed rect IS the crop viewport
              *  here, so "anything outside it is cut off" is literally true rather than decorative. */}
@@ -309,7 +341,7 @@ export function PhotoCropSheet({
               </span>
             </div>
 
-            <div style={{ display: "flex", gap: 12, marginTop: 16, width: frame.width + 16 }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 16, width: frame.width + 16, maxWidth: "100%" }}>
               <button type="button" onClick={onCancel} style={{ ...ghostButtonStyle, flex: 1 }}>
                 Cancel
               </button>
@@ -324,7 +356,7 @@ export function PhotoCropSheet({
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ flex: 1, minWidth: `min(${CROP_PREVIEW_MIN}px, 100%)` }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>{COPY[kind].previewLabel}</div>
             {kind === "banner" ? (
               <BannerPreview crop={crop} natural={natural} url={objectUrl} shopName={shopName} />
@@ -430,22 +462,4 @@ function zoomButtonStyle(disabled: boolean): React.CSSProperties {
   };
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 80,
-  padding: 16,
-};
 
-const cardStyle: React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 18,
-  padding: 24,
-  maxWidth: "96vw",
-  maxHeight: "92vh",
-  overflow: "auto",
-};

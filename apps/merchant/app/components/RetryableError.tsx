@@ -9,7 +9,7 @@ import { ghostButtonStyle } from "./queue/styles";
  */
 export function RetryableError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480 }}>
+    <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 16, padding: 20, maxWidth: 480, width: "100%" }}>
       <div>{message}</div>
       <button type="button" onClick={onRetry} style={{ ...ghostButtonStyle, marginTop: 12 }}>
         Retry

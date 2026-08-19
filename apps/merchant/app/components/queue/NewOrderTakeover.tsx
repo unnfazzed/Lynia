@@ -123,7 +123,7 @@ export function NewOrderTakeover({
     >
       {/* M1·3's alarm header (r-merchant.jsx:213-218): a darker band across the top of the takeover,
        *  volume glyph first, 15/800 label, and the countdown at 14/700 on the right. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 22px", background: "rgba(0,0,0,.12)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 22px", background: "rgba(0,0,0,.12)", flexWrap: "wrap" }}>
         <Icon name="volume-2" size={20} color="#fff" />
         <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: queued.length > 0 ? undefined : ".04em" }}>
           {queued.length > 0 ? `${queued.length + 1} NEW ORDERS — answer them one at a time` : "NEW ORDER — ALARM RINGING"}
@@ -149,12 +149,12 @@ export function NewOrderTakeover({
         </div>
       )}
 
-      <div style={{ flex: 1, display: "flex", gap: 20, padding: "8px 24px 24px", minHeight: 0 }}>
-        <div style={{ flex: 1, background: "#fff", color: "var(--ink)", borderRadius: 18, padding: 22, display: "flex", flexDirection: "column", overflow: "auto" }}>
+      <div className="takeover-body">
+        <div className="takeover-main" style={{ background: "#fff", color: "var(--ink)", borderRadius: 18, padding: "clamp(14px, 4vw, 22px)", display: "flex", flexDirection: "column" }}>
           {/* M1·3 leads the card with the order id and the PayTag at `lg` (r-merchant.jsx:221-227). */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{orderLabel(active)}</div>
+              <div style={{ fontSize: "clamp(20px, 6.5vw, 26px)", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{orderLabel(active)}</div>
               <div style={{ fontSize: 14, color: "var(--muted)" }}>
                 {active.paymentMethod === "wallet" ? "Pay-on-confirm" : "Collected at the door"}
               </div>
@@ -215,7 +215,7 @@ export function NewOrderTakeover({
             <div style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 700 }}>
               {active.paymentMethod === "cash" ? "Food total you'll be paid in cash" : "Food total"}
             </div>
-            <div style={{ fontSize: 38, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ fontSize: "clamp(30px, 9vw, 38px)", fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
               ${preview.total.toFixed(2)}
               {preview.hasUnavailable && (
                 <span style={{ fontSize: 14, fontWeight: 700, color: "var(--muted)", marginLeft: 10 }}>down from ${preview.fullTotal.toFixed(2)}</span>
@@ -224,7 +224,7 @@ export function NewOrderTakeover({
           </div>
         </div>
 
-        <div style={{ width: 300, display: "flex", flexDirection: "column", gap: 14, flexShrink: 0 }}>
+        <div className="takeover-rail" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {queued.length > 0 && queued[0] && (
             <div style={{ background: "rgba(255,255,255,.14)", borderRadius: 14, padding: 14 }}>
               <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".04em", marginBottom: 8, opacity: 0.85 }}>NEXT IN LINE</div>

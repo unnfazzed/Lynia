@@ -78,7 +78,7 @@ function Column({
   moneyActions: MoneyActions;
 }) {
   return (
-    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ flex: "1 1 260px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
       {/* Column head sizes follow the gallery's BoardCol (r-merchant.jsx:48-52): 14.5/800 title,
        *  13/700 muted tabular count beside it. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -256,7 +256,7 @@ export function QueueBoard({
     return (
       // M1·1's resting screen (r-merchant.jsx:149-153): the empty state carries the `inbox` glyph
       // above the title, in a card with the kit's own 16/20/26 padding and 30px top offset.
-      <div style={{ background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "16px 20px 26px", marginTop: 30, textAlign: "center", maxWidth: 420 }}>
+      <div style={{ background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "16px 20px 26px", marginTop: 30, textAlign: "center", maxWidth: 420, width: "100%" }}>
         <span
           style={{
             width: 56,
@@ -271,7 +271,7 @@ export function QueueBoard({
           <Icon name="inbox" size={24} color="var(--muted)" />
         </span>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>No orders right now</div>
-        <div style={{ fontSize: 13.5, color: "var(--muted)" }}>The alarm is armed — you&apos;ll hear it before you see it.</div>
+        <div style={{ fontSize: 13.5, color: "var(--muted)" }}>The alarm is on — you&apos;ll hear it before you see it.</div>
       </div>
     );
   }
@@ -293,7 +293,7 @@ export function QueueBoard({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, height: "100%", minHeight: 0 }}>
       {returnsSection}
-      <div style={{ display: "flex", gap: 22, flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", gap: 22, flex: 1, minHeight: 0, flexWrap: "wrap" }}>
         <Column title="New" tint="var(--accent)" items={newColumnItems} {...columnProps} />
         <Column title="Cooking" tint="var(--highlight)" items={cookingColumnItems} {...columnProps} />
         <Column title="Ready · waiting for rider" tint="var(--ink)" items={readyColumnItems} {...columnProps} />

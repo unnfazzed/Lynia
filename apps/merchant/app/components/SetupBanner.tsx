@@ -48,6 +48,7 @@ export function SetupBanner() {
         display: "flex",
         alignItems: "center",
         gap: 12,
+        flexWrap: "wrap",
         padding: "12px 16px",
         borderRadius: 14,
         background: "var(--highlight-wash)",
@@ -56,7 +57,7 @@ export function SetupBanner() {
       }}
     >
       <Icon name="circle-alert" size={18} color="var(--highlight-ink)" />
-      <div style={{ flex: 1, fontSize: 13.5, color: "var(--ink)", lineHeight: 1.45 }}>
+      <div style={{ flex: 1, minWidth: 180, fontSize: 13.5, color: "var(--ink)", lineHeight: 1.45 }}>
         <b>
           {pending.remaining} thing{pending.remaining === 1 ? "" : "s"} left to set up
         </b>{" "}

@@ -118,7 +118,7 @@ export default function ShopPage() {
 
   return (
     <Kitchen active="shop">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your shop profile…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
@@ -130,10 +130,12 @@ export default function ShopPage() {
               <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>This is your shop front. Changes go live straight away.</div>
             </div>
 
-            <div style={{ display: "flex", gap: 18 }}>
+            <div className="kitchen-split">
               <div style={{ ...cardStyle, flex: 1 }}>
-                <div style={{ display: "flex", gap: 24 }}>
-                  <div style={{ width: 200 }}>
+                {/* Cover + logo sit side by side as drawn; on a phone the pair wraps rather than
+                 *  running off the right edge of the card. */}
+                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                  <div style={{ width: 200, maxWidth: "100%" }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>COVER BANNER · 3:1</div>
                     <PhotoPicker
                       kind="banner"
@@ -145,7 +147,7 @@ export default function ShopPage() {
                       onUploaded={setCoverKey}
                     />
                   </div>
-                  <div style={{ width: 140 }}>
+                  <div style={{ width: 140, maxWidth: "100%" }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>LOGO · 1:1</div>
                     <PhotoPicker
                       kind="logo"
@@ -170,8 +172,8 @@ export default function ShopPage() {
                   <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} style={inputStyle} disabled={disabled} />
                 </label>
 
-                <div style={{ display: "flex", gap: 24 }}>
-                  <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 7 }}>WHAT YOU COOK · up to 3</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       {tags.map((t) => (
@@ -219,7 +221,7 @@ export default function ShopPage() {
                       />
                     )}
                   </div>
-                  <div style={{ width: 180 }}>
+                  <div style={{ width: 180, maxWidth: "100%" }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 7 }}>PRICE LEVEL</div>
                     <div style={{ display: "flex", gap: 8 }}>
                       {[1, 2, 3].map((level) => (
@@ -249,7 +251,7 @@ export default function ShopPage() {
 
                 {saveError && <div style={{ fontSize: 13, color: "var(--danger-ink)", marginTop: 12, fontWeight: 700 }}>{saveError}</div>}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
                   <button type="button" disabled={disabled || !name.trim()} onClick={onSave} style={{ ...primaryButtonStyle, opacity: disabled || !name.trim() ? 0.5 : 1 }}>
                     {saving ? "Saving…" : "Save changes"}
                   </button>
@@ -257,7 +259,7 @@ export default function ShopPage() {
                 </div>
               </div>
 
-              <div style={{ width: 300, flexShrink: 0 }}>
+              <div className="kitchen-aside">
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>WHAT CUSTOMERS SEE</div>
                 <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
                   <div style={{ height: 78, background: "var(--surface)", position: "relative" }}>
@@ -293,7 +295,7 @@ export default function ShopPage() {
               <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, marginBottom: 14 }}>
                 Applies to every cash order · mobile-money orders are unaffected
               </div>
-              <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 {CASH_RULES.map((rule) => {
                   const on = state.profile.cashRule === rule.value;
                   return (
@@ -305,6 +307,8 @@ export default function ShopPage() {
                       aria-pressed={on}
                       style={{
                         flex: 1,
+                        // Two abreast as drawn; one per line once the pair can no longer fit.
+                        minWidth: 240,
                         textAlign: "left",
                         padding: "16px 18px",
                         borderRadius: 14,

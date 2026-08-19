@@ -6,9 +6,17 @@
  * gesture that unlocks `AudioContext`; the alarm itself (a whole-screen takeover that rings until
  * Accept/Can't-take-it) rings when a real order arrives, which is E2's job once the kitchen queue
  * exists. E1 provides the infrastructure: the AudioContext unlock, resume-on-every-gesture (Chrome
- * can suspend a context that's been silent), the on/muted state shown in the top bar at all times,
- * and a manual test-ring (the gallery's "Play the alarm to test it" / "Test the order alarm" steps)
- * so a merchant can confirm the tablet's volume before a shift.
+ * can suspend a context that's been silent), and a manual test-ring (the gallery's "Play the alarm
+ * to test it" / "Test the order alarm" steps) so a merchant can confirm the tablet's volume before
+ * a shift.
+ *
+ * **The alarm has no off switch** (owner instruction 2026-08-19: "the alarm must always be on no
+ * need for manual switching on or off .. No need to activate or deactivate it"). There is no muted
+ * state to hold, so `start()` is gated on nothing but "already ringing" — the merchant cannot put
+ * the kitchen into a state where a real order arrives silently. `armed` is NOT an on/off switch
+ * either: it records whether this page load has had the one user gesture browsers require before
+ * they will loop audio, and the shell arms it from the first tap anywhere rather than from a
+ * dedicated control (see KitchenConnectionProvider). See docs/DESIGN-DEVIATIONS.md D-32.
  *
  * The tone-timing math is pure and unit-tested without a browser; the actual oscillator scheduling
  * is behind a minimal injectable interface so the class can be driven deterministically in tests.
@@ -43,34 +51,27 @@ export interface ToneSink {
 }
 
 export class AlarmController {
-  private muted = false;
   private ringing = false;
   private armed = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly sink: ToneSink) {}
 
-  isMuted(): boolean {
-    return this.muted;
-  }
-
   isRinging(): boolean {
     return this.ringing;
   }
 
-  /** True once the login gesture (or a post-reboot re-arm tap) has unlocked audio THIS PAGE LOAD.
-   *  Resets on every real reload/reboot (D-05 / §3 "the alarm needs one tap to re-arm"), since it's
-   *  plain in-memory state on a fresh module instance. */
+  /** True once a user gesture has unlocked audio THIS PAGE LOAD. Resets on every real
+   *  reload/reboot, since it's plain in-memory state on a fresh module instance — the shell re-arms
+   *  it from the first tap anywhere rather than asking the merchant to turn the alarm back on. */
   isArmed(): boolean {
     return this.armed;
   }
 
-  setMuted(muted: boolean): void {
-    this.muted = muted;
-  }
-
-  /** The login button / post-reboot re-arm tap: a real user gesture that unlocks AudioContext for
-   *  the rest of this page load. */
+  /** Any real user gesture — the login submit, or the first tap on the authenticated shell after a
+   *  reboot — unlocks AudioContext for the rest of this page load. Never surfaced as a control: the
+   *  shell calls this from its global gesture listener so the merchant never has to turn anything
+   *  on. */
   arm(): void {
     this.armed = true;
     this.sink.resume();
@@ -83,11 +84,12 @@ export class AlarmController {
     this.sink.resume();
   }
 
-  /** Start the looping chime (a real incoming order, or a manual test). No-op if already ringing or
-   *  muted. `durationMs` bounds a manual test ring (undefined = ring until stop() is called, the
-   *  D-05 "stops only on Accept/Can't-take-it" behaviour for a real order). */
+  /** Start the looping chime (a real incoming order, or a manual test). No-op only if it is already
+   *  ringing — there is no muted state to suppress it (see the always-on note above). `durationMs`
+   *  bounds a manual test ring (undefined = ring until stop() is called, the D-05 "stops only on
+   *  Accept/Can't-take-it" behaviour for a real order). */
   start(durationMs?: number): void {
-    if (this.ringing || this.muted) return;
+    if (this.ringing) return;
     this.ringing = true;
     const startedAt = Date.now();
     const tick = () => {

@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -1352,3 +1352,81 @@ keyed and keyless alike).
 **Retire this entry** when an export redraws `LJ Home` with a "Proceed" CTA, no submit hint, a prefilled
 search field and a prefilled price field — then all four halves are simply the mock, and the codegen
 label rewrite comes back out of `adopted.mjs`.
+
+---
+
+## D-32 · The merchant app is phone-first, and its alarm has no off switch — APPROVED (2026-08-19)
+
+Owner instruction, verbatim: *"Make the merchant view mobile phone friendly and optimised. Also the
+alarm must always be on no need for manual switching on or off .. No need to activate or deactivate
+it. All screens must be mobile optimised. The top bar must fit into a screen."* Sent with two
+screenshots of the merchant app on a phone: the top bar running off the right edge with the alarm
+pill half-cut, and the Menu header doing the same.
+
+Two deviations, one instruction.
+
+### Half 1 — the top bar's alarm pill is gone
+
+The kit draws a mute/unmute pill in `KitchenBar` (`r-parts.jsx:607`), and RESTAURANTS-DECISIONS §3
+asks for the alarm state "shown at all times — muting is deliberate and visible, never silent." The
+app now draws **no alarm control at all**.
+
+That follows from the instruction rather than from layout convenience: an alarm that can never be
+switched off has no state to show and nothing to toggle. `AlarmController` no longer holds a `muted`
+field and exposes neither `isMuted()` nor `setMuted()` — `alarm.test.ts` asserts their absence, so
+re-adding the switch fails a test rather than passing review. `start()` is gated only on "already
+ringing", so there is no configuration in which a real order lands silently.
+
+**`armed` is not the switch, and is no longer merchant-facing.** Browsers still refuse to loop audio
+until a page load has seen one user gesture. That requirement has not gone away; what has gone away
+is making the merchant aim a gesture at a control to satisfy it. The shell's global gesture listener
+now calls `arm()` (it used to call `resume()`, which no-ops while unarmed), so the first tap on any
+screen — any tap, anywhere — unlocks the AudioContext. The "You're signed in — the alarm needs one
+tap" banner (`RearmBanner`) is therefore deleted, not restyled.
+
+**Still drawn, and correct:** the manual test-ring on the queue and in the `/setup` checklist.
+Playing the alarm to check the device volume is not switching it on.
+
+Dropping the pill is also what lets the bar hold brand + role + connection status inside 320px
+without truncation, which is Half 2's requirement.
+
+### Half 2 — every screen has a phone tier the merchant mocks never drew
+
+`CLAUDE.md` fixes the merchant tablet at **1024×680**, and the RM mocks draw that viewport only.
+Nothing below it is drawn, so the phone layer is undrawn territory rather than a departure from a
+drawn screen — but it is recorded here because it is new geometry the kit does not contain.
+
+The rule the layer is built to: **at 1024×680 every screen renders exactly as it did before this
+change.** Phone geometry lives entirely in `@media (max-width: 680px)` blocks and in `clamp()` whose
+*maximum* is the drawn value (at 1024, `3.6vw` = 36.9px, far past a 16px cap — so the cap is what
+applies). What changes below 680px:
+
+- **Top bar** — the brand block is the only shrinking child, so a long status ("Offline (attempt
+  12)") truncates the wordmark instead of pushing itself off-screen; on the narrowest phones the
+  offline bar sheds the "Merchant" role label, which the connected bar keeps at every width.
+- **Bottom nav** — the active marker moves from a left border to a top border (a left rule reads as
+  stray debris on a bar lying on its side), and the bar clears the iOS home indicator via
+  `env(safe-area-inset-bottom)`.
+- **Two-column rows stack** (`.kitchen-split` / `.kitchen-aside`): shop editor + preview, hours +
+  busy mode, category list + tab preview, the dish sheet's form + photo, and both takeover rails.
+- **Header action rows wrap** — the title takes the first line, its buttons share the second.
+- **List rows wrap** — a dish's price and buttons, a day's open–close pair, a statement line's
+  money, a category's switch/rename/delete each drop to their own line. The grouping wrapper is
+  `display: contents` at tablet width, so the drawn row is untouched there.
+- **Sheets become bottom sheets** with their own scroller, capped at `88dvh`. Centred dialogs at
+  tablet width, unchanged.
+- **Form fields render at 16px** on phones only — under 16px iOS Safari zooms the whole page in on
+  focus, and that zoom-and-pan costs more than the point of type size does.
+- `viewport` gains `viewportFit: "cover"` so the safe-area insets above resolve. Zoom is not capped.
+
+**Verified as images, not prose** (`CLAUDE.md` → "Every parity claim becomes an image"): all eight
+routes plus the NEW ORDER takeover and three sheets were rendered against the production build at
+**360×720, 320×640 and 1024×680**, asserting each screen actually rendered (a marker string, after
+two runs where a redirect and a Next error page passed a weaker check) and that no element — page or
+inner scroller — overflows horizontally. That sweep found and fixed four real defects: the queue's
+board painting over its footer actions, the setup banner crushed to a two-word column, the hours
+row's time inputs overflowing 320px, and a category name squeezed narrower than its own text.
+
+**Retire this entry** when an export draws the merchant screens at a phone viewport — then the phone
+tier is simply the mock, and Half 2 stops being a deviation. Half 1 retires when the kit's
+`KitchenBar` drops its alarm pill.

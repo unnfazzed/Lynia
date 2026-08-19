@@ -57,10 +57,9 @@ describe("AlarmController", () => {
     vi.useRealTimers();
   });
 
-  it("starts unarmed, unmuted, not ringing", () => {
+  it("starts unarmed, not ringing", () => {
     const controller = new AlarmController(fakeSink());
     expect(controller.isArmed()).toBe(false);
-    expect(controller.isMuted()).toBe(false);
     expect(controller.isRinging()).toBe(false);
   });
 
@@ -76,14 +75,20 @@ describe("AlarmController", () => {
     expect(sink.resumes).toBe(2);
   });
 
-  it("a muted alarm never rings, even when started", () => {
+  // Owner instruction 2026-08-19: "the alarm must always be on no need for manual switching on or
+  // off .. No need to activate or deactivate it." The controller therefore holds no muted state and
+  // exposes nothing that could set one — a merchant cannot put the kitchen into a configuration
+  // where a real order lands silently. Pinned as an API assertion, not just a behavioural one,
+  // because the regression this guards against is someone re-adding the switch.
+  it("has no way to silence it — start() always rings", () => {
     const sink = fakeSink();
     const controller = new AlarmController(sink);
     controller.arm();
-    controller.setMuted(true);
+    expect("setMuted" in controller).toBe(false);
+    expect("isMuted" in controller).toBe(false);
     controller.start();
-    expect(controller.isRinging()).toBe(false);
-    expect(sink.chimes).toBe(0);
+    expect(controller.isRinging()).toBe(true);
+    expect(sink.chimes).toBe(1);
   });
 
   it("rings the chime on the 'on' phase and stays silent during the 'off' phase, looping", () => {

@@ -125,28 +125,29 @@ export default function CategoryManagePage() {
 
   return (
     <Kitchen active="catalog">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 16, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your categories…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={() => void refresh()} />}
 
         {state.status === "ready" && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ flex: 1 }}>
+            <div className="kitchen-head">
+              <div className="kitchen-head-title">
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Categories</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
                   This is exactly what customers see as the tabs on your menu — same names, same order.
                 </div>
               </div>
-              <Link href="/menu" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+              <Link href="/menu" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
                 Back to the menu
               </Link>
               <button
                 type="button"
+                className="kitchen-head-action"
                 disabled={actionsDisabled}
                 onClick={() => setSheet({ kind: "category", category: null })}
-                style={{ ...primaryButtonStyle, display: "inline-flex", alignItems: "center", gap: 8, ...disabledStyle(actionsDisabled) }}
+                style={{ ...primaryButtonStyle, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, ...disabledStyle(actionsDisabled) }}
               >
                 <Icon name="plus" size={16} color="#fff" />
                 New category
@@ -159,8 +160,9 @@ export default function CategoryManagePage() {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div style={{ ...cardStyle, flex: 1, minWidth: 420, padding: "4px 18px" }}>
+            <div className="kitchen-split">
+              {/* min() so the 420px floor never becomes a horizontal scroll on a narrower screen. */}
+              <div style={{ ...cardStyle, flex: 1, minWidth: "min(420px, 100%)", padding: "4px 18px" }}>
                 {ordered.length === 0 && (
                   <div style={{ fontSize: 13.5, color: "var(--muted)", padding: "18px 0" }}>
                     No categories yet. Create one and your dishes get somewhere to live.
@@ -172,10 +174,8 @@ export default function CategoryManagePage() {
                   return (
                     <div
                       key={c.id}
+                      className="kitchen-row"
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 14,
                         padding: "14px 0",
                         borderBottom: idx === ordered.length - 1 ? "none" : "1px solid var(--line)",
                         opacity: rowBusy ? 0.55 : 1,
@@ -211,62 +211,64 @@ export default function CategoryManagePage() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={!c.hidden}
-                        aria-label={`${c.name} — showing to customers`}
-                        disabled={rowDisabled}
-                        onClick={() => void onToggleHidden(c)}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: c.hidden ? "var(--muted)" : "var(--accent-text)",
-                          background: "none",
-                          border: "none",
-                          padding: 0,
-                          cursor: "pointer",
-                          ...disabledStyle(rowDisabled),
-                        }}
-                      >
-                        <span style={{ width: 44, height: 26, borderRadius: 999, background: c.hidden ? "var(--line)" : "var(--accent)", position: "relative", flexShrink: 0 }}>
-                          <span style={{ position: "absolute", top: 3, left: c.hidden ? 3 : 21, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
-                        </span>
-                        {c.hidden ? "Hidden" : "Showing"}
-                      </button>
+                      <span className="kitchen-row-actions">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={!c.hidden}
+                          aria-label={`${c.name} — showing to customers`}
+                          disabled={rowDisabled}
+                          onClick={() => void onToggleHidden(c)}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: c.hidden ? "var(--muted)" : "var(--accent-text)",
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                            ...disabledStyle(rowDisabled),
+                          }}
+                        >
+                          <span style={{ width: 44, height: 26, borderRadius: 999, background: c.hidden ? "var(--line)" : "var(--accent)", position: "relative", flexShrink: 0 }}>
+                            <span style={{ position: "absolute", top: 3, left: c.hidden ? 3 : 21, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
+                          </span>
+                          {c.hidden ? "Hidden" : "Showing"}
+                        </button>
 
-                      <button
-                        type="button"
-                        aria-label={`Rename ${c.name}`}
-                        disabled={rowDisabled}
-                        onClick={() => setSheet({ kind: "category", category: c })}
-                        style={iconButtonStyle(rowDisabled)}
-                      >
-                        <Icon name="pencil" size={17} color="var(--muted)" />
-                      </button>
+                        <button
+                          type="button"
+                          aria-label={`Rename ${c.name}`}
+                          disabled={rowDisabled}
+                          onClick={() => setSheet({ kind: "category", category: c })}
+                          style={iconButtonStyle(rowDisabled)}
+                        >
+                          <Icon name="pencil" size={17} color="var(--muted)" />
+                        </button>
 
-                      {/* M4·2 gates delete on emptiness (r-merchant.jsx:1024): the glyph greys out
-                       *  while dishes remain. The server 409s regardless — this is the same rule stated
-                       *  before the tap, not instead of it. */}
-                      <button
-                        type="button"
-                        aria-label={c.dishCount > 0 ? `Delete ${c.name} — move or delete its ${c.dishCount} dishes first` : `Delete ${c.name}`}
-                        title={c.dishCount > 0 ? "Move or delete its dishes first" : "Delete this empty category"}
-                        disabled={rowDisabled || c.dishCount > 0}
-                        onClick={() => void onDelete(c)}
-                        style={iconButtonStyle(rowDisabled || c.dishCount > 0)}
-                      >
-                        <Icon name="trash-2" size={17} color={c.dishCount > 0 ? "var(--line)" : "var(--danger-ink)"} />
-                      </button>
+                        {/* M4·2 gates delete on emptiness (r-merchant.jsx:1024): the glyph greys out
+                         *  while dishes remain. The server 409s regardless — this is the same rule stated
+                         *  before the tap, not instead of it. */}
+                        <button
+                          type="button"
+                          aria-label={c.dishCount > 0 ? `Delete ${c.name} — move or delete its ${c.dishCount} dishes first` : `Delete ${c.name}`}
+                          title={c.dishCount > 0 ? "Move or delete its dishes first" : "Delete this empty category"}
+                          disabled={rowDisabled || c.dishCount > 0}
+                          onClick={() => void onDelete(c)}
+                          style={iconButtonStyle(rowDisabled || c.dishCount > 0)}
+                        >
+                          <Icon name="trash-2" size={17} color={c.dishCount > 0 ? "var(--line)" : "var(--danger-ink)"} />
+                        </button>
+                      </span>
                     </div>
                   );
                 })}
               </div>
 
-              <div style={{ ...cardStyle, width: 300, flexShrink: 0, padding: 20 }}>
+              <div className="kitchen-aside" style={{ ...cardStyle, padding: 20 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>How customers see it</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                   {visible.length === 0 && <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Nothing is showing — your menu has no tabs right now.</span>}

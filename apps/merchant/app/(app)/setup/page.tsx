@@ -59,7 +59,7 @@ export default function SetupPage() {
 
   return (
     <Kitchen active="queue">
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, overflow: "auto", height: "100%" }}>
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 16, overflow: "auto", height: "100%" }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your setup…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
@@ -75,7 +75,7 @@ export default function SetupPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 12 }}>
               {setup.items.map((item) => (
                 <ChecklistCard
                   key={item.key}
@@ -94,6 +94,7 @@ export default function SetupPage() {
                 ...cardStyle,
                 display: "flex",
                 gap: 14,
+                flexWrap: "wrap",
                 alignItems: "flex-start",
                 background: setup.live ? "var(--accent-wash)" : "var(--highlight-wash)",
                 boxShadow: "none",
@@ -105,7 +106,7 @@ export default function SetupPage() {
                 color={setup.live ? "var(--accent-text)" : "var(--highlight-ink)"}
                 style={{ marginTop: 2 }}
               />
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: setup.live ? "var(--accent-text)" : "var(--highlight-ink)" }}>
                   {setup.live ? "Your shop is live" : "Customers can't see you yet"}
                 </div>

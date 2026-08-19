@@ -84,7 +84,7 @@ export function ReturnsSection({
           const amount = Number(o.debtAmount ?? 0);
           const goodsBack = o.status === "undelivered";
           return (
-            <div key={o.id} style={{ ...cardStyle, minWidth: 260, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={o.id} style={{ ...cardStyle, flex: "1 1 260px", minWidth: "min(260px, 100%)", display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 14.5, fontWeight: 800 }}>{orderLabel(o)}</div>
                 <div style={{ fontSize: 16, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>${formatMoney(amount)}</div>

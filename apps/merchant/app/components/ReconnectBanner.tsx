@@ -48,7 +48,7 @@ export function ReconnectBanner({ backfillCount }: { backfillCount?: number } = 
             display: "flex",
             alignItems: "center",
             gap: 14,
-            padding: "16px 22px",
+            padding: "clamp(12px, 4vw, 16px) clamp(14px, 4vw, 22px)",
             background: "var(--danger)",
           }}
         >
@@ -65,7 +65,7 @@ export function ReconnectBanner({ backfillCount }: { backfillCount?: number } = 
         </div>
         <div
           style={{
-            padding: "12px 22px",
+            padding: "clamp(10px, 3vw, 12px) clamp(14px, 4vw, 22px)",
             background: "var(--surface)",
             borderBottom: "1px solid var(--line)",
             fontSize: 13,
@@ -87,7 +87,7 @@ export function ReconnectBanner({ backfillCount }: { backfillCount?: number } = 
           display: "flex",
           alignItems: "center",
           gap: 14,
-          padding: "14px 22px",
+          padding: "clamp(12px, 3.5vw, 14px) clamp(14px, 4vw, 22px)",
           background: "var(--highlight-wash)",
           borderBottom: "1px solid var(--highlight-border)",
         }}

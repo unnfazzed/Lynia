@@ -82,16 +82,16 @@ export function RiderNoShowSheet({ order, onClose }: { order: MerchantOrderRespo
   ];
 
   return (
-    <div style={overlayStyle} role="dialog" aria-modal="true" aria-label="The rider hasn't arrived">
-      <div style={cardStyle}>
+    <div className="kitchen-sheet-overlay" role="dialog" aria-modal="true" aria-label="The rider hasn't arrived">
+      <div className="kitchen-sheet" style={{ maxWidth: 720 }}>
         <div style={{ fontSize: 20, fontWeight: 800 }}>The rider hasn&apos;t arrived</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4, marginBottom: 16, fontVariantNumeric: "tabular-nums" }}>
           {label}
           {readyTime ? ` · ready since ${readyTime}` : ""}
         </div>
 
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 260 }}>
+        <div className="kitchen-split">
+          <div style={{ flex: 1, minWidth: "min(260px, 100%)" }}>
             <div style={{ fontSize: 15, color: "var(--muted)", lineHeight: 1.55 }}>
               The food stays on your counter and you are not out of pocket — a cooked order that never gets collected is
               recorded against the rider, not against you.
@@ -107,7 +107,7 @@ export function RiderNoShowSheet({ order, onClose }: { order: MerchantOrderRespo
             </div>
           </div>
 
-          <div style={{ width: 300, flexShrink: 0 }}>
+          <div className="kitchen-aside">
             {/* No action buttons here on purpose — see this file's header for the endpoint-by-endpoint
              *  reason. Offering a tap that 409s, or one that quietly does nothing, would be worse than
              *  telling the kitchen plainly what does work. */}
@@ -134,23 +134,4 @@ export function RiderNoShowSheet({ order, onClose }: { order: MerchantOrderRespo
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(20,24,27,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 70,
-  padding: 16,
-};
 
-const cardStyle: React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 18,
-  padding: 24,
-  width: 720,
-  maxWidth: "96vw",
-  maxHeight: "92vh",
-  overflow: "auto",
-};

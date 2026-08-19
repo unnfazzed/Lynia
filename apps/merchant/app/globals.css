@@ -83,6 +83,9 @@ body {
   line-height: 1.5;
   color: var(--ink);
   background: var(--surface);
+  /* iOS inflates text in landscape unless this is pinned; the merchant app is a fixed-chrome shell
+   * whose type scale is drawn by the kit, so it must never be resized out from under us. */
+  -webkit-text-size-adjust: 100%;
 }
 
 button {
@@ -98,7 +101,18 @@ input:focus-visible {
   outline-offset: 2px;
 }
 
-/* Kitchen shell layout (tablet-first 1024×680, degrades to phone). */
+/* ============================================================================================
+ * Kitchen shell layout.
+ *
+ * Tablet-first: at the merchant's canonical 1024×680 viewport (CLAUDE.md "Canonical viewports")
+ * every rule below resolves to exactly the geometry the kit draws — the phone work lives entirely
+ * inside `@media (max-width: 680px)` and in `clamp()` bounds whose max is the drawn value, so the
+ * RM mocks render byte-identically and only phone widths change.
+ *
+ * Why classes and not inline styles: this app styles inline, and an inline style cannot carry a
+ * media query. Anything whose geometry has to change at the phone breakpoint is therefore a class
+ * here; everything else stays inline where it was.
+ * ============================================================================================ */
 .kitchen-shell {
   height: 100dvh;
   display: flex;
@@ -111,6 +125,75 @@ input:focus-visible {
   display: flex;
   min-height: 0;
 }
+
+/* ---- Top bar -------------------------------------------------------------------------------
+ * The brand block is the only flexible child and the only one allowed to shrink, so a long status
+ * ("Offline (attempt 12)") truncates the wordmark rather than pushing itself off the right edge —
+ * the bar fits 320px. */
+.kitchen-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 56px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.kitchen-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.kitchen-bar-mark {
+  flex-shrink: 0;
+}
+.kitchen-bar-wordmark {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kitchen-bar-role {
+  /* 8px from the wordmark's own gap + 6px = the kit's 14px between the lockup and the role label. */
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kitchen-bar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent-wash);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kitchen-bar-status-offline {
+  color: #fff;
+  background: var(--danger);
+}
+.kitchen-bar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---- Left rail / bottom bar ---------------------------------------------------------------- */
 .kitchen-nav {
   width: 92px;
   border-right: 1px solid var(--line);
@@ -149,11 +232,80 @@ input:focus-visible {
   flex: 1;
   min-width: 0;
   overflow: auto;
+  /* A sheet's own scroller should not chain into the page behind it on a touch screen. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Degrade the left rail to a bottom bar below tablet width (design says "degrades to phone", not
- * drawn in the gallery — this is the straightforward, standard collapse). */
+/* ---- Page + layout primitives ---------------------------------------------------------------
+ * `.kitchen-page` owns only the page padding (each screen keeps its own inline flex/gap/overflow).
+ * `.kitchen-split` is a drawn two-column row that stacks on a phone, and `.kitchen-aside` is its
+ * fixed 300px sidebar, which becomes full-width once stacked. */
+.kitchen-page {
+  padding: 20px;
+}
+.kitchen-split {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+.kitchen-split > * {
+  min-width: 0;
+}
+.kitchen-aside {
+  width: 300px;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+/* The queue: a fixed-height column whose board scrolls internally on the tablet, and an ordinary
+ * flowing column on a phone (where the board falls back to a stacked list with no scroller of its
+ * own — pinning the height there would paint that list over the actions beneath it). */
+.queue-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.queue-board-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* A screen heading with its action buttons on the same line — one line at tablet width, exactly as
+ * drawn: the title shrinks (flex-basis 0, like the `flex: 1` this replaced) rather than pushing the
+ * actions onto a second row. Wrapping is a phone-tier behaviour only. */
+.kitchen-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.kitchen-head-title {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* A day's open–close pair (see the hours screen). */
+.hours-window {
+  display: contents;
+}
+
+/* A list row (dish, day, statement line). `display: contents` keeps the grouped trailing controls
+ * as direct flex children of the row on tablet — i.e. exactly the drawn layout — and only becomes a
+ * real full-width flex row of its own once the row wraps on a phone. */
+.kitchen-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.kitchen-row-actions {
+  display: contents;
+}
+
 @media (max-width: 680px) {
+  /* Degrade the left rail to a bottom bar below tablet width (design says "degrades to phone", not
+   * drawn in the gallery — this is the straightforward, standard collapse). */
   .kitchen-shell-body {
     flex-direction: column-reverse;
   }
@@ -162,10 +314,192 @@ input:focus-visible {
     flex-direction: row;
     border-right: none;
     border-top: 1px solid var(--line);
-    padding: 4px 0;
+    /* Clear the iOS home indicator so the last row of tabs is tappable. */
+    padding: 4px 0 calc(4px + env(safe-area-inset-bottom, 0px));
   }
   .kitchen-nav-item {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 2px;
+    /* The active marker has to move to the edge the bar is attached to — a left border reads as a
+     * stray rule when the rail is lying on its side. */
+    border-left: none;
+    border-top: 3px solid transparent;
+  }
+  .kitchen-nav-item[data-active="true"] {
+    border-left-color: transparent;
+    border-top-color: var(--accent);
+  }
+
+  .kitchen-bar {
+    height: 52px;
+    padding: 0 12px;
+    gap: 10px;
+  }
+  .kitchen-bar-wordmark {
+    font-size: 16px;
+  }
+  /* The offline pill is the widest thing the bar ever carries. Rather than truncate the wordmark
+   * for it on the narrowest phones, shed the secondary role label — which the connected bar (the
+   * one a merchant looks at all day) still draws at every width, exactly as the kit does. */
+  .kitchen-bar[data-offline="true"] .kitchen-bar-role {
+    display: none;
+  }
+
+  .kitchen-page {
+    padding: 14px 12px 20px;
+  }
+  .kitchen-split {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .kitchen-split > * {
+    width: 100%;
+  }
+  /* !important because a caller may pin a different drawn width inline (the dish sheet's 260px),
+   * and once stacked every sidebar is simply full width. */
+  .kitchen-aside {
+    width: 100% !important;
+  }
+
+  .queue-page {
+    height: auto;
+    min-height: 100%;
+  }
+  .queue-board-slot {
+    flex: 0 0 auto;
+  }
+
+  .kitchen-head {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  /* Title takes the whole first line; the actions wrap under it and share the width evenly. */
+  .kitchen-head-title {
+    flex-basis: 100%;
+  }
+  .kitchen-head-action {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .kitchen-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  /* Day name and its open/closed switch keep the first line; the times take the second. `order`
+   * does that without moving the switch ahead of the times in the DOM, where it belongs. */
+  .hours-window {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    order: 1;
+  }
+  .hours-window > input {
+    flex: 1 1 40%;
+    min-width: 0;
+    /* Chromium gives `input[type=time]` an intrinsic minimum from its own HH:MM AM sub-fields that
+     * `min-width: 0` cannot shrink past. At 16px (which the phone tier forces, to stop iOS zooming
+     * the page on focus) two of them plus the dash are wider than a 320px row, so the side padding
+     * comes off and the pair may wrap rather than overflow. */
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .hours-invalid {
+    flex-basis: 100%;
+    order: 2;
+  }
+
+  .kitchen-row-actions {
+    display: flex;
+    align-items: center;
+    flex-basis: 100%;
+    gap: 8px;
+  }
+  /* Opt-in: text buttons share the wrapped line evenly. Left off for rows whose trailing controls
+   * are fixed-size glyph buttons, which must keep their drawn width. */
+  .kitchen-row-actions-fill > * {
+    flex: 1 1 0;
+  }
+
+  /* iOS Safari zooms the whole page in when a focused field's text is under 16px. The kit draws
+   * these at 14-15px, which is right for the tablet; on a phone the zoom-and-pan that costs is
+   * worse than the point of type size. */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ---- Full-screen takeovers ------------------------------------------------------------------
+ * A takeover is the order (or the hold) beside a decision rail. On a phone the rail drops below the
+ * order instead of being squeezed: the Accept / Can't-take-it pair is what silences the alarm, so it
+ * is the last thing that may be clipped. The whole takeover scrolls in that layout. */
+.takeover-body {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+  padding: 8px 24px 24px;
+  min-height: 0;
+}
+.takeover-main {
+  flex: 1;
+  overflow: auto;
+}
+.takeover-rail {
+  width: 300px;
+  flex-shrink: 0;
+}
+@media (max-width: 680px) {
+  .takeover-body {
+    flex-direction: column;
+    gap: 14px;
+    padding: 8px 12px 16px;
+    overflow: auto;
+  }
+  .takeover-main {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .takeover-rail {
+    width: 100%;
+  }
+}
+
+/* ---- Sheets ---------------------------------------------------------------------------------
+ * Centred dialogs on tablet (unchanged), bottom sheets on a phone: a dialog centred in a 640px-tall
+ * phone viewport with the keyboard up has nowhere to go, and every one of these is form-shaped. */
+.kitchen-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 27, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+  padding: 16px;
+}
+.kitchen-sheet {
+  background: #fff;
+  border-radius: 18px;
+  padding: 24px;
+  width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+@media (max-width: 680px) {
+  .kitchen-sheet-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .kitchen-sheet {
+    max-width: none !important;
+    border-radius: 18px 18px 0 0;
+    max-height: 88dvh;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
   }
 }
 
