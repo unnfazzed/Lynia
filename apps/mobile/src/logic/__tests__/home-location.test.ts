@@ -1,4 +1,4 @@
-import { homeAddressLabel, isUsablePoint, parseStoredPlace } from "../home-location";
+import { homeAddressLabel, homeAreaLabel, isUsablePoint, parseStoredPlace } from "../home-location";
 
 describe("homeAddressLabel — the header's one-line detected address", () => {
   it("prefers a street line, the way the mock draws it", () => {
@@ -62,5 +62,62 @@ describe("parseStoredPlace — the persisted last-known address", () => {
     expect(parseStoredPlace(JSON.stringify({ lat: -17.8, lng: 31.05 }))).toBeNull();
     expect(parseStoredPlace(JSON.stringify({ label: "  ", lat: -17.8, lng: 31.05 }))).toBeNull();
     expect(parseStoredPlace(JSON.stringify({ label: "Nowhere", lat: 0, lng: 0 }))).toBeNull();
+  });
+});
+
+/**
+ * The suburb is a SECOND reading of the same reverse-geocode result, for prose that names an area
+ * ("5 places deliver to Belgravia" — RC.list) rather than a delivery destination. It deliberately
+ * does NOT share `homeAddressLabel`'s precedence: that one wants the finest line available, this one
+ * wants the finest AREA, and falling back to "Harare" too eagerly reproduces exactly the imprecise
+ * label the restaurant list used to hardcode.
+ */
+describe("homeAreaLabel — the suburb behind the address", () => {
+  it("prefers the district over the city, even when a street line exists", () => {
+    expect(homeAreaLabel({ streetNumber: "12", street: "Lanark Rd", district: "Belgravia", city: "Harare" })).toBe("Belgravia");
+  });
+
+  it("falls back through subregion → city → region rather than rendering nothing", () => {
+    expect(homeAreaLabel({ subregion: "Avondale", city: "Harare" })).toBe("Avondale");
+    expect(homeAreaLabel({ city: "Harare" })).toBe("Harare");
+    expect(homeAreaLabel({ region: "Harare Province" })).toBe("Harare Province");
+  });
+
+  it("returns an empty string when nothing names an area — the summary then says 'here'", () => {
+    expect(homeAreaLabel({})).toBe("");
+    expect(homeAreaLabel({ street: "Lanark Rd" })).toBe("");
+  });
+
+  it("ignores whitespace-only parts instead of treating them as an answer", () => {
+    expect(homeAreaLabel({ district: "   ", city: "Harare" })).toBe("Harare");
+  });
+});
+
+describe("parseStoredPlace — the persisted suburb is additive", () => {
+  it("round-trips an area when one was stored", () => {
+    const raw = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: "Belgravia", manual: true });
+    expect(parseStoredPlace(raw)).toEqual({ place: { label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: "Belgravia" }, manual: true });
+  });
+
+  it("still parses a slot written before the field existed — it simply has no suburb", () => {
+    const raw = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, manual: false });
+    const parsed = parseStoredPlace(raw);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.place.area).toBeUndefined();
+    expect(parsed!.place.label).toBe("12 Lanark Rd");
+  });
+
+  it("stores the TRIMMED value, not just a trimmed check — padding must not reach the header", () => {
+    const raw = JSON.stringify({ label: "  12 Lanark Rd  ", lat: -17.8, lng: 31.05, area: "  Belgravia  " });
+    const parsed = parseStoredPlace(raw)!;
+    expect(parsed.place.area).toBe("Belgravia");
+    expect(parsed.place.label).toBe("12 Lanark Rd");
+  });
+
+  it("drops a non-string or empty area rather than carrying junk into the header", () => {
+    const raw = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: 42 });
+    expect(parseStoredPlace(raw)!.place.area).toBeUndefined();
+    const blank = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: "  " });
+    expect(parseStoredPlace(blank)!.place.area).toBeUndefined();
   });
 });

@@ -7,8 +7,14 @@ import { Text, View } from "react-native";
 import { Card, Icon } from "../index";
 import { FoodThumb } from "./FoodThumb";
 
-/** R1·1 restaurant row: photo-led, distance/rating omitted (not in the wire contract yet — corridor
- *  scoping and geo-distance are Lane C data this app doesn't have), open/closed derived from `hours`. */
+/** R1·1 restaurant row: photo-led, open/closed derived from `hours`.
+ *
+ *  The mock's meta line (★ rating (n) · <km> km · <eta> min · $<fee> delivery) is still omitted, but
+ *  NOT for the reason this comment used to give ("not in the wire contract yet"). That expired: #673
+ *  put `ratingAvg`/`ratingCount`/`prepBaselineMinutes` on `RestaurantListItem` beside the existing
+ *  `location`, and `home-location.ts` gives the list a live customer fix — `logic/food-list.ts`'s
+ *  `restaurantMeta()` already derives all four for the header's pills. Wiring them into this row is
+ *  an open parity gap (docs/parity/PHASE4-browse.md), not a data one. */
 export function RestaurantRow({ r, onPress, now }: { r: RestaurantListItem; onPress: () => void; now: Date }): React.ReactElement {
   const open = isMerchantOpenNow(r.hours, now);
   const closingIn = open ? minutesUntilClose(r.hours, now) : null;
