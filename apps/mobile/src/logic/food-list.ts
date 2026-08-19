@@ -139,12 +139,16 @@ export function etaRange(metas: readonly FoodListMeta[]): { low: number; high: n
  * "Belgravia, Belgravia" would be worse than either half.
  */
 export function deliverToLabel(label: string, area: string | null): string {
-  if (!area) return label;
   const l = label.trim();
-  const a = area.trim();
-  if (!l || !a) return label;
+  const a = (area ?? "").trim();
+  if (!l || !a) return l;
+  // Match on whole ADDRESS COMPONENTS, not a substring: "Belgravia Road" contains "Belgravia" but is
+  // a street, not the suburb, so suppressing the qualifier there would drop the one part of the line
+  // that says which corridor this is. Only an exact component ("Belgravia", or the trailing half of
+  // "12 Lanark Rd, Belgravia") means the area is already spoken for.
   // Case-insensitive: the geocoder is not consistent about casing between fields.
-  if (l.toLowerCase().includes(a.toLowerCase())) return label;
+  const wanted = a.toLowerCase();
+  if (l.toLowerCase().split(",").some((part) => part.trim() === wanted)) return l;
   return `${l}, ${a}`;
 }
 

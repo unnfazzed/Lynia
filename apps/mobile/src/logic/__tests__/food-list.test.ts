@@ -141,4 +141,19 @@ describe("deliverToLabel — the street qualified by its suburb", () => {
     // The geocoder is not consistent about casing between fields.
     expect(deliverToLabel("BELGRAVIA", "Belgravia")).toBe("BELGRAVIA");
   });
+
+  it("matches whole address components, not substrings — a street named after the suburb still qualifies", () => {
+    // "Belgravia Road" CONTAINS "Belgravia" but is a street, not the suburb. Suppressing the
+    // qualifier here would drop the one part of the line that says which corridor this is.
+    expect(deliverToLabel("Belgravia Road", "Belgravia")).toBe("Belgravia Road, Belgravia");
+    expect(deliverToLabel("12 Belgravia Close", "Belgravia")).toBe("12 Belgravia Close, Belgravia");
+    // ...but a real trailing component is still recognised, whatever the spacing around the comma.
+    expect(deliverToLabel("12 Lanark Rd,Belgravia", "Belgravia")).toBe("12 Lanark Rd,Belgravia");
+  });
+
+  it("trims consistently whether or not an area is appended", () => {
+    expect(deliverToLabel("  12 Lanark Rd  ", "Belgravia")).toBe("12 Lanark Rd, Belgravia");
+    expect(deliverToLabel("  12 Lanark Rd  ", null)).toBe("12 Lanark Rd");
+    expect(deliverToLabel("12 Lanark Rd", "   ")).toBe("12 Lanark Rd");
+  });
 });

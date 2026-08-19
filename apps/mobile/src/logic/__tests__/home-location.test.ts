@@ -107,6 +107,13 @@ describe("parseStoredPlace — the persisted suburb is additive", () => {
     expect(parsed!.place.label).toBe("12 Lanark Rd");
   });
 
+  it("stores the TRIMMED value, not just a trimmed check — padding must not reach the header", () => {
+    const raw = JSON.stringify({ label: "  12 Lanark Rd  ", lat: -17.8, lng: 31.05, area: "  Belgravia  " });
+    const parsed = parseStoredPlace(raw)!;
+    expect(parsed.place.area).toBe("Belgravia");
+    expect(parsed.place.label).toBe("12 Lanark Rd");
+  });
+
   it("drops a non-string or empty area rather than carrying junk into the header", () => {
     const raw = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: 42 });
     expect(parseStoredPlace(raw)!.place.area).toBeUndefined();

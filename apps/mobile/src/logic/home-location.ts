@@ -143,11 +143,13 @@ export function parseStoredPlace(raw: string | null): { place: HomePlace; manual
     const v = JSON.parse(raw) as Partial<HomePlace> & { manual?: unknown };
     if (typeof v.label !== "string" || !v.label.trim()) return null;
     if (!isUsablePoint({ lat: v.lat as number, lng: v.lng as number })) return null;
-    const area = typeof v.area === "string" && v.area.trim() ? v.area.slice(0, ADDRESS_MAX) : undefined;
+    // Both fields VALIDATE on the trimmed value, so both must STORE the trimmed value — otherwise a
+    // slot holding " Belgravia " passes the check and then reaches the header with its padding.
+    const area = typeof v.area === "string" && v.area.trim() ? v.area.trim().slice(0, ADDRESS_MAX) : undefined;
     return {
       // `area` is ADDITIVE — a slot written before this field existed parses fine and simply has no
       // suburb, so the summary line degrades to its area-less form instead of the parse dropping.
-      place: { label: v.label.slice(0, ADDRESS_MAX), lat: v.lat as number, lng: v.lng as number, ...(area ? { area } : {}) },
+      place: { label: v.label.trim().slice(0, ADDRESS_MAX), lat: v.lat as number, lng: v.lng as number, ...(area ? { area } : {}) },
       manual: v.manual === true,
     };
   } catch {
@@ -282,6 +284,8 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
   // Set the moment the customer picks a place in the sheet, so a GPS fix that resolves a beat later
   // cannot overwrite their explicit choice.
   const manualRef = useRef(false);
+  // Bumped per manual pick, so a slow suburb lookup for pick N can never land on top of pick N+1.
+  const pickSeq = useRef(0);
   // Read through a ref so the one-shot detection effect below can stay dependency-free.
   const detectOnlyRef = useRef(detectOnly);
   detectOnlyRef.current = detectOnly;
@@ -376,10 +380,34 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
 
   const setManualPlace = useCallback((next: HomePlace): void => {
     manualRef.current = true;
+    const seq = ++pickSeq.current;
     setPlace(next);
     setSource("manual");
     setLocating(false);
     void saveStoredLocation(next, true);
+
+    // The sheet hands back a label + point and nothing else: a saved Home/Work slot and an address
+    // search both resolve a `ResolvedPlace` (lat/lng/landmark/placeId), which has no suburb to give.
+    // Without this, every pick blanked `area` and the food list's deliver-to silently fell back to a
+    // bare street plus "N places deliver here".
+    //
+    // Resolving it HERE rather than plumbing `area` through saved-places + the Places API keeps
+    // geocoding in the one module that owns it (LocationSheet is presentational by contract — the
+    // `mobile-ui-no-api` boundary) and needs no change to the persisted ResolvedPlace shape.
+    //
+    // The customer's LABEL is their choice and is never touched; only the AREA is filled in, because
+    // the suburb is a fact about the coordinates rather than a thing they chose.
+    if (next.area) return;
+    void (async () => {
+      const resolved = await addressFor({ lat: next.lat, lng: next.lng });
+      // Drop the answer if the screen is gone, the geocoder had no area, a LATER pick superseded
+      // this one, or a re-detect cleared the manual override while this was in flight.
+      if (!alive.current || !resolved.area) return;
+      if (pickSeq.current !== seq || !manualRef.current) return;
+      const patched: HomePlace = { ...next, area: resolved.area };
+      setPlace(patched);
+      void saveStoredLocation(patched, true);
+    })();
   }, []);
 
   return {
