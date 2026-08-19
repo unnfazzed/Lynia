@@ -329,10 +329,24 @@ them."* Everything below is on branch `claude/android-button-responsiveness-ocym
 
 **Release order — API FIRST.** `tap_ack` and `nav_open` are new `ClientMetricEvent` values, and the
 ingest endpoint validates with a strict Zod enum (`ZodBody(ClientMetricsBatch)`), so an API that
-predates them rejects the WHOLE batch — every sample in it, not just the new ones. Deploy the API
-before any binary that emits them. Merging to `main` does that, and the EAS build is a separate
-manual dispatch, so the natural order is already the safe one; it is written down here so nobody
-reverses it. The opposite direction is harmless: an older app on the new API is unaffected.
+predates them rejects the WHOLE batch — every sample in it, not just the new ones. That is the real
+hazard here: a binary emitting these against an older API silently kills *all* client RUM, not just
+the two new events. The opposite direction is harmless — an older app on the new API is unaffected.
+
+The natural order is the safe one, but it is **conditional, not automatic**, and the conditions are
+worth knowing before dispatching a build:
+
+| Step | What actually gates it |
+|---|---|
+| API deploy | A non-docs push to `main` triggers `.github/workflows/release.yml` (`paths-ignore` skips docs-only commits; a commit touching code *and* docs still deploys). Both its jobs are gated on the repo variable **`GCP_DEPLOY_ENABLED == 'true'`**, and `deploy` additionally `needs: staging-gate`, which waits for a green `deploy-staging` run on the same commit. With the flag unarmed the workflow is a clean no-op — **merging would then NOT deploy the API**, and the ordering hazard above becomes live. |
+| Mobile build | `mobile-release.yml` is a separate workflow and reaches no device on merge. It is gated on `EAS_RELEASE_ENABLED == 'true'`, and its `v*` tag trigger is separately gated on `EAS_TAG_RELEASES_ENABLED`; manual `workflow_dispatch` needs only the first. Pass `profile: preview` (CLAUDE.md — the `production` default fails at submission today). |
+
+Status for this change: the flag is armed in practice — the merge immediately before this one ran the
+full chain (staging-gate → `build · migrate · deploy` → Cloud Run canary, all green), and merging
+PR #825 started the same chain. **Confirm that run reached a green `build · migrate · deploy` before
+dispatching any EAS build**, rather than inferring it from the merge: the arming flag is a repo
+variable and can change without touching this repo, and a green *workflow* is not by itself a green
+*deploy* when the gate is off.
 
 Tests: **1392 mobile** (35 new) and **1786 API**, all green, plus `pnpm typecheck` and `pnpm lint`
 across the workspace. The prewarm test found and fixed a real gap while it was being written: the
