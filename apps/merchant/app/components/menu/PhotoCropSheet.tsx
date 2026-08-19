@@ -53,9 +53,14 @@ interface View {
 const INITIAL_VIEW: View = { zoom: 1, panX: 0, panY: 0 };
 
 /** Geometry of the crop row: the gap between the frame and the live preview, and the narrowest the
- *  preview column is allowed to get before the row wraps instead. */
+ *  preview column is allowed to get before the row wraps instead.
+ *
+ *  `CROP_PREVIEW_MIN` must equal `BannerPreview`'s own box width, not merely approach it: the
+ *  preview is a fixed-width card, so a row-break threshold that reserved LESS than it needs would
+ *  keep the columns side by side at a width where the preview then overflows its own column. One
+ *  number, used by both. */
 const CROP_ROW_GAP = 22;
-const CROP_PREVIEW_MIN = 240;
+const CROP_PREVIEW_MIN = 260;
 
 /** The dashed viewport's own display size. 3:1 gets the kit's 430-wide banner frame, 1:1 its 240
  *  square (`r-merchant.jsx:1387`, `1461`); height always follows from the ratio so the frame IS the
@@ -67,7 +72,7 @@ const CROP_PREVIEW_MIN = 240;
  *  than a CSS clamp because the crop maths converts drag distances through `frame.width` — a frame
  *  whose true width the component could not read would pan at the wrong rate. */
 function frameSize(aspect: number, available?: number | null): { width: number; height: number } {
-  const drawn = aspect >= 2 ? 420 : 240;
+  const drawn = aspect >= 2 ? 430 : 240;
   const width = available != null && available > 0 ? Math.max(160, Math.min(drawn, Math.round(available))) : drawn;
   return { width, height: Math.round(width / aspect) };
 }
@@ -394,7 +399,7 @@ function BannerPreview({
   url: string | null;
   shopName?: string;
 }) {
-  const boxWidth = 260;
+  const boxWidth = CROP_PREVIEW_MIN;
   return (
     <div style={{ width: boxWidth, borderRadius: 16, border: "1px solid var(--line)", overflow: "hidden", background: "var(--bg)" }}>
       <div style={{ height: Math.round(boxWidth / 3), background: "var(--surface)", position: "relative", overflow: "hidden" }}>
