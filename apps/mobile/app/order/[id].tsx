@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { formatMoney } from "../../src/logic/money";
@@ -21,7 +21,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast, Tappable } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -793,7 +793,7 @@ export default function OrderScreen(): React.ReactElement {
                 {SORT_MODES.map((m) => {
                   const on = sortMode === m.key;
                   return (
-                    <Pressable
+                    <Tappable tone="icon"
                       key={m.key}
                       onPress={() => setSortMode(m.key)}
                       accessibilityRole="button"
@@ -812,7 +812,7 @@ export default function OrderScreen(): React.ReactElement {
                       }}
                     >
                       <Text style={{ fontSize: 12, fontWeight: "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{m.label}</Text>
-                    </Pressable>
+                    </Tappable>
                   );
                 })}
               </View>
@@ -1138,7 +1138,7 @@ export default function OrderScreen(): React.ReactElement {
                 </Text>
               </View>
               {order.counterpartyPhone ? (
-                <Pressable
+                <Tappable
                   onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
                   accessibilityRole="button"
                   accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
@@ -1148,7 +1148,7 @@ export default function OrderScreen(): React.ReactElement {
                   <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
                     {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${formatPhoneLocal(order.counterpartyPhone)}` : ""}
                   </Text>
-                </Pressable>
+                </Tappable>
               ) : null}
             </Card>
             {/* Fix 1e: recompose is the customer re-sending THEIR parcel — a rider viewer is never the

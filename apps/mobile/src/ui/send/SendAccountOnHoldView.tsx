@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { useAuth } from "../../auth/auth-context";
 import { ACCOUNT_ON_HOLD_COPY } from "../../logic/gates";
@@ -18,7 +19,7 @@ import { SupportCallRow } from "../safety";
 export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.ReactElement {
   const router = useRouter();
   return (
-    <Pressable
+    <Tappable
       accessibilityRole="button"
       accessibilityLabel="Open your delivery in progress"
       onPress={() => router.push(`/order/${order.id}`)}
@@ -45,7 +46,7 @@ export function ActiveOrderBanner({ order }: { order: OrderSnapshot }): React.Re
         </Text>
       </View>
       <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Track</Text>
-    </Pressable>
+    </Tappable>
   );
 }
 

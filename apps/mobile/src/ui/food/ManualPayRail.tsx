@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import * as Clipboard from "expo-clipboard";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Card, Icon, useToast } from "../index";
 
 interface CopyableRow {
@@ -40,7 +41,7 @@ export function ManualPayRail({ rows }: { rows: CopyableRow[] }): React.ReactEle
               {row.value}
             </Text>
           </View>
-          <Pressable
+          <Tappable
             onPress={() => void copy(row)}
             accessibilityRole="button"
             accessibilityLabel={`Copy ${row.label}`}
@@ -57,7 +58,7 @@ export function ManualPayRail({ rows }: { rows: CopyableRow[] }): React.ReactEle
           >
             <Icon name={justCopied === row.label ? "check" : "copy"} size={14} color={tokens.color.accentText} />
             <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>{justCopied === row.label ? "Copied" : "Copy"}</Text>
-          </Pressable>
+          </Tappable>
         </View>
       ))}
       <Text style={{ fontSize: 11.5, color: tokens.color.muted, marginTop: 8, lineHeight: 16 }}>

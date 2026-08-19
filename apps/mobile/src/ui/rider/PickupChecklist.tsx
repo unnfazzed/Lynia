@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import { attachPickupPhoto } from "../../api/orders";
 import { requestPickupPhotoUpload, uploadImage } from "../../api/uploads";
 import { downscaleForUpload, type UploadImageSource } from "../../logic/image-downscale";
@@ -126,7 +127,7 @@ export function PickupChecklist({
         {items.map((it, i) => {
           const on = checkedItems.has(i);
           return (
-            <Pressable
+            <Tappable
               key={i}
               onPress={() => onToggle(i)}
               accessibilityRole="checkbox"
@@ -162,7 +163,7 @@ export function PickupChecklist({
               </View>
               <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{it.description}</Text>
               <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{it.quantity}×</Text>
-            </Pressable>
+            </Tappable>
           );
         })}
       </View>
@@ -207,7 +208,7 @@ export function PickupChecklist({
         disabled={checkedItems.size === 0}
       />
       {checkedItems.size === 0 && onCantCollect ? (
-        <Pressable
+        <Tappable
           onPress={onCantCollect}
           accessibilityRole="button"
           style={{ minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center", marginTop: tokens.space.xs }}
@@ -215,7 +216,7 @@ export function PickupChecklist({
           <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, textDecorationLine: "underline" }}>
             Can&apos;t find the parcel? Cancel this job
           </Text>
-        </Pressable>
+        </Tappable>
       ) : null}
     </Card>
   );

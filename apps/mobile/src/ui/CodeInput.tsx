@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "./Tappable";
 import React, { useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
 /**
  * Digit-box code entry — the kit's hand-off code grid (`rider-screens.jsx` JobHandoff: one flex box
@@ -31,7 +32,7 @@ export function CodeInput({
   const digits = value.slice(0, length).split("");
 
   return (
-    <Pressable
+    <Tappable
       onPress={() => inputRef.current?.focus()}
       disabled={disabled}
       accessibilityLabel={accessibilityLabel}
@@ -81,6 +82,6 @@ export function CodeInput({
         accessibilityLabel={accessibilityLabel}
         style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01 }}
       />
-    </Pressable>
+    </Tappable>
   );
 }

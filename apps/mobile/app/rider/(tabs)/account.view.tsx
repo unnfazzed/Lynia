@@ -6,9 +6,9 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/rider/(tabs)/account.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { AppBar, Screen, Card, Icon, StatusPill, type IconName } from "../../../src/ui";
+import { Tappable, AppBar, Screen, Card, Icon, StatusPill, type IconName } from "../../../src/ui";
 
 /** A settings row: [icon, label, sub] — mirrors the mock's `[ic, l, s2]` tuple verbatim. */
 export type RiderAccountRow = [IconName, string, string];
@@ -72,7 +72,7 @@ export function RiderAccountView({
           padding: 4,
           marginTop: 10
         }}>
-        {rows.map(([ic, l, s2], i) => <Pressable key={l} onPress={() => onRowPress(i)} accessibilityRole="button"><View style={{
+        {rows.map(([ic, l, s2], i) => <Tappable key={l} onPress={() => onRowPress(i)} accessibilityRole="button"><View style={{
               alignItems: "center",
               gap: 11,
               paddingTop: 11,
@@ -97,7 +97,7 @@ export function RiderAccountView({
                 }}>{s2}</Text>
             </View>
             <Icon name="chevron-right" size={16} color={tokens.color.muted} />
-          </View></Pressable>)}
+          </View></Tappable>)}
       </Card>
     </View>
   </View></Screen>;

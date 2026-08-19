@@ -6,9 +6,9 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/help/index.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { AppBar, Field, Card, Icon, type IconName } from "../../src/ui";
+import { Tappable, AppBar, Field, Card, Icon, type IconName } from "../../src/ui";
 
 /** A help topic, tuple-shaped to mirror the mock's `[icon, title, sub]` rows verbatim. */
 export type HelpTopicRow = [IconName, string, string];
@@ -50,7 +50,7 @@ export function HelpView({
         marginBottom: 8,
         marginLeft: 0
       }}>Browse topics</Text>
-        {topics.map(([ic, t, m], i) => <Pressable key={t} onPress={() => onTopicPress(i)} accessibilityRole="button" accessibilityLabel={t}><Card style={{
+        {topics.map(([ic, t, m], i) => <Tappable key={t} onPress={() => onTopicPress(i)} accessibilityRole="button" accessibilityLabel={t}><Card style={{
           marginBottom: 8
         }}>
             <View style={{
@@ -74,8 +74,8 @@ export function HelpView({
               </View>
               <Icon name="chevron-right" size={18} color={tokens.color.muted} />
             </View>
-          </Card></Pressable>)}
-        <Pressable onPress={onWhatsApp} accessibilityRole="button" accessibilityLabel="Chat with us on WhatsApp"><Card style={{
+          </Card></Tappable>)}
+        <Tappable onPress={onWhatsApp} accessibilityRole="button" accessibilityLabel="Chat with us on WhatsApp"><Card style={{
           backgroundColor: tokens.color.accentWash,
           borderWidth: 1,
           borderStyle: "solid",
@@ -95,7 +95,7 @@ export function HelpView({
             }}>Chat with us on WhatsApp</Text>
             <Icon name="chevron-right" size={18} color={tokens.color.accentText} />
           </View>
-        </Card></Pressable>
+        </Card></Tappable>
       </View>
     </View>;
 }

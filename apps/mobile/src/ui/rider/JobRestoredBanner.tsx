@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Icon } from "../index";
 
 /**
@@ -41,7 +42,7 @@ export function JobRestoredBanner({ onDismiss }: { onDismiss: () => void }): Rea
           step you&apos;d already confirmed is still recorded.
         </Text>
       </View>
-      <Pressable
+      <Tappable tone="icon"
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel="Dismiss job restored notice"
@@ -49,7 +50,7 @@ export function JobRestoredBanner({ onDismiss }: { onDismiss: () => void }): Rea
         style={{ minWidth: 28, minHeight: 28, alignItems: "center", justifyContent: "center" }}
       >
         <Icon name="x" size={16} color={tokens.color.accentText} />
-      </Pressable>
+      </Tappable>
     </View>
   );
 }

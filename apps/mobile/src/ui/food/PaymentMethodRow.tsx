@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Icon, type IconName } from "../Icon";
 
 /**
@@ -26,7 +27,7 @@ export function PaymentMethodRow({
   children?: React.ReactNode;
 }): React.ReactElement {
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
@@ -66,6 +67,6 @@ export function PaymentMethodRow({
           {children}
         </View>
       ) : null}
-    </Pressable>
+    </Tappable>
   );
 }

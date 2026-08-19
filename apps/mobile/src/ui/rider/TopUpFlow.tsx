@@ -1,7 +1,8 @@
 import { formatPhoneLocal, TOPUP_WINDOW_MS, type TopupRail } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { validateTopupAmount } from "../../logic/topup";
 import { useTopUp } from "../../query/use-topup";
@@ -240,7 +241,7 @@ export function TopUpFlow({
         {QUICK_AMOUNTS.map((v) => {
           const on = Number(amountRaw) === v;
           return (
-            <Pressable
+            <Tappable
               key={v}
               onPress={() => setAmountRaw(v.toFixed(2))}
               accessibilityRole="button"
@@ -267,7 +268,7 @@ export function TopUpFlow({
               >
                 {formatMoney(v)}
               </Text>
-            </Pressable>
+            </Tappable>
           );
         })}
       </View>
@@ -288,7 +289,7 @@ export function TopUpFlow({
       {RAILS.map((r) => {
         const on = r.id === rail;
         return (
-          <Pressable
+          <Tappable
             key={r.id}
             onPress={() => setRail(r.id)}
             accessibilityRole="radio"
@@ -338,7 +339,7 @@ export function TopUpFlow({
                 backgroundColor: tokens.color.bg,
               }}
             />
-          </Pressable>
+          </Tappable>
         );
       })}
 

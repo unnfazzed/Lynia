@@ -1,7 +1,8 @@
 import { formatPhoneLocal } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { mapsDirectionsUrl } from "../../logic/maps";
 import { formatMoney } from "../../logic/money";
@@ -43,7 +44,7 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
             Shared only while this delivery is live — for their privacy.
           </Text>
           {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
-          <Pressable
+          <Tappable
             onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
             accessibilityRole="button"
             accessibilityLabel="Call customer"
@@ -51,12 +52,12 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
           >
             <Icon name="phone" size={16} color={tokens.color.accentText} />
             <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer</Text>
-          </Pressable>
+          </Tappable>
         </>
       ) : null}
       {/* Waypoint contacts arrive only for the assigned rider inside the reveal window (§5d). */}
       {order.pickup.contactPhone ? (
-        <Pressable
+        <Tappable
           onPress={() => void Linking.openURL(`tel:${order.pickup.contactPhone}`)}
           accessibilityRole="button"
           accessibilityLabel="Call pickup contact"
@@ -64,10 +65,10 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
         >
           <Icon name="phone" size={16} color={tokens.color.accentText} />
           <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call pickup contact</Text>
-        </Pressable>
+        </Tappable>
       ) : null}
       {order.dropoff.contactPhone ? (
-        <Pressable
+        <Tappable
           onPress={() => void Linking.openURL(`tel:${order.dropoff.contactPhone}`)}
           accessibilityRole="button"
           accessibilityLabel="Call drop-off contact"
@@ -75,7 +76,7 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
         >
           <Icon name="phone" size={16} color={tokens.color.accentText} />
           <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call drop-off contact</Text>
-        </Pressable>
+        </Tappable>
       ) : null}
       {/* Line-items — the §5c "Items & note confirmed" step made real. Absent on orders
           created before the items column, so render nothing rather than a stub. */}
@@ -106,7 +107,7 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
           Google Maps. No Places key needed — a universal Maps URL. Shown while the run is active. */}
       {isActive ? (
         <>
-          <Pressable
+          <Tappable
             onPress={() => void Linking.openURL(mapsDirectionsUrl(order.pickup.point, order.dropoff.point))}
             accessibilityRole="button"
             accessibilityLabel="Follow the route in Google Maps"
@@ -114,7 +115,7 @@ export const JobDetailsCard = React.memo(function JobDetailsCard({
           >
             <Icon name="navigation" size={16} color={tokens.color.accentText} />
             <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Follow route in Google Maps</Text>
-          </Pressable>
+          </Tappable>
           {/* The hand-off backgrounds this app; the foreground-service stream (use-rider-location)
               keeps the customer's map live meanwhile — say so, so the switch feels safe to make. */}
           <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>

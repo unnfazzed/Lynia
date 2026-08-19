@@ -2,14 +2,14 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getMe } from "../../../src/api/auth";
 import { getActiveOrder } from "../../../src/api/orders";
 import { setOnline } from "../../../src/api/riders";
 import { pendingOrQueued } from "../../../src/query/client";
 import { notificationsRowSub, useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
-import { AppScreen, Button, SkeletonList, Sub } from "../../../src/ui";
+import { AppScreen, Button, SkeletonList, Sub, Tappable } from "../../../src/ui";
 import { RiderAccountView, type RiderAccountRow } from "./account.view";
 
 /**
@@ -133,7 +133,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
       {/* Same bottom-sheet confirm idiom as the safety sheets (src/ui/safety.tsx). */}
       <Modal visible={confirmSwitch} transparent animationType="slide" onRequestClose={() => setConfirmSwitch(false)}>
         <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
-          <Pressable
+          <Tappable
             style={{ flex: 1 }}
             onPress={() => setConfirmSwitch(false)}
             accessibilityRole="button"

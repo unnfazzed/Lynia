@@ -1,4 +1,5 @@
 import { formatPhoneLocal, SOS_POLICY } from "@lynia/shared";
+import { Tappable } from "./Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
@@ -51,7 +52,7 @@ function Sheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
         {/* Tap the dimmed backdrop to dismiss; the sheet itself sits below it. */}
-        <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+        <Tappable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <SafeAreaView
           edges={["bottom"]}
           style={{ maxHeight: "88%", backgroundColor: tokens.color.bg, borderTopLeftRadius: tokens.radius.card, borderTopRightRadius: tokens.radius.card }}
@@ -59,7 +60,7 @@ function Sheet({
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: tokens.space.lg }} showsVerticalScrollIndicator={false}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
               <Text style={{ flex: 1, fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{title}</Text>
-              <Pressable
+              <Tappable tone="icon"
                 onPress={onClose}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
@@ -67,7 +68,7 @@ function Sheet({
                 style={{ width: tokens.touchTargetMin, height: tokens.touchTargetMin, alignItems: "flex-end", justifyContent: "center" }}
               >
                 <Icon name="x" size={20} color={tokens.color.muted} />
-              </Pressable>
+              </Tappable>
             </View>
             {children}
           </ScrollView>
@@ -94,7 +95,7 @@ function OptionChips<T extends string>({
       {options.map((o) => {
         const on = value === o.value;
         return (
-          <Pressable
+          <Tappable tone="icon"
             key={o.value}
             onPress={() => onChange(o.value)}
             accessibilityRole="button"
@@ -111,7 +112,7 @@ function OptionChips<T extends string>({
             }}
           >
             <Text style={{ fontSize: 12, fontWeight: "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{o.label}</Text>
-          </Pressable>
+          </Tappable>
         );
       })}
     </View>
@@ -283,7 +284,7 @@ export function ReportControl({
               maxLength={REPORT_NOTE_MAX}
             />
             {/* Block toggle — a checkbox row (mirrors the pickup-verification tick), not a bright fill. */}
-            <Pressable
+            <Tappable
               onPress={() => setBlock((b) => !b)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: block }}
@@ -322,7 +323,7 @@ export function ReportControl({
                   You won&apos;t be matched with this {counterpartyNoun} on future trips.
                 </Text>
               </View>
-            </Pressable>
+            </Tappable>
             <Button label="Send report" onPress={() => m.mutate()} loading={pendingOrQueued(m)} disabled={!canSubmitReport(reason, note)} />
           </>
         )}
@@ -350,7 +351,7 @@ export function SupportCallRow({
   const uri = telUri(phone);
   if (!uri) return null;
   return (
-    <Pressable
+    <Tappable
       onPress={() => void Linking.openURL(uri)}
       accessibilityRole="button"
       accessibilityLabel={`Call ${name} on ${formatPhoneLocal(phone)}`}
@@ -375,7 +376,7 @@ export function SupportCallRow({
       <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
         <Icon name="phone" size={18} color={tokens.color.onAccent} />
       </View>
-    </Pressable>
+    </Tappable>
   );
 }
 

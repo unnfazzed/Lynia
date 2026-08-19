@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useState } from "react";
-import { AccessibilityInfo, Pressable, Text, View } from "react-native";
+import { AccessibilityInfo, Text, View } from "react-native";
 import { Card } from "../index";
 
 /**
@@ -43,7 +44,7 @@ export function DeliveryCodeCard({
           {code}
         </Text>
       ) : (
-        <Pressable
+        <Tappable tone="icon"
           onLongPress={code != null ? reveal : undefined}
           disabled={code == null}
           accessibilityRole="button"
@@ -54,7 +55,7 @@ export function DeliveryCodeCard({
           <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.line, fontVariant: ["tabular-nums"] }}>
             ••• •••
           </Text>
-        </Pressable>
+        </Tappable>
       )}
       <View style={{ paddingHorizontal: 8 }}>
         <Text style={{ fontSize: 12, color: tokens.color.muted, textAlign: "center", lineHeight: 17 }}>

@@ -5,8 +5,13 @@ it takes time to respond."*
 
 This is a different question from `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md`, which analysed how
 long a screen takes to **load** once it is on its way. This analyses the earlier segment: the gap
-between the finger landing on a control and the app **acknowledging** it. Analysis only — no code
-changes in this PR. Each finding names the mechanism, the evidence in the repo, and the delivery lane.
+between the finger landing on a control and the app **acknowledging** it. Each finding names the
+mechanism, the evidence in the repo, and the delivery lane.
+
+**Status: findings 1, 2, 4, 5(part), 7(part), 9, 10 and 11 are IMPLEMENTED — see §5.** The owner
+removed the OTA constraint on 2026-08-19 ("we are not doing OTA builds"), so the lane column below
+records how each fix would have shipped rather than gating it. Finding 3 (the New Architecture) is
+deliberately NOT implemented; §5.3 says why and what it would take.
 
 Prior art it builds on and does not re-litigate: `docs/PERFORMANCE.md`,
 `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§1.3 cold-boot request burst, §5.1 signed-URL churn —
@@ -33,7 +38,7 @@ loses the first one structurally.
 | 4 | **First navigation to a route evaluates its module graph inside the tap handler** — fixed for `/send` only; `/order/[id]`, `/food/order/[orderId]`, `/food/checkout`, `/rider/job` still pay 19–44 modules + the Maps SDK | completion | OTA (JS) |
 | 5 | **Every `<Text>` runs `StyleSheet.flatten` + 2 allocations per render** (the Inter patch) | render cost | OTA (JS) |
 | 6 | **Zero `StyleSheet.create`, 1,333 inline style literals, 10 memoized components** — every render re-allocates every style, so the bridge diff always sees a change | render cost | OTA (JS) |
-| 7 | **1-second `setInterval` → `setState` on 7 screens** re-renders whole subtrees once a second, competing with the tap | render cost | OTA (JS) |
+| 7 | **1-second `setInterval` → `setState` on 3 screens** re-renders whole subtrees once a second, competing with the tap (corrected down from 7 — see §2.3) | render cost | OTA (JS) |
 | 8 | **`LiveMap` glides the rider marker on the JS thread** (`useNativeDriver: false`, 900 ms per GPS fix) | render cost | OTA (JS) |
 | 9 | **Un-debounced SecureStore write on every cart mutation**, including every keystroke of the order note | native queue | OTA (JS) |
 | 10 | **Unmemoized root `AuthContext` value** — invalidates every consumer app-wide on each provider render | hygiene | OTA (JS) |
@@ -171,22 +176,35 @@ Two findings that compound, and together make *any* re-render more expensive tha
 Neither is a bug on its own. Together they mean "a screen re-rendered" costs several times what it
 should, and §2.3/§2.4 make screens re-render a lot.
 
-### 2.3 Seven screens re-render themselves once per second
+### 2.3 Three screens re-render themselves once per second
 
-`setInterval(…, 1000)` driving component state, so the whole subtree reconciles every second:
+> **Correction (same day, during implementation).** The first version of this section claimed
+> *seven* screens and listed `app/rider/(tabs)/index.tsx:494,557`. Those two intervals are a **20 s**
+> heartbeat and a **15 s** sent-offer sweep, not per-second — they were miscounted from a `setInterval`
+> grep without reading the periods. Three of the remaining six sites are also already correctly
+> scoped. The corrected finding is below and is materially smaller than first reported.
 
-| Site | Screen |
+Six `setInterval(…, 1000)` sites drive component state. They split cleanly in two:
+
+**Already correct — leaf-scoped by earlier work, and deliberately so:**
+
+| Site | Why it is fine |
 |---|---|
-| `app/food/order/[orderId].tsx:105` | food order tracking |
-| `app/rider/food-job.tsx:441` | rider food job |
-| `app/rider/(tabs)/index.tsx:494`, `:557` | rider board |
-| `src/ui/order/AuctionClock.tsx:69` | live auction countdown |
-| `src/ui/rider/TopUpFlow.tsx:91` | rider top-up |
-| `src/ui/rider/SentOfferCard.tsx:54` | sent-offer countdown |
-| `app/verify.tsx:64` | OTP resend countdown |
+| `src/ui/rider/SentOfferCard.tsx:54` | the ticker lives INSIDE each card, and the rider board's own comment (`index.tsx:132`) records moving it there as a prior perf fix; it also stops the moment the auction resolves |
+| `src/ui/order/AuctionClock.tsx:69` | same pattern, and its header cites SentOfferCard as the precedent |
+| `src/ui/rider/TopUpFlow.tsx:91` | contained to the flow component |
 
-Each tick is a full unmemoized reconcile of a screen that (per §2.2) reallocates every style and
-re-flattens every Text. If your tap lands inside that work, the press state waits for it.
+**Screen-level — the real finding:**
+
+| Site | Screen | Mitigation already present |
+|---|---|---|
+| `app/food/order/[orderId].tsx:105` | food order tracking | gated on `needsClock` — only ticks while a countdown is actually shown |
+| `app/rider/food-job.tsx:441` | rider food job | gated on `needsClock` likewise |
+| `app/verify.tsx:64` | OTP resend countdown | small screen; low impact |
+
+Each tick on those three is a full unmemoized reconcile of a screen that (per §2.2) reallocates every
+style and re-flattens every Text. If your tap lands inside that work, it waits for it. Both trackers
+already gate the clock to the states that need it, which bounds the cost considerably.
 
 `src/logic/use-now.ts` is **not** part of this — it defaults to 60 s and is used correctly.
 
@@ -270,7 +288,7 @@ notices it again.
    from whichever screen links to them, during idle: `/order/[id]` + `/food/order/[orderId]` from
    Home/Orders, `/food/checkout` from the cart, `/rider/job` + `/rider/food-job` from the board. The
    mechanism is already written, tested and commented — this is applying it, not inventing it.
-4. **OTA — trim the per-render cost:** `StyleSheet.create` in the primitives and the seven 1 s-clock
+4. **OTA — trim the per-render cost:** `StyleSheet.create` in the primitives and the 1 s-clock
    screens; `React.memo` the clock components so a tick re-renders the clock, not the screen; debounce
    the cart persist (§2.5); memoize the auth context value (§2.6).
 5. **Store build, only after 1–4 and with §3's numbers in hand — evaluate the New Architecture.**
@@ -281,3 +299,54 @@ An owner check that would sharpen all of this in about a minute on the handset: 
 into a screen slow and later taps to the same screen fast?** If yes, §2.1 is the dominant
 completion-side cause and step 3 moves up the list. If every tap feels equally slow, the cause is §1
 and steps 1–2 are the whole answer.
+
+---
+
+## 5. What was implemented (2026-08-19)
+
+Owner instruction, same day: *"we are not doing OTA builds. Proceed to implement the fixes and test
+them."* Everything below is on branch `claude/android-button-responsiveness-ocymrf`.
+
+### 5.1 Shipped
+
+| # | Change | Where |
+|---|---|---|
+| 1, 2 | **`Tappable` — the one tappable primitive.** Every control now acknowledges the touch. On **Android the feedback is the platform ripple and nothing else**, so a press costs **zero JavaScript**: `RippleDrawable` paints on the UI thread from the touch event and cannot be delayed by a busy JS thread, whereas the `({ pressed })` style it replaces required a bridge hop, a `setState` and a re-render. Other platforms fall back to a pressed opacity. 92 call sites migrated. | `src/ui/Tappable.tsx` + 57 files |
+| 1 | **Guardrail so it cannot rot.** A source scan fails CI if any `<Pressable>` carries neither a `pressed` style nor a real `android_ripple`, naming the exact file and line. Verified to fail on an injected regression before being kept. | `src/ui/__tests__/press-feedback-guardrail.test.ts` |
+| 1 | **Codegen emits it too.** The mock→RN transpiler now wraps interactions in `Tappable`, and the structural checker treats it as transparent (it renders exactly one `Pressable` and adds no layout box) — so a regenerated view keeps its press feedback instead of silently reverting. | `tools/parity/codegen/{adopted,emit,normalize}.mjs` |
+| 11 | **`tap_ack` + `nav_open` RUM events**, with tight frame-scale histogram buckets on the API. `tap_ack` measures JS-thread headroom at press time (`onPressIn` → next frame), sampled 1-in-4; `nav_open` pairs the last touch with the route change it caused, so redirects, deep links and socket-driven navigations never enter the histogram. | `packages/shared/src/contracts.ts`, `apps/api/src/observability/*`, `src/telemetry/{rum,tap-signal,nav-timing}` |
+| 4 | **Route prewarm registry** — the generalisation of PERF-SEND-01, which warmed `/send` alone. Home now warms `send`+`order`+`foodOrder`, Orders warms both trackers, the cart warms `foodCheckout`, and the rider board warms both job screens — one route per interaction slot, so warming never hands the JS thread a single long block. | `src/boot/prewarm-routes.ts` + 4 screens |
+| 9 | **Cart persistence debounced** (600 ms) with an unmount flush. A run of stepper taps, or a typed order note, was one AndroidKeyStore write *per keystroke*; it is now one write per burst. | `src/food/cart-context.tsx` |
+| 10 | **Auth context value memoised**, with `signIn`/`signOut` stabilised so the memo actually holds. | `src/auth/auth-context.tsx` |
+| 5, 7 | **Style hoisting in the tab bar** — on screen for the whole session and re-rendered on every route change. | `src/ui/shell/TabBar.tsx` |
+
+Tests: **1392 mobile** (35 new) and **1786 API**, all green, plus `pnpm typecheck` and `pnpm lint`
+across the workspace. The prewarm test found and fixed a real gap while it was being written: the
+scheduled callback did not re-check the cancel flag, so a screen the user had already left could keep
+evaluating route graphs.
+
+### 5.2 Deliberately not done
+
+- **The broad `StyleSheet.create` migration (§2.2).** 1,333 inline literals is a mechanical sweep of
+  its own; done piecemeal alongside behavioural changes it is a large diff with real chance of a
+  visual regression and no way to review it. The tab bar is converted as the pattern to follow.
+- **Restructuring the two trackers' 1 s clocks (§2.3).** Both already gate the clock on `needsClock`,
+  and `now` threads through five view components in a 1,000-line live-order screen. The rewiring risk
+  outweighs a bounded once-per-second cost — especially now that a press costs no JS at all.
+- **`LiveMap`'s JS-thread glide (§2.4).** Region animation genuinely cannot use the native driver;
+  the only real fix is a different map-animation strategy, which is its own piece of work.
+
+### 5.3 The New Architecture (finding 3) — still a spike, and here is why
+
+Removing the OTA constraint removes one of the two reasons this was ranked last; the other stands.
+`newArchEnabled` is a native flag: it changes the `runtimeVersion` fingerprint, cannot be rolled back
+without another store build, and `react-native-maps` — the app's most interop-sensitive dependency, on
+the send, tracking and rider screens — is the specific risk. **Nothing in this repo's CI can catch a
+Fabric interop break**: there is no device lane, and the parity render lane runs react-native-web.
+Flipping it here would mean shipping an unvalidated architecture change to internal testers on the
+same build as eight validated fixes, and if the map broke there would be no way to tell which change
+did it.
+
+The honest sequencing is: land this PR, read `tap_ack`/`nav_open` from the fleet, then flip the flag
+as its own build with `docs/QA-DEVICE-CHECKLIST.md` run on a handset — map render, marker glide,
+address picker, sheet gestures. Happy to do that as the next PR on the owner's word.

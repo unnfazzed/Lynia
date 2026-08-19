@@ -103,10 +103,17 @@ export const CLIENT_METRICS_PATH = "/client-metrics";
  *  and unit-test, rather than a probabilistic rate that could streak. */
 const APIFETCH_SAMPLE_RATE = 4;
 
+/** Taps are the most frequent thing a person does in the app, so `tap_ack` is sampled the same way
+ *  `apifetch` is — a deterministic 1-in-N counter, not a probabilistic rate. Kept at the same cadence
+ *  so the two share a mental model; the point of the metric is the DISTRIBUTION's shape, which a
+ *  quarter of the taps describes just as well as all of them. */
+const TAP_ACK_SAMPLE_RATE = 4;
+
 let started = false;
 let buffer: RoleSample[] = [];
 let dropped = 0;
 let apifetchCounter = 0;
+let tapAckCounter = 0;
 let appVersion: string | undefined;
 let intervalTimer: ReturnType<typeof setInterval> | null = null;
 let appStateSub: NativeEventSubscription | null = null;
@@ -180,6 +187,41 @@ export function enqueueApiFetch(ms: number): void {
 }
 
 /**
+ * Measure how much headroom the JS thread had at the instant a touch arrived: schedule a frame
+ * callback from `onPressIn` and record how long it actually took to run.
+ *
+ * This is the honest replacement for "time until the button lit up". On Android the press state is
+ * now a native ripple painted by the platform on the UI thread (src/ui/Tappable.tsx), so there is no
+ * JS press state left to time — but the JS thread's availability at press time is still exactly what
+ * made taps feel late, and it is still what every re-render fix in this program is trying to improve.
+ * An idle thread reads about one frame; a contended one reads far more.
+ *
+ * The measurement costs one `requestAnimationFrame` on a sampled fraction of presses. That is a real
+ * (small) cost on the very path being optimised, which is why it is sampled rather than universal —
+ * and why the sampling gate is checked BEFORE any clock is read.
+ *
+ * `raf` is injectable so the unit test drives it deterministically instead of waiting on a device
+ * frame that never comes under jest's fake timers.
+ */
+export function enqueueTapAck(raf: (cb: () => void) => void = requestAnimationFrame): void {
+  if (!started) return;
+  tapAckCounter += 1;
+  if (tapAckCounter % TAP_ACK_SAMPLE_RATE !== 0) return;
+  const at = Date.now();
+  raf(() => {
+    // Clamped to the contract's bounds: a device clock stepped mid-gesture must not poison the batch.
+    enqueue("tap_ack", Math.min(Math.max(Date.now() - at, 0), GLASS_CAP_MS), activeRole);
+  });
+}
+
+/** Tap → destination screen's first presented frame. Unsampled: a navigation is rare next to a tap,
+ *  and every one of them is independently informative (they differ by ROUTE, not by chance). */
+export function enqueueNavOpen(ms: number): void {
+  if (!started) return;
+  enqueue("nav_open", Math.min(Math.max(ms, 0), GLASS_CAP_MS), activeRole);
+}
+
+/**
  * Push a latency sample. No-op until `start()` runs (dormant-safe). When the buffer is full the oldest
  * sample is discarded and counted in `dropped`. Reaching `FLUSH_AT` triggers a flush.
  */
@@ -238,6 +280,7 @@ export function start(version?: string): void {
   started = true;
   appVersion = version;
   apifetchCounter = 0;
+  tapAckCounter = 0;
   intervalTimer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);
   appStateSub = AppState.addEventListener("change", onAppStateChange);
 }
@@ -253,6 +296,7 @@ export function stop(): void {
   buffer = [];
   dropped = 0;
   apifetchCounter = 0;
+  tapAckCounter = 0;
   // The boot milestones are once-per-PROCESS, but a test that stops and restarts the buffer is
   // simulating a fresh process — leaving them latched would silently no-op the next case.
   bootEventsSent.clear();

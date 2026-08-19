@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { Button, Card, Icon, type IconName } from "../index";
 
@@ -100,8 +101,8 @@ function AlternativeRow({ icon, title, sub, onPress }: Alternative): React.React
   // (it only unlocks after the N-10 wait), so it reads as guidance until it genuinely is one.
   if (!onPress) return <View style={style}>{inner}</View>;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}. ${sub}`} style={style}>
+    <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}. ${sub}`} style={style}>
       {inner}
-    </Pressable>
+    </Tappable>
   );
 }

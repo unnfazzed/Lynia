@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, UIManager, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, KeyboardAvoidingView, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, UIManager, useWindowDimensions, View } from "react-native";
 import { ApiError } from "../src/api/client";
 import { getMe } from "../src/api/auth";
 import { acceptDisclaimer, createOrder, getActiveCustomerOrder, type OrderSnapshot } from "../src/api/orders";
@@ -25,7 +25,7 @@ import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import type { ResolvedPlace } from "../src/api/places";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Field, haptic, Icon, TestBuildBanner, useActionError } from "../src/ui";
+import { Field, haptic, Icon, TestBuildBanner, useActionError, Tappable } from "../src/ui";
 import { AddressConfirmSheet } from "../src/ui/AddressConfirmSheet";
 import { AddressSearch } from "../src/ui/AddressSearch";
 import { BottomSheet } from "../src/ui/BottomSheet";
@@ -644,7 +644,7 @@ export default function HomeScreen(): React.ReactElement {
           {meQ.data?.rider?.isOnline ? (
             // A rider who switches to the customer view stayed online server-side with no reminder here
             // — they could lose track of their shift or miss a broadcast while browsing as a customer.
-            <Pressable
+            <Tappable
               accessibilityRole="button"
               accessibilityLabel="You're online as a rider — go back to the rider dashboard"
               onPress={() => router.push("/rider")}
@@ -664,7 +664,7 @@ export default function HomeScreen(): React.ReactElement {
               <Text style={{ fontSize: tokens.font.size.caption, fontWeight: "700", color: tokens.color.accentText }}>
                 Online as a rider — tap to go back
               </Text>
-            </Pressable>
+            </Tappable>
           ) : null}
 
           {activeOrder ? (

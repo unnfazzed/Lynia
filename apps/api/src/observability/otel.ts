@@ -54,6 +54,13 @@ export async function buildOtelSdk(serviceName: string, endpoint?: string): Prom
     client_boot_paint_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
     client_boot_home_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
     client_boot_home_paint_ms: [500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 12000],
+    // Tap responsiveness (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md). Frame-scale, so the
+    // boundaries start below one frame: an idle JS thread should sit in the 16-32 ms buckets, and
+    // anything past ~100 ms is a tap the user felt. Deliberately NOT the wide client buckets above.
+    client_tap_ack_ms: [8, 16, 32, 50, 100, 200, 400, 800, 2000],
+    // Tap → destination first frame. Wider (this includes the route's module evaluation and mount),
+    // but still far tighter than a cold start.
+    client_nav_open_ms: [100, 200, 350, 500, 800, 1200, 2000, 3500, 6000],
     // Rail-confirmation lag (money, not request latency): a mobile-money confirm is seconds→minutes,
     // and a late confirm on an already-expired intent is legitimately hours — 5s out to 1h.
     topup_confirm_lag_ms: [5000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000],

@@ -223,7 +223,12 @@ function assembleFile(spec, body) {
   // `ComposeMap`/`BottomSheet` are the Foundation-F.c map/sheet realizations (`FauxMap`→`ComposeMap`,
   // `MapSheet`→`BottomSheet` via DS_RENAME); both are re-exported from `src/ui` so a map/sheet region
   // fragment imports them from the one DS specifier like every other primitive.
-  const uiPrims = ["AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark", "ComposeMap", "BottomSheet", "JobCard", "TypeTag", "CashStrip"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
+  // `Tappable` is the app's one tappable primitive (src/ui/Tappable.tsx). Codegen emits it instead of
+  // a bare `Pressable` for every interaction wrapper so a REGENERATED view still acknowledges the
+  // touch — 90 hand-written call sites had no press state at all, which is the bug the primitive
+  // exists to make unrepresentable (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.1). It is
+  // transparent to the structural guardrail exactly as `Pressable` is (normalize.mjs TRANSPARENT).
+  const uiPrims = ["Tappable", "AppBar", "Screen", "Field", "Card", "Icon", "Button", "StatusPill", "EmptyState", "Stepper", "Skeleton", "Money", "PriceMath", "Banner", "CoverPhoto", "MenuRow", "EtaLine", "ShopLogo", "FoodThumb", "Heading", "Sub", "Label", "SystemState", "BrandLockup", "DoveMark", "Wordmark", "ComposeMap", "BottomSheet", "JobCard", "TypeTag", "CashStrip"].filter((n) => new RegExp(`<${n}[\\s/>]`).test(body));
   const usesTokens = /[^.\w]tokens\./.test(body) || /^tokens\./.test(body);
   const usesIconName = /IconName/.test(spec.propsType || "");
   // Region fragments type their data seam against the DS primitives' item types (e.g. the menu-rows

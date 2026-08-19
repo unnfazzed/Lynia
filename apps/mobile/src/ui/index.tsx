@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, ScrollView, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Tappable } from "./Tappable";
 import { captureException, isSentryEnabled, nativeCrash } from "../telemetry/sentry";
 import { Icon, type IconName } from "./Icon";
 import { isTestBuild } from "./test-build";
@@ -50,6 +51,7 @@ export { Avatar } from "./Avatar";
 export { RiderMini } from "./RiderMini";
 export { Celebrate } from "./Celebrate";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
+export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";
 
 /**
  * LR20 exit test, reachable only from the test-build banner's long-press. A release build needs SOME
@@ -95,14 +97,14 @@ function promptCrashTest(): void {
 export function TestBuildBanner(): React.ReactElement | null {
   if (!isTestBuild()) return null;
   return (
-    <Pressable
+    <Tappable
       accessibilityRole="alert"
       accessibilityHint="Long-press to run the crash-telemetry test"
       onLongPress={promptCrashTest}
       style={{ backgroundColor: tokens.color.highlight, paddingVertical: 6, paddingHorizontal: tokens.space.screen, alignItems: "center" }}
     >
       <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.ink }}>TEST BUILD — live API</Text>
-    </Pressable>
+    </Tappable>
   );
 }
 

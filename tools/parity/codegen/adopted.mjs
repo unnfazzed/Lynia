@@ -40,9 +40,9 @@
 /**
  * Shared data seam for the role fork (LJ.role_select + its food-off twin role_select_flag_off). The
  * mock's inline `Opt` cards are STATIC (a frozen `selected={true/false}`, a web `onClick={noop}` on the
- * Button); wire each option to its LIVE `selected` state and a transparent `Pressable` tap handler —
+ * Button); wire each option to its LIVE `selected` state and a transparent `Tappable` tap handler —
  * distinguished by the rider option's `icon="bike"` — and swap the Button's frozen `onClick`/`label` for
- * the container's `onContinue` + dynamic `continueLabel`. Structure-neutral: the Pressable wrap is
+ * the container's `onContinue` + dynamic `continueLabel`. Structure-neutral: the Tappable wrap is
  * transparent to the guardrail and the `Opt` call stays an opaque OPT leaf, so mock↔view congruence holds
  * by construction; only leaf values / an interaction wrapper change. The frozen option COPY (titles,
  * descriptions) is kept verbatim from each mock — the flag-on and flag-off views carry their own drawn
@@ -64,13 +64,13 @@ function roleSelectBind({ t, expr, wrap }) {
     JSXElement(path) {
       const open = path.node.openingElement;
       if (open.name.name !== "Opt") return;
-      if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
+      if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
       const iconAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "icon");
       const isRider = !!iconAttr && iconAttr.value?.type === "StringLiteral" && iconAttr.value.value === "bike";
       open.attributes = open.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "selected"));
       open.attributes.push(t.jsxAttribute(t.jsxIdentifier("selected"), t.jsxExpressionContainer(expr(isRider ? "riderSelected" : "customerSelected"))));
       const handler = isRider ? "onSelectRider" : "onSelectCustomer";
-      const wrapped = wrap(path.node, "Pressable", `onPress={${handler}} accessibilityRole="radio"`);
+      const wrapped = wrap(path.node, "Tappable", `onPress={${handler}} accessibilityRole="radio"`);
       path.replaceWith(wrapped);
       path.skip();
     },
@@ -196,15 +196,15 @@ export const ADOPTED = [
           path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onNext"))));
         }
       },
-      // The "Skip" affordance is a bare Text in the mock; wrap it in a Pressable(onSkip) — a transparent
+      // The "Skip" affordance is a bare Text in the mock; wrap it in a Tappable(onSkip) — a transparent
       // interaction wrapper the structural guardrail sees through.
       JSXElement(path) {
         const open = path.node.openingElement;
         if (open.name.name !== "Text") return;
         const kids = path.node.children.filter((c) => !(c.type === "JSXText" && c.value.trim() === ""));
         if (kids.length !== 1 || kids[0].type !== "JSXText" || kids[0].value.trim() !== "Skip") return;
-        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
-        path.replaceWith(wrap(path.node, "Pressable", `onPress={onSkip} accessibilityRole="button" hitSlop={8}`));
+        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
+        path.replaceWith(wrap(path.node, "Tappable", `onPress={onSkip} accessibilityRole="button" hitSlop={8}`));
         path.skip();
       },
     }),
@@ -245,7 +245,7 @@ export const ADOPTED = [
           path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
         }
       },
-      // Topic cards: give the .map callback an index and wrap each Card in a Pressable (transparent
+      // Topic cards: give the .map callback an index and wrap each Card in a Tappable (transparent
       // to the structural guardrail) so a tap fires onTopicPress(i). The React key moves to the wrap.
       CallExpression(path) {
         const callee = path.node.callee;
@@ -255,10 +255,10 @@ export const ADOPTED = [
         if (arrow.params.length < 2) arrow.params.push(t.identifier("i"));
         const card = arrow.body.type === "JSXElement" ? arrow.body : null;
         if (!card || card.openingElement.name.name !== "Card") return;
-        // move key off the Card onto the Pressable
+        // move key off the Card onto the Tappable
         const keyAttr = card.openingElement.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
         card.openingElement.attributes = card.openingElement.attributes.filter((a) => a !== keyAttr);
-        const wrapped = wrap(card, "Pressable", `onPress={() => onTopicPress(i)} accessibilityRole="button"`);
+        const wrapped = wrap(card, "Tappable", `onPress={() => onTopicPress(i)} accessibilityRole="button"`);
         if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
         wrapped.openingElement.attributes.push(t.jsxAttribute(t.jsxIdentifier("accessibilityLabel"), t.jsxExpressionContainer(expr("t"))));
         arrow.body = wrapped;
@@ -273,8 +273,8 @@ export const ADOPTED = [
           (p) => p.type === "ObjectProperty" && (p.key.name || p.key.value) === "backgroundColor",
         );
         if (!isWash) return;
-        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
-        path.replaceWith(wrap(path.node, "Pressable", `onPress={onWhatsApp} accessibilityRole="button" accessibilityLabel="Chat with us on WhatsApp"`));
+        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
+        path.replaceWith(wrap(path.node, "Tappable", `onPress={onWhatsApp} accessibilityRole="button" accessibilityLabel="Chat with us on WhatsApp"`));
         path.skip();
       },
     }),
@@ -561,7 +561,7 @@ export const ADOPTED = [
       {
         // Cover region — the full-bleed cover band: DS CoverPhoto with the floating back button, the
         // (decorative, static-mock) search glyph and the round DS ShopLogo overhanging its corner. The
-        // back glyph is wired to onBack via a transparent Pressable (invisible to the structural diff).
+        // back glyph is wired to onBack via a transparent Tappable (invisible to the structural diff).
         region: "cover",
         locator: { el: "CoverPhoto" },
         componentName: "MenuCoverView",
@@ -590,7 +590,7 @@ export const ADOPTED = [
             }
           },
           // The back glyph is the absolute box with a `left` inset (the search glyph has `right`); wrap
-          // it in a Pressable(onBack). Transparent wrapper → invisible to the structural guardrail.
+          // it in a Tappable(onBack). Transparent wrapper → invisible to the structural guardrail.
           JSXElement(path) {
             const open = path.node.openingElement;
             if (open.name.name !== "View") return;
@@ -599,15 +599,15 @@ export const ADOPTED = [
             if (obj?.type !== "ObjectExpression") return;
             const keys = obj.properties.filter((p) => p.type === "ObjectProperty" && !p.computed).map((p) => p.key.name || p.key.value);
             if (!keys.includes("left") || !keys.includes("position")) return;
-            if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Pressable") return;
-            path.replaceWith(wrap(path.node, "Pressable", `onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"`));
+            if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
+            path.replaceWith(wrap(path.node, "Tappable", `onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"`));
             path.skip();
           },
         }),
       },
       {
         // Rows region — the section's dish list: `{rows.map(i => <MenuRow i qty/>)}`. Each MenuRow is
-        // wrapped in a Pressable(onDishPress) so a tap opens the live ItemSheet (kept in the container).
+        // wrapped in a Tappable(onDishPress) so a tap opens the live ItemSheet (kept in the container).
         region: "rows",
         locator: { map: "MenuRow" },
         componentName: "MenuRowsView",
@@ -637,7 +637,7 @@ export const ADOPTED = [
             open.attributes.push(t.jsxAttribute(t.jsxIdentifier("qty"), t.jsxExpressionContainer(expr("qtyFor(i)"))));
             const keyAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
             open.attributes = open.attributes.filter((a) => a !== keyAttr);
-            const wrapped = wrap(row, "Pressable", `onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}`);
+            const wrapped = wrap(row, "Tappable", `onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}`);
             if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
             arrow.body = wrapped;
           },
@@ -716,7 +716,7 @@ export const ADOPTED = [
       {
         // Interrupt region — the centred modal Card: a highlight clock-tile, headline, body line and two
         // named ways forward (see-open / keep-cart). Locator {el:"Card"} anchors the mock's single Card;
-        // the app mounts <ClosedInterruptView/> inside its transparent dim-overlay Pressable (invisible to
+        // the app mounts <ClosedInterruptView/> inside its transparent dim-overlay Tappable (invisible to
         // the composition walker, which bubbles a non-scaffold wrapper's region). No backend gate, no
         // fabricated control — both actions are honest (navigate to the open list · dismiss keeping cart).
         region: "interrupt",
@@ -786,7 +786,7 @@ export const ADOPTED = [
         state: "twin-internals",
         key: "RC.home",
         reason:
-          "Composition is GATED (four regions, mock order/nesting). The four members' INTERNAL trees (home-8c mock members ≡ app twins HomeHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds — the RN twins reach the mock's DOM shapes through different primitives (an <img> sticker is a react-native-svg tree, the mock's <button> tile is a Pressable, the ETA pill is an absolutely-positioned View) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
+          "Composition is GATED (four regions, mock order/nesting). The four members' INTERNAL trees (home-8c mock members ≡ app twins HomeHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds — the RN twins reach the mock's DOM shapes through different primitives (an <img> sticker is a react-native-svg tree, the mock's <button> tile is a Tappable, the ETA pill is an absolutely-positioned View) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
       },
     ],
   },
@@ -1385,7 +1385,7 @@ export const ADOPTED = [
     // opaque sub-component on both sides (uppercase-fallback OPT), so structure holds by construction and
     // the idioms only make the view valid RN. The container keeps ALL logic (role state, saveRolePreference,
     // permission-priming route); the data seam wires each option's live `selected` + tap handler (a
-    // transparent Pressable wrap) and the Button's dynamic label/onPress. `role_select_flag_off` is the
+    // transparent Tappable wrap) and the Button's dynamic label/onPress. `role_select_flag_off` is the
     // food-off twin — SAME structure but a `div(Dove, Wordmark)` brand mark (vs `Lockup`) and its own frozen
     // copy — adopted as a second state so the flag-off screen aligns to its OWN mock (brand mark + verbatim
     // copy), the container switching views on `restaurantsEnabled`.
@@ -1497,7 +1497,7 @@ export const ADOPTED = [
       },
       // The feed: the mock's `{items.map((n, i) => <div…>)}` → a FlatList over the SAME `items`, so the
       // app keeps virtualization (B-O1) while normalize.mjs folds the FlatList back to the mock's MAP.
-      // Each row is wrapped in a transparent Pressable(onItemPress(i)) — invisible to the structural
+      // Each row is wrapped in a transparent Tappable(onItemPress(i)) — invisible to the structural
       // diff — so a tap opens the order the mock's static row couldn't. keyExtractor keys by `id`.
       CallExpression(path) {
         const callee = path.node.callee;
@@ -1509,7 +1509,7 @@ export const ADOPTED = [
         if (!row || row.type !== "JSXElement") return;
         // move the React key off the row (FlatList keys via keyExtractor instead)
         row.openingElement.attributes = row.openingElement.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "key"));
-        const wrapped = wrap(row, "Pressable", `onPress={() => onItemPress(i)} accessibilityRole="button"`);
+        const wrapped = wrap(row, "Tappable", `onPress={() => onItemPress(i)} accessibilityRole="button"`);
         const flat = expr(
           "<FlatList data={items} keyExtractor={n => n.id} showsVerticalScrollIndicator={false} renderItem={({ item: n, index: i }) => null} ListFooterComponent={<View style={{ height: tokens.space.xxl }} />} />",
         );
@@ -2065,7 +2065,7 @@ export const ADOPTED = [
               path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("dot"), null));
             },
             // Settings rows: swap the mock's frozen tuple array for the live `rows` prop, index the map,
-            // and wrap each row in a Pressable(onRowPress(i)) — a transparent interaction wrapper the
+            // and wrap each row in a Tappable(onRowPress(i)) — a transparent interaction wrapper the
             // guardrail sees through. The React key moves to the wrap.
             CallExpression(path) {
               const callee = path.node.callee;
@@ -2078,7 +2078,7 @@ export const ADOPTED = [
               if (!row) return;
               const keyAttr = row.openingElement.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
               row.openingElement.attributes = row.openingElement.attributes.filter((a) => a !== keyAttr);
-              const wrapped = wrap(row, "Pressable", `onPress={() => onRowPress(i)} accessibilityRole="button"`);
+              const wrapped = wrap(row, "Tappable", `onPress={() => onRowPress(i)} accessibilityRole="button"`);
               if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
               arrow.body = wrapped;
             },

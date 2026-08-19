@@ -1,9 +1,10 @@
 import { type UndeliveredReason } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { uploadDeliveryProof } from "../../logic/delivery-proof";
 import { UNDELIVERED_OPTIONS } from "../../logic/rider-job";
 import { Button, Card, Icon, Sub } from "../index";
@@ -119,7 +120,7 @@ export function UndeliveredSheet({
       <Sub>Pick the reason — this ends the job, so only use it if the hand-off truly can&apos;t happen.</Sub>
       <View style={{ gap: tokens.space.sm, marginTop: tokens.space.sm }}>
         {UNDELIVERED_OPTIONS.map((o) => (
-          <Pressable
+          <Tappable
             key={o.reason}
             onPress={() => setPicked(o.reason)}
             disabled={!!pending}
@@ -141,7 +142,7 @@ export function UndeliveredSheet({
           >
             <Icon name={o.icon} size={16} color={tokens.color.muted} />
             <Text style={{ flex: 1, fontSize: tokens.font.size.body, color: tokens.color.ink }}>{o.label}</Text>
-          </Pressable>
+          </Tappable>
         ))}
       </View>
       <Button label="Never mind" variant="ghost" onPress={onDismiss} disabled={!!pending} />

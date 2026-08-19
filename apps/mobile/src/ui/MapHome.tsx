@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "./Tappable";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { BrandLockup } from "./Brand";
@@ -134,7 +135,7 @@ function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; 
   const placeholder = isPickup ? "Set pickup location" : "Where to?";
   const filled = props.value.trim().length > 0;
   return (
-    <Pressable
+    <Tappable
       onPress={props.onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: props.active }}
@@ -170,6 +171,6 @@ function AddressRow(props: { slot: AddressSlot; value: string; active: boolean; 
       </View>
       {/* Kit AddressFields: a filled row shows `pencil` (edit), an empty row `search`. */}
       <Icon name={filled ? "pencil" : "search"} size={16} color={props.active ? tokens.color.accentText : tokens.color.muted} />
-    </Pressable>
+    </Tappable>
   );
 }

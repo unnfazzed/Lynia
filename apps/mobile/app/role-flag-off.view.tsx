@@ -6,9 +6,9 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/role.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { Icon, Button, Heading, Sub, DoveMark, Wordmark, type IconName } from "../src/ui";
+import { Tappable, Icon, Button, Heading, Sub, DoveMark, Wordmark, type IconName } from "../src/ui";
 
 export type RoleSelectViewProps = {
   customerSelected: boolean;
@@ -87,8 +87,8 @@ export function RoleSelectFlagOffView({
     }}><DoveMark size={40} on="white" /><Wordmark size={24} /></View>
       <Heading>How do you want to start?</Heading>
       <Sub>It's one account — pick how you'll use LyniaGo now, and switch anytime.</Sub>
-      <Pressable onPress={onSelectCustomer} accessibilityRole="radio"><Opt icon="package" title="Use LyniaGo" desc="Send parcels across Harare — more services soon." selected={customerSelected} /></Pressable>
-      <Pressable onPress={onSelectRider} accessibilityRole="radio"><Opt icon="bike" title="Earn as a rider" desc="Deliver parcels near you and get paid in cash." selected={riderSelected} /></Pressable>
+      <Tappable onPress={onSelectCustomer} accessibilityRole="radio"><Opt icon="package" title="Use LyniaGo" desc="Send parcels across Harare — more services soon." selected={customerSelected} /></Tappable>
+      <Tappable onPress={onSelectRider} accessibilityRole="radio"><Opt icon="bike" title="Earn as a rider" desc="Deliver parcels near you and get paid in cash." selected={riderSelected} /></Tappable>
       <Button label={continueLabel} onPress={onContinue} />
     </View>;
 }

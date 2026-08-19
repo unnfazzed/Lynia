@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import { Button, Heading, Icon, type IconName, Sub } from "../index";
 
 /**
@@ -65,7 +66,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
               </View>
             ))}
           </ScrollView>
-          <Pressable
+          <Tappable
             onPress={() => setChecked((v) => !v)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked }}
@@ -99,7 +100,7 @@ export function DisclaimerSheet({ visible, onAgree, onBack }: { visible: boolean
             <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
               I understand and accept these terms
             </Text>
-          </Pressable>
+          </Tappable>
           {/* Kit copy (screens.jsx:504) — "Agree & broadcast", matching the composer's own CTA. */}
           <Button label="Agree & broadcast" onPress={onAgree} disabled={!checked} />
           <Button label="Back" variant="ghost" onPress={onBack} />

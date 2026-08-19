@@ -6,9 +6,9 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/food/[id].tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { View, Pressable } from "react-native";
+import { View } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { Icon, CoverPhoto, ShopLogo } from "../../src/ui";
+import { Tappable, Icon, CoverPhoto, ShopLogo } from "../../src/ui";
 
 export type MenuCoverViewProps = {
   name: string;
@@ -26,7 +26,7 @@ export function MenuCoverView({
   onBack
 }: MenuCoverViewProps): React.ReactElement {
   return <CoverPhoto height={92} name={name} photo={photo}>
-        <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"><View style={{
+        <Tappable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"><View style={{
         position: "absolute",
         left: 12,
         top: 10,
@@ -43,7 +43,7 @@ export function MenuCoverView({
             rotate: "180deg"
           }]
         }} />
-        </View></Pressable>
+        </View></Tappable>
         <View style={{
       position: "absolute",
       right: 12,

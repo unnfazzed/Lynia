@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import type { HomePlace } from "../../logic/home-location";
@@ -74,9 +75,9 @@ export function LocationSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}>
+      <Tappable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}>
         {/* Swallow taps inside the panel so only the scrim closes it. */}
-        <Pressable
+        <Tappable
           onPress={() => undefined}
           style={{
             backgroundColor: tokens.color.bg,
@@ -172,8 +173,8 @@ export function LocationSheet({
               />
             </View>
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </Tappable>
+      </Tappable>
     </Modal>
   );
 }

@@ -1,7 +1,8 @@
 import type { RestaurantMenuDish } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { Money } from "../Money";
 import { Icon } from "../Icon";
@@ -24,7 +25,7 @@ export function MenuRow({
 }): React.ReactElement {
   const disabled = dish.outOfStock || !!disabledReason;
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -90,6 +91,6 @@ export function MenuRow({
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </Tappable>
   );
 }

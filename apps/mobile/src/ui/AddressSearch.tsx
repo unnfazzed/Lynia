@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "./Tappable";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { autocompletePlaces, placeDetails, placesEnabled, type PlaceSuggestion, type ResolvedPlace } from "../api/places";
@@ -530,7 +531,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
         {loading || resolving ? (
           <ActivityIndicator color={tokens.color.accentText} />
         ) : query.length > 0 ? (
-          <Pressable
+          <Tappable tone="icon"
             onPress={clear}
             accessibilityRole="button"
             accessibilityLabel="Clear search"
@@ -538,7 +539,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
             style={{ minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}
           >
             <Icon name="x" size={16} color={tokens.color.muted} />
-          </Pressable>
+          </Tappable>
         ) : null}
       </View>
 
@@ -650,7 +651,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
                     onPress={() => pick(place)}
                     accessibilityLabel={`${meta.label}: ${place.landmark}`}
                     trailing={
-                      <Pressable
+                      <Tappable tone="icon"
                         onPress={() => clearSlot(slot)}
                         accessibilityRole="button"
                         accessibilityLabel={`Remove saved ${meta.label}`}
@@ -658,7 +659,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
                         style={{ minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}
                       >
                         <Icon name="x" size={16} color={tokens.color.muted} />
-                      </Pressable>
+                      </Tappable>
                     }
                   />
                 );
@@ -683,7 +684,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
                     trailing={
                       // Promote to the first free slot (Home, then Work). Hidden once both are set.
                       nextFreeSlot ? (
-                        <Pressable
+                        <Tappable tone="icon"
                           onPress={() => promote(place, nextFreeSlot)}
                           accessibilityRole="button"
                           accessibilityLabel={`Save ${primary} as ${SLOT_META[nextFreeSlot].label}`}
@@ -691,7 +692,7 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
                           style={{ minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}
                         >
                           <Icon name="star" size={16} color={tokens.color.muted} />
-                        </Pressable>
+                        </Tappable>
                       ) : undefined
                     }
                   />

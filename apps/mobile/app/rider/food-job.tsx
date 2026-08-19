@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import {
@@ -28,7 +28,7 @@ import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useActionError, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useActionError, useToast, Tappable } from "../../src/ui";
 import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
 import { FoodNavLeg } from "../../src/ui/rider/FoodNavLeg";
 import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
@@ -496,7 +496,7 @@ export default function RiderFoodJob(): React.ReactElement {
                 <CashHeldStrip yours={breakdown?.kept ?? 0} owed={breakdown?.owed ?? 0} />
               </View>
               {deliveredFood.pickupPoint ? (
-                <Pressable
+                <Tappable
                   onPress={() => void Linking.openURL(mapsPlaceUrl(deliveredFood.pickupPoint!))}
                   accessibilityRole="button"
                   accessibilityLabel="Navigate back to the restaurant"
@@ -504,7 +504,7 @@ export default function RiderFoodJob(): React.ReactElement {
                 >
                   <Icon name="navigation" size={16} color={tokens.color.accentText} />
                   <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Navigate back to the kitchen</Text>
-                </Pressable>
+                </Tappable>
               ) : null}
             </Card>
           ) : cashCollect ? (
@@ -521,7 +521,7 @@ export default function RiderFoodJob(): React.ReactElement {
             ) : (
               <View style={{ flexDirection: "row", gap: 4 }}>
                 {[1, 2, 3, 4, 5].map((n) => (
-                  <Pressable
+                  <Tappable tone="icon"
                     key={n}
                     onPress={() => {
                       setCustomerScore(n);
@@ -534,7 +534,7 @@ export default function RiderFoodJob(): React.ReactElement {
                     style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
                   >
                     <Text style={{ fontSize: 30, color: n <= customerScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                  </Pressable>
+                  </Tappable>
                 ))}
               </View>
             )}
@@ -646,7 +646,7 @@ export default function RiderFoodJob(): React.ReactElement {
                 : "Cancelled before pickup — you're simply free. No food, straight back to the board."}
             </Text>
             {order.counterpartyPhone ? (
-              <Pressable
+              <Tappable
                 onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
                 accessibilityRole="button"
                 accessibilityLabel="Call customer"
@@ -654,7 +654,7 @@ export default function RiderFoodJob(): React.ReactElement {
               >
                 <Icon name="phone" size={16} color={tokens.color.accentText} />
                 <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer · {formatPhoneLocal(order.counterpartyPhone)}</Text>
-              </Pressable>
+              </Tappable>
             ) : null}
           </Card>
           <GetHelpControl orderId={order.id} />
@@ -799,9 +799,9 @@ export default function RiderFoodJob(): React.ReactElement {
             <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
               Location is off — the customer can&apos;t see where you are.
             </Text>
-            <Pressable onPress={() => void Linking.openSettings()} hitSlop={8}>
+            <Tappable tone="icon" onPress={() => void Linking.openSettings()} hitSlop={8}>
               <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accent }}>Turn on</Text>
-            </Pressable>
+            </Tappable>
           </View>
         ) : null}
 

@@ -3,11 +3,11 @@ import { tokens } from "@lynia/shared/tokens";
 import { isMerchantOpenNow } from "@lynia/shared";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, Icon, Screen } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, Screen, Tappable } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
 import { FoodListErrorView } from "./food-list.error.view";
 import { FoodListLoadingView } from "./food-list.loading.view";
@@ -68,28 +68,28 @@ export default function RestaurantListScreen(): React.ReactElement {
   return (
     <Screen>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={{ padding: 4 }}>
+        <Tappable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={{ padding: 4 }}>
           <View style={{ transform: [{ rotate: "180deg" }] }}>
             <Icon name="chevron-right" size={20} color={tokens.color.ink} />
           </View>
-        </Pressable>
+        </Tappable>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>FOOD · DELIVER TO</Text>
           <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
             Harare
           </Text>
         </View>
-        <Pressable
+        <Tappable
           onPress={() => router.push("/food/search")}
           accessibilityRole="button"
           accessibilityLabel="Search restaurants"
           style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}
         >
           <Icon name="search" size={18} color={tokens.color.ink} />
-        </Pressable>
+        </Tappable>
       </View>
 
-      <Pressable
+      <Tappable
         onPress={() => setOpenOnly((v) => !v)}
         accessibilityRole="button"
         accessibilityState={{ selected: openOnly }}
@@ -106,7 +106,7 @@ export default function RestaurantListScreen(): React.ReactElement {
         }}
       >
         <Text style={{ fontSize: 12.5, fontWeight: "700", color: openOnly ? tokens.color.accentText : tokens.color.muted }}>Open now</Text>
-      </Pressable>
+      </Tappable>
 
       {feed.showingStale ? (
         <View style={{ marginBottom: tokens.space.sm }}>
