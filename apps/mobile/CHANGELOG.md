@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.1](https://github.com/unnfazzed/Lynia/compare/v0.42.0...v0.42.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **mobile:** keep the suburb through a location pick; tighten area matching ([8598492](https://github.com/unnfazzed/Lynia/commit/859849296e76580493bc907eee72c0d1e876fc71))
+* **mobile:** live deliver-to on the restaurant list, plus RC.list header parity ([d4a367f](https://github.com/unnfazzed/Lynia/commit/d4a367f8a1e213ebe25b6750b7aaaa90d1946b81))
+
 ## [0.42.0](https://github.com/unnfazzed/Lynia/compare/v0.41.2...v0.42.0) (2026-08-19)
 
 
