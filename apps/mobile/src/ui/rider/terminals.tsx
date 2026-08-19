@@ -1,7 +1,8 @@
 import { type UndeliveredReason } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { UNDELIVERED_LABEL } from "../../logic/rider-job";
 import { Button, Card, Heading, Icon, Screen, StatusPill } from "../index";
@@ -49,7 +50,7 @@ export function CancelledHandback({
                 This job has ended. You still have the parcel — arrange the hand-back directly with the sender. This doesn&apos;t affect your reliability score.
               </Text>
               {senderPhone ? (
-                <Pressable
+                <Tappable
                   onPress={() => void Linking.openURL(`tel:${senderPhone}`)}
                   accessibilityRole="button"
                   accessibilityLabel="Call sender"
@@ -57,7 +58,7 @@ export function CancelledHandback({
                 >
                   <Icon name="phone" size={16} color={tokens.color.accentText} />
                   <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>Call sender · {senderPhone}</Text>
-                </Pressable>
+                </Tappable>
               ) : null}
             </>
           ) : (

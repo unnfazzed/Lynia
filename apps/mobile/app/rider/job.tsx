@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
 import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
@@ -39,7 +39,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast, Tappable } from "../../src/ui";
 import { RiderActiveParcelCashStripView } from "./active-parcel-cash-strip.view";
 import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
@@ -755,7 +755,7 @@ export default function RiderJob(): React.ReactElement {
             ) : (
               <View style={{ flexDirection: "row", gap: 4 }}>
                 {[1, 2, 3, 4, 5].map((n) => (
-                  <Pressable
+                  <Tappable tone="icon"
                     key={n}
                     onPress={() => {
                       setSenderScore(n);
@@ -773,7 +773,7 @@ export default function RiderJob(): React.ReactElement {
                     style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
                   >
                     <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                  </Pressable>
+                  </Tappable>
                 ))}
               </View>
             )}
@@ -954,9 +954,9 @@ export default function RiderJob(): React.ReactElement {
             <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
               Location is off — the customer can&apos;t see where you are.
             </Text>
-            <Pressable onPress={() => void Linking.openSettings()} hitSlop={8}>
+            <Tappable tone="icon" onPress={() => void Linking.openSettings()} hitSlop={8}>
               <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accent }}>Turn on</Text>
-            </Pressable>
+            </Tappable>
           </View>
         ) : null}
 

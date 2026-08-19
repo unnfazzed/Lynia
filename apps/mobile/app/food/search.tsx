@@ -2,11 +2,11 @@ import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { FlatList, Text, TextInput, View } from "react-native";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { AppBar, EmptyState, Icon, Screen } from "../../src/ui";
+import { AppBar, EmptyState, Icon, Screen, Tappable } from "../../src/ui";
 import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
 
 /** R1·5 search — restaurant name + cuisine tags only (client-side, over the already-fetched list).
@@ -74,9 +74,9 @@ export default function RestaurantSearchScreen(): React.ReactElement {
           style={{ flex: 1, fontSize: 14.5, color: tokens.color.ink }}
         />
         {query ? (
-          <Pressable onPress={() => setQuery("")} accessibilityRole="button" accessibilityLabel="Clear search">
+          <Tappable onPress={() => setQuery("")} accessibilityRole="button" accessibilityLabel="Clear search">
             <Icon name="x" size={16} color={tokens.color.muted} />
-          </Pressable>
+          </Tappable>
         ) : null}
       </View>
 

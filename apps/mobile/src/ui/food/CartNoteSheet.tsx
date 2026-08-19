@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Modal, ScrollView, Text, TextInput, View } from "react-native";
 import { BottomSheet } from "../BottomSheet";
 import { Button, Icon } from "../index";
 import { NoteField } from "./NoteField";
@@ -81,13 +82,13 @@ export function CartNoteSheet({
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose} visible>
-      <Pressable
+      <Tappable
         accessibilityLabel="Close"
         accessibilityRole="button"
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}
       >
-        <Pressable onPress={(e) => e.stopPropagation()}>
+        <Tappable onPress={(e) => e.stopPropagation()}>
           <BottomSheet
             // Kit R3·2 (r-customer-a.jsx:597): the sheet's top corners are 20px, a step softer than
             // the shared 16px card radius — same as the item sheet it sits alongside.
@@ -143,7 +144,7 @@ export function CartNoteSheet({
                 {QUICK_PHRASES.map((phrase) => {
                   const on = hasPhrase(note, phrase);
                   return (
-                    <Pressable
+                    <Tappable
                       key={phrase}
                       onPress={() => setNote((cur) => toggleQuickPhrase(cur, phrase))}
                       accessibilityRole="button"
@@ -163,7 +164,7 @@ export function CartNoteSheet({
                         {on ? "✓ " : "+ "}
                         {phrase}
                       </Text>
-                    </Pressable>
+                    </Tappable>
                   );
                 })}
               </View>
@@ -196,8 +197,8 @@ export function CartNoteSheet({
               </View>
             </ScrollView>
           </BottomSheet>
-        </Pressable>
-      </Pressable>
+        </Tappable>
+      </Tappable>
     </Modal>
   );
 }

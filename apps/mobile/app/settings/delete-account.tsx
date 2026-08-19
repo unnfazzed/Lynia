@@ -2,12 +2,12 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { deleteAccount } from "../../src/api/auth";
 import { getActiveCustomerOrder } from "../../src/api/orders";
 import { useAuth } from "../../src/auth/auth-context";
 import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, Icon, Screen, useActionErrorEffect } from "../../src/ui";
+import { AppBar, Button, Card, Icon, Screen, useActionErrorEffect, Tappable } from "../../src/ui";
 
 /**
  * Account deletion — the two screens the design draws (screens-shipped.jsx, SH7):
@@ -72,7 +72,7 @@ export default function DeleteAccountScreen({
             <Text style={{ fontWeight: "700", color: tokens.color.ink }}>30 days</Text>. Sign back in within 30 days and
             the deletion is cancelled — after that, nothing can be recovered.
           </Text>
-          <Pressable
+          <Tappable
             onPress={() => setAcknowledged((v) => !v)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: acknowledged }}
@@ -106,7 +106,7 @@ export default function DeleteAccountScreen({
             <Text style={{ flex: 1, fontSize: 13, fontWeight: "600", color: tokens.color.ink, lineHeight: 18 }}>
               I understand my history and saved places will be gone
             </Text>
-          </Pressable>
+          </Tappable>
         </Card>
         <Button
           label="Delete my account"

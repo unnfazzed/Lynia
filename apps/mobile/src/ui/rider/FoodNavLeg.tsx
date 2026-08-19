@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Text, View } from "react-native";
 import type { OrderSnapshot } from "../../api/orders";
 import { mapsDirectionsUrl, mapsPlaceUrl } from "../../logic/maps";
 import { formatMoney } from "../../logic/money";
@@ -120,7 +121,7 @@ export function FoodNavLeg({
           </View>
           {toRestaurant ? <PayTag method={paymentMethod} /> : null}
           {phone ? (
-            <Pressable
+            <Tappable
               onPress={() => void Linking.openURL(`tel:${phone}`)}
               accessibilityRole="button"
               accessibilityLabel={toRestaurant ? "Call the restaurant" : "Call the customer"}
@@ -137,7 +138,7 @@ export function FoodNavLeg({
               }}
             >
               <Icon name="phone" size={17} color={toRestaurant ? tokens.color.accentText : tokens.color.onAccent} />
-            </Pressable>
+            </Tappable>
           ) : null}
         </View>
         {collectAmount != null ? (

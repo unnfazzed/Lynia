@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { RemoteImage } from "../RemoteImage";
 import { avatarTint } from "../../logic/avatar";
 
@@ -52,7 +53,7 @@ export function RestaurantCard({
   const showPhoto = !!photoUrl && !photoFailed;
 
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${name}${closed ? " — closed" : ""}`}
@@ -124,6 +125,6 @@ export function RestaurantCard({
           ) : null}
         </View>
       </View>
-    </Pressable>
+    </Tappable>
   );
 }

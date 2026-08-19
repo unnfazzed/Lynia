@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Icon } from "../Icon";
 
 /**
@@ -49,7 +50,7 @@ export function AppBar({
       ]}
     >
       {back ? (
-        <Pressable
+        <Tappable tone="icon"
           onPress={onBack}
           disabled={!onBack}
           accessibilityRole="button"
@@ -64,7 +65,7 @@ export function AppBar({
           <View style={{ transform: [{ rotate: "180deg" }] }}>
             <Icon name="chevron-right" size={20} color={tokens.color.ink} />
           </View>
-        </Pressable>
+        </Tappable>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         {title ? (

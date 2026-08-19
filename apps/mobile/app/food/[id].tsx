@@ -3,10 +3,10 @@ import { tokens } from "@lynia/shared/tokens";
 import { isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, haptic, Icon, Screen, SkeletonList, useToast } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, haptic, Icon, Screen, SkeletonList, useToast, Tappable } from "../../src/ui";
 import { ItemSheet } from "../../src/ui/food/ItemSheet";
 import { RemindWhenOpen } from "../../src/ui/food/RemindWhenOpen";
 // Foundation-E — RC.menu is the first REGION-ADOPTED interactive screen: the cover, dish-rows and cart
@@ -166,7 +166,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         {menu.categories.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
             {menu.categories.map((c, i) => (
-              <Pressable
+              <Tappable
                 key={c.id}
                 onPress={() => setCategoryIdx(i)}
                 accessibilityRole="button"
@@ -182,7 +182,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
                 }}
               >
                 <Text style={{ fontSize: 12.5, fontWeight: "700", color: i === categoryIdx ? tokens.color.accentText : tokens.color.muted }}>{c.name}</Text>
-              </Pressable>
+              </Tappable>
             ))}
           </ScrollView>
         ) : null}
@@ -217,7 +217,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
       </ScrollView>
 
       {justClosed ? (
-        <Pressable
+        <Tappable
           onPress={() => setJustClosed(false)}
           style={{ position: "absolute", inset: 0, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "center", padding: 18 }}
         >
@@ -232,7 +232,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
             onSeeOpen={() => router.push("/food")}
             onDismiss={() => setJustClosed(false)}
           />
-        </Pressable>
+        </Tappable>
       ) : null}
 
       {openItem ? (

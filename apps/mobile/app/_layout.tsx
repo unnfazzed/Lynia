@@ -19,6 +19,7 @@ import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery }
 import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
+import { NavOpenProbe } from "../src/telemetry/nav-timing";
 import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
@@ -232,6 +233,9 @@ function RootLayout(): React.ReactElement | null {
                 server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
                 transition, so without this the user is stranded on an authless protected screen. */}
             <SessionGate />
+            {/* Tap → destination-screen latency (`nav_open`). Renders nothing; needs the router
+                context, and pairs each route change with the press that caused it. */}
+            <NavOpenProbe />
             <StatusBar style="dark" />
             {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
                 absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits

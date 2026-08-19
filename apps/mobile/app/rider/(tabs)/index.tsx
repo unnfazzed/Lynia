@@ -6,6 +6,7 @@ import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { FlatList, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
@@ -71,7 +72,15 @@ const ACTIVATION_RETRY_MS = 15_000;
 // caught. The way back is not lost: `activeJobBanner` re-renders itself the moment a fetch succeeds,
 // and the poll self-heals. Do not reintroduce a bare-`isError` banner here; see KNOWN_BUGS UX20-01.
 
+/** The board's two exits are the parcel job and the food job — the app's two heaviest routes after
+ *  the food tracker (36 and 39 new modules, plus maps, socket.io-client and, for the parcel job, the
+ *  image-picker/manipulator pair). A rider accepting work is the least patient tap in the product, so
+ *  both are warmed from board idle. Scoped to the rider surface: the customer launcher never
+ *  evaluates these graphs (src/boot/prewarm-routes.ts). */
+const BOARD_PREWARM: readonly PrewarmRoute[] = ["riderJob", "riderFoodJob"];
+
 export default function RiderHome(): React.ReactElement {
+  usePrewarmRoutes(BOARD_PREWARM);
   const router = useRouter();
   const pathname = usePathname();
   const qc = useQueryClient();

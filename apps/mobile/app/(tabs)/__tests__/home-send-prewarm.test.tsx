@@ -32,6 +32,13 @@ jest.mock("../../send", () => {
   return { __esModule: true, default: (): null => null };
 });
 
+// Home warms three routes, not one (src/boot/prewarm-routes.ts): `send`, `order` and `foodOrder`.
+// This file is about /send, and the other two are stubbed so draining the warm chain here does not
+// really evaluate two more live-tracking graphs — react-native-maps, socket.io-client and the rest —
+// against this file's deliberately minimal mock surface. Their own coverage is prewarm-routes.test.tsx.
+jest.mock("../../order/[id]", () => ({ __esModule: true, default: (): null => null }));
+jest.mock("../../food/order/[orderId]", () => ({ __esModule: true, default: (): null => null }));
+
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
   setItemAsync: async () => {},
@@ -88,35 +95,61 @@ afterEach(() => {
   interactions.restore();
 });
 
+/** Let the registry's macrotask yield elapse. REAL timers, deliberately: this test mounts the whole
+ *  launcher on a live QueryClient, and freezing the clock under it deadlocks the mount. */
+async function tick(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/**
+ * "The launcher went idle" is now TWO steps, and that is exactly the change this pins. The registry
+ * yields a macrotask before EACH route (src/boot/prewarm-routes.ts): with no `setDeadline` set,
+ * `runAfterInteractions` drains its whole queue in one `setImmediate` batch, so without the yield
+ * every warmed graph would land in one block — and the first would land while the launcher was still
+ * committing its own frame. So: let the yield elapse, then drain the interaction queue.
+ */
+async function goIdle(): Promise<void> {
+  await tick();
+  act(() => interactions.flush());
+}
+
 describe("(tabs)/home.tsx — /send route prewarm (PERF-SEND-01)", () => {
   it("does not pull the send route into the launcher's import graph", () => {
     expect(evaluatedByImportingHome).toBe(false);
   });
 
-  it("defers the warm rather than paying for it in Home's own render", () => {
+  it("defers the warm rather than paying for it in Home's own render", async () => {
     const tree = mountHome();
 
     // Rendering the launcher must cost none of /send's 140 KB: the warm is scheduled, not executed.
-    // Two deferred interactions are pending on a fresh mount: this prewarm and the boot_home_paint
-    // RUM mark (useBootHomePaintMark — see home-boot-paint-mark.test.tsx for its own contract).
+    // Only ONE interaction is pending on a fresh mount — the boot_home_paint RUM mark
+    // (useBootHomePaintMark, see home-boot-paint-mark.test.tsx). The prewarm is one step further
+    // back, behind its own yield, so it has not even reached the interaction queue yet.
+    expect(mockRequireSendRoute).not.toHaveBeenCalled();
+    expect(interactions.pending()).toBe(1);
+
+    // ...and it is still not executed once the yield elapses; it is merely queued by then.
+    await tick();
     expect(mockRequireSendRoute).not.toHaveBeenCalled();
     expect(interactions.pending()).toBe(2);
 
     act(() => tree.unmount());
   });
 
-  it("warms the route once the launcher is idle", () => {
+  it("warms the route once the launcher is idle", async () => {
     const tree = mountHome();
-    act(() => interactions.flush());
+    await goIdle();
 
     expect(mockSendRouteEvaluated).toBe(true);
 
     act(() => tree.unmount());
   });
 
-  it("evaluates the route graph once per process, not once per Home mount", () => {
+  it("evaluates the route graph once per process, not once per Home mount", async () => {
     const first = mountHome();
-    act(() => interactions.flush());
+    await goIdle();
     const afterFirst = mockRequireSendRoute.mock.calls.length;
     act(() => first.unmount());
 
@@ -124,18 +157,18 @@ describe("(tabs)/home.tsx — /send route prewarm (PERF-SEND-01)", () => {
     // registry already holds the graph — so the 140 KB is evaluated once for the life of the process,
     // however many times the customer bounces through Home.
     const second = mountHome();
-    act(() => interactions.flush());
+    await goIdle();
     expect(mockRequireSendRoute.mock.calls.length).toBe(afterFirst);
 
     act(() => second.unmount());
   });
 
-  it("withdraws the pending warm when the launcher is left first", () => {
+  it("withdraws the pending warm when the launcher is left first", async () => {
     const tree = mountHome();
     act(() => tree.unmount());
 
     expect(interactions.pending()).toBe(0);
-    act(() => interactions.flush());
+    await goIdle();
     expect(mockRequireSendRoute).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,9 @@
 import type { RestaurantListItem } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import { isMerchantOpenNow, minutesUntilClose } from "@lynia/shared";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Card, Icon } from "../index";
 import { FoodThumb } from "./FoodThumb";
 
@@ -13,7 +14,7 @@ export function RestaurantRow({ r, onPress, now }: { r: RestaurantListItem; onPr
   const closingIn = open ? minutesUntilClose(r.hours, now) : null;
 
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${r.name}${open ? "" : " — closed"}`}>
+    <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${r.name}${open ? "" : " — closed"}`}>
       <Card style={{ opacity: open ? 1 : 0.72 }}>
         <View style={{ flexDirection: "row", gap: 12 }}>
           <FoodThumb name={r.name} photoUrl={r.coverPhotoUrl} size={96} radius={14} />
@@ -58,6 +59,6 @@ export function RestaurantRow({ r, onPress, now }: { r: RestaurantListItem; onPr
           </View>
         </View>
       </Card>
-    </Pressable>
+    </Tappable>
   );
 }

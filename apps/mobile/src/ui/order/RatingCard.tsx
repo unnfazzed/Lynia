@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Pressable, Text, View } from "react-native";
+import { AccessibilityInfo, Text, View } from "react-native";
 import { Button, Card } from "../index";
 
 // Rating-on-tap undo window (D3): how long a tapped rating stays cancellable before it commits.
@@ -78,7 +79,7 @@ export function RatingCard({
       <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: tokens.space.sm }}>Rate your rider</Text>
       <View style={{ flexDirection: "row", gap: 4, marginBottom: tokens.space.sm }}>
         {[1, 2, 3, 4, 5].map((n) => (
-          <Pressable
+          <Tappable tone="icon"
             key={n}
             onPress={() => tapStar(n)}
             disabled={!!saving}
@@ -89,7 +90,7 @@ export function RatingCard({
             style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
           >
             <Text style={{ fontSize: 28, color: n <= score ? tokens.color.highlight : tokens.color.line }}>★</Text>
-          </Pressable>
+          </Tappable>
         ))}
       </View>
       {ratePending ? (

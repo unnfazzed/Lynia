@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { InteractionManager, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { InteractionManager, Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
 import { greetingFor, greetingLine } from "../../src/logic/greeting";
@@ -26,49 +26,36 @@ import {
   ServiceTiles,
   SkeletonRows,
   statusPillLabel,
-} from "../../src/ui";
+  Tappable } from "../../src/ui";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
 import { ServiceSoonSheet } from "../../src/ui/home/ServiceSoonSheet";
+import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
 /**
- * PERF-SEND-01 (second half). expo-router loads route components lazily — `useScreens` passes
- * `getComponent={() => getQualifiedRouteComponent(route)}`, so a route's module graph is EVALUATED on
- * the first navigation to it, not at launch. `/send` is the heaviest route in the customer app by that
- * measure: 57 modules / ~140 KB of minified JS that no other screen pulls in (measured by diffing the
- * production Metro graph with and without `app/send.tsx` — 1,815 → 1,872 modules), 29 of them
- * `react-native-maps` + `expo-location`. All of it used to be evaluated synchronously inside the tap
- * handler, which is why the FIRST "Send" tap of a session is the slow one and later taps are not.
+ * PERF-SEND-01 (second half), generalised. expo-router evaluates a route's module graph on the FIRST
+ * navigation to it — synchronously, inside the tap handler — which is why the first tap into a screen
+ * is the slow one (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). The launcher warms the
+ * routes it can actually reach, from its own idle time:
  *
- * Warming it from the launcher's idle time moves that evaluation off the tap path entirely. It is a
- * plain `require` inside `runAfterInteractions`, deliberately not a top-level import: Metro keeps the
- * module in the same single bundle either way, so what changes is only WHEN it is evaluated — a
- * top-level import here would drag all 57 modules back into the launch graph and re-open MOB-BOOT-03.
- * The graph is therefore evaluated once per process and every later mount is a module-cache hit, so
- * this needs no "already warmed" bookkeeping of its own. Best-effort by construction — a throw here
- * must never take down the launcher, and the route still loads on tap the way it always did.
+ *   - `send`      — the Send tile (the original PERF-SEND-01 case: 32 modules + react-native-maps);
+ *   - `order`     — the parcel tracker behind every live-order pill (29 + maps + socket.io-client);
+ *   - `foodOrder` — the food tracker behind the same pills, and the heaviest route in the customer
+ *                   app (44 + maps + socket.io-client + expo-clipboard).
+ *
+ * Deliberately NOT `foodCheckout` (reached from the cart, which warms it itself) and never the rider
+ * routes — see src/boot/prewarm-routes.ts on why warming is scoped per screen rather than global.
  */
-function usePrewarmSendRoute(): void {
-  useEffect(() => {
-    const handle = InteractionManager.runAfterInteractions(() => {
-      try {
-        require("../send");
-      } catch {
-        /* the tap path re-requires it and surfaces any real failure there */
-      }
-    });
-    return () => handle.cancel();
-  }, []);
-}
+const HOME_PREWARM: readonly PrewarmRoute[] = ["send", "order", "foodOrder"];
 
 /**
  * PERF-SEND-01, third half (deferred item D3, plan rev 2 "NOT in scope" → pulled forward by owner
  * instruction 2026-08-18): warm the ANDROID GOOGLE MAPS SDK itself from the launcher's idle time.
- * `usePrewarmSendRoute` above already evaluates /send's JS module graph off the tap path, but the
+ * `usePrewarmRoutes` above already evaluates /send's JS module graph off the tap path, but the
  * native SDK's first-in-process initialisation (renderer setup, key authorization) still ran on the
  * UI thread at the first real MapView mount — right as /send's transition settles, which is the
  * remaining "screen arrives, then visibly finishes loading" beat. That init is process-global, so a
@@ -171,7 +158,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
-  usePrewarmSendRoute();
+  usePrewarmRoutes(HOME_PREWARM);
   useBootHomePaintMark();
 
   // ── Header state: greeting (device clock), name (["me"]), unread bell dot, detected location ──
@@ -303,9 +290,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
               {/* `lineHeight` is Inter's own 16 x 1.21 — without it RN's default line box is 2px shorter
                   than the reference's and the whole section header sits 2px short. */}
               <Text style={{ flex: 1, fontSize: 16, lineHeight: 19.36, fontWeight: "700", color: tokens.color.ink }}>Popular near you</Text>
-              <Pressable onPress={() => router.push("/food")} accessibilityRole="button" accessibilityLabel="See all restaurants">
+              <Tappable onPress={() => router.push("/food")} accessibilityRole="button" accessibilityLabel="See all restaurants">
                 <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>See all →</Text>
-              </Pressable>
+              </Tappable>
             </View>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 16 }}>
               {venues.map((v) => (

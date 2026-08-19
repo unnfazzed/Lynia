@@ -1,4 +1,5 @@
 import { formatPhoneLocal, PRESENCE_ESCALATION_MS } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import React from "react";
@@ -184,7 +185,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           round green call button — placed ABOVE the map, per the parcel tracking mock. Parcel only;
           food keeps its own phone row lower down (unchanged). */}
       {!isFood && props.counterpartyPhone ? (
-        <Pressable
+        <Tappable
           onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
           accessibilityRole="button"
           accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
@@ -208,7 +209,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
             <Icon name="phone" size={18} color={tokens.color.onAccent} />
           </View>
-        </Pressable>
+        </Tappable>
       ) : null}
       <LiveMap
         pickup={{ lat: props.pickup.lat, lng: props.pickup.lng }}
@@ -276,7 +277,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
             Shared only while your delivery is live — for your privacy.
           </Text>
           {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
-          <Pressable
+          <Tappable
             onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
             accessibilityRole="button"
             accessibilityLabel={props.viewerRole === "rider" ? "Call sender" : "Call rider"}
@@ -284,7 +285,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           >
             <Icon name="phone" size={16} color={tokens.color.accentText} />
             <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>{props.viewerRole === "rider" ? "Call sender" : "Call rider"}</Text>
-          </Pressable>
+          </Tappable>
         </>
       ) : null}
       <View style={{ height: tokens.space.md }} />

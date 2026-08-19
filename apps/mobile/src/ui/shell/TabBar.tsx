@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 
@@ -41,31 +42,45 @@ export function TabBar({
 }): React.ReactElement {
   const insets = useSafeAreaInsets();
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        backgroundColor: tokens.color.bg,
-        borderTopWidth: 1,
-        borderTopColor: tokens.color.line,
-        paddingBottom: Math.max(insets.bottom, 4),
-      }}
-    >
+    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 4) }]}>
       {tabs.map((t) => {
         const on = t.id === active;
         return (
-          <Pressable
+          <Tappable
             key={t.id}
             onPress={() => onTab?.(t.id)}
             accessibilityRole="button"
             accessibilityLabel={t.label}
             accessibilityState={{ selected: on }}
-            style={{ flex: 1, alignItems: "center", gap: 3, paddingTop: 8, paddingBottom: 6 }}
+            style={styles.tab}
           >
             <Icon name={t.icon} size={21} color={on ? tokens.color.accentText : tokens.color.muted} />
-            <Text style={{ fontSize: 11.5, fontWeight: on ? "700" : "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{t.label}</Text>
-          </Pressable>
+            <Text style={on ? styles.labelOn : styles.labelOff}>{t.label}</Text>
+          </Tappable>
         );
       })}
     </View>
   );
 }
+
+/**
+ * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2). The tab bar is on
+ * screen for the whole session and re-renders with every route change, and a style object literal in
+ * JSX is a NEW object each time — so React Native's shallow prop diff sees a change on every node and
+ * re-sends props across the bridge even when the rendered result is identical. `StyleSheet.create`
+ * returns the same frozen objects for the life of the process, so an unchanged tab now diffs to
+ * nothing. The two label variants are separate entries rather than one style plus an inline override
+ * for the same reason: the override literal would reintroduce the fresh object it exists to avoid.
+ * Only the safe-area pad stays inline — it is genuinely dynamic.
+ */
+const styles = StyleSheet.create({
+  bar: {
+    flexDirection: "row",
+    backgroundColor: tokens.color.bg,
+    borderTopWidth: 1,
+    borderTopColor: tokens.color.line,
+  },
+  tab: { flex: 1, alignItems: "center", gap: 3, paddingTop: 8, paddingBottom: 6 },
+  labelOn: { fontSize: 11.5, fontWeight: "700", color: tokens.color.accentText },
+  labelOff: { fontSize: 11.5, fontWeight: "600", color: tokens.color.muted },
+});

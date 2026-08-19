@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "../Icon";
 import { MoonSticker, SunSticker } from "./ServiceStickers";
@@ -88,7 +89,7 @@ export function HomeHeader({
           <View accessibilityElementsHidden importantForAccessibility="no">
             {evening ? <MoonSticker size={TIME_STICKER} /> : <SunSticker size={TIME_STICKER} />}
           </View>
-          <Pressable
+          <Tappable
             onPress={onBell}
             disabled={!onBell}
             accessibilityRole="button"
@@ -118,11 +119,11 @@ export function HomeHeader({
                 }}
               />
             ) : null}
-          </Pressable>
+          </Tappable>
         </View>
       </View>
       {search ? (
-        <Pressable
+        <Tappable
           onPress={search.onPress}
           disabled={!search.onPress}
           accessibilityRole={search.onPress ? "button" : undefined}
@@ -141,7 +142,7 @@ export function HomeHeader({
         >
           <Icon name="search" size={16} color={tokens.color.muted} />
           <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>{search.placeholder}</Text>
-        </Pressable>
+        </Tappable>
       ) : null}
     </View>
   );
@@ -176,7 +177,7 @@ export function HomeAddressRow({
 }): React.ReactElement {
   const detect = mode === "detect";
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       disabled={!onPress || busy}
       accessibilityRole={onPress ? "button" : undefined}
@@ -193,7 +194,7 @@ export function HomeAddressRow({
       <View style={{ opacity: busy ? 0.5 : 1 }}>
         <Icon name={detect ? "refresh-cw" : "chevron-down"} size={detect ? 12 : 13} color={tokens.color.accentText} />
       </View>
-    </Pressable>
+    </Tappable>
   );
 }
 
@@ -228,7 +229,7 @@ export function HomeStatusRow({
         {detail ? `${label} · ${detail}` : label}
       </Text>
       {actionLabel && onAction ? (
-        <Pressable
+        <Tappable tone="icon"
           onPress={onAction}
           disabled={busy}
           accessibilityRole="button"
@@ -237,7 +238,7 @@ export function HomeStatusRow({
           style={{ marginLeft: "auto", opacity: busy ? 0.6 : 1 }}
         >
           <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>{actionLabel}</Text>
-        </Pressable>
+        </Tappable>
       ) : null}
     </View>
   );

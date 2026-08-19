@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
 import { addServiceInterest, isInterested, removeServiceInterest } from "../../logic/service-interest";
@@ -68,9 +69,9 @@ export function ServiceSoonSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}>
+      <Tappable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}>
         {/* Swallow taps inside the panel so only the scrim closes it. */}
-        <Pressable
+        <Tappable
           onPress={() => undefined}
           style={{
             backgroundColor: tokens.color.bg,
@@ -122,8 +123,8 @@ export function ServiceSoonSheet({
               {armed ? "We'll let you know" : "Notify me"}
             </Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </Tappable>
+      </Tappable>
     </Modal>
   );
 }

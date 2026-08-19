@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { getFoodOrderAsRider } from "../../../src/api/food-rider";
 import { getActiveOrder } from "../../../src/api/orders";
 import { getTopup } from "../../../src/api/wallet";
@@ -14,7 +14,7 @@ import { reconcilePendingTopup } from "../../../src/logic/topup";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { filterLedgerEntries, type LedgerFilter } from "../../../src/logic/wallet-ledger";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows, Tappable } from "../../../src/ui";
 import { CashHeldStrip } from "../../../src/ui/rider/CashHeldStrip";
 
 /** One ledger receipt. A debit renders in ink (never red text on white); a credit in the text-green.
@@ -63,7 +63,7 @@ function FilterChips({ value, onChange }: { value: LedgerFilter; onChange: (f: L
       {LEDGER_FILTERS.map((f) => {
         const on = f.id === value;
         return (
-          <Pressable
+          <Tappable
             key={f.id}
             onPress={() => onChange(f.id)}
             accessibilityRole="button"
@@ -78,7 +78,7 @@ function FilterChips({ value, onChange }: { value: LedgerFilter; onChange: (f: L
             }}
           >
             <Text style={{ fontSize: 12.5, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted }}>{f.label}</Text>
-          </Pressable>
+          </Tappable>
         );
       })}
     </View>

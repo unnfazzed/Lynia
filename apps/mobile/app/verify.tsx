@@ -2,13 +2,13 @@ import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { AppState, Pressable, Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { Button, Field, Heading, Icon, Screen, Sub, useActionError } from "../src/ui";
+import { Button, Field, Heading, Icon, Screen, Sub, useActionError, Tappable } from "../src/ui";
 
 /**
  * The three seed props stage the OTP screen's non-idle states, each of which is its own gallery
@@ -218,7 +218,7 @@ export default function VerifyScreen({
           {/* Resend affordance (screens.jsx `Otp` idle · screens-safety.jsx `OtpState`): an inline
               centred link, not a ghost button. Idle → green "Didn't get it? Resend code"; during the
               cooldown → a muted "Resend in m:ss" (or "Resend again in m:ss" after a resend). */}
-          <Pressable
+          <Tappable
             onPress={resend}
             disabled={cooldown > 0}
             accessibilityRole="button"
@@ -236,7 +236,7 @@ export default function VerifyScreen({
                 Didn&apos;t get it? Resend code
               </Text>
             )}
-          </Pressable>
+          </Tappable>
         </>
       )}
 

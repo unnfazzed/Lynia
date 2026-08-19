@@ -14,7 +14,7 @@
  *     center (incl. CSS `placeItems`), position:absolute, border presence, flex:1 — computed the SAME
  *     way from the mock's CSS and the view's RN styles, so the two sides are comparable.
  * It deliberately DROPS text content, data values, handler props, and interaction wrappers
- * (Pressable/Touchable/Fragment are transparent — no layout box), so a benign data/handler change
+ * (Pressable/Tappable/Touchable/Fragment are transparent — no layout box), so a benign data/handler change
  * never reddens the check. Because the app view is a mechanical function of the mock, mock and view
  * normalize to the SAME tree — that is "structural parity by construction".
  *
@@ -53,7 +53,10 @@ const KIND = new Map(Object.entries({
   mapsheet: "SHEET", bottomsheet: "SHEET",
   svg: "SVG", path: "SVG", circle: "SVG", rect: "SVG", g: "SVG", line: "SVG", polyline: "SVG", polygon: "SVG",
 }));
-const TRANSPARENT = new Set(["pressable", "touchableopacity", "touchablewithoutfeedback", "touchablehighlight", "fragment"]);
+// `tappable` is src/ui/Tappable.tsx — a Pressable that supplies press feedback. It renders exactly
+// one Pressable and adds no layout box, so it belongs in the same transparency class as the
+// primitive it wraps; omitting it would make every interaction wrapper read as structural drift.
+const TRANSPARENT = new Set(["pressable", "tappable", "touchableopacity", "touchablewithoutfeedback", "touchablehighlight", "fragment"]);
 // Virtualized lists — Bucket-C equivalence. A `<FlatList data renderItem={item => <Row/>} />` renders
 // the SAME element tree as the mock's `{items.map(item => <Row/>)}`: a virtualized list is a windowed
 // map, structurally identical (it just mounts a sliding window of the identical per-item subtree). So

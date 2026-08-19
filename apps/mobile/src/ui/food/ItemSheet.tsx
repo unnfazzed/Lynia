@@ -1,7 +1,8 @@
 import type { RestaurantMenuDish } from "@lynia/shared";
+import { Tappable } from "../Tappable";
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import { QtyStepper } from "../home/QtyStepper";
 import { formatMoney } from "../../logic/money";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
@@ -34,13 +35,13 @@ export function ItemSheet({
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose} visible>
-      <Pressable
+      <Tappable
         accessibilityLabel="Close"
         accessibilityRole="button"
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}
       >
-        <Pressable onPress={(e) => e.stopPropagation()}>
+        <Tappable onPress={(e) => e.stopPropagation()}>
           <BottomSheet
             // Kit R2·3 (r-customer-a.jsx:246): the item sheet's top corners are 20px, a step softer
             // than the shared 16px card radius.
@@ -72,8 +73,8 @@ export function ItemSheet({
               ) : null}
             </ScrollView>
           </BottomSheet>
-        </Pressable>
-      </Pressable>
+        </Tappable>
+      </Tappable>
     </Modal>
   );
 }

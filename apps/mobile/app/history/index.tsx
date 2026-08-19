@@ -6,7 +6,7 @@ import type { OrderHistoryRow } from "../../src/api/orders";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { formatMoney } from "../../src/logic/money";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { AppBar, Button, Card, EmptyState, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel, Tappable } from "../../src/ui";
 
 // The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome, so a
 // bailed-on or undelivered job read "Delivered" right next to a StatusPill saying otherwise on the
@@ -25,7 +25,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
   const fare = o.agreedFare ?? o.proposedFare;
   return (
     <Card>
-      <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}>
+      <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
@@ -43,7 +43,7 @@ function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => voi
             <StatusPill status={o.status} tone={orderStatusTone(o.status)} />
           </View>
         </View>
-      </Pressable>
+      </Tappable>
       {/* Reorder (customer trips only): one tap re-opens the compose form prefilled with this trip's
           route, item and price — the "order again" shortcut every delivery app leans on for repeat runs. */}
       {onReorder ? (

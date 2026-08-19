@@ -6,9 +6,9 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/onboarding.tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { Icon, Button, DoveMark, Wordmark, type IconName } from "../src/ui";
+import { Tappable, Icon, Button, DoveMark, Wordmark, type IconName } from "../src/ui";
 
 export type OnboardingViewProps = {
   /** The active slide's mint-tile glyph. */
@@ -52,11 +52,11 @@ export function OnboardingView({
         gap: 7,
         flexDirection: "row"
       }}><DoveMark size={24} on="white" /><Wordmark size={17} /></View>
-        <Pressable onPress={onSkip} accessibilityRole="button" hitSlop={8}><Text style={{
+        <Tappable onPress={onSkip} accessibilityRole="button" hitSlop={8}><Text style={{
           color: tokens.color.muted,
           fontSize: 13,
           fontWeight: "600"
-        }}>Skip</Text></Pressable>
+        }}>Skip</Text></Tappable>
       </View>
       <View style={{
       flex: 1,

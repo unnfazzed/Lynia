@@ -6,8 +6,7 @@
 // The transpiler owns STRUCTURE + STYLE (mechanical, from the mock). Data flows in as
 // props from the container (apps/mobile/app/food/[id].tsx) — that is the ONLY hand-wired seam.
 import React from "react";
-import { Pressable } from "react-native";
-import { MenuRow, type MenuRowItem } from "../../src/ui";
+import { Tappable, MenuRow, type MenuRowItem } from "../../src/ui";
 
 /** A menu row's kit-item shape plus the dish `id` the list keys + maps back to. */
 export type MenuRowSeed = MenuRowItem & { id: string };
@@ -22,5 +21,5 @@ export function MenuRowsView({
   qtyFor,
   onDishPress
 }: MenuRowsViewProps): React.ReactElement {
-  return <>{rows.map(i => <Pressable key={i.id} onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}><MenuRow i={i} qty={qtyFor(i)} /></Pressable>)}</>;
+  return <>{rows.map(i => <Tappable key={i.id} onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}><MenuRow i={i} qty={qtyFor(i)} /></Tappable>)}</>;
 }

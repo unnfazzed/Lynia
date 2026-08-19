@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Text, View } from "react-native";
 import { mapsPlaceUrl } from "../../logic/maps";
 import { formatMoney } from "../../logic/money";
 import { Card, Icon } from "../index";
@@ -89,7 +90,7 @@ export function ReturnToRestaurantCard({
           </View>
 
           {pickupPoint ? (
-            <Pressable
+            <Tappable
               onPress={() => void Linking.openURL(mapsPlaceUrl(pickupPoint))}
               accessibilityRole="button"
               accessibilityLabel={`Navigate back to ${kitchen}`}
@@ -105,7 +106,7 @@ export function ReturnToRestaurantCard({
               <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
                 Navigate back to {kitchen}
               </Text>
-            </Pressable>
+            </Tappable>
           ) : null}
         </>
       ) : null}

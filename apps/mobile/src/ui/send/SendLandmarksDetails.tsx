@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Field, Icon } from "../index";
 
 /**
@@ -37,7 +38,7 @@ export function SendLandmarksDetails({
 }): React.ReactElement {
   return (
     <>
-      <Pressable
+      <Tappable
         onPress={toggleDetails}
         accessibilityRole="button"
         accessibilityState={{ expanded: detailsOpen }}
@@ -59,7 +60,7 @@ export function SendLandmarksDetails({
           ) : null}
         </Text>
         <Icon name={detailsOpen ? "chevron-down" : "chevron-right"} size={16} color={tokens.color.muted} />
-      </Pressable>
+      </Tappable>
       {detailsOpen ? (
         <View style={{ marginTop: tokens.space.sm }}>
           <Field

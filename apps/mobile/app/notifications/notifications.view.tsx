@@ -13,9 +13,9 @@
 // construction and a regeneration of this file diffs only in these marked additions. Read that entry
 // before touching this: the rule it bends ("not drawn ⇒ not rendered") is otherwise absolute.
 import React from "react";
-import { View, Text, Pressable, FlatList, PanResponder } from "react-native";
+import { View, Text, FlatList, PanResponder } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
-import { AppBar, Icon, EmptyState, type IconName } from "../../src/ui";
+import { Tappable, AppBar, Icon, EmptyState, type IconName } from "../../src/ui";
 
 /** A feed row, shaped to mirror the mock's `{ icon, t, m, w, unread }` keys verbatim, plus the
  *  `id` the FlatList keys by (B-O1). The container maps its live `NotificationRow` onto this,
@@ -107,7 +107,7 @@ export function NotificationsView({
           {<FlatList data={items} keyExtractor={n => n.id} showsVerticalScrollIndicator={false} renderItem={({
         item: n,
         index: i
-      }) => <Pressable onPress={() => onItemPress(i)} accessibilityRole="button" onTouchStart={() => {
+      }) => <Tappable onPress={() => onItemPress(i)} accessibilityRole="button" onTouchStart={() => {
         draggingIndex.current = i;
       }} {...pan.panHandlers}><View style={{
           gap: 11,
@@ -163,7 +163,7 @@ export function NotificationsView({
             flexShrink: 0,
             marginTop: 6
           }} /> : null}
-            </View></Pressable>} ListFooterComponent={<View style={{
+            </View></Tappable>} ListFooterComponent={<View style={{
         height: tokens.space.xxl
       }} />} />}
         </View>}

@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
+import { Tappable } from "../Tappable";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "../Icon";
 
@@ -38,7 +39,7 @@ export function BrandHeader({
     <View>
       <View style={{ backgroundColor: tokens.color.accent, paddingTop: insets.top + 6, paddingHorizontal: tokens.space.screen, paddingBottom: 30 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Pressable onPress={onAddress} disabled={!onAddress} accessibilityRole={onAddress ? "button" : undefined} style={{ flex: 1, minWidth: 0 }}>
+          <Tappable onPress={onAddress} disabled={!onAddress} accessibilityRole={onAddress ? "button" : undefined} style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 11.5, fontWeight: "700", color: "rgba(255,255,255,.85)", letterSpacing: 0.5 }}>{label}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 16, fontWeight: "700", color: tokens.color.onAccent }}>
@@ -46,13 +47,13 @@ export function BrandHeader({
               </Text>
               <Icon name="chevron-down" size={15} color={tokens.color.onAccent} />
             </View>
-          </Pressable>
+          </Tappable>
           <RoundIcon icon="bell" onPress={onBell} label="Notifications" />
           <RoundIcon icon="user" onPress={onProfile} label="Profile" />
         </View>
       </View>
       {showSearch ? (
-        <Pressable
+        <Tappable
           onPress={onSearch}
           disabled={!onSearch}
           accessibilityRole={onSearch ? "button" : undefined}
@@ -73,7 +74,7 @@ export function BrandHeader({
         >
           <Icon name="search" size={16} color={tokens.color.muted} />
           <Text style={{ fontSize: 13.5, color: tokens.color.muted }}>{searchPlaceholder}</Text>
-        </Pressable>
+        </Tappable>
       ) : null}
     </View>
   );
@@ -81,7 +82,7 @@ export function BrandHeader({
 
 function RoundIcon({ icon, onPress, label }: { icon: "bell" | "user"; onPress?: () => void; label: string }): React.ReactElement {
   return (
-    <Pressable
+    <Tappable
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole="button"
@@ -89,6 +90,6 @@ function RoundIcon({ icon, onPress, label }: { icon: "bell" | "user"; onPress?: 
       style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.accentPressed, alignItems: "center", justifyContent: "center" }}
     >
       <Icon name={icon} size={17} color={tokens.color.onAccent} />
-    </Pressable>
+    </Tappable>
   );
 }

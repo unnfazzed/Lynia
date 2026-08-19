@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   addLine,
   cartItemCount,
@@ -36,6 +36,11 @@ export interface FoodCartApi {
   clear: () => void;
 }
 
+/** How long a burst of cart edits is coalesced before it reaches SecureStore. Long enough to absorb
+ *  typing in the order note and a run of stepper taps, short enough that an ordinary pause persists
+ *  well before the customer could kill the app. */
+export const CART_PERSIST_DEBOUNCE_MS = 600;
+
 const FoodCartContext = createContext<FoodCartApi | null>(null);
 
 export function FoodCartProvider({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -56,9 +61,36 @@ export function FoodCartProvider({ children }: { children: React.ReactNode }): R
 
   // Persist every change once the initial load has landed (so a load-in-progress can't be clobbered
   // by writing the still-default EMPTY_CART over a just-restored draft).
+  //
+  // DEBOUNCED (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5). `saveFoodCart` is a
+  // SecureStore write — AndroidKeyStore AES encryption plus a SharedPreferences commit — and this
+  // effect used to fire it on EVERY cart mutation: each `+`/`-` on the quantity stepper, and each
+  // keystroke of the order note (`setOrderNote` writes the same state). The write is async and never
+  // blocked the render, but it queues on the native-modules thread that every other native call
+  // shares, so a burst of them lands squarely on the tap path. Coalescing a burst into one write
+  // costs nothing the contract cares about: the snapshot exists to survive a RESTART, and the flush
+  // on unmount below closes the only window that could lose (the last few hundred ms before the
+  // provider goes away). A tap-and-quit inside that window loses at most the final keystroke.
   useEffect(() => {
-    if (ready) void saveFoodCart(cart);
+    if (!ready) return;
+    const t = setTimeout(() => void saveFoodCart(cart), CART_PERSIST_DEBOUNCE_MS);
+    return () => clearTimeout(t);
   }, [cart, ready]);
+
+  // Unmount flush: the debounce above cancels its pending write on every cart change AND on unmount,
+  // so without this a customer who edits the cart and immediately leaves the tab would lose the edit.
+  // Reads the latest cart from a ref so this effect stays mount-scoped (a `[cart]` dependency would
+  // make it fire on every change, which is the behaviour being removed).
+  const latest = useRef(cart);
+  latest.current = cart;
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+  useEffect(
+    () => () => {
+      if (readyRef.current) void saveFoodCart(latest.current);
+    },
+    [],
+  );
 
   const addItem = useCallback((restaurantId: string, restaurantName: string, line: FoodCartLine): boolean => {
     let switched = false;

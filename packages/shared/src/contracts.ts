@@ -544,6 +544,26 @@ export const ClientMetricEvent = z.enum([
    * cold-start number.
    */
   "boot_home_paint",
+  /**
+   * Tap acknowledgement headroom: `onPressIn` → the next animation frame the JS thread can actually
+   * run. NOT "how long until the button lit up" — since the Android press state is now a native
+   * ripple painted by the platform on the UI thread, there is no JS press state left to time. What
+   * this measures is the thing that made taps feel late in the first place: how backed-up the JS
+   * thread was at the instant the touch arrived, i.e. how late a JS-driven response WOULD have been.
+   * An idle thread reads ~one frame (≈16 ms); a screen mid-poll, mid-socket-push or mid-clock-tick
+   * reads far higher, and that is the signal. Sampled 1-in-N on the client (taps are frequent).
+   * See docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2.
+   */
+  "tap_ack",
+  /**
+   * Tap → destination screen on glass: the touch that preceded a route change → the first presented
+   * frame of the new route, observed from a post-interaction callback (the same technique and the
+   * same LOWER-BOUND caveat as `boot_home_paint` — Paper exposes no compositor-presentation
+   * callback). Only emitted when a real touch preceded the navigation, so redirects, deep links and
+   * programmatic pushes never enter the histogram. This is the number the route-prewarm registry
+   * (src/boot/prewarm-routes.ts) exists to move.
+   */
+  "nav_open",
 ]);
 export type ClientMetricEvent = z.infer<typeof ClientMetricEvent>;
 

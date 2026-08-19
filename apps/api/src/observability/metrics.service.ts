@@ -38,6 +38,11 @@ type HistogramName =
   | "client_boot_paint_ms"
   | "client_boot_home_ms"
   | "client_boot_home_paint_ms"
+  // Tap responsiveness. MUCH tighter buckets than every other client metric: these are frame-scale
+  // numbers (one frame is ~16 ms), so the wide 100 ms-and-up boundaries above would collapse a
+  // healthy tap and a badly-contended one into the same bucket and measure nothing.
+  | "client_tap_ack_ms"
+  | "client_nav_open_ms"
   // Top-up rail confirmation lag (initiatedAt → confirmed). MUCH wider buckets than the request
   // metrics — a mobile-money confirm is minutes, and a late confirm on an expired intent is hours.
   | "topup_confirm_lag_ms";
@@ -143,6 +148,8 @@ const CLIENT_EVENT_HISTOGRAM: Record<ClientMetricEvent, HistogramName> = {
   boot_paint: "client_boot_paint_ms",
   boot_home: "client_boot_home_ms",
   boot_home_paint: "client_boot_home_paint_ms",
+  tap_ack: "client_tap_ack_ms",
+  nav_open: "client_nav_open_ms",
 };
 
 /**

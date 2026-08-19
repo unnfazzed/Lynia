@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { logout } from "../api/auth";
 import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
@@ -59,12 +59,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       .finally(() => setLoading(false));
   }, []);
 
-  const signIn = async (s: Session): Promise<void> => {
+  const signIn = useCallback(async (s: Session): Promise<void> => {
     ref.current = s;
     setSession(s);
     await saveSession(s);
-  };
-  const signOut = async (): Promise<void> => {
+  }, []);
+  const signOut = useCallback(async (): Promise<void> => {
     // Revoke the session server-side FIRST, while the token is still live (the endpoint is authed), so a
     // deliberate sign-out actually kills the refresh token instead of leaving it valid for REFRESH_TTL
     // (30 days). Best-effort: an offline/failed revoke must never trap the local sign-out below.
@@ -87,9 +87,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     queryClient.clear();
     clearConditionalCache();
     await clearPersistedQueries();
-  };
+  }, []);
 
-  return <AuthContext.Provider value={{ session, loading, signIn, signOut }}>{children}</AuthContext.Provider>;
+  // Memoised, and the two actions with it. This provider wraps the ENTIRE app, so a fresh object
+  // literal here invalidates the context for every `useAuth()` consumer on each provider render —
+  // and `signIn`/`signOut` re-created inline would defeat the memo anyway. Not a hot path today
+  // (the provider only re-renders when `session` or `loading` changes), which is exactly why it is
+  // worth pinning now: it is a latent hazard the moment any other state joins this provider.
+  // docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.6.
+  const value = useMemo<AuthState>(() => ({ session, loading, signIn, signOut }), [session, loading, signIn, signOut]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

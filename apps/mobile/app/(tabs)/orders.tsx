@@ -2,13 +2,14 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
+import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getActiveCustomerOrders, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
 import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel } from "../../src/ui";
+import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, Tappable } from "../../src/ui";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
@@ -78,7 +79,7 @@ function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void
   const title = isFood ? o.merchantName || "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
   const fare = o.agreedFare ?? o.proposedFare;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open live order ${title}`} style={{ marginBottom: tokens.space.md }}>
+    <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open live order ${title}`} style={{ marginBottom: tokens.space.md }}>
       <Card accent style={{ padding: 12, marginBottom: 0 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
@@ -95,7 +96,7 @@ function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void
           <Money v={fare} size={14} />
         </View>
       </Card>
-    </Pressable>
+    </Tappable>
   );
 }
 
@@ -105,7 +106,13 @@ function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void
  * running unchanged (the rider Account tab still bridges to it, out of this lane's scope), so this
  * screen owns its own copy of the row anatomy rather than reaching into that route's internals.
  */
+/** Every row on this tab links to one of the two trackers, and both are heavy (29 and 44 new
+ *  modules, plus react-native-maps and socket.io-client). Warm them from the list's idle time so the
+ *  first "open my order" tap of a session isn't the slow one — see src/boot/prewarm-routes.ts. */
+const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order", "foodOrder"];
+
 export default function OrdersTabScreen(): React.ReactElement {
+  usePrewarmRoutes(ORDERS_PREWARM);
   const router = useRouter();
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();

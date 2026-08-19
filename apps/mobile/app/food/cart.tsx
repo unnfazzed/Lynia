@@ -2,12 +2,13 @@ import { RESTAURANTS_PRICING } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
+import { ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
 import { formatMoney } from "../../src/logic/money";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { AppBar, Card, Icon, Money, Screen } from "../../src/ui";
+import { AppBar, Card, Icon, Money, Screen, Tappable } from "../../src/ui";
 import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
@@ -47,9 +48,17 @@ function reconcile(lines: FoodCartLine[], latest: Map<string, { priceUsd: number
   return { lines: kept, removedNames, priceChanges };
 }
 
+/** The cart has exactly one forward exit, and it drags react-native-maps in through the address
+ *  confirm step (19 new modules). Warm it while the customer is still reviewing their basket —
+ *  but only when there IS a basket: from an empty cart checkout is unreachable, so warming it would
+ *  spend a Go-class handset's idle time and memory on a route this visit cannot open. */
+const CART_PREWARM: readonly PrewarmRoute[] = ["foodCheckout"];
+const NO_PREWARM: readonly PrewarmRoute[] = [];
+
 export default function FoodCartScreen(): React.ReactElement {
   const router = useRouter();
   const cart = useFoodCart();
+  usePrewarmRoutes(cart.cart.lines.length > 0 ? CART_PREWARM : NO_PREWARM);
   const { menu } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
 
   const latestByDish = useMemo(() => {
@@ -123,9 +132,9 @@ export default function FoodCartScreen(): React.ReactElement {
                   ? "We removed it and updated your total. Nothing was ordered."
                   : `${reconciled.priceChanges[0]!.name}: ${formatMoney(reconciled.priceChanges[0]!.from)} → ${formatMoney(reconciled.priceChanges[0]!.to)}.`}
               </Text>
-              <Pressable onPress={() => setDismissedNotice(true)} accessibilityRole="button" accessibilityLabel="Dismiss">
+              <Tappable onPress={() => setDismissedNotice(true)} accessibilityRole="button" accessibilityLabel="Dismiss">
                 <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText, marginTop: 6 }}>Got it</Text>
-              </Pressable>
+              </Tappable>
             </View>
           </View>
         </Card>
@@ -146,7 +155,7 @@ export default function FoodCartScreen(): React.ReactElement {
                 {/* R3·2 (cart_note): the note is EDITABLE from the cart, not only at the moment the dish
                     was added — "leg not breast" is exactly the thing you remember once the basket is in
                     front of you. Opens the note sheet on this line. */}
-                <Pressable
+                <Tappable
                   onPress={() => setNoteTarget({ dishId: line.dishId, note: line.note, name: line.name })}
                   accessibilityRole="button"
                   accessibilityLabel={line.note ? `Edit the note for ${line.name}: ${line.note}` : `Add a note for ${line.name}`}
@@ -156,7 +165,7 @@ export default function FoodCartScreen(): React.ReactElement {
                   <Text style={{ flex: 1, fontSize: 12, fontWeight: line.note ? "400" : "700", color: tokens.color.accentText }} numberOfLines={2}>
                     {line.note || "Note for the kitchen"}
                   </Text>
-                </Pressable>
+                </Tappable>
               </View>
               <QtyStepper value={line.quantity} onChange={(n) => cart.setQuantity(line.dishId, line.note, n)} max={MAX_ITEM_QTY} />
               <Money v={line.priceUsd * line.quantity} style={{ minWidth: 52, textAlign: "right" }} />
@@ -164,7 +173,7 @@ export default function FoodCartScreen(): React.ReactElement {
           ))}
           {/* Kit R3·1 (r-customer-a.jsx:323-327): the cart's own way back into the menu, so adding a
               forgotten drink doesn't mean hunting for the back button. */}
-          <Pressable
+          <Tappable
             onPress={() => router.push(`/food/${cart.cart.restaurantId}`)}
             accessibilityRole="button"
             accessibilityLabel="Add more items"
@@ -181,7 +190,7 @@ export default function FoodCartScreen(): React.ReactElement {
           >
             <Icon name="plus" size={15} color={tokens.color.accentText} />
             <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Add more items</Text>
-          </Pressable>
+          </Tappable>
         </Card>
 
         <NoteField
