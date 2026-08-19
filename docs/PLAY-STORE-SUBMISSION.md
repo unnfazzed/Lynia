@@ -692,6 +692,52 @@
 > reviewer really was added to the `production` environment and needs a human's attention, not
 > another wait.
 
+> **Status (2026-08-19, later — v0.42.1 shipped to the internal track; second mobile dispatch of the
+> day, on top of the same-day v0.42.0 entry above.)** A Claude session was asked to "deploy to EAS
+> build and push a google play version, tell me the updated version number after, all PRs committed
+> and GCP updated, track to the end."
+>
+> **① Open PRs: none.** `list_pull_requests` returned empty — everything was merged to `main` already.
+> **② GCP/API: current and healthy.** `release.yml` had already run green on every commit up to the
+> tip, including `main`@`866455b` itself (run `32261720314`, success 14:03:19 UTC). Independently
+> verified through the LB rather than inferred from the tick: `GET
+> https://lyniago.lyniafinance.com/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> **Admin/merchant — deliberately not dispatched**: `git diff` between the last mobile build
+> (`fb094420a3`) and the new tip (`866455b`) touched only `apps/mobile/**` — no admin/merchant/shared
+> change to ship, same call as every prior entry.
+>
+> **Why the mobile build was genuinely due.** Two real mobile PRs landed on `main` since the morning's
+> v0.42.0 build (`1253099d`, at `fb094420a3`): **#829** (live deliver-to on the restaurant list, RC.list
+> header parity — `home-location.ts`, `food-list.ts`, `RestaurantRow.tsx`) and **#830** (keep the suburb
+> through a location pick, tighter area matching), plus release-please's `#831` bumping `main` to
+> **0.42.1**. 11 files under `apps/mobile` changed — a real UI/logic delta, not a version-string bump.
+>
+> **Ownership guards ran rather than were assumed**, per `CLAUDE.md`: `ListAgents` clear, no in-flight
+> `mobile-release.yml` run (last was run #29, completed 2026-08-19 12:18:33 UTC), CI green on the
+> dispatched commit (`main`@`866455b`, run `32261720218`), and `pnpm install --frozen-lockfile` clean
+> on pnpm 10.33.0 with `pnpm-lock.yaml`/`apps/mobile/eas.json` unmoved afterward.
+>
+> Dispatched `mobile-release.yml` run #30 (`32271247407`) explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above and the
+> 2026-08-16 incident. Ref `main`@`866455b7da699c0e472e099d94b6fcc66f6ef5c7` (app version **0.42.1**).
+> The dispatcher job succeeded in 62 s (15:38:17 → 15:39:19 UTC), which under `--no-wait` proves only
+> that the build was queued.
+>
+> EAS build `6dc910c2-1e22-46ea-b5e1-dbfb6567d08c` (profile `preview`, created 15:39:12 UTC) reached
+> **FINISHED**. Its submission `2419e096-6b28-4773-885c-b22ddabcfe2e` reached **FINISHED**, track
+> **`internal`**, no error — confirmed via `eas-build-status.yml` run #36 (`32302804548`). Exact
+> versionCode not captured — `eas-build-status.yml`'s recap doesn't query that field, same known gap
+> as every entry since 2026-08-17.
+>
+> **The `runtime=?` gap first recorded 2026-08-16 is still open.** This run's Recap again rendered
+> `runtime=?` for every listed build. Still out of scope for a ship-and-track request.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and
+> nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
+> exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
