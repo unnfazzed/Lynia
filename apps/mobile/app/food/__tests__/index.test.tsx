@@ -7,8 +7,9 @@
  * "just add a row here" edit can't quietly revert to an unbounded ScrollView.
  */
 import renderer, { act } from "react-test-renderer";
-import { ActivityIndicator, FlatList } from "react-native";
+import { ActivityIndicator, FlatList, Text } from "react-native";
 import { Banner, EmptyState, Skeleton } from "../../../src/ui";
+import { LocationSheet } from "../../../src/ui/home/LocationSheet";
 
 // The adopted RC.list_loading view renders <Skeleton/>, whose Animated pulse is an infinite loop, and
 // the screen's useNow() runs a 60s interval — both would fire after Jest teardown on the real clock.
@@ -28,6 +29,35 @@ const mockRestaurants = Array.from({ length: 40 }, (_, i) => ({
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
+}));
+
+// The header's deliver-to is the customer's LIVE location now. Stub the hook rather than
+// expo-location so these tests stay about the LIST, and so the hook's async GPS beats can't land
+// state updates outside act() once a test has finished asserting.
+const mockLocation = {
+  label: "22 Bingley Drive",
+  point: { lat: -17.8, lng: 31.05 } as { lat: number; lng: number } | null,
+  area: "Belgravia" as string | null,
+  source: "gps" as const,
+  locating: false,
+  denied: false,
+  useCurrentLocation: jest.fn(),
+  setManualPlace: jest.fn(),
+};
+const resetLocation = () => {
+  mockLocation.label = "22 Bingley Drive";
+  mockLocation.point = { lat: -17.8, lng: 31.05 };
+  mockLocation.area = "Belgravia";
+  mockLocation.denied = false;
+};
+jest.mock("../../../src/logic/home-location", () => ({
+  SET_LOCATION_PROMPT: "Set your location",
+  useHomeLocation: () => mockLocation,
+}));
+// Opening the sheet reads the saved Home/Work slots from SecureStore — stub it so these tests stay
+// off native storage and land no async setState after the assertions have run.
+jest.mock("../../../src/logic/saved-places", () => ({
+  loadSaved: () => Promise.resolve({ home: null, work: null }),
 }));
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: true, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
@@ -230,6 +260,154 @@ describe("RestaurantListScreen (B-O10: GET /restaurants is now cursor-paginated)
     expect(mockFeedStub.loadMore).not.toHaveBeenCalled(); // not filtering yet — no reason to drain
     act(() => {
       tree.root.findByProps({ accessibilityLabel: "Open now filter" }).props.onPress();
+    });
+    expect(mockFeedStub.loadMore).toHaveBeenCalled();
+  });
+});
+
+/**
+ * RC.list header parity (`r-customer-a.jsx:89`). The mock draws a PRECISE street address under the
+ * "FOOD · DELIVER TO" overline with a chevron-down picker beside it, four filter/sort pills, and a
+ * results summary naming the suburb. The app drew a hardcoded "Harare", no chevron, one pill and no
+ * summary — the same hardcode `home-location.ts` was written to kill on the home header.
+ *
+ * These pin the wiring, not the pixels: that the address comes from the live location rather than a
+ * literal, that every drawn pill exists and is honest about whether it can answer, and that the
+ * summary describes what is actually on screen.
+ */
+describe("RestaurantListScreen (RC.list header: live deliver-to, four pills, results summary)", () => {
+  beforeEach(() => {
+    resetFeedStub();
+    resetLocation();
+    mockFeedStub.hasMore = false;
+    mockFeedStub.isLoadingMore = false;
+    mockFeedStub.loadMore.mockClear();
+  });
+
+  const allText = (tree: renderer.ReactTestRenderer): string =>
+    tree.root
+      .findAllByType(Text)
+      .map((n) => (Array.isArray(n.props.children) ? n.props.children.join("") : String(n.props.children ?? "")))
+      .join("\n");
+
+  it("draws the customer's live address, never the hardcoded 'Harare'", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    const text = allText(tree);
+    expect(text).toContain("FOOD · DELIVER TO");
+    expect(text).toContain("22 Bingley Drive, Belgravia"); // street qualified by suburb, as RC.list draws it
+    // The regression this whole change exists to prevent.
+    expect(text).not.toContain("Harare");
+  });
+
+  it("opens the same location sheet the home header opens when the deliver-to is tapped", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    expect(tree.root.findByType(LocationSheet).props.visible).toBe(false);
+    // Async act: opening the sheet kicks off its saved-places load, which must settle inside act().
+    await act(async () => {
+      tree.root.findAllByProps({ accessibilityLabel: "Deliver to 22 Bingley Drive, Belgravia. Change location" })[0]!.props.onPress();
+    });
+    expect(tree.root.findByType(LocationSheet).props.visible).toBe(true);
+    // A pick writes through the shared slot, so home and food can never disagree about the address.
+    expect(tree.root.findByType(LocationSheet).props.onPick).toBe(mockLocation.setManualPlace);
+  });
+
+  it("renders all four pills the mock draws, not just 'Open now'", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    const text = allText(tree);
+    for (const label of ["Open now", "Nearest", "Under $2 fee", "Top rated"]) expect(text).toContain(label);
+  });
+
+  it("summarises the results and names the suburb the customer is in", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    // 40 stub restaurants, none carrying a location — so the count lands and the ETA clause is
+    // dropped rather than invented.
+    expect(allText(tree)).toContain("40 places deliver to Belgravia");
+  });
+
+  it("disables the distance-dependent pills (and drops the suburb) when there is no fix", () => {
+    mockLocation.point = null;
+    mockLocation.area = null;
+    mockLocation.label = "Set your location";
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    const stateOf = (label: string) => tree.root.findAllByProps({ accessibilityLabel: label })[0]!.props.accessibilityState;
+    expect(stateOf("Sort by nearest").disabled).toBe(true);
+    expect(stateOf("Under $2 delivery fee filter").disabled).toBe(true);
+    // Rating needs no geometry, and Open now reads `hours` — both still work.
+    expect(stateOf("Sort by top rated").disabled).toBe(false);
+    expect(stateOf("Open now filter").disabled).toBe(false);
+    expect(allText(tree)).toContain("40 places deliver here");
+  });
+
+  /**
+   * REGRESSION (caught by the parity render lane, not by these tests): the header's derived state
+   * lives in `useMemo`s, and they were originally written BELOW the screen's three state-dependent
+   * early returns (flag-off / cold-loading / cold-error). A hook after an early return runs on the
+   * data frame but not on the loading frame, so React saw the hook COUNT grow between renders and
+   * tore the whole screen down — "Rendered more hooks than during the previous render", i.e. a BLANK
+   * screen on the completely ordinary cold-load → data transition every user hits on app open.
+   *
+   * Every other test here renders ONE fixed state, which is exactly why none of them caught it. This
+   * one drives the transition.
+   */
+  it("survives the cold-load → data transition (hooks must not be declared after an early return)", () => {
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isFetching = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    // Cold frame: the adopted skeleton, no header yet.
+    expect(tree.root.findAllByType(FlatList)).toHaveLength(0);
+
+    // Data lands — the SAME mounted component now takes the full render path.
+    mockFeedStub.restaurants = mockRestaurants;
+    mockFeedStub.isFetching = false;
+    act(() => {
+      tree.update(<RestaurantListScreen />);
+    });
+    expect(tree.root.findAllByType(FlatList)).toHaveLength(1);
+    expect(allText(tree)).toContain("22 Bingley Drive");
+  });
+
+  it("survives the cold-error → data transition too", () => {
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isError = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    mockFeedStub.restaurants = mockRestaurants;
+    mockFeedStub.isError = false;
+    act(() => {
+      tree.update(<RestaurantListScreen />);
+    });
+    expect(allText(tree)).toContain("FOOD · DELIVER TO");
+  });
+
+  it("drains remaining pages for a SORT too — 'Nearest' over page one is not the nearest", () => {
+    mockFeedStub.hasMore = true;
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<RestaurantListScreen />);
+    });
+    expect(mockFeedStub.loadMore).not.toHaveBeenCalled();
+    act(() => {
+      tree.root.findAllByProps({ accessibilityLabel: "Sort by nearest" })[0]!.props.onPress();
     });
     expect(mockFeedStub.loadMore).toHaveBeenCalled();
   });

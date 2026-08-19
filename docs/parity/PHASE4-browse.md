@@ -68,18 +68,29 @@ and the `/order/[id]` navigation.
 ## RC.list → `apps/mobile/app/food/index.tsx`
 
 Header (rotated-chevron back + "FOOD · DELIVER TO / address" + 44px round surface search) and the
-photo-led `RestaurantRow` list already matched `RC.list`. No code change was required; the remaining
-gaps are honest-data deviations, not structural misses.
+photo-led `RestaurantRow` list matched `RC.list` structurally. Three of the four gaps recorded here
+were justified as "the wire contract can't back this" — **that justification expired** and the gaps
+are now closed (2026-08-19); the table below records what changed and what genuinely remains.
 
-| Mock element | App reality | Why (honest, not faked) |
+**Why the data argument no longer holds.** #673 added `ratingAvg`, `ratingCount` and
+`prepBaselineMinutes` to `RestaurantListItem`, which already carried `location`; and `home-location.ts`
+(the 8c home header) gave every customer face a live reverse-geocoded fix. Distance, delivery fee, ETA
+and rating are therefore all derivable on-device through the same `haversineKm → deliveryFeeForDistance`
+path checkout and the home carousel already use. The header was left on a hardcoded `"Harare"` — the
+exact string `home-location.ts` exists to kill — purely because this screen was not revisited when the
+home adopted the hook.
+
+| Mock element | App reality | Status |
 |---|---|---|
-| Filter chip row: **Open now · Nearest · Under $2 fee · Top rated** | single **Open now** toggle | Nearest/fee/rating need distance/fee/rating data the C1 API doesn't carry; rendering dead chips would fake sortability. |
-| Count line **"5 places deliver to Belgravia · 25–45 min"** | omitted | The area corridor and ETA range are un-backed; a partial "N places" line drops the two facts the mock's line is about. |
-| **Hero** 16:9 photo card for the top row | uniform 96px thumb rows | The hero is photo-led; with no `coverPhotoUrl` (gray stub) and no rating/ETA, a 130px gray hero would read worse than a uniform honest row. |
-| chevron-down beside the address | omitted | The app address is static ("Harare"); a chevron-down would signal a picker that doesn't exist. |
+| Precise deliver-to address | ~~static `"Harare"`~~ → live `useHomeLocation()` label | ✅ **Aligned.** Same hook, same persisted slot as the home header, so the two screens cannot disagree. Falls back to last-known, then the `Set your location` prompt — never to a city-level guess. |
+| chevron-down beside the address | ~~omitted~~ → drawn, opens `LocationSheet` | ✅ **Aligned.** The chevron now signals a picker that exists; a pick persists to the shared slot. |
+| Filter chip row: **Open now · Nearest · Under $2 fee · Top rated** | ~~single **Open now** toggle~~ → all four | ✅ **Aligned.** Each wires to real data (`hours`, haversine distance, `deliveryFeeForDistance`, `ratingAvg`). Nearest and Under-$2 render drawn-but-disabled with an a11y hint while there is no customer fix — the one honest answer when the input is genuinely absent, and it self-heals the moment a location is set. |
+| Count line **"5 places deliver to Belgravia · 25–45 min"** | ~~omitted~~ → drawn | ✅ **Aligned.** Counts what is actually on screen post-filter. Each half degrades independently: no suburb ⇒ "deliver here"; nothing timeable ⇒ the ETA clause is dropped, never faked. |
+| Row meta line **★ 4.7 (210) · 1.2 km · 25–35 min · $1.50 delivery** | `Open now` / `Closing in N min` | ⬜ **Open.** The data now exists (see above) and `restaurantMeta()` already computes it for the pills — this is a wiring gap in `RestaurantRow`, no longer a contract gap. Not in scope of the header pass. |
+| **Hero** 16:9 photo card for the top row | uniform 96px thumb rows | ⬜ **Open.** Genuinely blocked on photo coverage: with no `coverPhotoUrl` a 130px gray hero reads worse than a uniform honest row. |
 
 `RestaurantRow` itself matches the mock `RestRow` (96px thumb, name + closed pill, cuisine·price,
-`Open now`/`Closing in N min` in place of the un-backed rating/distance/fee meta).
+`Open now`/`Closing in N min` in place of the not-yet-wired rating/distance/fee meta).
 
 ---
 

@@ -66,6 +66,9 @@ function lucideDeepIconsPlugin() {
 
 export function aliasMap() {
   const a = {
+    // Exact-subpath FIRST: the bare "react-native" alias below would otherwise rewrite this onto
+    // react-native-web/Libraries/…, a path RNW does not ship (see the shim's own note).
+    "react-native/Libraries/Image/resolveAssetSource": join(SHIMS, "resolve-asset-source.js"),
     "react-native": join(NM, "react-native-web"),
     react: join(NM, "react"),
     "react-dom": join(NM, "react-dom"),
@@ -79,6 +82,7 @@ export function aliasMap() {
     "expo-task-manager": join(SHIMS, "expo-task-manager.js"),
     "expo-location": join(SHIMS, "expo-location.js"),
     "react-native-maps": join(SHIMS, "react-native-maps.js"),
+    "expo-image": join(SHIMS, "expo-image.js"),
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
     "@sentry/react-native": join(SHIMS, "sentry.js"),

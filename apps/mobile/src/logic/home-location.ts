@@ -47,6 +47,17 @@ export interface HomePlace {
   label: string;
   lat: number;
   lng: number;
+  /**
+   * The SUBURB/district this point falls in ("Belgravia"), when the geocoder names one. A coarser
+   * answer than `label`, and a DIFFERENT question: the restaurant list's results summary asks "how
+   * many places deliver to where I am", and the mock answers it with the area rather than the street
+   * line ("5 places deliver to Belgravia" — RC.list). A street address in that sentence would read
+   * as one delivery destination instead of the corridor being described.
+   *
+   * Optional because plenty of honest fixes resolve to a street with no named district — the summary
+   * drops the area rather than inventing one.
+   */
+  area?: string;
 }
 
 export type HomeLocationSource = "gps" | "manual" | "last-known" | "none";
@@ -56,6 +67,8 @@ export interface HomeLocation {
   label: string;
   /** The point behind the label, for distance-sorting and fee estimates. Null when unknown. */
   point: { lat: number; lng: number } | null;
+  /** The suburb behind the label, for prose that names the area. Null when the geocoder named none. */
+  area: string | null;
   source: HomeLocationSource;
   /** A fix is in flight. The row keeps painting the previous label rather than flashing empty. */
   locating: boolean;
@@ -95,6 +108,20 @@ export function homeAddressLabel(r: Partial<Location.LocationGeocodedAddress>): 
   return out.slice(0, ADDRESS_MAX);
 }
 
+/**
+ * A reverse-geocode result -> the SUBURB the point sits in, or "" when nothing names one.
+ *
+ * Coarsest-useful-first is wrong here: `city` for a Harare fix is "Harare", which is exactly the
+ * imprecise answer the list header used to hardcode. So prefer the finest AREA the geocoder has
+ * (district, then subregion) and only fall back to city/region when it knows nothing finer — an
+ * area label that says "Harare" is honest when that is genuinely all we resolved, but it must never
+ * be preferred over "Belgravia".
+ */
+export function homeAreaLabel(r: Partial<Location.LocationGeocodedAddress>): string {
+  const area = (r.district ?? "").trim() || (r.subregion ?? "").trim() || (r.city ?? "").trim() || (r.region ?? "").trim();
+  return area.slice(0, ADDRESS_MAX);
+}
+
 /** A finite coordinate in the real lat/lng domain — and never the geocoder's 0,0 "found nothing". */
 export function isUsablePoint(p: { lat: number; lng: number } | null | undefined): p is { lat: number; lng: number } {
   if (!p) return false;
@@ -116,8 +143,11 @@ export function parseStoredPlace(raw: string | null): { place: HomePlace; manual
     const v = JSON.parse(raw) as Partial<HomePlace> & { manual?: unknown };
     if (typeof v.label !== "string" || !v.label.trim()) return null;
     if (!isUsablePoint({ lat: v.lat as number, lng: v.lng as number })) return null;
+    const area = typeof v.area === "string" && v.area.trim() ? v.area.slice(0, ADDRESS_MAX) : undefined;
     return {
-      place: { label: v.label.slice(0, ADDRESS_MAX), lat: v.lat as number, lng: v.lng as number },
+      // `area` is ADDITIVE — a slot written before this field existed parses fine and simply has no
+      // suburb, so the summary line degrades to its area-less form instead of the parse dropping.
+      place: { label: v.label.slice(0, ADDRESS_MAX), lat: v.lat as number, lng: v.lng as number, ...(area ? { area } : {}) },
       manual: v.manual === true,
     };
   } catch {
@@ -180,14 +210,22 @@ async function livePoint(): Promise<{ lat: number; lng: number } | null> {
   }
 }
 
-/** Best-effort street label for a point. Empty string (never a throw) when the geocoder can't help. */
-export async function addressFor(point: { lat: number; lng: number }): Promise<string> {
+/**
+ * Best-effort labels for a point: the street line the header draws, and the suburb prose names.
+ *
+ * Both come out of the ONE reverse-geocode call — they are two readings of the same result, and
+ * resolving them separately would double a network-ish call on every fix for no new information.
+ * An empty `label` (never a throw) is the "geocoder couldn't help" signal callers already branch on.
+ */
+export async function addressFor(point: { lat: number; lng: number }): Promise<{ label: string; area?: string }> {
   try {
     const results = await Location.reverseGeocodeAsync({ latitude: point.lat, longitude: point.lng });
     const first = results[0];
-    return first ? homeAddressLabel(first) : "";
+    if (!first) return { label: "" };
+    const area = homeAreaLabel(first);
+    return { label: homeAddressLabel(first), ...(area ? { area } : {}) };
   } catch {
-    return "";
+    return { label: "" };
   }
 }
 
@@ -197,9 +235,9 @@ export async function detectHomePlace(): Promise<HomePlace | null> {
   if ((await ensurePermission()) !== "granted") return null;
   const point = (await livePoint()) ?? (await cachedPoint());
   if (!isUsablePoint(point)) return null;
-  const label = await addressFor(point);
-  if (!label) return null;
-  return { label, ...point };
+  const resolved = await addressFor(point);
+  if (!resolved.label) return null;
+  return { ...resolved, ...point };
 }
 
 // ---------------------------------------------------------------------------
@@ -288,10 +326,10 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
       const cached = await cachedPoint();
       if (!alive.current || manualRef.current) return;
       if (isUsablePoint(cached)) {
-        const label = await addressFor(cached);
+        const resolved = await addressFor(cached);
         if (!alive.current || manualRef.current) return;
-        if (label) {
-          setPlace({ label, ...cached });
+        if (resolved.label) {
+          setPlace({ ...resolved, ...cached });
           setSource("gps");
         }
       }
@@ -302,13 +340,13 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
         setLocating(false);
         return;
       }
-      const label = await addressFor(live);
+      const resolved = await addressFor(live);
       if (!alive.current || manualRef.current) {
         setLocating(false);
         return;
       }
-      if (label) {
-        const next = { label, ...live };
+      if (resolved.label) {
+        const next = { ...resolved, ...live };
         setPlace(next);
         setSource("gps");
         // Detect-only never writes: the slot holds the customer's deliver-to, and persisting a
@@ -347,6 +385,7 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
   return {
     label: place?.label ?? SET_LOCATION_PROMPT,
     point: place ? { lat: place.lat, lng: place.lng } : null,
+    area: place?.area ?? null,
     source: place ? source : "none",
     locating,
     denied,

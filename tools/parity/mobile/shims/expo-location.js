@@ -29,8 +29,16 @@ export async function geocodeAsync() { return []; }
 // no address would paint the "Set your location" prompt instead of the drawn row. Answers with the
 // mock's own sample address (home-8c.jsx), the same way the fixed HARARE point above answers the
 // position calls.
+// Overridable per fixture, like __PARITY_PERMISSIONS above, for a screen whose mock draws a
+// DIFFERENT corridor than the home's sample address — RC.list draws "12 Lanark Rd, Belgravia" and a
+// "deliver to Belgravia" count line, which the default Harare-district answer cannot produce. Set
+// `window.__PARITY_REVERSE_GEOCODE = { ...address }` at fixture top level; anything omitted falls
+// back to the default below, so existing fixtures (and every screen reading `district` through
+// geocode.ts's landmarkFromAddress) are untouched.
+const DEFAULT_ADDRESS = { name: "12 Samora Machel Ave", streetNumber: "12", street: "Samora Machel Ave", district: "Harare", city: "Harare", subregion: "Harare", region: "Harare", country: "Zimbabwe", isoCountryCode: "ZW", postalCode: null, timezone: null };
 export async function reverseGeocodeAsync() {
-  return [{ name: "12 Samora Machel Ave", streetNumber: "12", street: "Samora Machel Ave", district: "Harare", city: "Harare", subregion: "Harare", region: "Harare", country: "Zimbabwe", isoCountryCode: "ZW", postalCode: null, timezone: null }];
+  const override = (typeof window !== "undefined" && window.__PARITY_REVERSE_GEOCODE) || {};
+  return [{ ...DEFAULT_ADDRESS, ...override }];
 }
 export default {
   Accuracy, ActivityType, requestForegroundPermissionsAsync, getForegroundPermissionsAsync,

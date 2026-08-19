@@ -112,7 +112,7 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header/rows aligned; filter chips, count line & hero row deviate on honest-data grounds — see doc |
+| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header aligned 2026-08-19: live deliver-to + chevron picker, all four filter chips, count line. Row meta line & hero row still open — see doc |
 | ⬜ | C3·2 | `RC list_loading` | List loading  [FOOD] | | |
 | 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
 | ✅ | C3·4 | `RC menu` | Menu  [FOOD] | **region-adopted (Foundation-E)** — first machine-guarded INTERACTIVE screen: cover / dish-rows / cart-bar are generated guarded fragments the container composes; per-region congruence + composition check green (`tools/parity/codegen/cli.mjs check`) | cover band + overhanging shop logo + floating back button; tabs/ItemSheet/RemindWhenOpen/just-closed stay live glue; backend-gated meta line honest-kept (non-region) |
