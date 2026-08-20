@@ -214,6 +214,31 @@ const KycPending = () => (
     <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute." />
   </Pad>
 );
+/* 1·3b — the rider opened the check and backed out, or never opened it. The screen above would be a
+   lie here: nothing was submitted, so "your ID check is with Didit" describes a check that does not
+   exist. Distinct icon (id-card, not the alert) because this is the rider's move, not a fault. */
+const KycUnfinished = () => (
+  <Pad>
+    <RiderHead />
+    <EmptyState icon="id-card" title="Finish verifying your ID" message="You haven't finished verifying your ID. It takes about a minute.">
+      <Button label="Finish verifying" onClick={noop} />
+    </EmptyState>
+  </Pad>
+);
+/* 1·3c — the check could not OPEN: camera unavailable, permission denied, no connection. Not the
+   rider abandoning anything, so it must not be worded as if they did — that would blame them for a
+   device fault and send them round a loop that fails the same way. Alert glyph, the cause named, and
+   support as a ghost second action (the only one of the three pending states that offers it: the
+   other two are solved by one tap, and a support row there would invite a call for nothing). */
+const KycCantStart = () => (
+  <Pad>
+    <RiderHead />
+    <EmptyState icon="triangle-alert" title="We couldn't open the ID check" message="This is usually the camera or the connection. Check both and try again.">
+      <Button label="Try again" onClick={noop} />
+      <Button label="Contact support" variant="ghost" onClick={noop} />
+    </EmptyState>
+  </Pad>
+);
 const KycVerified = () => (
   <Pad>
     <RiderHead chip={<StatusPill status="Verified" tone="online" dot />} />
@@ -867,6 +892,8 @@ window.RJ = {
   kyc_intro: () => S(<KycIntro />),
   kyc_form: () => S(<KycForm />),
   kyc_pending: () => S(<KycPending />),
+  kyc_unfinished: () => S(<KycUnfinished />),
+  kyc_cant_start: () => S(<KycCantStart />),
   kyc_verified: () => S(<KycVerified />),
   kyc_failed: () => S(<KycFailed />),
   kyc_expired: () => S(<KycExpired />),

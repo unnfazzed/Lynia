@@ -642,6 +642,14 @@ const Register = () => (
     </div>
     <Field label="National ID number" value="63-123456-A-42" onChange={noop} hint="Stored on your account only — we don't verify it. Riders go through a separate ID check." />
     <Button label="Continue" onClick={noop} />
+    {/* N-01: this screen had NO way out — no back, no skip, no sign-out — and it sits immediately
+        after OTP. Someone who mistyped their number and passed the code sent to it was trapped, with
+        the Android system back button as the only exit and nowhere defined for it to go. That is the
+        one thing DESIGN.md's own accessibility section forbids: "easy error recovery (retry, edit,
+        go back)". Ghost, not primary, and phrased as the thing the rider actually wants ("a different
+        number") rather than a navigation word. Same weight and idiom as the OTP screen's ghost Back
+        one step earlier, so the pair reads as one flow. */}
+    <Button label="Use a different number" variant="ghost" onClick={noop} />
   </Pad>
 );
 

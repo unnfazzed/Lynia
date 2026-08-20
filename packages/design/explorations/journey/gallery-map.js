@@ -107,7 +107,9 @@ const RIDER = [
   ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [
     ["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "ID photo · capture", ""],
     ["RJ", "photo_preview", "ID photo · preview", ""], ["RJ", "photo_uploading", "ID photo · uploading", ""],
-    ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_verified", "Verified", ""],
+    ["RJ", "kyc_pending", "Verification pending", ""],
+    ["RJ", "kyc_unfinished", "Verification not finished", ""], ["RJ", "kyc_cant_start", "Couldn't open the ID check", ""],
+    ["RJ", "kyc_verified", "Verified", ""],
   ]],
   ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [
     ["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"],

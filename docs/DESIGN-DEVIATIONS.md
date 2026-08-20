@@ -1504,6 +1504,60 @@ unaffected (BH-03).
 
 ---
 
+## D-35 · The ACT 1 KYC cluster gains three drawn states and two exits — RETIRED same day (2026-08-20)
+
+> **Retired on arrival**, like D-33: these are design CHANGES the owner commissioned, not divergences
+> the app is carrying. Once exported they are simply the mocks. The entry exists because
+> `packages/design/**` was edited in-repo, which the reverse-drift freeze requires be logged, and
+> because the upstream sync below is still owed.
+
+Commissioned by the navigation review (N-01, N-02) and the KYC plan (P0-1), with decisions D2/D3/D4
+recorded in `docs/plans/2026-08-20-navigation-fix-forward.md`.
+
+**Added — `RJ kyc_unfinished` (1·3b) and `RJ kyc_cant_start` (1·3c).** `kyc_pending` assumed the happy
+path: it says *"your ID check is with Didit"*, which is false for a rider who backed out of the SDK
+(nothing was submitted) and false again for one whose camera never opened. The SDK returns **three**
+outcomes — `completed`, `cancelled`, `failed` — and one drawn state cannot serve all three, because
+they differ in whether the rider still owes an action and in whose fault it is. `cant_start` is the
+only one of the three carrying a support ghost: the other two are solved by one tap, and offering
+support there would invite a call for nothing.
+
+**Changed — `LJ register` (C1·8) gains "Use a different number".** It had no back, no skip and no
+sign-out, immediately after OTP, so a mistyped number that passed its own code was a trap. This is the
+one thing `docs/DESIGN.md` § Responsive & accessibility explicitly requires — *"easy error recovery
+(retry, edit, go back)"* — so the mock was contradicting its own design system. Ghost weight, matching
+the OTP screen's ghost *Back* one step earlier.
+
+**Changed — `RJ photo_capture` (E·1): the ✕ became a control, and the screen became a portrait.**
+The close was a bare 20px glyph with no role, label or hit area, absent from both the hierarchy and
+accessibility notes, while the shutter beside it was a fully specified 68px button — and it is the
+only exit from a full-bleed dark camera. It is now a labelled `button` at DESIGN.md's 44px floor. The
+drawn glyph is unchanged at 20px; only the touch area around it grew.
+
+Per **D3** the step is the **rider portrait**, not the ID document (the Didit SDK photographs the
+document itself; our capture serves the admin reviewer and the `KYC_MODE=manual` fallback). So the
+ID-card rectangle became a portrait oval and the rules changed from document readability to face
+framing — *"all four corners in"* describes a card, not a person.
+
+**D2, recorded here because this is the screen that forced it.** `docs/DESIGN.md` requires ≥44px touch
+targets; `CLAUDE.md` says a mock drawing smaller wins. The 20px ✕ was legal under one and a violation
+under the other. Resolution: the 2026-08-10 rule is scoped to **parity** — it stops the APP silently
+resizing a mock — and was never licence for the KIT to draw an unusable control. The app never
+inflates; a below-floor mock is an **UPSTREAM defect to fix**, as done here. Still owed:
+writing that precedence into `CLAUDE.md` so it stops being re-argued (T9).
+
+⚠️ **UPSTREAM SYNC OWED**, compounding D-33's. Edited in-repo, not exported from the Claude Design
+project that `packages/design/` mirrors, so the next export reverts all of it. Replay there:
+`rider-screens.jsx` (two new components + registry), `gallery-map.js` (two band entries),
+`screens.jsx` (Register ghost), `rider-screens-safety.jsx` (PhotoCapture header + oval + rules), and
+the matching `_ds_bundle.js` twins. **Not touched:** the interactive kit's own registration form
+(`ui_kits/mobile/app.js`) still lacks the exit — it is a live form needing a handler, so it was left
+for the export rather than half-wired here.
+
+**Retire this entry** when an export carries all of the above; nothing here is a standing deviation.
+
+---
+
 ## D-34 · The Didit SDK's own verification UI is outside pixel parity — APPROVED (2026-08-20)
 
 **The consequence of D-33's chosen route, stated so it is never mistaken for drift.** Route A embeds

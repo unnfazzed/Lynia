@@ -8782,20 +8782,34 @@ try { (() => {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 10,
-      padding: "40px 16px 10px"
+      gap: 4,
+      padding: "34px 16px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": "Close",
+    style: {
+      width: 44,
+      height: 44,
+      marginLeft: -12,
+      display: "grid",
+      placeItems: "center",
+      background: "none",
+      border: "none",
+      padding: 0,
+      cursor: "pointer"
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "x",
     size: 20,
     color: "#fff"
-  }), /*#__PURE__*/React.createElement("span", {
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 16,
       fontWeight: 700,
       color: "#fff"
     }
-  }, "ID photo")), /*#__PURE__*/React.createElement("div", {
+  }, "Rider photo")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       display: "flex",
@@ -8807,9 +8821,9 @@ try { (() => {
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: "100%",
-      aspectRatio: "1.586 / 1",
-      borderRadius: 14,
+      width: "72%",
+      aspectRatio: "0.78 / 1",
+      borderRadius: "50%",
       border: "2.5px dashed rgba(255,255,255,.75)",
       display: "grid",
       placeItems: "center",
@@ -8821,10 +8835,10 @@ try { (() => {
       fontWeight: 600,
       color: "rgba(255,255,255,.8)",
       textAlign: "center",
-      maxWidth: 190,
+      maxWidth: 170,
       lineHeight: 1.5
     }
-  }, "Fit the photo page of your ID inside the frame")), /*#__PURE__*/React.createElement("div", {
+  }, "Put your face inside the oval")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "rgba(255,255,255,.7)",
@@ -8832,7 +8846,7 @@ try { (() => {
       maxWidth: 240,
       lineHeight: 1.5
     }
-  }, "Names and numbers readable \xB7 no glare \xB7 all four corners in")), /*#__PURE__*/React.createElement("div", {
+  }, "Face the light \xB7 no hat or sunglasses \xB7 look straight ahead")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "center",
@@ -11220,6 +11234,26 @@ try { (() => {
     title: "Finishing verification\u2026",
     message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
   }));
+  const KycUnfinished = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "id-card",
+    title: "Finish verifying your ID",
+    message: "You haven't finished verifying your ID. It takes about a minute."
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Finish verifying",
+    onClick: noop
+  })));
+  const KycCantStart = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "triangle-alert",
+    title: "We couldn't open the ID check",
+    message: "This is usually the camera or the connection. Check both and try again."
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Try again",
+    onClick: noop
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Contact support",
+    variant: "ghost",
+    onClick: noop
+  })));
   const KycVerified = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, {
     chip: /*#__PURE__*/React.createElement(StatusPill, {
       status: "Verified",
@@ -13103,6 +13137,8 @@ try { (() => {
     kyc_intro: () => S(/*#__PURE__*/React.createElement(KycIntro, null)),
     kyc_form: () => S(/*#__PURE__*/React.createElement(KycForm, null)),
     kyc_pending: () => S(/*#__PURE__*/React.createElement(KycPending, null)),
+    kyc_unfinished: () => S(/*#__PURE__*/React.createElement(KycUnfinished, null)),
+    kyc_cant_start: () => S(/*#__PURE__*/React.createElement(KycCantStart, null)),
     kyc_verified: () => S(/*#__PURE__*/React.createElement(KycVerified, null)),
     kyc_failed: () => S(/*#__PURE__*/React.createElement(KycFailed, null)),
     kyc_expired: () => S(/*#__PURE__*/React.createElement(KycExpired, null)),
@@ -17782,6 +17818,10 @@ try { (() => {
     hint: "Stored on your account only \u2014 we don't verify it. Riders go through a separate ID check."
   }), /*#__PURE__*/React.createElement(Button, {
     label: "Continue",
+    onClick: noop
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Use a different number",
+    variant: "ghost",
     onClick: noop
   }));
 

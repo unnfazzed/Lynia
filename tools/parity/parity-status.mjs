@@ -125,6 +125,10 @@ export const PARITY_STATUS = {
   "RJ.photo_preview": { status: "PENDING" }, // ID photo · preview
   "RJ.photo_uploading": { status: "PENDING" }, // ID photo · uploading
   "RJ.kyc_pending": { status: "PENDING" }, // Verification pending
+  // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of
+  // docs/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
+  "RJ.kyc_unfinished": { status: "PENDING" }, // Verification not finished — resume, don't restart
+  "RJ.kyc_cant_start": { status: "PENDING" }, // SDK couldn't open — device fault, not the rider's
   "RJ.kyc_verified": { status: "PENDING" }, // Verified
   "RJ.offer_sent": { status: "PENDING" }, // Offer sent · waiting
   "RJ.picked": { status: "PENDING" }, // Customer picked you
