@@ -5766,9 +5766,9 @@ node("kyc_form", 1, B.B1, "1·2", "KYC form + consent", {
   c: "Submit for verification"
 });
 node("kyc_pending", 2, B.B1, "1·3", "Verification pending", {
-  p: "ID check is with Didit (selfie liveness in-browser). Rider waits — usually under a minute.",
+  p: "ID check is with Didit, in-app (SDK capture + selfie liveness). Rider waits — usually under a minute; no action needed.",
   s: "Pending",
-  c: "Continue in browser"
+  c: "— waits (no action)"
 });
 node("kyc_verified", 3, B.B1, "1·4", "Verified", {
   p: "ID + bike approved. The one moment that unlocks going online.",
@@ -11219,11 +11219,7 @@ try { (() => {
     icon: "id-card",
     title: "Finishing verification\u2026",
     message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
-  }, /*#__PURE__*/React.createElement(Button, {
-    label: "Continue in browser",
-    variant: "ghost",
-    onClick: noop
-  })));
+  }));
   const KycVerified = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, {
     chip: /*#__PURE__*/React.createElement(StatusPill, {
       status: "Verified",
@@ -40265,7 +40261,7 @@ function App() {
             color: "var(--ink)",
             fontWeight: 600
           }
-        }, "Didit"), " \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers. You'll finish in your browser, then come back to go online.", " ", /*#__PURE__*/React.createElement("span", {
+        }, "Didit"), " \u2014 an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.", " ", /*#__PURE__*/React.createElement("span", {
           style: {
             color: "var(--accent-text)",
             fontWeight: 600,
@@ -40293,11 +40289,7 @@ function App() {
         icon: "id-card",
         title: "Finishing verification\u2026",
         message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
-      }, /*#__PURE__*/React.createElement(Button, {
-        label: "Continue in browser",
-        variant: "ghost",
-        onClick: () => {}
-      })) : kyc === "failed" ? /*#__PURE__*/React.createElement(EmptyState, {
+      }) : kyc === "failed" ? /*#__PURE__*/React.createElement(EmptyState, {
         icon: "triangle-alert",
         title: "We couldn't verify your ID",
         message: "Often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."

@@ -14,7 +14,9 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-33, D-34.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34.** D-33 was RETIRED on the day it was
+opened — the mocks were redrawn without the browser step, so nothing diverges (its entry carries an
+upstream-sync warning for the next design export). D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -1433,7 +1435,22 @@ tier is simply the mock, and Half 2 stops being a deviation. Half 1 retires when
 
 ---
 
-## D-33 · Rider KYC finishes inside the app; the mocks draw a browser hand-off — APPROVED (2026-08-20)
+## D-33 · Rider KYC finishes inside the app; the mocks drew a browser hand-off — RETIRED same day (2026-08-20)
+
+> **Retired by the in-repo design change in this PR.** The mocks no longer draw the browser step, so
+> the app and the design agree and **there is no deviation left to carry** — align to the mock as
+> normal. The original entry is kept below as the record of the decision.
+>
+> ⚠️ **UPSTREAM SYNC OWED — read before the next design export.** This change was made *in this repo*
+> under the owner's explicit instruction ("design it in this session"), NOT exported from the Claude
+> Design project that `packages/design/` mirrors. That project **still contains the
+> "Continue in browser" button**, so the next export will silently reintroduce it and re-open this
+> deviation. Apply the same three edits there — `rider-screens.jsx` `KycPending` (drop the ghost
+> Button), `rider-map.jsx` node `kyc_pending` (`p` + `c`), `ui_kits/mobile/app.js` (the pending
+> EmptyState and the consent card's "You'll finish in your browser" clause) — or diff against this
+> commit when the next export lands. The compiled `_ds_bundle.js` was edited to match by hand; its
+> header `sourceHashes` are therefore stale for those three files, which is harmless here (nothing
+> in this repo validates them) but means the tool may see the files as changed on next sync.
 
 **Owner instruction, 2026-08-20:** *"The current KYC process you will end up on didit's website. I
 don't want riders to go on the didit interface. Everything must be done inside the app and didit will

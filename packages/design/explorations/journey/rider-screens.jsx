@@ -211,9 +211,7 @@ function KycForm() {
 const KycPending = () => (
   <Pad>
     <RiderHead />
-    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute.">
-      <Button label="Continue in browser" variant="ghost" onClick={noop} />
-    </EmptyState>
+    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute." />
   </Pad>
 );
 const KycVerified = () => (

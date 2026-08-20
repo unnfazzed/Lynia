@@ -1023,7 +1023,7 @@ function App() {
               <div style={{ display: "flex", gap: 8 }}>
                 <Icon name="id-card" size={18} color="var(--accent-text)" style={{ marginTop: 1 }} />
                 <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>
-                  Your national ID is checked by our verification partner <b style={{ color: "var(--ink)", fontWeight: 600 }}>Didit</b> — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers. You'll finish in your browser, then come back to go online.{" "}
+                  Your national ID is checked by our verification partner <b style={{ color: "var(--ink)", fontWeight: 600 }}>Didit</b> — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers.{" "}
                   <span style={{ color: "var(--accent-text)", fontWeight: 600, textDecoration: "underline" }}>Privacy policy</span>
                 </div>
               </div>
@@ -1041,9 +1041,7 @@ function App() {
             {RoleSwitch}
           </TopRow>
           {kyc === "pending" ? (
-            <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute.">
-              <Button label="Continue in browser" variant="ghost" onClick={() => {}} />
-            </EmptyState>
+            <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute." />
           ) : kyc === "failed" ? (
             <EmptyState icon="triangle-alert" title="We couldn't verify your ID" message="Often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing.">
               <Button label="Try again" onClick={() => setKyc("form")} />

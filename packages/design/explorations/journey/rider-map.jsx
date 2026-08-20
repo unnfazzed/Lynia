@@ -25,7 +25,7 @@ node("perm_notif", 6, B.B0, "0·7", "Permission · notifications", { p: "Prime p
 // Act 1 — KYC / become a rider
 node("kyc_intro", 0, B.B1, "1·1", "Become a rider", { p: "Entry gate — a verified ID + bike is required before going online. Empty-state CTA.", s: "Not started", c: "Become a rider" });
 node("kyc_form", 1, B.B1, "1·2", "KYC form + consent", { p: "Name, national ID, bike registration, rider photo, and a plain-language consent block naming the partner (Didit) and what's collected. Pre-filled from account registration for customer-first users — no double entry. (S12)", s: "Filled · valid", c: "Submit for verification" });
-node("kyc_pending", 2, B.B1, "1·3", "Verification pending", { p: "ID check is with Didit (selfie liveness in-browser). Rider waits — usually under a minute.", s: "Pending", c: "Continue in browser" });
+node("kyc_pending", 2, B.B1, "1·3", "Verification pending", { p: "ID check is with Didit, in-app (SDK capture + selfie liveness). Rider waits — usually under a minute; no action needed.", s: "Pending", c: "— waits (no action)" });
 node("kyc_verified", 3, B.B1, "1·4", "Verified", { p: "ID + bike approved. The one moment that unlocks going online.", s: "Verified", c: "Go online" });
 node("kyc_failed", 4, B.B1, "1·b1", "Verification failed", { p: "Blurry photo / glare / mismatch. Honest reason + one retry, support if it persists. (Edge)", s: "Failed", c: "Try again" });
 node("kyc_expired", 5, B.B1, "1·b2", "ID expired (later)", { p: "A previously-verified rider whose document lapsed — blocked from going online until they re-verify. (Edge)", s: "Blocked · re-verify", c: "Re-verify my ID" });
