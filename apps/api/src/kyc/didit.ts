@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { KYC_THRESHOLDS, KycDeclineReason } from "@lynia/shared";
+import type { ServerKycPendingState } from "./kyc-pending-state";
 
 export type RiderKyc = "verified" | "failed" | "pending" | "expired";
 
@@ -25,6 +26,41 @@ export function mapDiditStatus(status: string): RiderKyc {
     default:
       // Not Started | In Progress | Awaiting User | In Review | Resubmitted | Abandoned | Expired
       return "pending";
+  }
+}
+
+/**
+ * Split a still-PENDING Didit session into "in flight" vs "waiting on the rider" (P0-1 / D6).
+ *
+ * Distinct from {@link mapDiditStatus}, which answers a different question — what the rider's
+ * kyc_status should be. This one only ever runs while that answer is already `pending`, and asks
+ * whether the rider owes the next action:
+ *
+ *   In Progress / In Review / Resubmitted   the vendor holds it            → in_flight
+ *   Approved / Declined                     terminal; the webhook that flips kycStatus is in flight,
+ *                                           so while the row still says pending, so is the check → in_flight
+ *   Not Started / Awaiting User             never opened, or opened and backed out → unfinished
+ *   Abandoned / Expired / Kyc Expired       session dead; a resume mints a fresh one → unfinished
+ *
+ * Unknown ⇒ `unfinished`, the safe default: offering a resume to a rider genuinely mid-check costs
+ * one wasted tap, while withholding it from one who cancelled strands them behind the gate with
+ * nothing to press. It deliberately does NOT default to the SDK's `failed` state — that accuses the
+ * device of a fault we have no evidence for, and its copy sends the rider to support.
+ *
+ * Normalisation is looser than `mapDiditStatus`'s: Didit has spelled these `In Review`, `in_review`
+ * and `IN_REVIEW` across versions, so `_`/`-`/whitespace runs all collapse to one space. A casing or
+ * separator change must not silently reclassify every pending rider.
+ */
+export function mapDiditPendingState(status: string): ServerKycPendingState {
+  switch (status.trim().toLowerCase().replace(/[\s_-]+/g, " ")) {
+    case "in progress":
+    case "in review":
+    case "resubmitted":
+    case "approved":
+    case "declined":
+      return "in_flight";
+    default:
+      return "unfinished";
   }
 }
 
