@@ -409,9 +409,15 @@ Synthesized from this review's findings. Each derives from a specific finding ab
 - [x] **T1 (P1, human: ~1d / CC: ~40min)** — design kit — draw the three `kyc_pending` states
   - Surfaced by: P0-1 + Pass 2 — the SDK's `failed` outcome had no drawn state at all
   - Files: `packages/design/explorations/journey/rider-screens.jsx`, `rider-map.jsx`, `_ds_bundle.js`, `docs/DESIGN-DEVIATIONS.md`
-  - Verify: all THREE render — `node tools/parity/render-mock.mjs --src RJ --id kyc_pending`, then
-    `--id kyc_unfinished` and `--id kyc_cant_start`; plus `check-design-freeze` and the
-    screen-inventory guardrail (both new ids adopted, neither silently uncovered)
+  - Verify: all THREE render — one invocation each, since `render-mock.mjs` takes a single `--id`
+    (from `tools/parity/`; `--out` defaults to `out/mock-RJ-<id>.png`, so the three don't collide):
+    ```
+    node render-mock.mjs --src RJ --id kyc_pending
+    node render-mock.mjs --src RJ --id kyc_unfinished
+    node render-mock.mjs --src RJ --id kyc_cant_start
+    ```
+    plus `check-design-freeze` and the screen-inventory guardrail (both new ids adopted, neither
+    silently uncovered)
 - [x] **T2 (P1, human: ~2h / CC: ~20min)** — design kit — registration exit affordance
   - Surfaced by: P0-3 / N-01 — violates DESIGN.md's own "easy error recovery (retry, edit, go back)"
   - Files: `packages/design/explorations/journey/screens.jsx` (Register C1·8), bundle, ledger
