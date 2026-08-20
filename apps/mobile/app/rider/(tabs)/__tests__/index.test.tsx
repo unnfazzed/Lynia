@@ -93,9 +93,31 @@ jest.mock("../../../../src/net/use-feature-flags", () => ({
 }));
 
 import RiderHome from "../index";
+import * as WebBrowser from "expo-web-browser";
 import { makeOffer } from "../../../../src/api/offers";
+import { retryKyc } from "../../../../src/api/riders";
 
 const mockMakeOffer = makeOffer as jest.MockedFunction<typeof makeOffer>;
+// The KYC launch lane: `retryKyc` hands back a verification URL, and the in-app browser either opens
+// it, is closed by the rider, or cannot open at all — the three outcomes the pending walls resolve on.
+const mockRetryKyc = retryKyc as jest.MockedFunction<typeof retryKyc>;
+const mockOpenAuthSession = WebBrowser.openAuthSessionAsync as jest.MockedFunction<
+  typeof WebBrowser.openAuthSessionAsync
+>;
+/** The rider closing the in-app tab. Written as a literal because the mock replaces the whole module,
+ *  so `WebBrowserResultType.DISMISS` does not exist at runtime here. */
+const DISMISSED = { type: "dismiss" } as unknown as WebBrowser.WebBrowserAuthSessionResult;
+
+/** Flattened text of every host element, "|"-joined — used to assert copy without depending on layout. */
+function treeText(tree: renderer.ReactTestRenderer): string {
+  return tree.root
+    .findAll((n) => typeof n.type === "string")
+    .map((n) => {
+      const c = n.props.children;
+      return Array.isArray(c) ? c.filter((x) => typeof x === "string").join("") : typeof c === "string" ? c : "";
+    })
+    .join("|");
+}
 
 function meFixture(overrides: Partial<NonNullable<Me["rider"]>> = {}): Me {
   return {
@@ -730,8 +752,224 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     await settle();
 
     expect(labelHits(activeTree, "Back to customer")).toBe(0);
-    // The wall itself still renders — this is a removal, not a regression of the gate.
-    expect(labelHits(activeTree, "Continue verification")).toBeGreaterThan(0);
+    // The wall itself still renders — this is a removal, not a regression of the gate. (Copy is the
+    // mock's since the pending split: an auto-mode rider with no server pending-state resolves to
+    // `unfinished`, whose primary is "Finish verifying".)
+    expect(labelHits(activeTree, "Finish verifying")).toBeGreaterThan(0);
+  });
+
+  /**
+   * The 2026-08-16 removal, pinned by SHAPE rather than by string.
+   *
+   * The assertions above name "Back to customer" — which only stops the bridge coming back under the
+   * name it had. The P0-1 pending split (2026-08-20) proposed re-adding it as "Order food and send
+   * parcels", which every absence assertion above would have waved through. The owner's instruction
+   * was about the bridge, not the label, so pin the whole action set: any new action on a KYC wall
+   * fails here and has to be argued for on purpose.
+   */
+  const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
+    ["in flight — with the vendor, nothing to press", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, []],
+    ["unfinished — the rider's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying"]],
+    ["manual/ops review — nothing to press", { kycStatus: "pending", kycMode: "manual" }, []],
+    ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID"]],
+    ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again"]],
+  ];
+
+  it.each(WALL_ACTIONS)("%s: the wall offers exactly its own actions and no exit", async (_name, patch, expected) => {
+    mockGetMe.mockResolvedValue(meFixture(patch));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
+      .map((n) => n.props.label as string);
+    expect(labels).toEqual(expected);
+  });
+});
+
+/**
+ * P0-1 — `kyc_pending` is three screens, not one (`RJ kyc_pending` / `kyc_unfinished` / `kyc_cant_start`).
+ *
+ * The bug these exist for: a rider who opened the check and backed out at step one used to land on
+ * "Your ID check is with Didit" — false, nothing was submitted — with no way to resume. Each state now
+ * says something the other two must not, so assert the COPY, not just the action count: a regression
+ * that renders the right buttons under the wrong sentence is exactly the failure being fixed.
+ */
+describe("rider board — the three KYC pending states (P0-1)", () => {
+  async function wall(patch: Parameters<typeof meFixture>[0]): Promise<string> {
+    mockGetMe.mockResolvedValue(meFixture(patch));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    return treeText(activeTree);
+  }
+
+  it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
+    expect(text).toContain("Finishing verification");
+    expect(text).toContain("Your ID check is with Didit");
+    expect(text).not.toContain("Finish verifying your ID");
+  });
+
+  it("unfinished: never claims the check is with the vendor — nothing was submitted", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" });
+    expect(text).toContain("Finish verifying your ID");
+    expect(text).toContain("You haven't finished verifying your ID");
+    // The precise lie this split exists to remove.
+    expect(text).not.toContain("Your ID check is with Didit");
+  });
+
+  // Absent signal ⇒ unfinished. An older API that sends no pending-state must still leave the rider a
+  // way forward; defaulting the other way would strand someone who cancelled with nothing to press.
+  it("an API that sends no pending state still offers the resume", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto" });
+    expect(text).toContain("Finish verifying your ID");
+  });
+
+  /**
+   * The launch lane. `openAuthSessionAsync` was wrapped in `.catch(() => undefined)`, so a browser
+   * that could not open — no WebView, a stripped Android build — swallowed the failure whole: the
+   * rider tapped, nothing happened, and they were left on the same wall with no explanation.
+   */
+  it("a launch that never opened shows the couldn't-start wall, not silence", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockRejectedValue(new Error("no browser available"));
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+
+    const text = treeText(activeTree);
+    expect(text).toContain("We couldn't open the ID check");
+    // It must NOT read as a decline: nothing was assessed, and blaming the rider for a device fault
+    // sends them round a loop that fails the same way.
+    expect(text).not.toContain("We couldn't verify your ID");
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
+      .map((n) => n.props.label as string);
+    expect(labels).toEqual(["Try again", "Contact support"]);
+  });
+
+  // Closing the tab is a choice, not a fault — it must land on the resume, never on the alert state.
+  it("closing the verification tab is unfinished, not a failure", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockResolvedValue(DISMISSED);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+
+    expect(treeText(activeTree)).not.toContain("We couldn't open the ID check");
+    expect(treeText(activeTree)).toContain("Finish verifying your ID");
+  });
+
+  // The cached pending-state is from BEFORE the rider went to verify, so it says "unfinished" — which
+  // would tell someone who just completed the check that they haven't started it.
+  it("a completed check shows in flight, not the stale unfinished it was cached with", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // Hold the refetch open so only the optimistic value is on screen — that window IS the bug: it is
+    // where a rider who just finished would otherwise be told they haven't started.
+    mockGetMe.mockImplementation(() => new Promise(() => undefined));
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+
+    expect(treeText(activeTree)).toContain("Your ID check is with Didit");
+    expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
+  });
+
+  /**
+   * ...and it must stay a hint. The obvious fix — let a `completed` launch outrank the server — would
+   * strand a rider whose completion the vendor never registered: the in-flight wall has no action by
+   * design, so there is nothing to press to get off it. The refetch has to be able to pull them back.
+   */
+  it("but the server can still pull a completed rider back to the resume", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    // The refetch the launch fires lands with the vendor's real answer: nothing was registered.
+    await settle();
+    await settle();
+
+    expect(treeText(activeTree)).toContain("Finish verifying your ID");
+    expect(treeText(activeTree)).not.toContain("Your ID check is with Didit");
+  });
+
+  // Without the reset, one failed launch would hold the rider on the alert wall forever — the exact
+  // dead end the state was added to remove.
+  it("a retry that opens fine clears the couldn't-start wall", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockRejectedValueOnce(new Error("no browser available"));
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+    expect(treeText(activeTree)).toContain("We couldn't open the ID check");
+
+    mockOpenAuthSession.mockResolvedValue(DISMISSED);
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    await settle();
+
+    expect(treeText(activeTree)).not.toContain("We couldn't open the ID check");
+  });
+
+  it("manual review stays its own state, whatever the pending state says", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "in_flight" });
+    expect(text).toContain("Your ID is under review");
+    expect(text).not.toContain("Your ID check is with Didit");
   });
 });
 
@@ -742,15 +980,6 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
  * would otherwise be easy to lose in a later refactor of this very large screen.
  */
 describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
-  const flatText = (tree: renderer.ReactTestRenderer): string =>
-    tree.root
-      .findAll((n) => typeof n.type === "string")
-      .map((n) => {
-        const c = n.props.children;
-        return Array.isArray(c) ? c.filter((x) => typeof x === "string").join("") : typeof c === "string" ? c : "";
-      })
-      .join("|");
-
   it("greets the rider by first name, on every screen state the tab can be in", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -760,7 +989,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
     // greetingLine breaks the phrase and the name onto two lines inside one string.
-    expect(flatText(activeTree)).toMatch(/Good (morning|afternoon|evening),\nTapiwa/);
+    expect(treeText(activeTree)).toMatch(/Good (morning|afternoon|evening),\nTapiwa/);
   });
 
   it("renders NO search bar — a rider has nothing to search from the board", async () => {
@@ -771,7 +1000,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     activeTree = renderScreen();
     await settle();
     await settle();
-    expect(flatText(activeTree)).not.toMatch(/Search/i);
+    expect(treeText(activeTree)).not.toMatch(/Search/i);
   });
 
   it("draws no shift row at all — no status pill, no Go offline (owner 2026-08-17)", async () => {
@@ -783,7 +1012,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    const text = flatText(activeTree);
+    const text = treeText(activeTree);
     expect(text).not.toMatch(/Go offline/);
     expect(text).not.toMatch(/Go online/);
     // The connection is still honest — the reconnecting BANNER keeps the top of the screen — but
@@ -800,7 +1029,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    const text = flatText(activeTree);
+    const text = treeText(activeTree);
     expect(text).not.toMatch(/Jobs near you/);
     expect(text).not.toMatch(/one queue/);
   });
@@ -816,7 +1045,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
 
     // The test's expo-location mock resolves no address, so the row shows its honest prompt — the
     // point is that the ROW is there and never blank.
-    expect(flatText(activeTree)).toMatch(/Set your location|Harare/);
+    expect(treeText(activeTree)).toMatch(/Set your location|Harare/);
   });
 
   it("shows the no-fix warning on the LIVE board — the one place it matters", async () => {
@@ -832,7 +1061,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    expect(flatText(activeTree)).toMatch(/Couldn't get your location/);
+    expect(treeText(activeTree)).toMatch(/Couldn't get your location/);
   });
 
   it("the location-denied wall offers no shift control — there is no shift to end", async () => {
@@ -847,7 +1076,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    expect(flatText(activeTree)).toMatch(/Can't find your location/);
+    expect(treeText(activeTree)).toMatch(/Can't find your location/);
     expect(activeTree.root.findAll((n) => n.props.label === "Go offline")).toHaveLength(0);
   });
 
@@ -893,6 +1122,6 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
       .map((n) => n.props.accessibilityLabel as string);
     expect(labels.some((l) => /Your location: .*\. Update it/.test(l))).toBe(true);
     expect(labels.some((l) => /Change location/.test(l))).toBe(false);
-    expect(flatText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
+    expect(treeText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
   });
 });

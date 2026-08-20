@@ -92,6 +92,18 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   entry first.
 - **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;
   `docs/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
+  **That rule is scoped to the APP, and it is not licence for the KIT to draw an unusable control**
+  (owner decision D2, 2026-08-20). Read against `docs/DESIGN.md` § Responsive & accessibility, which
+  requires targets **≥ `--target-min` (44px), 52px for primary**, the two used to contradict each
+  other outright: a 20px drawn ✕ was simultaneously the authority and a violation, and a builder
+  could honestly ship either. The precedence, once:
+  1. **The app never inflates a drawn target.** 2026-08-10 stands — silently resizing a mock is how
+     the app stopped looking like the design.
+  2. **The mock must draw one that clears the floor.** A below-floor mock is an **UPSTREAM kit
+     defect**: fix it in `packages/design/**`, log it in `docs/DESIGN-DEVIATIONS.md`, and report it
+     upstream — never reproduce it in the app.
+  The screen that forced this was `RJ photo_capture`, whose ✕ was the only exit from a full-bleed
+  camera (see D-35). Sizes come from the token, never a literal: `var(--target-min)`, not `44`.
 - **Canonical viewports.** Phone registries (LJ/RC/RJ/RJM/RR) **360×720**, with the mandatory
   **320×640** entry-phone check. Merchant tablet (RM) **1024×680**. Admin **1440×900**.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`

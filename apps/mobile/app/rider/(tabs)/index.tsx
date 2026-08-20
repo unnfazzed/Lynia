@@ -1,4 +1,4 @@
-import { haversineKm } from "@lynia/shared";
+import { haversineKm, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,7 +17,8 @@ import { pushOnce } from "../../../src/push/push";
 import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { type KycSdkResult, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { formatMoney } from "../../../src/logic/money";
@@ -352,10 +353,24 @@ export default function RiderHome(): React.ReactElement {
   });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
   const rider = meQ.data?.rider;
-  const kyc = rider?.kycStatus;
-  // KYC decline detail (item 4): the specific reason + whether self-resubmit is locked (2+ attempts).
-  const kycReasonLabel = kycDeclineLabel(rider?.kycDeclineReason);
-  const kycLocked = isKycLocked(rider?.kycAttempts);
+  // D8: the KYC wall is resolved ONCE, as a tagged state, instead of re-derived inline. What was a
+  // six-deep nested ternary over verified / expired / failed / locked / manual-mode / pending in the
+  // render is now a switch over `resolveKycGate`'s result — which is unit-tested in gates.test.tsx
+  // rather than only reachable by rendering the whole board.
+  // What the LAST verification launch did on this screen, in memory only. It is a hint the resolver
+  // uses to answer before the first poll lands — and, for a launch that never opened at all, the only
+  // signal there is: the vendor session still reads "not started", so the server cannot see it. It
+  // dies with the screen, which is correct — after a relaunch we no longer know the camera or the
+  // browser is still broken, and `resolveKycGate` degrades to `unfinished`.
+  const [kycLaunch, setKycLaunch] = useState<KycSdkResult>(null);
+  const kycGate = resolveKycGate(rider, kycLaunch);
+
+  // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
+  // locked state's SupportCallRow dials — this branch just wears the ghost Button the mock draws.
+  const callSupport = (): void => {
+    const uri = telUri(SOS_POLICY.safetyLine);
+    if (uri) void Linking.openURL(uri);
+  };
 
   // Online-gate refusal (item 2): the reason the rules API blocked going online (kyc / suspended /
   // on_hold / cooldown). Set from the mutation's onError, cleared once the rider is online.
@@ -465,10 +480,39 @@ export default function RiderHome(): React.ReactElement {
       setError(feedback.error);
       setInfo(feedback.info);
       if (feedback.openUrl) {
-        await WebBrowser.openAuthSessionAsync(feedback.openUrl).catch(() => undefined);
+        try {
+          // `.catch(() => undefined)` used to swallow this outright, which is the bug the drawn
+          // `cant_start` state exists for: when the in-app browser cannot open — no WebView, a
+          // stripped Android build — the rider tapped, nothing happened, and they were left staring
+          // at the same wall with no explanation. A throw here means the check never opened.
+          const browser = await WebBrowser.openAuthSessionAsync(feedback.openUrl);
+          // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing
+          // the tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
+          setKycLaunch(browser.type === "success" ? "completed" : "cancelled");
+          if (browser.type === "success") {
+            // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
+            // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
+            // tell someone who just completed the check that they haven't started it, until the
+            // refetch below lands. Move the cached value forward with them.
+            //
+            // Done here rather than by letting the launch result outrank the server in
+            // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
+            // in-flight wall has NO action by design, so a hint that outranks the server would pin a
+            // rider there for the life of the screen if the vendor never registered the completion.
+            // As an optimistic cache write it is corrected by the very next poll instead.
+            qc.setQueryData<Me>(["me"], (prev) =>
+              prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
+            );
+          }
+        } catch {
+          setKycLaunch("failed");
+        }
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
+    // Each attempt starts from a clean slate, so a previous launch failure can't hold the rider on
+    // "We couldn't open the ID check" after a retry that opened fine.
+    onMutate: () => setKycLaunch(null),
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
   });
 
@@ -1075,7 +1119,9 @@ export default function RiderHome(): React.ReactElement {
             <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
           </EmptyState>
         ) : knownUnverified ? (
-          !meQ.data?.rider ? (
+          // D8: one switch over the resolved wall, not a nested ternary. Adding a state means adding a
+          // case here and a branch in `resolveKycGate` — both visible, neither buried in a chain.
+          kycGate.kind === "not_a_rider" ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
             <EmptyState
               icon="id-card"
@@ -1084,7 +1130,7 @@ export default function RiderHome(): React.ReactElement {
             >
               <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
             </EmptyState>
-          ) : kyc === "expired" ? (
+          ) : kycGate.kind === "expired" ? (
             // 1·b2: a previously-verified rider whose ID lapsed. Distinct from the first-time "verify"
             // and the "declined" states — the rider was good, the document aged out. Re-verify mints a
             // fresh Didit session (the A-02 counter was reset server-side, so they're never locked out).
@@ -1095,39 +1141,37 @@ export default function RiderHome(): React.ReactElement {
             >
               <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
             </EmptyState>
-          ) : kyc === "failed" ? (
-            kycLocked ? (
-              // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"
-              // so the rider isn't stuck re-running a check the system won't accept again.
-              <EmptyState
-                icon="triangle-alert"
-                title="We couldn't verify your ID"
-                message={
-                  kycReasonLabel
-                    ? `Your ID check didn't pass: ${kycReasonLabel.toLowerCase()}. You've reached the retry limit — contact support to finish verifying.`
-                    : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
-                }
-              >
-                {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
-                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
-                    5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
-                <SupportCallRow />
-              </EmptyState>
-            ) : (
-              // Honest declined state with the specific reason + a real retry (a fresh session).
-              <EmptyState
-                icon="triangle-alert"
-                title="We couldn't verify your ID"
-                message={
-                  kycReasonLabel
-                    ? `${kycReasonLabel}. Fix that and try again — or contact support if it keeps failing.`
-                    : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
-                }
-              >
-                <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
-              </EmptyState>
-            )
-          ) : rider?.kycMode === "manual" ? (
+          ) : kycGate.kind === "locked" ? (
+            // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"
+            // so the rider isn't stuck re-running a check the system won't accept again.
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't verify your ID"
+              message={
+                kycGate.reasonLabel
+                  ? `Your ID check didn't pass: ${kycGate.reasonLabel.toLowerCase()}. You've reached the retry limit — contact support to finish verifying.`
+                  : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
+              }
+            >
+              {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
+                  instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
+                  5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
+              <SupportCallRow />
+            </EmptyState>
+          ) : kycGate.kind === "declined" ? (
+            // Honest declined state with the specific reason + a real retry (a fresh session).
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't verify your ID"
+              message={
+                kycGate.reasonLabel
+                  ? `${kycGate.reasonLabel}. Fix that and try again — or contact support if it keeps failing.`
+                  : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
+              }
+            >
+              <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+            </EmptyState>
+          ) : kycGate.kind === "manual_review" ? (
             // BH-03: manual KYC mode has no vendor browser step — the old copy told every pending
             // rider to "continue in the browser" and go there via a "Continue verification" tap that
             // silently no-oped server-side, which read as a stuck/broken flow. Be honest: this is ops
@@ -1138,14 +1182,48 @@ export default function RiderHome(): React.ReactElement {
               message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
             >
             </EmptyState>
+          ) : kycGate.kind === "cant_start" ? (
+            // RJ kyc_cant_start (1·3c). NOT a failed check — nothing was assessed — so it must not
+            // borrow the decline copy above. A launch failure is the device's fault, not the rider's,
+            // and wording it as abandonment would blame them for it and send them round a loop that
+            // fails the same way. Support is a real second action here (and only here): the other two
+            // pending states are solved by one tap, so a support route there would invite a call for
+            // nothing. Reached today from a browser launch that throws, and by the native SDK's own
+            // `failed` outcome once that lands — the mapping is the same either way.
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't open the ID check"
+              message="This is usually the camera or the connection. Check both and try again."
+            >
+              <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+              {/* The mock draws a ghost "Contact support"; the app's sanctioned support action is a
+                  `tel:` call (R4 — not a mailto dead end). Mock structure, live behaviour inside it. */}
+              <Button label="Contact support" variant="ghost" onPress={callSupport} />
+            </EmptyState>
+          ) : kycGate.kind === "in_flight" ? (
+            // RJ kyc_pending (1·3a). The check really is with the vendor, so there is deliberately no
+            // action — the board polls and the rider owes nothing. The mock draws no exit here either:
+            // the owner moved the customer bridge off this screen onto the Account tab on 2026-08-16,
+            // and the tab bar is the way out. See the absence test in this screen's suite.
+            <EmptyState
+              icon="id-card"
+              title="Finishing verification…"
+              message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute."
+            />
           ) : (
-            // Pending — let them re-open a working verification session instead of re-keying the form.
+            // RJ kyc_unfinished (1·3b). The rider opened the check and backed out, or never opened it.
+            // The screen above would be a lie here: nothing was submitted, so "your ID check is with
+            // Didit" describes a check that does not exist. Their move, hence the primary — and no
+            // bridge, which would only compete with the one tap that clears the wall.
+            //
+            // "Finish", not "start": since #842 the session is resumed rather than re-minted, so the
+            // rider genuinely picks up where they left off and it costs no vendor credit (P0-2 / D7).
             <EmptyState
               icon="id-card"
               title="Finish verifying your ID"
-              message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
+              message="You haven't finished verifying your ID. It takes about a minute."
             >
-              <Button label="Continue verification" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+              <Button label="Finish verifying" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
             </EmptyState>
           )
         ) : locDenied ? (

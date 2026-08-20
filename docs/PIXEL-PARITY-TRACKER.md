@@ -273,11 +273,20 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 |---|---|---|---|---|---|
 | 👁 | R2·1 | `RJ kyc_intro` | Become a rider | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | `become.tsx` realizes the `kyc_form` beat (name/ID + bike/photo + Didit reassurance cards); the `kyc_intro` empty-state itself is realized upstream on the rider board — intro-mock vs form-app is an inherent beat difference (deviation) |
 | ⬜ | R2·2 | `RJ kyc_form` | KYC form + consent | | |
-| ⬜ | R2·3 | `RJ photo_capture` | ID photo · capture | | |
-| ⬜ | R2·4 | `RJ photo_preview` | ID photo · preview | | |
-| ⬜ | R2·5 | `RJ photo_uploading` | ID photo · uploading | | |
+| ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
+| ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
+| ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
 | ⬜ | R2·6 | `RJ kyc_pending` | Verification pending | | |
-| ⬜ | R2·7 | `RJ kyc_verified` | Verified | | |
+| ⬜ | R2·7 | `RJ kyc_unfinished` | Verification not finished | | |
+| ⬜ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | | |
+| ⬜ | R2·9 | `RJ kyc_verified` | Verified | | |
+
+> **Two rows here are newer than the export.** `kyc_unfinished` and `kyc_cant_start` (#841) were
+> drawn in-repo rather than exported — see `docs/DESIGN-DEVIATIONS.md` D-35 and its upstream-sync
+> warning. The E-series titles changed with them: D3 re-scoped that capture step from the ID document
+> to a **rider portrait**, so it is "Rider photo", not "ID photo". Badges shift accordingly — what was
+> R2·7 (`kyc_verified`) is now R2·9, matching the order `tools/parity/screens.generated.json` derives
+> from the gallery.
 
 ### R3 · Online & the one board
 
@@ -384,7 +393,7 @@ is green on `main`; the adopted set is congruent-by-construction and cannot sile
 | ⬜ | R9·17 | `RR offline_resume` | Resumed mid-delivery  [FOOD] | | |
 | ⬜ | R9·18 | `RJ kyc_failed` | Verification failed | | |
 | ⬜ | R9·19 | `RJ kyc_expired` | ID expired (later) | | |
-| ⬜ | R9·20 | `RJ photo_failed` | ID photo · upload failed | | |
+| ⬜ | R9·20 | `RJ photo_failed` | Rider photo · upload failed | | |
 | ⬜ | R9·21 | `RJ gate_out_of_area` | Gate · out of area | | |
 | ⬜ | R9·22 | `RJ gate_cooldown` | Gate · cooldown | | |
 | ⬜ | R9·23 | `RJ gate_banned` | Gate · account closed | | |

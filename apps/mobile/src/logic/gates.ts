@@ -226,3 +226,82 @@ export function resolveKycRetryFeedback(
   }
   return { openUrl: null, error: "Couldn't start verification — try again in a moment.", info: null };
 }
+
+/**
+ * The rider's KYC wall, as a tagged state (P0-1 / D8).
+ *
+ * `not_a_rider` is the pre-onboarding state (no rider record at all); the rest are the walls a rider
+ * with a record can be behind. `verified` is deliberately absent — a verified rider has no wall, and
+ * the caller has already decided they're looking at one.
+ */
+export type KycGate =
+  | { kind: "not_a_rider" }
+  | { kind: "expired" }
+  | { kind: "declined"; reasonLabel: string | null }
+  | { kind: "locked"; reasonLabel: string | null }
+  | { kind: "manual_review" }
+  | { kind: "in_flight" }
+  | { kind: "unfinished" }
+  | { kind: "cant_start" };
+
+/** Just the fields the wall reads off `Me["rider"]` — kept structural so the resolver needs no API type. */
+export interface KycGateRider {
+  kycStatus?: "pending" | "verified" | "failed" | "expired";
+  kycDeclineReason?: KycDeclineReason | string | null;
+  kycAttempts?: number | null;
+  kycMode?: "auto" | "manual";
+  /** Server's read of a live pending session (P0-1 / D6); null when it doesn't apply or isn't known. */
+  kycPendingState?: "in_flight" | "unfinished" | null;
+}
+
+/**
+ * What the vendor SDK handed back on THIS screen, or null if it hasn't run (or the app restarted).
+ * Held in memory only — see `resolveKycGate` on why `failed` must not outlive the session.
+ */
+export type KycSdkResult = "completed" | "cancelled" | "failed" | null;
+
+/**
+ * Resolve the rider's KYC wall once, in a testable place, instead of inline in the board's render.
+ *
+ * The board's gate branch was already a six-deep nested ternary over verified / expired / failed /
+ * locked / manual-mode / pending. Splitting `pending` into three (P0-1) would have made the app's
+ * most-hit screen a nine-deep chain whose only test path is rendering the whole board. Same shape as
+ * `resolveKycRetryFeedback` and `onlineGateReason` above: pure, tagged, unit-tested.
+ *
+ * Order matters, and each step earns its place:
+ *
+ *  1. **No rider record** — nothing has been submitted; this is onboarding, not a wall.
+ *  2. **Terminal states first** (`expired`, then `failed` → locked/declined). A terminal server answer
+ *     outranks anything the SDK reported: a rider whose check came back DECLINED must see that, not a
+ *     resume, however their last SDK launch went.
+ *  3. **Manual mode** — no vendor step exists, so none of the pending states below can apply. Pending
+ *     there means ops are reviewing it, not that the rider owes anything (BH-03).
+ *  4. **`failed` beats the server** — and it is the one place the client outranks it, because the
+ *     server cannot see this state at all: a launch failure means the SDK never reached the vendor, so
+ *     the session still reads "not started" and the server would answer `unfinished`. That is not
+ *     wrong so much as unhelpful — it would send a rider whose camera is broken round a loop that
+ *     fails again for the same reason, instead of to support.
+ *  5. **Otherwise the server decides**, and the SDK's own result is only a hint filling the gap before
+ *     the first poll lands — never authority. A client-side marker dies on reinstall, diverges across
+ *     devices, and can contradict what actually happened (D6).
+ *  6. **Absent signal ⇒ `unfinished`.** Offering a resume to a rider genuinely mid-check costs one
+ *     wasted tap; withholding it from one who cancelled strands them behind the wall with nothing to
+ *     press. It deliberately does NOT default to `cant_start`: that accuses the device of a fault we
+ *     have no evidence for, and its copy routes to support.
+ */
+export function resolveKycGate(rider: KycGateRider | null | undefined, sdkResult: KycSdkResult = null): KycGate {
+  if (!rider) return { kind: "not_a_rider" };
+
+  if (rider.kycStatus === "expired") return { kind: "expired" };
+  if (rider.kycStatus === "failed") {
+    const reasonLabel = kycDeclineLabel(rider.kycDeclineReason);
+    return isKycLocked(rider.kycAttempts) ? { kind: "locked", reasonLabel } : { kind: "declined", reasonLabel };
+  }
+
+  if (rider.kycMode === "manual") return { kind: "manual_review" };
+
+  if (sdkResult === "failed") return { kind: "cant_start" };
+  if (rider.kycPendingState) return { kind: rider.kycPendingState === "in_flight" ? "in_flight" : "unfinished" };
+  if (sdkResult === "completed") return { kind: "in_flight" };
+  return { kind: "unfinished" };
+}

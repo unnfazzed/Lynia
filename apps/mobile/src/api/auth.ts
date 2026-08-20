@@ -71,6 +71,18 @@ export interface Me {
     /** Deploy-wide KYC review mode (not per-rider): "auto" resubmits open a vendor browser session;
      *  "manual" has no vendor step — pending means "waiting on ops review", not "waiting on you". */
     kycMode?: "auto" | "manual";
+    /**
+     * P0-1 / D6 — which KIND of pending, derived server-side from the vendor's own session status:
+     * `in_flight` (the check is with the vendor; nothing for the rider to do) vs `unfinished` (they
+     * opened it and backed out, or never started — their move). Null when the question doesn't apply
+     * (verified, manual mode, no live session) or an older API doesn't send it, and `resolveKycGate`
+     * treats null as `unfinished` — see there for why that is the safe default.
+     *
+     * The SDK's third outcome, `failed` (the check never opened), is deliberately not here: the
+     * session still reads "not started" vendor-side, so the server cannot see it. That one is
+     * client-only, held for the current screen.
+     */
+    kycPendingState?: "in_flight" | "unfinished" | null;
   } | null;
 }
 

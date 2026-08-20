@@ -173,6 +173,10 @@ job** renders the §5c stepper from the rider's perspective.
 ```
 FEATURE          | LOADING             | EMPTY                           | ERROR                              | SUCCESS              | PARTIAL
 -----------------|---------------------|---------------------------------|------------------------------------|----------------------|------------------
+ID verification  | wall skeleton while | n/a — a rider always has a wall | declined → reason + "Try again";   | "Verified" → the     | unfinished → "Finish
+  (KYC)          |   /auth/me is cold  |   here, never a blank board     |   2nd decline locks to support;    |   board unlocks      |   verifying" (resumes,
+                 |                     |                                 |   SDK couldn't open → "camera or   |                      |   0 credits); in flight
+                 |                     |                                 |   connection", support ghost       |                      |   → "with Didit", no action
 Go online        | toggle spinner      | n/a                             | cooldown 403 → "taken offline" +   | "you're online"      | heartbeat retrying
                  |                     |                                 |   reason, toggle flips off (built) |                      |
 Broadcast board  | skeleton cards      | no-orders → "No open orders in   | location off → "enable for nearest"| sorted board         | orders stream in
@@ -187,8 +191,23 @@ Delivery OTP     | verify spinner      | n/a                             | wrong
 - **No open orders (online):** *"No open orders near you right now — you're online and first in line."*
   Reassures the rider that staying online is the correct action (don't make idleness feel like a dead-end).
   Secondary: typical busy-hours / busiest-corridor hint.
-- **Not yet verified:** if a rider opens the board pre-KYC, a calm gate — *"Finish verification to start
-  bidding."* Primary: **Resume verification**. No silent empty board.
+- **Not yet verified:** if a rider opens the board pre-KYC, a calm gate. No silent empty board.
+
+  **This is the row the matrix above was missing, and its absence is why the states got improvised.**
+  "Pending" is one server state but three different situations, and one screen cannot serve all three
+  — they differ in whether the rider still owes an action, and if so whose fault it is (P0-1):
+
+  | State | When | Copy | Action |
+  |---|---|---|---|
+  | **in flight** (`RJ kyc_pending`) | the vendor has it | *"Finishing verification… / Your ID check is with Didit"* | none — the board polls |
+  | **unfinished** (`RJ kyc_unfinished`) | opened and backed out, or never opened | *"Finish verifying your ID / It takes about a minute."* | **Finish verifying** — resumes the live session, costs no credit |
+  | **couldn't start** (`RJ kyc_cant_start`) | the check never opened (camera, permission, network) | *"We couldn't open the ID check / usually the camera or the connection"* | **Try again** · ghost **Contact support** |
+
+  Two rules that are easy to lose. **"Couldn't start" is not a decline** — nothing was assessed, so it
+  must not borrow the rejection copy, and it never counts toward the A-02 attempt lock (**D4**): a
+  device fault is not evidence about the rider's identity. And **the exit is the tab bar, not the
+  wall** — the customer bridge was moved off this screen onto the Account tab (owner, 2026-08-16), so
+  none of these three draws one.
 
 ## Cross-cutting flows (designed now, built later)
 
@@ -242,10 +261,64 @@ Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checkl
 
 ## Responsive & accessibility
 
-- Android-first, designed at 360px width; touch targets **≥ 44px** (52px for primary).
+- Android-first, designed at 360px width; touch targets **≥ 44px** (52px for primary) — from the
+  token, never a literal — `--target-min` / `--target-primary` in the kit, `touchTargetMin` /
+  `touchTargetPrimary` (`packages/shared/src/design-tokens.ts`) in the app.
 - **Sunlight contrast** (AA+, primary ≥ 7:1) — riders use the app outdoors.
 - Icon + text label everywhere; logical screen-reader order; visible focus.
 - Easy error recovery (retry, edit, go back) — replenish the goodwill reservoir.
+
+### Who wins when a mock draws a target below the floor
+
+The floor above and `CLAUDE.md`'s "strict mock sizes" rule (a mock smaller than 44px wins) used to
+contradict each other outright — a 20px drawn ✕ was simultaneously the authority and a violation, and
+a builder could honestly ship either. Settled by **D2 (owner, 2026-08-20)**:
+
+| | Rule |
+|---|---|
+| **App** | Never inflates a drawn target. Silently resizing a mock is how the app stopped looking like the design. |
+| **Kit** | Must draw one that clears the floor. A below-floor mock is an **UPSTREAM defect** — fix it in `packages/design/**` with a `docs/DESIGN-DEVIATIONS.md` entry, and report it upstream. |
+
+"Mock wins" is scoped to **parity**. It was never licence for the design to draw an unusable control.
+
+### Screen classes — what "no back arrow" actually means
+
+`back={false}` removes a drawn chevron and, on its own, says nothing about Android's hardware back
+button. Two different intentions were wearing the same prop, so name them (**N-04**; scope settled by
+**D1**):
+
+| Class | Drawn back | Hardware back | Members |
+|---|---|---|---|
+| **dismissible** | yes | allowed | every ordinary pushed screen |
+| **directed** | no | allowed | `gate_topup` (M2), the KYC walls, the active job (J6/J7) |
+| **held** | no | **blocked** | checkout while an order is being placed — and nothing else |
+
+**`held` is deliberately almost empty.** Blocking the OS back gesture is a serious thing to do to
+someone, and it is justified in exactly one place: a payment is in flight and leaving would risk a
+double charge or a silently-lost order. `usePlacingGuard` is the only implementation, and
+`app/food/checkout.tsx` is its only caller.
+
+**Active jobs are `directed`, not `held` (D1).** A rider mid-delivery has no drawn back — the screen
+is the job — but the gesture stays allowed. A rider in trouble must always have an exit, and the tab
+bar leaves anyway, so blocking one gesture would be theatre rather than protection.
+
+### Back and skip idioms — why they are not all the same word
+
+Four exit affordances ship, and a review (**N-05 / N-06 / N-07**) flagged them as inconsistent. Three
+of them are drawn that way on purpose; the distinction is what the tap *costs*:
+
+| Affordance | Where | Why not one of the others |
+|---|---|---|
+| **Drawn chevron** | any dismissible pushed screen | Ordinary reversible navigation. |
+| **Ghost "Back"** | OTP | The step above is a *different* decision (which number), not a screen to pop. |
+| **Ghost "Use a different number"** | Register | Same shape as OTP's, and it says what it undoes — the rider has already passed a code, so a bare "Back" would read as losing it. |
+| **"Skip"**, top-right text | onboarding carousel | Skipping *marketing*, not making a product decision — hence the lowest possible weight and no button chrome. |
+| **"Not now"**, secondary button | notification permission | A real decision with a real consequence, and the wording promises it is re-askable. |
+| **"Enter address manually"**, secondary button | location permission | **Not a decline at all** — it is the alternative route to the same outcome. Location exists to set a pickup pin; typing the address achieves that. "Not now" here would leave the customer with no pin and no way forward. |
+
+So: **one word per *meaning*, not one word everywhere.** "Skip" for a step with no consequence, "Not
+now" for a re-askable decline, a named alternative when one exists. The mocks already encode this —
+changing the app to a single word would introduce drift, not remove it.
 
 ## NOT in scope (design, deferred)
 
