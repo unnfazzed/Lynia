@@ -35,7 +35,7 @@ import {
   saveRiderSentOffers,
   type SentOffer,
 } from "../../../src/logic/rider-bid-draft";
-import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader, Icon, OfflineBanner, SkeletonList, statusPillLabel, Sub, useActionError } from "../../../src/ui";
+import { AppScreen, Button, Card, EmptyState, haptic, HomeAddressRow, HomeHeader, HomeStatusRow, Icon, OfflineBanner, SkeletonList, statusPillLabel, Sub, useActionError } from "../../../src/ui";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../../src/query/client";
 import { JobCard } from "../../../src/ui/rider/JobCard";
@@ -940,9 +940,12 @@ export default function RiderHome(): React.ReactElement {
     />
   );
 
-  // No shift row: no status pill, no Go-offline (owner decision 2026-08-17, "you are always
-  // online"). Connection health is still visible — the reconnecting banner keeps the top of the
-  // screen — but there is nothing left to toggle, so there is nothing to draw.
+  // Shift row: status ONLY, no control (owner decisions 2026-08-17 "you are always online", then
+  // 2026-08-20 "bring back the toggle" → resolved to the status row without an action). The rider
+  // is still always online, so there is nothing to toggle — but "am I taking work?" previously had
+  // no answer here, because the reconnecting banner only speaks when something is WRONG. A healthy
+  // board was silent, and silence read as both "online" and "broken". The row is rendered in the
+  // list header below; see the note there for why the dot and the banner are not the same message.
 
   // No "Jobs near you" heading and no queue subtitle (owner instruction 2026-08-17): the greeting
   // names the screen, the tab bar names the tab, and the cards are self-evidently the jobs — a
@@ -968,6 +971,22 @@ export default function RiderHome(): React.ReactElement {
             renderItem={renderJobCard}
             ListHeaderComponent={
               <>
+                {/* Shift status, at the RJM mock's `OnlinePill` position — the first thing in the
+                    list header, above the warnings. STATUS ONLY, no control (owner decision
+                    2026-08-20): the rider is still always online (D-29), so there is nothing to
+                    toggle, but "am I actually taking work?" had no answer on this screen at all.
+                    The reconnecting BANNER only appears when something is wrong, so a healthy board
+                    said nothing — silence read as both "online" and "broken".
+
+                    The dot carries the honest state and the banner carries the explanation: they
+                    are not duplicate messages, they are a persistent indicator and a transient
+                    alert. Deliberately no "one queue" subtitle and no "Go offline" action — both
+                    were removed by owner instruction (D-29) and neither is being brought back. */}
+                {online ? (
+                  <View style={{ marginBottom: tokens.space.sm }}>
+                    <HomeStatusRow label={board.connected && !beatStale ? "Online" : "Reconnecting"} connected={board.connected && !beatStale} />
+                  </View>
+                ) : null}
                 {/* Before anything else: a rider with no fix is online but may see an empty board,
                     and this is the only line that says why. It used to live in the offline toggle
                     Card — a screen state that no longer exists — so without this it became

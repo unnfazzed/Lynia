@@ -1098,10 +1098,25 @@ deliberate extension of it rather than an alignment — hence a ledger entry, no
 | Search bar | not drawn | **still not drawn** — omitted by instruction, and `HomeHeader.search` is optional precisely so a face with nothing to search renders none |
 | Location | not drawn | the header's **`subRow`** — the DETECTED current location, the same `HomeAddressRow` the customer home draws, in **detect** mode (*"keep the location on the rider card just like the customer home"*, then *"Detect only"*) |
 | Connectivity banner | first element on the screen | **still first** — pinned into the header's `topSlot`, inside the mint block above the greeting, so it keeps the top of the screen (*"keep it at the top like before"*) while the header stays the one component owning the top inset |
-| Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline"), plus a go-online Card on the offline path | **gone entirely** — no pill, no switch. The rider is ALWAYS ONLINE (*"you are always online"*) |
+| Shift state | an `OnlinePill` row in the list header (status pill · queue subtitle · "Go offline"), plus a go-online Card on the offline path | **status only, no control** (amended 2026-08-20 — see below). The rider is ALWAYS ONLINE (*"you are always online"*), so no switch and no go-online Card; but a dot + "Online"/"Reconnecting" row now sits at the mock's `OnlinePill` position |
 | "Jobs near you" | the screen's `Heading` | **removed** (*"Remove the text jobs near you"*) |
 | "Parcels and food · one queue" | beside the online pill | **removed** (*"And the parcels and food one home text as well"*) |
 | Job cards | `JobCard` list | **unchanged** |
+
+**Amendment 2026-08-20 — the status half came back, the control did not.** Owner asked to "bring
+again the toggle". Resolved to **status only, no action**: the rider stays always-online, so there is
+still nothing to toggle, but the board had no affirmative signal that a shift was live. The
+reconnecting banner speaks only when something is wrong, so a healthy board said nothing at all, and
+silence was doing double duty as both "online" and "broken".
+
+`HomeStatusRow` (already built for this and sitting unmounted in `HomeHeader.tsx` since this entry
+orphaned it) now renders at the mock's `OnlinePill` position — first in the list header, on the
+open-board path only. A rider behind a wall is not online, so the walls draw nothing.
+
+Still NOT drawn, and still deliberate: the "Go offline" action, the go-online Card on the offline
+path, and the "one queue" subtitle. The remaining gap to the mock is therefore the *action*, not the
+row. Retire this half of the entry if always-online is ever reversed — at which point the mock's
+`OnlinePill` is simply correct and nothing here is a deviation.
 
 **Why the two labels came off.** The greeting names the screen, the tab bar names the tab, and the
 cards are self-evidently the jobs — a heading over the only content on a screen labels the obvious.
