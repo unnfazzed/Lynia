@@ -17,6 +17,7 @@ import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
+import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { carrierFromPhone } from "./otp-carrier";
 import { OTP_SENDER, type OtpSender } from "./otp-sender";
@@ -83,6 +84,7 @@ export class AuthService {
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
     private readonly metrics: MetricsService,
     private readonly pii: PiiCryptoService,
+    private readonly kycPendingState: KycPendingStateService,
   ) {}
 
   /** Full profile for the authenticated caller (GET /auth/me) — adds the rider record when present. */
@@ -120,6 +122,10 @@ export class AuthService {
             kycAttempts: true,
             // Owner-only (see the payload note below on why this never leaves this endpoint).
             kycSessionToken: true,
+            // Neither is returned: the session ref is the pending-state derivation's input, and the url
+            // joins the token as the liveness signal for it (see the derivation below).
+            kycRef: true,
+            kycSessionUrl: true,
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
             // instead of the rider only learning their count at the moment they get locked out.
             cancelStrikes: true,
@@ -128,6 +134,33 @@ export class AuthService {
       },
     });
     if (!p) throw new NotFoundException("Profile not found");
+
+    // P0-1 / D6: `pending` is ONE server state but two different situations on screen — the check is
+    // with the vendor (the rider owes nothing, the board polls), or the rider opened it and backed
+    // out (they owe the next tap). Collapsing them is what put a rider who cancelled at step one on a
+    // screen reading "your ID check is with Didit" — false, nothing was submitted — with no way to
+    // resume. The VENDOR is the authority here, not a marker the phone left itself: a client-side
+    // note dies on reinstall, diverges across devices, and can contradict what actually happened.
+    //
+    // Derived only for an auto-mode pending rider holding a LIVE session — the same triple retryKyc
+    // requires to resume rather than mint (rider.service.ts). Each condition rules out a case where
+    // asking the vendor would be wrong, not merely wasteful:
+    //   • not pending      — already through the gate; nothing to resume.
+    //   • manual mode      — no vendor session exists; pending there means ops are reviewing it.
+    //   • no token/url     — no live session to re-enter, so the rider owes the next tap whatever the
+    //                        vendor says. This is the load-bearing one: `adminSetKyc("pending")` is a
+    //                        RESET that clears the token and url but KEEPS kycRef, so deriving from
+    //                        the ref alone would answer with the state of the very session the admin
+    //                        just set aside — potentially "in flight", stranding the rider on a screen
+    //                        with no action while they wait for a check nobody is running.
+    // Never throws and never blocks: see KycPendingStateService for the TTL, the coalescing, and why
+    // every failure path answers `unfinished`.
+    const hasLiveKycSession = Boolean(p.rider?.kycRef && p.rider.kycSessionToken && p.rider.kycSessionUrl);
+    const kycPendingState =
+      p.rider?.kycStatus === "pending" && this.env.KYC_MODE === "auto" && hasLiveKycSession
+        ? await this.kycPendingState.get(p.rider.kycRef)
+        : null;
+
     return {
       profileId: p.id,
       role: p.role,
@@ -167,6 +200,11 @@ export class AuthService {
             // decision, erasure) nulls the column, so this is belt-and-braces — but it means a token
             // lingering through some future path that forgets to clear it still cannot be handed out.
             kycSessionToken: p.rider.kycStatus === "pending" ? p.rider.kycSessionToken : null,
+            // `in_flight` | `unfinished` while an auto-mode check is pending; null otherwise. The
+            // SDK's own third outcome, `failed` (the check never opened — camera, permission,
+            // network), is deliberately absent: the session still reads "not started" vendor-side, so
+            // the server genuinely cannot see it. That one is client-only and short-lived.
+            kycPendingState,
           }
         : null,
     };

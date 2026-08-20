@@ -2,6 +2,7 @@ import { Global, Logger, Module } from "@nestjs/common";
 import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { KycModule } from "../kyc/kyc.module";
 import { AdminGuard } from "./admin.guard";
 import { AdminOrSchedulerGuard } from "./admin-or-scheduler.guard";
 import { AuthController } from "./auth.controller";
@@ -15,6 +16,10 @@ import { WhatsappWebhookController } from "./whatsapp-webhook.controller";
 
 @Global()
 @Module({
+  // KycModule provides KycPendingStateService, which getProfile uses to split a `pending` check into
+  // "with the vendor" vs "still waiting on you" (P0-1 / D6). It carries the shared KYC_VENDOR binding,
+  // so importing it here and in RidersModule means one vendor and one derivation cache, not two.
+  imports: [KycModule],
   controllers: [AuthController, WhatsappWebhookController, BirdWebhookController],
   providers: [
     AuthService,

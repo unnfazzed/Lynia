@@ -7,6 +7,7 @@ import {
   diditTimestampFresh,
   extractDiditDocumentNumber,
   extractDiditScore,
+  mapDiditPendingState,
   mapDiditStatus,
   verifyDiditSignature,
   verifyDiditSignatureV2,
@@ -28,6 +29,48 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Resubmitted")).toBe("pending");
     expect(mapDiditStatus("Abandoned")).toBe("pending");
     expect(mapDiditStatus("Not Started")).toBe("pending");
+  });
+});
+
+describe("mapDiditPendingState", () => {
+  it("treats the statuses where the vendor holds the check as in flight", () => {
+    expect(mapDiditPendingState("In Progress")).toBe("in_flight");
+    expect(mapDiditPendingState("In Review")).toBe("in_flight");
+    expect(mapDiditPendingState("Resubmitted")).toBe("in_flight");
+  });
+
+  // A terminal decision the webhook hasn't delivered yet. The row still says pending, and the honest
+  // read of "with Didit, nothing for you to do" is in_flight — showing "Finish verifying" to a rider
+  // who is seconds from being verified would be worse than one wasted poll.
+  it("treats an already-decided session as in flight, not as the rider's move", () => {
+    expect(mapDiditPendingState("Approved")).toBe("in_flight");
+    expect(mapDiditPendingState("Declined")).toBe("in_flight");
+  });
+
+  it("treats never-opened and backed-out sessions as unfinished", () => {
+    expect(mapDiditPendingState("Not Started")).toBe("unfinished");
+    expect(mapDiditPendingState("Awaiting User")).toBe("unfinished");
+  });
+
+  // Dead sessions land on `unfinished` too: the rider owes the next tap either way — the only
+  // difference is that resuming mints a fresh session rather than reusing the live one.
+  it("treats dead sessions as unfinished", () => {
+    expect(mapDiditPendingState("Abandoned")).toBe("unfinished");
+    expect(mapDiditPendingState("Expired")).toBe("unfinished");
+    expect(mapDiditPendingState("Kyc Expired")).toBe("unfinished");
+  });
+
+  // The regression this normalisation exists for: Didit has shipped all three spellings, and a
+  // casing/separator change must not silently reclassify every in-flight rider as "your move".
+  it("survives casing and separator drift in the status string", () => {
+    for (const s of ["IN_REVIEW", "in-review", "in review", "  In   Review  ", "In_Review"]) {
+      expect(mapDiditPendingState(s)).toBe("in_flight");
+    }
+  });
+
+  it("defaults an unknown status to unfinished rather than guessing in flight", () => {
+    expect(mapDiditPendingState("Something New")).toBe("unfinished");
+    expect(mapDiditPendingState("")).toBe("unfinished");
   });
 });
 

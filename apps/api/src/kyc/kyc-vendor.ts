@@ -1,3 +1,5 @@
+import type { ServerKycPendingState } from "./kyc-pending-state";
+
 /**
  * KYC vendor seam (T7). The vendor verifies a Zimbabwean national ID asynchronously and calls
  * back with the result. Behind an interface so a vendor swap (or the manual backstop) is contained.
@@ -21,6 +23,15 @@ export interface KycSubmission {
 export interface KycVendor {
   /** Submit a rider for verification; returns a reference the callback will quote. */
   submit(riderId: string): Promise<KycSubmission>;
+
+  /**
+   * Read whether a still-pending session is actually in flight or is waiting on the rider (P0-1 / D6).
+   *
+   * OPTIONAL: a vendor with no notion of a resumable session simply omits it and every pending rider
+   * reads `unfinished` — the documented safe default. It must NEVER throw: a vendor outage has to
+   * degrade to a default, not fail the rider's own `/auth/me`.
+   */
+  pendingState?(ref: string): Promise<ServerKycPendingState>;
 }
 
 export const KYC_VENDOR = Symbol("KYC_VENDOR");

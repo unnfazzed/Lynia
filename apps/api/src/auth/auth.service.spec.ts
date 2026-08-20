@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -35,6 +36,10 @@ const baseEnv = {
 const tokens = new TokenService(baseEnv);
 
 /** Spy metrics fake — OTP-verify recording is best-effort; keep tests off the OTel path. */
+/** getProfile's KYC pending-state derivation (P0-1 / D6). None of these specs call getProfile, so it
+ *  is never invoked — this exists to satisfy the constructor, and answers the safe default if it ever is. */
+const fakeKycPendingState = () => ({ get: async () => "unfinished" as const }) as unknown as KycPendingStateService;
+
 const fakeMetrics = () =>
   ({
     startTimer: () => () => 0,
@@ -43,7 +48,7 @@ const fakeMetrics = () =>
     incIdentityNewDeviceVerify: vi.fn(),
   }) as unknown as MetricsService;
 
-function make(env: Env, prisma: Partial<Record<string, unknown>>) {
+function make(env: Env, prisma: Partial<Record<string, unknown>>, kycPendingState = fakeKycPendingState()) {
   const store = new InMemoryOtpStore();
   const metrics = fakeMetrics();
   const svc = new AuthService(
@@ -54,6 +59,7 @@ function make(env: Env, prisma: Partial<Record<string, unknown>>) {
     new ConsoleOtpSender(),
     metrics,
     pii,
+    kycPendingState,
   );
   return { svc, store, metrics };
 }
@@ -114,7 +120,7 @@ describe("AuthService — Play-review demo account (§7.1)", () => {
     const sender = new ConsoleOtpSender();
     vi.spyOn(sender, "send").mockImplementation(async () => { sent++; });
     const store = new InMemoryOtpStore();
-    const svc = new AuthService(demoEnv, demoPrisma() as unknown as PrismaService, new TokenService(demoEnv), store, sender, fakeMetrics(), pii);
+    const svc = new AuthService(demoEnv, demoPrisma() as unknown as PrismaService, new TokenService(demoEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
     const res = await svc.requestOtp("+263770000777", "9.9.9.9");
     expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
     expect(sent).toBe(0); // BSP/SMS never invoked
@@ -197,7 +203,7 @@ describe("AuthService — Play-review demo account (§7.1)", () => {
         const sender = new ConsoleOtpSender();
         vi.spyOn(sender, "send").mockImplementation(async () => { sent++; });
         const store = new InMemoryOtpStore();
-        const svc = new AuthService(multiEnv, demoPrisma() as unknown as PrismaService, new TokenService(multiEnv), store, sender, fakeMetrics(), pii);
+        const svc = new AuthService(multiEnv, demoPrisma() as unknown as PrismaService, new TokenService(multiEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
         const res = await svc.requestOtp(typed, "1.1.1.1");
         expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
         expect(sent).toBe(0);
@@ -1031,5 +1037,124 @@ describe("AuthService.logout", () => {
   it("reports revoked=true when a live session was revoked", async () => {
     const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 1 }) } });
     expect(await svc.logout("sid", "pid")).toEqual({ revoked: true });
+  });
+});
+
+/**
+ * P0-1 / D6 — `kycPendingState` on getMe. A `pending` check is one server state but two situations on
+ * screen: with the vendor (nothing for the rider to do) vs opened-and-backed-out (their move). These
+ * assert the derivation runs on exactly the riders it should, and is skipped on the ones it shouldn't
+ * — each needless call is real vendor latency on the poll of a rider stuck behind the gate.
+ */
+describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
+  const autoEnv = { ...baseEnv, KYC_MODE: "auto" } as Env;
+
+  /** Records which refs the derivation was asked about, so "was it even called" is assertable. */
+  function spyPendingState(answer: "in_flight" | "unfinished" = "in_flight") {
+    const asked: (string | null | undefined)[] = [];
+    const svc = {
+      get: async (ref: string | null | undefined) => {
+        asked.push(ref);
+        return answer;
+      },
+    } as unknown as KycPendingStateService;
+    return { svc, asked };
+  }
+
+  const profileWithRider = (rider: Record<string, unknown> | null) => ({
+    profile: {
+      findUnique: async () => ({
+        id: "p1",
+        role: "rider",
+        firstName: "T",
+        lastName: "R",
+        phone: "+263770000001",
+        email: null,
+        photoUrl: null,
+        ordersCount: 0,
+        onHold: false,
+        idNumber: null,
+        rider,
+      }),
+    },
+  });
+
+  const pendingRider = {
+    bikeReg: "ABZ 1234",
+    kycStatus: "pending",
+    ratingAvg: 0,
+    ratingCount: 0,
+    tripsCount: 0,
+    isOnline: false,
+    kycDeclineReason: null,
+    kycAttempts: 0,
+    kycSessionToken: "tok_live",
+    kycSessionUrl: "https://verify.didit.me/sess_live",
+    kycRef: "sess_live",
+    cancelStrikes: 0,
+  };
+
+  it("derives the state for an auto-mode pending rider and returns it", async () => {
+    const spy = spyPendingState("in_flight");
+    const { svc } = make(autoEnv, profileWithRider(pendingRider), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider?.kycPendingState).toBe("in_flight");
+    expect(spy.asked).toEqual(["sess_live"]);
+  });
+
+  it("skips the derivation for a verified rider — nothing to resume", async () => {
+    const spy = spyPendingState();
+    const { svc } = make(autoEnv, profileWithRider({ ...pendingRider, kycStatus: "verified" }), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider?.kycPendingState).toBeNull();
+    expect(spy.asked).toHaveLength(0);
+  });
+
+  // Manual mode has no vendor session to ask about — pending there means "ops are reviewing it", and
+  // the app branches on kycMode before ever reading this. Calling the vendor would be pure latency.
+  it("skips the derivation in manual KYC mode", async () => {
+    const spy = spyPendingState();
+    const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, profileWithRider(pendingRider), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider?.kycPendingState).toBeNull();
+    expect(spy.asked).toHaveLength(0);
+  });
+
+  // adminSetKyc("pending") is a RESET: it clears the session token and url but keeps kycRef. Deriving
+  // from the ref alone would answer with the state of the session the admin just set aside — if that
+  // reads "in flight", the rider sits on an actionless screen waiting for a check nobody is running.
+  it("skips the derivation after an admin pending-reset, which leaves kycRef but no live session", async () => {
+    const spy = spyPendingState("in_flight");
+    const reset = { ...pendingRider, kycSessionToken: null, kycSessionUrl: null };
+    const { svc } = make(autoEnv, profileWithRider(reset), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider?.kycPendingState).toBeNull();
+    expect(spy.asked).toHaveLength(0);
+  });
+
+  // Same rule for a session minted before the token was captured (pre-#840 rows): there is nothing to
+  // re-enter, so the rider owes the next tap whatever the vendor would say about the old session.
+  it("skips the derivation when the session has a ref but no token", async () => {
+    const spy = spyPendingState("in_flight");
+    const { svc } = make(autoEnv, profileWithRider({ ...pendingRider, kycSessionToken: null }), spy.svc);
+    expect((await svc.getProfile("p1")).rider?.kycPendingState).toBeNull();
+    expect(spy.asked).toHaveLength(0);
+  });
+
+  it("is absent for a non-rider account", async () => {
+    const spy = spyPendingState();
+    const { svc } = make(autoEnv, profileWithRider(null), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider).toBeNull();
+    expect(spy.asked).toHaveLength(0);
+  });
+
+  // kycRef is selected purely as the derivation's input. It is a vendor session id, not something the
+  // rider app has any use for, so it must not ride along on the payload.
+  it("never leaks the vendor session ref onto the payload", async () => {
+    const spy = spyPendingState();
+    const { svc } = make(autoEnv, profileWithRider(pendingRider), spy.svc);
+    const me = await svc.getProfile("p1");
+    expect(me.rider).not.toHaveProperty("kycRef");
   });
 });
