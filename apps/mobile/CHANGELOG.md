@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.43.0](https://github.com/unnfazzed/Lynia/compare/v0.42.1...v0.43.0) (2026-08-20)
+
+
+### Features
+
+* **mobile:** enable the New Architecture; log the KYC design deviations ([63acca8](https://github.com/unnfazzed/Lynia/commit/63acca8887dc1ee30b32a8e1b5f8e5c2194df243))
+* **rider:** show shift status on the board — status only, no toggle ([#839](https://github.com/unnfazzed/Lynia/issues/839)) ([1bf4140](https://github.com/unnfazzed/Lynia/commit/1bf4140b162a78d1f1f2900a7badaf2c7688380f))
+
 ## [0.42.1](https://github.com/unnfazzed/Lynia/compare/v0.42.0...v0.42.1) (2026-08-19)
 
 
