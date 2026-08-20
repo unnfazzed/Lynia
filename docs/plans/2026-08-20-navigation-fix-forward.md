@@ -411,7 +411,7 @@ Synthesized from this review's findings. Each derives from a specific finding ab
   - Files: `packages/design/explorations/journey/rider-screens.jsx`, `rider-map.jsx`, `_ds_bundle.js`, `docs/DESIGN-DEVIATIONS.md`
   - Verify: all THREE render — one invocation each, since `render-mock.mjs` takes a single `--id`
     (from `tools/parity/`; `--out` defaults to `out/mock-RJ-<id>.png`, so the three don't collide):
-    ```
+    ```bash
     node render-mock.mjs --src RJ --id kyc_pending
     node render-mock.mjs --src RJ --id kyc_unfinished
     node render-mock.mjs --src RJ --id kyc_cant_start
