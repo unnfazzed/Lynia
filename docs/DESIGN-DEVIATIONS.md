@@ -1113,6 +1113,13 @@ silence was doing double duty as both "online" and "broken".
 orphaned it) now renders at the mock's `OnlinePill` position — first in the list header, on the
 open-board path only. A rider behind a wall is not online, so the walls draw nothing.
 
+**It renders only while the connection is healthy**, which is exactly when the reconnecting banner is
+absent — the two are never on screen together. The first cut drew the row in both states with the
+label switching to "Reconnecting", and the parity render showed the banner's *"Reconnecting… your
+data may be a moment behind"* with a second *"Reconnecting"* 120px beneath it. Same word twice is
+noise, and the banner already says more about the failure than a dot can. Banner speaks when
+something is wrong; row speaks when nothing is.
+
 Still NOT drawn, and still deliberate: the "Go offline" action, the go-online Card on the offline
 path, and the "one queue" subtitle. The remaining gap to the mock is therefore the *action*, not the
 row. Retire this half of the entry if always-online is ever reversed — at which point the mock's

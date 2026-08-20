@@ -978,13 +978,24 @@ export default function RiderHome(): React.ReactElement {
                     The reconnecting BANNER only appears when something is wrong, so a healthy board
                     said nothing — silence read as both "online" and "broken".
 
-                    The dot carries the honest state and the banner carries the explanation: they
-                    are not duplicate messages, they are a persistent indicator and a transient
-                    alert. Deliberately no "one queue" subtitle and no "Go offline" action — both
-                    were removed by owner instruction (D-29) and neither is being brought back. */}
-                {online ? (
+                    THE CONDITION IS THE POINT: this renders only when the connection is healthy,
+                    which is exactly when the banner above is absent. The two never appear together.
+                    A first cut rendered the row in both states with the label switching to
+                    "Reconnecting", and the parity render showed the result — the banner's
+                    "Reconnecting… your data may be a moment behind" with a second "Reconnecting"
+                    120px under it. Same word twice on one screen is noise, not honesty; the banner
+                    already owns the failure case and says more about it than a dot can.
+
+                    So the split is by state, not by component: banner speaks when something is
+                    wrong, row speaks when nothing is. `connected` is therefore always true here —
+                    passed explicitly rather than hardcoded inside HomeStatusRow, because the
+                    component's honest-dot contract belongs to the component (see its test).
+
+                    Deliberately no "one queue" subtitle and no "Go offline" action — both were
+                    removed by owner instruction (D-29) and neither is being brought back. */}
+                {online && board.connected && !beatStale ? (
                   <View style={{ marginBottom: tokens.space.sm }}>
-                    <HomeStatusRow label={board.connected && !beatStale ? "Online" : "Reconnecting"} connected={board.connected && !beatStale} />
+                    <HomeStatusRow label="Online" connected />
                   </View>
                 ) : null}
                 {/* Before anything else: a rider with no fix is online but may see an empty board,
