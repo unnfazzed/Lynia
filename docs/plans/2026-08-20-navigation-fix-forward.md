@@ -406,53 +406,71 @@ None. All four decisions surfaced by this review were taken above.
 
 Synthesized from this review's findings. Each derives from a specific finding above.
 
-- [ ] **T1 (P1, human: ~1d / CC: ~40min)** — design kit — draw the three `kyc_pending` states
+- [x] **T1 (P1, human: ~1d / CC: ~40min)** — design kit — draw the three `kyc_pending` states
   - Surfaced by: P0-1 + Pass 2 — the SDK's `failed` outcome had no drawn state at all
   - Files: `packages/design/explorations/journey/rider-screens.jsx`, `rider-map.jsx`, `_ds_bundle.js`, `docs/DESIGN-DEVIATIONS.md`
   - Verify: `node tools/parity/render-mock.mjs --src RJ --id kyc_pending`, `check-design-freeze`
-- [ ] **T2 (P1, human: ~2h / CC: ~20min)** — design kit — registration exit affordance
+- [x] **T2 (P1, human: ~2h / CC: ~20min)** — design kit — registration exit affordance
   - Surfaced by: P0-3 / N-01 — violates DESIGN.md's own "easy error recovery (retry, edit, go back)"
   - Files: `packages/design/explorations/journey/screens.jsx` (Register C1·8), bundle, ledger
   - Verify: render `LJ.register` at 360×720 and 320×640
-- [ ] **T3 (P1, human: ~2h / CC: ~20min)** — design kit — promote the capture ✕ to a control, re-caption E·1 for a portrait
+- [x] **T3 (P1, human: ~2h / CC: ~20min)** — design kit — promote the capture ✕ to a control, re-caption E·1 for a portrait
   - Surfaced by: P0-4 / N-02, and D3 (portrait re-scope changes the frame and the three rules)
   - Files: `rider-screens-safety.jsx` (PhotoCapture/PhotoPreview), `rider-map.jsx` E·1–E·3, bundle, ledger
   - Verify: rendered mock shows a ≥44px labelled close control
-- [ ] **T4 (P1, human: ~1d / CC: ~1h)** — api — resume a live KYC session instead of minting one
+- [x] **T4 (P1, human: ~1d / CC: ~1h)** — api — resume a live KYC session instead of minting one
   - Surfaced by: P0-2 — the resume CTA is worthless if every tap costs a paid session
   - Files: `apps/api/src/riders/rider.service.ts` (`retryKyc`), `auth.service.ts` (`getProfile`), `kyc/didit-kyc-vendor.ts` (read `session_token`), prisma schema
   - Verify: `rider.service.spec.ts` — a resume on a live session calls `vendor.submit` zero times
-- [ ] **T5 (P1, human: ~30min / CC: ~10min)** — api — assert a launch failure never increments `kycAttempts`
+- [x] **T5 (P1, human: ~30min / CC: ~10min)** — api — assert a launch failure never increments `kycAttempts`
   - Surfaced by: **D4** — currently an unwritten invariant, so a refactor could silently create a lockout
   - Files: `apps/api/src/riders/rider.service.spec.ts`
   - Verify: the new regression test fails if the increment is ever added
-- [ ] **T6 (P1, human: ~1d / CC: ~45min)** — mobile — the three pending states + SDK result mapping
+- [x] **T6 (P1, human: ~1d / CC: ~45min)** — mobile — the three pending states + SDK result mapping
   - Surfaced by: P0-1, Pass 2 (LOADING unspecified), Pass 6 (focus on return)
   - Files: `app/rider/(tabs)/index.tsx`, `src/logic/gates.ts`, `src/logic/kyc-draft.ts` (`kycAttemptState`)
   - Verify: `gates.test.tsx` cases for completed / cancelled / failed
-- [ ] **T7 (P2, human: ~1h / CC: ~15min)** — mobile — branch the switch-to-customer copy on verified state
+- [x] **T7 — CHECKED, DOES NOT REPRODUCE** (2026-08-20, PR #843). No copy change was needed.
   - Surfaced by: P1-1 — the sheet warns an unverified rider about losing something they never had
-  - Files: `app/rider/(tabs)/account.tsx`
-  - Verify: snapshot for the unverified variant
-- [ ] **T8 (P2, human: ~1h / CC: ~15min)** — mobile — customer bridge on the unverified gate
+  - **Finding:** the warning is real but that rider never sees it. The sheet is gated on
+    `isOnline || activeJob`, and the server refuses to put an unverified rider on shift at all
+    (`onlineRefusalReason`), so `isOnline` cannot be true for them — they switch straight through.
+  - Files: `app/rider/(tabs)/__tests__/account.test.tsx` — the invariant is now pinned by a test, so
+    the risk (a future change making the sheet reachable pre-verification) is caught rather than
+    re-argued.
+- [x] **T8 — REFUSED, needs an owner ruling to proceed** (2026-08-20, PR #843).
   - Surfaced by: P1-2 / Pass 3 step 5 — the owner constraint's actual landing point
-  - Files: `app/rider/(tabs)/index.tsx`
-  - Verify: rendered gate shows the ghost row only when unverified
-- [ ] **T9 (P2, human: ~2h / CC: ~20min)** — docs — record the touch-target precedence
+  - **Conflict:** the owner removed the customer bridge from this exact screen on **2026-08-16**,
+    from a photo of it — *"move 'Back to customer' off this screen onto the Account tab"*. The newer
+    constraint that motivated P1-2 (*"not finishing KYC should not stop a rider from logging in"*) is
+    about **login**, which KYC already does not block. It does not override the older decision.
+  - It was built first — design-kit ghost on `kyc_pending`, a D-36 ledger entry, and the render — and
+    then backed out on finding the standing decision. To land it, the owner has to reverse 2026-08-16;
+    it then needs the mock and the ledger entry again.
+  - **The near-miss is the lasting output.** The absence tests named the string `"Back to customer"`,
+    so re-adding the bridge as `"Order food and send parcels"` passed every one of them. They now pin
+    the whole action set per wall, so any new action on a KYC wall fails on purpose.
+- [x] **T9 (P2, human: ~2h / CC: ~20min)** — docs — record the touch-target precedence
   - Surfaced by: **D2** / Pass 5 — DESIGN.md and CLAUDE.md currently contradict each other
   - Files: `CLAUDE.md`, `docs/DESIGN.md`
   - Verify: n/a (documentation)
-- [ ] **T10 (P2, human: ~2h / CC: ~20min)** — docs + tests — screen-class notation
+- [x] **T10 (P2, human: ~2h / CC: ~20min)** — docs + tests — screen-class notation
   - Surfaced by: P2-1 / N-04, narrowed by **D1** to annotation only
   - Files: `docs/DESIGN.md`, one test per `held` screen
   - Verify: the held-screen test asserts `usePlacingGuard` is mounted
-- [ ] **T11 (P3, human: ~1h / CC: ~15min)** — docs — when each back idiom applies
+- [x] **T11 (P3, human: ~1h / CC: ~15min)** — docs — when each back idiom applies
   - Surfaced by: N-05 — four idioms ship, two logged separately, never reconciled
   - Files: `docs/DESIGN.md`
-- [ ] **T12 (P3, human: ~1h / CC: ~15min)** — design + mobile — one word, one slot for skip
+- [x] **T12 — resolved as the "stated reason" branch, not the "one word" branch** (2026-08-20).
   - Surfaced by: N-06 / N-07
-  - Files: `packages/design/.../screens.jsx`, `app/onboarding.view.tsx`, `app/permissions.tsx`
-- [ ] **T13 (P2, human: ~30min / CC: ~10min)** — design kit — add the KYC row to DESIGN.md's state table
+  - The three variants are drawn that way in the mocks, and the difference tracks what the tap costs:
+    **"Skip"** (top-right text) skips *marketing* — no consequence, so the lowest possible weight;
+    **"Not now"** (secondary button) declines a permission — a real decision, worded as re-askable;
+    **"Enter address manually"** is not a decline at all but the alternative route to the same
+    outcome, and replacing it with "Not now" would leave the customer with no pickup pin and no way
+    forward. One word per *meaning*, not one word everywhere — recorded in `docs/DESIGN.md`.
+  - No app or kit change: unifying the wording would have *introduced* drift from the mocks.
+- [x] **T13 (P2, human: ~30min / CC: ~10min)** — design kit — add the KYC row to DESIGN.md's state table
   - Surfaced by: Pass 2 — the table has Signup/OTP but no verification row, which is why its states were improvised
   - Files: `docs/DESIGN.md`
 
