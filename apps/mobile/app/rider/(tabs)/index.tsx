@@ -1,4 +1,4 @@
-import { haversineKm } from "@lynia/shared";
+import { haversineKm, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { formatMoney } from "../../../src/logic/money";
@@ -357,6 +358,13 @@ export default function RiderHome(): React.ReactElement {
   // render is now a switch over `resolveKycGate`'s result — which is unit-tested in gates.test.tsx
   // rather than only reachable by rendering the whole board.
   const kycGate = resolveKycGate(rider);
+
+  // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
+  // locked state's SupportCallRow dials — this branch just wears the ghost Button the mock draws.
+  const callSupport = (): void => {
+    const uri = telUri(SOS_POLICY.safetyLine);
+    if (uri) void Linking.openURL(uri);
+  };
 
   // Online-gate refusal (item 2): the reason the rules API blocked going online (kyc / suspended /
   // on_hold / cooldown). Set from the mutation's onError, cleared once the rider is online.
@@ -1139,14 +1147,47 @@ export default function RiderHome(): React.ReactElement {
               message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
             >
             </EmptyState>
+          ) : kycGate.kind === "cant_start" ? (
+            // RJ kyc_cant_start (1·3c). NOT a failed check — nothing was assessed — so it must not
+            // borrow the decline copy above. A launch failure is the device's fault, not the rider's,
+            // and wording it as abandonment would blame them for it and send them round a loop that
+            // fails the same way. Support is a real second action here (and only here): the other two
+            // pending states are solved by one tap, so a support route there would invite a call for
+            // nothing.
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't open the ID check"
+              message="This is usually the camera or the connection. Check both and try again."
+            >
+              <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+              {/* The mock draws a ghost "Contact support"; the app's sanctioned support action is a
+                  `tel:` call (R4 — not a mailto dead end). Mock structure, live behaviour inside it. */}
+              <Button label="Contact support" variant="ghost" onPress={callSupport} />
+            </EmptyState>
+          ) : kycGate.kind === "in_flight" ? (
+            // RJ kyc_pending (1·3a). The check really is with the vendor, so there is deliberately no
+            // action — the board polls and the rider owes nothing. The mock draws no exit here either:
+            // the owner moved the customer bridge off this screen onto the Account tab on 2026-08-16,
+            // and the tab bar is the way out. See the absence test in this screen's suite.
+            <EmptyState
+              icon="id-card"
+              title="Finishing verification…"
+              message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute."
+            />
           ) : (
-            // Pending — let them re-open a working verification session instead of re-keying the form.
+            // RJ kyc_unfinished (1·3b). The rider opened the check and backed out, or never opened it.
+            // The screen above would be a lie here: nothing was submitted, so "your ID check is with
+            // Didit" describes a check that does not exist. Their move, hence the primary — and no
+            // bridge, which would only compete with the one tap that clears the wall.
+            //
+            // "Finish", not "start": since #842 the session is resumed rather than re-minted, so the
+            // rider genuinely picks up where they left off and it costs no vendor credit (P0-2 / D7).
             <EmptyState
               icon="id-card"
               title="Finish verifying your ID"
-              message="Your ID check is still pending. Continue in the browser, then come back — riders go online once verified."
+              message="You haven't finished verifying your ID. It takes about a minute."
             >
-              <Button label="Continue verification" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+              <Button label="Finish verifying" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
             </EmptyState>
           )
         ) : locDenied ? (

@@ -152,6 +152,29 @@ describe("rider Account tab — the customer bridge moved here from the board (o
     expect(has(activeTree, "You're online for deliveries")).toBe(false);
   });
 
+  /**
+   * P1-1 checked, and it does NOT reproduce — pinned so the claim stays true rather than being
+   * re-argued. The review read the confirmation copy ("takes you offline, so you'll stop receiving
+   * nearby deliveries") and noted both clauses are false for a rider who has never been verified.
+   * They are — but that rider never sees the sheet: the sheet is gated on `isOnline || activeJob`,
+   * and the server refuses to put an unverified rider on shift at all (`onlineRefusalReason`), so
+   * `isOnline` cannot be true for them. There is no false warning to fix; the risk is a future change
+   * making the sheet reachable for them, which is what this asserts against.
+   */
+  it("unverified: switches straight through, never warning about deliveries they never had", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", isOnline: false }));
+    mockGetActiveOrder.mockResolvedValue(null);
+
+    activeTree = renderScreen();
+    await settle();
+    press(activeTree, SWITCH_ROW);
+    await settle();
+
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+    expect(has(activeTree, "You're online for deliveries")).toBe(false);
+    expect(has(activeTree, "you'll stop receiving nearby deliveries")).toBe(false);
+  });
+
   it("online: asks first, and going through takes the rider offline (the copy promises it)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ isOnline: true }));
     mockGetActiveOrder.mockResolvedValue(null);

@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, kycDeclineLabel, onlineGateReason, resolveKycRetryFeedback, shouldOfferPermissionSettings } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_LOCK_ATTEMPTS, kycDeclineLabel, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, shouldOfferPermissionSettings } from "../gates";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
@@ -181,5 +181,73 @@ describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent 
       error: null,
       info: null,
     });
+  });
+});
+
+/**
+ * P0-1 / D6 — `resolveKycGate`. The wall a rider is behind, resolved once. The three PENDING kinds are
+ * what this exists for: one server state, three different situations, and collapsing them is what put
+ * a rider who cancelled at step one on a screen reading "your ID check is with Didit".
+ */
+describe("resolveKycGate (P0-1 / D6)", () => {
+  it("sends an account with no rider record to onboarding, not to a wall", () => {
+    expect(resolveKycGate(null).kind).toBe("not_a_rider");
+    expect(resolveKycGate(undefined).kind).toBe("not_a_rider");
+  });
+
+  it("keeps a lapsed ID distinct from a decline", () => {
+    expect(resolveKycGate({ kycStatus: "expired" }).kind).toBe("expired");
+  });
+
+  it("splits a failed check on the A-02 attempt lock", () => {
+    expect(resolveKycGate({ kycStatus: "failed", kycAttempts: 1 }).kind).toBe("declined");
+    expect(resolveKycGate({ kycStatus: "failed", kycAttempts: KYC_LOCK_ATTEMPTS }).kind).toBe("locked");
+  });
+
+  it("carries the decline reason label through so the wall can name what to fix", () => {
+    const gate = resolveKycGate({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" });
+    expect(gate).toMatchObject({ kind: "declined", reasonLabel: kycDeclineLabel("id_unreadable") });
+  });
+
+  // BH-03: manual mode has no vendor step at all, so none of the pending kinds can apply — pending
+  // there means ops are reviewing it, not that the rider owes anything.
+  it("routes manual mode to ops review, whatever the pending state says", () => {
+    expect(resolveKycGate({ kycStatus: "pending", kycMode: "manual" }).kind).toBe("manual_review");
+    expect(resolveKycGate({ kycStatus: "pending", kycMode: "manual", kycPendingState: "in_flight" }).kind).toBe("manual_review");
+  });
+
+  it("reads the server's pending state when there is one", () => {
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight" }).kind).toBe("in_flight");
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "unfinished" }).kind).toBe("unfinished");
+  });
+
+  // The safe default. Withholding the resume from a rider who cancelled strands them behind the wall
+  // with nothing to press; offering it to one genuinely mid-check costs a single wasted tap.
+  it("falls back to unfinished when nothing is known — never to cant_start", () => {
+    expect(resolveKycGate({ kycStatus: "pending" }).kind).toBe("unfinished");
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: null }).kind).toBe("unfinished");
+  });
+
+  // A terminal server answer outranks anything the SDK reported: a rider whose check came back
+  // DECLINED must see that, not a resume, however their last launch went.
+  it("lets a terminal server answer outrank the SDK's result", () => {
+    expect(resolveKycGate({ kycStatus: "failed", kycAttempts: 1 }, "cancelled").kind).toBe("declined");
+    expect(resolveKycGate({ kycStatus: "expired" }, "failed").kind).toBe("expired");
+  });
+
+  // The one place the client outranks the server, because the server cannot see this at all: a launch
+  // failure means the SDK never reached the vendor, so the session still reads "not started".
+  it("keeps a launch failure visible even though the server would answer unfinished", () => {
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "unfinished" }, "failed").kind).toBe("cant_start");
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight" }, "failed").kind).toBe("cant_start");
+  });
+
+  // Hint, never authority — it only fills the gap before the first poll lands.
+  it("uses the SDK result as a hint only while the server has no answer", () => {
+    expect(resolveKycGate({ kycStatus: "pending" }, "completed").kind).toBe("in_flight");
+    expect(resolveKycGate({ kycStatus: "pending" }, "cancelled").kind).toBe("unfinished");
+    // Server present → server wins, and the stale hint is ignored.
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "unfinished" }, "completed").kind).toBe("unfinished");
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight" }, "cancelled").kind).toBe("in_flight");
   });
 });

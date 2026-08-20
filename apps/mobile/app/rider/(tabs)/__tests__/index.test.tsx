@@ -730,8 +730,99 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     await settle();
 
     expect(labelHits(activeTree, "Back to customer")).toBe(0);
-    // The wall itself still renders — this is a removal, not a regression of the gate.
-    expect(labelHits(activeTree, "Continue verification")).toBeGreaterThan(0);
+    // The wall itself still renders — this is a removal, not a regression of the gate. (Copy is the
+    // mock's since the pending split: an auto-mode rider with no server pending-state resolves to
+    // `unfinished`, whose primary is "Finish verifying".)
+    expect(labelHits(activeTree, "Finish verifying")).toBeGreaterThan(0);
+  });
+
+  /**
+   * The 2026-08-16 removal, pinned by SHAPE rather than by string.
+   *
+   * The assertions above name "Back to customer" — which only stops the bridge coming back under the
+   * name it had. The P0-1 pending split (2026-08-20) proposed re-adding it as "Order food and send
+   * parcels", which every absence assertion above would have waved through. The owner's instruction
+   * was about the bridge, not the label, so pin the whole action set: any new action on a KYC wall
+   * fails here and has to be argued for on purpose.
+   */
+  const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
+    ["in flight — with the vendor, nothing to press", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, []],
+    ["unfinished — the rider's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying"]],
+    ["manual/ops review — nothing to press", { kycStatus: "pending", kycMode: "manual" }, []],
+    ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID"]],
+    ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again"]],
+  ];
+
+  it.each(WALL_ACTIONS)("%s: the wall offers exactly its own actions and no exit", async (_name, patch, expected) => {
+    mockGetMe.mockResolvedValue(meFixture(patch));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
+      .map((n) => n.props.label as string);
+    expect(labels).toEqual(expected);
+  });
+});
+
+/**
+ * P0-1 — `kyc_pending` is three screens, not one (`RJ kyc_pending` / `kyc_unfinished` / `kyc_cant_start`).
+ *
+ * The bug these exist for: a rider who opened the check and backed out at step one used to land on
+ * "Your ID check is with Didit" — false, nothing was submitted — with no way to resume. Each state now
+ * says something the other two must not, so assert the COPY, not just the action count: a regression
+ * that renders the right buttons under the wrong sentence is exactly the failure being fixed.
+ */
+describe("rider board — the three KYC pending states (P0-1)", () => {
+  const wallText = (tree: renderer.ReactTestRenderer): string =>
+    tree.root
+      .findAll((n) => typeof n.type === "string")
+      .map((n) => {
+        const c = n.props.children;
+        return Array.isArray(c) ? c.filter((x) => typeof x === "string").join("") : typeof c === "string" ? c : "";
+      })
+      .join("|");
+
+  async function wall(patch: Parameters<typeof meFixture>[0]): Promise<string> {
+    mockGetMe.mockResolvedValue(meFixture(patch));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    return wallText(activeTree);
+  }
+
+  it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
+    expect(text).toContain("Finishing verification");
+    expect(text).toContain("Your ID check is with Didit");
+    expect(text).not.toContain("Finish verifying your ID");
+  });
+
+  it("unfinished: never claims the check is with the vendor — nothing was submitted", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" });
+    expect(text).toContain("Finish verifying your ID");
+    expect(text).toContain("You haven't finished verifying your ID");
+    // The precise lie this split exists to remove.
+    expect(text).not.toContain("Your ID check is with Didit");
+  });
+
+  // Absent signal ⇒ unfinished. An older API that sends no pending-state must still leave the rider a
+  // way forward; defaulting the other way would strand someone who cancelled with nothing to press.
+  it("an API that sends no pending state still offers the resume", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "auto" });
+    expect(text).toContain("Finish verifying your ID");
+  });
+
+  it("manual review stays its own state, whatever the pending state says", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "in_flight" });
+    expect(text).toContain("Your ID is under review");
+    expect(text).not.toContain("Your ID check is with Didit");
   });
 });
 
