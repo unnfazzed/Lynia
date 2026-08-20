@@ -887,6 +887,57 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     expect(treeText(activeTree)).toContain("Finish verifying your ID");
   });
 
+  // The cached pending-state is from BEFORE the rider went to verify, so it says "unfinished" — which
+  // would tell someone who just completed the check that they haven't started it.
+  it("a completed check shows in flight, not the stale unfinished it was cached with", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // Hold the refetch open so only the optimistic value is on screen — that window IS the bug: it is
+    // where a rider who just finished would otherwise be told they haven't started.
+    mockGetMe.mockImplementation(() => new Promise(() => undefined));
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+
+    expect(treeText(activeTree)).toContain("Your ID check is with Didit");
+    expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
+  });
+
+  /**
+   * ...and it must stay a hint. The obvious fix — let a `completed` launch outrank the server — would
+   * strand a rider whose completion the vendor never registered: the in-flight wall has no action by
+   * design, so there is nothing to press to get off it. The refetch has to be able to pull them back.
+   */
+  it("but the server can still pull a completed rider back to the resume", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
+    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    // The refetch the launch fires lands with the vendor's real answer: nothing was registered.
+    await settle();
+    await settle();
+
+    expect(treeText(activeTree)).toContain("Finish verifying your ID");
+    expect(treeText(activeTree)).not.toContain("Your ID check is with Didit");
+  });
+
   // Without the reset, one failed launch would hold the rider on the alert wall forever — the exact
   // dead end the state was added to remove.
   it("a retry that opens fine clears the couldn't-start wall", async () => {

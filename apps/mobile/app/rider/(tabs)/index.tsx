@@ -489,6 +489,21 @@ export default function RiderHome(): React.ReactElement {
           // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing
           // the tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
           setKycLaunch(browser.type === "success" ? "completed" : "cancelled");
+          if (browser.type === "success") {
+            // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
+            // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
+            // tell someone who just completed the check that they haven't started it, until the
+            // refetch below lands. Move the cached value forward with them.
+            //
+            // Done here rather than by letting the launch result outrank the server in
+            // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
+            // in-flight wall has NO action by design, so a hint that outranks the server would pin a
+            // rider there for the life of the screen if the vendor never registered the completion.
+            // As an optimistic cache write it is corrected by the very next poll instead.
+            qc.setQueryData<Me>(["me"], (prev) =>
+              prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
+            );
+          }
         } catch {
           setKycLaunch("failed");
         }
