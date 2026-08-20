@@ -124,6 +124,51 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "light",
   platforms: ["android", "ios"],
+  /**
+   * React Native's New Architecture (Fabric + TurboModules). Expo SDK 52 leaves this OFF by default
+   * for an existing project; SDK 53 flips the default on. Turned on here because the Didit React
+   * Native SDK — the Route A decision of 2026-08-20, docs/plans/2026-08-20-kyc-in-app-plan.md §3 —
+   * requires RN >= 0.76 **with** the New Architecture and does not support the old one. RN is 0.76.9
+   * here, so the version floor was already met and this flag is the whole remaining gap.
+   *
+   * NATIVE CHANGE. It shifts the expo-updates `fingerprint` runtimeVersion, so it reaches devices
+   * only through a store build — no OTA can carry it, and no OTA can repair it (REL-01/REL-02 in
+   * docs/KNOWN_BUGS.md). Landed on its own, ahead of any KYC code, so a regression here is
+   * attributable to the migration rather than tangled up with the verification rewrite.
+   *
+   * Dependency audit at the pinned versions (expo-doctor 1.20.2 raises no New-Architecture finding;
+   * its three failures predate this change and are version-drift / direct-install warnings). Every
+   * third-party native module ships Fabric codegen EXCEPT react-native-maps:
+   *   react-native-screens 4.4.0 ............ codegenConfig ✓
+   *   react-native-safe-area-context 4.12.0 . codegenConfig ✓
+   *   react-native-svg 15.8.0 ............... codegenConfig ✓
+   *   @sentry/react-native 6.22.0 ........... codegenConfig ✓
+   *   react-native-maps 1.18.4 .............. NO codegen — still a Paper view. It renders under
+   *     Fabric only via the New Renderer Interop Layer. The library README tells you to register
+   *     `unstable_reactLegacyComponentNames` in a react-native.config.js; that instruction is STALE
+   *     for this stack and a file written to follow it is inert. Verified, not assumed:
+   *       (a) nothing in react-native@0.76.9 or @react-native/gradle-plugin reads that key, and
+   *       (b) this project autolinks through `expo-modules-autolinking react-native-config`
+   *           (see the generated android/settings.gradle), whose output carries only packageName
+   *           and sourceDir — it does not forward `project.<platform>` keys at all, so the option
+   *           cannot reach the build unless EXPO_USE_COMMUNITY_AUTOLINKING=1 swaps the whole
+   *           autolinking strategy over to @react-native-community/cli.
+   *     It is unnecessary regardless: RCTLegacyViewManagerInteropComponentView's `isSupported:`
+   *     falls through to a step 3 that scans the registered bridge modules and matches
+   *     AIRMapManager → "AIRMap" on its own, and Android resolves legacy managers through the view
+   *     manager registry the same way. So: nothing to configure — but nothing PROVEN either,
+   *     because interop is runtime behaviour that no static check can exercise.
+   * posthog-react-native 4.63.0 also has no codegen, but ships no native views of its own.
+   *
+   * NOT PROVEN BY CI, AND CI CANNOT PROVE IT. There is no device build in the pipeline, so a green
+   * run says nothing about whether Fabric renders. The gate is a `preview`-profile EAS build smoke
+   * tested on a real phone. Maps are the sharp edge — a blank map on /send is exactly the silent,
+   * ship-it-and-find-out-later failure the GOOGLE_MAPS_API_KEY guard below exists for (2026-08-16),
+   * and the interop path above is unverified until something renders. Check, at minimum: /send's
+   * map + marker drag, rider live tracking (MarkerAnimated + Polyline + Circle), the bottom sheets
+   * (react-native-screens), and push registration.
+   */
+  newArchEnabled: true,
   // Launcher icon copied from packages/design/assets/brand/icon/ (the design system owns the
   // artwork); splash-icon.png is the bare Paper Dove (Brand.tsx geometry) rendered white for the
   // green splash below. Light UI only — the design defers dark mode.

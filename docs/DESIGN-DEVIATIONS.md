@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-33, D-34.** D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
 effect. D-10/D-11/D-12 are the food-cluster per-element dispositions (menu cover search glyph kept
 non-interactive per Foundation-E · checkout live drop-off capture · cart upsell omitted).
@@ -1430,3 +1430,60 @@ row's time inputs overflowing 320px, and a category name squeezed narrower than 
 **Retire this entry** when an export draws the merchant screens at a phone viewport — then the phone
 tier is simply the mock, and Half 2 stops being a deviation. Half 1 retires when the kit's
 `KitchenBar` drops its alarm pill.
+
+---
+
+## D-33 · Rider KYC finishes inside the app; the mocks draw a browser hand-off — APPROVED (2026-08-20)
+
+**Owner instruction, 2026-08-20:** *"The current KYC process you will end up on didit's website. I
+don't want riders to go on the didit interface. Everything must be done inside the app and didit will
+do the analysis."*
+
+**What the kit draws.** `RJ kyc_pending` (1·3, `explorations/journey/rider-screens.jsx` → `KycPending`)
+is an EmptyState titled *"Finishing verification…"* whose only action is a ghost
+**"Continue in browser"**; `rider-map.jsx:28` describes the step as *"selfie liveness in-browser"*;
+and `RJ kyc_form`'s consent card names Didit as the partner. The shipped app matches all three today
+— `become.tsx:232` and `rider/(tabs)/index.tsx:468` hand off to a Chrome Custom Tab via
+`WebBrowser.openAuthSessionAsync`.
+
+**Why this is a deviation and not an alignment fix.** The authority chain in `CLAUDE.md` makes the
+gallery the source of truth, and the gallery currently draws the browser step. So removing it is a
+**product change against a current mock**, which is exactly the case this ledger exists for. It is
+recorded here rather than argued in a code comment.
+
+**The deviation.** The three browser exits are removed. Verification runs inside the app through
+Didit's native SDK (Route A, `docs/plans/2026-08-20-kyc-in-app-plan.md` §3). Concretely:
+`kyc_pending` loses its "Continue in browser" action and becomes a wait state with at most a
+*Check status* refresh; `kyc_failed` / `kyc_expired` re-enter the capture step instead of minting a
+session and opening a tab; and `kyc_form`'s consent card drops "You'll finish in your browser" while
+KEEPING the Didit partner naming, which is a real disclosure the mock is right to draw.
+
+**Retire this entry** when an export redraws the ACT 1 KYC cluster without the browser step — at
+which point the app is simply the mock again. Until then the mocks are stale on this point and must
+not be aligned to. Note the manual-review variant (`KYC_MODE=manual`) never had a browser step and is
+unaffected (BH-03).
+
+---
+
+## D-34 · The Didit SDK's own verification UI is outside pixel parity — APPROVED (2026-08-20)
+
+**The consequence of D-33's chosen route, stated so it is never mistaken for drift.** Route A embeds
+`@didit-protocol/sdk-react-native`, whose capture, liveness and NFC screens are drawn by Didit's
+native SDK, not by us. They are configurable only through the SDK's own knobs (`languageCode`,
+`fontFamily`, `showCloseButton`, `showExitConfirmation`, camera options) — the design tokens in
+`packages/design/tokens/*.css` cannot reach them, and no mock can be authored for them.
+
+**Therefore:** the in-SDK verification screens are exempt from the pixel-parity guardrails. They get
+no gallery id, no `tools/parity/app-targets.mjs` target, and no screenshot-lane sheet. Everything
+AROUND them — the form that launches the SDK, and the pending / verified / failed / expired / locked
+gates it returns to — stays fully in parity and is aligned as normal.
+
+**The trade, recorded.** The alternative (Route B: our own capture UI against Didit's standalone
+analysis APIs) would have been fully Lynia-drawn and parity-able. It was put to the owner and not
+chosen, because it buys those pixels with passive-only liveness, no NFC, and a false-reject rate we
+would own on entry-level phones — a bad trade at the gate that decides who carries strangers'
+parcels. Set the SDK's `fontFamily` to Inter and `languageCode` explicitly so the embedded screens
+sit as close to the system as the seam allows.
+
+**Retire this entry** if the document step later moves to Route B's in-app capture (kept open in the
+plan's §3), at which point those screens come back under parity and need mocks.
