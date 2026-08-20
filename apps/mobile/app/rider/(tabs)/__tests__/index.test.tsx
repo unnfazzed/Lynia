@@ -1061,6 +1061,52 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     }
   });
 
+  /**
+   * The other half of the server's claim-release (rider.service.releaseForcedKycReplacement).
+   *
+   * If the retry REQUEST itself fails — the vendor was down, so the server released the claim it had
+   * taken — the rider must still be able to force on the next tap. The arm is deliberately not
+   * cleared in `onError`: a request that never produced a session has not resolved the expiry that
+   * armed it, so the intent to force is still live. Server release + client arm is what makes a
+   * vendor outage recoverable rather than a window-long trap.
+   */
+  it("keeps the force armed when the retry request itself fails", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValueOnce({ outcome: "failed", sessionUnusable: true });
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+
+    // The forced attempt reaches a vendor that is down.
+    mockRetryKyc.mockRejectedValueOnce(new Error("didit down"));
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(2, true);
+
+    // The wall is back on `unfinished`, not `cant_start`: a failed REQUEST is not a failed launch —
+    // `onMutate` cleared the launch result, and the error speaks as a toast. So the control here is
+    // the resume primary, not "Try again".
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s2" });
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(3, true);
+  });
+
   // A denied camera is not a dead session. Re-minting for it would burn a Didit credit on every tap
   // to fix something a new session cannot fix.
   it("does not force a fresh session for a launch failure that is not expiry", async () => {
