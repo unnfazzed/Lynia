@@ -197,34 +197,45 @@ export function isWithinServiceCorridor(point: LatLng): boolean {
 
 /** What `retryKyc`'s success handler should do next. */
 export interface KycRetryFeedback {
-  /** An https verification URL to open in the in-app browser, or null if there's nothing to open. */
-  openUrl: string | null;
-  /** An error to surface when there's no usable URL — never both this and `openUrl` set. */
+  /**
+   * The Didit session credential to hand the native SDK, or null if there is nothing to open.
+   *
+   * This replaced an `openUrl` that fed `WebBrowser.openAuthSessionAsync`. The rename is the point of
+   * the change, not incidental to it: while this field held a URL, the only thing a caller could do
+   * with a successful retry was send the rider to Didit's website.
+   */
+  sessionToken: string | null;
+  /** An error to surface when there's no usable token — never both this and `sessionToken` set. */
   error: string | null;
-  /** A calm (non-error) status line to surface when there's no usable URL by design (manual review). */
+  /** A calm (non-error) status line to surface when there's no usable token by design (manual review). */
   info: string | null;
 }
 
 /**
- * JOURNEY-BUGS: `retryKyc` succeeding with a missing/non-https `verificationUrl` used to silently do
- * nothing but refetch `["me"]` — the rider saw no feedback and no verification browser opened. Decide
- * once, in a testable place, whether to open the browser or tell the rider it didn't work.
+ * JOURNEY-BUGS: `retryKyc` succeeding with no usable credential used to silently do nothing but
+ * refetch `["me"]` — the rider saw no feedback and no verification opened. Decide once, in a testable
+ * place, whether to launch the check or tell the rider it didn't work.
  *
- * BH-03: a missing `verificationUrl` is EXPECTED in manual KYC mode (no vendor to resubmit to —
- * ops reviews it) — that must not surface as the same "couldn't start verification" error auto mode
- * gets on a genuine failure, or a manual-review rider sees a false failure on every retry tap.
+ * BH-03: a missing credential is EXPECTED in manual KYC mode (no vendor to resubmit to — ops reviews
+ * it) — that must not surface as the same "couldn't start verification" error auto mode gets on a
+ * genuine failure, or a manual-review rider sees a false failure on every retry tap.
+ *
+ * Now gated on `sessionToken` rather than `verificationUrl` (Route A). There is no `startsWith`
+ * check to inherit: a URL could be sanity-checked for https, but a token is an opaque credential with
+ * no shape we are entitled to assume, so the only honest test is "did the server give us one". The
+ * SDK is what rejects a bad one, and `runKycVerification` maps that rejection to `cant_start`.
  */
 export function resolveKycRetryFeedback(
-  verificationUrl: string | null | undefined,
+  sessionToken: string | null | undefined,
   mode: "auto" | "manual" | undefined,
 ): KycRetryFeedback {
-  if (verificationUrl && verificationUrl.startsWith("https://")) {
-    return { openUrl: verificationUrl, error: null, info: null };
+  if (sessionToken) {
+    return { sessionToken, error: null, info: null };
   }
   if (mode === "manual") {
-    return { openUrl: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
+    return { sessionToken: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
   }
-  return { openUrl: null, error: "Couldn't start verification — try again in a moment.", info: null };
+  return { sessionToken: null, error: "Couldn't start verification — try again in a moment.", info: null };
 }
 
 /**

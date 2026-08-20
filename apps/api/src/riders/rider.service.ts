@@ -291,7 +291,10 @@ export class RiderService {
    * attempts and land the rider in the support queue having never been assessed. The regression test
    * pins this; see rider.service.spec.ts.
    */
-  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
+  async retryKyc(
+    profileId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
       select: { kycStatus: true, kycAttempts: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true },
@@ -330,7 +333,11 @@ export class RiderService {
     // through to the mint below. The device is the other half of this contract: when the SDK or the
     // browser rejects the credentials as expired, the client calls back here and, once a terminal
     // webhook has cleared the row, it mints (D7).
-    if (rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
+    //
+    // `force` is the device's veto on all of the above. Expiry produces no webhook, so the row still
+    // looks perfectly resumable from here; only the client that just watched the SDK reject the token
+    // knows otherwise. Without this, "Try again" resumes the same dead session forever.
+    if (!opts.force && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
       return {
         kycStatus: "pending",
         mode: this.env.KYC_MODE,

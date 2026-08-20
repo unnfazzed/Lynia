@@ -53,7 +53,7 @@ jest.mock("expo-location", () => ({
   reverseGeocodeAsync: async () => [],
   Accuracy: { Balanced: 3 },
 }));
-jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
+jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn() }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
   setItemAsync: async () => undefined,
@@ -93,7 +93,7 @@ jest.mock("../../../../src/net/use-feature-flags", () => ({
 }));
 
 import RiderHome from "../index";
-import * as WebBrowser from "expo-web-browser";
+import { runKycVerification } from "../../../../src/kyc/verify";
 import { makeOffer } from "../../../../src/api/offers";
 import { retryKyc } from "../../../../src/api/riders";
 
@@ -101,12 +101,11 @@ const mockMakeOffer = makeOffer as jest.MockedFunction<typeof makeOffer>;
 // The KYC launch lane: `retryKyc` hands back a verification URL, and the in-app browser either opens
 // it, is closed by the rider, or cannot open at all — the three outcomes the pending walls resolve on.
 const mockRetryKyc = retryKyc as jest.MockedFunction<typeof retryKyc>;
-const mockOpenAuthSession = WebBrowser.openAuthSessionAsync as jest.MockedFunction<
-  typeof WebBrowser.openAuthSessionAsync
->;
-/** The rider closing the in-app tab. Written as a literal because the mock replaces the whole module,
- *  so `WebBrowserResultType.DISMISS` does not exist at runtime here. */
-const DISMISSED = { type: "dismiss" } as unknown as WebBrowser.WebBrowserAuthSessionResult;
+const mockRunKyc = runKycVerification as jest.MockedFunction<typeof runKycVerification>;
+/** The three launch outcomes, named — every KYC test below picks one of these. */
+const LAUNCH_COMPLETED = { outcome: "completed" as const, sessionUnusable: false };
+const LAUNCH_CANCELLED = { outcome: "cancelled" as const, sessionUnusable: false };
+const LAUNCH_FAILED = { outcome: "failed" as const, sessionUnusable: false };
 
 /** Flattened text of every host element, "|"-joined — used to assert copy without depending on layout. */
 function treeText(tree: renderer.ReactTestRenderer): string {
@@ -833,16 +832,19 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   });
 
   /**
-   * The launch lane. `openAuthSessionAsync` was wrapped in `.catch(() => undefined)`, so a browser
-   * that could not open — no WebView, a stripped Android build — swallowed the failure whole: the
-   * rider tapped, nothing happened, and they were left on the same wall with no explanation.
+   * The launch lane. This began as a browser bug — `openAuthSessionAsync` was wrapped in
+   * `.catch(() => undefined)`, so a browser that could not open swallowed the failure whole and the
+   * rider tapped into silence. The browser is gone (Route A: Didit's native SDK opens over this
+   * screen), but the failure mode it guards against is not: a KYC SDK that R8 shrank away, or an
+   * Expo Go run with no native module, fails to launch exactly the same way. The seam reports that as
+   * `failed` instead of throwing, and this test pins that it still reaches the rider as words.
    */
   it("a launch that never opened shows the couldn't-start wall, not silence", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
-    mockOpenAuthSession.mockRejectedValue(new Error("no browser available"));
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_FAILED);
 
     activeTree = renderScreen();
     await settle();
@@ -870,8 +872,8 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
-    mockOpenAuthSession.mockResolvedValue(DISMISSED);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
 
     activeTree = renderScreen();
     await settle();
@@ -893,8 +895,8 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
-    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_COMPLETED);
 
     activeTree = renderScreen();
     await settle();
@@ -920,8 +922,8 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
-    mockOpenAuthSession.mockResolvedValue({ type: "success", url: "lynia://kyc" } as unknown as WebBrowser.WebBrowserAuthSessionResult);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_COMPLETED);
 
     activeTree = renderScreen();
     await settle();
@@ -938,14 +940,106 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     expect(treeText(activeTree)).not.toContain("Your ID check is with Didit");
   });
 
+  /**
+   * The resume loop. The server's free resume path proves a session EXISTS, never that it still
+   * opens, and an expired token fires no webhook — so left alone, "Try again" hands back the same
+   * dead token forever and the rider never gets past the wall. The device is the only party that can
+   * see it, so the next attempt has to carry that knowledge back.
+   */
+  it("an expired session makes the NEXT attempt mint a fresh one", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValueOnce({ outcome: "failed", sessionUnusable: true });
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+    // First tap takes the free resume — we had no reason to think the session was dead yet.
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(1, false);
+
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    await settle();
+    // Second tap says "not that one again", so the server mints instead of resuming.
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(2, true);
+  });
+
+  // ...and the flag is spent, not sticky. Left latched, every later tap would mint a PAID session for
+  // a rider whose session was fine — turning one expiry into a standing charge.
+  it("stops forcing once a fresh session opens", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValueOnce({ outcome: "failed", sessionUnusable: true });
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(2, true);
+
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(3, false);
+  });
+
+  // A denied camera is not a dead session. Re-minting for it would burn a Didit credit on every tap
+  // to fix something a new session cannot fix.
+  it("does not force a fresh session for a launch failure that is not expiry", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_FAILED);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(2, false);
+  });
+
   // Without the reset, one failed launch would hold the rider on the alert wall forever — the exact
   // dead end the state was added to remove.
   it("a retry that opens fine clears the couldn't-start wall", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/s1" });
-    mockOpenAuthSession.mockRejectedValueOnce(new Error("no browser available"));
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    // The seam never throws; a launch that could not open reports `failed`.
+    mockRunKyc.mockResolvedValueOnce(LAUNCH_FAILED);
 
     activeTree = renderScreen();
     await settle();
@@ -957,7 +1051,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await settle();
     expect(treeText(activeTree)).toContain("We couldn't open the ID check");
 
-    mockOpenAuthSession.mockResolvedValue(DISMISSED);
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
     await renderer.act(async () => {
       tree.root.find((n) => n.props.label === "Try again").props.onPress();
     });

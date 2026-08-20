@@ -175,6 +175,18 @@ const config: ExpoConfig = {
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
+    // Didit's native KYC SDK (Route A, owner decision 2026-08-20 — riders verify INSIDE LyniaGo and
+    // never open Didit's website). The plugin is load-bearing native wiring, not a nicety: it adds
+    // Didit's own Maven repository (their Android artifacts are not on Maven Central) and the Podfile
+    // globals that resolve the iOS SDK. Without it the JS imports resolve and the build fails at link.
+    //
+    // Registered bare, so the SDK's default variant applies. That variant includes the NFC reader,
+    // which a Zimbabwean national ID cannot use — dropping to "autodetection" would shrink the binary.
+    // NOT done here on purpose: which steps a check actually runs is decided server-side by
+    // DIDIT_WORKFLOW_ID, which this repo cannot read, and a variant missing a step the workflow asks
+    // for fails the check on the device rather than at build time. Trim it once the workflow's steps
+    // are known and can be pinned in a test — a smaller APK is not worth a KYC flow that dead-ends.
+    "@didit-protocol/sdk-react-native",
     // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + the
     // source-map / debug-symbol upload hooks into the EAS build; runtime capture stays inert until
     // EXPO_PUBLIC_SENTRY_DSN is set (src/telemetry/sentry.ts).
@@ -318,6 +330,12 @@ const config: ExpoConfig = {
             // missing-class warnings so R8 can't strip the classes JS/Fabric reach reflectively.
             "-keep class com.rnmaps.maps.** { *; }",
             "-dontwarn com.rnmaps.maps.**",
+            // Didit's KYC SDK, same reasoning as maps above: release builds run R8, and the SDK's
+            // classes are reached across the JNI/TurboModule boundary rather than from Java call
+            // sites R8 can see, so shrinking is free to strip them. A stripped KYC SDK does not fail
+            // the build — it fails on a rider's phone, as the launch failure `cant_start` reports.
+            "-keep class me.didit.** { *; }",
+            "-dontwarn me.didit.**",
           ].join("\n"),
         },
       },

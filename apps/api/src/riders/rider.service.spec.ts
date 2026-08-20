@@ -551,6 +551,103 @@ describe("RiderService.retryKyc", () => {
     expect(wrote).toBe(false);
   });
 
+  /**
+   * `force` — the device's veto on the resume path.
+   *
+   * The resume guard can prove a session exists; it cannot prove the token still opens. Didit's
+   * expiry is silent (no webhook), so the row stays perfectly resumable-looking forever, and a rider
+   * whose token expired gets it handed back on every tap. Only the client that watched the SDK reject
+   * it knows better, so the client is what says so.
+   */
+  it("force skips the resume path and mints, even though the stored session still looks live", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new", token: "tok_new" };
+      },
+    };
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        // Exactly the row the test above resumes from — same fixture, opposite outcome.
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_live" }),
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1", { force: true })).toMatchObject({ sessionToken: "tok_new" });
+    expect(submitCalls).toBe(1);
+    // The dead credentials are REPLACED, not merely bypassed — otherwise the next non-forced tap
+    // would resume the expired session all over again.
+    expect(data).toMatchObject({ kycRef: "sess_new", kycSessionToken: "tok_new" });
+  });
+
+  it("defaults to resuming — an older client that sends no force is unchanged", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://x", token: "tok_new" };
+      },
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_live" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    // No opts at all, and force: false — both must take the free path.
+    expect(await s.retryKyc("p1")).toMatchObject({ sessionToken: "tok_live" });
+    expect(await s.retryKyc("p1", { force: false })).toMatchObject({ sessionToken: "tok_live" });
+    expect(submitCalls).toBe(0);
+  });
+
+  // force is a resume override, NOT a lock override: it must not become a way to buy a third attempt
+  // past the A-02 two-attempt limit.
+  it("force still respects the two-attempt lock", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://x", token: "tok_new" };
+      },
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 2, kycRef: "sess_old", kycSessionToken: null, kycSessionUrl: null }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    await expect(s.retryKyc("p1", { force: true })).rejects.toThrow(/locked/i);
+    expect(submitCalls).toBe(0);
+  });
+
+  // Manual mode has no vendor session to force a replacement for; forcing must not conjure one.
+  it("force is inert in manual mode", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending" };
+      },
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live", kycSessionUrl: "https://x" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "manual", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1", { force: true })).toEqual({ kycStatus: "pending", mode: "manual" });
+    expect(submitCalls).toBe(0);
+  });
+
   it("mints when a pending rider has a ref but NO token (older session, pre-token or vendor omitted it)", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {

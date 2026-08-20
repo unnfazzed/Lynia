@@ -24,6 +24,22 @@ const SetOnline = z.object({
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
 });
+/**
+ * `force` = "the credentials you last gave me are dead; do not hand them back".
+ *
+ * The resume path in retryKyc is free and is the right default, but it has one blind spot: it proves
+ * a session EXISTS, never that it is still openable. An expired token therefore resumes forever — the
+ * rider taps "Try again", gets the same dead token, and the SDK rejects it again, with no webhook
+ * coming to clear the row (expiry is silent). Only the device can see that, so only the device can
+ * say it. Optional and defaulted, so an older client is unaffected.
+ *
+ * Not a cost hole: the route's 5/hour throttle and the A-02 two-attempt lock both sit in front of the
+ * mint, and the client sets this ONLY for an expired session — never for a denied camera or a dropped
+ * network, which a new session would not fix anyway.
+ */
+const RetryKyc = z.object({
+  force: z.boolean().optional(),
+});
 // The 20s liveness beat (wave-2 W3): position only, no `online` flag — a beat can never toggle state.
 const Heartbeat = z.object({
   lat: z.number().min(-90).max(90).optional(),
@@ -55,8 +71,8 @@ export class RidersController {
   // for a genuine rider re-taking their selfie while blunting a scripted flood.
   @Throttle({ limit: 5, windowSec: 3600, keyPrefix: "kyc-retry" })
   @Post("kyc/retry")
-  retryKyc(@CurrentUser() id: string) {
-    return this.riders.retryKyc(id);
+  retryKyc(@Body(new ZodBody(RetryKyc)) body: z.infer<typeof RetryKyc>, @CurrentUser() id: string) {
+    return this.riders.retryKyc(id, { force: body.force === true });
   }
 
   @Patch("online")

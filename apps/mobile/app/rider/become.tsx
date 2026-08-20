@@ -2,11 +2,11 @@ import { normalizeNationalId } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
 import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
+import { runKycVerification } from "../../src/kyc/verify";
 import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type PendingKycPhoto } from "../../src/logic/kyc-draft";
@@ -225,20 +225,26 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
       // rather than leaving it in the keystore any longer than needed.
       void clearKycDraft();
-      // Hand off in an in-app browser tab (not the system browser) — it returns deterministically to
-      // the app when the rider finishes/closes, so the gate can re-check on focus instead of stranding
-      // them in Chrome. Only ever open an https URL (defense against a bad/compromised vendor URL).
-      if (res.verificationUrl && res.verificationUrl.startsWith("https://")) {
-        await WebBrowser.openAuthSessionAsync(res.verificationUrl).catch(() => undefined);
-      }
+      // Route A: Didit's native check opens over this screen — no browser tab, no handoff out of the
+      // app. The old `.catch(() => undefined)` here was the same swallow the board's retry path had:
+      // when the launch failed the rider saw the generic "finish it in the browser" line describing a
+      // browser that never opened. `runKycVerification` never throws and names the outcome instead.
+      const launch = res.sessionToken ? await runKycVerification(res.sessionToken) : null;
       setPending(
         res.kycStatus === "verified"
           ? "You're verified — you can go online."
           : res.mode === "manual"
-            // BH-03: manual mode never opens a browser step (no verificationUrl) — telling the
-            // rider to "finish it in the browser" here describes a step that never happened.
+            // BH-03: manual mode has no vendor step at all — describing one here would name a step
+            // that never happened.
             ? "Verification submitted. Our team will review it and notify you — no action needed from you."
-            : "Verification started. Finish it in the browser, then come back and go online.",
+            : // The three auto-mode outcomes say three different things, mirroring the board's walls:
+              // a finished flow is with Didit, a closed one is resumable, and one that never opened is
+              // not the rider's doing. Sending everyone the same line is what made the old copy wrong.
+              launch?.outcome === "completed"
+              ? "Verification submitted. We'll let you know as soon as it's checked."
+              : launch?.outcome === "cancelled"
+                ? "You didn't finish verifying. Pick it up again from your rider board."
+                : "We couldn't open the ID check. Try again from your rider board.",
       );
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit

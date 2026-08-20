@@ -3,7 +3,6 @@ import { tokens } from "@lynia/shared/tokens";
 import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
@@ -18,6 +17,7 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { type KycSdkResult, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { runKycVerification } from "../../../src/kyc/verify";
 import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
@@ -363,6 +363,9 @@ export default function RiderHome(): React.ReactElement {
   // dies with the screen, which is correct — after a relaunch we no longer know the camera or the
   // browser is still broken, and `resolveKycGate` degrades to `unfinished`.
   const [kycLaunch, setKycLaunch] = useState<KycSdkResult>(null);
+  // A ref, not state: nothing renders from it, and it must be readable by the NEXT mutationFn call
+  // without waiting for a re-render — a state write here would be read stale by a fast second tap.
+  const forceFreshSession = useRef(false);
   const kycGate = resolveKycGate(rider, kycLaunch);
 
   // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
@@ -470,42 +473,41 @@ export default function RiderHome(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, gate, loc, locHint]);
 
-  // Pending/failed riders re-run KYC: mint a FRESH Didit session and open it (no re-keying the form).
+  // Pending/failed riders re-run KYC: get session credentials and open Didit's native check over this
+  // screen. The rider never leaves LyniaGo, and never re-keys the form.
   const retryM = useMutation({
-    mutationFn: retryKyc,
+    // `force` is normally false so the server's free resume path can hand back the session the rider
+    // already has. It flips true for exactly one tap after the SDK rejected that session as expired.
+    mutationFn: () => retryKyc(forceFreshSession.current),
     onSuccess: async (res) => {
-      // In-app browser tab (not the system browser): it returns to the app when the rider closes it,
-      // so we can immediately re-check status rather than leaving them stranded outside the app.
-      const feedback = resolveKycRetryFeedback(res.verificationUrl, res.mode);
+      const feedback = resolveKycRetryFeedback(res.sessionToken, res.mode);
       setError(feedback.error);
       setInfo(feedback.info);
-      if (feedback.openUrl) {
-        try {
-          // `.catch(() => undefined)` used to swallow this outright, which is the bug the drawn
-          // `cant_start` state exists for: when the in-app browser cannot open — no WebView, a
-          // stripped Android build — the rider tapped, nothing happened, and they were left staring
-          // at the same wall with no explanation. A throw here means the check never opened.
-          const browser = await WebBrowser.openAuthSessionAsync(feedback.openUrl);
-          // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing
-          // the tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
-          setKycLaunch(browser.type === "success" ? "completed" : "cancelled");
-          if (browser.type === "success") {
-            // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
-            // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
-            // tell someone who just completed the check that they haven't started it, until the
-            // refetch below lands. Move the cached value forward with them.
-            //
-            // Done here rather than by letting the launch result outrank the server in
-            // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
-            // in-flight wall has NO action by design, so a hint that outranks the server would pin a
-            // rider there for the life of the screen if the vendor never registered the completion.
-            // As an optimistic cache write it is corrected by the very next poll instead.
-            qc.setQueryData<Me>(["me"], (prev) =>
-              prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
-            );
-          }
-        } catch {
-          setKycLaunch("failed");
+      if (feedback.sessionToken) {
+        // Route A: Didit's native UI opens ON TOP of this screen. There is no browser tab to come back
+        // from, and no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification`
+        // never throws and reports every failure as `failed`, which is what the drawn `cant_start`
+        // state exists to say.
+        const launch = await runKycVerification(feedback.sessionToken);
+        setKycLaunch(launch.outcome);
+        // An expired session would otherwise resume forever: the server cannot see expiry (it fires no
+        // webhook), so unless the next tap says "don't hand me that one again", the rider re-opens the
+        // same dead token until they give up.
+        forceFreshSession.current = launch.sessionUnusable;
+        if (launch.outcome === "completed") {
+          // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
+          // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
+          // tell someone who just completed the check that they haven't started it, until the
+          // refetch below lands. Move the cached value forward with them.
+          //
+          // Done here rather than by letting the launch result outrank the server in
+          // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
+          // in-flight wall has NO action by design, so a hint that outranks the server would pin a
+          // rider there for the life of the screen if the vendor never registered the completion.
+          // As an optimistic cache write it is corrected by the very next poll instead.
+          qc.setQueryData<Me>(["me"], (prev) =>
+            prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
+          );
         }
       }
       void qc.invalidateQueries({ queryKey: ["me"] });

@@ -3,7 +3,20 @@ import { ApiError, apiFetch } from "./client";
 export interface BecomeResult {
   kycStatus: "pending" | "verified" | "failed" | "expired";
   mode: "auto" | "manual";
+  /**
+   * The vendor-hosted web flow. Still returned by the server, and deliberately UNUSED by this app
+   * since the native SDK landed — a rider verifies inside LyniaGo and never opens Didit's site. Kept
+   * on the type because the server still sends it (older builds in the field still open it) and
+   * because deleting a field the API returns is how a client silently stops noticing a contract
+   * change. Do not reintroduce a browser launch from it.
+   */
   verificationUrl?: string;
+  /**
+   * SECRET — the short-lived Didit session credential the native SDK opens. This is the field the app
+   * actually acts on. Present only while a check is pending and only for the rider it belongs to;
+   * never log it, never persist it beyond the launch.
+   */
+  sessionToken?: string;
 }
 
 export function completeProfile(body: { firstName: string; lastName: string; idNumber: string }): Promise<{ ok: true }> {
@@ -15,9 +28,17 @@ export function becomeRider(body: { bikeReg: string; photoUrl: string }): Promis
   return apiFetch("/riders/become", { method: "POST", body });
 }
 
-/** Re-run KYC for an existing rider whose check is pending/failed; returns a fresh verification URL. */
-export function retryKyc(): Promise<{ kycStatus: BecomeResult["kycStatus"]; mode: BecomeResult["mode"]; verificationUrl?: string }> {
-  return apiFetch("/riders/kyc/retry", { method: "POST", body: {} });
+/**
+ * Re-run KYC for an existing rider whose check is pending/failed; returns session credentials for the
+ * native SDK.
+ *
+ * `force` tells the server not to hand back the session it already holds. Pass it ONLY after the SDK
+ * rejected that session as expired: expiry fires no webhook, so the server cannot see it, and without
+ * the flag the free resume path returns the same dead token on every tap. Never pass it for a denied
+ * camera or a dropped network — a fresh session costs a Didit credit and would not fix either.
+ */
+export function retryKyc(force = false): Promise<Pick<BecomeResult, "kycStatus" | "mode" | "verificationUrl" | "sessionToken">> {
+  return apiFetch("/riders/kyc/retry", { method: "POST", body: { force } });
 }
 
 /** Going online sends the rider's position (when known) so the server can corridor-check it and refuse
