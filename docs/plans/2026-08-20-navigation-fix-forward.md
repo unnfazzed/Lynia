@@ -409,7 +409,9 @@ Synthesized from this review's findings. Each derives from a specific finding ab
 - [x] **T1 (P1, human: ~1d / CC: ~40min)** — design kit — draw the three `kyc_pending` states
   - Surfaced by: P0-1 + Pass 2 — the SDK's `failed` outcome had no drawn state at all
   - Files: `packages/design/explorations/journey/rider-screens.jsx`, `rider-map.jsx`, `_ds_bundle.js`, `docs/DESIGN-DEVIATIONS.md`
-  - Verify: `node tools/parity/render-mock.mjs --src RJ --id kyc_pending`, `check-design-freeze`
+  - Verify: all THREE render — `node tools/parity/render-mock.mjs --src RJ --id kyc_pending`, then
+    `--id kyc_unfinished` and `--id kyc_cant_start`; plus `check-design-freeze` and the
+    screen-inventory guardrail (both new ids adopted, neither silently uncovered)
 - [x] **T2 (P1, human: ~2h / CC: ~20min)** — design kit — registration exit affordance
   - Surfaced by: P0-3 / N-01 — violates DESIGN.md's own "easy error recovery (retry, edit, go back)"
   - Files: `packages/design/explorations/journey/screens.jsx` (Register C1·8), bundle, ledger
@@ -429,7 +431,11 @@ Synthesized from this review's findings. Each derives from a specific finding ab
 - [x] **T6 (P1, human: ~1d / CC: ~45min)** — mobile — the three pending states + SDK result mapping
   - Surfaced by: P0-1, Pass 2 (LOADING unspecified), Pass 6 (focus on return)
   - Files: `app/rider/(tabs)/index.tsx`, `src/logic/gates.ts`, `src/logic/kyc-draft.ts` (`kycAttemptState`)
-  - Verify: `gates.test.tsx` cases for completed / cancelled / failed
+  - Verify: `gates.test.tsx` — every resolved state (`in_flight` / `unfinished` / `cant_start`),
+    each SDK outcome (completed / cancelled / failed), the precedence between them (terminal
+    server states outrank the SDK; `failed` outranks the server because the server cannot see
+    it), and the absent-signal fallback to `unfinished`. Plus board-level copy assertions: the
+    three walls must say three different things, not just carry three different buttons.
 - [x] **T7 — CHECKED, DOES NOT REPRODUCE** (2026-08-20, PR #843). No copy change was needed.
   - Surfaced by: P1-1 — the sheet warns an unverified rider about losing something they never had
   - **Finding:** the warning is real but that rider never sees it. The sheet is gated on

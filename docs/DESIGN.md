@@ -304,8 +304,10 @@ bar leaves anyway, so blocking one gesture would be theatre rather than protecti
 
 ### Back and skip idioms — why they are not all the same word
 
-Four exit affordances ship, and a review (**N-05 / N-06 / N-07**) flagged them as inconsistent. Three
-of them are drawn that way on purpose; the distinction is what the tap *costs*:
+**Six** exit affordances ship, across five idioms — the two ghosts below are one idiom in two places —
+and a review (**N-05 / N-06 / N-07**) flagged them as inconsistent. The three "past this without doing
+it" variants in particular (**Skip** / **Not now** / **Enter address manually**) are drawn differently
+on purpose; the distinction is what the tap *costs*:
 
 | Affordance | Where | Why not one of the others |
 |---|---|---|
