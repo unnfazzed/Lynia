@@ -5,8 +5,11 @@ want riders to go on the didit interface. Everything must be done inside the app
 analysis."*
 
 This document maps what ships today, names every gap between that and the instruction, and specifies the
-UI/backend work. It is a plan — nothing here is implemented yet. One decision is open (§4); it changes
-roughly half the work, so it is called out rather than assumed.
+UI/backend work. It is a plan — nothing here is implemented yet.
+
+> **Owner decision (2026-08-20): Route A — Didit's native SDK, embedded.** The fork in §3 is closed.
+> Route B is kept below as the recorded alternative and as the shape of any later move to our own
+> capture UI; it is not the path being built. §5 phase 0 is done.
 
 ---
 
@@ -169,7 +172,7 @@ We build the capture in our own design system and post the images server-side:
   and `applyKycResult` needs a non-webhook caller.
 - ❌ ID images now transit our backend and bucket (G15).
 
-### Recommendation
+### Decision — Route A (owner, 2026-08-20)
 
 **Route A**, and revisit B once there is a measured false-reject baseline on real Zimbabwean IDs.
 
@@ -179,12 +182,16 @@ the only path to a fully Lynia-drawn KYC screen, but it buys those pixels by tra
 moving false-reject risk onto our own camera code, at the launch gate for rider trust. That is the wrong trade
 to make first.
 
-**If the requirement is strictly "no Didit-drawn pixels at all", that is Route B and the answer changes.**
-That reading is available in the instruction ("didit will do the analysis"), which is why this is flagged
-rather than assumed.
+The alternative reading — "no Didit-drawn pixels at all", which would mean Route B — was put to the owner
+and **not** chosen. Ending the website hand-off comes first; the SDK's own native UI is accepted.
 
-A viable middle: ship A now; build B's in-app ID capture behind it later and switch the document step over
-once its reject rate is known, keeping the SDK for the selfie/liveness beat.
+A viable middle, still open for later: build B's in-app ID capture behind the shipped SDK and switch the
+document step over once its reject rate is known, keeping the SDK for the selfie/liveness beat.
+
+**What Route A commits us to, stated plainly:** the New Architecture migration (G9) is now on the critical
+path, and the KYC verification screens will **not** be pixel-parity-able — they are Didit's, themeable by
+font and language only. That exemption needs a `docs/DESIGN-DEVIATIONS.md` entry of its own alongside the
+G12 mock changes.
 
 ---
 
@@ -269,17 +276,19 @@ resumes instead of restarting (the pattern is already there for the single photo
 
 | Phase | Work | Gate |
 |---|---|---|
-| 0 | Owner picks Route A or B (§3) | **Blocking — half the plan depends on it** |
+| 0 | ~~Owner picks Route A or B (§3)~~ | ✅ **Done — Route A, 2026-08-20** |
 | 1 | Design: new/changed mocks, exported from the tool | `design-freeze` green |
-| 2 | Route A: prove New Architecture on a preview build **before** any KYC code. Route B: land `expo-camera` + the capture screen behind a flag | A real device build, not CI |
-| 3 | Backend: session token / standalone vendor + resume fix (G5) | Unit + webhook regression tests |
+| 2 | **Prove New Architecture on a preview build, in isolation, before any KYC code** | A real device build, not CI |
+| 3 | Backend: `session_token` passthrough + resume fix (G5) | Unit + webhook regression tests |
 | 4 | Mobile: capture + verify + analysing states, browser call sites deleted | Parity sheets attached |
 | 5 | Store build (no OTA — G11), preview profile, internal track | `docs/PLAY-STORE-SUBMISSION.md` ledger entry |
 
-**Biggest risks, in order:** the New Architecture migration under Route A (G9) — de-risk it in isolation on a
-preview build before writing a line of KYC code; the false-reject rate under Route B (§3) — no way to know it
-without real Zimbabwean IDs on real phones; and silent degradation of the IR26-04 dedupe and threshold bands
-if the payload shape changes without tests (G8).
+**Biggest risk, now that Route A is chosen:** the New Architecture migration (G9). It is the one item that
+can sink the schedule, it is orthogonal to KYC, and it must be proven on a real device build **before** a
+line of KYC code is written — otherwise a failed migration strands finished KYC work behind it. Second:
+silent degradation of the IR26-04 dedupe and threshold bands if the payload shape changes without tests
+(G8) — less likely under Route A, since the webhook contract is unchanged, but the extractors still fail
+open. (Route B's false-reject risk is deferred with Route B.)
 
 **Out of scope:** the manual-review backstop, the admin console, `KYC_THRESHOLDS`, the A-02 two-attempt lock,
 and the one-ID-one-account guards. All of them keep working unchanged under both routes.
