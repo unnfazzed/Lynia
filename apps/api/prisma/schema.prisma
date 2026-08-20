@@ -309,6 +309,13 @@ model Rider {
   // client is still ahead of us): without it, a resume returns a token today's build cannot consume
   // and the rider sees "Couldn't start verification" — the BH-03 false-error class, reintroduced.
   kycSessionUrl     String?                                @map("kyc_session_url")
+  // When a forced session replacement was last spent. `force` is a client-asserted bypass of the free
+  // resume path (silent Didit expiry is invisible server-side), so it needs a server bound: the route's
+  // 5/hour throttle is the only other limit and the A-02 lock does not apply, because a mint never
+  // increments kycAttempts (D4). One timestamp suffices — the rule is a rate, and a genuine expiry
+  // needs exactly one replacement. Claimed by a conditional UPDATE before the vendor is called, so
+  // concurrent forced requests cannot both pay. Nulled on erasure with the session credentials.
+  kycForcedAt       DateTime?                              @map("kyc_forced_at")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different

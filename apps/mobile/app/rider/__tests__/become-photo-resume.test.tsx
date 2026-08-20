@@ -31,9 +31,6 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: (...args: [string, string]) => mockSetItemAsync(...args),
   deleteItemAsync: (...args: [string]) => mockDeleteItemAsync(...args),
 }));
-jest.mock("expo-web-browser", () => ({
-  openAuthSessionAsync: jest.fn().mockResolvedValue({ type: "dismiss" }),
-}));
 jest.mock("expo-image-picker", () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),

@@ -11233,7 +11233,11 @@ try { (() => {
     icon: "id-card",
     title: "Finishing verification\u2026",
     message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
-  }));
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Order food and send parcels",
+    variant: "ghost",
+    onClick: noop
+  })));
   const KycUnfinished = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
     icon: "id-card",
     title: "Finish verifying your ID",

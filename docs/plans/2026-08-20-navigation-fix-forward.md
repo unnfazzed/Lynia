@@ -450,7 +450,12 @@ Synthesized from this review's findings. Each derives from a specific finding ab
   - Files: `app/rider/(tabs)/__tests__/account.test.tsx` — the invariant is now pinned by a test, so
     the risk (a future change making the sheet reachable pre-verification) is caught rather than
     re-argued.
-- [x] **T8 — REFUSED, needs an owner ruling to proceed** (2026-08-20, PR #843).
+- [x] **T8 — LANDED after the owner's ruling** (2026-08-20). Refused first, then granted: presented as
+  needing a reversal of 2026-08-16, the owner answered *"Just proceed.. Execute all"*. Logged as
+  **D-36**; the ghost is drawn on `RJ.kyc_pending` and rendered by the app on `in_flight` and
+  `manual_review` only — never beside a wall whose one tap clears it. The absence tests inverted into
+  presence tests in the same place, keeping the exactly-this-action-set strictness. Record of the
+  original refusal, kept because the reasoning is what the ruling was granted against:
   - Surfaced by: P1-2 / Pass 3 step 5 — the owner constraint's actual landing point
   - **Conflict:** the owner removed the customer bridge from this exact screen on **2026-08-16**,
     from a photo of it — *"move 'Back to customer' off this screen onto the Account tab"*. The newer

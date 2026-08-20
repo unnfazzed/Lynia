@@ -3,7 +3,6 @@ import { tokens } from "@lynia/shared/tokens";
 import { ETA_SPEED_KMH } from "../../../src/logic/eta";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
@@ -18,6 +17,7 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { type KycSdkResult, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { runKycVerification } from "../../../src/kyc/verify";
 import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
@@ -72,6 +72,28 @@ const ACTIVATION_RETRY_MS = 15_000;
 // rider CANNOT have an assigned job and the card was pure noise, which is exactly what the photo
 // caught. The way back is not lost: `activeJobBanner` re-renders itself the moment a fetch succeeds,
 // and the poll self-heals. Do not reintroduce a bare-`isError` banner here; see KNOWN_BUGS UX20-01.
+
+/**
+ * P1-2 / T8 — the way out of a KYC wall that has nothing else on it.
+ *
+ * The owner's constraint is that not finishing KYC must not stop a rider using the app. Routing
+ * already honoured that (KYC gates *rides*, never login), but the board did not: a rider waiting on a
+ * check got a single dead EmptyState and nowhere to go but the tab bar. Someone held in manual review
+ * for two days learns from that screen that the app is not for them yet.
+ *
+ * Deliberately the SAME label as the Account tab's row sub-line ("Order food and send parcels") and
+ * NOT "Back to customer". The 2026-08-16 removal was of a row named "Back to customer", and the
+ * absence tests written afterwards named that string — so re-adding a bridge under any other name
+ * passed all of them. Those tests now pin the whole action set per wall (see this screen's suite), and
+ * the naming here is deliberate rather than incidental: it says what the rider gets, not which role
+ * they are leaving.
+ *
+ * Ghost, never primary: on a wall with a real action it would compete with the one tap that clears
+ * the wall, which is why it appears only where there is no such tap.
+ */
+function CustomerBridge({ onPress }: { onPress: () => void }): React.ReactElement {
+  return <Button label="Order food and send parcels" variant="ghost" onPress={onPress} />;
+}
 
 /** The board's two exits are the parcel job and the food job — the app's two heaviest routes after
  *  the food tracker (36 and 39 new modules, plus maps, socket.io-client and, for the parcel job, the
@@ -363,6 +385,32 @@ export default function RiderHome(): React.ReactElement {
   // dies with the screen, which is correct — after a relaunch we no longer know the camera or the
   // browser is still broken, and `resolveKycGate` degrades to `unfinished`.
   const [kycLaunch, setKycLaunch] = useState<KycSdkResult>(null);
+  // A ref, not state: nothing renders from it, and it must be readable by the NEXT mutationFn call
+  // without waiting for a re-render — a state write here would be read stale by a fast second tap.
+  const forceFreshSession = useRef(false);
+  /**
+   * One forced mint per stuck episode. Without this, `force` re-arms on every expiry, so a session
+   * that is minted fresh and STILL reports expired (device clock skew is the realistic cause on the
+   * low-end Android this ships to) makes every subsequent tap buy another paid Didit session —
+   * bounded only by the route's 5/hour throttle, because mints deliberately do not increment
+   * `kycAttempts` (D4), so the A-02 two-attempt lock never catches it either.
+   *
+   * A genuine expiry needs exactly ONE replacement. If the replacement is also rejected, the problem
+   * is not the session and buying more will not fix it — so we stop, and the rider lands on
+   * `cant_start`, whose second action is support. Cleared by any launch that actually opens, so this
+   * bounds one episode rather than the life of the screen.
+   */
+  const spentForce = useRef(false);
+
+  /**
+   * The customer bridge's action (P1-2 / T8). A plain replace, with none of the Account tab's
+   * offline-toggle or confirm-sheet machinery: both of those exist to protect a shift, and a rider
+   * behind a KYC wall has never had one — the server refuses to put an unverified rider online at
+   * all. `replace`, not `push`, so the customer home does not stack a back-arrow onto a rider wall.
+   */
+  const leaveForCustomer = useCallback((): void => {
+    router.replace("/home");
+  }, [router]);
   const kycGate = resolveKycGate(rider, kycLaunch);
 
   // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
@@ -470,42 +518,49 @@ export default function RiderHome(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, gate, loc, locHint]);
 
-  // Pending/failed riders re-run KYC: mint a FRESH Didit session and open it (no re-keying the form).
+  // Pending/failed riders re-run KYC: get session credentials and open Didit's native check over this
+  // screen. The rider never leaves LyniaGo, and never re-keys the form.
   const retryM = useMutation({
-    mutationFn: retryKyc,
+    // `force` is normally false so the server's free resume path can hand back the session the rider
+    // already has. It flips true for exactly one tap after the SDK rejected that session as expired,
+    // and spending it is recorded here so a second expiry cannot buy a second session.
+    mutationFn: () => {
+      const force = forceFreshSession.current;
+      if (force) spentForce.current = true;
+      return retryKyc(force);
+    },
     onSuccess: async (res) => {
-      // In-app browser tab (not the system browser): it returns to the app when the rider closes it,
-      // so we can immediately re-check status rather than leaving them stranded outside the app.
-      const feedback = resolveKycRetryFeedback(res.verificationUrl, res.mode);
+      const feedback = resolveKycRetryFeedback(res.sessionToken, res.mode);
       setError(feedback.error);
       setInfo(feedback.info);
-      if (feedback.openUrl) {
-        try {
-          // `.catch(() => undefined)` used to swallow this outright, which is the bug the drawn
-          // `cant_start` state exists for: when the in-app browser cannot open — no WebView, a
-          // stripped Android build — the rider tapped, nothing happened, and they were left staring
-          // at the same wall with no explanation. A throw here means the check never opened.
-          const browser = await WebBrowser.openAuthSessionAsync(feedback.openUrl);
-          // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing
-          // the tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
-          setKycLaunch(browser.type === "success" ? "completed" : "cancelled");
-          if (browser.type === "success") {
-            // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
-            // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
-            // tell someone who just completed the check that they haven't started it, until the
-            // refetch below lands. Move the cached value forward with them.
-            //
-            // Done here rather than by letting the launch result outrank the server in
-            // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
-            // in-flight wall has NO action by design, so a hint that outranks the server would pin a
-            // rider there for the life of the screen if the vendor never registered the completion.
-            // As an optimistic cache write it is corrected by the very next poll instead.
-            qc.setQueryData<Me>(["me"], (prev) =>
-              prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
-            );
-          }
-        } catch {
-          setKycLaunch("failed");
+      if (feedback.sessionToken) {
+        // Route A: Didit's native UI opens ON TOP of this screen. There is no browser tab to come back
+        // from, and no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification`
+        // never throws and reports every failure as `failed`, which is what the drawn `cant_start`
+        // state exists to say.
+        const launch = await runKycVerification(feedback.sessionToken);
+        setKycLaunch(launch.outcome);
+        // An expired session would otherwise resume forever: the server cannot see expiry (it fires no
+        // webhook), so unless the next tap says "don't hand me that one again", the rider re-opens the
+        // same dead token until they give up. Armed at most once per episode — see `spentForce`.
+        forceFreshSession.current = launch.sessionUnusable && !spentForce.current;
+        // A launch that opened at all proves the credentials were good, so the next expiry after this
+        // is a NEW episode and gets its own single replacement.
+        if (launch.outcome !== "failed") spentForce.current = false;
+        if (launch.outcome === "completed") {
+          // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
+          // "unfinished", because at that moment they hadn't finished. Left alone, the wall would
+          // tell someone who just completed the check that they haven't started it, until the
+          // refetch below lands. Move the cached value forward with them.
+          //
+          // Done here rather than by letting the launch result outrank the server in
+          // `resolveKycGate`, which looks like the smaller fix and is the more dangerous one: the
+          // in-flight wall has NO action by design, so a hint that outranks the server would pin a
+          // rider there for the life of the screen if the vendor never registered the completion.
+          // As an optimistic cache write it is corrected by the very next poll instead.
+          qc.setQueryData<Me>(["me"], (prev) =>
+            prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev,
+          );
         }
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
@@ -1181,6 +1236,7 @@ export default function RiderHome(): React.ReactElement {
               title="Your ID is under review"
               message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
             >
+              <CustomerBridge onPress={leaveForCustomer} />
             </EmptyState>
           ) : kycGate.kind === "cant_start" ? (
             // RJ kyc_cant_start (1·3c). NOT a failed check — nothing was assessed — so it must not
@@ -1202,14 +1258,24 @@ export default function RiderHome(): React.ReactElement {
             </EmptyState>
           ) : kycGate.kind === "in_flight" ? (
             // RJ kyc_pending (1·3a). The check really is with the vendor, so there is deliberately no
-            // action — the board polls and the rider owes nothing. The mock draws no exit here either:
-            // the owner moved the customer bridge off this screen onto the Account tab on 2026-08-16,
-            // and the tab bar is the way out. See the absence test in this screen's suite.
+            // action to push it forward — the board polls and the rider owes nothing.
+            //
+            // The bridge below REVERSES the 2026-08-16 decision that moved "Back to customer" off this
+            // screen onto the Account tab. That decision was made from a photo of a screen whose only
+            // other content was a wait; the owner reinstated it on 2026-08-20 ("execute all", against
+            // T8 stated as needing exactly this ruling). Logged as D-36 — read that entry before
+            // removing this again, because it has now moved twice.
+            //
+            // It is a GHOST, and that is the whole argument for it being safe: it competes with
+            // nothing, because this wall has no primary. A rider waiting on a check still needs to
+            // eat.
             <EmptyState
               icon="id-card"
               title="Finishing verification…"
               message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute."
-            />
+            >
+              <CustomerBridge onPress={leaveForCustomer} />
+            </EmptyState>
           ) : (
             // RJ kyc_unfinished (1·3b). The rider opened the check and backed out, or never opened it.
             // The screen above would be a lie here: nothing was submitted, so "your ID check is with

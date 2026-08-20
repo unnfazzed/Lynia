@@ -277,15 +277,39 @@ resumes instead of restarting (the pattern is already there for the single photo
 | Phase | Work | Gate |
 |---|---|---|
 | 0 | ~~Owner picks Route A or B (§3)~~ | ✅ **Done — Route A, 2026-08-20** |
-| 1 | Design: new/changed mocks, exported from the tool | `design-freeze` green |
-| 2 | **Prove New Architecture on a preview build, in isolation, before any KYC code** | A real device build, not CI |
-| 3 | Backend: `session_token` passthrough + resume fix (G5) | Unit + webhook regression tests |
-| 4 | Mobile: capture + verify + analysing states, browser call sites deleted | Parity sheets attached |
+| 1 | Design: new/changed mocks, exported from the tool | ◐ **Drawn (PRs #841, #847) — EXPORT STILL OWED** |
+| 2 | **Prove New Architecture on a preview build, in isolation, before any KYC code** | ⚠️ **Not done in isolation — see below** |
+| 3 | Backend: `session_token` passthrough + resume fix (G5) | ✅ **Done — PRs #840, #842** |
+| 4 | Mobile: capture + verify + analysing states, browser call sites deleted | ✅ **Done — states in #843, SDK swap here** |
 | 5 | Store build (no OTA — G11), preview profile, internal track | `docs/PLAY-STORE-SUBMISSION.md` ledger entry |
 
+**Phase 1 is drawn but not exported, and the gate is the export.** The mocks for the three pending
+states and the reinstated customer bridge were authored IN THIS REPO, not in the Claude Design tool —
+D-33, D-35 and D-36 each carry an `UPSTREAM SYNC OWED` warning for exactly that reason. Until an
+export carries them, the next one silently reverts them, so this phase stays open however finished the
+screens look.
+
+**Phase 2 did not happen the way this table asked, and that is a known, owner-accepted risk.** The
+plan's own biggest-risk note said to prove the New Architecture on a real device *before* a line of
+KYC code, precisely so a failed migration could not strand finished KYC work behind it. The owner
+instructed otherwise ("Just proceed.. Execute all", 2026-08-20) after the EAS build had been excluded
+from the previous round, so the SDK swap and the New-Architecture proof now ride the SAME build.
+
+What that costs if the migration fails: the failure arrives mixed with a KYC change rather than in
+isolation, so the first debugging step is separating the two. What makes it survivable: `newArchEnabled`
+is one line in `app.config.ts` (#835) and the KYC SDK is behind one seam (`src/kyc/verify.ts`), so
+either can be reverted without the other. The dependency audit that preceded #835 found no blocker,
+and the one interop question (react-native-maps) resolves through RN's automatic interop layer.
+
 **Biggest risk, now that Route A is chosen:** the New Architecture migration (G9). It is the one item that
-can sink the schedule, it is orthogonal to KYC, and it must be proven on a real device build **before** a
-line of KYC code is written — otherwise a failed migration strands finished KYC work behind it. Second:
+can sink the schedule and it is orthogonal to KYC. This originally read *"it must be proven on a real
+device build before a line of KYC code is written"* — a gate that can no longer be met, because the
+owner directed the KYC code to be written first (see the Phase 2 note above). Stating an unmeetable
+condition is worse than stating none: it reads as satisfiable and quietly never is. **The surviving
+gate is Phase 5's:** the preview build must come back green on a real device, running the New
+Architecture *and* the SDK together, before anything is submitted to a track. If it fails, the
+separation is done by revert — the flag and the seam are independent — not by having sequenced them.
+Second:
 silent degradation of the IR26-04 dedupe and threshold bands if the payload shape changes without tests
 (G8) — less likely under Route A, since the webhook contract is unchanged, but the extractors still fail
 open. (Route B's false-reject risk is deferred with Route B.)

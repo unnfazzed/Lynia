@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@babel/runtime": "7.29.7",
+    "@didit-protocol/sdk-react-native": "4.7.2",
     "@lynia/shared": "workspace:*",
     "@sentry/react-native": "~6.22.0",
     "@tanstack/query-async-storage-persister": "^5.101.4",
