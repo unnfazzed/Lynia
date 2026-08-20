@@ -1,0 +1,15 @@
+-- Didit session token, persisted so a rider can RESUME an unfinished ID check instead of minting a
+-- fresh (paid) session on every "Finish verifying" tap.
+--
+-- Why it has to be stored at all: Didit returns `session_token` ONLY from POST /v3/session/ at create
+-- time. GET /v3/session/{id}/decision/ returns the session's status and its hosted url, but no token —
+-- and the native SDK needs a token to reopen a check. So resuming for free is impossible without
+-- keeping this. (docs/plans/2026-08-20-navigation-fix-forward.md P0-2, owner decision D7.)
+--
+-- It is a SECRET: a short-lived credential granting access to that rider's verification flow. Treated
+-- like DIDIT_API_KEY — never logged, returned only to the owning rider, never in an admin payload or
+-- an audit row, cleared the moment the session reaches a terminal state, and nulled on erasure
+-- (unlike verified_id_hash, which is a one-way hash retained deliberately per DS15-02b).
+--
+-- Additive, idempotent, nullable — no lock on a populated table, existing riders untouched.
+ALTER TABLE "riders" ADD COLUMN IF NOT EXISTS "kyc_session_token" TEXT;

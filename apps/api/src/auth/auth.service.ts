@@ -118,6 +118,8 @@ export class AuthService {
             // on a resubmit and the attempt-2 lock state (item 4).
             kycDeclineReason: true,
             kycAttempts: true,
+            // Owner-only (see the payload note below on why this never leaves this endpoint).
+            kycSessionToken: true,
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
             // instead of the rider only learning their count at the moment they get locked out.
             cancelStrikes: true,
@@ -155,6 +157,16 @@ export class AuthService {
             // the app can tell "pending, waiting on a browser vendor flow" (auto) apart from "pending,
             // waiting on manual ops review, no browser step exists" (manual) instead of always assuming auto.
             kycMode: this.env.KYC_MODE,
+            // SECRET, and this is the ONLY endpoint that may return it. getProfile is scoped to the
+            // caller's own profileId, so the token reaches exactly the rider whose check it opens —
+            // the device needs it to re-enter an unfinished SDK session without minting a fresh paid
+            // one (P0-2 / D7). It must never appear in admin.getKycReview, an audit row, or a webhook
+            // echo; those look at riders who are not the caller.
+            //
+            // Only surfaced while the check is still PENDING. Every terminal path (webhook, admin
+            // decision, erasure) nulls the column, so this is belt-and-braces — but it means a token
+            // lingering through some future path that forgets to clear it still cannot be handed out.
+            kycSessionToken: p.rider.kycStatus === "pending" ? p.rider.kycSessionToken : null,
           }
         : null,
     };

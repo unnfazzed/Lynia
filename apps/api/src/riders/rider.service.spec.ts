@@ -467,6 +467,140 @@ describe("RiderService.retryKyc", () => {
     expect(where).toMatchObject({ profileId: "p1", kycStatus: "failed", kycAttempts: 1 });
   });
 
+  // ── P0-2 / D7: resume a live session instead of minting a paid one ──────────────────────────────
+  //
+  // The bug this closes: retryKyc called vendor.submit() unconditionally, so every "Finish verifying"
+  // tap bought a new Didit session. The rider-facing resume button is worthless if it costs a credit
+  // each time, and the 5/hour route throttle capped that bleed without stopping it.
+
+  it("resumes a pending rider's live session — hands back the stored token, mints NOTHING", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new" };
+      },
+    };
+    let wrote = false;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live" }),
+        updateMany: async () => {
+          wrote = true;
+          return { count: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", sessionToken: "tok_live" });
+    // The whole point: zero paid sessions, and the kycRef is untouched so the webhook still resolves
+    // this rider when the check the rider is resuming eventually finishes.
+    expect(submitCalls).toBe(0);
+    expect(wrote).toBe(false);
+  });
+
+  it("mints when a pending rider has a ref but NO token (older session, pre-token or vendor omitted it)", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://x/sess_new", token: "tok_new" };
+      },
+    };
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_old", kycSessionToken: null }),
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toMatchObject({ sessionToken: "tok_new" });
+    expect(submitCalls).toBe(1);
+    expect(data).toMatchObject({ kycRef: "sess_new", kycSessionToken: "tok_new" });
+  });
+
+  it("does NOT resume a failed rider — a decided session cannot be reopened, so it mints", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", token: "tok_new" };
+      },
+    };
+    const prisma = {
+      rider: {
+        // A stale token still attached to a declined rider must never be handed back: Didit will not
+        // reopen a Declined session, so resuming would give the SDK a credential it can only reject.
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1, kycRef: "sess_dead", kycSessionToken: "tok_dead" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toMatchObject({ sessionToken: "tok_new" });
+    expect(submitCalls).toBe(1);
+  });
+
+  it("CLEARS a stale token when the new session carries none", async () => {
+    const vendor: KycVendor = { submit: async () => ({ ref: "sess_new", status: "pending" }) };
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1, kycRef: "sess_dead", kycSessionToken: "tok_dead" }),
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    await s.retryKyc("p1");
+    // Explicit null, not an omitted key: leaving tok_dead attached would bind a dead credential to a
+    // kycRef it no longer belongs to, and the next resume would hand it out.
+    expect(data).toHaveProperty("kycSessionToken", null);
+  });
+
+  // ── D4: a retry is NOT an attempt ───────────────────────────────────────────────────────────────
+  //
+  // kycAttempts counts DECLINES — evidence about the rider's identity — and two of them lock the
+  // application (A-02). An SDK that never opened (camera blocked, no network) is evidence about the
+  // PHONE, so counting it would let a broken device burn both attempts and land a rider in support
+  // having never been assessed. Nothing in retryKyc may touch the counter; this pins that, because
+  // "a retry is an attempt" is an entirely reasonable-looking change for someone to make later.
+
+  it("never increments kycAttempts — not on a mint, not on a resume (D4)", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const vendor: KycVendor = { submit: async () => ({ ref: "sess_new", status: "pending", token: "tok_new" }) };
+
+    const mintPrisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1, kycRef: "sess_old", kycSessionToken: null }),
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          seen.push(args.data);
+          return { count: 1 };
+        },
+      },
+    };
+    await svc(mintPrisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor).retryKyc("p1");
+
+    const resumePrisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 1, kycRef: "sess_live", kycSessionToken: "tok_live" }),
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          seen.push(args.data);
+          return { count: 1 };
+        },
+      },
+    };
+    await svc(resumePrisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor).retryKyc("p1");
+
+    expect(seen.length).toBeGreaterThan(0);
+    for (const data of seen) expect(data).not.toHaveProperty("kycAttempts");
+  });
+
   it("409s when the observed KYC state changed under it (CAS claims zero rows)", async () => {
     const vendor: KycVendor = {
       submit: async () => ({ ref: "sess_x", status: "pending", url: "https://verify.didit.me/sess_x" }),

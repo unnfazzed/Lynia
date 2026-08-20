@@ -296,6 +296,14 @@ model Rider {
   // or out-of-order delivery can't overwrite a newer decision (see RiderService.applyKycResult).
   kycRef            String?                                @unique @map("kyc_ref")
   kycResolvedAt     DateTime?                              @map("kyc_resolved_at")
+  // SECRET. The Didit `session_token` for the live session named by kycRef, kept so a rider can RESUME
+  // an unfinished check instead of minting a fresh PAID session on every retry tap. Didit returns this
+  // only from POST /v3/session/ at create time — the decision endpoint hands back status and a url but
+  // no token, and the native SDK needs one to reopen a check, so free resume is impossible without it.
+  // Handled like DIDIT_API_KEY: never logged, returned ONLY to the owning rider (never to an admin
+  // payload or an audit row), cleared when the session reaches a terminal state, and nulled on erasure
+  // — unlike verifiedIdHash above, which is a one-way hash retained on purpose (DS15-02b).
+  kycSessionToken   String?                                @map("kyc_session_token")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different

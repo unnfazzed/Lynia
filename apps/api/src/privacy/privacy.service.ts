@@ -252,6 +252,10 @@ export class PrivacyService {
         vehicleInfo: null,
         photoUrl: "",
         kycRef: null,
+        // A live vendor credential, so it goes — unlike verifiedIdHash/idNumberHash above, which are
+        // one-way hashes retained on purpose (DS15-02b) as the signal that catches a banned identity
+        // coming back. A session token identifies nobody and protects nothing once the account is gone.
+        kycSessionToken: null,
         kycDeclineReason: null,
         suspendReason: null,
         currentLat: null,
