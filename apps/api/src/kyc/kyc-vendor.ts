@@ -7,6 +7,15 @@ export interface KycSubmission {
   status: "pending";
   /** Verification link the rider opens to complete the check (vendor-hosted flow). */
   url?: string;
+  /**
+   * SECRET — the vendor's short-lived session token, the credential the NATIVE SDK needs to open (or
+   * re-open) this check on the device. Didit returns it only at session-create time; the decision
+   * endpoint gives back status and a url but never a token, so this is the only chance to capture it,
+   * and without it a resume has to mint a fresh paid session (P0-2 / D7).
+   *
+   * Never log it. It reaches exactly one place — the owning rider's own `getMe`.
+   */
+  token?: string;
 }
 
 export interface KycVendor {

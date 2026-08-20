@@ -171,7 +171,7 @@ export class RiderService {
   async becomeRider(
     profileId: string,
     data: { bikeReg: string; photoUrl: string },
-  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string }> {
+  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const existing = await this.prisma.rider.findUnique({
       where: { profileId },
       select: { profileId: true },
@@ -218,6 +218,9 @@ export class RiderService {
 
     let kycRef: string | null = null;
     let verificationUrl: string | undefined;
+    // SECRET, captured here or never — Didit hands `session_token` back only from session-create, so
+    // a token dropped on this path means every later resume mints a fresh paid session (P0-2 / D7).
+    let sessionToken: string | undefined;
     if (this.env.KYC_MODE === "auto") {
       // A vendor outage must surface as a retryable 503, not an unhandled 500 — and we throw before
       // creating the rider row, so a failed submit leaves no half-onboarded rider behind.
@@ -225,6 +228,7 @@ export class RiderService {
         const submission = await this.vendor.submit(profileId);
         kycRef = submission.ref;
         verificationUrl = submission.url;
+        sessionToken = submission.token;
       } catch (err) {
         this.logger.error(`KYC submit failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
         throw new ServiceUnavailableException("Couldn't start ID verification. Please try again.");
@@ -253,6 +257,10 @@ export class RiderService {
             kycStatus: initialKyc,
             idVerified: stubAutoPass,
             kycRef,
+            // Only ever attached to a still-pending session. The stub auto-pass path lands `verified`
+            // immediately, and a verified rider must carry no live credential.
+            kycSessionToken: stubAutoPass ? null : (sessionToken ?? null),
+            kycSessionUrl: stubAutoPass ? null : (verificationUrl ?? null),
             duplicateIdFlag,
           },
         }),
@@ -263,18 +271,30 @@ export class RiderService {
       }
       throw err;
     }
-    return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl };
+    return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl, sessionToken: stubAutoPass ? undefined : sessionToken };
   }
 
   /**
-   * Re-run KYC for an existing rider whose check is pending or failed (Didit allows retries within the
-   * workflow's retry window). Mints a fresh verification session, points the rider at the new ref, and
-   * clears kycResolvedAt so the new webhook resolves it. Verified riders are left untouched.
+   * Re-run KYC for an existing rider whose check is pending or failed. RESUMES the live session when
+   * there is one (free), and only mints a fresh — paid — session when there isn't. Verified riders are
+   * left untouched.
+   *
+   * WHY RESUME EXISTS (P0-2 / gap G5). This used to call `vendor.submit()` unconditionally, so every
+   * "Finish verifying" tap burned a Didit session. That is the whole cost of the rider-facing resume
+   * button: a rider who backs out of the SDK at step one and taps again should re-enter the SAME check,
+   * not buy a new one. The 5/hour throttle on the route capped the bleed; it never stopped it.
+   *
+   * NOTHING HERE TOUCHES `kycAttempts` (owner decision D4). The A-02 counter is incremented in exactly
+   * one place — `applyKycResult` on a vendor `failed` decision — because it counts DECLINES, evidence
+   * about the rider's identity. A retry is not a decline: an SDK that never opened (camera blocked, no
+   * network) tells us nothing about their ID, and counting it would let a broken phone burn both
+   * attempts and land the rider in the support queue having never been assessed. The regression test
+   * pins this; see rider.service.spec.ts.
    */
-  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string }> {
+  async retryKyc(profileId: string): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, kycAttempts: true },
+      select: { kycStatus: true, kycAttempts: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true },
     });
     if (!rider) throw new NotFoundException("Not a rider");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
@@ -288,6 +308,36 @@ export class RiderService {
     // BH-03: include `mode` even on this early return so the client can tell "no verificationUrl
     // because manual review is expected" apart from "no verificationUrl because something went wrong".
     if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending", mode: this.env.KYC_MODE };
+
+    // RESUME PATH — free. A `pending` rider still holding session credentials has an unfinished check,
+    // not a dead one: hand them back and let the client re-open the SAME session. Costs zero credits
+    // and keeps kycRef stable, so the webhook that eventually lands still resolves this rider.
+    //
+    // BOTH credentials go back, and that is not belt-and-braces — it is what keeps the SHIPPED app
+    // working. Today's build opens `verificationUrl` in a browser tab (resolveKycRetryFeedback reads
+    // ONLY that field); the native-SDK client that consumes `sessionToken` is still ahead of us. A
+    // resume that returned the token alone would hand the live app a response it cannot use, and its
+    // auto-mode fallback renders "Couldn't start verification — try again in a moment." — a false
+    // error on a request that actually succeeded, which is precisely the BH-03 bug this codebase
+    // already fixed once. Caught in review of this change; the test below pins it.
+    //
+    // Requiring the URL in the guard (not just the token) keeps that guarantee honest: a row that
+    // somehow holds a token but no URL falls through and mints, which costs a credit but always
+    // returns something every client can act on.
+    //
+    // Deliberately scoped to `pending`. A `failed` or `expired` rider needs a genuinely NEW check —
+    // their session already reached a terminal decision and Didit will not reopen it — so those fall
+    // through to the mint below. The device is the other half of this contract: when the SDK or the
+    // browser rejects the credentials as expired, the client calls back here and, once a terminal
+    // webhook has cleared the row, it mints (D7).
+    if (rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
+      return {
+        kycStatus: "pending",
+        mode: this.env.KYC_MODE,
+        verificationUrl: rider.kycSessionUrl,
+        sessionToken: rider.kycSessionToken,
+      };
+    }
 
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
     try {
@@ -308,12 +358,25 @@ export class RiderService {
     // under us ⇒ 409, and the rider re-reads rather than resubmitting onto a stale decision.
     const rotated = await this.prisma.rider.updateMany({
       where: { profileId, kycStatus: rider.kycStatus, kycAttempts: rider.kycAttempts },
-      data: { kycStatus: next, idVerified: stubAutoPass, kycRef: submission.ref, kycResolvedAt: null },
+      // The new session's token replaces the old one wholesale. `?? null` rather than an optional
+      // spread on purpose: a vendor response that carries no token must CLEAR the stale one, not leave
+      // the previous session's credential attached to a kycRef it no longer belongs to.
+      data: {
+        kycStatus: next,
+        idVerified: stubAutoPass,
+        kycRef: submission.ref,
+        kycResolvedAt: null,
+        // `?? null` rather than an optional spread, for both: a vendor response missing a credential
+        // must CLEAR the stale one, never leave the previous session's secret bound to a kycRef it no
+        // longer belongs to. They are always written and cleared together.
+        kycSessionToken: submission.token ?? null,
+        kycSessionUrl: submission.url ?? null,
+      },
     });
     if (rotated.count === 0) {
       throw new ConflictException("Your ID verification just changed — refresh and try again.");
     }
-    return { kycStatus: next, mode: this.env.KYC_MODE, verificationUrl: submission.url };
+    return { kycStatus: next, mode: this.env.KYC_MODE, verificationUrl: submission.url, sessionToken: submission.token };
   }
 
   /** The rider's prepaid commission balance for the online-gate, or undefined when commission is off
@@ -608,6 +671,16 @@ export class RiderService {
           // the same webhook delivery can't be reprocessed.
           ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
           kycResolvedAt: eventAt,
+          // The session token dies with the decision it belonged to. Every outcome that reaches here is
+          // terminal for THAT session — Didit will not reopen an Approved/Declined/Expired one — so
+          // keeping the credential would leave a verified rider carrying a live secret for no reason,
+          // and would let retryKyc hand back a token the SDK can only reject.
+          //
+          // Cleared on the hold-for-review path too, and deliberately: the vendor HAS decided (that is
+          // why we are in this branch), the session is spent, and only our own review is outstanding.
+          // A rider held for review who taps retry should mint a fresh session, not resume a decided one.
+          kycSessionToken: null,
+          kycSessionUrl: null,
           // IR26-04: persist the vendor-verified document hash EVEN when holding for review — a later
           // applicant presenting the same physical document must collide with this row too, and the
           // admin review screen surfaces the mismatch/collision from it.
@@ -780,6 +853,11 @@ export class RiderService {
             kycStatus: "failed",
             idVerified: false,
             kycDeclineReason: reasonCode ?? null,
+            // Terminal human decision — the session it belonged to is spent. Same reasoning as the
+            // webhook path: a declined rider must not carry a live credential, and retryKyc must mint
+            // rather than hand back a token that can only be rejected.
+            kycSessionToken: null,
+            kycSessionUrl: null,
             ...(isRepeatOfSameDecline ? {} : { kycAttempts: { increment: 1 } }),
             // Stamp the resolution time so applyKycResult's monotonic guard treats this human decision
             // as the latest word: a later (or replayed) vendor webhook with an older eventAt can no
@@ -801,6 +879,11 @@ export class RiderService {
           data: {
             kycStatus: status,
             idVerified: status === "verified",
+            // Cleared on every branch here, including a `pending` RESET. A reset is an invitation for a
+            // FRESH vendor result, so leaving the old session's token attached would let retryKyc resume
+            // the very check the admin just set aside.
+            kycSessionToken: null,
+            kycSessionUrl: null,
             // A manual APPROVE is a terminal human decision: stamp kycResolvedAt so a later/replayed
             // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
             // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.

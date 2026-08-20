@@ -52,9 +52,15 @@ export class DiditKycVendor implements KycVendor {
       id?: string;
       url?: string;
       verification_url?: string;
+      session_token?: string;
     };
     const ref = data.session_id ?? data.id;
     if (!ref) throw new Error("Didit response missing session id");
-    return { ref, status: "pending", url: data.url ?? data.verification_url };
+    // `session_token` is captured HERE or never: Didit returns it only from session-create. The
+    // decision endpoint (GET /v3/session/{id}/decision/) exposes status and a url but no token, so a
+    // token missed here means every later resume mints a fresh paid session. Read defensively like
+    // the rest of this response — an older workflow version that omits it degrades to exactly the
+    // pre-token behaviour (mint on retry) rather than failing the submit.
+    return { ref, status: "pending", url: data.url ?? data.verification_url, token: data.session_token };
   }
 }
