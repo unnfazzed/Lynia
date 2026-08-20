@@ -776,7 +776,10 @@
 > a FINISHED build proves the New Architecture and the Didit SDK **compile and link** together. It
 > does not prove the SDK's camera and liveness UI actually *runs* on a handset, which is the whole
 > point of Route A. That is the device smoke in `docs/QA-DEVICE-CHECKLIST.md` — on a real phone, by a
-> human — and it is now the only remaining gate on this work.
+> human — and it is the only remaining **runtime** gate for this build. It is not the only open item
+> on the KYC work: Phase 1 of `docs/plans/2026-08-20-kyc-in-app-plan.md` is still open because the new
+> mocks were drawn in-repo and never exported from the design tool (D-33 / D-35 / D-36 each carry
+> `UPSTREAM SYNC OWED`), which no build can close.
 
 ---
 
