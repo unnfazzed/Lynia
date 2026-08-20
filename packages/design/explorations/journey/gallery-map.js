@@ -105,9 +105,11 @@ const RIDER = [
     ["RJ", "perm_loc", "Permission · location", ""], ["RJ", "perm_notif", "Permission · notifications", ""],
   ]],
   ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [
-    ["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "ID photo · capture", ""],
-    ["RJ", "photo_preview", "ID photo · preview", ""], ["RJ", "photo_uploading", "ID photo · uploading", ""],
-    ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_verified", "Verified", ""],
+    ["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "Rider photo · capture", ""],
+    ["RJ", "photo_preview", "Rider photo · preview", ""], ["RJ", "photo_uploading", "Rider photo · uploading", ""],
+    ["RJ", "kyc_pending", "Verification pending", ""],
+    ["RJ", "kyc_unfinished", "Verification not finished", ""], ["RJ", "kyc_cant_start", "Couldn't open the ID check", ""],
+    ["RJ", "kyc_verified", "Verified", ""],
   ]],
   ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [
     ["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"],
@@ -150,7 +152,7 @@ const RIDER = [
     ["RR", "offer_expired", "Offer expired", "FOOD"], ["RR", "cancel_reason", "Drop the job · before pickup", "FOOD"], ["RR", "cancel_blocked", "Can't drop after collecting", "FOOD"],
     ["RR", "cash_dispute", "Customer confirmed, you didn't", "FOOD"], ["RR", "code_wrong", "Wrong code", "FOOD"], ["RR", "unreachable", "Customer unreachable", "FOOD"],
     ["RR", "return_rest", "Return to restaurant", "FOOD"], ["RR", "handback", "Hand back confirm", "FOOD"], ["RR", "offline_resume", "Resumed mid-delivery", "FOOD"],
-    ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "ID photo · upload failed", ""],
+    ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "Rider photo · upload failed", ""],
     ["RJ", "gate_out_of_area", "Gate · out of area", ""], ["RJ", "gate_cooldown", "Gate · cooldown", ""], ["RJ", "gate_banned", "Gate · account closed", ""],
     ["RJ", "gate_kyc_locked", "Gate · verification locked", ""], ["RJ", "topup_declined", "Top up · declined", "BOTH"],
     ["RJ", "offline", "Offline banner", ""], ["RJ", "on_hold", "Account on hold", ""], ["RJ", "force_update", "Force update", ""],

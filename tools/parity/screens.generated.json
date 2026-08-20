@@ -1,9 +1,9 @@
 {
   "generatedFrom": "packages/design/explorations/journey/gallery-map.js + restaurants/r-gallery-data.js + gallery.jsx ADMIN",
-  "count": 275,
+  "count": 277,
   "byCategory": {
     "customer": 122,
-    "rider": 98,
+    "rider": 100,
     "merchant": 48,
     "admin": 7
   },
@@ -1324,7 +1324,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_capture",
-      "title": "ID photo · capture",
+      "title": "Rider photo · capture",
       "tag": "",
       "mode": "phone"
     },
@@ -1334,7 +1334,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_preview",
-      "title": "ID photo · preview",
+      "title": "Rider photo · preview",
       "tag": "",
       "mode": "phone"
     },
@@ -1344,7 +1344,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_uploading",
-      "title": "ID photo · uploading",
+      "title": "Rider photo · uploading",
       "tag": "",
       "mode": "phone"
     },
@@ -1355,6 +1355,26 @@
       "src": "RJ",
       "id": "kyc_pending",
       "title": "Verification pending",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_unfinished",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_unfinished",
+      "title": "Verification not finished",
+      "tag": "",
+      "mode": "phone"
+    },
+    {
+      "key": "RJ.kyc_cant_start",
+      "category": "rider",
+      "band": "Become a rider (KYC)",
+      "src": "RJ",
+      "id": "kyc_cant_start",
+      "title": "Couldn't open the ID check",
       "tag": "",
       "mode": "phone"
     },
@@ -2084,7 +2104,7 @@
       "band": "Exceptions & edge",
       "src": "RJ",
       "id": "photo_failed",
-      "title": "ID photo · upload failed",
+      "title": "Rider photo · upload failed",
       "tag": "",
       "mode": "phone"
     },

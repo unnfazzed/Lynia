@@ -245,15 +245,34 @@ const JobHelpSent = () => (
 /* ── E · KYC ID-photo states (extends the KycForm "Photo added — retake" row) ── */
 const PhotoCapture = () => (
   <div style={{ height: "100%", background: "var(--ink)", display: "flex", flexDirection: "column", fontFamily: "var(--font-sans)", boxSizing: "border-box" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 16px 10px" }}>
-      <Icon name="x" size={20} color="#fff" />
-      <span style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>ID photo</span>
+    {/* N-02: the close was a bare 20px glyph — no role, no label, no hit area, and absent from both
+        the hierarchy and accessibility notes — while the shutter beside it is a fully specified 68px
+        button. It is the ONLY exit from a full-bleed dark camera, so it is now a real control at the
+        --target-min floor DESIGN.md requires. (D2 settled the precedence: the 2026-08-10 "mock wins" rule
+        stops the APP silently resizing a mock; it was never licence for the kit to draw an unusable
+        target. A mock below the floor is a kit defect, not a size to reproduce.)
+        The box is centred on the same 20px glyph, so the drawn mark is unchanged — only the touch
+        area around it grew, and the negative margin keeps the row's optical alignment. */}
+    <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "34px 16px 10px" }}>
+      <button
+        type="button"
+        aria-label="Close"
+        style={{ width: "var(--target-min)", height: "var(--target-min)", marginLeft: -12, display: "grid", placeItems: "center", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+      >
+        <Icon name="x" size={20} color="#fff" />
+      </button>
+      <span style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>Rider photo</span>
     </div>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "0 22px" }}>
-      <div style={{ width: "100%", aspectRatio: "1.586 / 1", borderRadius: 14, border: "2.5px dashed rgba(255,255,255,.75)", display: "grid", placeItems: "center", boxSizing: "border-box" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.8)", textAlign: "center", maxWidth: 190, lineHeight: 1.5 }}>Fit the photo page of your ID inside the frame</span>
+      {/* D3: this step is the RIDER PORTRAIT, not the ID document — the Didit SDK photographs the
+          document itself, so our capture exists for the admin reviewer who approves the rider (and
+          for KYC_MODE=manual, the fallback when the vendor is down; reviewing blind is worse than one
+          extra photo). Portrait oval, not an ID-card rectangle, and face-framing rules instead of
+          document-readability ones: "all four corners in" describes a card, not a person. */}
+      <div style={{ width: "72%", aspectRatio: "0.78 / 1", borderRadius: "50%", border: "2.5px dashed rgba(255,255,255,.75)", display: "grid", placeItems: "center", boxSizing: "border-box" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.8)", textAlign: "center", maxWidth: 170, lineHeight: 1.5 }}>Put your face inside the oval</span>
       </div>
-      <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.7)", textAlign: "center", maxWidth: 240, lineHeight: 1.5 }}>Names and numbers readable · no glare · all four corners in</div>
+      <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.7)", textAlign: "center", maxWidth: 240, lineHeight: 1.5 }}>Face the light · no hat or sunglasses · look straight ahead</div>
     </div>
     <div style={{ display: "flex", justifyContent: "center", padding: "18px 0 34px" }}>
       <button type="button" aria-label="Take photo" style={{ width: 68, height: 68, borderRadius: "50%", background: "#fff", border: "5px solid rgba(255,255,255,.35)", cursor: "pointer" }} />
@@ -263,11 +282,15 @@ const PhotoCapture = () => (
 const PhotoPreview = () => (
   <Pad>
     <Top title="Check your photo" />
+    {/* D3, same re-scope as PhotoCapture above: this is the RIDER PORTRAIT, so the self-check is about
+        the face being usable to a reviewer, not about a document being legible. "Can you read
+        everything?" and "check the names, ID number" were asking about a card that is no longer what
+        this step captures — a rider following them would go looking for their ID. */}
     <div style={{ height: 200, borderRadius: "var(--radius-input)", border: "1px solid var(--line)", background: "repeating-linear-gradient(45deg, #eef1f3 0 10px, #e6eaec 10px 20px)", display: "grid", placeItems: "center", marginBottom: 12 }}>
-      <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "var(--muted)", background: "var(--bg)", padding: "3px 8px", borderRadius: 6 }}>ID photo preview</span>
+      <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "var(--muted)", background: "var(--bg)", padding: "3px 8px", borderRadius: 6 }}>Rider photo preview</span>
     </div>
-    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 2 }}>Can you read everything?</div>
-    <Sub>Check the names, ID number and photo are sharp — glare or blur is the top reason checks fail.</Sub>
+    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 2 }}>Is your face clear?</div>
+    <Sub>Check your whole face is in frame and sharp — blur or shadow is the top reason a photo has to be retaken.</Sub>
     <Button label="Use this photo" onClick={noop} />
     <Button label="Retake" variant="ghost" onClick={noop} />
     <div style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "center", marginTop: 4, lineHeight: 1.4 }}>Retaking keeps your current photo until the new one is saved.</div>

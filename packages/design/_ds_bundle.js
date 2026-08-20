@@ -3770,7 +3770,7 @@ try { (() => {
    only, so no pre-existing generated badge moved.                                                */
 (() => {
   const CUSTOMER = [["First run", "First install only — one sign-in for both services, then the role fork and permission priming.", [["LJ", "splash", "Splash", ""], ["LJ", "onboard", "Onboarding · food", "FOOD"], ["LJ", "onboard_send", "Onboarding · send", "PARCEL"], ["LJ", "onboard_shared", "Onboarding · one app", "BOTH"], ["LJ", "login", "Phone login", ""], ["LJ", "otp", "SMS OTP", ""], ["LJ", "role_select", "Choose your role", ""], ["LJ", "register", "Profile registration", ""], ["LJ", "perm_loc", "Permission · location", ""], ["LJ", "perm_notif", "Permission · notifications", ""], ["LJ", "onboard_flag_off", "Onboarding · food off", "PARCEL"], ["LJ", "role_select_flag_off", "Choose your role · food off", ""]]], ["Home & orders", "One home for both services: tiles, a live-order card per running job, restaurants near you. One Orders list across everything.", [["RC", "home", "Home · service tiles", "BOTH"], ["RC", "orders", "Orders · all services", "BOTH"], ["RC", "orders_empty", "Orders · empty", "BOTH"], ["LJ", "home_flag_off", "Home · Food tile soon", "BOTH"], ["LJ", "order_restore", "Cold start · order running", "BOTH"], ["LJ", "stale_cache", "Orders · saved copy", "BOTH"]]], ["Browse & compose", "Where the two services diverge most: food is a catalogue, a parcel is a route you build.", [["RC", "list", "Restaurant list", "FOOD"], ["RC", "list_loading", "List loading", "FOOD"], ["RC", "search", "Search", "FOOD"], ["RC", "menu", "Menu", "FOOD"], ["RC", "item", "Item sheet", "FOOD"], ["LJ", "home_empty", "Send composer · no address", "PARCEL"], ["LJ", "addr_search", "Address search", "PARCEL"], ["LJ", "addr_map_confirm", "Confirm pin on map", "PARCEL"], ["LJ", "home_pins", "Send · both set", "PARCEL"], ["LJ", "home_expanded", "Send · sheet expanded", "PARCEL"], ["LJ", "disclaimer", "Broadcast disclaimer", "PARCEL"], ["LJ", "draft_restored", "Draft restored", "PARCEL"], ["LJ", "addr_unavailable", "Address search down", "PARCEL"], ["LJ", "map_failed", "Map didn't load", "PARCEL"], ["LJ", "loc_off", "Location off · composer", "PARCEL"]]], ["Commit & pay", "Food is priced and paid; a parcel is priced by the market — you name it and riders answer.", [["RC", "cart", "Cart", "FOOD"], ["RC", "cart_note", "Note for the kitchen", "FOOD"], ["RC", "checkout_cash", "Checkout · CASH", "FOOD"], ["RC", "checkout_wallet", "Checkout · WALLET", "FOOD"], ["RC", "placing", "Placing", "FOOD"], ["LJ", "auction_finding", "Auction · finding", "PARCEL"], ["LJ", "auction_live", "Auction · offers live", "PARCEL"], ["LJ", "auction_counter", "Counter-offer review", "PARCEL"]]], ["The kitchen confirms", "Food only: no payment clock. The kitchen calls, then requests the money — and the money only moves to the merchant.", [["RC", "await_accept", "Waiting on the kitchen", "FOOD"], ["RC", "confirm_call", "They call to confirm", "FOOD"], ["RC", "pay_push", "Push · payment requested", "FOOD"], ["RC", "pay_now", "Pay the restaurant", "FOOD"], ["RC", "pay_wait", "Prompt sent", "FOOD"], ["RC", "pay_manual", "Paid another way", "FOOD"], ["RC", "pay_confirmed", "Waiting to be confirmed", "FOOD"]]], ["Track", "One tracker grammar, two step vocabularies — plus the prep countdown food adds.", [["RC", "track_prep", "Prep countdown", "FOOD"], ["RC", "track_secured", "Rider secured", "FOOD"], ["RC", "track_way", "On the way", "FOOD"], ["LJ", "track_code", "Tracking · code issued", "PARCEL"], ["LJ", "track_active", "Tracking · live", "PARCEL"]]], ["Hand-off & close", "The same 6-digit code closes both. Food adds the money handshake before the code appears.", [["RC", "handoff", "Pay at the door", "FOOD"], ["RC", "handoff_wait", "Waiting for rider confirm", "FOOD"], ["RC", "handoff_code", "Both confirmed · code", "FOOD"], ["RC", "delivered_rate", "Delivered · rate the food", "FOOD"], ["LJ", "delivered_rate", "Delivered · rate the rider", "PARCEL"], ["LJ", "completed", "Completed", "PARCEL"], ["LJ", "rate_undo", "Rating sent · undo", "PARCEL"]]], ["Account & support", "One account, one history, one help desk for everything the customer orders.", [["LJ", "profile", "Account", ""], ["LJ", "history", "Orders · all services", "BOTH"], ["LJ", "notifications", "Notifications", ""], ["LJ", "notif_empty", "Notifications · empty", ""], ["LJ", "help", "Help & support", ""], ["LJ", "settings", "Settings", ""], ["LJ", "settings_perms", "Settings · real permissions", ""], ["LJ", "settings_perms_ok", "Settings · all granted", ""], ["LJ", "privacy", "Privacy", ""], ["LJ", "delete_account", "Delete account", ""], ["LJ", "delete_final", "Delete · final confirm", ""], ["LJ", "phone_masked", "Order ended · numbers masked", "BOTH"]]], ["Trust & safety", "SOS, report + block, and get-help-with-this-order — identical whichever service is running.", [["LJ", "sos_idle", "SOS · live-trip control", "BOTH"], ["LJ", "sos_confirm", "SOS · confirm", "BOTH"], ["LJ", "sos_contacts", "SOS · contacts", "BOTH"], ["LJ", "sos_error", "SOS · log failed (offline)", "BOTH"], ["LJ", "report", "Report + block rider", "BOTH"], ["LJ", "report_done", "Report sent", "BOTH"], ["LJ", "trip_help", "Get help with this order", "BOTH"], ["LJ", "trip_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Every branch that isn't the happy path, plus the overlays that can interrupt any screen.", [["RC", "list_empty", "Nothing open", "FOOD"], ["RC", "list_error", "Offline list", "FOOD"], ["RC", "menu_closed", "Closed restaurant", "FOOD"], ["RC", "closed_interrupt", "Closes while browsing", "FOOD"], ["RC", "cart_oos", "Item sold out", "FOOD"], ["RC", "cart_price", "Price changed", "FOOD"], ["RC", "cart_empty", "Empty cart", "FOOD"], ["RC", "cart_min", "Under the minimum", "FOOD"], ["RC", "checkout_offline", "Offline mid-checkout", "FOOD"], ["RC", "pay_open", "Still unpaid · reminder", "FOOD"], ["RC", "pay_failed", "Payment declined", "FOOD"], ["RC", "item_removed", "One item unavailable", "FOOD"], ["RC", "no_rider", "NO_RIDER", "FOOD"], ["RC", "track_paused", "Live paused", "FOOD"], ["RC", "rejected", "Rejected · refund pending", "FOOD"], ["RC", "refunded", "Refunded", "FOOD"], ["RC", "cancel_sheet", "Cancel pre-pickup", "FOOD"], ["RC", "rider_cancelled", "Rider cancelled · re-finding", "FOOD"], ["RC", "handoff_dispute", "Rider didn't confirm", "FOOD"], ["RC", "failed_noshow", "No-show · returned", "FOOD"], ["RC", "resume", "App resumed mid-order", "FOOD"], ["LJ", "no_riders", "No riders online", "PARCEL"], ["LJ", "select_race", "Rider just taken", "PARCEL"], ["LJ", "auction_expired", "Auction expired", "PARCEL"], ["LJ", "rider_cancelled", "Rider cancelled", "PARCEL"], ["LJ", "track_paused", "Live paused", "PARCEL"], ["LJ", "cancel", "Cancel · reason", "PARCEL"], ["LJ", "cancelled", "Cancelled", "PARCEL"], ["LJ", "undelivered", "Not delivered", "PARCEL"], ["LJ", "track_dark", "Rider went dark", "PARCEL"], ["LJ", "otp_cooldown", "OTP · resend cooldown", ""], ["LJ", "otp_resent", "OTP · code re-sent", ""], ["LJ", "otp_locked", "OTP · expired / locked", ""], ["LJ", "offline", "Offline banner", ""], ["LJ", "on_hold", "Account on hold", ""], ["LJ", "force_update", "Force update", ""], ["LJ", "no_gps", "Location off / no GPS", ""], ["LJ", "generic_error", "Generic error", ""], ["LJ", "conn_reconnecting", "Reconnecting banner", ""], ["LJ", "stale_cache_empty", "Offline · nothing saved", ""], ["LJ", "order_restore_error", "Restore failed", "BOTH"], ["LJ", "draft_discard", "Discard draft · confirm", "PARCEL"]]]];
-  const RIDER = [["First run & sign in", "Identical to the customer up to the role fork — one app, one account.", [["RJ", "splash", "Splash", ""], ["RJ", "onboard", "Onboarding · rider", ""], ["RJ", "login", "Phone sign-in", ""], ["RJ", "otp", "SMS OTP", ""], ["RJ", "role_select", "Choose your role", ""], ["RJ", "perm_loc", "Permission · location", ""], ["RJ", "perm_notif", "Permission · notifications", ""]]], ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "ID photo · capture", ""], ["RJ", "photo_preview", "ID photo · preview", ""], ["RJ", "photo_uploading", "ID photo · uploading", ""], ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_verified", "Verified", ""]]], ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"], ["RJM", "notifications", "One inbox", "BOTH"], ["RJM", "board_food_off", "Jobs · food dispatch off", "PARCEL"], ["RJM", "board_empty_food_off", "Food off · nothing in range", "PARCEL"]]], ["Taking a job", "The only real difference between the services: a food fare is fixed and accepted, a parcel fare is yours to name.", [["RJM", "offer_parcel", "Parcel · name your fare", "PARCEL"], ["RJ", "offer_sent", "Offer sent · waiting", "PARCEL"], ["RJ", "picked", "Customer picked you", "PARCEL"], ["RJM", "offer_food", "Food · accept the job", "FOOD"], ["RR", "offer_cash", "Food · CASH collect", "FOOD"], ["RR", "offer_upfront", "Food · kitchen wants upfront", "FOOD"], ["RR", "offer_wallet", "Food · already paid", "FOOD"]]], ["The active job", "One job at a time, one screen, one tracker with per-service step copy. Cash you carry is split: yours vs owed to a kitchen.", [["RJM", "active_parcel", "Active · parcel", "PARCEL"], ["RJ", "job_assigned", "Job · assigned", "PARCEL"], ["RJ", "job_pickup", "En route to pickup", "PARCEL"], ["RJ", "job_verify", "Verify items at pickup", "PARCEL"], ["RJ", "job_collect", "Parcel collected", "PARCEL"], ["RJ", "job_dropoff", "En route to drop-off", "PARCEL"], ["RJM", "active_food", "Active · food", "FOOD"], ["RR", "nav_rest", "To the restaurant", "FOOD"], ["RR", "pay_merchant", "Pay the merchant", "FOOD"], ["RR", "pickup_confirm", "Collect · CASH job", "FOOD"], ["RR", "pickup_paid", "Collect · already PAID", "FOOD"], ["RR", "nav_cust", "To the customer", "FOOD"], ["RR", "doorstep", "Collect · confirm cash", "FOOD"], ["RJM", "handoff", "Delivery code", "BOTH"], ["RJ", "job_handoff", "Hand-off · parcel", "PARCEL"], ["RJ", "job_delivered", "Delivered", "PARCEL"], ["RR", "delivered", "Delivered · food", "FOOD"], ["RR", "return_cash", "Return the kitchen's cash", "FOOD"], ["RJM", "pickup_photo", "Proof of pickup · capture", "PARCEL"], ["RJM", "pickup_photo_preview", "Proof of pickup · preview", "PARCEL"]]], ["Money", "One prepaid commission balance for both services, one ledger, one gate when it runs out.", [["RJM", "money", "Money tab", "BOTH"], ["RJM", "gate_topup", "Gate · top up to keep riding", "BOTH"], ["RJ", "topup_amount", "Top up · amount", "BOTH"], ["RJ", "topup_wait", "Payment prompt · wait", "BOTH"], ["RJ", "topup_success", "Top up · success", "BOTH"], ["RJ", "wallet_low", "Balance low", "BOTH"]]], ["Account & support", "One identity, one set of documents, one job history — whatever the rider carries.", [["RJM", "account", "Account", ""], ["RJ", "bike_docs", "Bike & documents", ""], ["RJ", "history", "Job history", "BOTH"], ["RJ", "settings", "Settings", ""], ["RJ", "help", "Help & support", ""], ["RJM", "strikes", "Reliability · strikes", ""]]], ["Trust & safety", "SOS, report + block, get-help-with-this-job — one set for both services.", [["RJ", "sos_idle", "SOS · live-job control", "BOTH"], ["RJ", "sos_confirm", "SOS · confirm", "BOTH"], ["RJ", "sos_contacts", "SOS · contacts", "BOTH"], ["RJ", "report", "Report + block customer", "BOTH"], ["RJ", "report_done", "Report sent", "BOTH"], ["RJ", "job_help", "Get help with this job", "BOTH"], ["RJ", "job_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Lost jobs, refused hand-offs, gate refusals and the overlays that can interrupt any screen.", [["RJ", "missed_order", "Job taken first", "PARCEL"], ["RJ", "not_chosen", "Not chosen", "PARCEL"], ["RJ", "bid_expired", "Auction expired · no pick", "PARCEL"], ["RJ", "handoff_wrong", "Wrong code · lockout", "PARCEL"], ["RJ", "undelivered", "Not delivered", "PARCEL"], ["RJ", "job_bail", "Rider cancels (bail)", "PARCEL"], ["RJ", "job_offline", "Connection lost mid-job", "PARCEL"], ["RJ", "job_cancelled", "Customer cancelled", "PARCEL"], ["RR", "offer_expired", "Offer expired", "FOOD"], ["RR", "cancel_reason", "Drop the job · before pickup", "FOOD"], ["RR", "cancel_blocked", "Can't drop after collecting", "FOOD"], ["RR", "cash_dispute", "Customer confirmed, you didn't", "FOOD"], ["RR", "code_wrong", "Wrong code", "FOOD"], ["RR", "unreachable", "Customer unreachable", "FOOD"], ["RR", "return_rest", "Return to restaurant", "FOOD"], ["RR", "handback", "Hand back confirm", "FOOD"], ["RR", "offline_resume", "Resumed mid-delivery", "FOOD"], ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "ID photo · upload failed", ""], ["RJ", "gate_out_of_area", "Gate · out of area", ""], ["RJ", "gate_cooldown", "Gate · cooldown", ""], ["RJ", "gate_banned", "Gate · account closed", ""], ["RJ", "gate_kyc_locked", "Gate · verification locked", ""], ["RJ", "topup_declined", "Top up · declined", "BOTH"], ["RJ", "offline", "Offline banner", ""], ["RJ", "on_hold", "Account on hold", ""], ["RJ", "force_update", "Force update", ""], ["RJ", "no_gps", "Location off / no GPS", ""], ["RJ", "generic_error", "Generic error", ""], ["RJM", "pickup_photo_failed", "Proof photo · upload failed", "PARCEL"], ["RJM", "strikes_final", "One strike from a pause", ""]]]];
+  const RIDER = [["First run & sign in", "Identical to the customer up to the role fork — one app, one account.", [["RJ", "splash", "Splash", ""], ["RJ", "onboard", "Onboarding · rider", ""], ["RJ", "login", "Phone sign-in", ""], ["RJ", "otp", "SMS OTP", ""], ["RJ", "role_select", "Choose your role", ""], ["RJ", "perm_loc", "Permission · location", ""], ["RJ", "perm_notif", "Permission · notifications", ""]]], ["Become a rider (KYC)", "A verified ID and bike before anything else — the same gate whichever service sends the job.", [["RJ", "kyc_intro", "Become a rider", ""], ["RJ", "kyc_form", "KYC form + consent", ""], ["RJ", "photo_capture", "Rider photo · capture", ""], ["RJ", "photo_preview", "Rider photo · preview", ""], ["RJ", "photo_uploading", "Rider photo · uploading", ""], ["RJ", "kyc_pending", "Verification pending", ""], ["RJ", "kyc_unfinished", "Verification not finished", ""], ["RJ", "kyc_cant_start", "Couldn't open the ID check", ""], ["RJ", "kyc_verified", "Verified", ""]]], ["Online & the one board", "Online means online for everything: parcels and food land in one list, each card tagged. Taken jobs simply leave the list.", [["RJM", "offline", "Offline", "BOTH"], ["RJM", "board", "Jobs · one list", "BOTH"], ["RJM", "board_empty", "Online · nothing in range", "BOTH"], ["RJM", "notifications", "One inbox", "BOTH"], ["RJM", "board_food_off", "Jobs · food dispatch off", "PARCEL"], ["RJM", "board_empty_food_off", "Food off · nothing in range", "PARCEL"]]], ["Taking a job", "The only real difference between the services: a food fare is fixed and accepted, a parcel fare is yours to name.", [["RJM", "offer_parcel", "Parcel · name your fare", "PARCEL"], ["RJ", "offer_sent", "Offer sent · waiting", "PARCEL"], ["RJ", "picked", "Customer picked you", "PARCEL"], ["RJM", "offer_food", "Food · accept the job", "FOOD"], ["RR", "offer_cash", "Food · CASH collect", "FOOD"], ["RR", "offer_upfront", "Food · kitchen wants upfront", "FOOD"], ["RR", "offer_wallet", "Food · already paid", "FOOD"]]], ["The active job", "One job at a time, one screen, one tracker with per-service step copy. Cash you carry is split: yours vs owed to a kitchen.", [["RJM", "active_parcel", "Active · parcel", "PARCEL"], ["RJ", "job_assigned", "Job · assigned", "PARCEL"], ["RJ", "job_pickup", "En route to pickup", "PARCEL"], ["RJ", "job_verify", "Verify items at pickup", "PARCEL"], ["RJ", "job_collect", "Parcel collected", "PARCEL"], ["RJ", "job_dropoff", "En route to drop-off", "PARCEL"], ["RJM", "active_food", "Active · food", "FOOD"], ["RR", "nav_rest", "To the restaurant", "FOOD"], ["RR", "pay_merchant", "Pay the merchant", "FOOD"], ["RR", "pickup_confirm", "Collect · CASH job", "FOOD"], ["RR", "pickup_paid", "Collect · already PAID", "FOOD"], ["RR", "nav_cust", "To the customer", "FOOD"], ["RR", "doorstep", "Collect · confirm cash", "FOOD"], ["RJM", "handoff", "Delivery code", "BOTH"], ["RJ", "job_handoff", "Hand-off · parcel", "PARCEL"], ["RJ", "job_delivered", "Delivered", "PARCEL"], ["RR", "delivered", "Delivered · food", "FOOD"], ["RR", "return_cash", "Return the kitchen's cash", "FOOD"], ["RJM", "pickup_photo", "Proof of pickup · capture", "PARCEL"], ["RJM", "pickup_photo_preview", "Proof of pickup · preview", "PARCEL"]]], ["Money", "One prepaid commission balance for both services, one ledger, one gate when it runs out.", [["RJM", "money", "Money tab", "BOTH"], ["RJM", "gate_topup", "Gate · top up to keep riding", "BOTH"], ["RJ", "topup_amount", "Top up · amount", "BOTH"], ["RJ", "topup_wait", "Payment prompt · wait", "BOTH"], ["RJ", "topup_success", "Top up · success", "BOTH"], ["RJ", "wallet_low", "Balance low", "BOTH"]]], ["Account & support", "One identity, one set of documents, one job history — whatever the rider carries.", [["RJM", "account", "Account", ""], ["RJ", "bike_docs", "Bike & documents", ""], ["RJ", "history", "Job history", "BOTH"], ["RJ", "settings", "Settings", ""], ["RJ", "help", "Help & support", ""], ["RJM", "strikes", "Reliability · strikes", ""]]], ["Trust & safety", "SOS, report + block, get-help-with-this-job — one set for both services.", [["RJ", "sos_idle", "SOS · live-job control", "BOTH"], ["RJ", "sos_confirm", "SOS · confirm", "BOTH"], ["RJ", "sos_contacts", "SOS · contacts", "BOTH"], ["RJ", "report", "Report + block customer", "BOTH"], ["RJ", "report_done", "Report sent", "BOTH"], ["RJ", "job_help", "Get help with this job", "BOTH"], ["RJ", "job_help_sent", "Issue logged", "BOTH"]]], ["Exceptions & edge", "Lost jobs, refused hand-offs, gate refusals and the overlays that can interrupt any screen.", [["RJ", "missed_order", "Job taken first", "PARCEL"], ["RJ", "not_chosen", "Not chosen", "PARCEL"], ["RJ", "bid_expired", "Auction expired · no pick", "PARCEL"], ["RJ", "handoff_wrong", "Wrong code · lockout", "PARCEL"], ["RJ", "undelivered", "Not delivered", "PARCEL"], ["RJ", "job_bail", "Rider cancels (bail)", "PARCEL"], ["RJ", "job_offline", "Connection lost mid-job", "PARCEL"], ["RJ", "job_cancelled", "Customer cancelled", "PARCEL"], ["RR", "offer_expired", "Offer expired", "FOOD"], ["RR", "cancel_reason", "Drop the job · before pickup", "FOOD"], ["RR", "cancel_blocked", "Can't drop after collecting", "FOOD"], ["RR", "cash_dispute", "Customer confirmed, you didn't", "FOOD"], ["RR", "code_wrong", "Wrong code", "FOOD"], ["RR", "unreachable", "Customer unreachable", "FOOD"], ["RR", "return_rest", "Return to restaurant", "FOOD"], ["RR", "handback", "Hand back confirm", "FOOD"], ["RR", "offline_resume", "Resumed mid-delivery", "FOOD"], ["RJ", "kyc_failed", "Verification failed", ""], ["RJ", "kyc_expired", "ID expired (later)", ""], ["RJ", "photo_failed", "Rider photo · upload failed", ""], ["RJ", "gate_out_of_area", "Gate · out of area", ""], ["RJ", "gate_cooldown", "Gate · cooldown", ""], ["RJ", "gate_banned", "Gate · account closed", ""], ["RJ", "gate_kyc_locked", "Gate · verification locked", ""], ["RJ", "topup_declined", "Top up · declined", "BOTH"], ["RJ", "offline", "Offline banner", ""], ["RJ", "on_hold", "Account on hold", ""], ["RJ", "force_update", "Force update", ""], ["RJ", "no_gps", "Location off / no GPS", ""], ["RJ", "generic_error", "Generic error", ""], ["RJM", "pickup_photo_failed", "Proof photo · upload failed", "PARCEL"], ["RJM", "strikes_final", "One strike from a pause", ""]]]];
 
   /* Merchant — the kitchen tablet. Food-only by definition, so no service tags. */
   const MERCHANT = (window.RGD ? window.RGD.MERCHANT : []).map(([title, sub, tiles]) => [title.replace(/^Act \d+ · /, ""), sub, tiles.map(([id,, t]) => ["RM", id, t, ""])]);
@@ -6134,28 +6134,28 @@ node("job_help_sent", 6, B.B9, "B3·2", "Issue logged", {
   a: "Status pill carries text, not colour-only",
   ref: "kyc_verified (1·4)"
 });
-// NEW · KYC ID-photo states (plan §2 · E) — extends the KycForm photo row
-node("photo_capture", 0, B.B10, "E·1", "ID photo · capture", {
+// NEW · KYC rider-photo states (plan §2 · E) — extends the KycForm photo row
+node("photo_capture", 0, B.B10, "E·1", "Rider photo · capture", {
   nw: 1,
-  p: "Camera stage for the ID photo (fix P3): card-shaped frame guide + the three readability rules. Entry: the photo row on kyc_form (1·2).",
+  p: "Camera stage for the RIDER PORTRAIT (D3 — the vendor SDK photographs the document itself; this photo is for the admin reviewer, and the fallback when KYC_MODE=manual): portrait oval guide + the three face-framing rules. Entry: the photo row on kyc_form (1·2).",
   s: "Camera open",
   c: "Take photo (shutter)",
-  h: "1st frame guide · 2nd shutter · 3rd rules line",
-  ic: "x (close) · shutter is a control, not a glyph",
-  a: "Shutter 68px, aria “Take photo”; white-on-ink contrast",
+  h: "1st oval guide · 2nd shutter · 3rd rules line",
+  ic: "x (close) · both close and shutter are controls, not glyphs",
+  a: "Shutter 68px aria “Take photo”; close --target-min aria “Close” (N-02 — it is the only exit from a full-bleed camera); white-on-ink contrast",
   ref: "kyc_form (1·2)"
 });
-node("photo_preview", 1, B.B10, "E·2", "ID photo · preview", {
+node("photo_preview", 1, B.B10, "E·2", "Rider photo · preview", {
   nw: 1,
-  p: "Self-check before upload — glare/blur is the top decline reason (KYC_DECLINE_REASON_LABELS), so the rider filters it here instead of burning one of two attempts. Retake keeps the current saved photo.",
+  p: "Self-check before upload — blur/shadow is what makes a portrait unusable for the reviewer, so the rider filters it here instead of burning one of two attempts. Retake keeps the current saved photo.",
   s: "Reviewing",
   c: "Use this photo",
-  h: "1st photo · 2nd readability question · 3rd use/retake",
+  h: "1st photo · 2nd clarity question · 3rd use/retake",
   ic: "— (photo placeholder)",
-  a: "Actions ≥44px; question is the heading",
+  a: "Actions ≥ --target-min; question is the heading",
   ref: "kyc_failed reasons (1·b1)"
 });
-node("photo_uploading", 2, B.B10, "E·3", "ID photo · uploading", {
+node("photo_uploading", 2, B.B10, "E·3", "Rider photo · uploading", {
   nw: 1,
   p: "Non-blocking upload inside the form: visible progress, the rest of the form stays editable, Submit disabled until the photo lands. Slow networks are the norm here — never a full-screen spinner.",
   s: "Uploading · 60%",
@@ -6165,14 +6165,14 @@ node("photo_uploading", 2, B.B10, "E·3", "ID photo · uploading", {
   a: "Progress is role=status with percent text, not colour-only",
   ref: "kyc_form (1·2)"
 });
-node("photo_failed", 3, B.B10, "E·4", "ID photo · upload failed", {
+node("photo_failed", 3, B.B10, "E·4", "Rider photo · upload failed", {
   nw: 1,
   p: "Recoverable failure (fix P3): retry in place, and the retake-preserve rule stated outright — the last good photo is only replaced once a new one uploads. A failed retry never wipes anything.",
   s: "Failed · recoverable",
   c: "Try again",
   h: "1st failure row + retry · 2nd keep-current option · 3rd preserve note",
   ic: "circle-alert, check",
-  a: "Error tied to the photo row; both actions ≥44px",
+  a: "Error tied to the photo row; both actions ≥ --target-min",
   ref: "handoff_wrong recovery (4·b1)"
 });
 
@@ -8782,20 +8782,34 @@ try { (() => {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 10,
-      padding: "40px 16px 10px"
+      gap: 4,
+      padding: "34px 16px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": "Close",
+    style: {
+      width: "var(--target-min)",
+      height: "var(--target-min)",
+      marginLeft: -12,
+      display: "grid",
+      placeItems: "center",
+      background: "none",
+      border: "none",
+      padding: 0,
+      cursor: "pointer"
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "x",
     size: 20,
     color: "#fff"
-  }), /*#__PURE__*/React.createElement("span", {
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 16,
       fontWeight: 700,
       color: "#fff"
     }
-  }, "ID photo")), /*#__PURE__*/React.createElement("div", {
+  }, "Rider photo")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       display: "flex",
@@ -8807,9 +8821,9 @@ try { (() => {
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: "100%",
-      aspectRatio: "1.586 / 1",
-      borderRadius: 14,
+      width: "72%",
+      aspectRatio: "0.78 / 1",
+      borderRadius: "50%",
       border: "2.5px dashed rgba(255,255,255,.75)",
       display: "grid",
       placeItems: "center",
@@ -8821,10 +8835,10 @@ try { (() => {
       fontWeight: 600,
       color: "rgba(255,255,255,.8)",
       textAlign: "center",
-      maxWidth: 190,
+      maxWidth: 170,
       lineHeight: 1.5
     }
-  }, "Fit the photo page of your ID inside the frame")), /*#__PURE__*/React.createElement("div", {
+  }, "Put your face inside the oval")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "rgba(255,255,255,.7)",
@@ -8832,7 +8846,7 @@ try { (() => {
       maxWidth: 240,
       lineHeight: 1.5
     }
-  }, "Names and numbers readable \xB7 no glare \xB7 all four corners in")), /*#__PURE__*/React.createElement("div", {
+  }, "Face the light \xB7 no hat or sunglasses \xB7 look straight ahead")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "center",
@@ -8871,14 +8885,14 @@ try { (() => {
       padding: "3px 8px",
       borderRadius: 6
     }
-  }, "ID photo preview")), /*#__PURE__*/React.createElement("div", {
+  }, "Rider photo preview")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 700,
       color: "var(--ink)",
       marginBottom: 2
     }
-  }, "Can you read everything?"), /*#__PURE__*/React.createElement(Sub, null, "Check the names, ID number and photo are sharp \u2014 glare or blur is the top reason checks fail."), /*#__PURE__*/React.createElement(Button, {
+  }, "Is your face clear?"), /*#__PURE__*/React.createElement(Sub, null, "Check your whole face is in frame and sharp \u2014 blur or shadow is the top reason a photo has to be retaken."), /*#__PURE__*/React.createElement(Button, {
     label: "Use this photo",
     onClick: noop
   }), /*#__PURE__*/React.createElement(Button, {
@@ -11220,6 +11234,26 @@ try { (() => {
     title: "Finishing verification\u2026",
     message: "Your ID check is with Didit \u2014 riders go online once it's verified. This usually takes under a minute."
   }));
+  const KycUnfinished = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "id-card",
+    title: "Finish verifying your ID",
+    message: "You haven't finished verifying your ID. It takes about a minute."
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Finish verifying",
+    onClick: noop
+  })));
+  const KycCantStart = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, null), /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "triangle-alert",
+    title: "We couldn't open the ID check",
+    message: "This is usually the camera or the connection. Check both and try again."
+  }, /*#__PURE__*/React.createElement(Button, {
+    label: "Try again",
+    onClick: noop
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Contact support",
+    variant: "ghost",
+    onClick: noop
+  })));
   const KycVerified = () => /*#__PURE__*/React.createElement(Pad, null, /*#__PURE__*/React.createElement(RiderHead, {
     chip: /*#__PURE__*/React.createElement(StatusPill, {
       status: "Verified",
@@ -13103,6 +13137,8 @@ try { (() => {
     kyc_intro: () => S(/*#__PURE__*/React.createElement(KycIntro, null)),
     kyc_form: () => S(/*#__PURE__*/React.createElement(KycForm, null)),
     kyc_pending: () => S(/*#__PURE__*/React.createElement(KycPending, null)),
+    kyc_unfinished: () => S(/*#__PURE__*/React.createElement(KycUnfinished, null)),
+    kyc_cant_start: () => S(/*#__PURE__*/React.createElement(KycCantStart, null)),
     kyc_verified: () => S(/*#__PURE__*/React.createElement(KycVerified, null)),
     kyc_failed: () => S(/*#__PURE__*/React.createElement(KycFailed, null)),
     kyc_expired: () => S(/*#__PURE__*/React.createElement(KycExpired, null)),
@@ -17782,6 +17818,10 @@ try { (() => {
     hint: "Stored on your account only \u2014 we don't verify it. Riders go through a separate ID check."
   }), /*#__PURE__*/React.createElement(Button, {
     label: "Continue",
+    onClick: noop
+  }), /*#__PURE__*/React.createElement(Button, {
+    label: "Use a different number",
+    variant: "ghost",
     onClick: noop
   }));
 
