@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.44.0](https://github.com/unnfazzed/Lynia/compare/v0.43.0...v0.44.0) (2026-08-20)
+
+
+### Features
+
+* **mobile:** split the KYC pending wall into the three states it always was ([#843](https://github.com/unnfazzed/Lynia/issues/843)) ([40aeaf0](https://github.com/unnfazzed/Lynia/commit/40aeaf01fdc390057f665efe1d5c859e655fd3c4))
+* **mobile:** verify inside the app — Didit's native SDK replaces the browser handoff ([#847](https://github.com/unnfazzed/Lynia/issues/847)) ([a80e145](https://github.com/unnfazzed/Lynia/commit/a80e1456979d67dbcc611d3fa899ca15d4cc1f19))
+
 ## [0.43.0](https://github.com/unnfazzed/Lynia/compare/v0.42.1...v0.43.0) (2026-08-20)
 
 
