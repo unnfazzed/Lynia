@@ -73,6 +73,28 @@ const ACTIVATION_RETRY_MS = 15_000;
 // caught. The way back is not lost: `activeJobBanner` re-renders itself the moment a fetch succeeds,
 // and the poll self-heals. Do not reintroduce a bare-`isError` banner here; see KNOWN_BUGS UX20-01.
 
+/**
+ * P1-2 / T8 — the way out of a KYC wall that has nothing else on it.
+ *
+ * The owner's constraint is that not finishing KYC must not stop a rider using the app. Routing
+ * already honoured that (KYC gates *rides*, never login), but the board did not: a rider waiting on a
+ * check got a single dead EmptyState and nowhere to go but the tab bar. Someone held in manual review
+ * for two days learns from that screen that the app is not for them yet.
+ *
+ * Deliberately the SAME label as the Account tab's row sub-line ("Order food and send parcels") and
+ * NOT "Back to customer". The 2026-08-16 removal was of a row named "Back to customer", and the
+ * absence tests written afterwards named that string — so re-adding a bridge under any other name
+ * passed all of them. Those tests now pin the whole action set per wall (see this screen's suite), and
+ * the naming here is deliberate rather than incidental: it says what the rider gets, not which role
+ * they are leaving.
+ *
+ * Ghost, never primary: on a wall with a real action it would compete with the one tap that clears
+ * the wall, which is why it appears only where there is no such tap.
+ */
+function CustomerBridge({ onPress }: { onPress: () => void }): React.ReactElement {
+  return <Button label="Order food and send parcels" variant="ghost" onPress={onPress} />;
+}
+
 /** The board's two exits are the parcel job and the food job — the app's two heaviest routes after
  *  the food tracker (36 and 39 new modules, plus maps, socket.io-client and, for the parcel job, the
  *  image-picker/manipulator pair). A rider accepting work is the least patient tap in the product, so
@@ -366,6 +388,16 @@ export default function RiderHome(): React.ReactElement {
   // A ref, not state: nothing renders from it, and it must be readable by the NEXT mutationFn call
   // without waiting for a re-render — a state write here would be read stale by a fast second tap.
   const forceFreshSession = useRef(false);
+
+  /**
+   * The customer bridge's action (P1-2 / T8). A plain replace, with none of the Account tab's
+   * offline-toggle or confirm-sheet machinery: both of those exist to protect a shift, and a rider
+   * behind a KYC wall has never had one — the server refuses to put an unverified rider online at
+   * all. `replace`, not `push`, so the customer home does not stack a back-arrow onto a rider wall.
+   */
+  const leaveForCustomer = useCallback((): void => {
+    router.replace("/home");
+  }, [router]);
   const kycGate = resolveKycGate(rider, kycLaunch);
 
   // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
@@ -1183,6 +1215,7 @@ export default function RiderHome(): React.ReactElement {
               title="Your ID is under review"
               message="Your documents are being checked by our team. We'll notify you as soon as it's done — no action needed from you."
             >
+              <CustomerBridge onPress={leaveForCustomer} />
             </EmptyState>
           ) : kycGate.kind === "cant_start" ? (
             // RJ kyc_cant_start (1·3c). NOT a failed check — nothing was assessed — so it must not
@@ -1204,14 +1237,24 @@ export default function RiderHome(): React.ReactElement {
             </EmptyState>
           ) : kycGate.kind === "in_flight" ? (
             // RJ kyc_pending (1·3a). The check really is with the vendor, so there is deliberately no
-            // action — the board polls and the rider owes nothing. The mock draws no exit here either:
-            // the owner moved the customer bridge off this screen onto the Account tab on 2026-08-16,
-            // and the tab bar is the way out. See the absence test in this screen's suite.
+            // action to push it forward — the board polls and the rider owes nothing.
+            //
+            // The bridge below REVERSES the 2026-08-16 decision that moved "Back to customer" off this
+            // screen onto the Account tab. That decision was made from a photo of a screen whose only
+            // other content was a wait; the owner reinstated it on 2026-08-20 ("execute all", against
+            // T8 stated as needing exactly this ruling). Logged as D-36 — read that entry before
+            // removing this again, because it has now moved twice.
+            //
+            // It is a GHOST, and that is the whole argument for it being safe: it competes with
+            // nothing, because this wall has no primary. A rider waiting on a check still needs to
+            // eat.
             <EmptyState
               icon="id-card"
               title="Finishing verification…"
               message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute."
-            />
+            >
+              <CustomerBridge onPress={leaveForCustomer} />
+            </EmptyState>
           ) : (
             // RJ kyc_unfinished (1·3b). The rider opened the check and backed out, or never opened it.
             // The screen above would be a lie here: nothing was submitted, so "your ID check is with

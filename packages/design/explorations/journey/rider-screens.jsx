@@ -211,7 +211,13 @@ function KycForm() {
 const KycPending = () => (
   <Pad>
     <RiderHead />
-    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute." />
+    <EmptyState icon="id-card" title="Finishing verification…" message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute.">
+      {/* The customer bridge, reinstated 2026-08-20 (D-36) after its 2026-08-16 removal. Drawn ONLY
+          on the two walls where the rider can do nothing but wait — here and ops review — never
+          beside a wall whose one tap clears it. Ghost: it competes with nothing, because this wall
+          has no primary. */}
+      <Button label="Order food and send parcels" variant="ghost" onClick={noop} />
+    </EmptyState>
   </Pad>
 );
 /* 1·3b — the rider opened the check and backed out, or never opened it. The screen above would be a

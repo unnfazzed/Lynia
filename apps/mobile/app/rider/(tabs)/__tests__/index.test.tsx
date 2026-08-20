@@ -682,9 +682,14 @@ describe("rider board (owner 2026-08-12: a failing background active-job check m
 
 // Owner instruction (2026-08-16), from a photo of the rider board's "Finish verifying your ID" wall:
 // remove "Refresh status" — the app handles this from the background, no manual refreshing — and move
-// "Back to customer" off this screen onto the Account tab. Both are ABSENCE assertions, which is the
-// only kind that can regress silently: a future edit re-adding either button breaks nothing else.
-describe("rider board (owner 2026-08-16: no manual refresh, and no customer bridge on this screen)", () => {
+// "Back to customer" off this screen onto the Account tab. ABSENCE assertions, which is the only kind
+// that can regress silently: a future edit re-adding either button breaks nothing else.
+//
+// HALF of this was reversed on 2026-08-20 (T8 / D-36): the customer bridge is back, on the two walls
+// where the rider can do nothing but wait. What survives here is everything that was NOT reversed —
+// "Refresh status" is still gone everywhere, the OLD bridge name and its confirm sheet are still
+// gone, and the walls that have a real action still carry no competing exit.
+describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not restored wholesale)", () => {
   function labelHits(tree: renderer.ReactTestRenderer, label: string): number {
     // Buttons carry their copy as a `label` prop; the copy also renders as a Text child, so check both.
     return (
@@ -727,7 +732,10 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     expect(labelHits(activeTree, "Refresh status")).toBe(0);
   });
 
-  it("'Back to customer' is gone from the board — the bridge lives on the Account tab now", async () => {
+  // The reinstated bridge is a plain ghost that navigates. The button REMOVED in 2026-08-16 was a
+  // different thing: it opened a confirm sheet about going offline and losing nearby deliveries. That
+  // machinery stayed removed, and on a verified/online board there is no bridge at all.
+  it("neither the old 'Back to customer' button nor its confirm sheet came back", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
@@ -741,7 +749,11 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     expect(labelHits(activeTree, "Go to customer view")).toBe(0);
   });
 
-  it("a KYC-walled rider sees no customer bridge on the board (it is reachable via the tab bar)", async () => {
+  // The scoping rule, from the wall that has something to press. An auto-mode rider with no server
+  // pending-state resolves to `unfinished`, whose primary — one tap — clears the wall outright. A
+  // bridge beside it would compete with the tap that actually solves the rider's problem, so the
+  // reinstatement deliberately stops short of this wall.
+  it("a wall with a real action carries no competing bridge", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -751,30 +763,34 @@ describe("rider board (owner 2026-08-16: no manual refresh, and no customer brid
     await settle();
 
     expect(labelHits(activeTree, "Back to customer")).toBe(0);
-    // The wall itself still renders — this is a removal, not a regression of the gate. (Copy is the
-    // mock's since the pending split: an auto-mode rider with no server pending-state resolves to
-    // `unfinished`, whose primary is "Finish verifying".)
+    expect(labelHits(activeTree, "Order food and send parcels")).toBe(0);
     expect(labelHits(activeTree, "Finish verifying")).toBeGreaterThan(0);
   });
 
   /**
-   * The 2026-08-16 removal, pinned by SHAPE rather than by string.
+   * Every KYC wall's action set, pinned by SHAPE rather than by string.
    *
-   * The assertions above name "Back to customer" — which only stops the bridge coming back under the
-   * name it had. The P0-1 pending split (2026-08-20) proposed re-adding it as "Order food and send
-   * parcels", which every absence assertion above would have waved through. The owner's instruction
-   * was about the bridge, not the label, so pin the whole action set: any new action on a KYC wall
-   * fails here and has to be argued for on purpose.
+   * Written for the 2026-08-16 removal of the customer bridge, and the reason it was written that way
+   * still holds after the owner REINSTATED the bridge on 2026-08-20 (T8 / D-36). The absence
+   * assertions above name "Back to customer", which only ever stopped the bridge returning under the
+   * name it had — re-adding it as "Order food and send parcels" passed every one of them. So this
+   * table pins the whole set: the bridge's presence is now asserted exactly where it was asserted
+   * absent, and any OTHER new action on a KYC wall still fails here and has to be argued for.
+   *
+   * Where the bridge is, and is not, is the argument the reinstatement was granted on: it appears on
+   * the two walls a rider can do nothing about — the vendor is deciding, or ops is — and on neither
+   * wall that has a tap which clears it, where a second action would compete with the first.
    */
+  const CUSTOMER_BRIDGE = "Order food and send parcels";
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
-    ["in flight — with the vendor, nothing to press", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, []],
-    ["unfinished — the rider's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying"]],
-    ["manual/ops review — nothing to press", { kycStatus: "pending", kycMode: "manual" }, []],
+    ["in flight — with the vendor, only the bridge", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, [CUSTOMER_BRIDGE]],
+    ["unfinished — the rider's move, no competing exit", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying"]],
+    ["manual/ops review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "manual" }, [CUSTOMER_BRIDGE]],
     ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID"]],
     ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again"]],
   ];
 
-  it.each(WALL_ACTIONS)("%s: the wall offers exactly its own actions and no exit", async (_name, patch, expected) => {
+  it.each(WALL_ACTIONS)("%s: the wall offers exactly its own actions", async (_name, patch, expected) => {
     mockGetMe.mockResolvedValue(meFixture(patch));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);

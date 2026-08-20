@@ -1592,8 +1592,71 @@ gates it returns to — stays fully in parity and is aligned as normal.
 analysis APIs) would have been fully Lynia-drawn and parity-able. It was put to the owner and not
 chosen, because it buys those pixels with passive-only liveness, no NFC, and a false-reject rate we
 would own on entry-level phones — a bad trade at the gate that decides who carries strangers'
-parcels. Set the SDK's `fontFamily` to Inter and `languageCode` explicitly so the embedded screens
-sit as close to the system as the seam allows.
+parcels.
+
+**AMENDED 2026-08-20 — neither config knob is set, and the original instruction here was wrong.**
+This entry first said to *"set the SDK's `fontFamily` to Inter and `languageCode` explicitly so the
+embedded screens sit as close to the system as the seam allows."* That was written before the SDK was
+read. Both halves fail on contact:
+
+- **`fontFamily: "Inter"` would not resolve, and would be actively harmful if it did.** The SDK's own
+  docs require the font to be *"registered in your app's native configuration"*. This app registers
+  type through `expo-font`'s `loadAsync` at the RN layer, under the names `Inter_400Regular` /
+  `Inter_600SemiBold` / `Inter_700Bold` (`src/ui/fonts.ts`) — there is no family called `Inter`, and a
+  third-party native SDK resolving a `Typeface` does not see expo-font's registry. Worse, those TTFs
+  are deliberately **subset** (there is a `check-font-charset` lint pinning the safe ranges): Didit's
+  UI carries its own strings, so a subset face would render tofu for anything outside our charset.
+- **`languageCode` has nothing honest to pass.** The app ships no i18n — no locale store, no
+  `getLocales` call, English hardcoded throughout. Forcing `"en"` would *override* the SDK's default
+  (device locale, English fallback) and take a Didit-supported language away from a rider whose phone
+  is set to it. The default is strictly better until the app itself has a locale to hand over.
+
+So `startVerification` is called with no `DiditConfig` at all (`src/kyc/verify.ts`), which also keeps
+`showCloseButton` and `showExitConfirmation` at their `true` defaults — the exit affordance the
+navigation review (N-05…N-07) requires of every full-screen step. **Revisit `languageCode` if and
+when the app gains a locale setting; leave `fontFamily` alone until type is registered natively AND
+shipped unsubset.**
 
 **Retire this entry** if the document step later moves to Route B's in-app capture (kept open in the
 plan's §3), at which point those screens come back under parity and need mocks.
+
+---
+
+## D-36 · The customer bridge returns to the KYC waiting walls — APPROVED (2026-08-20)
+
+**This reverses D-16's placement decision for two screens, and it is the second time this control has
+moved. Read the whole entry before moving it a third time.**
+
+**History.** On **2026-08-16** the owner, from a photo of the rider board's "Finish verifying your ID"
+wall, removed `"Back to customer"` from the board and moved the bridge onto the Account tab (D-16).
+On **2026-08-20**, presented with T8 stated explicitly as *"REFUSED, needs an owner ruling — to land
+it, the owner has to reverse 2026-08-16"*, the owner answered *"Just proceed.. Execute all"*. That is
+the ruling, and this entry is it.
+
+**What changed in the app and the kit.** `packages/design/explorations/journey/rider-screens.jsx`'s
+`KycPending` (gallery id `RJ.kyc_pending`) gains a ghost `"Order food and send parcels"`, mirrored in
+`_ds_bundle.js`. The app draws it on `in_flight` and on `manual_review` — the latter has no gallery
+screen of its own (ops review is a *mode*, not a drawn state), so it borrows the same idiom.
+
+**Where it is deliberately NOT drawn, which is the argument the reversal was granted on.** Not on
+`unfinished` and not on `cant_start`. Both have a tap that clears the wall, and a bridge beside it
+competes with the one action that actually solves the rider's problem. It appears only where the
+rider can do nothing at all — the vendor is deciding, or ops is — which is the exact case the
+constraint was about: *"not finishing KYC should not stop a rider from logging in"*, and a rider held
+in manual review for two days otherwise learns the app is not for them yet.
+
+**Why the label is not `"Back to customer"`.** The 2026-08-16 removal was pinned by absence tests
+naming that string, so re-adding the bridge under any other name passed all of them — a near-miss
+caught during T8. Those tests now pin the **whole action set per wall**, so the bridge's presence is
+asserted exactly where it was asserted absent, and any *other* new action on a KYC wall still fails
+on purpose. The chosen label matches the Account tab's own sub-line and says what the rider gets
+rather than which role they are leaving. The button removed in 2026-08-16 — the one that opened an
+offline-confirm sheet — stays removed; this is a plain ghost that navigates, because a rider behind a
+KYC wall has never had a shift to protect.
+
+⚠️ **UPSTREAM SYNC OWED**, compounding D-33's and D-35's. The `KycPending` change was made *in this
+repo*, not exported from the Claude Design tool. The next export must carry it or it will silently
+revert — and a revert here reads as the 2026-08-16 decision reasserting itself, which it is not.
+
+**Retire this entry** when an export carries the ghost on `RJ.kyc_pending`; the placement itself is a
+standing owner decision, not a deviation, so only the in-repo edit is what needs retiring.
