@@ -1324,7 +1324,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_capture",
-      "title": "ID photo · capture",
+      "title": "Rider photo · capture",
       "tag": "",
       "mode": "phone"
     },
@@ -1334,7 +1334,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_preview",
-      "title": "ID photo · preview",
+      "title": "Rider photo · preview",
       "tag": "",
       "mode": "phone"
     },
@@ -1344,7 +1344,7 @@
       "band": "Become a rider (KYC)",
       "src": "RJ",
       "id": "photo_uploading",
-      "title": "ID photo · uploading",
+      "title": "Rider photo · uploading",
       "tag": "",
       "mode": "phone"
     },
@@ -2104,7 +2104,7 @@
       "band": "Exceptions & edge",
       "src": "RJ",
       "id": "photo_failed",
-      "title": "ID photo · upload failed",
+      "title": "Rider photo · upload failed",
       "tag": "",
       "mode": "phone"
     },

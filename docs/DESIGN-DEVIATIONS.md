@@ -1539,6 +1539,22 @@ document itself; our capture serves the admin reviewer and the `KYC_MODE=manual`
 ID-card rectangle became a portrait oval and the rules changed from document readability to face
 framing — *"all four corners in"* describes a card, not a person.
 
+The 44px box is written `var(--target-min)`, not the literal — the token defines that value, and the
+whole point of D2 is that the floor is a system decision, not a number this one screen chose.
+
+**Changed — the rest of the E series follows the portrait re-scope.** D3 changes what E·1 *captures*,
+so every screen and label describing that artifact had to change with it, or the flow would tell the
+rider two different things about the same photo:
+
+| | Was | Now |
+|---|---|---|
+| `photo_preview` (E·2) body | "Can you read everything?" · "Check the names, ID number and photo are sharp — glare or blur…" | "Is your face clear?" · "Check your whole face is in frame and sharp — blur or shadow…" |
+| E·2 preview placeholder | "ID photo preview" | "Rider photo preview" |
+| Gallery tiles + `rider-map.jsx` E·1–E·4 | "ID photo · capture / preview / uploading / upload failed" | "Rider photo · …" |
+
+E·3 and E·4 keep their bodies: they describe upload mechanics and progress, which the re-scope does
+not touch. Only their titles name the artifact.
+
 **D2, recorded here because this is the screen that forced it.** `docs/DESIGN.md` requires ≥44px touch
 targets; `CLAUDE.md` says a mock drawing smaller wins. The 20px ✕ was legal under one and a violation
 under the other. Resolution: the 2026-08-10 rule is scoped to **parity** — it stops the APP silently
@@ -1548,8 +1564,9 @@ writing that precedence into `CLAUDE.md` so it stops being re-argued (T9).
 
 ⚠️ **UPSTREAM SYNC OWED**, compounding D-33's. Edited in-repo, not exported from the Claude Design
 project that `packages/design/` mirrors, so the next export reverts all of it. Replay there:
-`rider-screens.jsx` (two new components + registry), `gallery-map.js` (two band entries),
-`screens.jsx` (Register ghost), `rider-screens-safety.jsx` (PhotoCapture header + oval + rules), and
+`rider-screens.jsx` (two new components + registry), `gallery-map.js` (two band entries + the four
+E-series tile labels), `screens.jsx` (Register ghost), `rider-screens-safety.jsx` (PhotoCapture
+header + oval + rules, PhotoPreview re-caption), `rider-map.jsx` (E·1–E·4 titles, E·1/E·2 prose), and
 the matching `_ds_bundle.js` twins. **Not touched:** the interactive kit's own registration form
 (`ui_kits/mobile/app.js`) still lacks the exit — it is a live form needing a handler, so it was left
 for the export rather than half-wired here.

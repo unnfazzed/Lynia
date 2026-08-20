@@ -121,9 +121,9 @@ export const PARITY_STATUS = {
   "RJ.perm_loc": { status: "PENDING" }, // Permission · location
   "RJ.perm_notif": { status: "PENDING" }, // Permission · notifications
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
-  "RJ.photo_capture": { status: "PENDING" }, // ID photo · capture
-  "RJ.photo_preview": { status: "PENDING" }, // ID photo · preview
-  "RJ.photo_uploading": { status: "PENDING" }, // ID photo · uploading
+  "RJ.photo_capture": { status: "PENDING" }, // Rider photo · capture
+  "RJ.photo_preview": { status: "PENDING" }, // Rider photo · preview
+  "RJ.photo_uploading": { status: "PENDING" }, // Rider photo · uploading
   "RJ.kyc_pending": { status: "PENDING" }, // Verification pending
   // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of
   // docs/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
@@ -161,7 +161,7 @@ export const PARITY_STATUS = {
   "RJ.job_cancelled": { status: "PENDING" }, // Customer cancelled
   "RJ.kyc_failed": { status: "PENDING" }, // Verification failed
   "RJ.kyc_expired": { status: "PENDING" }, // ID expired (later)
-  "RJ.photo_failed": { status: "PENDING" }, // ID photo · upload failed
+  "RJ.photo_failed": { status: "PENDING" }, // Rider photo · upload failed
   "RJ.gate_out_of_area": { status: "PENDING" }, // Gate · out of area
   "RJ.gate_cooldown": { status: "PENDING" }, // Gate · cooldown
   "RJ.gate_banned": { status: "PENDING" }, // Gate · account closed
