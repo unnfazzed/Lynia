@@ -17,7 +17,7 @@ import { pushOnce } from "../../../src/push/push";
 import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { isKycLocked, kycDeclineLabel, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { formatMoney } from "../../../src/logic/money";
@@ -352,10 +352,11 @@ export default function RiderHome(): React.ReactElement {
   });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
   const rider = meQ.data?.rider;
-  const kyc = rider?.kycStatus;
-  // KYC decline detail (item 4): the specific reason + whether self-resubmit is locked (2+ attempts).
-  const kycReasonLabel = kycDeclineLabel(rider?.kycDeclineReason);
-  const kycLocked = isKycLocked(rider?.kycAttempts);
+  // D8: the KYC wall is resolved ONCE, as a tagged state, instead of re-derived inline. What was a
+  // six-deep nested ternary over verified / expired / failed / locked / manual-mode / pending in the
+  // render is now a switch over `resolveKycGate`'s result — which is unit-tested in gates.test.tsx
+  // rather than only reachable by rendering the whole board.
+  const kycGate = resolveKycGate(rider);
 
   // Online-gate refusal (item 2): the reason the rules API blocked going online (kyc / suspended /
   // on_hold / cooldown). Set from the mutation's onError, cleared once the rider is online.
@@ -1075,7 +1076,9 @@ export default function RiderHome(): React.ReactElement {
             <Button label="Retry" onPress={() => void meQ.refetch()} loading={meQ.isFetching} />
           </EmptyState>
         ) : knownUnverified ? (
-          !meQ.data?.rider ? (
+          // D8: one switch over the resolved wall, not a nested ternary. Adding a state means adding a
+          // case here and a branch in `resolveKycGate` — both visible, neither buried in a chain.
+          kycGate.kind === "not_a_rider" ? (
             // Not a rider yet → the full onboarding form (name, ID, bike, photo).
             <EmptyState
               icon="id-card"
@@ -1084,7 +1087,7 @@ export default function RiderHome(): React.ReactElement {
             >
               <Button label="Become a rider" onPress={() => router.push("/rider/become")} />
             </EmptyState>
-          ) : kyc === "expired" ? (
+          ) : kycGate.kind === "expired" ? (
             // 1·b2: a previously-verified rider whose ID lapsed. Distinct from the first-time "verify"
             // and the "declined" states — the rider was good, the document aged out. Re-verify mints a
             // fresh Didit session (the A-02 counter was reset server-side, so they're never locked out).
@@ -1095,39 +1098,37 @@ export default function RiderHome(): React.ReactElement {
             >
               <Button label="Re-verify my ID" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
             </EmptyState>
-          ) : kyc === "failed" ? (
-            kycLocked ? (
-              // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"
-              // so the rider isn't stuck re-running a check the system won't accept again.
-              <EmptyState
-                icon="triangle-alert"
-                title="We couldn't verify your ID"
-                message={
-                  kycReasonLabel
-                    ? `Your ID check didn't pass: ${kycReasonLabel.toLowerCase()}. You've reached the retry limit — contact support to finish verifying.`
-                    : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
-                }
-              >
-                {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
-                    instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
-                    5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
-                <SupportCallRow />
-              </EmptyState>
-            ) : (
-              // Honest declined state with the specific reason + a real retry (a fresh session).
-              <EmptyState
-                icon="triangle-alert"
-                title="We couldn't verify your ID"
-                message={
-                  kycReasonLabel
-                    ? `${kycReasonLabel}. Fix that and try again — or contact support if it keeps failing.`
-                    : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
-                }
-              >
-                <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
-              </EmptyState>
-            )
-          ) : rider?.kycMode === "manual" ? (
+          ) : kycGate.kind === "locked" ? (
+            // Two+ failed attempts (A-02): self-resubmit is locked — hand off to support, no "Try again"
+            // so the rider isn't stuck re-running a check the system won't accept again.
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't verify your ID"
+              message={
+                kycGate.reasonLabel
+                  ? `Your ID check didn't pass: ${kycGate.reasonLabel.toLowerCase()}. You've reached the retry limit — contact support to finish verifying.`
+                  : "Your ID check didn't pass and you've reached the retry limit. Contact support to finish verifying."
+              }
+            >
+              {/* R4: the lock tells the rider to "contact support" — make that a real, tappable action
+                  instead of dead copy, so they aren't stranded with only a no-op "Refresh status". The
+                  5 Jul design makes contact-support a `tel:` call, not a mailto dead end. */}
+              <SupportCallRow />
+            </EmptyState>
+          ) : kycGate.kind === "declined" ? (
+            // Honest declined state with the specific reason + a real retry (a fresh session).
+            <EmptyState
+              icon="triangle-alert"
+              title="We couldn't verify your ID"
+              message={
+                kycGate.reasonLabel
+                  ? `${kycGate.reasonLabel}. Fix that and try again — or contact support if it keeps failing.`
+                  : "The check didn't pass — often a blurry photo or glare on the ID. Try again, or contact support if it keeps failing."
+              }
+            >
+              <Button label="Try again" onPress={() => retryM.mutate()} loading={pendingOrQueued(retryM)} />
+            </EmptyState>
+          ) : kycGate.kind === "manual_review" ? (
             // BH-03: manual KYC mode has no vendor browser step — the old copy told every pending
             // rider to "continue in the browser" and go there via a "Continue verification" tap that
             // silently no-oped server-side, which read as a stuck/broken flow. Be honest: this is ops
