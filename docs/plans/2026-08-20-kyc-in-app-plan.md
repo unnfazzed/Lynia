@@ -302,8 +302,14 @@ either can be reverted without the other. The dependency audit that preceded #83
 and the one interop question (react-native-maps) resolves through RN's automatic interop layer.
 
 **Biggest risk, now that Route A is chosen:** the New Architecture migration (G9). It is the one item that
-can sink the schedule, it is orthogonal to KYC, and it must be proven on a real device build **before** a
-line of KYC code is written — otherwise a failed migration strands finished KYC work behind it. Second:
+can sink the schedule and it is orthogonal to KYC. This originally read *"it must be proven on a real
+device build before a line of KYC code is written"* — a gate that can no longer be met, because the
+owner directed the KYC code to be written first (see the Phase 2 note above). Stating an unmeetable
+condition is worse than stating none: it reads as satisfiable and quietly never is. **The surviving
+gate is Phase 5's:** the preview build must come back green on a real device, running the New
+Architecture *and* the SDK together, before anything is submitted to a track. If it fails, the
+separation is done by revert — the flag and the seam are independent — not by having sequenced them.
+Second:
 silent degradation of the IR26-04 dedupe and threshold bands if the payload shape changes without tests
 (G8) — less likely under Route A, since the webhook contract is unchanged, but the extractors still fail
 open. (Route B's false-reject risk is deferred with Route B.)

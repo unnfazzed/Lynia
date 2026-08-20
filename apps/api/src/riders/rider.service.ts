@@ -315,16 +315,46 @@ export class RiderService {
    * replacement is also rejected, the session is not the problem and buying more will not fix it; the
    * rider lands on `cant_start`, whose second action is support.
    */
-  private async claimForcedKycReplacement(profileId: string): Promise<boolean> {
+  private async claimForcedKycReplacement(
+    profileId: string,
+    observed: { kycRef: string | null; kycStatus: Kyc; kycAttempts: number },
+  ): Promise<boolean> {
     const cutoff = new Date(Date.now() - FORCED_KYC_REPLACEMENT_WINDOW_MS);
     const claimed = await this.prisma.rider.updateMany({
       where: {
         profileId,
+        // CAS on the snapshot retryKyc read, for the same reason the rotation below does it: the
+        // findUnique takes no row lock, so a terminal webhook (applyKycResult) or an admin decision
+        // can land in between. Without these, that race wins the claim and pays for a session the
+        // rotation CAS then refuses to store — a burnt credit for a rider who is already resolved.
+        kycRef: observed.kycRef,
+        kycStatus: observed.kycStatus,
+        kycAttempts: observed.kycAttempts,
         OR: [{ kycForcedAt: null }, { kycForcedAt: { lt: cutoff } }],
       },
       data: { kycForcedAt: new Date() },
     });
     return claimed.count === 1;
+  }
+
+  /**
+   * Hand back a claim that bought nothing.
+   *
+   * The claim is taken BEFORE `vendor.submit()` so a lost race never pays — but that means a vendor
+   * that then rejects leaves the rider holding a spent claim and no replacement session. Every later
+   * tap would fall through to the resume path and re-open the very token the SDK already rejected,
+   * for a whole window. That is the trap `force` exists to escape, so the claim is released whenever
+   * the spend it authorised did not happen.
+   *
+   * Best-effort and never throws: it runs on an error path, and the vendor failure is the error worth
+   * reporting. A release that itself fails costs the rider one window, not correctness.
+   */
+  private async releaseForcedKycReplacement(profileId: string, previous: Date | null): Promise<void> {
+    try {
+      await this.prisma.rider.updateMany({ where: { profileId }, data: { kycForcedAt: previous } });
+    } catch (err) {
+      this.logger.warn(`Couldn't release forced KYC claim for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async retryKyc(
@@ -333,7 +363,7 @@ export class RiderService {
   ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, kycAttempts: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true },
+      select: { kycStatus: true, kycAttempts: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true, kycForcedAt: true },
     });
     if (!rider) throw new NotFoundException("Not a rider");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
@@ -380,7 +410,13 @@ export class RiderService {
     // window loses it and silently falls back to the free resume — degraded, never refused, because a
     // 429 here would strand someone whose session really is dead. Two concurrent forced requests
     // cannot both win: the predicate and the write are one statement.
-    const forceHonored = opts.force === true && (await this.claimForcedKycReplacement(profileId));
+    const forceHonored =
+      opts.force === true &&
+      (await this.claimForcedKycReplacement(profileId, {
+        kycRef: rider.kycRef,
+        kycStatus: rider.kycStatus,
+        kycAttempts: rider.kycAttempts,
+      }));
     if (!forceHonored && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
       return {
         kycStatus: "pending",
@@ -395,6 +431,9 @@ export class RiderService {
       submission = await this.vendor.submit(profileId);
     } catch (err) {
       this.logger.error(`KYC retry failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      // The claim bought nothing — give it back, or the rider spends the rest of the window re-opening
+      // the dead token that made them force in the first place.
+      if (forceHonored) await this.releaseForcedKycReplacement(profileId, rider.kycForcedAt);
       throw new ServiceUnavailableException("Couldn't restart ID verification. Please try again.");
     }
     // The stub provider has no real callback, so it stands in as an instant pass (QA), mirroring become.
