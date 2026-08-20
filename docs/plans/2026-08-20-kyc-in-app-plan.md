@@ -314,7 +314,10 @@ device build before a line of KYC code is written"* — a gate that can no longe
 owner directed the KYC code to be written first (see the Phase 2 note above). Stating an unmeetable
 condition is worse than stating none: it reads as satisfiable and quietly never is. **The surviving
 gate is Phase 5's:** the preview build must come back green on a real device, running the New
-Architecture *and* the SDK together, before anything is submitted to a track. If it fails, the
+Architecture *and* the SDK together, before **production release** — NOT before the internal track.
+Gating internal submission on device smoke would be circular: submitting to internal is *how* the
+binary reaches a handset to be smoked. Build `6294977b` is therefore deliberately pre-smoke on
+internal, and that is the lane working as intended, not an exception to it. If it fails, the
 separation is done by revert — the flag and the seam are independent — not by having sequenced them.
 Second:
 silent degradation of the IR26-04 dedupe and threshold bands if the payload shape changes without tests
