@@ -352,15 +352,18 @@ export default function BecomeRiderScreen(): React.ReactElement {
             </Card>
             {/* The kit's KycForm sets this note as a surface card with an id-card mark, not loose grey
                 type — it's the reassurance that carries the ID number, so it has to read as a block.
-                The "we store it, we don't share it" line is the kit's; the rest stays honest to the
-                build (a test build has no browser step). */}
+                The live-build copy is now the mock's VERBATIM. It used to carry an app-invented
+                sentence — "You'll finish in your browser, then return here to go online" — describing
+                the handoff that Route A removed; with the native SDK the check opens right here, so
+                that sentence was not merely off-mock, it was false. The test-build variant stays
+                app-authored because the mock has no test build to draw. */}
             <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
               <View style={{ flexDirection: "row", gap: tokens.space.sm }}>
                 <Icon name="id-card" size={18} color={tokens.color.accentText} style={{ marginTop: 1 }} />
                 <Text style={{ flex: 1, fontSize: 13, color: tokens.color.muted, lineHeight: 20 }}>
                   {isTestBuild()
                     ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
-                    : "By submitting, your national ID is verified — an ID photo plus a quick selfie liveness check. You'll finish in your browser, then return here to go online. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers."}
+                    : "Your national ID is checked by our verification partner Didit — an ID photo plus a quick selfie liveness check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers."}
                 </Text>
               </View>
             </Card>

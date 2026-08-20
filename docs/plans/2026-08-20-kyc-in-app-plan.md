@@ -277,11 +277,17 @@ resumes instead of restarting (the pattern is already there for the single photo
 | Phase | Work | Gate |
 |---|---|---|
 | 0 | ~~Owner picks Route A or B (§3)~~ | ✅ **Done — Route A, 2026-08-20** |
-| 1 | Design: new/changed mocks, exported from the tool | ✅ **Done — PR #841** |
+| 1 | Design: new/changed mocks, exported from the tool | ◐ **Drawn (PRs #841, #847) — EXPORT STILL OWED** |
 | 2 | **Prove New Architecture on a preview build, in isolation, before any KYC code** | ⚠️ **Not done in isolation — see below** |
 | 3 | Backend: `session_token` passthrough + resume fix (G5) | ✅ **Done — PRs #840, #842** |
 | 4 | Mobile: capture + verify + analysing states, browser call sites deleted | ✅ **Done — states in #843, SDK swap here** |
 | 5 | Store build (no OTA — G11), preview profile, internal track | `docs/PLAY-STORE-SUBMISSION.md` ledger entry |
+
+**Phase 1 is drawn but not exported, and the gate is the export.** The mocks for the three pending
+states and the reinstated customer bridge were authored IN THIS REPO, not in the Claude Design tool —
+D-33, D-35 and D-36 each carry an `UPSTREAM SYNC OWED` warning for exactly that reason. Until an
+export carries them, the next one silently reverts them, so this phase stays open however finished the
+screens look.
 
 **Phase 2 did not happen the way this table asked, and that is a known, owner-accepted risk.** The
 plan's own biggest-risk note said to prove the New Architecture on a real device *before* a line of

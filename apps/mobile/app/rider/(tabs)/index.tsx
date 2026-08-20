@@ -388,6 +388,19 @@ export default function RiderHome(): React.ReactElement {
   // A ref, not state: nothing renders from it, and it must be readable by the NEXT mutationFn call
   // without waiting for a re-render — a state write here would be read stale by a fast second tap.
   const forceFreshSession = useRef(false);
+  /**
+   * One forced mint per stuck episode. Without this, `force` re-arms on every expiry, so a session
+   * that is minted fresh and STILL reports expired (device clock skew is the realistic cause on the
+   * low-end Android this ships to) makes every subsequent tap buy another paid Didit session —
+   * bounded only by the route's 5/hour throttle, because mints deliberately do not increment
+   * `kycAttempts` (D4), so the A-02 two-attempt lock never catches it either.
+   *
+   * A genuine expiry needs exactly ONE replacement. If the replacement is also rejected, the problem
+   * is not the session and buying more will not fix it — so we stop, and the rider lands on
+   * `cant_start`, whose second action is support. Cleared by any launch that actually opens, so this
+   * bounds one episode rather than the life of the screen.
+   */
+  const spentForce = useRef(false);
 
   /**
    * The customer bridge's action (P1-2 / T8). A plain replace, with none of the Account tab's
@@ -509,8 +522,13 @@ export default function RiderHome(): React.ReactElement {
   // screen. The rider never leaves LyniaGo, and never re-keys the form.
   const retryM = useMutation({
     // `force` is normally false so the server's free resume path can hand back the session the rider
-    // already has. It flips true for exactly one tap after the SDK rejected that session as expired.
-    mutationFn: () => retryKyc(forceFreshSession.current),
+    // already has. It flips true for exactly one tap after the SDK rejected that session as expired,
+    // and spending it is recorded here so a second expiry cannot buy a second session.
+    mutationFn: () => {
+      const force = forceFreshSession.current;
+      if (force) spentForce.current = true;
+      return retryKyc(force);
+    },
     onSuccess: async (res) => {
       const feedback = resolveKycRetryFeedback(res.sessionToken, res.mode);
       setError(feedback.error);
@@ -524,8 +542,11 @@ export default function RiderHome(): React.ReactElement {
         setKycLaunch(launch.outcome);
         // An expired session would otherwise resume forever: the server cannot see expiry (it fires no
         // webhook), so unless the next tap says "don't hand me that one again", the rider re-opens the
-        // same dead token until they give up.
-        forceFreshSession.current = launch.sessionUnusable;
+        // same dead token until they give up. Armed at most once per episode — see `spentForce`.
+        forceFreshSession.current = launch.sessionUnusable && !spentForce.current;
+        // A launch that opened at all proves the credentials were good, so the next expiry after this
+        // is a NEW episode and gets its own single replacement.
+        if (launch.outcome !== "failed") spentForce.current = false;
         if (launch.outcome === "completed") {
           // The cached `me` still carries the pending-state from BEFORE the rider went to verify —
           // "unfinished", because at that moment they hadn't finished. Left alone, the wall would

@@ -257,6 +257,8 @@ export class PrivacyService {
         // coming back. A session token identifies nobody and protects nothing once the account is gone.
         kycSessionToken: null,
         kycSessionUrl: null,
+        // Not a secret, but it is an activity timestamp tied to a person — a tombstone carries none.
+        kycForcedAt: null,
         kycDeclineReason: null,
         suspendReason: null,
         currentLat: null,

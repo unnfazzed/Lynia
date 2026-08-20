@@ -22,6 +22,16 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
 
+/**
+ * How long one forced KYC session replacement lasts before another can be claimed.
+ *
+ * An hour, matched to the route's own 5/hour throttle window so the two bounds reason about the same
+ * period rather than interacting in surprising ways. Generous for the honest case — a rider hits a
+ * genuine expiry, forces once, and is done in seconds — and tight for the abusive one, where the
+ * ceiling drops from five paid sessions an hour to one.
+ */
+const FORCED_KYC_REPLACEMENT_WINDOW_MS = 60 * 60 * 1000;
+
 // Re-export the online-gate helpers so existing importers (matching/offers/tests) keep their
 // `from "./rider.service"` path. The definitions live in ./online-gate — importing them from here
 // would re-form the rider↔tracking cycle those services' imports are designed to avoid.
@@ -291,6 +301,32 @@ export class RiderService {
    * attempts and land the rider in the support queue having never been assessed. The regression test
    * pins this; see rider.service.spec.ts.
    */
+  /**
+   * Try to claim this rider's one forced KYC session replacement for the current window.
+   *
+   * Returns true only if the claim was won, and winning it is what authorises spending a paid vendor
+   * session — so the claim happens BEFORE `vendor.submit()`, never after. A post-hoc check would let
+   * two concurrent forced requests both pay and only then discover one of them should not have.
+   *
+   * Atomic by construction: the predicate (never forced, or forced longer ago than the window) and the
+   * write are one conditional UPDATE, so exactly one of N racing callers can see `count === 1`.
+   *
+   * One per window is the right budget because a genuine expiry needs exactly ONE replacement. If the
+   * replacement is also rejected, the session is not the problem and buying more will not fix it; the
+   * rider lands on `cant_start`, whose second action is support.
+   */
+  private async claimForcedKycReplacement(profileId: string): Promise<boolean> {
+    const cutoff = new Date(Date.now() - FORCED_KYC_REPLACEMENT_WINDOW_MS);
+    const claimed = await this.prisma.rider.updateMany({
+      where: {
+        profileId,
+        OR: [{ kycForcedAt: null }, { kycForcedAt: { lt: cutoff } }],
+      },
+      data: { kycForcedAt: new Date() },
+    });
+    return claimed.count === 1;
+  }
+
   async retryKyc(
     profileId: string,
     opts: { force?: boolean } = {},
@@ -337,7 +373,15 @@ export class RiderService {
     // `force` is the device's veto on all of the above. Expiry produces no webhook, so the row still
     // looks perfectly resumable from here; only the client that just watched the SDK reject the token
     // knows otherwise. Without this, "Try again" resumes the same dead session forever.
-    if (!opts.force && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
+    //
+    // But it is a CLIENT ASSERTION that bypasses the only thing stopping a pending rider from buying
+    // paid sessions, so it is claimed, not trusted: one conditional UPDATE, before the vendor is ever
+    // called. Winning the claim is what authorises the spend. A rider who already forced inside the
+    // window loses it and silently falls back to the free resume — degraded, never refused, because a
+    // 429 here would strand someone whose session really is dead. Two concurrent forced requests
+    // cannot both win: the predicate and the write are one statement.
+    const forceHonored = opts.force === true && (await this.claimForcedKycReplacement(profileId));
+    if (!forceHonored && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
       return {
         kycStatus: "pending",
         mode: this.env.KYC_MODE,

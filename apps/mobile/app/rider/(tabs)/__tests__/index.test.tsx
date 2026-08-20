@@ -98,8 +98,9 @@ import { makeOffer } from "../../../../src/api/offers";
 import { retryKyc } from "../../../../src/api/riders";
 
 const mockMakeOffer = makeOffer as jest.MockedFunction<typeof makeOffer>;
-// The KYC launch lane: `retryKyc` hands back a verification URL, and the in-app browser either opens
-// it, is closed by the rider, or cannot open at all — the three outcomes the pending walls resolve on.
+// The KYC launch lane: `retryKyc` hands back an opaque Didit SESSION TOKEN, and the native SDK either
+// completes, is cancelled by the rider, or fails to launch — the three outcomes the pending walls
+// resolve on. `sessionUnusable` rides alongside for the one failure a fresh session can fix (expiry).
 const mockRetryKyc = retryKyc as jest.MockedFunction<typeof retryKyc>;
 const mockRunKyc = runKycVerification as jest.MockedFunction<typeof runKycVerification>;
 /** The three launch outcomes, named — every KYC test below picks one of these. */
@@ -1020,6 +1021,44 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     });
     await settle();
     expect(mockRetryKyc).toHaveBeenNthCalledWith(3, false);
+  });
+
+  /**
+   * One forced mint per stuck episode, on the client too.
+   *
+   * The server holds the real bound (a claimed, windowed replacement — see rider.service), but the
+   * client must not lean on it: if `force` re-armed on every expiry, a session that is minted fresh
+   * and STILL reports expired — device clock skew, the realistic cause on low-end Android — would
+   * have the app asking to pay again on every single tap, and the server would spend the rider's one
+   * claim on the first of them.
+   */
+  it("does not keep forcing when the replacement session also reports expired", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    // Every launch says "expired" — the pathological case.
+    mockRunKyc.mockResolvedValue({ outcome: "failed", sessionUnusable: true });
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    await settle();
+    expect(mockRetryKyc).toHaveBeenNthCalledWith(1, false);
+
+    for (const nth of [2, 3, 4]) {
+      await renderer.act(async () => {
+        tree.root.find((n) => n.props.label === "Try again").props.onPress();
+      });
+      await settle();
+      // Tap 2 spends the one force; taps 3 and 4 must fall back rather than ask to pay again.
+      expect(mockRetryKyc).toHaveBeenNthCalledWith(nth, nth === 2);
+    }
   });
 
   // A denied camera is not a dead session. Re-minting for it would burn a Didit credit on every tap
