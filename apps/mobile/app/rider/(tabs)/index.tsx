@@ -17,7 +17,7 @@ import { pushOnce } from "../../../src/push/push";
 import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { type KycSdkResult, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
 import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
 import { useHomeLocation } from "../../../src/logic/home-location";
@@ -357,7 +357,13 @@ export default function RiderHome(): React.ReactElement {
   // six-deep nested ternary over verified / expired / failed / locked / manual-mode / pending in the
   // render is now a switch over `resolveKycGate`'s result — which is unit-tested in gates.test.tsx
   // rather than only reachable by rendering the whole board.
-  const kycGate = resolveKycGate(rider);
+  // What the LAST verification launch did on this screen, in memory only. It is a hint the resolver
+  // uses to answer before the first poll lands — and, for a launch that never opened at all, the only
+  // signal there is: the vendor session still reads "not started", so the server cannot see it. It
+  // dies with the screen, which is correct — after a relaunch we no longer know the camera or the
+  // browser is still broken, and `resolveKycGate` degrades to `unfinished`.
+  const [kycLaunch, setKycLaunch] = useState<KycSdkResult>(null);
+  const kycGate = resolveKycGate(rider, kycLaunch);
 
   // R4: "contact support" is a real `tel:` call, not dead copy and not a mailto. Same safety line the
   // locked state's SupportCallRow dials — this branch just wears the ghost Button the mock draws.
@@ -474,10 +480,24 @@ export default function RiderHome(): React.ReactElement {
       setError(feedback.error);
       setInfo(feedback.info);
       if (feedback.openUrl) {
-        await WebBrowser.openAuthSessionAsync(feedback.openUrl).catch(() => undefined);
+        try {
+          // `.catch(() => undefined)` used to swallow this outright, which is the bug the drawn
+          // `cant_start` state exists for: when the in-app browser cannot open — no WebView, a
+          // stripped Android build — the rider tapped, nothing happened, and they were left staring
+          // at the same wall with no explanation. A throw here means the check never opened.
+          const browser = await WebBrowser.openAuthSessionAsync(feedback.openUrl);
+          // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing
+          // the tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
+          setKycLaunch(browser.type === "success" ? "completed" : "cancelled");
+        } catch {
+          setKycLaunch("failed");
+        }
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
+    // Each attempt starts from a clean slate, so a previous launch failure can't hold the rider on
+    // "We couldn't open the ID check" after a retry that opened fine.
+    onMutate: () => setKycLaunch(null),
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
   });
 
@@ -1153,7 +1173,8 @@ export default function RiderHome(): React.ReactElement {
             // and wording it as abandonment would blame them for it and send them round a loop that
             // fails the same way. Support is a real second action here (and only here): the other two
             // pending states are solved by one tap, so a support route there would invite a call for
-            // nothing.
+            // nothing. Reached today from a browser launch that throws, and by the native SDK's own
+            // `failed` outcome once that lands — the mapping is the same either way.
             <EmptyState
               icon="triangle-alert"
               title="We couldn't open the ID check"
