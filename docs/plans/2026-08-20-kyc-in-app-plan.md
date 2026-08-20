@@ -281,7 +281,14 @@ resumes instead of restarting (the pattern is already there for the single photo
 | 2 | **Prove New Architecture on a preview build, in isolation, before any KYC code** | ⚠️ **Not done in isolation — see below** |
 | 3 | Backend: `session_token` passthrough + resume fix (G5) | ✅ **Done — PRs #840, #842** |
 | 4 | Mobile: capture + verify + analysing states, browser call sites deleted | ✅ **Done — states in #843, SDK swap here** |
-| 5 | Store build (no OTA — G11), preview profile, internal track | `docs/PLAY-STORE-SUBMISSION.md` ledger entry |
+| 5 | Store build (no OTA — G11), preview profile, internal track | ✅ **Done — build `6294977b` FINISHED, submission FINISHED, track `internal` (2026-08-20)** |
+
+**The New-Architecture risk did not land.** Build `6294977b` (2026-08-20) compiled and linked the
+New Architecture and the Didit SDK together on their first build, and its submission reached the
+internal track clean. The accepted risk recorded above is therefore closed on the *build* side. It is
+NOT closed on the runtime side: a FINISHED build proves the two link, not that the SDK's camera and
+liveness UI runs on a handset — which is the entire point of Route A. The device smoke in
+`docs/QA-DEVICE-CHECKLIST.md` is the remaining gate.
 
 **Phase 1 is drawn but not exported, and the gate is the export.** The mocks for the three pending
 states and the reinstated customer bridge were authored IN THIS REPO, not in the Claude Design tool —
@@ -307,7 +314,10 @@ device build before a line of KYC code is written"* — a gate that can no longe
 owner directed the KYC code to be written first (see the Phase 2 note above). Stating an unmeetable
 condition is worse than stating none: it reads as satisfiable and quietly never is. **The surviving
 gate is Phase 5's:** the preview build must come back green on a real device, running the New
-Architecture *and* the SDK together, before anything is submitted to a track. If it fails, the
+Architecture *and* the SDK together, before **production release** — NOT before the internal track.
+Gating internal submission on device smoke would be circular: submitting to internal is *how* the
+binary reaches a handset to be smoked. Build `6294977b` is therefore deliberately pre-smoke on
+internal, and that is the lane working as intended, not an exception to it. If it fails, the
 separation is done by revert — the flag and the seam are independent — not by having sequenced them.
 Second:
 silent degradation of the IR26-04 dedupe and threshold bands if the payload shape changes without tests

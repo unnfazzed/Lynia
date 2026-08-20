@@ -738,6 +738,49 @@
 > nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
 > exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
+> **2026-08-20 — internal-track build #31: the New Architecture and the Didit native SDK, together,
+> on their first build. Both halves FINISHED.**
+>
+> What shipped: `main`@`a80e1456` — PR **#847**, the Route A KYC swap. Riders no longer leave LyniaGo
+> to verify: `WebBrowser.openAuthSessionAsync` is gone from both launch sites and Didit's native SDK
+> draws capture and liveness over the app. Riding with it: `newArchEnabled: true` (#835), which had
+> **never been built before this run**.
+>
+> **This build carried a risk the plan had explicitly wanted sequenced away.** Phase 2 of
+> `docs/plans/2026-08-20-kyc-in-app-plan.md` asked for the New Architecture to be proven on a device
+> *before* a line of KYC code, so a failed migration could not strand finished KYC work. The owner
+> directed the KYC code first, so the two rode the same build. **That risk did not land** — the build
+> is green — but it was real when dispatched, and the plan records why it stayed survivable: the flag
+> is one line in `app.config.ts` and the SDK is behind one seam (`src/kyc/verify.ts`), so either
+> reverts without the other.
+>
+> Dispatched `mobile-release.yml` run `32422046604` explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above. The default
+> (`production`) would have built fine and then failed at submission on service-account permissions,
+> burning one of a limited monthly allowance.
+>
+> EAS build `6294977b-aa53-4bbd-a4d8-a2b839646765` (profile `preview`, created 21:59:21 UTC) reached
+> **FINISHED**. Its submission `f65a2b9b-924c-427e-98d2-7424649f9d36` reached **FINISHED**, track
+> **`internal`**, no error — confirmed via `eas-build-status.yml` run `32424204118`, after run
+> `32422210230` at 22:01 caught it mid-flight (`IN_PROGRESS` / `AWAITING_BUILD`) and was re-checked
+> rather than assumed. Under `--no-wait` the green dispatcher job proves only that the build was
+> queued, which is exactly why both checks happened.
+>
+> **Failure class: none.** First clean first-attempt build+submission pair since the lane was armed.
+>
+> Two known gaps unchanged: exact versionCode not captured, and `runtime=?` still rendered for every
+> listed build (open since 2026-08-16). Neither is in scope for a ship-and-track request.
+>
+> **What this run does NOT establish.** Everything in the entry above still holds — **internal** track
+> only, the store URL still 404s by design, §8 step 2 untouched. And one thing specific to this build:
+> a FINISHED build proves the New Architecture and the Didit SDK **compile and link** together. It
+> does not prove the SDK's camera and liveness UI actually *runs* on a handset, which is the whole
+> point of Route A. That is the device smoke in `docs/QA-DEVICE-CHECKLIST.md` — on a real phone, by a
+> human — and it is the only remaining **runtime** gate for this build. It is not the only open item
+> on the KYC work: Phase 1 of `docs/plans/2026-08-20-kyc-in-app-plan.md` is still open because the new
+> mocks were drawn in-repo and never exported from the design tool (D-33 / D-35 / D-36 each carry
+> `UPSTREAM SYNC OWED`), which no build can close.
+
 ---
 
 ## 1. App identity
