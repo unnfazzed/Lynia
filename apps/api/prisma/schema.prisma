@@ -304,6 +304,11 @@ model Rider {
   // payload or an audit row), cleared when the session reaches a terminal state, and nulled on erasure
   // — unlike verifiedIdHash above, which is a one-way hash retained on purpose (DS15-02b).
   kycSessionToken   String?                                @map("kyc_session_token")
+  // SECRET, same handling as kycSessionToken above and always written/cleared with it. The hosted
+  // verification URL for that session. Kept because the SHIPPED app opens a browser (the native-SDK
+  // client is still ahead of us): without it, a resume returns a token today's build cannot consume
+  // and the rider sees "Couldn't start verification" — the BH-03 false-error class, reintroduced.
+  kycSessionUrl     String?                                @map("kyc_session_url")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different

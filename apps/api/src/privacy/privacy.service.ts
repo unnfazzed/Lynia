@@ -256,6 +256,7 @@ export class PrivacyService {
         // one-way hashes retained on purpose (DS15-02b) as the signal that catches a banned identity
         // coming back. A session token identifies nobody and protects nothing once the account is gone.
         kycSessionToken: null,
+        kycSessionUrl: null,
         kycDeclineReason: null,
         suspendReason: null,
         currentLat: null,

@@ -473,6 +473,53 @@ describe("RiderService.retryKyc", () => {
   // tap bought a new Didit session. The rider-facing resume button is worthless if it costs a credit
   // each time, and the 5/hour route throttle capped that bleed without stopping it.
 
+  // Caught in review of this change, and worth stating plainly: the first cut returned ONLY the token
+  // on the resume path. The shipped app's resolveKycRetryFeedback reads ONLY `verificationUrl`, so a
+  // resume would have rendered "Couldn't start verification — try again in a moment." on a request
+  // that actually succeeded. That is the BH-03 false-error class this codebase already fixed once, and
+  // it would have shipped invisibly because the API was green and the client is a separate PR.
+  it("resume returns BOTH credentials — the shipped browser client reads verificationUrl, the SDK reads the token", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({
+          kycStatus: "pending",
+          kycAttempts: 0,
+          kycRef: "sess_live",
+          kycSessionToken: "tok_live",
+          kycSessionUrl: "https://verify.didit.me/sess_live",
+        }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit: async () => { throw new Error("must not mint"); } });
+    const res = await s.retryKyc("p1");
+    // The exact field today's app consumes, and https so its own guard passes.
+    expect(res.verificationUrl).toBe("https://verify.didit.me/sess_live");
+    expect(res.verificationUrl?.startsWith("https://")).toBe(true);
+    expect(res.sessionToken).toBe("tok_live");
+  });
+
+  it("mints when a pending rider has a token but NO url — never returns a response the app can't act on", async () => {
+    let submitCalls = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        submitCalls += 1;
+        return { ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new", token: "tok_new" };
+      },
+    };
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_half", kycSessionToken: "tok_half", kycSessionUrl: null }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    expect(await s.retryKyc("p1")).toMatchObject({ verificationUrl: "https://verify.didit.me/sess_new", sessionToken: "tok_new" });
+    // Costs a credit, and that is the right trade: a half-populated row must not produce a reply the
+    // shipped client renders as a false error.
+    expect(submitCalls).toBe(1);
+  });
+
   it("resumes a pending rider's live session — hands back the stored token, mints NOTHING", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
@@ -484,7 +531,7 @@ describe("RiderService.retryKyc", () => {
     let wrote = false;
     const prisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live" }),
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0, kycRef: "sess_live", kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_live" }),
         updateMany: async () => {
           wrote = true;
           return { count: 1 };
@@ -492,7 +539,12 @@ describe("RiderService.retryKyc", () => {
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
-    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", sessionToken: "tok_live" });
+    expect(await s.retryKyc("p1")).toEqual({
+      kycStatus: "pending",
+      mode: "auto",
+      verificationUrl: "https://verify.didit.me/sess_live",
+      sessionToken: "tok_live",
+    });
     // The whole point: zero paid sessions, and the kycRef is untouched so the webhook still resolves
     // this rider when the check the rider is resuming eventually finishes.
     expect(submitCalls).toBe(0);
@@ -588,7 +640,7 @@ describe("RiderService.retryKyc", () => {
 
     const resumePrisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 1, kycRef: "sess_live", kycSessionToken: "tok_live" }),
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 1, kycRef: "sess_live", kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_live" }),
         updateMany: async (args: { data: Record<string, unknown> }) => {
           seen.push(args.data);
           return { count: 1 };
