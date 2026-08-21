@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/unnfazzed/Lynia/compare/v0.45.2...v0.46.0) (2026-08-21)
+
+
+### Features
+
+* **mobile:** add Firebase Crashlytics alongside Sentry ([#858](https://github.com/unnfazzed/Lynia/issues/858)) ([9f7cf36](https://github.com/unnfazzed/Lynia/commit/9f7cf36e7cb8e94ff1d502856ef5b3f70921a453))
+
 ## [0.45.2](https://github.com/unnfazzed/Lynia/compare/v0.45.1...v0.45.2) (2026-08-21)
 
 
