@@ -119,18 +119,25 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
    * replaces UIManager wholesale — so these tests make the SDK hostile on purpose instead.
    */
   describe("never takes the app down with it (MOB-BOOT-04)", () => {
-    /** Load ../sentry with an SDK that explodes the way the real one can. */
+    /**
+     * Load ../sentry with an SDK that explodes the way the real one can.
+     *
+     * Deliberately `resetModules` + `require` rather than `isolateModules`: ../sentry requires the SDK
+     * LAZILY, from inside initSentry(), which runs after this helper has returned. Inside
+     * `isolateModules` that deferred require would resolve against a different registry than the one
+     * `doMock` seeded here, and the hostile factory would silently not apply — the tests would then
+     * pass for the wrong reason (an SDK that failed to load looks identical to one that loaded and
+     * misbehaved). One registry throughout is what makes these assertions mean anything.
+     */
     function loadWithHostileSdk(factory: () => unknown) {
-      let mod!: typeof import("../sentry");
-      jest.isolateModules(() => {
-        jest.doMock("@sentry/react-native", factory);
-        mod = require("../sentry");
-      });
-      return mod;
+      jest.resetModules();
+      jest.doMock("@sentry/react-native", factory);
+      return require("../sentry") as typeof import("../sentry");
     }
 
     afterEach(() => {
       jest.dontMock("@sentry/react-native");
+      jest.resetModules();
     });
 
     it("stays inert instead of throwing when the SDK throws on import", () => {
@@ -169,6 +176,48 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
 
       expect(() => mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" })).not.toThrow();
       expect(mod.isSentryEnabled()).toBe(false);
+    });
+
+    /**
+     * The reporter must not be able to defeat the guard that calls it.
+     *
+     * `app/_layout.tsx`'s `bootStep` calls `captureException` from inside the catch block whose whole
+     * job is to stop a boot-step throw killing the launch. If the SDK is ARMED and its own
+     * `captureException` throws, an unguarded call would escape that catch, reach module scope, and
+     * kill the process — the guard undone by its own error handler. The inert path was never the
+     * risky one; this is.
+     */
+    it("swallows a throw from an ARMED SDK's captureException", () => {
+      const mod = loadWithHostileSdk(() => ({
+        init: jest.fn(),
+        captureException: () => {
+          throw new Error("transport blew up mid-report");
+        },
+        addBreadcrumb: jest.fn(),
+        nativeCrash: jest.fn(),
+        wrap: (c: unknown) => c,
+      }));
+
+      mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+      expect(mod.isSentryEnabled()).toBe(true);
+      expect(() => mod.captureException(new Error("the original boot failure"))).not.toThrow();
+    });
+
+    it("swallows a throw from an ARMED SDK's addBreadcrumb", () => {
+      const mod = loadWithHostileSdk(() => ({
+        init: jest.fn(),
+        captureException: jest.fn(),
+        addBreadcrumb: () => {
+          throw new Error("scope unavailable");
+        },
+        nativeCrash: jest.fn(),
+        wrap: (c: unknown) => c,
+      }));
+
+      mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+      // Documented as "safe to call unconditionally", and callers sprinkle it through hot paths
+      // without wrapping it — so that promise has to hold even when the SDK is armed and broken.
+      expect(() => mod.addBreadcrumb("compose-map-retry", { attempt: 2 })).not.toThrow();
     });
 
     // The load is deferred, so an unprovisioned build keeps the SDK off the cold-start graph

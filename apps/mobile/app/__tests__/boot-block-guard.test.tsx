@@ -128,6 +128,29 @@ describe("root layout module scope survives a hostile boot step (MOB-BOOT-04)", 
     expect(stackScreenOptions.contentStyle.backgroundColor).toBe(tokens.color.accentWash);
   });
 
+  it("evaluates even when the error REPORTER itself throws", () => {
+    // The nastiest shape, and the one a naive guard gets wrong: bootStep catches the step's throw and
+    // hands it to captureException, so a reporter that throws escapes the catch and kills the launch
+    // anyway. Guarded inside src/telemetry/sentry.ts; asserted here from the outside.
+    let module: unknown;
+    jest.isolateModules(() => {
+      jest.doMock("../../src/telemetry/sentry", () => ({
+        initSentry: jest.fn(),
+        captureException: jest.fn(() => {
+          throw new Error("reporting blew up while reporting");
+        }),
+        addBreadcrumb: jest.fn(),
+        wrap: (c: unknown) => c,
+      }));
+      jest.doMock("expo-splash-screen", () => ({ ...healthySplash, setOptions: boom }));
+      jest.doMock("../../src/boot/prewarm", () => ({ prewarmBootReads: boom }));
+      jest.doMock("../../src/ui/fonts", () => healthyFonts);
+      module = require("../_layout");
+    });
+
+    expect(module).toBeDefined();
+  });
+
   it("evaluates when EVERY boot step throws at once", () => {
     const { module, captured } = loadLayout(() => {
       jest.doMock("expo-splash-screen", () => ({

@@ -50,9 +50,15 @@ function bootStep(step: () => unknown): void {
   try {
     step();
   } catch (error) {
-    // captureException is itself a no-op when Sentry is inert or failed to load, so this can't
-    // re-throw the very failure it is reporting.
-    captureException(error);
+    try {
+      captureException(error);
+    } catch {
+      // Belt and braces, and the braces are load-bearing. `captureException` already guards its own
+      // SDK call (src/telemetry/sentry.ts) and is inert without a DSN — but this catch block exists
+      // precisely so that a throw cannot kill the launch, and it would be absurd for the reporting
+      // inside it to be the thing that does. bootStep's contract is "nothing here ends the process",
+      // and a contract that depends on a collaborator's internals is not a contract.
+    }
   }
 }
 

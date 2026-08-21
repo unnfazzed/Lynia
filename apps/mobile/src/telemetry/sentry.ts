@@ -138,7 +138,16 @@ export interface CaptureContext {
  * this event only and there is no scope left pushed if the caller throws mid-report.
  */
 export function captureException(error: unknown, context?: CaptureContext): void {
-  if (enabled && sentry) sentry.captureException(error, context);
+  if (!enabled || !sentry) return;
+  try {
+    sentry.captureException(error, context);
+  } catch {
+    // REPORTING MUST NEVER BECOME THE FAILURE. This is called from `app/_layout.tsx`'s `bootStep`
+    // catch block — i.e. from the handler that exists to stop a boot-step throw killing the launch.
+    // An unguarded throw here would escape that catch, reach module scope, and kill the process
+    // anyway: the guard would be defeated by its own error reporter. Swallowed, and there is nowhere
+    // to report it to, because this IS the reporter.
+  }
 }
 
 /**
@@ -152,7 +161,14 @@ export function captureException(error: unknown, context?: CaptureContext): void
  * `docs/SENTRY-TRIAGE-2026-08-17.md` §2.
  */
 export function addBreadcrumb(message: string, data?: Record<string, unknown>): void {
-  if (enabled && sentry) sentry.addBreadcrumb({ message, data, level: "info" });
+  if (!enabled || !sentry) return;
+  try {
+    sentry.addBreadcrumb({ message, data, level: "info" });
+  } catch {
+    // Same contract as captureException: a breadcrumb is context for some LATER event, so losing one
+    // costs nothing, and it is documented as "safe to call unconditionally" — callers sprinkle it
+    // through hot paths and none of them wrap it.
+  }
 }
 
 /**
@@ -167,6 +183,10 @@ export function addBreadcrumb(message: string, data?: Record<string, unknown>): 
  */
 export function nativeCrash(): boolean {
   if (!enabled || !sentry) return false;
+  // Deliberately NOT wrapped, unlike its neighbours above. This is the LR20 exit test, reachable only
+  // from the QA build's banner: a tester is here precisely to learn whether the crash pipeline works,
+  // so swallowing a failure in the call itself would report success for a pipeline that is broken.
+  // It is also not on any boot path, so it cannot cost a launch.
   sentry.nativeCrash();
   return true;
 }
