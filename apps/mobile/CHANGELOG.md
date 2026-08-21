@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.2](https://github.com/unnfazzed/Lynia/compare/v0.46.1...v0.46.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **mobile:** revert the New Architecture + Didit native surface (MOB-BOOT-04 cold-start crash) ([#863](https://github.com/unnfazzed/Lynia/issues/863)) ([1e6ee80](https://github.com/unnfazzed/Lynia/commit/1e6ee808da783381e861d3174ab9b6c13206cb57))
+
 ## [0.46.1](https://github.com/unnfazzed/Lynia/compare/v0.46.0...v0.46.1) (2026-08-21)
 
 
