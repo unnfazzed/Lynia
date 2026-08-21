@@ -38,13 +38,16 @@ function splitName(full: string): { firstName: string; lastName: string } {
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
-  const { session, signIn } = useAuth();
+  const { session, signIn, signOut } = useAuth();
   // The just-verified number, threaded from verify.tsx; shown read-only in the "Verified" phone field.
   const params = useLocalSearchParams<{ phone?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const [fullName, setFullName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [busy, setBusy] = useState(false);
+  // Separate from `busy`: the two actions are independent, and sharing one flag would spin the
+  // primary while the rider is actually leaving.
+  const [leaving, setLeaving] = useState(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -107,6 +110,21 @@ export default function ProfileSetupScreen(): React.ReactElement {
     }
   };
 
+  /** Abandon this verified number and start the phone step again. */
+  const useDifferentNumber = async (): Promise<void> => {
+    if (leaving) return;
+    setLeaving(true);
+    try {
+      await signOut();
+      router.replace("/phone");
+    } catch {
+      // signOut is already best-effort about the server revoke; if the local clear itself fails the
+      // rider must not be left on a dead button with no explanation.
+      setLeaving(false);
+      setError("Couldn't switch numbers. Try again.");
+    }
+  };
+
   return (
     <Screen>
       <Heading>Tell us who you are</Heading>
@@ -153,6 +171,20 @@ export default function ProfileSetupScreen(): React.ReactElement {
         hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
       />
       <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
+      {/* The mock's `Register` ghost (LJ.register), and the only drawn exit from this screen.
+          Without it a customer who mistyped their number and then passed the code sent to THAT
+          number is trapped: the phone field above is deliberately read-only, so there is nothing on
+          screen to correct, and the Android system back button is the only way out — the one thing
+          DESIGN.md's accessibility section forbids ("easy error recovery").
+
+          It signs out rather than just navigating, because by this point the wrong number is a
+          verified session: routing to /phone while still authenticated as +263-whatever would send
+          them back here on the next guard pass. `replace`, not `push`, so no back-stack entry
+          returns to a screen whose session no longer exists.
+
+          The typed name/ID draft is deliberately left in place — it belongs to the person, not to
+          the number, and they would only retype it identically. */}
+      <Button label="Use a different number" variant="ghost" onPress={useDifferentNumber} loading={leaving} />
     </Screen>
   );
 }

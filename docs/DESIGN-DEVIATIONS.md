@@ -1459,6 +1459,16 @@ tier is simply the mock, and Half 2 stops being a deviation. Half 1 retires when
 
 ## D-33 · Rider KYC finishes inside the app; the mocks drew a browser hand-off — RETIRED same day (2026-08-20)
 
+> ✅ **UPSTREAM SYNC DISCHARGED (2026-08-21).** The Claude Design project has adopted these changes
+> and shipped them back as `packages/design/handoff/kyc-2026-08/` (README + work order, now in this
+> repo). Its README lists the same six screens — two net-new, three edited, one audited-no-change —
+> and its spec matches what this repo already carries: every copy string, icon, size and token was
+> re-checked against it screen by screen. **The next export will therefore not revert these.**
+>
+> One honest limit on that: the handoff shipped as two Markdown documents, **not** as exported JSX.
+> So this is verified against the design project's own written specification, not diffed against its
+> source files. If a future export contradicts the handoff, the export wins and this entry reopens.
+
 > **Retired by the in-repo design change in this PR.** The mocks no longer draw the browser step, so
 > the app and the design agree and **there is no deviation left to carry** — align to the mock as
 > normal. The original entry is kept below as the record of the decision.
@@ -1505,6 +1515,16 @@ unaffected (BH-03).
 ---
 
 ## D-35 · The ACT 1 KYC cluster gains three drawn states and two exits — RETIRED same day (2026-08-20)
+
+> ✅ **UPSTREAM SYNC DISCHARGED (2026-08-21).** The Claude Design project has adopted these changes
+> and shipped them back as `packages/design/handoff/kyc-2026-08/` (README + work order, now in this
+> repo). Its README lists the same six screens — two net-new, three edited, one audited-no-change —
+> and its spec matches what this repo already carries: every copy string, icon, size and token was
+> re-checked against it screen by screen. **The next export will therefore not revert these.**
+>
+> One honest limit on that: the handoff shipped as two Markdown documents, **not** as exported JSX.
+> So this is verified against the design project's own written specification, not diffed against its
+> source files. If a future export contradicts the handoff, the export wins and this entry reopens.
 
 > **Retired on arrival**, like D-33: these are design CHANGES the owner commissioned, not divergences
 > the app is carrying. Once exported they are simply the mocks. The entry exists because
@@ -1623,6 +1643,16 @@ plan's §3), at which point those screens come back under parity and need mocks.
 ---
 
 ## D-36 · The customer bridge returns to the KYC waiting walls — APPROVED (2026-08-20)
+
+> ✅ **UPSTREAM SYNC DISCHARGED (2026-08-21).** The Claude Design project has adopted these changes
+> and shipped them back as `packages/design/handoff/kyc-2026-08/` (README + work order, now in this
+> repo). Its README lists the same six screens — two net-new, three edited, one audited-no-change —
+> and its spec matches what this repo already carries: every copy string, icon, size and token was
+> re-checked against it screen by screen. **The next export will therefore not revert these.**
+>
+> One honest limit on that: the handoff shipped as two Markdown documents, **not** as exported JSX.
+> So this is verified against the design project's own written specification, not diffed against its
+> source files. If a future export contradicts the handoff, the export wins and this entry reopens.
 
 **This reverses D-16's placement decision for two screens, and it is the second time this control has
 moved. Read the whole entry before moving it a third time.**

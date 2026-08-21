@@ -17,6 +17,7 @@ import renderer, { act } from "react-test-renderer";
 
 const mockUpdateProfile = jest.fn();
 const mockSignIn = jest.fn(async () => undefined);
+const mockSignOut = jest.fn(async () => undefined);
 const mockReplace = jest.fn();
 
 let secureStore: Record<string, string> = {};
@@ -41,7 +42,7 @@ jest.mock("../../../src/api/auth", () => ({
   updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
 }));
 jest.mock("../../../src/auth/auth-context", () => ({
-  useAuth: () => ({ session: { profileId: "p1", role: "customer", needsProfile: true }, signIn: mockSignIn }),
+  useAuth: () => ({ session: { profileId: "p1", role: "customer", needsProfile: true }, signIn: mockSignIn, signOut: mockSignOut }),
 }));
 jest.mock("../../../src/auth/session", () => ({
   loadRolePreference: async () => null,
@@ -72,10 +73,98 @@ beforeEach(() => {
   secureStore = {};
   mockUpdateProfile.mockReset().mockResolvedValue({ ok: true });
   mockSignIn.mockClear();
+  mockSignOut.mockReset().mockResolvedValue(undefined);
   mockReplace.mockClear();
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
+});
+
+/**
+ * The screen's only drawn exit (design handoff kyc-2026-08 §6, mock `LJ.register`).
+ *
+ * A customer who mistyped their number and then passed the code sent to THAT number is trapped here:
+ * the phone field is deliberately read-only, so nothing on screen corrects it. The ghost must exist,
+ * and it must SIGN OUT rather than merely navigate — by this point the wrong number is a verified
+ * session, and routing to /phone while still authenticated returns them here on the next guard pass.
+ */
+describe("profile setup — the different-number exit", () => {
+  function pressGhost(tree: renderer.ReactTestRenderer): void {
+    const btn = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
+    if (!btn) throw new Error("no 'Use a different number' action on the screen");
+    act(() => {
+      void btn.props.onPress();
+    });
+  }
+
+  it("offers the exit, and it is a ghost so it never competes with Continue", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    const ghost = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
+    if (!ghost) throw new Error("no 'Use a different number' action on the screen");
+    expect(ghost.props.variant).toBe("ghost");
+    // Exact label. "Back" would suggest losing the code they just passed; "Change number" is a
+    // system word. The mock draws this string and the app ships it verbatim.
+    expect(tree.root.findAll((n) => n.props.label === "Back").length).toBe(0);
+  });
+
+  it("signs out before returning to the phone step", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    pressGhost(tree);
+    await settle();
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/phone");
+  });
+
+  it("replaces rather than pushes, so no back-stack entry returns to a dead session", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    pressGhost(tree);
+    await settle();
+
+    // `replace` is the only navigation this action performs — a push would leave this screen
+    // reachable by back, with the session it depends on already revoked.
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the typed draft — the name and ID belong to the person, not the number", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
+    setFieldByAccessibilityLabel(tree, "National ID number", "63123456A42");
+    await settle();
+
+    pressGhost(tree);
+    await settle();
+
+    // Contrast with the submit path, which DOES clear the draft once the PATCH lands. Switching
+    // numbers is not completing the form, so the draft survives and they retype nothing.
+    act(() => tree.unmount());
+    let fresh!: renderer.ReactTestRenderer;
+    await act(async () => {
+      fresh = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(getFieldValue(fresh, "Full name")).toBe("Tendai Moyo");
+  });
 });
 
 describe("profile setup — draft persistence (LC-C10)", () => {
