@@ -959,6 +959,39 @@
 > FINISHED submission does not prove the binary *runs* — the real exit test remains the device smoke
 > in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
+> **2026-08-21, evening — internal-track build #35: the MOB-BOOT-04 revert. Both halves FINISHED.
+> This is the build meant to end the cold-start crash on builds #31–#34.**
+>
+> What shipped: `main`@`1e6ee80` — PR **#863**, executing RCA §8.2
+> (`docs/COLD-START-CRASH-RCA-2026-08-21.md`): `newArchEnabled: false` **and** the Didit SDK removed
+> together (dependency, config plugin, R8 keep rules), back to build #30's proven native surface,
+> plus §8.2 step 2 (never-throwing `src/kyc/verify.ts` stub; `src/config.ts` module-scope throws
+> deferred to a per-request `API_CONFIG_ERROR` with loopback-host detection). NATIVE change — new
+> fingerprint runtimeVersion; nothing before this build can be OTA-repaired into this state.
+>
+> **The free pre-check ran this time — the gate #31–#34 skipped.** `android-test-apk.yml` run #22
+> (`32510399583`) built the identical native surface (release variant, R8 on) from this exact commit
+> and went green **before** the EAS slot was spent. The on-device cold-start confirmation of that
+> sideload artifact was still pending when the owner explicitly instructed the dispatch ("proceed
+> with EAS and google play build") — recorded as an owner decision, not a skipped step.
+>
+> Pre-dispatch: `pnpm install --frozen-lockfile` clean on `main`@`1e6ee80` (the lockfile moved in
+> #863 — exactly one package, Didit — so the strict-install fingerprint-drift class of build
+> `5906d2f0` was ruled out); no in-flight `mobile-release.yml` run. Dispatched run `32513981530`
+> explicitly with **`profile: preview`, `submit: true`** at 18:33 UTC.
+>
+> EAS build `0c17263a-d4ef-445e-98b0-bb1830b88e93` (profile `preview`, created 18:34:33 UTC) reached
+> **FINISHED**. Its submission `fb689f19-cfa0-4a07-b085-6588baee48a7` reached **FINISHED**, track
+> **`internal`**, no error — read from the `eas-build-status.yml` Recap (run `32517269213`), not
+> inferred from the green dispatcher job. **Failure class: none.**
+>
+> **What this run does NOT establish** — the same line every entry carries, and for this build it is
+> the entire question: a FINISHED submission does not prove the binary *runs*. `MOB-BOOT-04` stays
+> OPEN in `docs/KNOWN_BUGS.md` until the owner updates from the internal track (or sideloads run
+> #22's artifact) and reports a cold start reaching the app. In-app KYC (Route A) is OFF in this
+> build by design; re-landing it follows RCA §8.2 step 6 — one native change at a time, each behind
+> a device smoke. Still internal track only; the store listing still 404s by design.
+
 ---
 
 ## 1. App identity
