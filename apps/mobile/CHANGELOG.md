@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.2](https://github.com/unnfazzed/Lynia/compare/v0.45.1...v0.45.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **mobile:** a boot step that throws must not kill the launch (MOB-BOOT-04) ([a074fb4](https://github.com/unnfazzed/Lynia/commit/a074fb45e7f4d78ddde853f3cd756f4654c070c6))
+* **mobile:** the error reporter must not defeat the guard that calls it ([da0b418](https://github.com/unnfazzed/Lynia/commit/da0b418bcf4b1c15078168e01e4201f857ae1253))
+
 ## [0.45.1](https://github.com/unnfazzed/Lynia/compare/v0.45.0...v0.45.1) (2026-08-21)
 
 
