@@ -1,0 +1,336 @@
+{
+  "key": "RC.no_rider",
+  "src": "RC",
+  "id": "no_rider",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_no_rider",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 30,
+    "text": 22,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Order LG-4471",
+    "We couldn't find a rider",
+    "We tried every rider near Fife Ave for 6 minutes. Sadza Republic never started cooking, and you were not charged.",
+    "Try again now",
+    "See places with riders nearby",
+    "✓",
+    "Order placed",
+    "9 min ago",
+    "✓",
+    "Restaurant accepted",
+    "6 min ago",
+    "!",
+    "Rider secured",
+    "just now · no rider · live",
+    "4",
+    "Rider at restaurant",
+    "5",
+    "Picked up",
+    "6",
+    "On the way",
+    "7",
+    "Delivered"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.1",
+    "1.0.2",
+    "1.0.3.0",
+    "1.0.3.1",
+    "1.1.0.0.0",
+    "1.1.0.1.0",
+    "1.1.0.1.1",
+    "1.1.1.0.0",
+    "1.1.1.1.0",
+    "1.1.1.1.1",
+    "1.1.2.0.0",
+    "1.1.2.1.0",
+    "1.1.2.1.1",
+    "1.1.3.0.0",
+    "1.1.3.1.0",
+    "1.1.4.0.0",
+    "1.1.4.1.0",
+    "1.1.5.0.0",
+    "1.1.5.1.0",
+    "1.1.6.0.0",
+    "1.1.6.1.0"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      12,
+      13
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Order LG-4471"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "We couldn't find a rider"
+              },
+              {
+                "role": "text",
+                "text": "We tried every rider near Fife Ave for 6 minutes. Sadza Republic never started cooking, and you were not charged."
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Try again now"
+                  },
+                  {
+                    "role": "text",
+                    "text": "See places with riders nearby"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "✓"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Order placed"
+                      },
+                      {
+                        "role": "text",
+                        "text": "9 min ago"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "✓"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Restaurant accepted"
+                      },
+                      {
+                        "role": "text",
+                        "text": "6 min ago"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "!"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Rider secured"
+                      },
+                      {
+                        "role": "text",
+                        "text": "just now · no rider · live"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "4"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Rider at restaurant"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "5"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Picked up"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "6"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "On the way"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "7"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Delivered"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

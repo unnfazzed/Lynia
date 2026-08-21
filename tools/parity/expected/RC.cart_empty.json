@@ -1,0 +1,97 @@
+{
+  "key": "RC.cart_empty",
+  "src": "RC",
+  "id": "cart_empty",
+  "mode": "phone",
+  "component": "app/food/cart.tsx",
+  "fixture": "food_cart_empty",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 7,
+    "text": 4,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Your cart",
+    "Your cart is empty",
+    "Add something from a kitchen near you — we'll show the delivery fee before you order.",
+    "Browse restaurants"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.1",
+    "1.2",
+    "1.3.0"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Your cart"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Your cart is empty"
+          },
+          {
+            "role": "text",
+            "text": "Add something from a kitchen near you — we'll show the delivery fee before you order."
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Browse restaurants"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

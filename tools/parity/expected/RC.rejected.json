@@ -1,0 +1,186 @@
+{
+  "key": "RC.rejected",
+  "src": "RC",
+  "id": "rejected",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_rejected",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 12,
+    "text": 12,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Order LG-4471",
+    "Sadza Republic couldn't take your order",
+    "They ran out of beef stew. Because you'd already paid, they owe you a refund — we're tracking it.",
+    "REFUND PENDING",
+    "$15.50",
+    "Paid to",
+    "Sadza Republic · EcoCash",
+    "Your reference",
+    "EC-77241180-4471",
+    "Refund due by",
+    "Today, 12:00",
+    "Get help with this refund"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.1",
+    "1.0.2",
+    "1.1.0.0",
+    "1.1.0.1",
+    "1.1.1.0",
+    "1.1.1.1",
+    "1.1.2.0",
+    "1.1.2.1",
+    "1.1.3.0",
+    "1.1.3.1",
+    "1.1.4"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      9,
+      10
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Order LG-4471"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Sadza Republic couldn't take your order"
+              },
+              {
+                "role": "text",
+                "text": "They ran out of beef stew. Because you'd already paid, they owe you a refund — we're tracking it."
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "REFUND PENDING"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$15.50"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Paid to"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Sadza Republic · EcoCash"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Your reference"
+                  },
+                  {
+                    "role": "text",
+                    "text": "EC-77241180-4471"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Refund due by"
+                  },
+                  {
+                    "role": "text",
+                    "text": "Today, 12:00"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Get help with this refund"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

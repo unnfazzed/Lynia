@@ -158,6 +158,31 @@ pnpm --filter ./apps/mobile exec jest rendered-conformance   # NO browser — th
   `tools/parity/rendered-conformance.pending.json` **fails the test**: no screen is silently uncovered.
 - `rendered-conformance.pending.json` is therefore also the rendered-drift inventory: it names the
   concrete blocker for every wired screen that does not yet conform.
+- **Pending suspends the ASSERTION, never the EXTRACTION.** Every wired+fixtured key carries a
+  committed `expected/<key>.json` whether or not it is asserted — that file is the mock's own truth,
+  and it is what a pending entry's blocker is measured against. Wiring a target without running the
+  extractor is a gap, not a deferral.
+
+### Where each half runs, and why
+
+| Check | Needs a browser? | CI | Catches |
+|---|---|---|---|
+| `extract-expected.mjs --check` | yes | `parity-render` step, **non-blocking** | a committed expectation that no longer reproduces from its mock |
+| `jest rendered-conformance` | no | mobile test job, **blocking** | app-vs-mock divergence, plus a wired target with no/stale/orphaned expectation |
+
+The browser half cannot be the blocking gate — browser rendering is environment-sensitive, which is
+the same reason `parity-render` carries `continue-on-error`. So it runs as the last step of that job
+(after the artifact upload, so drift never costs the PR its screenshots) and writes its verdict to the
+job summary. The guarantee that no screen goes *un-extracted* is browser-free and does block:
+`rendered-conformance` requires a committed expectation for every wired+fixtured target, requires
+`expected/index.json` to match the directory, and rejects an expectation whose target is gone.
+
+**Reading a `≠` from `--check`.** A key reported `≠` with **no file on disk** is an unrun extractor,
+not drift — a null `previous` never equals a fresh render, so the two cases print identically. Check
+whether `tools/parity/expected/<key>.json` exists before diagnosing. This is not hypothetical: PR #795
+(2026-08-17) wired 11 new `RC.*` targets and listed them as pending without running the extractor, and
+because `--check` was not in CI at the time, they read as "11 drifted RC expectations" for four days.
+The fix was to run the extractor; the recurrence gate is the blocking jest coverage tests above.
 
 ## How it plugs into an alignment PR
 

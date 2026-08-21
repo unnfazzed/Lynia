@@ -1,0 +1,29 @@
+{
+  "key": "RC.list_loading",
+  "src": "RC",
+  "id": "list_loading",
+  "mode": "phone",
+  "component": "app/food/index.tsx",
+  "fixture": "food_list_loading",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 1,
+    "text": 0,
+    "image": 0,
+    "input": 0
+  },
+  "texts": [],
+  "textPaths": [],
+  "groups": [],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": []
+  }
+}

@@ -1,0 +1,319 @@
+{
+  "key": "RC.await_accept",
+  "src": "RC",
+  "id": "await_accept",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_await_accept",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 28,
+    "text": 22,
+    "image": 1,
+    "input": 0
+  },
+  "texts": [
+    "Sadza Republic",
+    "Order LG-4471 · 3 items · $15.50",
+    "WAITING",
+    "1:44",
+    "to accept",
+    "Waiting for Sadza Republic",
+    "They have 3 minutes to accept. You'll pay only after they do — nothing has left your wallet.",
+    "1",
+    "Order placed",
+    "09:41 · live",
+    "2",
+    "Restaurant accepted",
+    "3",
+    "Rider secured",
+    "4",
+    "Rider at restaurant",
+    "5",
+    "Picked up",
+    "6",
+    "On the way",
+    "7",
+    "Delivered"
+  ],
+  "textPaths": [
+    "0.0.0",
+    "0.0.1",
+    "0.1",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.1",
+    "1.2",
+    "1.3.0.0.0",
+    "1.3.0.1.0",
+    "1.3.0.1.1",
+    "1.3.1.0.0",
+    "1.3.1.1.0",
+    "1.3.2.0.0",
+    "1.3.2.1.0",
+    "1.3.3.0.0",
+    "1.3.3.1.0",
+    "1.3.4.0.0",
+    "1.3.4.1.0",
+    "1.3.5.0.0",
+    "1.3.5.1.0",
+    "1.3.6.0.0",
+    "1.3.6.1.0"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      8,
+      9
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Sadza Republic"
+              },
+              {
+                "role": "text",
+                "text": "Order LG-4471 · 3 items · $15.50"
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "WAITING"
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "1:44"
+                  },
+                  {
+                    "role": "text",
+                    "text": "to accept"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Waiting for Sadza Republic"
+          },
+          {
+            "role": "text",
+            "text": "They have 3 minutes to accept. You'll pay only after they do — nothing has left your wallet."
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Order placed"
+                      },
+                      {
+                        "role": "text",
+                        "text": "09:41 · live"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Restaurant accepted"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "3"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Rider secured"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "4"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Rider at restaurant"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "5"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Picked up"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "6"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "On the way"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "7"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Delivered"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
