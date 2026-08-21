@@ -46,3 +46,19 @@ export function captureException(err: unknown, context?: Record<string, unknown>
   if (!initialized) return;
   Sentry.captureException(err, context ? { extra: context } : undefined);
 }
+
+/**
+ * Best-effort drain of the Sentry transport before an INTENTIONAL `process.exit`. The SDK sends
+ * events asynchronously, so a `captureException` immediately followed by an exit loses the event —
+ * which is precisely the case that matters most (a boot failure: see main.ts's bootstrap catch).
+ * Resolves rather than rejects on a flush error or timeout: we are exiting either way, and a failed
+ * flush must never mask the error that caused it. A no-op when Sentry is off.
+ */
+export async function flushSentry(timeoutMs = 2_000): Promise<void> {
+  if (!initialized) return;
+  try {
+    await Sentry.flush(timeoutMs);
+  } catch {
+    // Exiting anyway — nothing actionable, and throwing here would replace the real cause.
+  }
+}

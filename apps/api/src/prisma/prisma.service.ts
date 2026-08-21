@@ -39,6 +39,61 @@ export function poolConfig(url: string): { connectionString: string; max: number
   return out;
 }
 
+/** Attempts for the FIRST connection at boot, inclusive of the initial try. Opening a brand-new
+ *  physical connection is exactly what `connectionTimeoutMillis` bounds (pg-pool destroys the socket
+ *  and raises `Connection terminated due to connection timeout`), and on Cloud Run that first connect
+ *  races instance start: the `/cloudsql/<instance>` socket is not always ready the moment the
+ *  container is. That is a TRANSIENT — one retry turns a dead instance into a slightly slower boot —
+ *  whereas a genuinely unreachable database still fails, just after a bounded delay. */
+const CONNECT_ATTEMPTS = 3;
+/** First backoff; doubles per attempt (500ms, 1s). Short on purpose — this sits in the boot path. */
+const CONNECT_RETRY_BASE_MS = 500;
+
+/**
+ * Backoff delay between connect attempts. The timer is deliberately left REF'd — do not `unref()` it.
+ * Elsewhere in this codebase an `unref()`ed timer is correct (health.service.ts races a ping against
+ * one; the sweepers must not hold the process open at shutdown), but here the timer is the only thing
+ * being awaited during boot: `app.listen()` has not run yet, so there is no server handle keeping the
+ * loop alive. An `unref()`ed timer would let Node drain the event loop and exit **0** in the middle of
+ * the retry — no reconnect, no Sentry report, no non-zero exit for the orchestrator to act on. That is
+ * a silent version of the exact failure this retry exists to fix.
+ */
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Run `connect`, retrying a failure with exponential backoff up to {@link CONNECT_ATTEMPTS} tries.
+ * Rethrows the LAST error once the attempts are spent, so a real outage still fails the boot loudly
+ * (main.ts turns that into a non-zero exit) rather than being papered over. Exported for testing;
+ * `sleep` is injectable so tests need no timers.
+ */
+export async function connectWithRetry(
+  connect: () => Promise<unknown>,
+  opts: {
+    attempts?: number;
+    baseDelayMs?: number;
+    onRetry?: (attempt: number, err: Error) => void;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const attempts = opts.attempts ?? CONNECT_ATTEMPTS;
+  const baseDelayMs = opts.baseDelayMs ?? CONNECT_RETRY_BASE_MS;
+  const sleep = opts.sleep ?? defaultSleep;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await connect();
+      return;
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      opts.onRetry?.(attempt, err instanceof Error ? err : new Error(String(err)));
+      await sleep(baseDelayMs * 2 ** (attempt - 1));
+    }
+  }
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
@@ -52,7 +107,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit(): Promise<void> {
-    await this.$connect();
+    await connectWithRetry(() => this.$connect(), {
+      onRetry: (attempt, err) =>
+        this.logger.warn(`Prisma connect attempt ${attempt} failed (${err.message}) — retrying`),
+    });
     this.logger.log("Prisma connected");
   }
 
