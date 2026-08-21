@@ -9,15 +9,65 @@ const isDev = typeof __DEV__ !== "undefined" && __DEV__;
 const fromExtra = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
 const configured = process.env.EXPO_PUBLIC_API_URL ?? fromExtra;
 
-if (!configured && !isDev) {
-  throw new Error("Set EXPO_PUBLIC_API_URL (or extra.apiUrl in app.config.ts) to the production API URL.");
-}
-
 export const API_URL: string = configured ?? "http://localhost:3000"; // dev-only fallback
 
-if (!isDev && API_URL.includes("localhost")) {
-  throw new Error("EXPO_PUBLIC_API_URL must point at the real API, not localhost, in a release build.");
+/**
+ * The lowercased host part of an http(s) URL — userinfo, brackets and port stripped — or null when
+ * the URL doesn't parse as one. Regex, not `new URL(...)`: React Native's built-in URL polyfill
+ * throws "not implemented" from accessors like `hostname`, and this module must never throw (see
+ * API_CONFIG_ERROR below).
+ */
+function httpUrlHost(url: string): string | null {
+  const ipv6 = /^https?:\/\/(?:[^/@?#[\]]*@)?\[([^\]]+)\]/i.exec(url);
+  if (ipv6) return ipv6[1]?.toLowerCase() ?? null;
+  const host = /^https?:\/\/(?:[^/@?#]*@)?([^/:?#@]+)/i.exec(url);
+  return host?.[1]?.toLowerCase() ?? null;
 }
+
+/**
+ * Hosts that can only ever be the phone itself — a dead API for every real user. Expects the
+ * lowercased host from httpUrlHost. The IPv6 test covers every spelling of ::1 (`::1`,
+ * `0:0:0:0:0:0:0:1`, `::0001`, …): an address whose digits reduce to exactly "1" once zeros and
+ * separators are stripped is all-zero groups plus a final 1, which is loopback and nothing else.
+ *
+ * SCOPE: this is a misconfiguration tripwire, not a security boundary. It catches the ways a dev
+ * value realistically leaks into a release build; deliberately-obfuscated loopback spellings
+ * (octal/decimal IPv4 like 0177.0.0.1, IPv4-mapped IPv6 like ::ffff:127.0.0.1) are out of scope —
+ * those fail at first fetch like any other unreachable host, which is the pre-existing behaviour.
+ */
+function isLoopbackHost(host: string): boolean {
+  const h = host.endsWith(".") ? host.slice(0, -1) : host; // "localhost." — the DNS root dot
+  if (h === "localhost" || h === "0.0.0.0") return true;
+  // Exact dotted-quad only: 127.anything is loopback as an IPv4 ADDRESS (127.0.0.0/8), but
+  // "127.example.com" is a legal DNS name pointing wherever its owner says — flagging it would
+  // reject a correctly configured build, which is worse than missing an exotic spelling.
+  if (/^127(\.\d{1,3}){3}$/.test(h)) return true;
+  if (h.includes(":")) return h.replace(/[0:]/g, "") === "1";
+  return false;
+}
+
+/**
+ * A release build with no real API URL is misconfigured and must say so loudly — but not by dying at
+ * the splash. These conditions used to be module-scope `throw`s, and this module sits in the root
+ * layout's eager import graph, where expo-router evaluates it BEFORE the error boundary it derives
+ * from that same load exists — so a throw here was a cold-start process kill, not an error screen
+ * (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md §2 and §8.2 step 2). The check now lives
+ * here as a value and fires at first use: `apiFetch` refuses every request with this message, so the
+ * app boots, renders, and each screen's normal error path names the misconfiguration instead.
+ *
+ * Loopback covers every spelling of "the phone itself" — `localhost`, `127.x.x.x`, `[::1]`,
+ * `0.0.0.0` — not just the literal "localhost" the old throw matched. A URL that doesn't parse as
+ * http(s) is equally a config error: `fetch` could only fail on it, and it would fail as a
+ * retryable-looking network error instead of naming the real problem.
+ */
+export const API_CONFIG_ERROR: string | null = (() => {
+  if (isDev) return null;
+  if (!configured) return "This build is misconfigured: EXPO_PUBLIC_API_URL (or extra.apiUrl in app.config.ts) is not set.";
+  const host = httpUrlHost(API_URL);
+  if (!host) return "This build is misconfigured: EXPO_PUBLIC_API_URL is not a valid http(s) URL.";
+  if (isLoopbackHost(host)) return "This build is misconfigured: EXPO_PUBLIC_API_URL points at the device itself (loopback), not the real API.";
+  return null;
+})();
 
 /** Socket.IO connects to the same origin as the REST API. */
 export const WS_URL: string = API_URL;

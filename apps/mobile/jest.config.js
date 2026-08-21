@@ -49,9 +49,6 @@ module.exports = {
     // @sentry/react-native pulls in native modules jest-expo can't load; route it to a light mock
     // (init/captureException spies, identity wrap) so any test importing the app root stays green.
     "^@sentry/react-native$": "<rootDir>/__mocks__/@sentry/react-native.js",
-    // Didit's KYC SDK is a TurboModule — importing the real one throws under jest-expo, taking every
-    // screen that can launch a check down with it. Same treatment as Sentry above.
-    "^@didit-protocol/sdk-react-native$": "<rootDir>/__mocks__/@didit-protocol/sdk-react-native.js",
     "^lucide-react-native$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js",
     // Deep per-icon imports (see Icon.tsx) — map <name> straight to its CJS file, past exports gating.
     "^lucide-react-native/dist/cjs/icons/(.*)$":

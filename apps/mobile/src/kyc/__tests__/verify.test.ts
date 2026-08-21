@@ -1,77 +1,30 @@
 /**
- * The KYC SDK seam. Its whole job is turning Didit's result union into the three states the app draws,
- * so the cases below are the mapping — plus the two ways it must refuse to throw.
+ * The KYC SDK seam — pinned in its REVERTED state (MOB-BOOT-04, 2026-08-21).
  *
- * The native module is replaced by __mocks__/@didit-protocol/sdk-react-native.js via jest.config's
- * moduleNameMapper; each test drives it directly.
+ * The Didit native SDK is removed from this build (docs/COLD-START-CRASH-RCA-2026-08-21.md §8.2), so
+ * the seam's whole contract collapses to two promises the callers still rely on:
+ *
+ *   1. It never throws — a launch attempt is how a rider taps "Continue verification", and an
+ *      exception there is the silent dead-end this module has always existed to prevent.
+ *   2. It resolves `failed` with a usable session — the gate maps that to `cant_start` (the truthful
+ *      wall: this build cannot open a check), and `sessionUnusable: false` keeps retries on the
+ *      server's free resume path instead of burning a paid Didit credit per tap.
+ *
+ * The result-union mapping tests (completed/cancelled/failed/sessionExpired) travel with the SDK:
+ * restore them from git history at this file (2026-08-20) when the SDK is re-landed per RCA §8.2.
  */
-import { startVerification } from "@didit-protocol/sdk-react-native";
 import { runKycVerification } from "../verify";
 
-const mockStart = startVerification as jest.MockedFunction<typeof startVerification>;
-
-beforeEach(() => {
-  mockStart.mockReset();
-});
-
-describe("runKycVerification — SDK result → app pending state", () => {
-  it("maps a finished flow to completed, whatever the on-device verdict says", async () => {
-    // Approved is the strongest thing the device can claim, and it still only means "the rider got to
-    // the end". The server takes its verdict from the signed webhook; if this mapped Approved to
-    // anything stronger, a tampered client could promote itself past KYC.
-    mockStart.mockResolvedValue({ type: "completed", session: { sessionId: "s1", status: "Approved" } } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "completed", sessionUnusable: false });
-
-    mockStart.mockResolvedValue({ type: "completed", session: { sessionId: "s1", status: "Declined" } } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "completed", sessionUnusable: false });
-  });
-
-  it("maps the rider closing it to cancelled — resumable, not broken", async () => {
-    mockStart.mockResolvedValue({ type: "cancelled" } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "cancelled", sessionUnusable: false });
-  });
-
-  it("maps an SDK error to failed", async () => {
-    mockStart.mockResolvedValue({ type: "failed", error: { type: "networkError", message: "no net" } } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
-  });
-});
-
-describe("runKycVerification — session usability", () => {
-  // The loop this prevents: expiry fires no webhook, so the server still sees a resumable session and
-  // hands the same dead token back on every "Try again". Only the device can see it is dead.
-  it("flags an expired session so the next attempt mints a fresh one", async () => {
-    mockStart.mockResolvedValue({ type: "failed", error: { type: "sessionExpired", message: "expired" } } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "failed", sessionUnusable: true });
-  });
-
-  it.each(["cameraAccessDenied", "networkError", "apiError", "unknown"] as const)(
-    "does NOT flag %s as unusable — a new session costs a credit and would not fix it",
-    async (type) => {
-      mockStart.mockResolvedValue({ type: "failed", error: { type, message: type } } as never);
-      const result = await runKycVerification("tok");
-      expect(result.outcome).toBe("failed");
-      expect(result.sessionUnusable).toBe(false);
+describe("runKycVerification — reverted-SDK stub", () => {
+  it.each(["tok", "", null, undefined] as const)(
+    "resolves failed (cant_start) without throwing for token %p",
+    async (token) => {
+      await expect(runKycVerification(token)).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
     },
   );
-});
 
-describe("runKycVerification — never throws", () => {
-  it("reports failed without calling the SDK when there is no token", async () => {
-    await expect(runKycVerification(null)).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
-    await expect(runKycVerification(undefined)).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
-    await expect(runKycVerification("")).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
-    expect(mockStart).not.toHaveBeenCalled();
-  });
-
-  it("swallows a throwing native module into failed", async () => {
-    // What an Expo Go run or a build that shrank the SDK away actually does.
-    mockStart.mockRejectedValue(new Error("TurboModule not found"));
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
-  });
-
-  it("treats an unrecognised future result type as failed, not as success", async () => {
-    mockStart.mockResolvedValue({ type: "something_new" } as never);
-    await expect(runKycVerification("tok")).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
+  it("never marks the session unusable — retrying must not burn a paid session this build cannot open", async () => {
+    const result = await runKycVerification("still-valid-token");
+    expect(result.sessionUnusable).toBe(false);
   });
 });
