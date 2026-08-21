@@ -38,13 +38,18 @@ function splitName(full: string): { firstName: string; lastName: string } {
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
-  const { session, signIn } = useAuth();
+  const { session, signIn, signOut } = useAuth();
   // The just-verified number, threaded from verify.tsx; shown read-only in the "Verified" phone field.
   const params = useLocalSearchParams<{ phone?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const [fullName, setFullName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [busy, setBusy] = useState(false);
+  // Separate from `busy`: the two actions are independent, and sharing one flag would spin the
+  // primary while the rider is actually leaving.
+  const [leaving, setLeaving] = useState(false);
+  // The synchronous half of the guard above — see useDifferentNumber.
+  const leavingRef = useRef(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -107,6 +112,30 @@ export default function ProfileSetupScreen(): React.ReactElement {
     }
   };
 
+  /**
+   * Abandon this verified number and start the phone step again.
+   *
+   * The lock is a REF, not the `leaving` state: a state write is not visible to a second press in
+   * the same tick, so guarding on it lets a double-tap fire two sign-outs (two server revokes, two
+   * device wipes, two navigations) before the button ever re-renders disabled. Cleared on the
+   * failure path so a genuine retry is still possible.
+   */
+  const useDifferentNumber = async (): Promise<void> => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    try {
+      await signOut();
+      router.replace("/phone");
+    } catch {
+      // signOut is already best-effort about the server revoke; if the local clear itself fails the
+      // rider must not be left on a dead button with no explanation.
+      leavingRef.current = false;
+      setLeaving(false);
+      setError("Couldn't switch numbers. Try again.");
+    }
+  };
+
   return (
     <Screen>
       <Heading>Tell us who you are</Heading>
@@ -153,6 +182,23 @@ export default function ProfileSetupScreen(): React.ReactElement {
         hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
       />
       <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
+      {/* The mock's `Register` ghost (LJ.register), and the only drawn exit from this screen.
+          Without it a customer who mistyped their number and then passed the code sent to THAT
+          number is trapped: the phone field above is deliberately read-only, so there is nothing on
+          screen to correct, and the Android system back button is the only way out — the one thing
+          DESIGN.md's accessibility section forbids ("easy error recovery").
+
+          It signs out rather than just navigating, because by this point the wrong number is a
+          verified session: routing to /phone while still authenticated as +263-whatever would send
+          them back here on the next guard pass. `replace`, not `push`, so no back-stack entry
+          returns to a screen whose session no longer exists.
+
+          The typed name/ID draft does NOT survive this, and that is correct rather than a wart:
+          signOut → clearDeviceState wipes PROFILE_DRAFT_KEY because the draft holds a national ID
+          (LC-C10, same shared-device rule as the KYC draft). Preserving it across a sign-out would
+          mean whoever verifies a number NEXT on this handset lands here pre-filled with a stranger's
+          name and ID. Retyping a name is the cheaper of the two costs, so the rider retypes. */}
+      <Button label="Use a different number" variant="ghost" onPress={useDifferentNumber} loading={leaving} />
     </Screen>
   );
 }
