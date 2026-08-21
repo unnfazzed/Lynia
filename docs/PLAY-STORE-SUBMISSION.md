@@ -826,6 +826,63 @@
 > exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human. The
 > Didit camera/liveness UI that shipped in build #31 still has no handset run behind it.
 
+> **2026-08-21 — internal-track build #33: the first build dispatched to FIX a reported crash rather
+> than to ship a feature. Both halves FINISHED.**
+>
+> What shipped: `main`@`f86e3e1` — PR **#854**, the `MOB-BOOT-04` cold-start fix and its RCA
+> (`docs/COLD-START-CRASH-RCA-2026-08-21.md`). **JS-only.** No native input moved: `app.config.ts`,
+> `package.json`, `pnpm-lock.yaml`, `plugins/**`, `eas.json` and `fingerprint.config.js` are all
+> byte-identical to build #32, which is why the release job's *strict* frozen install could not
+> drift the way it did for build `5906d2f0`.
+>
+> **Why it exists.** The owner photographed *"LyniaGo keeps stopping"* on a handset at ~07:38 UTC:
+> builds #31 and #32 install and then die on every cold start. `app/_layout.tsx` runs Sentry init,
+> the splash hold and the font/boot prewarm at module scope, and expo-router evaluates that file
+> **eagerly** while building the route tree — before the `Try` boundary it derives from that same
+> load exists. So a synchronous throw there was a process kill, not an error screen. Every
+> module-scope boot call now runs through a `bootStep` guard, and `@sentry/react-native` is loaded
+> lazily behind a guard because its entry makes three unguarded module-scope
+> `UIManager.hasViewManagerConfig()` calls that were fail-safe under Paper and **throw** under the
+> New Architecture.
+>
+> Dispatched `mobile-release.yml` run `32467179010` explicitly with **`profile: preview`,
+> `submit: true`**. The dispatcher job went green at 09:18:23 UTC — which under `--no-wait` proves
+> only that the build was **queued**.
+>
+> EAS build `8307c0b7-6db2-442c-b889-279cebc259a4` (profile `preview`, created 09:18:17 UTC) reached
+> **FINISHED**. Its submission `1fa4639a-9b5c-4454-9427-5cbc875e8dbc` reached **FINISHED**, track
+> **`internal`**, no error — confirmed via `eas-build-status.yml` run `32469440082` at 09:46, read
+> from the Recap rather than inferred from the green dispatcher job.
+>
+> **Failure class: none.** Third consecutive clean first-attempt build+submission pair.
+>
+> ⚠️ **What this build does NOT establish, and it is the whole point of it.** The fix is
+> **hypothesis-agnostic hardening, not a diagnosis**: it makes a boot-step throw non-fatal without
+> knowing which statement throws. The RCA's leading candidate is the Sentry probe; its §1.1 keeps
+> React instance creation **open**, because the R8 analysis refutes only Didit's reflective
+> `ReactModuleInfo` probe and not that `TurboModuleManager` completes the whole registry. So:
+> **if this build cold-starts, the fault was in the JS module graph. If it still dies, the fault is
+> native and below JS**, and the next build is the fuller revert — the guards plus `newArchEnabled`
+> off and the Didit SDK removed *together* (the SDK requires the New Architecture, so reverting the
+> flag alone crashes for a reason that teaches nothing), back to build #30's proven surface.
+>
+> **Still no device trace.** Neither Play Console Android vitals (filtered to #31's versionCode) nor
+> an on-device bug report has been pulled, so the throwing statement remains unnamed. A booting app
+> makes that *harder* to capture, not easier — the failing state is gone once the tester updates.
+>
+> **This build was shipped without the free pre-check, again.** `android-test-apk.yml` builds a
+> signed sideloadable `assembleRelease` APK on a GitHub runner — identical native surface, zero EAS
+> quota — and would have answered "does it boot?" before a slot was spent. It was offered and not
+> taken; recorded here because builds #31 and #32 also skipped it, and that is now three in a row.
+>
+> Two known gaps unchanged: exact versionCode not captured, and `runtime=?` still rendered for every
+> listed build (open since 2026-08-16).
+>
+> **What this run does NOT establish** — unchanged: still the **internal** track only;
+> `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2 (closed test,
+> its ~14-day clock, production access) untouched. A FINISHED submission does not prove the binary
+> *runs* — and for this build, whether it runs is the entire question.
+
 ---
 
 ## 1. App identity
