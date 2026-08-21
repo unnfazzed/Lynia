@@ -63,7 +63,26 @@ Run the core journeys on a **≤2 GB-RAM device** under **throttled 3G/EDGE** an
 - [ ] **Marker interpolation** stays smooth under 2–5 s WS latency (no teleport).
 - [ ] **Data usage per delivery** measured (expensive-data reality check for the corridor).
 
-## LR20 — crash telemetry (Sentry) + store readiness
+## LR20 — crash telemetry (Sentry + Crashlytics) + store readiness
+
+> **Two reporters since 2026-08-21.** Firebase Crashlytics now runs alongside Sentry — not as
+> redundancy, but because Sentry arms from JS and so cannot witness a crash that happens before its
+> own `init()`, which is precisely how build #31 reached testers dead (MOB-BOOT-04,
+> `docs/COLD-START-CRASH-RCA-2026-08-21.md`). Crashlytics arms from a native ContentProvider before
+> React Native loads. Full spec, provisioning and the coexistence caveat: **`docs/CRASHLYTICS.md`**.
+>
+> Two consequences for this checklist:
+> 1. The forced-crash dialog below now reports **both** reporters' armed state and exercises both.
+>    A crash must be confirmed in **every console the dialog marks ACTIVE** — passing one and
+>    assuming the other is exactly the failure mode this gate exists to catch.
+> 2. **The one interaction nothing off-device can prove:** both SDKs install native signal handlers
+>    on the same process. A single forced **native** crash must appear in **both** consoles. If it
+>    lands in only one, that is the interaction failing — see `docs/CRASHLYTICS.md` §5.
+>
+> Crashlytics needs **no new credential** — it rides the same `google-services.json` that already
+> provisions FCM push. The founder step is one click: Firebase console → Release & Monitor →
+> Crashlytics → Enable.
+
 
 ### Crash telemetry (roadmap 1.1) — CODE WIRED; founder finishes on a device build
 
@@ -101,6 +120,15 @@ pass the DSN through (those lanes build on the runner, not on EAS servers).
 Keep the DSN unset in dev so local runs stay quiet — the seam is inert without it, by design.
 
 - [ ] Activate per the founder steps; **both** forced crashes visible and readable from a release build.
+- [ ] **Crashlytics enabled** in the Firebase console for `zw.co.lynia` (Release & Monitor →
+  Crashlytics → Enable). No new credential — it rides the existing `google-services.json`.
+- [ ] The forced-crash dialog reports `Sentry: ACTIVE · Crashlytics: ACTIVE` on the `preview` build.
+  Anything marked INERT is a provisioning gap, not a pass.
+- [ ] **JS error** lands in Sentry (named frames) **and** as a Crashlytics non-fatal.
+- [ ] **Native crash** lands in **BOTH** consoles with real `zw.co.lynia.*` frames. This is the only
+  check that proves the two native signal handlers coexist — nothing in CI can (docs/CRASHLYTICS.md §5).
+- [ ] Cold start unaffected on a low-end handset — Crashlytics adds a Firebase ContentProvider to
+  Application startup, which is the point, but it must not cost a visible launch regression.
 - [ ] **MOB-BOOT-03-SIB-1 shim check (2026-08-17):** the forced-crash test above is ALSO the
   verification gate for the Metro shim that stubs Sentry's browser-only replay/feedback subtree
   (`metro-shims/sentry-browser-redirect.js` — jest cannot cover a Metro resolver redirect). On the
