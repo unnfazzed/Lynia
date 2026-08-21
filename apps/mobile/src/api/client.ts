@@ -1,5 +1,5 @@
 import { getDeviceId, type Session } from "../auth/session";
-import { API_URL } from "../config";
+import { API_CONFIG_ERROR, API_URL } from "../config";
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { reportReachable, reportUnreachable } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
@@ -140,6 +140,10 @@ export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise
 }
 
 async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  // A misconfigured release build (no real API URL) fails HERE, per request, with a message naming
+  // the fix — never at module scope, where a throw predates every error boundary and kills the boot
+  // (MOB-BOOT-04). Status 400: deterministic, so the retry policy won't hammer a dead constant.
+  if (API_CONFIG_ERROR) throw new ApiError(400, API_CONFIG_ERROR);
   const { method = "GET", body, auth = true } = opts;
   const session = hooks?.getSession() ?? null;
 

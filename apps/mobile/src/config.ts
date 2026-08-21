@@ -9,15 +9,23 @@ const isDev = typeof __DEV__ !== "undefined" && __DEV__;
 const fromExtra = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
 const configured = process.env.EXPO_PUBLIC_API_URL ?? fromExtra;
 
-if (!configured && !isDev) {
-  throw new Error("Set EXPO_PUBLIC_API_URL (or extra.apiUrl in app.config.ts) to the production API URL.");
-}
-
 export const API_URL: string = configured ?? "http://localhost:3000"; // dev-only fallback
 
-if (!isDev && API_URL.includes("localhost")) {
-  throw new Error("EXPO_PUBLIC_API_URL must point at the real API, not localhost, in a release build.");
-}
+/**
+ * A release build with no real API URL is misconfigured and must say so loudly — but not by dying at
+ * the splash. These two conditions used to be module-scope `throw`s, and this module sits in the root
+ * layout's eager import graph, where expo-router evaluates it BEFORE the error boundary it derives
+ * from that same load exists — so a throw here was a cold-start process kill, not an error screen
+ * (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md §2 and §8.2 step 2). The check now lives
+ * here as a value and fires at first use: `apiFetch` refuses every request with this message, so the
+ * app boots, renders, and each screen's normal error path names the misconfiguration instead.
+ */
+export const API_CONFIG_ERROR: string | null = (() => {
+  if (isDev) return null;
+  if (!configured) return "This build is misconfigured: EXPO_PUBLIC_API_URL (or extra.apiUrl in app.config.ts) is not set.";
+  if (API_URL.includes("localhost")) return "This build is misconfigured: EXPO_PUBLIC_API_URL points at localhost, not the real API.";
+  return null;
+})();
 
 /** Socket.IO connects to the same origin as the REST API. */
 export const WS_URL: string = API_URL;

@@ -1,9 +1,19 @@
 # Cold-start crash RCA — internal-track builds #31 / #32 (2026-08-21)
 
-**Ledger id:** `MOB-BOOT-04`. **Status:** narrowed by device observation (§1.1) — the native
-`Application.onCreate` candidate is **refuted**, leaving a JS-evaluation / React-instance-creation
-fatal. A hypothesis-agnostic fix has landed (§8.1); the specific throwing statement still needs a
-stack trace. **Reported:** owner photograph, 2026-08-21
+**Ledger id:** `MOB-BOOT-04`. **Status (updated 2026-08-21, post-build #33):** the §8.1 JS-only
+hardening shipped in build #33 and the owner reports the crash **persists** ("I click open, it shows
+green splash then crashes"). That is the discriminator §8.1 was designed to be: with every
+module-scope boot statement made non-fatal, a surviving cold-start death localises the fault **below
+the JS module graph** — in React instance creation (§1.1 path 1, the TurboModule-registry half that
+§4 narrowed but could not eliminate). Candidate #1 (the Sentry probe) is therefore insufficient as
+the whole story. **The §8.2 revert has been executed** — `newArchEnabled: false` and the Didit SDK
+(dependency, plugin, R8 keep rules) removed together, back to build #30's proven native surface,
+plus §8.2 step 2 (`src/kyc/verify.ts` stub, `src/config.ts` throws deferred to first fetch). It
+reaches devices only through a new store build: sideload `android-test-apk.yml`'s artifact and
+confirm a cold start **before** dispatching `mobile-release.yml` (`profile: preview`). A device
+trace (§7) is still wanted to name the exact native fault before any re-land.
+Earlier narrowing (§1.1): the native `Application.onCreate` candidate is **refuted**; a
+hypothesis-agnostic fix landed (§8.1). **Reported:** owner photograph, 2026-08-21
 09:38 local (≈07:38 UTC) — the system dialog *"LyniaGo keeps stopping"* with *Open app again* /
 *Close app*, on a Transsion-class Android handset. The app dies at cold start, repeatedly.
 

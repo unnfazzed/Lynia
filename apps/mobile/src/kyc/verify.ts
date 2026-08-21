@@ -1,21 +1,25 @@
 /**
- * The ONE place the app talks to Didit's native SDK.
+ * The ONE place the app talks to a KYC verification SDK — currently a stub that always reports
+ * `cant_start`, because the Didit native SDK is REVERTED (MOB-BOOT-04, 2026-08-21).
  *
- * Route A (owner decision, 2026-08-20): the rider never leaves LyniaGo to verify. Didit's native SDK
- * puts the capture + liveness UI on top of our screen as a full-screen modal and hands back a result;
- * Didit still does the analysis, and the verdict still arrives the way it always did — by HMAC-signed
- * webhook to /kyc/callback. What changed is only where the rider stands while it happens.
+ * Route A (owner decision, 2026-08-20) put Didit's native capture/liveness UI inside LyniaGo. That
+ * SDK requires React Native's New Architecture, and every build carrying that pair (#31–#33) dies at
+ * cold start on a real handset — including build #33, whose JS-only hardening proved the fault sits
+ * below the JS module graph. Per docs/COLD-START-CRASH-RCA-2026-08-21.md §8.2 both native changes
+ * are reverted together, which removes the package this module used to import.
  *
- * Why a wrapper instead of importing `startVerification` in the two screens that launch a check:
+ * What survives is the seam: callers still get the same `KycLaunchOutcome` union, and
+ * `resolveKycGate` remains the single authority on which wall a rider sees. With no SDK present a
+ * launch attempt resolves to `failed`, which the gate maps to `cant_start` — the honest state: the
+ * check could not be opened on this build. The verdict lane is unchanged (HMAC-signed webhook to
+ * /kyc/callback), so riders verified by other means (manual review) are unaffected.
  *
- *  - It is the only import site of a NATIVE module. Anything native is absent in Jest and in Expo Go,
- *    so a direct import in a screen makes that whole screen unmountable in tests. Here it is one
- *    module to mock (`__mocks__/@didit-protocol/sdk-react-native.js`).
- *  - The SDK's result union is not the app's. Mapping it once, in a tested pure-ish function, is what
- *    keeps `resolveKycGate` — which already models exactly these three outcomes — the single authority
- *    on which wall a rider sees.
+ * Re-landing the SDK: restore the import + result mapping from git history at this file (2026-08-20),
+ * together with the New Architecture flag and plugin/keep-rule wiring in app.config.ts — one native
+ * change at a time, each behind a sideloaded device cold-start smoke (RCA §8.2 steps 3–6). When it
+ * returns, the import must load lazily inside the try below: this module's "never throws" contract
+ * once lied because a static import throws before any catch can hold it (RCA §3 #3).
  */
-import { startVerification } from "@didit-protocol/sdk-react-native";
 import type { KycSdkResult } from "../logic/gates";
 
 /**
@@ -39,46 +43,16 @@ export interface KycLaunchOutcome {
 }
 
 /**
- * Open Didit's native check for `sessionToken` and map the result onto the app's three pending states.
+ * Attempt to open a verification check for `sessionToken`.
  *
- * Never throws: every failure path — no token, an unlinked native module, a mid-flow SDK error —
- * resolves to `failed`, because the caller's job is to pick a wall, and an exception there would put
- * the rider back on the silent dead-end this whole change exists to remove.
+ * Never throws: with the native SDK reverted, every call resolves to `failed`, because the caller's
+ * job is to pick a wall and `cant_start` is the truthful one — the app cannot open a check on this
+ * build. `sessionUnusable` stays false: the credential is fine, this build just has nothing to hand
+ * it to, and burning a paid session on retry would fix nothing.
  */
 export async function runKycVerification(sessionToken: string | null | undefined): Promise<KycLaunchOutcome> {
-  // No credential, nothing to open. `failed` (not `cancelled`) because the rider did nothing wrong and
-  // did not walk away — the app could not start the check, which is what `cant_start` says.
-  if (!sessionToken) return { outcome: "failed", sessionUnusable: false };
-
-  try {
-    // Config left at the SDK's defaults on purpose. Its own defaults already give the rider a close
-    // button and an exit confirmation, which is the exit affordance the navigation review (N-05..N-07)
-    // asked every full-screen step to have; overriding them would remove it. Didit's UI is outside our
-    // pixel-parity surface by D-34, so we do not restyle it either.
-    const result = await startVerification(sessionToken);
-
-    switch (result.type) {
-      case "completed":
-        // Deliberately NOT branching on `result.session.status` (Approved / Pending / Declined). The
-        // device's copy of the verdict is a preview, not the decision: the server records KYC only
-        // from the signed webhook, so treating an on-device "Approved" as verified would let a
-        // tampered client promote itself. All this says is "the rider finished the flow" — the wall
-        // becomes in_flight, and the real verdict arrives by webhook.
-        return { outcome: "completed", sessionUnusable: false };
-      case "cancelled":
-        // They closed it themselves. Nothing broke and nothing was assessed: resume, don't restart.
-        return { outcome: "cancelled", sessionUnusable: false };
-      case "failed":
-        return { outcome: "failed", sessionUnusable: result.error?.type === "sessionExpired" };
-      default:
-        // Unreachable against today's union — TS proves the three cases above are exhaustive — but the
-        // SDK is untyped JavaScript at runtime, so a result type added in a future version would
-        // otherwise fall out of this function as `undefined` and read as neither success nor failure.
-        return { outcome: "failed", sessionUnusable: false };
-    }
-  } catch {
-    // The native module is missing (Expo Go, a stripped build) or threw. Same rider-visible truth as
-    // any other launch failure: the check could not be opened.
-    return { outcome: "failed", sessionUnusable: false };
-  }
+  // Referenced so the signature keeps its meaning for callers and for the re-land diff; no SDK to
+  // hand it to today.
+  void sessionToken;
+  return { outcome: "failed", sessionUnusable: false };
 }

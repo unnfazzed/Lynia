@@ -125,68 +125,40 @@ const config: ExpoConfig = {
   userInterfaceStyle: "light",
   platforms: ["android", "ios"],
   /**
-   * React Native's New Architecture (Fabric + TurboModules). Expo SDK 52 leaves this OFF by default
-   * for an existing project; SDK 53 flips the default on. Turned on here because the Didit React
-   * Native SDK — the Route A decision of 2026-08-20, docs/plans/2026-08-20-kyc-in-app-plan.md §3 —
-   * requires RN >= 0.76 **with** the New Architecture and does not support the old one. RN is 0.76.9
-   * here, so the version floor was already met and this flag is the whole remaining gap.
+   * React Native's New Architecture (Fabric + TurboModules) — OFF, reverted 2026-08-21 (MOB-BOOT-04).
+   *
+   * It was turned on (with the Didit native KYC SDK, which requires it) for internal-track build #31,
+   * and every build carrying that surface — #31, #32, and #33 (which added the JS-only boot-graph
+   * hardening) — dies on a real handset at cold start: green splash, then "LyniaGo keeps stopping".
+   * Build #33 was the discriminator the RCA (docs/COLD-START-CRASH-RCA-2026-08-21.md §8) set up: it
+   * made every module-scope boot statement non-fatal, so the crash surviving it localises the fault
+   * below the JS module graph — in native React-instance/TurboModule-registry creation, exactly the
+   * half no CI here can exercise. Per the RCA's recorded decision, this reverts BOTH native changes
+   * together — the flag and the Didit SDK (dependency, plugin, R8 keep rules) — back to build #30's
+   * proven surface. Never revert the flag alone: the Didit SDK requires the New Architecture, so
+   * flag-off-with-SDK-present crashes for a reason that teaches nothing.
    *
    * NATIVE CHANGE. It shifts the expo-updates `fingerprint` runtimeVersion, so it reaches devices
-   * only through a store build — no OTA can carry it, and no OTA can repair it (REL-01/REL-02 in
-   * docs/KNOWN_BUGS.md). Landed on its own, ahead of any KYC code, so a regression here is
-   * attributable to the migration rather than tangled up with the verification rewrite.
+   * only through a store build — no OTA can carry it, and no OTA can repair the broken builds
+   * already on the internal track (REL-01/REL-02 in docs/KNOWN_BUGS.md).
    *
-   * Dependency audit at the pinned versions (expo-doctor 1.20.2 raises no New-Architecture finding;
-   * its three failures predate this change and are version-drift / direct-install warnings). Every
-   * third-party native module ships Fabric codegen EXCEPT react-native-maps:
-   *   react-native-screens 4.4.0 ............ codegenConfig ✓
-   *   react-native-safe-area-context 4.12.0 . codegenConfig ✓
-   *   react-native-svg 15.8.0 ............... codegenConfig ✓
-   *   @sentry/react-native 6.22.0 ........... codegenConfig ✓
-   *   react-native-maps 1.18.4 .............. NO codegen — still a Paper view. It renders under
-   *     Fabric only via the New Renderer Interop Layer. The library README tells you to register
-   *     `unstable_reactLegacyComponentNames` in a react-native.config.js; that instruction is STALE
-   *     for this stack and a file written to follow it is inert. Verified, not assumed:
-   *       (a) nothing in react-native@0.76.9 or @react-native/gradle-plugin reads that key, and
-   *       (b) this project autolinks through `expo-modules-autolinking react-native-config`
-   *           (see the generated android/settings.gradle), whose output carries only packageName
-   *           and sourceDir — it does not forward `project.<platform>` keys at all, so the option
-   *           cannot reach the build unless EXPO_USE_COMMUNITY_AUTOLINKING=1 swaps the whole
-   *           autolinking strategy over to @react-native-community/cli.
-   *     It is unnecessary regardless: RCTLegacyViewManagerInteropComponentView's `isSupported:`
-   *     falls through to a step 3 that scans the registered bridge modules and matches
-   *     AIRMapManager → "AIRMap" on its own, and Android resolves legacy managers through the view
-   *     manager registry the same way. So: nothing to configure — but nothing PROVEN either,
-   *     because interop is runtime behaviour that no static check can exercise.
-   * posthog-react-native 4.63.0 also has no codegen, but ships no native views of its own.
-   *
-   * NOT PROVEN BY CI, AND CI CANNOT PROVE IT. There is no device build in the pipeline, so a green
-   * run says nothing about whether Fabric renders. The gate is a `preview`-profile EAS build smoke
-   * tested on a real phone. Maps are the sharp edge — a blank map on /send is exactly the silent,
-   * ship-it-and-find-out-later failure the GOOGLE_MAPS_API_KEY guard below exists for (2026-08-16),
-   * and the interop path above is unverified until something renders. Check, at minimum: /send's
-   * map + marker drag, rider live tracking (MarkerAnimated + Polyline + Circle), the bottom sheets
-   * (react-native-screens), and push registration.
+   * Re-enabling: only WITH the Didit SDK, one native change at a time, each behind a sideloaded
+   * android-test-apk.yml cold-start smoke on a real device BEFORE any EAS/Play dispatch — the gate
+   * builds #31–#33 all skipped. The pre-revert audit notes (react-native-maps has no Fabric codegen
+   * and renders only via the interop layer; nothing registers unstable_reactLegacyComponentNames on
+   * this autolinking stack) live in git history at this file, 2026-08-20.
    */
-  newArchEnabled: true,
+  newArchEnabled: false,
   // Launcher icon copied from packages/design/assets/brand/icon/ (the design system owns the
   // artwork); splash-icon.png is the bare Paper Dove (Brand.tsx geometry) rendered white for the
   // green splash below. Light UI only — the design defers dark mode.
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
-    // Didit's native KYC SDK (Route A, owner decision 2026-08-20 — riders verify INSIDE LyniaGo and
-    // never open Didit's website). The plugin is load-bearing native wiring, not a nicety: it adds
-    // Didit's own Maven repository (their Android artifacts are not on Maven Central) and the Podfile
-    // globals that resolve the iOS SDK. Without it the JS imports resolve and the build fails at link.
-    //
-    // Registered bare, so the SDK's default variant applies. That variant includes the NFC reader,
-    // which a Zimbabwean national ID cannot use — dropping to "autodetection" would shrink the binary.
-    // NOT done here on purpose: which steps a check actually runs is decided server-side by
-    // DIDIT_WORKFLOW_ID, which this repo cannot read, and a variant missing a step the workflow asks
-    // for fails the check on the device rather than at build time. Trim it once the workflow's steps
-    // are known and can be pinned in a test — a smaller APK is not worth a KYC flow that dead-ends.
-    "@didit-protocol/sdk-react-native",
+    // Didit's native KYC SDK (Route A) was registered here from 2026-08-20 to 2026-08-21 and is
+    // REVERTED with the New Architecture flag above (MOB-BOOT-04) — the SDK requires the New
+    // Architecture, so the two ship and revert only as a pair. Re-registration goes through the
+    // re-enable protocol in the newArchEnabled comment.
     // Sentry crash reporting (roadmap 1.1 / LR20). The config plugin wires the native SDK + the
     // source-map / debug-symbol upload hooks into the EAS build; runtime capture stays inert until
     // EXPO_PUBLIC_SENTRY_DSN is set (src/telemetry/sentry.ts).
@@ -330,12 +302,6 @@ const config: ExpoConfig = {
             // missing-class warnings so R8 can't strip the classes JS/Fabric reach reflectively.
             "-keep class com.rnmaps.maps.** { *; }",
             "-dontwarn com.rnmaps.maps.**",
-            // Didit's KYC SDK, same reasoning as maps above: release builds run R8, and the SDK's
-            // classes are reached across the JNI/TurboModule boundary rather than from Java call
-            // sites R8 can see, so shrinking is free to strip them. A stripped KYC SDK does not fail
-            // the build — it fails on a rider's phone, as the launch failure `cant_start` reports.
-            "-keep class me.didit.** { *; }",
-            "-dontwarn me.didit.**",
           ].join("\n"),
         },
       },
