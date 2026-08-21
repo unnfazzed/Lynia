@@ -145,50 +145,79 @@ describe("service-corridor gate (Q1)", () => {
 });
 
 describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent no-op)", () => {
-  it("hands back the session token and clears any prior error", () => {
-    expect(resolveKycRetryFeedback("sess_tok_abc", "auto")).toEqual({
-      sessionToken: "sess_tok_abc",
+  it("hands back both credentials and clears any prior error", () => {
+    expect(
+      resolveKycRetryFeedback({ sessionToken: "sess_tok_abc", verificationUrl: "https://verify.didit.me/s1", mode: "auto" }),
+    ).toEqual({
+      launch: { sessionToken: "sess_tok_abc", verificationUrl: "https://verify.didit.me/s1" },
       error: null,
       info: null,
     });
   });
 
-  it("surfaces an error instead of silently doing nothing when the token is missing in auto mode", () => {
-    const feedback = resolveKycRetryFeedback(undefined, "auto");
-    expect(feedback.sessionToken).toBeNull();
+  // MOB-BOOT-04: with the native SDK reverted, the URL is the credential that actually opens — a
+  // response carrying only the hosted web flow must still be launchable, or every retry on this
+  // build surfaces a false "couldn't start verification" on a request that succeeded.
+  it("launches on a URL alone — the browser fallback lane", () => {
+    expect(resolveKycRetryFeedback({ verificationUrl: "https://verify.didit.me/s1", mode: "auto" })).toEqual({
+      launch: { sessionToken: null, verificationUrl: "https://verify.didit.me/s1" },
+      error: null,
+      info: null,
+    });
+  });
+
+  it("launches on a token alone — the native lane's shape when the SDK re-lands", () => {
+    expect(resolveKycRetryFeedback({ sessionToken: "sess_tok_abc", mode: "auto" })).toEqual({
+      launch: { sessionToken: "sess_tok_abc", verificationUrl: null },
+      error: null,
+      info: null,
+    });
+  });
+
+  it("surfaces an error instead of silently doing nothing when both credentials are missing in auto mode", () => {
+    const feedback = resolveKycRetryFeedback({ mode: "auto" });
+    expect(feedback.launch).toBeNull();
     expect(feedback.error).toBeTruthy();
     expect(feedback.info).toBeNull();
   });
 
-  // The URL era had a `startsWith("https://")` guard, and its replacement is deliberately NOT a shape
-  // check. A token is an opaque credential — any pattern this asserted would be invented, and a real
-  // token that failed the invention would be rejected here as "couldn't start verification" while
-  // being perfectly valid. Emptiness is the only thing we can honestly test for; the SDK judges the
-  // rest, and `runKycVerification` maps its rejection to cant_start.
+  // The URL feeds a browser surface, so it keeps the https guard the URL era had; a non-https value
+  // is treated as absent, never opened.
+  it("drops a non-https URL rather than opening it", () => {
+    const feedback = resolveKycRetryFeedback({ verificationUrl: "http://verify.didit.me/s1", mode: "auto" });
+    expect(feedback.launch).toBeNull();
+    expect(feedback.error).toBeTruthy();
+  });
+
+  // A token is an opaque credential — any pattern asserted here would be invented, and a real token
+  // that failed the invention would be rejected as "couldn't start verification" while being
+  // perfectly valid. Emptiness is the only thing we can honestly test for; the SDK judges the rest,
+  // and `runKycVerification` maps its rejection to cant_start.
   it("treats an empty token as no token rather than launching with it", () => {
-    const feedback = resolveKycRetryFeedback("", "auto");
-    expect(feedback.sessionToken).toBeNull();
+    const feedback = resolveKycRetryFeedback({ sessionToken: "", mode: "auto" });
+    expect(feedback.launch).toBeNull();
     expect(feedback.error).toBeTruthy();
   });
 
   it("passes an unusual-looking token straight through instead of inventing a format rule", () => {
-    expect(resolveKycRetryFeedback("not-a-url-and-that-is-fine", "auto").sessionToken).toBe(
-      "not-a-url-and-that-is-fine",
-    );
+    expect(resolveKycRetryFeedback({ sessionToken: "not-a-url-and-that-is-fine", mode: "auto" }).launch).toEqual({
+      sessionToken: "not-a-url-and-that-is-fine",
+      verificationUrl: null,
+    });
   });
 
-  // BH-03: manual KYC mode never mints a session — a missing token there is the EXPECTED shape of a
-  // successful retry (ops review, no vendor step), not a failure to explain as one.
-  it("surfaces a calm info line, not an error, when the token is missing in manual mode", () => {
-    const feedback = resolveKycRetryFeedback(undefined, "manual");
-    expect(feedback.sessionToken).toBeNull();
+  // BH-03: manual KYC mode never mints a session — missing credentials there are the EXPECTED shape
+  // of a successful retry (ops review, no vendor step), not a failure to explain as one.
+  it("surfaces a calm info line, not an error, when the credentials are missing in manual mode", () => {
+    const feedback = resolveKycRetryFeedback({ mode: "manual" });
+    expect(feedback.launch).toBeNull();
     expect(feedback.error).toBeNull();
     expect(feedback.info).toBeTruthy();
   });
 
-  it("still launches in manual mode on the rare occasion a token is present", () => {
-    expect(resolveKycRetryFeedback("sess_tok_xyz", "manual")).toEqual({
-      sessionToken: "sess_tok_xyz",
+  it("still launches in manual mode on the rare occasion a credential is present", () => {
+    expect(resolveKycRetryFeedback({ sessionToken: "sess_tok_xyz", mode: "manual" })).toEqual({
+      launch: { sessionToken: "sess_tok_xyz", verificationUrl: null },
       error: null,
       info: null,
     });

@@ -518,8 +518,9 @@ export default function RiderHome(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, gate, loc, locHint]);
 
-  // Pending/failed riders re-run KYC: get session credentials and open Didit's native check over this
-  // screen. The rider never leaves LyniaGo, and never re-keys the form.
+  // Pending/failed riders re-run KYC: get session credentials and open the check over this screen —
+  // the hosted web flow in an in-app browser tab while the native SDK is reverted (MOB-BOOT-04).
+  // The rider never re-keys the form.
   const retryM = useMutation({
     // `force` is normally false so the server's free resume path can hand back the session the rider
     // already has. It flips true for exactly one tap after the SDK rejected that session as expired,
@@ -530,15 +531,16 @@ export default function RiderHome(): React.ReactElement {
       return retryKyc(force);
     },
     onSuccess: async (res) => {
-      const feedback = resolveKycRetryFeedback(res.sessionToken, res.mode);
+      const feedback = resolveKycRetryFeedback(res);
       setError(feedback.error);
       setInfo(feedback.info);
-      if (feedback.sessionToken) {
-        // Route A: Didit's native UI opens ON TOP of this screen. There is no browser tab to come back
-        // from, and no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification`
-        // never throws and reports every failure as `failed`, which is what the drawn `cant_start`
-        // state exists to say.
-        const launch = await runKycVerification(feedback.sessionToken);
+      if (feedback.launch) {
+        // The check opens over this screen — via the in-app browser tab (the hosted web flow) while
+        // the native SDK is reverted (MOB-BOOT-04), returning here when the rider closes it. There is
+        // no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification` never
+        // throws and reports every failure as `failed`, which is what the drawn `cant_start` state
+        // exists to say.
+        const launch = await runKycVerification(feedback.launch);
         setKycLaunch(launch.outcome);
         // An expired session would otherwise resume forever: the server cannot see expiry (it fires no
         // webhook), so unless the next tap says "don't hand me that one again", the rider re-opens the

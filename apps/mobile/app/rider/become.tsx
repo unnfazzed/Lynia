@@ -225,11 +225,14 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
       // rather than leaving it in the keystore any longer than needed.
       void clearKycDraft();
-      // Route A: Didit's native check opens over this screen — no browser tab, no handoff out of the
-      // app. The old `.catch(() => undefined)` here was the same swallow the board's retry path had:
-      // when the launch failed the rider saw the generic "finish it in the browser" line describing a
+      // The check opens over this screen — the hosted web flow in an in-app browser tab while the
+      // native SDK is reverted (MOB-BOOT-04). The old `.catch(() => undefined)` here was the same
+      // swallow the board's retry path had: when the launch failed the rider saw a line describing a
       // browser that never opened. `runKycVerification` never throws and names the outcome instead.
-      const launch = res.sessionToken ? await runKycVerification(res.sessionToken) : null;
+      const launch =
+        res.sessionToken || res.verificationUrl
+          ? await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl })
+          : null;
       setPending(
         res.kycStatus === "verified"
           ? "You're verified — you can go online."
