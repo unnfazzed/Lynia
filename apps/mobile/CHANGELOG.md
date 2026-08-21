@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/unnfazzed/Lynia/compare/v0.46.0...v0.46.1) (2026-08-21)
+
+
+### Reverts
+
+* pull Firebase Crashlytics — it deterministically breaks EAS builds ([5d18361](https://github.com/unnfazzed/Lynia/commit/5d18361159acdff6b91459d8733363f2447a0a6a))
+
 ## [0.46.0](https://github.com/unnfazzed/Lynia/compare/v0.45.2...v0.46.0) (2026-08-21)
 
 
