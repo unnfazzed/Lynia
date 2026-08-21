@@ -36,7 +36,8 @@ Three facts that constrain everything below:
 
 ### The regression range
 
-`866455b7..a80e1456` is 16 commits. **Exactly two are native-affecting, both in `app.config.ts`:**
+`866455b7..a80e1456` is 16 commits. **Exactly two changes in it are native-affecting.** Between them
+they touch three files — `apps/mobile/app.config.ts`, `apps/mobile/package.json` and `pnpm-lock.yaml`:
 
 - `63acca8` (#835) — `newArchEnabled: true`. Fabric + TurboModules + **bridgeless**. Never built
   before #31. That commit touched only `app.config.ts` (+45 lines, 44 of them comment) and
@@ -149,7 +150,9 @@ path, that Paper had a catch and bridgeless does not, and that this changed exac
 because it was the leading alternative and the elimination is the useful part. **Universal. Pre-JS.** `MainApplication.kt` calls `SoLoader.init(...)` then, under
 `IS_NEW_ARCHITECTURE_ENABLED`, `DefaultNewArchitectureEntryPoint.load()` — which in RN 0.76.9
 defaults to `turboModules=true, fabric=true, bridgeless=true` and ends at
-`SoLoader.loadLibrary("appmodules")`. **This path has never executed on a device.** A failure here
+`SoLoader.loadLibrary("appmodules")`. **Before build #31 this path had never run on a device, and it
+was never device-validated afterwards** — a FINISHED build records no launch. It has since run, and
+§1.1 shows it succeeded. A failure here
 kills the process inside `Application.onCreate`, before any Activity, before any JS, before
 `initSentry()` — which is exactly why Sentry has nothing.
 
@@ -266,8 +269,11 @@ spent. It was never run.
 **The checklist that survived as "the only remaining runtime gate" could not have caught it either.**
 `docs/QA-DEVICE-CHECKLIST.md` was last modified before both native PRs. It still instructs the tester
 to verify *"in-app browser opens the Didit flow"* — the behaviour #847 deleted — so a correctly
-working Route A build **fails** that item. It contains **no New Architecture items at all**, and no
-unconditional "the app cold-starts" check.
+working Route A build **fails** that item. It contains **no New Architecture items at all**. It does
+carry a cold-start check — LR17's *"Cold start completes in a reasonable time; no white-screen hang"*
+(`docs/QA-DEVICE-CHECKLIST.md:58`) — but it sits under the heading *"real-network pass (low-end
+Android, throttled)"*, so it reads as a performance item conditional on a throttled low-end device
+rather than the unconditional "does the app open at all" gate every release needs.
 
 **And nothing knew the first build had never been opened**, so sixteen hours later #32 shipped the
 identical native surface to the same track.
@@ -287,7 +293,8 @@ DSN, and then shipped a release that is blind for precisely the failure class th
 ## 7. Diagnostics — do these before building anything
 
 1. **Play Console → Quality → Android vitals → Crashes and ANRs**, filtered to build #31's
-   versionCode (then #32's). R8's `mapping.txt` is embedded in the AAB, so Play deobfuscates
+   versionCode (then #32's). AGP embeds R8's `mapping.txt` in the AAB
+   (`BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map`), so Play should deobfuscate
    automatically. This is the only place a real stack trace exists today. *(Caveat: vitals lag by
    hours and suppress clusters below a device-count privacy threshold — with one or two testers it
    may not surface.)*
@@ -300,8 +307,12 @@ DSN, and then shipped a release that is blind for precisely the failure class th
    > *When it fails, do you see the green Lynia splash for a moment first, or does it go straight
    > from the launcher to the dialog?*
 
-   **No splash, no JS frame in the trace ⇒ #2** (native, `MainApplication.onCreate`).
-   **Splash appears, then dies, JS frames in the trace ⇒ #1** (bridgeless `hasViewManagerConfig`).
+   **No splash** strongly suggests #2 (native, `MainApplication.onCreate`).
+   **Splash, then death** strongly suggests a fatal after the Activity starts — #1, or any other
+   statement in the same module graph (`src/config.ts`'s throws, `SplashScreen.setOptions`,
+   `prewarmFonts`, `prewarmBootReads`), which produce an identical symptom.
+   Treat it as a heuristic that halves the list, never as a classifier: **only the stack trace names
+   the throwing statement.**
    This halves the suspect list before a single build is spent.
 
 ---
@@ -363,11 +374,15 @@ mistaken dispatch cannot become a third bad build.
    dependency, plugin registration and keep rules. Do **not** revert the flag alone: the Didit SDK
    *requires* the New Architecture, so flag-off-with-SDK-present crashes for a reason that teaches
    nothing.
-2. **Land the defensive JS fixes in the same build**, because they are correct regardless of which
-   candidate wins: make `src/kyc/verify.ts` `require()` inside its existing `try` (restoring its own
-   documented contract); wrap the module-scope boot block of `app/_layout.tsx` in `try/catch`; make
-   `initSentry()` require Sentry lazily; guard `SplashScreen.setOptions`; replace `src/config.ts`'s
-   module-scope `throw`s with a check at first fetch.
+2. **Carry §8.1's fixes into that build** — they are already on the branch and are correct regardless
+   of which candidate wins. Note what §8.1 does **not** yet cover, and why the Sentry change had to go
+   further than "make `initSentry()` lazy": deferring only the init call would have left
+   `sentry.ts`'s top-level `import` and its `export const wrap = Sentry.wrap` evaluating at module
+   load, and **no `try/catch` in `_layout.tsx` can catch a static import failure in its own dependency
+   graph** — which is why the import itself was removed. Still open, same class, not yet done:
+   `src/kyc/verify.ts` should `require()` inside its existing `try` (restoring its own documented
+   contract, §3 #3), and `src/config.ts`'s two module-scope `throw`s should become a check at first
+   fetch.
 3. **Sideload before Play.** Dispatch **Android Test APK**, install the artifact, confirm it cold
    starts. ~15 minutes, no EAS quota. *This is the step that was skipped for #31 and #32.*
 4. **Dispatch `mobile-release.yml` with `profile: preview` explicitly** — the workflow default is
@@ -388,14 +403,22 @@ than performed. This lane has no such guardrail. In priority order:
 1. **Emulator cold-start smoke on the release APK** (CI-blocking, path-gated to
    `app.config.ts` / `package.json` / `pnpm-lock.yaml` / `plugins/**` / `fingerprint.config.js`).
    Assemble release, boot an emulator, launch, assert the process is alive after N seconds and
-   logcat has no `FATAL EXCEPTION`. **This is the only proposal that would have caught this
-   incident on either candidate.** Costs ~20-35 min of runner time on the ~5% of PRs that touch
+   logcat has no `FATAL EXCEPTION`. **It is the only proposal here that exercises both
+   candidate paths in CI** — but it is not a guarantee: an x86_64 emulator cannot prove behaviour on a
+   specific handset, and candidate #1 may depend on a device-specific bridgeless lookup. Guardrail 3
+   is a ledger gate: it installs nothing and reads no logcat, so it is process coverage, not runtime
+   coverage. Costs ~20-35 min of runner time on the ~5% of PRs that touch
    those paths. Must be *required*, never `continue-on-error`.
 2. **Boot-path import lint** (near-zero cost). Forbid any module reachable from the eager boot graph
    — `app/_layout.tsx` and every `app/**/_layout.tsx` — from statically importing a package on a
    native-only denylist, and **derive that denylist from the `moduleNameMapper` entries that point at
    `__mocks__/`**. Every module the suite has to fake because the real one explodes on import is, by
    definition, a module that must not sit on the boot path. Self-extending.
+
+   Caveat on that derivation: a `__mocks__/` entry is a *proxy* for import-time hostility, not proof of
+   it — a module can be mocked for speed or determinism instead. Treat the mock list as the seed for
+   the denylist and confirm each entry against actual import-time behaviour, so the lint blocks
+   modules that genuinely throw rather than everything anyone found convenient to fake.
 3. **Device-smoke ledger gate.** A `docs/DEVICE-SMOKE-LEDGER.md` row per shipped build, and a
    `mobile-release.yml` preflight that refuses to dispatch while the previous build on the channel is
    still `PENDING`. **#32 would have been blocked.** It turns a gate that prose can rewrite into a
@@ -411,6 +434,7 @@ than performed. This lane has no such guardrail. In priority order:
 - `MOB-BOOT-04` — this incident. OPEN until a device trace confirms #1 or #2.
 - The `src/kyc/verify.ts` import-time throw (§3 #3) — real P1, independent of the crash.
 - Missing `bcutil-jdk18on` breaks Didit NFC in the `all` variant (§4).
-- `docs/QA-DEVICE-CHECKLIST.md` still describes the deleted browser hand-off and has no New
-  Architecture or cold-start items.
+- `docs/QA-DEVICE-CHECKLIST.md` still describes the deleted browser hand-off, has no New
+  Architecture items, and files its only cold-start check (LR17) under a conditional low-end/throttled
+  section instead of as an unconditional release gate.
 - `react-native-maps` Fabric interop remains unverified on-device.
