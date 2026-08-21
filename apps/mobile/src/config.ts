@@ -12,18 +12,42 @@ const configured = process.env.EXPO_PUBLIC_API_URL ?? fromExtra;
 export const API_URL: string = configured ?? "http://localhost:3000"; // dev-only fallback
 
 /**
+ * The host part of an http(s) URL, without brackets/port — or null when the URL doesn't parse as
+ * one. Regex, not `new URL(...)`: React Native's built-in URL polyfill throws "not implemented"
+ * from accessors like `hostname`, and this module must never throw (see API_CONFIG_ERROR below).
+ */
+function httpUrlHost(url: string): string | null {
+  const ipv6 = /^https?:\/\/\[([^\]]+)\]/i.exec(url);
+  if (ipv6) return ipv6[1] ?? null;
+  const host = /^https?:\/\/([^/:?#]+)/i.exec(url);
+  return host?.[1] ?? null;
+}
+
+/** Hosts that can only ever be the phone itself — a dead API for every real user. */
+function isLoopbackHost(host: string): boolean {
+  return host === "localhost" || host === "::1" || host === "0.0.0.0" || host.startsWith("127.");
+}
+
+/**
  * A release build with no real API URL is misconfigured and must say so loudly — but not by dying at
- * the splash. These two conditions used to be module-scope `throw`s, and this module sits in the root
+ * the splash. These conditions used to be module-scope `throw`s, and this module sits in the root
  * layout's eager import graph, where expo-router evaluates it BEFORE the error boundary it derives
  * from that same load exists — so a throw here was a cold-start process kill, not an error screen
  * (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md §2 and §8.2 step 2). The check now lives
  * here as a value and fires at first use: `apiFetch` refuses every request with this message, so the
  * app boots, renders, and each screen's normal error path names the misconfiguration instead.
+ *
+ * Loopback covers every spelling of "the phone itself" — `localhost`, `127.x.x.x`, `[::1]`,
+ * `0.0.0.0` — not just the literal "localhost" the old throw matched. A URL that doesn't parse as
+ * http(s) is equally a config error: `fetch` could only fail on it, and it would fail as a
+ * retryable-looking network error instead of naming the real problem.
  */
 export const API_CONFIG_ERROR: string | null = (() => {
   if (isDev) return null;
   if (!configured) return "This build is misconfigured: EXPO_PUBLIC_API_URL (or extra.apiUrl in app.config.ts) is not set.";
-  if (API_URL.includes("localhost")) return "This build is misconfigured: EXPO_PUBLIC_API_URL points at localhost, not the real API.";
+  const host = httpUrlHost(API_URL);
+  if (!host) return "This build is misconfigured: EXPO_PUBLIC_API_URL is not a valid http(s) URL.";
+  if (isLoopbackHost(host)) return "This build is misconfigured: EXPO_PUBLIC_API_URL points at the device itself (loopback), not the real API.";
   return null;
 })();
 

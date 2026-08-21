@@ -39,9 +39,17 @@ describe("config.ts — a misconfigured release build boots instead of dying at 
     expect(cfg.API_URL).toBe("http://localhost:3000"); // the dev fallback still exists, it just can't pass silently
   });
 
-  it("evaluates without throwing when the configured URL is localhost, and names it", () => {
-    const cfg = loadConfigAsRelease("http://localhost:3000");
-    expect(cfg.API_CONFIG_ERROR).toMatch(/localhost/);
+  it.each(["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000", "https://0.0.0.0"])(
+    "evaluates without throwing when the configured URL is loopback (%s), and names it",
+    (url) => {
+      const cfg = loadConfigAsRelease(url);
+      expect(cfg.API_CONFIG_ERROR).toMatch(/loopback/);
+    },
+  );
+
+  it("treats a URL that is not http(s) as a config error, not a retryable network failure", () => {
+    const cfg = loadConfigAsRelease("not-a-url");
+    expect(cfg.API_CONFIG_ERROR).toMatch(/valid http/);
   });
 
   it("reports no error for a correctly configured release build", () => {

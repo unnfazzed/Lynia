@@ -1,6 +1,7 @@
 /**
- * The ONE place the app talks to a KYC verification SDK — currently a stub that always reports
- * `cant_start`, because the Didit native SDK is REVERTED (MOB-BOOT-04, 2026-08-21).
+ * The ONE place the app talks to a KYC verification SDK — currently a stub that always resolves
+ * `failed` (which `resolveKycGate` maps to the `cant_start` wall), because the Didit native SDK is
+ * REVERTED (MOB-BOOT-04, 2026-08-21).
  *
  * Route A (owner decision, 2026-08-20) put Didit's native capture/liveness UI inside LyniaGo. That
  * SDK requires React Native's New Architecture, and every build carrying that pair (#31–#33) dies at

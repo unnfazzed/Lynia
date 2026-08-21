@@ -2,11 +2,16 @@
 
 **Ledger id:** `MOB-BOOT-04`. **Status (updated 2026-08-21, post-build #33):** the §8.1 JS-only
 hardening shipped in build #33 and the owner reports the crash **persists** ("I click open, it shows
-green splash then crashes"). That is the discriminator §8.1 was designed to be: with every
-module-scope boot statement made non-fatal, a surviving cold-start death localises the fault **below
-the JS module graph** — in React instance creation (§1.1 path 1, the TurboModule-registry half that
-§4 narrowed but could not eliminate). Candidate #1 (the Sentry probe) is therefore insufficient as
-the whole story. **The §8.2 revert has been executed** — `newArchEnabled: false` and the Didit SDK
+green splash then crashes"). Read that discriminator precisely: §8.1 guarded the *named* boot
+statements (the `_layout.tsx` calls, the Sentry entry), so the surviving crash proves the fault is
+**not one of the guarded statements** — it does NOT yet prove it is native. Both §1.1 paths remain
+open: React instance creation (path 1, the TurboModule-registry half §4 narrowed but could not
+eliminate) and an unguarded synchronous throw elsewhere in the eager JS module graph (path 2 — a
+static import or module-scope initializer in any of the ~1,700 boot modules §8.1 never touched).
+Candidate #1 (the Sentry probe) is refuted as the whole story; only a device trace (§7) names the
+statement. The revert below is correct under either path: it removes the entire native delta of the
+regression range, which is what every surviving candidate has in common. **The §8.2 revert has been
+executed** — `newArchEnabled: false` and the Didit SDK
 (dependency, plugin, R8 keep rules) removed together, back to build #30's proven native surface,
 plus §8.2 step 2 (`src/kyc/verify.ts` stub, `src/config.ts` throws deferred to first fetch). It
 reaches devices only through a new store build: sideload `android-test-apk.yml`'s artifact and
