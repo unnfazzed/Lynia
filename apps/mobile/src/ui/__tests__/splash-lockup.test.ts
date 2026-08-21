@@ -83,6 +83,9 @@ describe("splash lockup — the native launch image and the JS frame are one pic
 // (app/__tests__/boot-splash-hold.test.tsx) so in-app navigation keeps its animation.
 describe("cold start does not animate", () => {
   it("pins the native splash to hide without a fade", () => {
-    expect(read("app/_layout.tsx")).toContain("SplashScreen.setOptions({ fade: false });");
+    // Matched WITHOUT its statement terminator: since MOB-BOOT-04 the call is wrapped in the root
+    // layout's `bootStep` guard (a throw at module scope there is a process kill, not an error
+    // screen), so the line now ends `}));`. The option itself is what this pins, not the punctuation.
+    expect(read("app/_layout.tsx")).toContain("SplashScreen.setOptions({ fade: false })");
   });
 });

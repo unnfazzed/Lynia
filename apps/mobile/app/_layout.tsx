@@ -27,25 +27,56 @@ import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
 import { BootSplashHold } from "./boot-splash-hold.view";
 import ForceUpdateScreen from "./force-update";
 
+/**
+ * EVERY STATEMENT IN THIS BLOCK RUNS WHERE NOTHING CAN CATCH IT (MOB-BOOT-04,
+ * docs/COLD-START-CRASH-RCA-2026-08-21.md).
+ *
+ * expo-router evaluates this file EAGERLY while it builds the route tree — `getRoutes()` calls
+ * `loadRoute()` for every `_layout` — and the `Try` boundary that catches render errors for the whole
+ * app is built FROM the result of that load. It therefore cannot catch the load itself. Neither
+ * `Sentry.wrap` (touch instrumentation + a profiler, not a boundary) nor Expo's `registerRootComponent`
+ * (dev-only) adds one either. So a synchronous throw anywhere in this module's graph is not an error
+ * screen: uncaught JS → `DefaultJSExceptionHandler` rethrows on the native thread → the process dies and
+ * Android shows "LyniaGo keeps stopping".
+ *
+ * That is not hypothetical — it is how build #31 reached testers dead. So every module-scope call here
+ * goes through {@link bootStep}: it reports (if telemetry survived) and continues. A boot that is
+ * missing its splash pin, its font prewarm or its crash reporter is strictly better than no boot, and
+ * each of these is an optimisation or a nicety, never a correctness precondition — the app re-does or
+ * tolerates all of it downstream (fonts fall back to system, prewarm's consumers call it again from
+ * their own effects, the splash hides on first paint regardless).
+ */
+function bootStep(step: () => unknown): void {
+  try {
+    step();
+  } catch (error) {
+    // captureException is itself a no-op when Sentry is inert or failed to load, so this can't
+    // re-throw the very failure it is reporting.
+    captureException(error);
+  }
+}
+
 // Crash reporting (roadmap 1.1 / LR20) — first thing at module load so native + JS handlers are armed
 // before any app code runs. Inert unless EXPO_PUBLIC_SENTRY_DSN is set (dev/jest stay silent).
-initSentry();
+// Guarded twice over: initSentry() no longer throws on its own (src/telemetry/sentry.ts) AND it runs
+// through bootStep, because this is the statement that must not be the one that kills the launch.
+bootStep(initSentry);
 
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
-SplashScreen.preventAutoHideAsync().catch(() => {});
+bootStep(() => SplashScreen.preventAutoHideAsync().catch(() => {}));
 // The cold start is ONE screen and it does not animate (owner instruction 2026-08-18). `fade` is
 // already the library default on both platforms, but it is a DEFAULT — pin it, because the frame it
 // would cross-fade to is the identical picture (app/splash.view.tsx), so a fade here could only ever
 // render as the brand mark dipping in opacity against itself for no reason.
-SplashScreen.setOptions({ fade: false });
+bootStep(() => SplashScreen.setOptions({ fade: false }));
 
 // Start the fonts and every device-local boot read NOW, at module evaluation, so the native side works
 // on them while the JS thread finishes evaluating the startup graph. Previously all of this began only
 // after the first render committed, which itself waited on the fonts — one serial chain where nothing
 // actually depended on anything. See src/boot/prewarm.ts for the full shape of that bug.
-prewarmFonts();
-prewarmBootReads();
+bootStep(prewarmFonts);
+bootStep(prewarmBootReads);
 
 /** Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider. */
 function PushSync(): null {

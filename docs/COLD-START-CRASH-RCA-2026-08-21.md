@@ -1,7 +1,9 @@
 # Cold-start crash RCA — internal-track builds #31 / #32 (2026-08-21)
 
-**Ledger id:** `MOB-BOOT-04`. **Status:** root cause not yet confirmed on-device; two ranked
-candidates, both attributable to the same PR pair. **Reported:** owner photograph, 2026-08-21
+**Ledger id:** `MOB-BOOT-04`. **Status:** narrowed by device observation (§1.1) — the native
+`Application.onCreate` candidate is **refuted**, leaving a JS-evaluation / React-instance-creation
+fatal. A hypothesis-agnostic fix has landed (§8.1); the specific throwing statement still needs a
+stack trace. **Reported:** owner photograph, 2026-08-21
 09:38 local (≈07:38 UTC) — the system dialog *"LyniaGo keeps stopping"* with *Open app again* /
 *Close app*, on a Transsion-class Android handset. The app dies at cold start, repeatedly.
 
@@ -56,6 +58,33 @@ fresh-install crash, not an upgrade-only one.**
 
 ---
 
+## 1.1 Device evidence (owner, 2026-08-21)
+
+> *"I see the green splash screen but it crashes after that."*
+
+This is decisive, and it is worth being precise about what it does and does not settle.
+
+**Refuted: the native `MainApplication.onCreate` candidate.** The green splash is painted by the
+Activity's splash theme, which cannot appear unless `Application.onCreate` has already completed. So
+`SoLoader.init`, `DefaultNewArchitectureEntryPoint.load()` and `libappmodules.so` all succeeded. The
+New Architecture's native entry point is **not** where this dies.
+
+**What remains,** in order of the startup sequence, both of which occur after the splash is up:
+
+1. **React instance creation** — `TurboModuleManager` building the module registry, which calls
+   `getReactModuleInfoProvider()` on every package including Didit's.
+2. **JS bundle evaluation** — the root layout's module graph (§2), which is where candidate #1 lives.
+
+`(1)` was refuted independently on R8 grounds (§4), which leaves **candidate #1 as the leading
+explanation**. Note the splash would be *held* through JS evaluation by
+`preventAutoHideAsync()`, and expo-router's global `ErrorUtils` handler hides it before delegating on
+a fatal — so "splash, brief flash, dialog" is exactly the shape candidate #1 predicts.
+
+**Still not settled by this observation:** which statement throws. Candidate #1 names Sentry's
+`hasViewManagerConfig` probes as the most likely, but any synchronous throw in that module graph
+produces an identical symptom. That is precisely why the fix in §8.1 is written to be
+hypothesis-agnostic rather than to target Sentry alone.
+
 ## 2. The structural defect that makes all of this fatal
 
 This is the finding that matters most, because it is the difference between *a broken feature* and
@@ -86,7 +115,7 @@ and `:18`.
 
 ## 3. Ranked candidate root causes
 
-### #1 — PRIMARY. Sentry's module-scope `UIManager` probes stopped being fail-safe the moment the New Architecture shipped
+### #1 — PRIMARY (leading, after §1.1). Sentry's module-scope `UIManager` probes stopped being fail-safe the moment the New Architecture shipped
 
 **Universal — every user, every launch, both roles. Fully source-verified except for the final
 native step.**
@@ -114,16 +143,18 @@ cold start instead of a `console.error`.
 path, that Paper had a catch and bridgeless does not, and that this changed exactly with the flag.
 *Not confirmed without a device:* that the underlying native lookup actually throws on that handset.
 
-### #2 — CLOSE SECOND. The New Architecture native entry point failing in `MainApplication.onCreate`
+### #2 — REFUTED by device observation (§1.1). The New Architecture native entry point failing in `MainApplication.onCreate`
 
-**Universal. Pre-JS.** `MainApplication.kt` calls `SoLoader.init(...)` then, under
+**Refuted:** the green splash cannot paint if this path fails. Retained here with its reasoning
+because it was the leading alternative and the elimination is the useful part. **Universal. Pre-JS.** `MainApplication.kt` calls `SoLoader.init(...)` then, under
 `IS_NEW_ARCHITECTURE_ENABLED`, `DefaultNewArchitectureEntryPoint.load()` — which in RN 0.76.9
 defaults to `turboModules=true, fabric=true, bridgeless=true` and ends at
 `SoLoader.loadLibrary("appmodules")`. **This path has never executed on a device.** A failure here
 kills the process inside `Application.onCreate`, before any Activity, before any JS, before
 `initSentry()` — which is exactly why Sentry has nothing.
 
-*Signature:* `UnsatisfiedLinkError: dlopen failed: library "libappmodules.so" not found`, or an
+*Signature that would have confirmed it, and was NOT observed:* no splash at all, plus
+`UnsatisfiedLinkError: dlopen failed: library "libappmodules.so" not found`, or an
 `IllegalStateException` from `isConfigurationValid`, or a `SIGABRT` tombstone — with a frame in
 `MainApplication.onCreate` and **no JS frame anywhere in the trace**.
 
@@ -276,6 +307,43 @@ DSN, and then shipped a release that is blind for precisely the failure class th
 ---
 
 ## 8. Recovery
+
+### 8.1 What has landed (JS-only, OTA-deliverable)
+
+Two changes, both correct regardless of which candidate turns out to be right, and both deliberately
+**hypothesis-agnostic** — they fix the *fatality* (§2), not one guess at the *fault*:
+
+- **`src/telemetry/sentry.ts`** — the SDK is no longer a top-level import. It is `require`d lazily
+  inside a guard (the pattern `analytics.tsx` already uses for PostHog), and `init` and `wrap` are
+  guarded too. A build with no DSN now never evaluates the SDK at all; a build with one that cannot
+  load or arm it degrades to no crash reporting, which is what this module already promised callers,
+  instead of taking the app down. Crash-handler timing is unchanged — `initSentry()` is still the
+  first statement in the root layout.
+- **`app/_layout.tsx`** — every module-scope boot call (`initSentry`, `preventAutoHideAsync`,
+  `setOptions`, `prewarmFonts`, `prewarmBootReads`) now runs through a `bootStep` guard that reports
+  via `captureException` and continues. None of them is a correctness precondition: fonts fall back to
+  the system face, prewarm's consumers call it again from their own effects, and the splash hides on
+  first paint regardless. **A degraded boot beats no boot.**
+
+Tests: 9 new (4 pinning that the Sentry seam stays inert rather than throwing when the SDK explodes on
+import, when `init` throws, and that it is not loaded at all without a DSN; 5 making each boot step
+hostile in turn and asserting the root layout still *evaluates* — asserted on `require`, not on
+render, because the failure being pinned is module evaluation). Verified by mutation: removing a
+single `bootStep` guard fails exactly the two tests that cover it. Full mobile suite 1,504 green,
+typecheck and lint clean.
+
+**Fingerprint unchanged** — the diff touches only `.ts`/`.tsx` under `app/` and `src/`; no
+`app.config.ts`, `package.json`, `pnpm-lock.yaml`, `plugins/**`, `eas.json` or `fingerprint.config.js`.
+So this is publishable to the `preview` channel and will match builds #31 and #32.
+
+**What this does NOT do:** it does not fix the underlying native fault. If the throwing statement is
+the Sentry probe, the app boots and loses crash reporting. If it is something else in the same graph,
+the app boots and loses that step. If the fault is in React instance creation rather than JS
+evaluation, this changes nothing and the rollback in §8.2 is the answer. It buys a working app and a
+diagnosable one; it is not a substitute for the stack trace in §7.
+
+### 8.2 The rollback path
+
 
 **A native fix cannot be OTA'd** (`runtimeVersion: { policy: "fingerprint" }`). But note a correction
 to the usual assumption: `apps/mobile/fingerprint.config.js` sets `sourceSkips: ["ExpoConfigVersions"]`,
