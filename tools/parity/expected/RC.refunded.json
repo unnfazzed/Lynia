@@ -1,0 +1,155 @@
+{
+  "key": "RC.refunded",
+  "src": "RC",
+  "id": "refunded",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_refunded",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 11,
+    "text": 9,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "Order LG-4471",
+    "Refunded in full",
+    "Sadza Republic sent it back at 11:26",
+    "Amount",
+    "$15.50",
+    "Their reference",
+    "EC-4471-RF9920",
+    "Keep this reference — it's your proof against the restaurant's own statement, not a screenshot.",
+    "Order from somewhere else"
+  ],
+  "textPaths": [
+    "0.1.0",
+    "1.0.0.1.0",
+    "1.0.0.1.1",
+    "1.0.1.0",
+    "1.0.1.1",
+    "1.0.2.0",
+    "1.0.2.1",
+    "1.0.3",
+    "1.1"
+  ],
+  "groups": [
+    [
+      1,
+      2
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "image"
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "text",
+                "text": "Order LG-4471"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Refunded in full"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Sadza Republic sent it back at 11:26"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Amount"
+                  },
+                  {
+                    "role": "text",
+                    "text": "$15.50"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "Their reference"
+                  },
+                  {
+                    "role": "text",
+                    "text": "EC-4471-RF9920"
+                  }
+                ]
+              },
+              {
+                "role": "text",
+                "text": "Keep this reference — it's your proof against the restaurant's own statement, not a screenshot."
+              }
+            ]
+          },
+          {
+            "role": "text",
+            "text": "Order from somewhere else"
+          }
+        ]
+      }
+    ]
+  }
+}

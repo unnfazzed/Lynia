@@ -166,6 +166,49 @@ jobs:
           name: parity-mobile-renders
           path: tools/parity/out/*.png
           if-no-files-found: warn
+      # Expectation drift — re-render every wired mobile MOCK and diff it against the committed
+      # tools/parity/expected/<key>.json. It lives here, in the non-blocking browser lane, for the
+      # same reason the whole job is continue-on-error: it needs Chromium, and browser rendering is
+      # environment-sensitive, so it cannot be the blocking gate (extract-expected.mjs header). The
+      # blocking half of the same guarantee — every wired target HAS a committed expectation, the
+      # index matches the directory, no expectation outlives its target — runs browser-free in
+      # apps/mobile/src/parity/__tests__/rendered-conformance.test.tsx and gates the mobile test job.
+      #
+      # LAST in the job on purpose: continue-on-error is job-level, so a failing step still skips the
+      # steps after it. Running the check after the upload means drift never costs the PR its
+      # screenshot evidence.
+      #
+      # This step did not exist until 2026-08-21, which is exactly how eleven RC keys wired in #795
+      # sat with no committed expectation for four days while every gate stayed green.
+      - name: Expectation drift · extract-expected --check
+        working-directory: tools/parity
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/expected-check.log"
+          status=0
+          node extract-expected.mjs --check 2>&1 | tee "$log" || status=$?
+          {
+            if [ "$status" -eq 0 ]; then
+              echo "### Parity expectations · reproduce exactly"
+            else
+              echo "### Parity expectations · DRIFT (non-blocking)"
+              echo
+              echo "The committed \`tools/parity/expected/<key>.json\` no longer reproduces from the mocks."
+              echo "Regenerate locally and commit the diff:"
+              echo
+              echo '```bash'
+              echo 'node tools/parity/extract-expected.mjs'
+              echo '```'
+              echo
+              echo "A key reported \`≠\` with no file on disk is an UNRUN extractor, not drift — a null"
+              echo "previous never equals a fresh render. That case also fails the blocking mobile test."
+            fi
+            echo
+            echo '```'
+            tail -n 100 "$log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   schema:
     name: prisma migrate · constraint proof (PostGIS)

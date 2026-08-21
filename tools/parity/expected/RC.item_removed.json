@@ -1,0 +1,231 @@
+{
+  "key": "RC.item_removed",
+  "src": "RC",
+  "id": "item_removed",
+  "mode": "phone",
+  "component": "app/food/order/[orderId].tsx",
+  "fixture": "food_item_removed",
+  "generator": "tools/parity/extract-expected.mjs",
+  "chromeDropped": [
+    "status-bar: 09:413G84%"
+  ],
+  "roleCounts": {
+    "container": 16,
+    "text": 16,
+    "image": 2,
+    "input": 0
+  },
+  "texts": [
+    "One item is unavailable",
+    "LG-4471 · answer within 0:52 — no answer cancels it, free",
+    "Sadza Republic has everything except the muriwo une dovi. They can cook the rest now.",
+    "1",
+    "Muriwo une dovi",
+    "$2.50",
+    "Food",
+    "$10.50",
+    "Delivery",
+    "3.1 km · $0.80/km, rounded to $0.50",
+    "$2.50",
+    "Total",
+    "$13.00",
+    "You'd pay $2.50 less — refunded on mobile money, or less cash at the door.",
+    "Yes — send it without the muriwo",
+    "Cancel the whole order"
+  ],
+  "textPaths": [
+    "0.0.1.0",
+    "0.0.1.1",
+    "0.1.0.0.1",
+    "0.1.0.1.0",
+    "0.1.0.1.1",
+    "0.1.0.1.2",
+    "0.1.1.0.0.0",
+    "0.1.1.0.1",
+    "0.1.1.1.0.0",
+    "0.1.1.1.0.1",
+    "0.1.1.1.1",
+    "0.1.1.2.0",
+    "0.1.1.2.1",
+    "0.1.1.3",
+    "1.0",
+    "1.1"
+  ],
+  "groups": [
+    [
+      0,
+      1
+    ],
+    [
+      3,
+      4,
+      5
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      14,
+      15
+    ]
+  ],
+  "note": "",
+  "dynamic": [],
+  "extra": [],
+  "undrawn": [],
+  "tree": {
+    "role": "container",
+    "children": [
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "image"
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "text",
+                    "text": "One item is unavailable"
+                  },
+                  {
+                    "role": "text",
+                    "text": "LG-4471 · answer within 0:52 — no answer cancels it, free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "container",
+            "children": [
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "image"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Sadza Republic has everything except the muriwo une dovi. They can cook the rest now."
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "1"
+                      },
+                      {
+                        "role": "text",
+                        "text": "Muriwo une dovi"
+                      },
+                      {
+                        "role": "text",
+                        "text": "$2.50"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "role": "container",
+                "children": [
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Food"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$10.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "container",
+                        "children": [
+                          {
+                            "role": "text",
+                            "text": "Delivery"
+                          },
+                          {
+                            "role": "text",
+                            "text": "3.1 km · $0.80/km, rounded to $0.50"
+                          }
+                        ]
+                      },
+                      {
+                        "role": "text",
+                        "text": "$2.50"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "container",
+                    "children": [
+                      {
+                        "role": "text",
+                        "text": "Total"
+                      },
+                      {
+                        "role": "text",
+                        "text": "$13.00"
+                      }
+                    ]
+                  },
+                  {
+                    "role": "text",
+                    "text": "You'd pay $2.50 less — refunded on mobile money, or less cash at the door."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "container",
+        "children": [
+          {
+            "role": "text",
+            "text": "Yes — send it without the muriwo"
+          },
+          {
+            "role": "text",
+            "text": "Cancel the whole order"
+          }
+        ]
+      }
+    ]
+  }
+}

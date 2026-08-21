@@ -26,6 +26,15 @@
  *
  * Hand-maintained fields (`dynamic`, `extra`, `undrawn`, `note`) in an existing expected file are
  * CARRIED OVER on regeneration — the extractor owns the mock's shape, a human owns the escapes.
+ *
+ * READING `--check`: a key printed `≠` with NO file on disk is an UNRUN EXTRACTOR, not drift — a null
+ * `previous` can never equal a fresh render, so the two cases print identically. Look for the file
+ * before diagnosing. PR #795 wired 11 `RC.*` targets and listed them pending without running this
+ * script; with `--check` not yet in CI, that read as "11 drifted RC expectations". `--check` now runs
+ * as the last (non-blocking, browser-bound) step of the parity-render job, and the browser-free half
+ * of the guarantee — every wired target HAS a committed expectation, the index matches the directory,
+ * no expectation outlives its target — blocks in
+ * apps/mobile/src/parity/__tests__/rendered-conformance.test.tsx.
  */
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";

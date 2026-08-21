@@ -66,6 +66,16 @@ apply to them; the only open item is a seeded parity instance for *offline-scree
 Guardrail suite (token-conformance · screen-inventory · reverse-drift freeze · structural-snapshot)
 is green on `main`; the adopted set is congruent-by-construction and cannot silently regress.
 
+**Rendered-expectation coverage (2026-08-21).** All 67 wired mobile targets now carry a committed
+`tools/parity/expected/<key>.json`, and all 67 reproduce byte-for-byte under
+`node tools/parity/extract-expected.mjs --check`. The 11 `RC.*` targets wired by PR #795 (await_accept,
+cart_empty, item_removed, list_error, list_loading, menu_closed, no_rider, pay_confirmed, refunded,
+rejected, track_prep) had been listed pending with no expectation file extracted at all — which
+`--check` reports as `≠`, indistinguishable from real drift, and which nothing caught because `--check`
+was not in CI. Both holes are closed: `--check` runs as the last step of `parity-render` (non-blocking,
+it needs a browser) and the *blocking* mobile test job now requires an expectation for every wired
+target, an `index.json` that matches the directory, and no expectation outliving its target.
+
 > **Lane wiring ≠ sign-off.** Phase 2 of the screenshot lane (PR for `claude/phase-2-multi-agent`) wired
 > the app side of **47 screens** — the primary populated state of every top-level app route across all
 > four surfaces — so an alignment reviewer can now generate a real side-by-side for them

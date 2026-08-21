@@ -27,6 +27,14 @@
  *   - tools/parity/rendered-conformance.pending.json — a wired+fixtured key not yet asserted at all,
  *     with an honest reason. A key that is in neither the expected set nor pending FAILS: no screen
  *     is silently uncovered.
+ *
+ * Pending suspends the ASSERTION, never the EXTRACTION. Every wired+fixtured key must still carry a
+ * committed tools/parity/expected/<key>.json — that file is the mock's own truth, and it is what the
+ * pending entry's blocker is measured against. Eleven RC keys wired on 2026-08-17 (PR #795) went in
+ * with a pending reason and no expectation file at all, and nothing caught it: the extractor's own
+ * `--check` reported them as drift (a null `previous` never equals a fresh render) but `--check` was
+ * not wired into CI, and this ledger exempted pending keys from having a file. Both holes are closed
+ * here — the coverage tests below require the file for pending keys too, and CI now runs `--check`.
  */
 import React from "react";
 import renderer, { act } from "react-test-renderer";
@@ -211,6 +219,14 @@ function loadExpected(key: string): Expected {
   return JSON.parse(fs.readFileSync(path.join(EXPECTED_DIR, `${key}.json`), "utf8")) as Expected;
 }
 
+/** Every key with a committed expectation on disk. `fs` is `require`d above, so annotate the walk. */
+function committedKeys(): string[] {
+  return (fs.readdirSync(EXPECTED_DIR) as string[])
+    .filter((f: string) => f.endsWith(".json") && f !== "index.json")
+    .map((f: string) => f.slice(0, -5))
+    .sort();
+}
+
 /** Mount one wired screen with its parity fixture and return the normalized rendered tree. */
 async function renderWired(key: string, imageLabels: Set<string>): Promise<{ texts: { text: string; path: string }[] }> {
   const target = (APP_TARGETS as Record<string, { component: string; fixture: string } | undefined>)[key];
@@ -267,6 +283,33 @@ describe("rendered conformance — coverage ledger", () => {
       if (!fs.existsSync(path.join(EXPECTED_DIR, `${key}.json`))) gaps.push(key);
     }
     expect(gaps).toEqual([]);
+  });
+
+  // The gate that would have caught PR #795: pending suspends the ASSERTION, not the EXTRACTION.
+  // `extract-expected.mjs` generates for every wired mobile target, so a wired key with no committed
+  // expectation is an unrun extractor — and it shows up in `--check` as indistinguishable from real
+  // drift, because a null `previous` never equals a fresh render. Requiring the file here means the
+  // browser-free half of the lane catches the omission on its own, which matters: the browser half
+  // is environment-sensitive and therefore non-blocking by design (see the header, and the
+  // `continue-on-error` on parity-render).
+  it("every wired+fixtured mobile screen has a committed mock expectation, pending included", () => {
+    const missing = WIRED.filter((key) => !fs.existsSync(path.join(EXPECTED_DIR, `${key}.json`)));
+    expect(missing).toEqual([]);
+  });
+
+  // A hand-added or hand-deleted expectation without re-running the extractor leaves index.json
+  // disagreeing with the directory. The extractor rewrites the index from the directory listing on
+  // every non-check run, so equality here is exactly "the extractor was the last thing to touch this".
+  it("expected/index.json lists exactly the committed expectations", () => {
+    const index = JSON.parse(fs.readFileSync(path.join(EXPECTED_DIR, "index.json"), "utf8")) as { keys: string[] };
+    expect(index.keys).toEqual(committedKeys());
+  });
+
+  // Committed expectations must describe screens that are still wired. A retired or renamed target
+  // leaves its JSON behind, and a stale file is a quiet invitation to align to a screen that is gone.
+  it("no committed expectation outlives its wired target", () => {
+    const wired = new Set(WIRED);
+    expect(committedKeys().filter((key) => !wired.has(key))).toEqual([]);
   });
 
   it("pending entries name a real wired screen and carry an honest reason", () => {
