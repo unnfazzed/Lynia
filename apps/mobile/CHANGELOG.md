@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.1](https://github.com/unnfazzed/Lynia/compare/v0.45.0...v0.45.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **parity:** extract the 11 missing RC expectations and gate the omission in CI ([1fb6c5b](https://github.com/unnfazzed/Lynia/commit/1fb6c5b76e0cc69ff1b1a1f0654600a88685c5ce))
+
 ## [0.45.0](https://github.com/unnfazzed/Lynia/compare/v0.44.0...v0.45.0) (2026-08-21)
 
 
