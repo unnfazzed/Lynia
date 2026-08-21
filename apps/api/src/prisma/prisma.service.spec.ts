@@ -102,6 +102,26 @@ describe("connectWithRetry (boot-time connect is retried, not fatal on the first
     expect(onRetry.mock.calls[0][0]).toBe(1);
   });
 
+  it("leaves the backoff timer REF'd — an unref'd one lets Node exit 0 mid-retry, silently", async () => {
+    // Regression pin (CodeRabbit, PR #857). onModuleInit runs before app.listen(), so during boot this
+    // timer can be the only thing on the event loop. unref() it and Node drains and exits 0 partway
+    // through the retry: no reconnect, no Sentry report, no non-zero exit. Exercises the REAL
+    // defaultSleep by deliberately not passing an injected `sleep`.
+    const handle = { unref: vi.fn() } as unknown as NodeJS.Timeout;
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void) => {
+      fn();
+      return handle;
+    }) as unknown as typeof globalThis.setTimeout);
+    try {
+      const connect = vi.fn().mockRejectedValueOnce(new Error("timeout")).mockResolvedValue(undefined);
+      await connectWithRetry(connect, { baseDelayMs: 1 });
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect(handle.unref).not.toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
   it("wraps a non-Error rejection so onRetry always receives an Error", async () => {
     const onRetry = vi.fn();
     const connect = vi.fn().mockRejectedValueOnce("socket hang up").mockResolvedValue(undefined);

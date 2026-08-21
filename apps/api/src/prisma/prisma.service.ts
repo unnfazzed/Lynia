@@ -49,10 +49,18 @@ const CONNECT_ATTEMPTS = 3;
 /** First backoff; doubles per attempt (500ms, 1s). Short on purpose — this sits in the boot path. */
 const CONNECT_RETRY_BASE_MS = 500;
 
+/**
+ * Backoff delay between connect attempts. The timer is deliberately left REF'd — do not `unref()` it.
+ * Elsewhere in this codebase an `unref()`ed timer is correct (health.service.ts races a ping against
+ * one; the sweepers must not hold the process open at shutdown), but here the timer is the only thing
+ * being awaited during boot: `app.listen()` has not run yet, so there is no server handle keeping the
+ * loop alive. An `unref()`ed timer would let Node drain the event loop and exit **0** in the middle of
+ * the retry — no reconnect, no Sentry report, no non-zero exit for the orchestrator to act on. That is
+ * a silent version of the exact failure this retry exists to fix.
+ */
 function defaultSleep(ms: number): Promise<void> {
   return new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    t.unref?.();
+    setTimeout(resolve, ms);
   });
 }
 
