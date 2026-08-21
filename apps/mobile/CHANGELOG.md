@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.0](https://github.com/unnfazzed/Lynia/compare/v0.44.0...v0.45.0) (2026-08-21)
+
+
+### Features
+
+* **mobile:** give the profile-setup screen its drawn exit, and close the design sync ([#849](https://github.com/unnfazzed/Lynia/issues/849)) ([aa4d119](https://github.com/unnfazzed/Lynia/commit/aa4d119d81f7ce2663e5b291b2f575e434a3c6d5))
+
 ## [0.44.0](https://github.com/unnfazzed/Lynia/compare/v0.43.0...v0.44.0) (2026-08-20)
 
 
