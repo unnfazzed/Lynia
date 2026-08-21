@@ -781,6 +781,51 @@
 > mocks were drawn in-repo and never exported from the design tool (D-33 / D-35 / D-36 each carry
 > `UPSTREAM SYNC OWED`), which no build can close.
 
+> **2026-08-21 — internal-track build #32: v0.45.1 to the internal track. Both halves FINISHED,
+> first attempt, and the GCP side verified alongside it.**
+>
+> What shipped: `main`@`f89ce9a` (v0.45.1) — everything landed since build #31's `a80e1456`:
+> **#849** (the profile-setup screen's drawn exit, closing that design sync) and **#851** (the 11
+> missing RC parity expectations, with the omission now gated in CI), plus the release-please
+> 0.44.0 → 0.45.1 bumps. No native-layer change rode this build.
+>
+> Dispatched `mobile-release.yml` run `32457528923` explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above. The dispatcher
+> job went green at 07:12:04 UTC, which under `--no-wait` proves only that the build was **queued**.
+>
+> EAS build `cd266ad0-f0c6-4f84-8710-c6bb828b549a` (profile `preview`, created 07:11:59 UTC) reached
+> **FINISHED**. Its submission `38cc3bb2-dbe6-41a4-a2b9-d2477d8e8165` reached **FINISHED**, track
+> **`internal`**, no error. Checked twice on purpose: `eas-build-status.yml` run `32457797407` at
+> 07:15 caught the pair mid-flight (`IN_PROGRESS` / `AWAITING_BUILD`) and run `32459182869` at 07:34
+> confirmed both terminal, rather than inferring the outcome from a green dispatcher job.
+>
+> **Failure class: none.** Second consecutive clean first-attempt build+submission pair.
+>
+> **The GCP side was verified in the same run, because "is it deployed?" has a backend half too.**
+> `release.yml` run `32456923569` deployed this same commit to Cloud Run for real — not a gated
+> skip: the staging gate went green on the commit, migrations applied through the Cloud SQL Auth
+> Proxy, a new no-traffic revision deployed, and the **canary graduated and promoted** at 07:13:05
+> UTC with both rollback steps skipped. `gcp-drift-detect.yml` run `32457154577` (dispatched against
+> this commit) returned `No drift. Verify=0, plan=skipped`.
+>
+> ⚠️ **That `plan=skipped` is a gap, not a pass.** Probe 2 — "is a `terraform apply` pending?" —
+> never executed, because the **`TF_PROD_TFVARS` repo secret is unset**; the workflow skips the plan
+> rather than diffing against `variables.tf` defaults and reporting every live-armed flag as
+> spurious drift. So probe 1 (live provisioning matches the repo) passed on its own terms, and
+> whether committed Terraform differs from recorded state is **unverified — it has been unverified
+> on every nightly run, not just this one**. Closing it is founder-only: paste the applied
+> `terraform.tfvars` verbatim into that secret (`docs/LAUNCH-EXECUTION-RUNBOOK.md` §10).
+>
+> Two known gaps unchanged: exact versionCode not captured, and `runtime=?` still rendered for every
+> listed build (open since 2026-08-16). Neither is in scope for a ship-and-track request.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and
+> nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
+> exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human. The
+> Didit camera/liveness UI that shipped in build #31 still has no handset run behind it.
+
 ---
 
 ## 1. App identity
