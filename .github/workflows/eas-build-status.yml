@@ -237,10 +237,10 @@ jobs:
             echo "--- phase banners ---"
             grep -nE "^(Start|End) phase:" /tmp/phase.txt | tail -30 || true
             echo "--- keyword matches (with context) ---"
-            grep -inE "error:|FAILURE|failed|exception|Caused by|cannot|unable to|not found" /tmp/phase.txt \
+            grep -inE "error:|FAILURE|failed|exception|Caused by|cannot|unable to|not found|mismatch|undefined|invalid" /tmp/phase.txt \
               | grep -viE "HeapDumpOnOutOfMemoryError" | head -40 || true
-            echo "--- last 80 lines ---"
-            tail -80 /tmp/phase.txt
+            echo "--- last 300 lines ---"
+            tail -300 /tmp/phase.txt
             echo "::endgroup::"
           done
 

@@ -86,12 +86,6 @@ export function aliasMap() {
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
     "@sentry/react-native": join(SHIMS, "sentry.js"),
-    // Crashlytics rides in through src/telemetry/crashlytics.ts, which app/_layout.tsx arms at
-    // module scope. `firebase-app.js` reports zero apps, so the telemetry module gates itself off
-    // before it ever touches the crashlytics shim — the lane renders exactly as an unprovisioned
-    // build does.
-    "@react-native-firebase/app": join(SHIMS, "firebase-app.js"),
-    "@react-native-firebase/crashlytics": join(SHIMS, "firebase-crashlytics.js"),
     "expo-secure-store": join(SHIMS, "expo-secure-store.js"),
     "@lynia/shared": join(SHARED_SRC, "index.ts"),
     "@lynia/shared/fixtures": join(SHARED_SRC, "fixtures.ts"),

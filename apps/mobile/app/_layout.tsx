@@ -19,7 +19,6 @@ import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery }
 import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
-import { initCrashlytics, recordError } from "../src/telemetry/crashlytics";
 import { NavOpenProbe } from "../src/telemetry/nav-timing";
 import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
@@ -53,19 +52,12 @@ function bootStep(step: () => unknown): void {
   } catch (error) {
     try {
       captureException(error);
-      // Reported to BOTH reporters on purpose. A boot-step failure is the exact class of bug
-      // Crashlytics was added for (docs/CRASHLYTICS.md): it happens at module scope, where the app
-      // may be seconds from a process kill, and Sentry — armed from JS, possibly by the very
-      // statement that just threw — is the half more likely to be missing. Crashlytics's native
-      // handler is up before any of this ran, so this record survives cases the line above cannot.
-      recordError(error, "boot-step");
     } catch {
-      // Belt and braces, and the braces are load-bearing. Both calls already guard their own SDK
-      // (src/telemetry/sentry.ts, src/telemetry/crashlytics.ts) and both are inert when
-      // unprovisioned — but this catch block exists precisely so that a throw cannot kill the
-      // launch, and it would be absurd for the reporting inside it to be the thing that does.
-      // bootStep's contract is "nothing here ends the process", and a contract that depends on a
-      // collaborator's internals is not a contract.
+      // Belt and braces, and the braces are load-bearing. `captureException` already guards its own
+      // SDK call (src/telemetry/sentry.ts) and is inert without a DSN — but this catch block exists
+      // precisely so that a throw cannot kill the launch, and it would be absurd for the reporting
+      // inside it to be the thing that does. bootStep's contract is "nothing here ends the process",
+      // and a contract that depends on a collaborator's internals is not a contract.
     }
   }
 }
@@ -75,12 +67,6 @@ function bootStep(step: () => unknown): void {
 // Guarded twice over: initSentry() no longer throws on its own (src/telemetry/sentry.ts) AND it runs
 // through bootStep, because this is the statement that must not be the one that kills the launch.
 bootStep(initSentry);
-
-// Crashlytics' JS half (custom keys + the collection switch). The NATIVE handler is already armed by
-// this point — it comes up in a ContentProvider during Application startup, before React Native —
-// which is the whole reason this reporter is here alongside Sentry: it is the only one that can
-// witness a crash in the statements ABOVE it. Inert without a google-services.json (app.config.ts).
-bootStep(initCrashlytics);
 
 // Keep the native splash up until the fonts register (nothing else holds it — expo-router's
 // keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
