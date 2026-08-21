@@ -80,10 +80,10 @@ New Architecture's native entry point is **not** where this dies.
 Didit's reflective `ReactModuleInfo` probe — by showing `proguard-android.txt` still emits
 `-dontoptimize`, so no constructor arity can change. It does **not** prove that `TurboModuleManager`
 finishes building the whole registry, and no other package's initialisation has been ruled out. So
-instance creation stays open until a device trace shows registry construction completing; **candidate
-#1 is the leading explanation, not the only surviving one.** Note the splash would be *held* through
-JS evaluation by
-`preventAutoHideAsync()`, and expo-router's global `ErrorUtils` handler hides it before delegating on
+instance creation stays open until a device trace shows registry construction completing;
+**candidate #1 is the leading explanation, not the only surviving one.** Note the splash would be
+*held* through JS evaluation by `preventAutoHideAsync()`, and expo-router's global `ErrorUtils`
+handler hides it before delegating on
 a fatal — so "splash, brief flash, dialog" is exactly the shape candidate #1 predicts.
 
 **Still not settled by this observation:** which statement throws. Candidate #1 names Sentry's
