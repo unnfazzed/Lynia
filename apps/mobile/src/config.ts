@@ -36,8 +36,13 @@ function httpUrlHost(url: string): string | null {
  * those fail at first fetch like any other unreachable host, which is the pre-existing behaviour.
  */
 function isLoopbackHost(host: string): boolean {
-  if (host === "localhost" || host === "0.0.0.0" || host.startsWith("127.")) return true;
-  if (host.includes(":")) return host.replace(/[0:]/g, "") === "1";
+  const h = host.endsWith(".") ? host.slice(0, -1) : host; // "localhost." — the DNS root dot
+  if (h === "localhost" || h === "0.0.0.0") return true;
+  // Exact dotted-quad only: 127.anything is loopback as an IPv4 ADDRESS (127.0.0.0/8), but
+  // "127.example.com" is a legal DNS name pointing wherever its owner says — flagging it would
+  // reject a correctly configured build, which is worse than missing an exotic spelling.
+  if (/^127(\.\d{1,3}){3}$/.test(h)) return true;
+  if (h.includes(":")) return h.replace(/[0:]/g, "") === "1";
   return false;
 }
 

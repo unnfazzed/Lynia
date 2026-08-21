@@ -57,13 +57,22 @@ describe("config.ts — a misconfigured release build boots instead of dying at 
     "http://user:pw@localhost:3000",
     "http://[0:0:0:0:0:0:0:1]:3000",
     "http://user@[::0001]:3000",
+    "http://localhost.:3000",
+    "http://127.0.0.1.:3000",
   ])("evaluates without throwing when the configured URL is loopback (%s), and names it", (url) => {
     const cfg = loadConfigAsRelease(url);
     expect(cfg.API_CONFIG_ERROR).toMatch(/loopback/);
   });
 
   it("does not flag a real host that merely resembles loopback spellings", () => {
-    for (const url of ["https://user@api.lyniafinance.com", "https://localhost.lyniafinance.com", "http://[2001:db8::1]"]) {
+    for (const url of [
+      "https://user@api.lyniafinance.com",
+      "https://localhost.lyniafinance.com",
+      "http://[2001:db8::1]",
+      // A 127.-prefixed DNS NAME is not the 127.0.0.0/8 ADDRESS block — it resolves wherever its
+      // owner points it, and rejecting it would break a correctly configured build.
+      "https://127.example.com",
+    ]) {
       expect(loadConfigAsRelease(url).API_CONFIG_ERROR).toBeNull();
     }
   });
