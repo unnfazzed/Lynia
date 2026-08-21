@@ -11,7 +11,7 @@ import { securityHeaders } from "./common/security-headers.middleware";
 import { parseTrustProxy } from "./common/trust-proxy";
 import { loadEnv } from "./config/env";
 import { initObservability } from "./observability/otel";
-import { initSentry } from "./observability/sentry";
+import { captureException, flushSentry, initSentry } from "./observability/sentry";
 
 /**
  * Defense-in-depth process-level backstops (F-12). The reliability-critical paths already attach a
@@ -141,4 +141,24 @@ async function bootstrap(): Promise<void> {
   );
 }
 
-void bootstrap();
+/**
+ * A boot failure must EXIT, not linger. `bootstrap()` was previously fire-and-forget (`void`), so a
+ * rejection anywhere in it — most plausibly `PrismaService.onModuleInit`'s `$connect()` failing to
+ * reach Cloud SQL — fell through to the `unhandledRejection` backstop above, which deliberately logs
+ * and KEEPS SERVING. That policy is right for a stray rejection in a running instance and wrong here:
+ * `app.listen` never ran, so the process stayed alive with no HTTP server, deaf until Cloud Run's
+ * startup probe gave up. Failing fast lets the orchestrator restart a clean instance immediately.
+ *
+ * It also fixes the diagnosis. Such a boot rejection reached Sentry only via the SDK's global
+ * unhandled-rejection handler, so it arrived with no context: no transaction, no breadcrumbs, and a
+ * culprit pointing at whatever library frame threw (e.g. `?(pg-pool:index)`), which reads like a
+ * mystery driver error rather than "the API could not start". Reporting it here names the phase.
+ */
+bootstrap().catch(async (err: unknown) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  new Logger("Bootstrap").error(`API failed to start — exiting for a clean restart: ${error.stack ?? error.message}`);
+  captureException(error, { phase: "bootstrap" });
+  // Drain before exiting, or the report we just queued dies with the process.
+  await flushSentry();
+  process.exit(1);
+});
