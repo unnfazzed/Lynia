@@ -182,8 +182,11 @@ export default function ProfileSetupScreen(): React.ReactElement {
           them back here on the next guard pass. `replace`, not `push`, so no back-stack entry
           returns to a screen whose session no longer exists.
 
-          The typed name/ID draft is deliberately left in place — it belongs to the person, not to
-          the number, and they would only retype it identically. */}
+          The typed name/ID draft does NOT survive this, and that is correct rather than a wart:
+          signOut → clearDeviceState wipes PROFILE_DRAFT_KEY because the draft holds a national ID
+          (LC-C10, same shared-device rule as the KYC draft). Preserving it across a sign-out would
+          mean whoever verifies a number NEXT on this handset lands here pre-filled with a stranger's
+          name and ID. Retyping a name is the cheaper of the two costs, so the rider retypes. */}
       <Button label="Use a different number" variant="ghost" onPress={useDifferentNumber} loading={leaving} />
     </Screen>
   );

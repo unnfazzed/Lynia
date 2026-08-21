@@ -17,7 +17,13 @@ import renderer, { act } from "react-test-renderer";
 
 const mockUpdateProfile = jest.fn();
 const mockSignIn = jest.fn(async () => undefined);
-const mockSignOut = jest.fn(async () => undefined);
+// Mirrors what the REAL signOut does to this key: clearDeviceState deletes PROFILE_DRAFT_KEY
+// because the draft holds a national ID (LC-C10). A no-op mock here would let the screen claim a
+// draft-survival behaviour the shipped app does not have — which is exactly what it did before.
+const PROFILE_DRAFT_KEY = "lynia.profileDraft.v1";
+const mockSignOut = jest.fn(async () => {
+  delete secureStore[PROFILE_DRAFT_KEY];
+});
 const mockReplace = jest.fn();
 
 let secureStore: Record<string, string> = {};
@@ -73,7 +79,7 @@ beforeEach(() => {
   secureStore = {};
   mockUpdateProfile.mockReset().mockResolvedValue({ ok: true });
   mockSignIn.mockClear();
-  mockSignOut.mockReset().mockResolvedValue(undefined);
+  mockSignOut.mockClear();
   mockReplace.mockClear();
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
@@ -141,7 +147,7 @@ describe("profile setup — the different-number exit", () => {
     expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the typed draft — the name and ID belong to the person, not the number", async () => {
+  it("drops the typed draft, because it holds a national ID and this is a sign-out", async () => {
     let tree!: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(<ProfileSetupScreen />);
@@ -155,15 +161,18 @@ describe("profile setup — the different-number exit", () => {
     pressGhost(tree);
     await settle();
 
-    // Contrast with the submit path, which DOES clear the draft once the PATCH lands. Switching
-    // numbers is not completing the form, so the draft survives and they retype nothing.
+    // The rider retypes their name, and that is the intended trade. Preserving the draft across a
+    // sign-out would leave whoever verifies a number NEXT on this handset looking at a stranger's
+    // name and national ID — the leak LC-C10 closed. This assertion is the guard on that: a future
+    // "improvement" that re-saves the draft to spare the retyping fails here.
     act(() => tree.unmount());
     let fresh!: renderer.ReactTestRenderer;
     await act(async () => {
       fresh = renderer.create(<ProfileSetupScreen />);
     });
     await settle();
-    expect(getFieldValue(fresh, "Full name")).toBe("Tendai Moyo");
+    expect(getFieldValue(fresh, "Full name")).toBe("");
+    expect(getFieldValue(fresh, "National ID number")).toBe("");
   });
 });
 
