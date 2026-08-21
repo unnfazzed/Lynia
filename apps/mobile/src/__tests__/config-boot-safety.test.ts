@@ -16,6 +16,11 @@
 function loadConfigAsRelease(extraApiUrl?: string): typeof import("../config") {
   let loaded: typeof import("../config") | undefined;
   const oldDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  // Belt-and-braces: babel-preset-expo normally inlines EXPO_PUBLIC_* at transform time (making the
+  // runtime env invisible to config.ts), but if a config ever changes that, a var set in the test
+  // process's shell must not outrank the extra.apiUrl these tests control.
+  const oldEnv = process.env.EXPO_PUBLIC_API_URL;
+  delete process.env.EXPO_PUBLIC_API_URL;
   (globalThis as { __DEV__?: boolean }).__DEV__ = false;
   try {
     jest.isolateModules(() => {
@@ -27,6 +32,8 @@ function loadConfigAsRelease(extraApiUrl?: string): typeof import("../config") {
     });
   } finally {
     (globalThis as { __DEV__?: boolean }).__DEV__ = oldDev;
+    if (oldEnv === undefined) delete process.env.EXPO_PUBLIC_API_URL;
+    else process.env.EXPO_PUBLIC_API_URL = oldEnv;
   }
   if (!loaded) throw new Error("config module did not load");
   return loaded;
@@ -39,13 +46,27 @@ describe("config.ts — a misconfigured release build boots instead of dying at 
     expect(cfg.API_URL).toBe("http://localhost:3000"); // the dev fallback still exists, it just can't pass silently
   });
 
-  it.each(["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000", "https://0.0.0.0"])(
-    "evaluates without throwing when the configured URL is loopback (%s), and names it",
-    (url) => {
-      const cfg = loadConfigAsRelease(url);
-      expect(cfg.API_CONFIG_ERROR).toMatch(/loopback/);
-    },
-  );
+  it.each([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://[::1]:3000",
+    "https://0.0.0.0",
+    // Non-canonical spellings a naive substring/equality check would miss:
+    "http://LOCALHOST:3000",
+    "http://user@127.0.0.1:3000",
+    "http://user:pw@localhost:3000",
+    "http://[0:0:0:0:0:0:0:1]:3000",
+    "http://user@[::0001]:3000",
+  ])("evaluates without throwing when the configured URL is loopback (%s), and names it", (url) => {
+    const cfg = loadConfigAsRelease(url);
+    expect(cfg.API_CONFIG_ERROR).toMatch(/loopback/);
+  });
+
+  it("does not flag a real host that merely resembles loopback spellings", () => {
+    for (const url of ["https://user@api.lyniafinance.com", "https://localhost.lyniafinance.com", "http://[2001:db8::1]"]) {
+      expect(loadConfigAsRelease(url).API_CONFIG_ERROR).toBeNull();
+    }
+  });
 
   it("treats a URL that is not http(s) as a config error, not a retryable network failure", () => {
     const cfg = loadConfigAsRelease("not-a-url");

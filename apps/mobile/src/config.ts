@@ -12,20 +12,33 @@ const configured = process.env.EXPO_PUBLIC_API_URL ?? fromExtra;
 export const API_URL: string = configured ?? "http://localhost:3000"; // dev-only fallback
 
 /**
- * The host part of an http(s) URL, without brackets/port — or null when the URL doesn't parse as
- * one. Regex, not `new URL(...)`: React Native's built-in URL polyfill throws "not implemented"
- * from accessors like `hostname`, and this module must never throw (see API_CONFIG_ERROR below).
+ * The lowercased host part of an http(s) URL — userinfo, brackets and port stripped — or null when
+ * the URL doesn't parse as one. Regex, not `new URL(...)`: React Native's built-in URL polyfill
+ * throws "not implemented" from accessors like `hostname`, and this module must never throw (see
+ * API_CONFIG_ERROR below).
  */
 function httpUrlHost(url: string): string | null {
-  const ipv6 = /^https?:\/\/\[([^\]]+)\]/i.exec(url);
-  if (ipv6) return ipv6[1] ?? null;
-  const host = /^https?:\/\/([^/:?#]+)/i.exec(url);
-  return host?.[1] ?? null;
+  const ipv6 = /^https?:\/\/(?:[^/@?#[\]]*@)?\[([^\]]+)\]/i.exec(url);
+  if (ipv6) return ipv6[1]?.toLowerCase() ?? null;
+  const host = /^https?:\/\/(?:[^/@?#]*@)?([^/:?#@]+)/i.exec(url);
+  return host?.[1]?.toLowerCase() ?? null;
 }
 
-/** Hosts that can only ever be the phone itself — a dead API for every real user. */
+/**
+ * Hosts that can only ever be the phone itself — a dead API for every real user. Expects the
+ * lowercased host from httpUrlHost. The IPv6 test covers every spelling of ::1 (`::1`,
+ * `0:0:0:0:0:0:0:1`, `::0001`, …): an address whose digits reduce to exactly "1" once zeros and
+ * separators are stripped is all-zero groups plus a final 1, which is loopback and nothing else.
+ *
+ * SCOPE: this is a misconfiguration tripwire, not a security boundary. It catches the ways a dev
+ * value realistically leaks into a release build; deliberately-obfuscated loopback spellings
+ * (octal/decimal IPv4 like 0177.0.0.1, IPv4-mapped IPv6 like ::ffff:127.0.0.1) are out of scope —
+ * those fail at first fetch like any other unreachable host, which is the pre-existing behaviour.
+ */
 function isLoopbackHost(host: string): boolean {
-  return host === "localhost" || host === "::1" || host === "0.0.0.0" || host.startsWith("127.");
+  if (host === "localhost" || host === "0.0.0.0" || host.startsWith("127.")) return true;
+  if (host.includes(":")) return host.replace(/[0:]/g, "") === "1";
+  return false;
 }
 
 /**
