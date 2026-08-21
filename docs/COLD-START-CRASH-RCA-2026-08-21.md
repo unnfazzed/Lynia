@@ -76,8 +76,13 @@ New Architecture's native entry point is **not** where this dies.
    `getReactModuleInfoProvider()` on every package including Didit's.
 2. **JS bundle evaluation** — the root layout's module graph (§2), which is where candidate #1 lives.
 
-`(1)` was refuted independently on R8 grounds (§4), which leaves **candidate #1 as the leading
-explanation**. Note the splash would be *held* through JS evaluation by
+**`(1)` is narrowed, not eliminated.** §4's R8 analysis refutes one specific hypothesis inside it —
+Didit's reflective `ReactModuleInfo` probe — by showing `proguard-android.txt` still emits
+`-dontoptimize`, so no constructor arity can change. It does **not** prove that `TurboModuleManager`
+finishes building the whole registry, and no other package's initialisation has been ruled out. So
+instance creation stays open until a device trace shows registry construction completing; **candidate
+#1 is the leading explanation, not the only surviving one.** Note the splash would be *held* through
+JS evaluation by
 `preventAutoHideAsync()`, and expo-router's global `ErrorUtils` handler hides it before delegating on
 a fatal — so "splash, brief flash, dialog" is exactly the shape candidate #1 predicts.
 
@@ -150,9 +155,10 @@ path, that Paper had a catch and bridgeless does not, and that this changed exac
 because it was the leading alternative and the elimination is the useful part. **Universal. Pre-JS.** `MainApplication.kt` calls `SoLoader.init(...)` then, under
 `IS_NEW_ARCHITECTURE_ENABLED`, `DefaultNewArchitectureEntryPoint.load()` — which in RN 0.76.9
 defaults to `turboModules=true, fabric=true, bridgeless=true` and ends at
-`SoLoader.loadLibrary("appmodules")`. **Before build #31 this path had never run on a device, and it
-was never device-validated afterwards** — a FINISHED build records no launch. It has since run, and
-§1.1 shows it succeeded. A failure here
+`SoLoader.loadLibrary("appmodules")`. **Before build #31 this path had never run on a device, and no
+device launch or cold-start validation was ever recorded for #31 or #32** — a FINISHED build records
+no launch. It did of course run the moment a tester opened the app, and §1.1 is that observation: it
+succeeded. A failure here
 kills the process inside `Application.onCreate`, before any Activity, before any JS, before
 `initSentry()` — which is exactly why Sentry has nothing.
 

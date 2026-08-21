@@ -224,12 +224,20 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
     // entirely — the same win analytics.tsx already took for PostHog. A hostile SDK that is never
     // required is the only way to assert "not loaded" from the outside.
     it("does not load the SDK at all when no DSN is configured", () => {
+      // Asserted on the FACTORY, not on the outcome. A hostile factory alone proves nothing here:
+      // loadSentry catches every throw from the require, so if the SDK were loaded regardless of the
+      // DSN, the throw would be swallowed, `enabled` would stay false, and "does not throw" plus
+      // "not enabled" would both still pass. Counting the invocation is the only thing that can tell
+      // "never required" from "required and quietly failed".
+      const required = jest.fn();
       const mod = loadWithHostileSdk(() => {
+        required();
         throw new Error("must never be required without a DSN");
       });
 
       expect(() => mod.initSentry({ dsn: undefined })).not.toThrow();
       expect(mod.isSentryEnabled()).toBe(false);
+      expect(required).not.toHaveBeenCalled();
     });
   });
 });
