@@ -49,12 +49,6 @@ module.exports = {
     // @sentry/react-native pulls in native modules jest-expo can't load; route it to a light mock
     // (init/captureException spies, identity wrap) so any test importing the app root stays green.
     "^@sentry/react-native$": "<rootDir>/__mocks__/@sentry/react-native.js",
-    // Firebase Crashlytics (docs/CRASHLYTICS.md) — the app package resolves the native Firebase
-    // runtime and crashlytics is a TurboModule on top of it; neither exists under jest-expo. Routed
-    // to light mocks so any test importing the app root stays green. `app`'s getApps() is also the
-    // provisioning seam the telemetry module gates on, so the mock keeps it controllable.
-    "^@react-native-firebase/app$": "<rootDir>/__mocks__/@react-native-firebase/app.js",
-    "^@react-native-firebase/crashlytics$": "<rootDir>/__mocks__/@react-native-firebase/crashlytics.js",
     // Didit's KYC SDK is a TurboModule — importing the real one throws under jest-expo, taking every
     // screen that can launch a check down with it. Same treatment as Sentry above.
     "^@didit-protocol/sdk-react-native$": "<rootDir>/__mocks__/@didit-protocol/sdk-react-native.js",

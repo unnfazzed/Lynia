@@ -3,7 +3,6 @@ import React from "react";
 import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionValue, Pressable, ScrollView, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Tappable } from "./Tappable";
-import { crashNow, isCrashlyticsEnabled, recordError } from "../telemetry/crashlytics";
 import { captureException, isSentryEnabled, nativeCrash } from "../telemetry/sentry";
 import { Icon, type IconName } from "./Icon";
 import { isTestBuild } from "./test-build";
@@ -65,30 +64,14 @@ export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type Pre
  * (named frames instead of Hermes bytecode), a native crash verifies the R8 mapping upload (real
  * zw.co.lynia.* frames instead of `a.b.c(SourceFile:1)`). Passing one and not the other is a real and
  * easy-to-miss outcome, so the tester should fire both.
- *
- * BOTH REPORTERS, TWO BUTTONS. Since Crashlytics joined Sentry (docs/CRASHLYTICS.md) this gate has to
- * cover two pipelines, and it deliberately does NOT grow a third and fourth button to do it: RN's
- * Android Alert slices `buttons` to three and SILENTLY DROPS the rest
- * (react-native/Libraries/Alert/Alert.js), so a fourth option would render as a QA gate that looks
- * present and tests nothing. Instead each existing button now exercises both:
- *  - "JS error" reports to Sentry AND records a Crashlytics non-fatal;
- *  - "Native crash" kills the process once — both reporters' NATIVE handlers are armed against the
- *    same signal, so one crash should surface in both consoles. That it appears in both IS the
- *    check that the two coexist, which is the one interaction this pairing can't prove off-device.
  */
 function promptCrashTest(): void {
-  const sentryArmed = isSentryEnabled();
-  const crashlyticsArmed = isCrashlyticsEnabled();
-  // Named per reporter, because "armed" is not one state any more: a build can genuinely have one
-  // and not the other (a DSN with no google-services.json, or the reverse). A tester who is told
-  // "ACTIVE" and then finds one console empty cannot tell a broken pipeline from an unprovisioned
-  // one — so say exactly which halves would report.
-  const status = `Sentry: ${sentryArmed ? "ACTIVE" : "INERT"} · Crashlytics: ${crashlyticsArmed ? "ACTIVE" : "INERT"}`;
+  const armed = isSentryEnabled();
   Alert.alert(
     "Crash telemetry test",
-    sentryArmed || crashlyticsArmed
-      ? `${status}. The app will crash on purpose; reopen it and confirm the event in EVERY console marked ACTIVE above.`
-      : `${status}. A crash here would report NOTHING — check EXPO_PUBLIC_SENTRY_DSN and the google-services.json build wiring before testing.`,
+    armed
+      ? "Sentry is ACTIVE in this build. The app will crash on purpose; reopen it and confirm the event in the lynia-mobile dashboard."
+      : "Sentry is NOT active in this build (no DSN was inlined at build time). A crash here would report NOTHING — check EXPO_PUBLIC_SENTRY_DSN before testing.",
     [
       { text: "Cancel", style: "cancel" },
       {
@@ -98,26 +81,10 @@ function promptCrashTest(): void {
         // ErrorBoundary), so it verifies the reporting seam without killing the process.
         onPress: () => {
           captureException(new Error("LR20 crash-telemetry test — JS error (deliberate)"));
-          recordError(new Error("LR20 crash-telemetry test — JS error (deliberate)"), "qa-crash-test");
-          Alert.alert(
-            "Sent",
-            sentryArmed || crashlyticsArmed
-              ? `JS error reported. Check each ACTIVE console — ${status}.`
-              : "Nothing was sent — both reporters are inert.",
-          );
+          Alert.alert("Sent", armed ? "JS error reported. Check Sentry." : "Nothing was sent — Sentry is inert.");
         },
       },
-      {
-        text: "Native crash",
-        style: "destructive",
-        // Sentry first when it is armed: its nativeCrash is the long-standing LR20 gate and it is the
-        // reporter with source maps. `crashNow()` is the fallback for the build shape that has
-        // Crashlytics but no DSN — without it that build would have NO way to force a native crash,
-        // and both helpers refuse (returning false) rather than faking one when inert.
-        onPress: () => {
-          if (!nativeCrash()) crashNow();
-        },
-      },
+      { text: "Native crash", style: "destructive", onPress: () => nativeCrash() },
     ],
   );
 }

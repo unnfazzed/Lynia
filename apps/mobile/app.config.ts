@@ -213,44 +213,6 @@ const config: ExpoConfig = {
         experimental_android: { enableAndroidGradlePlugin: true },
       },
     ],
-    /**
-     * Firebase Crashlytics — a SECOND crash reporter, deliberately, alongside Sentry above
-     * (docs/CRASHLYTICS.md). It is not redundancy for its own sake: Sentry arms from JS, so the one
-     * failure class it structurally cannot see is a crash that happens BEFORE its own init runs —
-     * which is precisely what killed build #31 (docs/COLD-START-CRASH-RCA-2026-08-21.md, MOB-BOOT-04:
-     * the Sentry import itself threw at `app/_layout.tsx` module scope, so the reporter WAS the
-     * crash and nothing was reported). Crashlytics arms from a native ContentProvider during
-     * Application startup, before React Native loads, so it survives exactly that.
-     *
-     * GATED ON `googleServicesFile`, and it has to be: the app plugin's Android mod THROWS when
-     * `android.googleServicesFile` is unset ("Path to google-services.json is not defined" —
-     * verified in the installed plugin source, plugin/build/android/copyGoogleServices.js). Attaching
-     * it unconditionally would break prebuild for every unprovisioned build — local dev and the QA
-     * APK lane (android-test-apk.yml) among them. Same "attach only when provisioned" shape as the
-     * Maps / FCM / TLS-pinning gates elsewhere in this file.
-     *
-     * NO NEW CREDENTIAL. Crashlytics rides the SAME `google-services.json` that already provisions
-     * FCM push above — the founder step is one click in the Firebase console (Release & Monitor →
-     * Crashlytics → Enable), not another secret to wire into EAS.
-     *
-     * iOS IS NOT PROVISIONED, and this is the sharp edge to know about: the app plugin registers its
-     * iOS mods unconditionally, and `withIosGoogleServicesFile` throws without an
-     * `ios.googleServicesFile` (plugin/build/ios/googleServicesPlist.js). Those mods only execute on
-     * an iOS prebuild — EAS runs `prebuild -p android` here, and every build lane in this repo is
-     * Android — so nothing today reaches them. But a bare `expo prebuild` (no `-p`) WILL fail until an
-     * iOS GoogleService-Info.plist is added. Do that in the same change that first builds for iOS.
-     *
-     * The crashlytics plugin's own job is the `com.google.firebase.crashlytics` Gradle plugin, which
-     * uploads the R8 `mapping.txt` for release builds. That is load-bearing, not a nicety:
-     * `enableProguardInReleaseBuilds` is ON below, so without the upload every native crash arrives
-     * as `a.b.c(SourceFile:1)` — the same unreadable-stack failure the Sentry Android Gradle plugin
-     * is turned on for.
-     *
-     * NATIVE CHANGE. New native modules + Gradle plugins shift the expo-updates `fingerprint`
-     * runtimeVersion, so this reaches devices only through a store build — no OTA can carry it, and
-     * no OTA can repair it (REL-01/REL-02 in docs/KNOWN_BUGS.md).
-     */
-    ...(googleServicesFile ? ["@react-native-firebase/app", "@react-native-firebase/crashlytics"] : []),
     [
       "expo-splash-screen",
       // The native splash IS the design's splash (journey 0·1, screens.jsx `Splash`): full-bleed
