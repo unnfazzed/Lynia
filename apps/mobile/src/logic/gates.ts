@@ -195,19 +195,22 @@ export function isWithinServiceCorridor(point: LatLng): boolean {
   return haversineKm(center, point) <= SERVICE_CORRIDOR.radiusKm;
 }
 
+/** The credentials a launchable retry hands to `runKycVerification` — never both fields absent. */
+export interface KycRetryLaunch {
+  /** The Didit session credential for the native SDK — an opaque token, no shape assumed. */
+  sessionToken: string | null;
+  /** The vendor-hosted https web flow — the in-app-browser fallback lane while the native SDK is
+   *  reverted (MOB-BOOT-04). Non-https values are treated as absent, never opened. */
+  verificationUrl: string | null;
+}
+
 /** What `retryKyc`'s success handler should do next. */
 export interface KycRetryFeedback {
-  /**
-   * The Didit session credential to hand the native SDK, or null if there is nothing to open.
-   *
-   * This replaced an `openUrl` that fed `WebBrowser.openAuthSessionAsync`. The rename is the point of
-   * the change, not incidental to it: while this field held a URL, the only thing a caller could do
-   * with a successful retry was send the rider to Didit's website.
-   */
-  sessionToken: string | null;
-  /** An error to surface when there's no usable token — never both this and `sessionToken` set. */
+  /** What to open, or null if there is nothing usable to open. */
+  launch: KycRetryLaunch | null;
+  /** An error to surface when there's nothing to launch — never both this and `launch` set. */
   error: string | null;
-  /** A calm (non-error) status line to surface when there's no usable token by design (manual review). */
+  /** A calm (non-error) status line to surface when there's nothing to launch by design (manual review). */
   info: string | null;
 }
 
@@ -220,22 +223,27 @@ export interface KycRetryFeedback {
  * it) — that must not surface as the same "couldn't start verification" error auto mode gets on a
  * genuine failure, or a manual-review rider sees a false failure on every retry tap.
  *
- * Now gated on `sessionToken` rather than `verificationUrl` (Route A). There is no `startsWith`
- * check to inherit: a URL could be sanity-checked for https, but a token is an opaque credential with
- * no shape we are entitled to assume, so the only honest test is "did the server give us one". The
- * SDK is what rejects a bad one, and `runKycVerification` maps that rejection to `cant_start`.
+ * A retry is launchable when EITHER credential is usable. The token is opaque — no `startsWith`
+ * shape check we would be inventing; the SDK judges it and `runKycVerification` maps a rejection to
+ * `cant_start`. The URL is not opaque: it is handed to a browser surface, so only https counts
+ * (the same guard the URL era had). Both go into the launch — with the native SDK reverted
+ * (MOB-BOOT-04) the browser lane is what actually opens, and when the SDK re-lands the token
+ * becomes the primary path with the URL as its fallback, with no change here.
  */
-export function resolveKycRetryFeedback(
-  sessionToken: string | null | undefined,
-  mode: "auto" | "manual" | undefined,
-): KycRetryFeedback {
-  if (sessionToken) {
-    return { sessionToken, error: null, info: null };
+export function resolveKycRetryFeedback(res: {
+  sessionToken?: string | null;
+  verificationUrl?: string | null;
+  mode?: "auto" | "manual";
+}): KycRetryFeedback {
+  const sessionToken = res.sessionToken || null;
+  const verificationUrl = res.verificationUrl && res.verificationUrl.startsWith("https://") ? res.verificationUrl : null;
+  if (sessionToken || verificationUrl) {
+    return { launch: { sessionToken, verificationUrl }, error: null, info: null };
   }
-  if (mode === "manual") {
-    return { sessionToken: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
+  if (res.mode === "manual") {
+    return { launch: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
   }
-  return { sessionToken: null, error: "Couldn't start verification — try again in a moment.", info: null };
+  return { launch: null, error: "Couldn't start verification — try again in a moment.", info: null };
 }
 
 /**

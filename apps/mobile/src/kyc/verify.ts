@@ -1,27 +1,40 @@
 /**
- * The ONE place the app talks to a KYC verification SDK — currently a stub that always resolves
- * `failed` (which `resolveKycGate` maps to the `cant_start` wall), because the Didit native SDK is
- * REVERTED (MOB-BOOT-04, 2026-08-21).
+ * The ONE place the app opens a KYC verification check — currently via the vendor-hosted web flow in
+ * an in-app browser tab, because the Didit native SDK is REVERTED (MOB-BOOT-04, 2026-08-21).
  *
  * Route A (owner decision, 2026-08-20) put Didit's native capture/liveness UI inside LyniaGo. That
  * SDK requires React Native's New Architecture, and every build carrying that pair (#31–#33) dies at
- * cold start on a real handset — including build #33, whose JS-only hardening proved the fault sits
- * below the JS module graph. Per docs/COLD-START-CRASH-RCA-2026-08-21.md §8.2 both native changes
+ * cold start on a real handset. Per docs/COLD-START-CRASH-RCA-2026-08-21.md §8.2 both native changes
  * are reverted together, which removes the package this module used to import.
  *
- * What survives is the seam: callers still get the same `KycLaunchOutcome` union, and
- * `resolveKycGate` remains the single authority on which wall a rider sees. With no SDK present a
- * launch attempt resolves to `failed`, which the gate maps to `cant_start` — the honest state: the
- * check could not be opened on this build. The verdict lane is unchanged (HMAC-signed webhook to
- * /kyc/callback), so riders verified by other means (manual review) are unaffected.
+ * The revert initially left this module a stub that resolved every launch `failed` — which walled
+ * every pending rider behind `cant_start` ("We couldn't open the ID check") with a "Try again" that
+ * could only fail the same way: the app had NO working path to finish or correct an ID check at all.
+ * That dead-end is why the browser hand-off is restored here as the fallback lane: the server never
+ * stopped returning `verificationUrl` (the vendor-hosted web flow — kept precisely because shipped
+ * builds still open it), the verdict lane is unchanged (HMAC-signed webhook to /kyc/callback), and
+ * `expo-web-browser` was part of build #30's proven-good native surface, so this is a JS-only change
+ * that cannot re-introduce the cold-start crash.
  *
- * Re-landing the SDK: restore the import + result mapping from git history at this file (2026-08-20),
- * together with the New Architecture flag and plugin/keep-rule wiring in app.config.ts — one native
- * change at a time, each behind a sideloaded device cold-start smoke (RCA §8.2 steps 3–6). When it
- * returns, the import must load lazily inside the try below: this module's "never throws" contract
- * once lied because a static import throws before any catch can hold it (RCA §3 #3).
+ * Re-landing the SDK: restore the native launch from git history at this file (2026-08-20) as the
+ * PRIMARY path — try the token-holding native check first, and keep this browser lane as the fallback
+ * for a missing/failed native module — together with the New Architecture flag and plugin/keep-rule
+ * wiring in app.config.ts, one native change at a time, each behind a sideloaded device cold-start
+ * smoke (RCA §8.2 steps 3–6). The SDK import must load lazily inside a try, exactly as the browser
+ * module does below: this module's "never throws" contract once lied because a static import throws
+ * before any catch can hold it (RCA §3 #3).
  */
 import type { KycSdkResult } from "../logic/gates";
+
+/**
+ * Everything a launch attempt may need. `verificationUrl` feeds the browser lane below;
+ * `sessionToken` is the native SDK's credential, carried so the call sites don't change shape when
+ * the SDK re-lands as the primary path. Both come from the same retry/become response.
+ */
+export interface KycLaunchCredentials {
+  sessionToken?: string | null;
+  verificationUrl?: string | null;
+}
 
 /**
  * What one launch attempt tells the caller.
@@ -36,24 +49,42 @@ export interface KycLaunchOutcome {
    * The session itself is dead and re-opening it would fail identically — so the NEXT attempt must
    * mint a fresh one (`retryKyc({ force: true })`) instead of taking the server's free resume path.
    *
-   * Set ONLY for an expired token. It deliberately does not cover the other failure types: a denied
-   * camera or a dropped network leaves the session perfectly good, and re-minting for those would
-   * burn a paid Didit session on every tap to fix a problem a new session cannot fix.
+   * Native-SDK-only: the hosted web flow renders its own expired-session page inside the tab, so the
+   * browser lane can never observe expiry and always reports `false` — retries stay on the server's
+   * free resume path instead of burning a paid Didit session per tap.
    */
   sessionUnusable: boolean;
 }
 
 /**
- * Attempt to open a verification check for `sessionToken`.
+ * Attempt to open a verification check.
  *
- * Never throws: with the native SDK reverted, every call resolves to `failed`, because the caller's
- * job is to pick a wall and `cant_start` is the truthful one — the app cannot open a check on this
- * build. `sessionUnusable` stays false: the credential is fine, this build just has nothing to hand
- * it to, and burning a paid session on retry would fix nothing.
+ * Never throws: every failure path — no https URL to open, a browser module that won't load (a
+ * stripped build, no WebView), a launch that throws — resolves to `failed`, because the caller's job
+ * is to pick a wall and `cant_start` is the truthful one. The in-app browser tab (not the system
+ * browser) returns to the app when the rider closes it, so the caller can immediately re-check
+ * status rather than leaving them stranded outside the app.
  */
-export async function runKycVerification(sessionToken: string | null | undefined): Promise<KycLaunchOutcome> {
-  // Referenced so the signature keeps its meaning for callers and for the re-land diff; no SDK to
-  // hand it to today.
-  void sessionToken;
-  return { outcome: "failed", sessionUnusable: false };
+export async function runKycVerification(creds: KycLaunchCredentials): Promise<KycLaunchOutcome> {
+  const url = creds.verificationUrl;
+  // https only — the URL crosses a trust boundary (server → OS browser surface), and anything else
+  // (http, a scheme-less string, an intent: URL) is not a vendor verification page we should open.
+  if (!url || !url.startsWith("https://")) {
+    return { outcome: "failed", sessionUnusable: false };
+  }
+  try {
+    // Lazy require inside the try, never a static import: a module that explodes at import time
+    // would otherwise throw before any catch can hold it and break this function's "never throws"
+    // contract (the exact failure RCA §3 #3 documents against this file).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const WebBrowser = require("expo-web-browser") as typeof import("expo-web-browser");
+    const browser = await WebBrowser.openAuthSessionAsync(url);
+    // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing the
+    // tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
+    return { outcome: browser.type === "success" ? "completed" : "cancelled", sessionUnusable: false };
+  } catch {
+    // The browser module is missing or the tab could not open. Same rider-visible truth as before
+    // this lane existed: the check never started, and `cant_start` says so.
+    return { outcome: "failed", sessionUnusable: false };
+  }
 }

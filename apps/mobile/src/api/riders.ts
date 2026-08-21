@@ -4,11 +4,11 @@ export interface BecomeResult {
   kycStatus: "pending" | "verified" | "failed" | "expired";
   mode: "auto" | "manual";
   /**
-   * The vendor-hosted web flow. Still returned by the server, and deliberately UNUSED by this app
-   * since the native SDK landed — a rider verifies inside LyniaGo and never opens Didit's site. Kept
-   * on the type because the server still sends it (older builds in the field still open it) and
-   * because deleting a field the API returns is how a client silently stops noticing a contract
-   * change. Do not reintroduce a browser launch from it.
+   * The vendor-hosted web flow. Back in active use: with the Didit native SDK reverted (MOB-BOOT-04)
+   * this is the field `runKycVerification` actually opens — the in-app browser tab is the ONLY lane
+   * on this build that can run a check, so removing its launch again would silently wall every
+   * pending rider behind `cant_start` (see src/kyc/verify.ts). When the SDK re-lands, the token
+   * below becomes the primary path and this URL stays as the launch fallback.
    */
   verificationUrl?: string;
   /**
