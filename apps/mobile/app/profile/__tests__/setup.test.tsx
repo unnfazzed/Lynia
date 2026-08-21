@@ -130,6 +130,34 @@ describe("profile setup — the different-number exit", () => {
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/phone");
+    // The ORDER is the point, not just that both happened: navigating before the revoke lands would
+    // race the auth guard on /phone against a session that is still valid.
+    const [signOutAt] = mockSignOut.mock.invocationCallOrder;
+    const [replaceAt] = mockReplace.mock.invocationCallOrder;
+    if (signOutAt === undefined || replaceAt === undefined) throw new Error("both calls must have happened");
+    expect(signOutAt).toBeLessThan(replaceAt);
+  });
+
+  // A double-tap must not fire two sign-outs. The guard is a ref precisely because the `leaving`
+  // state write is not visible to a second press in the same tick — assert the behaviour, so a
+  // future refactor back to state-guarding fails here.
+  it("ignores a second press in the same tick", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    const btn = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
+    if (!btn) throw new Error("no 'Use a different number' action on the screen");
+    act(() => {
+      void btn.props.onPress();
+      void btn.props.onPress();
+    });
+    await settle();
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 
   it("replaces rather than pushes, so no back-stack entry returns to a dead session", async () => {

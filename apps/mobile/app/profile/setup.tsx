@@ -48,6 +48,8 @@ export default function ProfileSetupScreen(): React.ReactElement {
   // Separate from `busy`: the two actions are independent, and sharing one flag would spin the
   // primary while the rider is actually leaving.
   const [leaving, setLeaving] = useState(false);
+  // The synchronous half of the guard above — see useDifferentNumber.
+  const leavingRef = useRef(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
@@ -110,9 +112,17 @@ export default function ProfileSetupScreen(): React.ReactElement {
     }
   };
 
-  /** Abandon this verified number and start the phone step again. */
+  /**
+   * Abandon this verified number and start the phone step again.
+   *
+   * The lock is a REF, not the `leaving` state: a state write is not visible to a second press in
+   * the same tick, so guarding on it lets a double-tap fire two sign-outs (two server revokes, two
+   * device wipes, two navigations) before the button ever re-renders disabled. Cleared on the
+   * failure path so a genuine retry is still possible.
+   */
   const useDifferentNumber = async (): Promise<void> => {
-    if (leaving) return;
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await signOut();
@@ -120,6 +130,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
     } catch {
       // signOut is already best-effort about the server revoke; if the local clear itself fails the
       // rider must not be left on a dead button with no explanation.
+      leavingRef.current = false;
       setLeaving(false);
       setError("Couldn't switch numbers. Try again.");
     }

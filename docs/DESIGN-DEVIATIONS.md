@@ -1468,12 +1468,13 @@ tier is simply the mock, and Half 2 stops being a deviation. Half 1 retires when
 > One honest limit on that: the handoff shipped as two Markdown documents, **not** as exported JSX.
 > So this is verified against the design project's own written specification, not diffed against its
 > source files. If a future export contradicts the handoff, the export wins and this entry reopens.
-
+>
 > **Retired by the in-repo design change in this PR.** The mocks no longer draw the browser step, so
 > the app and the design agree and **there is no deviation left to carry** — align to the mock as
 > normal. The original entry is kept below as the record of the decision.
 >
-> ⚠️ **UPSTREAM SYNC OWED — read before the next design export.** This change was made *in this repo*
+> 🗄️ **UPSTREAM SYNC OWED — HISTORICAL, discharged 2026-08-21 (see the note above); kept as the
+> record of what was owed.** This change was made *in this repo*
 > under the owner's explicit instruction ("design it in this session"), NOT exported from the Claude
 > Design project that `packages/design/` mirrors. That project **still contains the
 > "Continue in browser" button**, so the next export will silently reintroduce it and re-open this
@@ -1525,7 +1526,7 @@ unaffected (BH-03).
 > One honest limit on that: the handoff shipped as two Markdown documents, **not** as exported JSX.
 > So this is verified against the design project's own written specification, not diffed against its
 > source files. If a future export contradicts the handoff, the export wins and this entry reopens.
-
+>
 > **Retired on arrival**, like D-33: these are design CHANGES the owner commissioned, not divergences
 > the app is carrying. Once exported they are simply the mocks. The entry exists because
 > `packages/design/**` was edited in-repo, which the reverse-drift freeze requires be logged, and
@@ -1582,7 +1583,8 @@ resizing a mock — and was never licence for the KIT to draw an unusable contro
 inflates; a below-floor mock is an **UPSTREAM defect to fix**, as done here. Still owed:
 writing that precedence into `CLAUDE.md` so it stops being re-argued (T9).
 
-⚠️ **UPSTREAM SYNC OWED**, compounding D-33's. Edited in-repo, not exported from the Claude Design
+🗄️ **UPSTREAM SYNC OWED — HISTORICAL, discharged 2026-08-21 (see the note under this heading).**
+Compounded D-33's. Edited in-repo, not exported from the Claude Design
 project that `packages/design/` mirrors, so the next export reverts all of it. Replay there:
 `rider-screens.jsx` (two new components + registry), `gallery-map.js` (two band entries + the four
 E-series tile labels), `screens.jsx` (Register ghost), `rider-screens-safety.jsx` (PhotoCapture
@@ -1684,7 +1686,8 @@ rather than which role they are leaving. The button removed in 2026-08-16 — th
 offline-confirm sheet — stays removed; this is a plain ghost that navigates, because a rider behind a
 KYC wall has never had a shift to protect.
 
-⚠️ **UPSTREAM SYNC OWED**, compounding D-33's and D-35's. The `KycPending` change was made *in this
+🗄️ **UPSTREAM SYNC OWED — HISTORICAL, discharged 2026-08-21 (see the note under this heading).**
+Compounded D-33's and D-35's. The `KycPending` change was made *in this
 repo*, not exported from the Claude Design tool. The next export must carry it or it will silently
 revert — and a revert here reads as the 2026-08-16 decision reasserting itself, which it is not.
 
