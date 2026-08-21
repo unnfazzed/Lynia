@@ -883,6 +883,82 @@
 > its ~14-day clock, production access) untouched. A FINISHED submission does not prove the binary
 > *runs* — and for this build, whether it runs is the entire question.
 
+> **2026-08-21, later — internal-track build #34: a real regression caught, root-caused, and reverted
+> in the same session — two EAS builds ERRORED before the fix, none reached the store, then a clean
+> build+submit on the fixed `main`.** A Claude session was asked to "deploy to EAS and playstore
+> build .. make sure all PR are merged to main and main is GCP current."
+>
+> **Open PRs: none at start.** `main` = `f3c47430` (release 0.46.0, merging #859). `release.yml` and
+> `ci.yml` were still finishing on that exact merge commit when checked — both confirmed green before
+> anything was dispatched, and `GET https://lyniago.lyniafinance.com/healthz` independently returned
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. Admin/merchant — deliberately not
+> dispatched: `git diff --stat` against their last green baseline (`640adb1`) touched neither
+> `apps/admin/**`, `apps/merchant/**` nor `packages/shared/**`.
+>
+> **The mobile build was due**: #858 (`feat(mobile): add Firebase Crashlytics alongside Sentry`) had
+> landed since the last shipped build (#33, `f86e3e1a`). Ownership guards ran clean (`ListAgents`,
+> no in-flight `mobile-release.yml` run, `pnpm install --frozen-lockfile` clean against `origin/main`
+> in an isolated worktree). Dispatched `mobile-release.yml` explicitly with **`profile: preview`,
+> `submit: true`** against `main`@`f3c47430`.
+>
+> **Both attempts on that commit ERRORED.** Build `18bd20ef-5ecb-452b-bf4a-e67dcdefe0a0` (14:26 UTC)
+> failed in `CONFIGURE_EXPO_UPDATES` with a bare `UNKNOWN_ERROR`. A same-commit retry — to rule out a
+> transient EAS-side flake before spending effort on a fix — reproduced identically: build
+> `239b5355-8412-40c6-9ff0-696a5321262e` (15:01 UTC), same phase, same error. Both submissions
+> auto-canceled since neither build produced an artifact; no store impact either time.
+>
+> **Root-caused, not guessed.** `eas-build-status.yml`'s failed-build log tail was widened 80→300
+> lines (committed alongside the fix) to see past what the old window cut off. The full phase log
+> showed the actual sequence: a "Differing fingerprint" notice (normal, expected whenever native
+> inputs change) followed by a diff with an **`added` `bareNativeDir` source for `android/`, resolving
+> with `hash: null`** — printed as the last thing before the phase failed. `@react-native-firebase/app`'s
+> config plugin copies `google-services.json` into `android/` via `withDangerousMod`;
+> `@expo/fingerprint` detects that dangerous mod and forces `android/` to be tracked as a source, but
+> can't produce a real hash for it. Confirmed as a genuine **upstream** `@expo/fingerprint` limitation
+> via two independent, unresolved Expo GitHub issues showing the identical signature:
+> [expo/expo#33852](https://github.com/expo/expo/issues/33852) (file-based EAS secret — our
+> `GOOGLE_SERVICES_JSON` is exactly that — closed *not planned*) and
+> [expo/expo#33280](https://github.com/expo/expo/issues/33280) (confirms `.fingerprintignore` cannot
+> exclude `android`/`ios` from this detection either). No `sourceSkips` value fixes it — the closest,
+> `ExpoConfigAll`, covers a different source type and this repo wouldn't want it regardless (it would
+> stop tracking real plugin/permission changes, defeating `REL-01`'s anti-brick property).
+>
+> **Fixed by a clean full revert, not a partial disable.** Autolinking is independent of the `plugins`
+> array, so removing only the plugin registration would leave the native Crashlytics SDK autolinked
+> but half-configured — an unverified native-init state riskier than reverting to the exact surface
+> build #33 already shipped 30+ times. `git revert 9f7cf36` applied with no conflicts; verified locally
+> (`pnpm typecheck && pnpm build && pnpm test`, all 6 workspace packages green, 1507 mobile tests
+> passing) before pushing. Tracked as `REL-03` in `docs/KNOWN_BUGS.md`. Shipped as **PR #860**
+> (draft → CI green → merged) — the owner marked it ready for review and it merged on green, with one
+> CodeRabbit nit on a pre-existing (not introduced by this revert) QA-tooling detail in
+> `src/ui/index.tsx`, verified against the diff and left for a future pass since it's a debug-only,
+> non-regression cosmetic gap. Release-please's routine version-bump PR (**#861**, 0.46.0 → 0.46.1)
+> auto-merged in the same window — routine, not a manual PR needing separate review.
+>
+> **Re-verified GCP on the moving tip rather than the commit last observed**: `release.yml` ran green
+> again on `main`@`32415a2e` (post-#861), and `GET /healthz` was independently re-checked and still
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+>
+> **Re-dispatched `mobile-release.yml`** against the fixed `main` (resolved to `b2c500e` at dispatch
+> time, just before #861 landed) — explicitly `profile: preview`, `submit: true` again. EAS build
+> `a1fc417c-f446-4bbd-8ae0-881f9bfd0fdf` (created 15:54:47 UTC) reached **FINISHED**. Its submission
+> `dfff63d7-d1fc-4db8-ba10-71ac593426bd` reached **FINISHED**, track **`internal`**, no error —
+> confirmed via `eas-build-status.yml`, first `IN_PROGRESS` then `FINISHED` on the next check, rather
+> than inferred from the green dispatcher job.
+>
+> **Net effect:** the regression never reached the store or any tester — caught at the build-pipeline
+> stage, both failed attempts left zero artifacts. The internal track now carries a clean build without
+> Crashlytics (Sentry remains the sole crash reporter, unaffected throughout). `REL-03` stays **open**
+> until `react-native-firebase` or `@expo/fingerprint` ships a fix — re-adding Crashlytics needs a
+> fresh PR verified against a real `mobile-release.yml` dispatch, not just a local `expo prebuild`,
+> since this class of bug is invisible until the actual EAS builder runs `CONFIGURE_EXPO_UPDATES`.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched; a
+> FINISHED submission does not prove the binary *runs* — the real exit test remains the device smoke
+> in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
