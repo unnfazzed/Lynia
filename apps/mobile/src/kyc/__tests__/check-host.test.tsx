@@ -167,6 +167,28 @@ describe("KycCheckSheet outcomes", () => {
     await expect(pending).resolves.toBe("failed");
   });
 
+  it("a second presentation over an errored sheet cancels the first and starts fresh (no stale error)", async () => {
+    const { tree, pending } = openSheet();
+    act(() => {
+      webViewProps(tree).onError!({} as never);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("We couldn't open the ID check");
+    // A new check arrives while the errored sheet is still up (e.g. a fresh retry tap).
+    let second!: Promise<string>;
+    act(() => {
+      second = presentKycCheck({ url: "https://verify.didit.me/sess_2" })!;
+    });
+    // The first caller is released as cancelled, and the new presentation renders a FRESH sheet —
+    // loading its own URL, not the previous check's error state.
+    await expect(pending).resolves.toBe("cancelled");
+    expect(JSON.stringify(tree.toJSON())).not.toContain("We couldn't open the ID check");
+    expect(tree.root.findByType(MockWebView).props.source).toEqual({ uri: "https://verify.didit.me/sess_2" });
+    act(() => {
+      webViewProps(tree).onShouldStartLoadWithRequest!({ url: "lynia://kyc-done", isTopFrame: true } as never);
+    });
+    await expect(second).resolves.toBe("completed");
+  });
+
   it("'Try again' from the error state remounts the WebView for a clean retry", () => {
     const { tree } = openSheet();
     act(() => {

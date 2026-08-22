@@ -159,6 +159,11 @@ keep both intact.**
 
 ## 3. What "everything in the app" can mean
 
+> **HISTORICAL (superseded 2026-08-22 — see the status update at the top).** Route A shipped, crashed
+> cold start (MOB-BOOT-04) and is reverted; the live implementation is the Route A″ WebView sheet.
+> This section stays as the record of the fork and of Route B's shape. Nothing below directs current
+> QA or release work.
+
 Two genuinely different integrations, both supported by Didit:
 
 ### Route A — Didit's **native SDK**, embedded
@@ -221,6 +226,11 @@ G12 mock changes.
 ---
 
 ## 4. The UI work
+
+> **PARTLY HISTORICAL (2026-08-22).** §4.1 landed (#843) and stands. §4.2's SDK-specific items are
+> superseded by the WebView sheet — `startVerification` never re-landed, and the browser call sites
+> were not deleted after all: the in-app browser tab deliberately REMAINS as the sheet's fallback
+> lane (`src/kyc/verify.ts`). §4.3 (Route B) stays the recorded alternative.
 
 ### 4.1 Common to both routes
 
@@ -298,6 +308,12 @@ resumes instead of restarting (the pattern is already there for the single photo
 ---
 
 ## 5. Sequencing and risk
+
+> **HISTORICAL (superseded 2026-08-22).** This table tracked the Route A build-out; its phases are
+> the record of what happened, ending in build #31's cold-start crash and the MOB-BOOT-04 revert.
+> Current state and sequencing live in the status update at the top of this document; the next
+> release gate is the RCA §8.2 sideload smoke for the `react-native-webview` store build — NOT a
+> New-Architecture/SDK build.
 
 | Phase | Work | Gate |
 |---|---|---|

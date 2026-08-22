@@ -101,9 +101,13 @@ export function resetKycCheckHostForTests(): void {
 }
 
 interface ActiveCheck {
+  /** Unique per presentation — keys the sheet so React can never hand a new check a stale one. */
+  id: number;
   req: KycCheckRequest;
   resolve: (outcome: KycCheckOutcome) => void;
 }
+
+let presentationSeq = 0;
 
 /**
  * Mount once per KYC-launching screen. Renders nothing until `presentKycCheck` is called, then a
@@ -123,7 +127,7 @@ export function KycCheckHost(): React.ReactElement | null {
           // resolve it as the rider having left (promise resolution is idempotent, so this can
           // never race the sheet's own outcome into a double-settle).
           prev?.resolve("cancelled");
-          return { req, resolve };
+          return { id: ++presentationSeq, req, resolve };
         });
       });
     presenters.push(presenter);
@@ -151,7 +155,10 @@ export function KycCheckHost(): React.ReactElement | null {
     active.resolve(outcome);
     setActive(null);
   };
-  return <KycCheckSheet url={active.req.url} WebView={WebView} onDone={finish} />;
+  // Keyed per presentation: replacing an active check renders at the same position, and without the
+  // key React would reuse the sheet instance — carrying the previous check's phase (an old error
+  // state, a spent attempt counter) into the new one instead of loading its URL fresh.
+  return <KycCheckSheet key={active.id} url={active.req.url} WebView={WebView} onDone={finish} />;
 }
 
 /** How long a first load may sit on the spinner before the copy admits it's slow (upload pattern). */
@@ -238,7 +245,7 @@ function KycCheckSheet({
               justifyContent: "center",
             }}
           >
-            <Icon name="x" size={20} color={tokens.color.ink} />
+            <Icon name="x" size={tokens.icon.size} color={tokens.color.ink} />
           </Tappable>
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>

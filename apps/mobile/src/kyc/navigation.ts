@@ -35,11 +35,17 @@ function urlScheme(url: string): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
-/** Lowercased host of an http(s) URL (userinfo/port stripped), or null when it doesn't parse as one. */
+/**
+ * Lowercased host of an http(s) URL (userinfo/port stripped), or null when it doesn't parse as one.
+ * Backslash terminates the authority (WHATWG parsing — browsers treat `\` like `/`), so it is
+ * excluded from the userinfo and host classes: otherwise `https://evil.example\@verify.didit.me/`
+ * would read `verify.didit.me` as the host here while the WebView actually navigates to
+ * `evil.example`, letting a non-vendor page pass as "still the check".
+ */
 function httpUrlHost(url: string): string | null {
-  const ipv6 = /^https?:\/\/(?:[^/@?#[\]]*@)?\[([^\]]+)\]/i.exec(url);
+  const ipv6 = /^https?:\/\/(?:[^/\\@?#[\]]*@)?\[([^\]]+)\]/i.exec(url);
   if (ipv6) return ipv6[1]?.toLowerCase() ?? null;
-  const host = /^https?:\/\/(?:[^/@?#]*@)?([^/:?#@]+)/i.exec(url);
+  const host = /^https?:\/\/(?:[^/\\@?#]*@)?([^/\\:?#@]+)/i.exec(url);
   return host?.[1]?.toLowerCase() ?? null;
 }
 

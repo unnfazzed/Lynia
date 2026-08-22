@@ -52,6 +52,13 @@ describe("resolveKycWebNavigation", () => {
     expect(resolveKycWebNavigation(INITIAL, "https://user@verify.didit.me:443/x")).toBe("allow");
   });
 
+  it("a backslash-delimited authority cannot spoof the vendor host (WHATWG: \\ ends the authority)", () => {
+    // A browser/WebView navigates these to evil.example (backslash acts like a slash), so the
+    // policy must NOT read the didit.me part after it as the host and keep the page in the sheet.
+    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\@verify.didit.me/x")).toBe("completed");
+    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\.didit.me/x")).toBe("completed");
+  });
+
   it("lets an unparseable http URL through to the WebView (its error state owns the failure)", () => {
     expect(resolveKycWebNavigation(INITIAL, "https://")).toBe("allow");
   });
