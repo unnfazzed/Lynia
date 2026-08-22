@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.0](https://github.com/unnfazzed/Lynia/compare/v0.47.0...v0.48.0) (2026-08-22)
+
+
+### Features
+
+* **kyc:** the ID check reads as Lynia's own — no vendor naming in rider-facing copy (D-38) ([#873](https://github.com/unnfazzed/Lynia/issues/873)) ([e416527](https://github.com/unnfazzed/Lynia/commit/e4165271dcc7eaa8d722db9c0098fae812cc9756))
+
 ## [0.47.0](https://github.com/unnfazzed/Lynia/compare/v0.46.3...v0.47.0) (2026-08-22)
 
 
