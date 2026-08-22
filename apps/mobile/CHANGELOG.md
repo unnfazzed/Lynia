@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.3](https://github.com/unnfazzed/Lynia/compare/v0.46.2...v0.46.3) (2026-08-21)
+
+
+### Bug Fixes
+
+* **mobile:** restore the browser KYC hand-off while the native SDK is reverted ([#866](https://github.com/unnfazzed/Lynia/issues/866)) ([629c63e](https://github.com/unnfazzed/Lynia/commit/629c63e8fc5526d72e384f4d5522200bd88ea4a0))
+
 ## [0.46.2](https://github.com/unnfazzed/Lynia/compare/v0.46.1...v0.46.2) (2026-08-21)
 
 
