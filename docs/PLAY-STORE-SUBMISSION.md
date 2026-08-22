@@ -1029,6 +1029,14 @@
 > checklist's KYC-sheet items — remains owed from the internal track (or run #23's sideload
 > artifact) before this build is treated as good. `MOB-BOOT-04`'s device-trace question also remains
 > whatever the #35 verdict left it.
+>
+> **Update, same morning (owner screenshot, ~10:47 local): the device smoke's core PASSED.** The
+> owner's handset running this build cold-starts to the app and opens the in-app ID-check sheet —
+> Lynia header over the embedded document-selection flow, camera lane reachable. That is the
+> first on-device confirmation of (a) the post-revert surface booting and (b) the
+> react-native-webview sheet rendering. The remaining QA-checklist KYC items (finish-flow
+> auto-close, exits, fallback) are still to be walked, but the "does the binary run at all"
+> question this entry held open is answered YES.
 
 ---
 

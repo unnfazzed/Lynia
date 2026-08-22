@@ -44,10 +44,11 @@ specifically. This shipped straight to the internal track without a device pass.
 - [ ] **Push receipt per notice** — offer-received (customer), assigned (rider), each lifecycle status,
       expired, cancelled, and the nearby-order broadcast all arrive on the device.
 - [ ] **KYC in-app sheet** — "Finish verifying" opens the ID check **inside the app** (Lynia header
-      "ID check · with our verification partner Didit" over the vendor flow — no browser tab, no
-      URL bar); the camera permission is asked before the sheet; document capture + selfie work
-      inside it; finishing closes the sheet automatically and lands on "Finishing verification…";
-      the app auto-polls while pending and resolves to verified/declined with the honest reason.
+      "ID check · Have your national ID ready" over the embedded flow — no browser tab, no URL bar,
+      and **no vendor naming anywhere in Lynia-drawn copy**, D-38); the camera permission is asked
+      before the sheet; document capture + selfie work inside it; finishing closes the sheet
+      automatically and lands on "Finishing verification…"; the app auto-polls while pending and
+      resolves to verified/declined with the honest reason.
 - [ ] **KYC sheet exits** — ✕ asks "Leave the ID check?"; leaving lands on the "Finish verifying
       your ID" wall (resume works, no new session minted); airplane mode before opening lands on
       "We couldn't open the ID check" with a working "Try again" — and restoring connectivity then

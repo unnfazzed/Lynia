@@ -90,7 +90,9 @@ describe("KycCheckSheet outcomes", () => {
     const { tree } = openSheet();
     const rendered = JSON.stringify(tree.toJSON());
     expect(rendered).toContain("ID check");
-    expect(rendered).toContain("with our verification partner Didit");
+    // D-38: no vendor naming anywhere in rider-facing KYC — the sub explains the step instead.
+    expect(rendered).toContain("Have your national ID ready");
+    expect(rendered).not.toContain("Didit");
     expect(tree.root.findByType(MockWebView).props.source).toEqual({ uri: URL });
   });
 

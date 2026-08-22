@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37.** D-33 was RETIRED on the day it was
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38.** D-33 was RETIRED on the day it was
 opened — the mocks were redrawn without the browser step, so nothing diverges (its entry carries an
 upstream-sync warning for the next design export). D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
@@ -1721,3 +1721,35 @@ that lane for older builds.
 **No kit edit was made** for this entry — `packages/design/**` is untouched, so no upstream sync is
 owed. **Retire this entry** if the native SDK re-lands (D-34 then covers its UI again) or if Route B
 (fully Lynia-drawn capture) ships and no vendor-drawn surface remains.
+
+## D-38 · No vendor naming in rider-facing KYC copy — the check reads as Lynia's own — APPROVED (2026-08-22)
+
+**Owner instruction (2026-08-22, from a build-#36 device screenshot of the in-app sheet):** *"Remove
+the statement at the top that says 'with our verification partner Didit' … do it across all KYC
+screens to remove any statement that says Didit … replace it with text that explains the action or
+verification step … the idea is to make it look like it's us doing it."*
+
+**This reverses the partner-naming half of the D-33/D-34-era decisions** ("KEEPING the Didit partner
+naming, which is a real disclosure the mock is right to draw") and diverges from mocks that draw the
+name. The three Lynia-drawn strings that carried it, and what they now say:
+
+| Surface | Was | Now |
+|---|---|---|
+| ID-check sheet header sub (`KycCheckHost.tsx`) | "with our verification partner Didit" | "Have your national ID ready" |
+| `RJ.kyc_form` consent card (`become.tsx`) | "…checked by our verification partner **Didit** — an ID photo plus a quick selfie liveness check…" | "We verify your national ID with an ID photo and a quick selfie check…" (storage/sharing sentence unchanged) |
+| `RJ.kyc_pending` wall (`(tabs)/index.tsx`) | "Your ID check is with Didit — riders go online once it's verified…" | "We're checking your ID — riders go online once it's verified…" (rest verbatim) |
+
+**Where the disclosure lives instead — recorded so this is never read as hiding the processing.**
+The third-party-processor relationship remains disclosed in the privacy policy (the consent card
+links to it), which is where CDPA/data-protection duty puts it; the per-screen naming was a courtesy
+the owner has now withdrawn. Compliance posture unchanged.
+
+**What this entry cannot remove:** the "Secured by Didit" footer INSIDE the embedded flow is drawn
+by the vendor's hosted pages, not by this repo — removing it is a white-label setting in the Didit
+dashboard (vendor plan permitting), tracked as a founder/ops item, not a code change.
+
+**No kit edit was made** — `packages/design/**` untouched, so no freeze entry is owed, but the mocks
+(`rider-screens.jsx` `KycPending`/`KycForm`) still draw the name: **UPSTREAM SYNC OWED** — the
+design tool must adopt this copy or the next export reverts it. The affected screens are already in
+`tools/parity/rendered-conformance.pending.json` for unrelated reasons, so no guardrail pins the old
+strings. **Retire this entry** when an export carries the vendor-free copy.
