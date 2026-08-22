@@ -1038,6 +1038,63 @@
 > auto-close, exits, fallback) are still to be walked, but the "does the binary run at all"
 > question this entry held open is answered YES.
 
+> **Status (2026-08-22 — v0.48.0 shipped to the internal track; PRs/GCP/mobile all checked in one
+> pass on an explicit "deploy the PR to main and main to Expo and Play Store build, make sure GCP
+> is final" request.)**
+>
+> **① Open PRs: none.** `list_pull_requests` returned empty — `main` = `b72210f` (release-please
+> `chore(main): release 0.48.0`, merging #874) was already merged before this session started; there
+> was no pending PR to land.
+>
+> **② GCP/API — confirmed final.** CI green on `b72210f` (run #1961, `32576972451`). `release.yml`
+> run #683 (`32576972425`) briefly sat in a `waiting` state for a few minutes — the same bounded
+> environment-wait pattern recorded 2026-08-19, not a stuck reviewer gate — then ran the staging
+> gate, migration and no-traffic deploy and completed **SUCCESS** at 14:02:22 UTC. Independently
+> verified through the LB rather than inferred from the tick: `GET
+> https://lyniago.lyniafinance.com/healthz` → 200
+> `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+>
+> **Admin/merchant — deliberately not dispatched.** `git diff 640adb1..origin/main -- apps/admin
+> apps/merchant packages/shared` is empty — nothing changed since their last green deploys
+> (deploy-admin run #81, deploy-merchant run #5, both at `640adb1`, 2026-08-19) — recording the skip
+> rather than the click, same call as every prior entry.
+>
+> **Why the mobile build was genuinely due.** Since the last shipped build (`f8db0a7`, run #38),
+> `apps/mobile` picked up #873 — the rider-facing KYC copy fix so the ID check reads as Lynia's own,
+> no vendor naming (D-38): `KycCheckHost.tsx`, `rider/become.tsx`, `rider/(tabs)/index.tsx` + their
+> tests. A real copy/UI change, not a version-string bump.
+>
+> **Ownership guards ran rather than were assumed**, per `CLAUDE.md`: `ListAgents` showed no other
+> reachable Claude session, no in-flight `mobile-release.yml` run (last was run #38, completed
+> 2026-08-22 08:27 UTC), CI green on the dispatched commit, and `pnpm install --frozen-lockfile`
+> clean on pnpm 10.33.0 with `pnpm-lock.yaml`/`apps/mobile/eas.json` unmoved against
+> `origin/main`@`b72210f`.
+>
+> Dispatched `mobile-release.yml` run #39 (`32577284570`) explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above and the
+> 2026-08-16 incident where an empty-input redispatch queued a live production submission. Ref
+> `main`@`b72210fd00879209bd865770e2987b48296f6e30` (app version **0.48.0**). The dispatcher job
+> succeeded in ~60 s (13:57:43 → 13:58:43 UTC), which under `--no-wait` proves only that the build
+> was queued.
+>
+> EAS build `3af39eeb-54d0-44d6-877a-0d891ce4b9b3` (profile `preview`, created 13:58:35 UTC) reached
+> **FINISHED**. Its submission `eb04ab8f-a9d2-40ac-98c8-420d066ccd62` reached **FINISHED**, track
+> **`internal`**, no error — confirmed via `eas-build-status.yml` run #49 (`32578307586`), ~21
+> minutes after dispatch, no retries needed. Exact versionCode not captured — the same known
+> `eas-build-status.yml` recap gap as every entry since 2026-08-17.
+>
+> **One pre-existing item noticed, not touched.** The same Recap listed an older build,
+> `239b5355…` (created 2026-08-21T15:01:06Z, i.e. run #35's dispatch), **ERRORED** with its
+> submission **CANCELED**. Both are terminal states, it predates this session by a day, and it was
+> already superseded by run #36's clean build/submit minutes later — recorded here for completeness,
+> not reopened.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and
+> nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
+> exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
