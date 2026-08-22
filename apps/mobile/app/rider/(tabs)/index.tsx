@@ -1275,7 +1275,7 @@ export default function RiderHome(): React.ReactElement {
             <EmptyState
               icon="id-card"
               title="Finishing verification…"
-              message="Your ID check is with Didit — riders go online once it's verified. This usually takes under a minute."
+              message="We're checking your ID — riders go online once it's verified. This usually takes under a minute."
             >
               <CustomerBridge onPress={leaveForCustomer} />
             </EmptyState>

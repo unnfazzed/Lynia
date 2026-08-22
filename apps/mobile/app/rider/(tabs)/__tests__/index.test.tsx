@@ -811,7 +811,7 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
  * P0-1 — `kyc_pending` is three screens, not one (`RJ kyc_pending` / `kyc_unfinished` / `kyc_cant_start`).
  *
  * The bug these exist for: a rider who opened the check and backed out at step one used to land on
- * "Your ID check is with Didit" — false, nothing was submitted — with no way to resume. Each state now
+ * "We're checking your ID" — false, nothing was submitted — with no way to resume. Each state now
  * says something the other two must not, so assert the COPY, not just the action count: a regression
  * that renders the right buttons under the wrong sentence is exactly the failure being fixed.
  */
@@ -829,7 +829,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
     expect(text).toContain("Finishing verification");
-    expect(text).toContain("Your ID check is with Didit");
+    expect(text).toContain("We're checking your ID");
     expect(text).not.toContain("Finish verifying your ID");
   });
 
@@ -838,7 +838,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     expect(text).toContain("Finish verifying your ID");
     expect(text).toContain("You haven't finished verifying your ID");
     // The precise lie this split exists to remove.
-    expect(text).not.toContain("Your ID check is with Didit");
+    expect(text).not.toContain("We're checking your ID");
   });
 
   // Absent signal ⇒ unfinished. An older API that sends no pending-state must still leave the rider a
@@ -926,7 +926,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
       tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
     });
 
-    expect(treeText(activeTree)).toContain("Your ID check is with Didit");
+    expect(treeText(activeTree)).toContain("We're checking your ID");
     expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
   });
 
@@ -954,7 +954,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await settle();
 
     expect(treeText(activeTree)).toContain("Finish verifying your ID");
-    expect(treeText(activeTree)).not.toContain("Your ID check is with Didit");
+    expect(treeText(activeTree)).not.toContain("We're checking your ID");
   });
 
   /**
@@ -1164,7 +1164,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   it("manual review stays its own state, whatever the pending state says", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "in_flight" });
     expect(text).toContain("Your ID is under review");
-    expect(text).not.toContain("Your ID check is with Didit");
+    expect(text).not.toContain("We're checking your ID");
   });
 });
 

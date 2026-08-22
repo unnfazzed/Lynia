@@ -251,10 +251,11 @@ function KycCheckSheet({
             <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
               ID check
             </Text>
-            {/* The partner naming is a real disclosure the consent card already made — kept over the
-                flow so the vendor-drawn pixels below are never mistaken for an unbranded surprise. */}
+            {/* Owner instruction (2026-08-22): no vendor naming anywhere in rider-facing KYC — the
+                check reads as Lynia's own (D-38). The third-party-processor disclosure lives in the
+                privacy policy the consent card links to, not in the chrome. */}
             <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted }}>
-              with our verification partner Didit
+              Have your national ID ready
             </Text>
           </View>
           {/* Spacer balancing the close button so the title optically centres. */}
