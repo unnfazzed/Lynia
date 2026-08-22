@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34.** D-33 was RETIRED on the day it was
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37.** D-33 was RETIRED on the day it was
 opened — the mocks were redrawn without the browser step, so nothing diverges (its entry carries an
 upstream-sync warning for the next design export). D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
@@ -1693,3 +1693,31 @@ revert — and a revert here reads as the 2026-08-16 decision reasserting itself
 
 **Retire this entry** when an export carries the ghost on `RJ.kyc_pending`; the placement itself is a
 standing owner decision, not a deviation, so only the in-repo edit is what needs retiring.
+
+## D-37 · The in-app ID-check sheet renders Didit's hosted flow — vendor pixels inside Lynia chrome — APPROVED (2026-08-22)
+
+**D-34's exemption, carried to the surface that actually shipped.** D-34 approved that the Didit
+**native SDK's** verification UI (Route A) sits outside pixel parity. That SDK is reverted with the
+New Architecture (MOB-BOOT-04 — every build carrying the pair died at cold start), and the owner's
+instruction stands: *riders must not do KYC on the Didit website outside the app, everything must
+look like the app interface* (2026-08-20, reaffirmed 2026-08-22). The shipped mechanism is now an
+**in-app sheet** (`apps/mobile/src/kyc/KycCheckHost.tsx`): Didit's hosted web flow rendered inside
+LyniaGo via `react-native-webview`, under a Lynia header ("ID check · with our verification partner
+Didit", token-drawn, ✕ at `--target-min`), with Lynia-drawn loading ("Opening your ID check…"),
+error (the `kyc_cant_start` copy, verbatim) and exit-confirmation states.
+
+**What is exempt, exactly as under D-34:** the pixels *inside* the sheet — document capture, selfie
+liveness, progress — are Didit's hosted pages, not drawable from `packages/design/tokens` and not
+coverable by the parity guardrails. Everything *around* them is Lynia chrome, built from tokens, and
+IS subject to parity discipline. No gallery screen draws the sheet's chrome (the sheet is transport,
+not a journey state — the drawn journey states remain `kyc_form` → `kyc_pending` /
+`kyc_unfinished` / `kyc_cant_start`, all unchanged); if Design later draws one, the app aligns to it.
+
+**Fallback lane, same exemption:** where the sheet cannot present (WebView module absent, hard
+camera denial), the launch falls back to the in-app browser tab — vendor pixels again, plus browser
+chrome. The API's `GET /kyc/return` landing (brand CTA green, shared tokens) is the branded end of
+that lane for older builds.
+
+**No kit edit was made** for this entry — `packages/design/**` is untouched, so no upstream sync is
+owed. **Retire this entry** if the native SDK re-lands (D-34 then covers its UI again) or if Route B
+(fully Lynia-drawn capture) ships and no vendor-drawn surface remains.

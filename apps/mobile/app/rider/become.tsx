@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { becomeRider, completeProfile } from "../../src/api/riders";
+import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { runKycVerification } from "../../src/kyc/verify";
 import { shouldOfferPermissionSettings } from "../../src/logic/gates";
 import { downscaleForUpload, type UploadImageSource } from "../../src/logic/image-downscale";
@@ -225,10 +226,11 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
       // rather than leaving it in the keystore any longer than needed.
       void clearKycDraft();
-      // The check opens over this screen — the hosted web flow in an in-app browser tab while the
-      // native SDK is reverted (MOB-BOOT-04). The old `.catch(() => undefined)` here was the same
-      // swallow the board's retry path had: when the launch failed the rider saw a line describing a
-      // browser that never opened. `runKycVerification` never throws and names the outcome instead.
+      // The check opens over this screen — the in-app ID-check sheet (KycCheckHost, mounted below),
+      // falling back to the in-app browser tab when the sheet can't present. The old
+      // `.catch(() => undefined)` here was the same swallow the board's retry path had: when the
+      // launch failed the rider saw a line describing a check that never opened. `runKycVerification`
+      // never throws and names the outcome instead.
       const launch =
         res.sessionToken || res.verificationUrl
           ? await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl })
@@ -374,6 +376,8 @@ export default function BecomeRiderScreen(): React.ReactElement {
           </>
         )}
       </ScrollView>
+      {/* Presents the in-app ID-check sheet when submit's runKycVerification launches (src/kyc). */}
+      <KycCheckHost />
     </Screen>
   );
 }

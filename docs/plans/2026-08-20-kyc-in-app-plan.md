@@ -11,6 +11,31 @@ UI/backend work. It is a plan — nothing here is implemented yet.
 > Route B is kept below as the recorded alternative and as the shape of any later move to our own
 > capture UI; it is not the path being built. §5 phase 0 is done.
 
+> **Status update (2026-08-22): Route A is reverted; the shipped path is Route A″ — the hosted flow
+> in an in-app WebView sheet.** Route A shipped (builds #31–#33) and every build carrying the
+> New Architecture + Didit SDK pair died at cold start on a real handset (`MOB-BOOT-04`,
+> `docs/COLD-START-CRASH-RCA-2026-08-21.md`); both native changes were reverted together per RCA
+> §8.2, which briefly restored the browser hand-off this plan exists to kill (#866). The owner's
+> instruction is unchanged — no KYC on the Didit website outside the app, everything in app
+> chrome — so the current implementation keeps Route A's shape with the SDK swapped for a WebView:
+>
+> - **`src/kyc/KycCheckHost.tsx`** presents Didit's hosted flow inside LyniaGo (Lynia header,
+>   loading/error/exit states from tokens; vendor pixels inside per D-37, extending D-34).
+> - **`src/kyc/verify.ts`** prefers the sheet and falls back to the in-app browser tab (WebView
+>   module absent or hard camera denial); the outcome contract (completed/cancelled/failed →
+>   in_flight/unfinished/cant_start) and every §4.1 wall are unchanged.
+> - **Completion** is the session's `callback` redirect, detected in-sheet by leaving the vendor
+>   host (`src/kyc/navigation.ts`); `GET /kyc/return` is the branded landing recommended as
+>   `DIDIT_CALLBACK_URL`, and its `lynia://` bounce also closes older builds' browser tabs.
+> - **Cold-start posture:** `newArchEnabled` stays `false`; no Didit SDK; `react-native-webview`
+>   (13.12.5, old-architecture, Expo-52-pinned) is lazy-required off the boot path. Still a NATIVE
+>   dependency → store build only, behind the RCA §8.2 sideload-smoke gate.
+>
+> G1/G2 (hand-offs, vendor website) close again under this lane; G3 (double capture), G7 (token,
+> now moot for the web lane), and the G9 New-Architecture migration stay exactly where the revert
+> left them. Re-landing the true Route A remains possible per RCA §8.2 step 6 — `verify.ts` still
+> carries `sessionToken` untouched for that day.
+
 ---
 
 ## 1. The process today
@@ -134,6 +159,11 @@ keep both intact.**
 
 ## 3. What "everything in the app" can mean
 
+> **HISTORICAL (superseded 2026-08-22 — see the status update at the top).** Route A shipped, crashed
+> cold start (MOB-BOOT-04) and is reverted; the live implementation is the Route A″ WebView sheet.
+> This section stays as the record of the fork and of Route B's shape. Nothing below directs current
+> QA or release work.
+
 Two genuinely different integrations, both supported by Didit:
 
 ### Route A — Didit's **native SDK**, embedded
@@ -196,6 +226,11 @@ G12 mock changes.
 ---
 
 ## 4. The UI work
+
+> **PARTLY HISTORICAL (2026-08-22).** §4.1 landed (#843) and stands. §4.2's SDK-specific items are
+> superseded by the WebView sheet — `startVerification` never re-landed, and the browser call sites
+> were not deleted after all: the in-app browser tab deliberately REMAINS as the sheet's fallback
+> lane (`src/kyc/verify.ts`). §4.3 (Route B) stays the recorded alternative.
 
 ### 4.1 Common to both routes
 
@@ -273,6 +308,12 @@ resumes instead of restarting (the pattern is already there for the single photo
 ---
 
 ## 5. Sequencing and risk
+
+> **HISTORICAL (superseded 2026-08-22).** This table tracked the Route A build-out; its phases are
+> the record of what happened, ending in build #31's cold-start crash and the MOB-BOOT-04 revert.
+> Current state and sequencing live in the status update at the top of this document; the next
+> release gate is the RCA §8.2 sideload smoke for the `react-native-webview` store build — NOT a
+> New-Architecture/SDK build.
 
 | Phase | Work | Gate |
 |---|---|---|

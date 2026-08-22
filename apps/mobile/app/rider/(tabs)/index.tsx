@@ -17,6 +17,7 @@ import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { type KycSdkResult, onlineGateReason, ONLINE_GATE_COPY, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
 import { runKycVerification } from "../../../src/kyc/verify";
 import { telUri } from "../../../src/logic/safety";
 import { greetingFor, greetingLine } from "../../../src/logic/greeting";
@@ -519,8 +520,8 @@ export default function RiderHome(): React.ReactElement {
   }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, gate, loc, locHint]);
 
   // Pending/failed riders re-run KYC: get session credentials and open the check over this screen —
-  // the hosted web flow in an in-app browser tab while the native SDK is reverted (MOB-BOOT-04).
-  // The rider never re-keys the form.
+  // the in-app ID-check sheet (KycCheckHost, mounted in the gated branch below), with the in-app
+  // browser tab as fallback. The rider never re-keys the form.
   const retryM = useMutation({
     // `force` is normally false so the server's free resume path can hand back the session the rider
     // already has. It flips true for exactly one tap after the SDK rejected that session as expired,
@@ -535,9 +536,9 @@ export default function RiderHome(): React.ReactElement {
       setError(feedback.error);
       setInfo(feedback.info);
       if (feedback.launch) {
-        // The check opens over this screen — via the in-app browser tab (the hosted web flow) while
-        // the native SDK is reverted (MOB-BOOT-04), returning here when the rider closes it. There is
-        // no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification` never
+        // The check opens over this screen — the in-app ID-check sheet, or the in-app browser tab
+        // when the sheet can't present — returning here when the rider finishes or closes it. There
+        // is no `.catch(() => undefined)` to swallow a launch failure — `runKycVerification` never
         // throws and reports every failure as `failed`, which is what the drawn `cant_start` state
         // exists to say.
         const launch = await runKycVerification(feedback.launch);
@@ -1441,6 +1442,9 @@ export default function RiderHome(): React.ReactElement {
         {trailingFooterContent}
       </ScrollView>
       </View>
+      {/* Presents the in-app ID-check sheet when a wall's retry launches (src/kyc/verify.ts). This
+          branch is the one the KYC walls render in, so the sheet always has a mounted host. */}
+      <KycCheckHost />
     </AppScreen>
   );
 }
