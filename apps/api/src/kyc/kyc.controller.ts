@@ -2,6 +2,8 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
+  Header,
   Inject,
   Logger,
   Param,
@@ -14,6 +16,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { tokens } from "@lynia/shared/tokens";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -41,6 +44,43 @@ const AdminKyc = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reasonCode"], message: "A decline must record a reason." });
     }
   });
+
+/**
+ * The /kyc/return landing (see the route's doc comment). Static, self-contained, no reflected input.
+ * Colours come from the shared design tokens (the CTA green + ink pair every app face uses) so this
+ * page can't drift from the palette; the typeface is the system stack because a redirect landing
+ * must not block on a webfont. The `lynia://` link/redirect is the app scheme (apps/mobile
+ * app.config.ts `scheme`) — in an in-app browser tab it bounces the tab closed and back to LyniaGo.
+ */
+const KYC_RETURN_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>LyniaGo — ID check</title>
+<style>
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: ${tokens.color.cta}; color: ${tokens.color.onAccent};
+         min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  main { text-align: center; padding: 24px; max-width: 420px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { font-size: 16px; line-height: 1.45; margin: 0 0 24px; opacity: .92; }
+  a { display: inline-block; background: ${tokens.color.onAccent}; color: ${tokens.color.cta};
+      font-weight: 600; font-size: 16px; text-decoration: none; border-radius: 999px;
+      padding: 14px 28px; min-height: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>All done here</h1>
+  <p>Head back to the LyniaGo app — we&rsquo;ll take it from there.</p>
+  <a href="lynia://">Back to LyniaGo</a>
+</main>
+<script>setTimeout(function () { location.href = "lynia://"; }, 400);</script>
+</body>
+</html>
+`;
 
 @Controller()
 export class KycController {
@@ -123,6 +163,32 @@ export class KycController {
       this.logger.warn(`KYC webhook for session ${payload.session_id} (${decision.status}) matched no rider or was stale`);
     }
     return res;
+  }
+
+  /**
+   * Post-verification browser return page — the recommended DIDIT_CALLBACK_URL target
+   * (`<api>/kyc/return`). This is the REDIRECT half of the vendor contract (the webhook above is the
+   * verdict half): when the rider finishes Didit's hosted flow, the browser surface showing it is
+   * sent here.
+   *
+   * Who actually lands on it:
+   *  - The in-app ID-check sheet (mobile src/kyc/KycCheckHost.tsx) intercepts the redirect BEFORE it
+   *    loads — leaving the vendor's host is its completion signal — so current builds close the sheet
+   *    and never render this page.
+   *  - Older shipped builds still open the flow in an in-app browser tab
+   *    (`openAuthSessionAsync`). For them this page is the difference between "finished on a dead
+   *    webhook URL / vendor end screen" and a branded landing whose `lynia://` redirect bounces the
+   *    tab shut and resolves the launch `completed`.
+   *
+   * Public and unauthenticated by design (the redirect carries no session of ours); serves static
+   * HTML with no request data reflected, so there is nothing to sanitise or rate-limit beyond the
+   * global limiter.
+   */
+  @Get("kyc/return")
+  @Header("content-type", "text/html; charset=utf-8")
+  @Header("cache-control", "public, max-age=300")
+  returnPage(): string {
+    return KYC_RETURN_HTML;
   }
 
   /** Manual-review backstop (T7): admin sets a rider's KYC status directly. The decision + its audit

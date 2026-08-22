@@ -169,3 +169,21 @@ describe("KycController.callback", () => {
     expect(eventAt()).toEqual(new Date(ts * 1000));
   });
 });
+
+describe("KycController.returnPage", () => {
+  it("serves the branded post-verification landing with the app-scheme bounce", () => {
+    const html = ctl(fakeRiders().riders, {}).returnPage();
+    // The two halves the page exists for: a human-readable "go back to the app" landing, and the
+    // lynia:// redirect that closes an in-app browser tab on older builds.
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("Back to LyniaGo");
+    expect(html).toContain('href="lynia://"');
+    expect(html).toContain('location.href = "lynia://"');
+  });
+
+  it("reflects no request data — the page is a static constant", () => {
+    const c = ctl(fakeRiders().riders, {});
+    // Two calls, byte-identical: nothing about the caller can reach the markup.
+    expect(c.returnPage()).toBe(c.returnPage());
+  });
+});
