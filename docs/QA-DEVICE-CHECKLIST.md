@@ -50,7 +50,13 @@ specifically. This shipped straight to the internal track without a device pass.
       the app auto-polls while pending and resolves to verified/declined with the honest reason.
 - [ ] **KYC sheet exits** — ✕ asks "Leave the ID check?"; leaving lands on the "Finish verifying
       your ID" wall (resume works, no new session minted); airplane mode before opening lands on
-      "We couldn't open the ID check" with a working "Try again".
+      "We couldn't open the ID check" with a working "Try again" — and restoring connectivity then
+      tapping "Try again" completes normally.
+- [ ] **KYC browser fallback** — with the camera permission hard-denied ("Don't allow" twice /
+      "Don't ask again"), "Finish verifying" opens the in-app browser tab instead of the sheet, the
+      flow completes there, and finishing lands on the branded "All done here" page
+      (`GET /kyc/return`) whose "Back to LyniaGo" / auto `lynia://` bounce returns to the app and
+      the "Finishing verification…" wall.
 - [ ] **GPS degradation (T11)** — mid-delivery: revoke location permission → app shows a "location paused"
       state, last-known position stays labelled-stale (not frozen-silent); turn GPS off → same; background
       the rider app → the customer sees a stale-but-labelled marker, not a lie.
