@@ -992,6 +992,44 @@
 > build by design; re-landing it follows RCA §8.2 step 6 — one native change at a time, each behind
 > a device smoke. Still internal track only; the store listing still 404s by design.
 
+> **2026-08-22, morning — internal-track build #36: the in-app KYC sheet binary (v0.47.0). Both
+> halves FINISHED.**
+>
+> What shipped: `main`@`f8db0a7` — PR **#870** squashed as `49144d6` plus the 0.47.0 release
+> merge. The rider ID check now runs inside the app: Didit's hosted flow in a `react-native-webview`
+> sheet under Lynia chrome (`src/kyc/KycCheckHost.tsx`), browser tab demoted to fallback, completion
+> detected in-sheet via the callback redirect. **Exactly one native delta over build #35's surface:**
+> `react-native-webview@13.12.5` (Expo-52 pin, old architecture, autolinked, lazy-required off the
+> boot path). `newArchEnabled` stays `false`; no Didit SDK. NATIVE change — new fingerprint
+> runtimeVersion; not OTA-reachable from any earlier build.
+>
+> **The free pre-check ran** — `android-test-apk.yml` run #23 (`32561448903`) built the identical
+> native surface from this commit and went green **before** the EAS slot was spent. The on-device
+> cold-start confirmation of that artifact was still pending when the owner explicitly instructed
+> the dispatch ("proceed with expo build and deploy to google playstore") — recorded as an owner
+> decision, the same shape as build #35's entry.
+>
+> Pre-dispatch: `pnpm install --frozen-lockfile` clean on `main`@`f8db0a7` (the lockfile moved in
+> #870 — one package, react-native-webview, plus peer-hash re-serialization — ruling out the
+> `5906d2f0` strict-install drift class); no in-flight `mobile-release.yml` run. Dispatched run
+> `32562309175` explicitly with **`profile: preview`, `submit: true`** at 08:27 UTC.
+>
+> EAS build `1c4c3061-6eb4-4854-a9c8-d9cdfdeff61a` (profile `preview`, created 08:27:42 UTC) reached
+> **FINISHED**. Its submission `e93f26d5-b272-4339-ac17-f076c6ea4777` reached **FINISHED**, track
+> **`internal`**, no error — read from the `eas-build-status.yml` Recap (run `32564048097`), not
+> inferred from the green dispatcher job. **Failure class: none.**
+>
+> Server side, same morning: `GET /kyc/return` deployed and verified live (release runs #679–#681),
+> and `DIDIT_CALLBACK_URL=https://lyniago.lyniafinance.com/kyc/return` confirmed injected on the
+> promoted revision (run `32562491423` logs) — new Didit sessions carry the redirect, so the sheet
+> auto-closes on completion.
+>
+> **What this run does NOT establish:** a FINISHED submission does not prove the binary runs, and
+> this is the first build carrying react-native-webview. The device smoke — cold start, then the QA
+> checklist's KYC-sheet items — remains owed from the internal track (or run #23's sideload
+> artifact) before this build is treated as good. `MOB-BOOT-04`'s device-trace question also remains
+> whatever the #35 verdict left it.
+
 ---
 
 ## 1. App identity
