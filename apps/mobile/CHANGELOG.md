@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.0](https://github.com/unnfazzed/Lynia/compare/v0.46.3...v0.47.0) (2026-08-22)
+
+
+### Features
+
+* **kyc:** rider ID check runs inside the app — Didit's hosted flow in a Lynia-chrome sheet ([#870](https://github.com/unnfazzed/Lynia/issues/870)) ([49144d6](https://github.com/unnfazzed/Lynia/commit/49144d6e02ef24617480f86c3ce76f2d66daec01))
+
 ## [0.46.3](https://github.com/unnfazzed/Lynia/compare/v0.46.2...v0.46.3) (2026-08-21)
 
 
