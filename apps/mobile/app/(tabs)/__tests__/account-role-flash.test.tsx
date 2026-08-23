@@ -85,4 +85,15 @@ describe("(tabs)/account.tsx — the rider-bridge row never guesses from a stale
     await settle();
     expect(texts(activeTree)).toContain("Become a rider");
   });
+
+  // The mocked `session` above says "customer" — if `isRider` were still reading that stale value
+  // instead of the freshly-fetched `me.role`, this would show "Become a rider" instead.
+  it("me.role wins even when it DIFFERS from session's role — not just when they happen to agree", async () => {
+    mockGetMe.mockResolvedValue({ firstName: "Shepherd", lastName: "Mahupa", phone: "+263778831938", role: "rider", rider: null });
+    activeTree = await render();
+    await settle();
+    const all = texts(activeTree);
+    expect(all).toContain("Switch to rider");
+    expect(all).not.toContain("Become a rider");
+  });
 });
