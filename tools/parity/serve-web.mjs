@@ -47,7 +47,19 @@ console.error(
 const child = spawn("npx", ["next", "dev", "--webpack", "-p", String(app.port), "-H", "127.0.0.1"], {
   cwd: app.dir,
   stdio: "inherit",
-  env: { ...process.env, NODE_ENV: "development", ADMIN_CONSOLE_REQUIRE_AUTH: "false" },
+  env: {
+    ...process.env,
+    NODE_ENV: "development",
+    ADMIN_CONSOLE_REQUIRE_AUTH: "false",
+    // CF (crash-fuzz 2026-08-23): merchant talks to the API straight from the BROWSER
+    // (app/lib/config.ts), which only ever reads the NEXT_PUBLIC_-prefixed, build-time-inlined var —
+    // never the plain API_BASE_URL this script forwards for admin's server-side proxy. Without this,
+    // "point API_BASE_URL at a seeded instance for populated states" (the comment above) silently did
+    // nothing for merchant: its client bundle kept the `http://localhost:3000` fallback baked in, so
+    // every browser call 404'd/ECONNREFUSED'd against nothing while admin worked fine — confirmed live
+    // (curl on the served bundle, and every `/auth/otp/request` failing `ERR_CONNECTION_REFUSED`).
+    ...(seededApi && which === "merchant" ? { NEXT_PUBLIC_API_BASE_URL: seededApi } : {}),
+  },
 });
 child.on("exit", (code) => process.exit(code ?? 0));
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => child.kill(sig));

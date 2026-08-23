@@ -37,6 +37,13 @@ export default function CategoryManagePage() {
   // Synchronous double-submit guard (CF-01 class) — see menu/page.tsx: createCategory is NOT
   // idempotent, so a same-tick double-tap on "Save" genuinely creates two categories.
   const submittingRef = useRef(false);
+  // CF-04-SIB (crash-fuzz 2026-08-23): `run()` below — the shared helper behind move/toggle/delete —
+  // guarded only with `busyId` (React state), the same async-state-only race CF-02 fixed elsewhere.
+  // move/toggle recompute an identical target value on both same-tick calls (harmless duplicate
+  // write, like the accepted hours/shop non-fix), but delete does not: two same-tick taps would send
+  // two DELETE calls for one id. Per-id (a `Set`, not a single ref) so unrelated rows stay independent
+  // — same shape as ReturnsSection.tsx's goodsBackInFlightRef.
+  const rowInFlightIdsRef = useRef<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -56,6 +63,10 @@ export default function CategoryManagePage() {
    *  actually holds. A reorder is several writes; if one fails halfway the merchant must see the real
    *  half-applied order, not an optimistic one that never landed. */
   async function run(id: string | null, fn: () => Promise<unknown>, fallback: string) {
+    if (id != null) {
+      if (rowInFlightIdsRef.current.has(id)) return;
+      rowInFlightIdsRef.current.add(id);
+    }
     setBusyId(id);
     setListError(null);
     let signedOut = false;
@@ -68,6 +79,7 @@ export default function CategoryManagePage() {
       }
       setListError(err instanceof ApiError ? err.message : fallback);
     } finally {
+      if (id != null) rowInFlightIdsRef.current.delete(id);
       // A dead session is already on its way to /login — don't fire a doomed refetch behind it.
       if (!signedOut) await refresh();
       setBusyId(null);
