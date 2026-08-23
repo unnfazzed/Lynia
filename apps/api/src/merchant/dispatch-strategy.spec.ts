@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LIVE_FOOD_DISPATCH_OFFER_WHERE } from "../common/food-dispatch-lock";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingService } from "../tracking/tracking.service";
 import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
@@ -13,12 +14,14 @@ function build(
   const prisma = {
     order: {
       findMany: async (args: { where: Record<string, unknown> }) => {
-        // Distinguish the three lookups by their WHERE shape: the C4 debt/handshake query is the only
-        // one that filters on orderType; of the remaining two, dispatchOfferedRiderId is the "offered
-        // elsewhere" lookup and plain riderId is the "busy" (active-ride) lookup.
-        if ("orderType" in args.where) return owingDebtIds.map((riderId) => ({ riderId }));
-        if ("riderId" in args.where) return busyIds.map((riderId) => ({ riderId }));
-        return offeredElsewhereIds.map((dispatchOfferedRiderId) => ({ dispatchOfferedRiderId }));
+        // Distinguish the three lookups by their WHERE shape. Both the "offered elsewhere" and C4
+        // debt/handshake queries now spread LIVE_FOOD_DISPATCH_OFFER_WHERE (X2-OBS-2 fix — they used
+        // to diverge on orderType/status), so `orderType` alone no longer uniquely identifies the debt
+        // query: check `dispatchOfferedRiderId` (unique to "offered elsewhere") and `OR` (unique to the
+        // debt query, its two-way cash/handshake condition) before falling back to "busy".
+        if ("dispatchOfferedRiderId" in args.where) return offeredElsewhereIds.map((dispatchOfferedRiderId) => ({ dispatchOfferedRiderId }));
+        if ("OR" in args.where) return owingDebtIds.map((riderId) => ({ riderId }));
+        return busyIds.map((riderId) => ({ riderId }));
       },
     },
   } as unknown as PrismaService;
@@ -72,5 +75,29 @@ describe("NearestRiderDispatchStrategy.pickCandidate", () => {
     const strategy = build([{ profileId: "r1", distanceM: 400 }, { profileId: "r2", distanceM: 900 }], [], [], ["r1"]);
     const res = await strategy.pickCandidate({ lat: 0, lng: 0, radiusM: 1000, excludeRiderIds: [] });
     expect(res).toEqual({ riderId: "r2", distanceM: 900 });
+  });
+
+  // LM-01 (order-assignment audit, X2-OBS-2 fix): the "offered elsewhere" query used to omit the
+  // orderType/status half of the live-offer definition that common/food-dispatch-lock.ts's own
+  // single-rider check always applied — harmless only because nothing but food dispatch currently
+  // ever sets dispatchOfferedRiderId, but a latent drift the moment that stops being true. Pin that
+  // the query now spreads the SAME shared predicate as hasLiveFoodDispatchOffer.
+  it("scopes the offered-elsewhere query to LIVE_FOOD_DISPATCH_OFFER_WHERE (orderType=merchant, status=open_for_offers)", async () => {
+    const tracking = { nearbyRiders: async () => [{ profileId: "r1", distanceM: 400 }] } as unknown as TrackingService;
+    let offeredElsewhereWhere: Record<string, unknown> | undefined;
+    const prisma = {
+      order: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          if ("dispatchOfferedRiderId" in args.where) {
+            offeredElsewhereWhere = args.where;
+            return [];
+          }
+          return [];
+        },
+      },
+    } as unknown as PrismaService;
+    const strategy = new NearestRiderDispatchStrategy(tracking, prisma);
+    await strategy.pickCandidate({ lat: 0, lng: 0, radiusM: 1000, excludeRiderIds: [] });
+    expect(offeredElsewhereWhere).toMatchObject(LIVE_FOOD_DISPATCH_OFFER_WHERE);
   });
 });

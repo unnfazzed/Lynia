@@ -583,8 +583,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   // ── Rider (N-16 pickup — mechanic only; C3's dispatch owns getting a rider assigned) ───────────────
 
-  /** Mirrors order-lifecycle.service.ts:confirmDelivery's shape one hop earlier. Unreachable via HTTP
-   *  until C3's dispatch sets `Order.riderId`, but the mechanic is correct and tested now. */
+  /** Mirrors order-lifecycle.service.ts:confirmDelivery's shape one hop earlier. Reachable once C3's
+   *  dispatch (`FoodDispatchService.acceptDispatch`) sets `Order.riderId` and moves the order to
+   *  `en_route_pickup` — wired live at `POST /merchant/orders/:orderId/confirm-pickup`. */
   async confirmPickup(orderId: string, riderId: string, code: string): Promise<{ orderId: string; status: "picked_up" }> {
     const expectedHash = this.tokens.hash(code);
     const outcome = await this.prisma.$transaction(async (tx) => {
