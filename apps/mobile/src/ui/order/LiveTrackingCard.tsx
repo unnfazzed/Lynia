@@ -116,6 +116,14 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   // to fare-only + a phone-only CallRow honestly rather than being faked.
   const riderName = props.riderIdentity ? `${props.riderIdentity.firstName} ${props.riderIdentity.lastName}`.trim() : "";
   const isFood = props.jobType === "food";
+  // UIP-05: RC.track_way (r-customer-b.jsx:275-291, "R6·3 — on the way") replaces the step timeline
+  // with the live map + rider/delivery-code sheet the instant a food order is actually en route to the
+  // customer, and draws no "follow route in Google Maps" row at all. The two earlier active-ride mocks
+  // this same card also renders for (RCB.track_prep "confirmed", RCB.track_secured "assigned") DO draw
+  // RTracker — each on its own bespoke, non-map layout this component doesn't yet have — so this only
+  // turns the two off for the one status + vertical (food) the audit actually verified against a mock;
+  // the parcel tracker and every other food status are unchanged.
+  const onTheWay = isFood && status === "en_route_dropoff";
 
   return (
     <Card>
@@ -225,7 +233,11 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
       {telemetry?.hasRider && (isFood || (riderStale && !isRiderViewer)) ? (
         <Text style={{ fontSize: 14, color: tokens.color.muted }}>{trackingHint}</Text>
       ) : null}
-      {/* Maps-sync (§3·2). The kit's customer row is route-sync, not a place pin: "Follow route in
+      {/* UIP-05: not drawn on RCB.track_way (food, en_route_dropoff) — see `onTheWay` above. Kept for
+          every other status/vertical this card renders, where a mock-verified answer doesn't exist
+          either way yet, rather than guessing beyond what was actually checked.
+
+          Maps-sync (§3·2). The kit's customer row is route-sync, not a place pin: "Follow route in
           Google Maps · Same live route your rider is navigating" (ui_kits/mobile/app.js GMapsRow).
           This shipped as `mapsPlaceUrl(dropoff)` — a lone pin on the destination — which answers
           "where is it going" but not the question a waiting customer actually has, which is "what
@@ -234,37 +246,39 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           trip is over, so the swap is gated on the run being live. */}
       {/* Kit GMapsRow (screens.jsx:95-107): a bordered row, not a bare link — an accent-wash icon
           circle, an ink title over a muted sub, and a trailing arrow that says it leaves the app. */}
-      <Pressable
-        onPress={() => void Linking.openURL(isActive ? mapsDirectionsUrl(props.pickup, props.dropoff) : mapsPlaceUrl(props.dropoff))}
-        accessibilityRole="button"
-        accessibilityLabel={isActive ? "Follow the route in Google Maps" : "Open the drop-off in Google Maps"}
-        style={({ pressed }) => ({
-          minHeight: tokens.touchTargetMin,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: tokens.space.sm,
-          marginTop: tokens.space.sm,
-          paddingHorizontal: tokens.space.md,
-          paddingVertical: 10,
-          borderWidth: 1,
-          borderColor: tokens.color.line,
-          borderRadius: tokens.radius.input,
-          backgroundColor: pressed ? tokens.color.accentWash : tokens.color.bg,
-        })}
-      >
-        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accentWash }}>
-          <Icon name="navigation" size={16} color={tokens.color.accentText} />
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 13.5, fontWeight: "600", color: tokens.color.ink }}>
-            {isActive ? "Follow route in Google Maps" : "Open drop-off in Maps"}
-          </Text>
-          {isActive ? (
-            <Text style={{ fontSize: 11.5, color: tokens.color.muted }}>Same live route your rider is navigating</Text>
-          ) : null}
-        </View>
-        <Icon name="arrow-right" size={16} color={tokens.color.muted} />
-      </Pressable>
+      {!onTheWay ? (
+        <Pressable
+          onPress={() => void Linking.openURL(isActive ? mapsDirectionsUrl(props.pickup, props.dropoff) : mapsPlaceUrl(props.dropoff))}
+          accessibilityRole="button"
+          accessibilityLabel={isActive ? "Follow the route in Google Maps" : "Open the drop-off in Google Maps"}
+          style={({ pressed }) => ({
+            minHeight: tokens.touchTargetMin,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: tokens.space.sm,
+            marginTop: tokens.space.sm,
+            paddingHorizontal: tokens.space.md,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: tokens.color.line,
+            borderRadius: tokens.radius.input,
+            backgroundColor: pressed ? tokens.color.accentWash : tokens.color.bg,
+          })}
+        >
+          <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accentWash }}>
+            <Icon name="navigation" size={16} color={tokens.color.accentText} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 13.5, fontWeight: "600", color: tokens.color.ink }}>
+              {isActive ? "Follow route in Google Maps" : "Open drop-off in Maps"}
+            </Text>
+            {isActive ? (
+              <Text style={{ fontSize: 11.5, color: tokens.color.muted }}>Same live route your rider is navigating</Text>
+            ) : null}
+          </View>
+          <Icon name="arrow-right" size={16} color={tokens.color.muted} />
+        </Pressable>
+      ) : null}
       {isFood && props.counterpartyPhone ? (
         <>
           <Text style={{ fontSize: 14, color: tokens.color.ink, marginTop: 4, fontVariant: ["tabular-nums"] }}>
@@ -289,12 +303,16 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
         </>
       ) : null}
       <View style={{ height: tokens.space.md }} />
-      {/* UX-2026-07-15: the shared order screen's rider-viewer gating (07-14 Fix #1) only covered the
+      {/* UIP-05: RCB.track_way draws no RTracker once the map has taken over (see `onTheWay` above) —
+          the DELIVERY CODE block + SafetyRow (rendered by this card's caller, FoodOrderLiveTrackerView)
+          are what the mock puts in the timeline's place at that stage.
+
+          UX-2026-07-15: the shared order screen's rider-viewer gating (07-14 Fix #1) only covered the
           TOP-level delivery-code card and the Cancel/rebroadcast/report controls — this card's OWN,
           separate reissue button and the stepper's copy were a second, missed instance of the same gap.
           A rider viewing their own job must never see customer-voiced milestone copy or a control that
           403s ("Not your order") against their own delivery. */}
-      <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} jobType={props.jobType} />
+      {!onTheWay ? <Stepper events={props.events} currentStatus={status} view={isRiderViewer ? "rider" : "customer"} jobType={props.jobType} /> : null}
     </Card>
   );
 });

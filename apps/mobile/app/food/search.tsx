@@ -3,6 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { FlatList, Text, TextInput, View } from "react-native";
+import { useHomeLocation } from "../../src/logic/home-location";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
@@ -17,6 +18,9 @@ export default function RestaurantSearchScreen(): React.ReactElement {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
+  // Same live fix RC.list's header/summary use — feeds RestaurantRow's rating/distance/eta/fee meta
+  // line so a restaurant can't quote two different numbers depending on which screen found it.
+  const location = useHomeLocation();
   const [query, setQuery] = useState("");
   // LC-B06: was `useMemo(() => new Date(), [])` — froze at first render, so the open/closed badge
   // and "closing in N min" countdown never advanced for the life of this screen.
@@ -101,7 +105,7 @@ export default function RestaurantSearchScreen(): React.ReactElement {
             <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.muted, marginBottom: 8 }}>PLACES</Text>
           }
           renderItem={({ item }: { item: RestaurantListItem }) => (
-            <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
+            <RestaurantRow r={item} now={now} customerPoint={location.point} onPress={() => router.push(`/food/${item.id}`)} />
           )}
           showsVerticalScrollIndicator={false}
         />

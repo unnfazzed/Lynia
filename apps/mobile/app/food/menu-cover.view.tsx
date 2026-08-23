@@ -26,7 +26,11 @@ export function MenuCoverView({
   onBack
 }: MenuCoverViewProps): React.ReactElement {
   return <CoverPhoto height={92} name={name} photo={photo}>
-        <Tappable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"><View style={{
+        <Tappable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" style={{
+      position: "absolute",
+      top: 0,
+      left: 0
+    }}><View style={{
         position: "absolute",
         left: 12,
         top: 10,

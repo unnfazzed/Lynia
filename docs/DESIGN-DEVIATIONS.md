@@ -14,7 +14,9 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38.** D-33 was RETIRED on the day it was
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39.** D-39 was authored by
+this session executing UIP-04, not a quoted owner instruction like the rest — flag it for explicit
+confirmation rather than treating it as settled. D-33 was RETIRED on the day it was
 opened — the mocks were redrawn without the browser step, so nothing diverges (its entry carries an
 upstream-sync warning for the next design export). D-20 is an UPSTREAM kit defect (no app-side effect). D-01 and D-02 were
 retired by the 2026-08-10 rev 2 export; D-04 was decided in the mock's favour; D-05 has no app-side
@@ -1753,3 +1755,35 @@ dashboard (vendor plan permitting), tracked as a founder/ops item, not a code ch
 design tool must adopt this copy or the next export reverts it. The affected screens are already in
 `tools/parity/rendered-conformance.pending.json` for unrelated reasons, so no guardrail pins the old
 strings. **Retire this entry** when an export carries the vendor-free copy.
+
+---
+
+## D-39 · RC.cart keeps a per-line edit affordance the mock's static sample never draws — APPROVED (2026-08-23)
+
+**This session's disposition, executing UIP-04** (`docs/UI-PARITY-AUDIT-2026-08-23.md`), following the
+D-11 precedent (*"the app's live X that the mock lacks a surface for → a DESIGN-DEVIATIONS.md entry,
+keep it; adopt the rest of the structure to the mock"*) — flagged here for the user's review, not a
+quoted owner instruction like D-11's.
+
+The kit's `RC.cart` row (`r-parts.jsx`/`r-customer-a.jsx:317-331`) draws quantity as a **static 28×28
+badge** and a per-dish note **only when one is already set** (`{c.note ? … : null}` — no "add a note"
+affordance drawn at all). Neither is a static mock's oversight: the kit's own editing surface for a
+cart line is the **Item Sheet** (`RC.item`, r-customer-a.jsx:257-289), whose bottom bar carries the
+44px stepper — but that sheet is reached from the MENU when adding a dish, with no drawn path back to
+it from an already-added cart line.
+
+The app rebuilt the row to the kit's exact static structure — the badge is no longer a stepper, and
+sits in the badge's left slot; the note text is conditional exactly as drawn — but a cart with items
+already in it needs *some* way back into that editing surface once the customer has left the menu, so
+`CartNoteSheet` (already the app's dish/whole-order note editor) gained the Item Sheet's own stepper in
+its footer, and the row's note slot (pencil + "Note for the kitchen" prompt, shown even with no note
+set) is now that surface's only entry point — kept as a **superset** of the static row for exactly this
+reason, per D-11's rule. Per-line quantity/note editing is load-bearing (removing it entirely would be a
+regression, not an alignment), so the surface is kept; only its trigger's constant visibility (rather
+than appearing solely once a note exists) is the sanctioned divergence this entry covers.
+
+Everything else on the row and the whole-order note now matches the mock's structure: the whole-order
+note moved from a free-standing textarea below the card into a tappable summary row *inside* it (kit
+r-customer-a.jsx:332-338 — muted pencil, ink-coloured value, between the lines and "Add more items"),
+and the duplicate "a note can't change the price" disclaimer was removed from the main page (it already
+lives correctly on the note sheet, matching kit r-customer-a.jsx:614).

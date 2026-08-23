@@ -124,6 +124,7 @@ export async function bundleScreen(o) {
   const entry = `
     import * as React from "react";
     import { createRoot } from "react-dom/client";
+    import ${JSON.stringify(join(MOBILE_APP, "src/ui/fonts.ts"))}; // UIP-01: same applyInterToTextComponents() patch app/_layout.tsx installs before any screen mounts
     ${o.fixture ? `import * as Fixture from ${JSON.stringify(o.fixture)};` : `const Fixture = {};`}
     import Screen from ${JSON.stringify(o.component)};
     function Root() {
