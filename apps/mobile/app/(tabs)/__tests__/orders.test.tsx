@@ -160,6 +160,17 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     expect(has(activeTree, /\$12\.00/)).toBe(true);
   });
 
+  // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body from getActiveCustomerOrders is a truthy
+  // non-array that `?? []` used to let through into `.map()` (liveIds), crashing the whole tab with
+  // no error boundary in the render tree — live-reproduced via the tools/parity mobile harness.
+  it("does not crash when getActiveCustomerOrders resolves a non-array body — degrades to no pinned card", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue({ orders: [] } as unknown);
+    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    activeTree = renderOrders();
+    await settle();
+    expect(has(activeTree, /Nothing here yet/)).toBe(true);
+  });
+
   it("pins EVERY live order (a food job and a parcel side-by-side), the food one titled by its restaurant", async () => {
     const parcel = {
       id: "order-1",

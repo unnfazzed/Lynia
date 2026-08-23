@@ -71,12 +71,27 @@ export default function AccountTabScreen(): React.ReactElement {
     // `shield` rather than a settings/cog glyph: the design kit's 38-icon subset has none, and this
     // row's contents ARE permissions, privacy and sign-out — so the shield is honest, not a stand-in.
     { icon: "shield", label: "Settings", sub: "Permissions, privacy and sign out", onPress: () => router.push("/settings") },
-    {
-      icon: "bike",
-      label: isRider ? "Switch to rider" : "Become a rider",
-      sub: isRider ? "Jobs, money and your bike" : "Earn by delivering parcels and food",
-      onPress: () => router.push(isRider ? "/rider" : "/rider/become"),
-    },
+    // MOB-BOOT-02-SIB-3 (crash-fuzz 2026-08-23, MOB-BOOT-02 class — "a screen rendering a decision it has
+    // not yet made"): while `me` is still loading OR failed to load, `isRider` falls back to the
+    // stale/absent `session?.role`, which can read "customer" for an account that is actually a
+    // verified rider — live-reproduced via the tools/parity mobile harness as a ~1.5-2s flash of
+    // "Become a rider" on a rider's own account before it flips to "Switch to rider". Gated on
+    // `meQ.isSuccess` specifically (not just `!meQ.isLoading`, caught in review): an ERRORED fetch is
+    // just as unresolved as a loading one, and `session?.role` is exactly as unreliable a guess either
+    // way. The rider-side sibling (`app/rider/(tabs)/account.tsx`) avoids this class entirely by
+    // early-returning a full-screen skeleton while loading; this screen's other rows carry no role
+    // guess, so only this one row withholds itself until the real role is known, rather than gating
+    // the whole list.
+    ...(meQ.isSuccess
+      ? [
+          {
+            icon: "bike" as const,
+            label: isRider ? "Switch to rider" : "Become a rider",
+            sub: isRider ? "Jobs, money and your bike" : "Earn by delivering parcels and food",
+            onPress: () => router.push(isRider ? "/rider" : "/rider/become"),
+          },
+        ]
+      : []),
   ];
 
   return (

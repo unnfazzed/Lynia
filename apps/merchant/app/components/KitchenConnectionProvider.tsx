@@ -12,6 +12,10 @@ import { clearMerchantSession, loadMerchantSession, type MerchantSession } from 
 
 export interface KitchenConnectionValue {
   session: MerchantSession | null;
+  /** True once the mount-time cookie read has actually run at least once. `session === null` is
+   *  ambiguous on its own (not-yet-checked vs. genuinely signed out); consumers that need to tell
+   *  those apart — SessionGuard, below — gate on this instead of on `session` alone. */
+  sessionChecked: boolean;
   signOut: () => void;
   alarm: {
     /** Whether this page load has had the user gesture browsers require before they will loop
@@ -41,6 +45,7 @@ const TEST_RING_DURATION_MS = 3 * 1200 + 2 * 800; // three chime cycles, long en
 export function KitchenConnectionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<MerchantSession | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [alarmTick, setAlarmTick] = useState(0); // bump to re-render on arm/ring changes
   const [reachState, setReachState] = useState<ReachabilityState>({
     reachable: true,
@@ -50,6 +55,7 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   useEffect(() => {
     setSession(loadMerchantSession());
+    setSessionChecked(true);
   }, []);
 
   useEffect(() => {
@@ -160,13 +166,14 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   const value = useMemo<KitchenConnectionValue>(
     () => ({
       session,
+      sessionChecked,
       signOut,
       alarm,
       reachability: reachState,
       actionsDisabled: !reachState.reachable,
       wakeLock,
     }),
-    [session, signOut, alarm, reachState, wakeLock],
+    [session, sessionChecked, signOut, alarm, reachState, wakeLock],
   );
 
   return <KitchenConnectionContext.Provider value={value}>{children}</KitchenConnectionContext.Provider>;

@@ -134,7 +134,10 @@ export default function OrdersTabScreen(): React.ReactElement {
     queryFn: getActiveCustomerOrders,
     refetchInterval: focused ? 30_000 : false,
   });
-  const activeOrders = activeOrdersQ.data ?? [];
+  // Array.isArray, not `?? []`: a malformed 200 body (any shape drift the untyped `apiFetch` JSON
+  // parse can't catch) is a truthy non-array that `?? []` lets straight through into `.map()` below
+  // (CF-04 — confirmed live, matches UIP-02's fixture-level repro of the identical crash).
+  const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
   // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
   // error card. A failed check just shows no live cards; the poll and reconnect refetch self-heal.
 

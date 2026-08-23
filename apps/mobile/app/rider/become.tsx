@@ -17,6 +17,9 @@ import { PhotoCaptureGuide, PhotoReviewCard } from "../../src/ui/rider/PhotoRevi
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
+  // CF-02-SIB-3: same-tick double-submit guard for `submit` below — see the ref's use for why a plain
+  // `busy` state boolean isn't enough.
+  const submitInFlightRef = useRef(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [idNumber, setIdNumber] = useState("");
@@ -218,6 +221,13 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
   const submit = async (): Promise<void> => {
     if (!photoKey) return;
+    // CF-02-SIB-3: `busy` (React state) only reflects the FIRST of two same-tick taps — the second
+    // tap's re-render hasn't landed yet, so a fast double-tap on "Submit for verification" fired
+    // becomeRider() twice (each opening its own paid Didit session server-side, no client
+    // idempotency key). Same guard shape as CF-02's admin/merchant ConfirmModal fix: a synchronous
+    // ref checked-and-set before any await.
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setError(null);
     setBusy(true);
     try {
@@ -263,6 +273,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
       }
       setError(e instanceof ApiError ? e.message : "Couldn't start rider setup.");
     } finally {
+      submitInFlightRef.current = false;
       setBusy(false);
     }
   };

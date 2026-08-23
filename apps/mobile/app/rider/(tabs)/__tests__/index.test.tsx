@@ -228,6 +228,22 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     expect(lists[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id).sort()).toEqual(orders.map((o) => o.id).sort());
   });
 
+  // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body from getOpenOrders is a truthy non-array
+  // that `?? []` used to let straight through into `.filter()`/`.map()` (the `ranked` useMemo),
+  // crashing the whole board with no error boundary — live-reproduced via the tools/parity mobile
+  // harness on the sibling home/orders queries. Sibling-swept fix here too.
+  it("does not crash when getOpenOrders resolves a non-array body — renders an empty board, not a crash", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue({ orders: [] } as unknown as OpenOrder[]);
+
+    activeTree = renderScreen();
+    await expect(settle()).resolves.toBeUndefined();
+    await settle();
+
+    expect(activeTree.root.findAll((n) => n.props.title === "Nothing in range yet").length).toBeGreaterThan(0);
+  });
+
   it("not yet a verified rider (knownUnverified gate): renders no FlatList and does not leak open-order data", async () => {
     mockGetMe.mockResolvedValue({ ...meFixture(), rider: null });
     mockGetActiveOrder.mockResolvedValue(null);

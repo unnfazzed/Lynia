@@ -60,6 +60,14 @@ export function TopUpFlow({
   onExit: () => void;
 }): React.ReactElement {
   const fail = useActionError();
+  // CF-02-SIB-3: `isStarting` (React Query's `create.isPending`) only reflects the FIRST of two
+  // same-tick taps on "Request … via …" — a fast double-tap fired createTopup() twice (confirmed
+  // live via the tools/parity mobile harness). The deterministic `idempotencyKey` below means the
+  // server should dedupe both calls to one intent, but the wasted duplicate request is still the
+  // same guard-shape defect CF-02 fixed elsewhere; wallet is a sensitive lane, so it gets the fix
+  // too. Reset in mutate()'s own onSettled — `start` is fire-and-forget (`create.mutate`, not
+  // `mutateAsync`), so there's no promise here to await.
+  const startInFlightRef = React.useRef(false);
   const [amountRaw, setAmountRaw] = React.useState("10.00");
   const [phone, setPhone] = React.useState("");
   const [rail, setRail] = React.useState<Exclude<TopupRail, "manual">>("ecocash");
@@ -347,7 +355,14 @@ export function TopUpFlow({
         label={amountOk ? `Request ${formatMoney(amount)} via ${railName}` : `Request via ${railName}`}
         disabled={!amountOk || !phoneOk || isStarting}
         loading={isStarting}
-        onPress={() => start({ amount, rail, phone, idempotencyKey })}
+        onPress={() => {
+          if (startInFlightRef.current) return;
+          startInFlightRef.current = true;
+          start(
+            { amount, rail, phone, idempotencyKey },
+            { onSettled: () => { startInFlightRef.current = false; } },
+          );
+        }}
       />
 
       {/* The route that works today. `creditFromTopup` has no caller yet, so until a rail lands the

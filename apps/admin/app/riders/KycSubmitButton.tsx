@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { tokens } from "@lynia/shared";
 import { setKyc } from "./actions";
 
@@ -18,8 +18,15 @@ import { setKyc } from "./actions";
 export function KycApproveButton({ profileId }: { profileId: string }): React.ReactElement {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // CF-02-SIB-4 (crash-fuzz 2026-08-23, KYC gating — sensitive lane): same guard-shape defect as
+  // ConfirmModal.tsx's CF-02 fix — `pending` only reflects the first of two same-tick clicks.
+  // `adminSetKyc` deliberately re-records an audit row on every call (by design, per its own code
+  // comment) — a double-tap race must not multiply that further than one genuine extra click would.
+  const inFlightRef = useRef(false);
 
   function approve() {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setError(null);
     startTransition(async () => {
       try {
@@ -29,6 +36,8 @@ export function KycApproveButton({ profileId }: { profileId: string }): React.Re
         await setKyc(fd);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Couldn't approve — try again.");
+      } finally {
+        inFlightRef.current = false;
       }
     });
   }

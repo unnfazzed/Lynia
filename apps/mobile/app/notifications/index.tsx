@@ -62,7 +62,8 @@ export default function NotificationsScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const feedQ = useQuery({ queryKey: ["notifications"], queryFn: getNotificationsFeed });
-  const feed = feedQ.data ?? [];
+  // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array (CF-04 sibling).
+  const feed = Array.isArray(feedQ.data) ? feedQ.data : [];
   const onBack = (): void => router.back();
 
   // STREAMLINE-01: stamp the read watermark when the screen gains focus. `unread` is now real per-user

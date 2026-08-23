@@ -729,7 +729,8 @@ export default function RiderHome(): React.ReactElement {
   // stable across renders that don't actually touch openQ.data/bidIds/loc.
   const ranked = useMemo(
     () =>
-      (openQ.data ?? [])
+      // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array (CF-04 sibling).
+      (Array.isArray(openQ.data) ? openQ.data : [])
         .filter((o) => !bidIds.has(o.id)) // hide orders we've already bid on (one round per rider)
         .map((o) => ({ o, km: loc ? haversineKm(loc, o.pickup.point) : null }))
         .sort((a, b) => (a.km ?? Number.MAX_SAFE_INTEGER) - (b.km ?? Number.MAX_SAFE_INTEGER)),

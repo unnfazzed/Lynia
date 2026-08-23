@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { acknowledgeSos } from "./actions";
 
 /**
@@ -15,6 +15,12 @@ import { acknowledgeSos } from "./actions";
 export function AcknowledgeButton({ id, disabled = false }: { id: string; disabled?: boolean }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // CF-02-SIB-4 (crash-fuzz 2026-08-23): same guard-shape defect as ConfirmModal.tsx's CF-02 fix —
+  // `pending` only reflects the first of two same-tick clicks. `SosService.acknowledge`'s own
+  // CAS (`updateMany({ acknowledgedAt: null })`) already makes a double-fire harmless server-side,
+  // but the client shouldn't rely on that alone — fixed here too, for consistency and in case a
+  // future endpoint change removes the incidental protection.
+  const inFlightRef = useRef(false);
 
   return (
     <span style={{ position: "relative", zIndex: 2, display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -23,12 +29,16 @@ export function AcknowledgeButton({ id, disabled = false }: { id: string; disabl
         className="btn ghost"
         disabled={disabled || pending}
         onClick={() => {
+          if (inFlightRef.current) return;
+          inFlightRef.current = true;
           setError(null);
           startTransition(async () => {
             try {
               await acknowledgeSos(id);
             } catch (e) {
               setError(e instanceof Error ? e.message : "Could not acknowledge — try again.");
+            } finally {
+              inFlightRef.current = false;
             }
           });
         }}
