@@ -2208,14 +2208,13 @@ carries the sensitive-lane four.
   them, and R-06/N-21's grammar is about the count matching, not about timing. Worth a founder call
   before adding a guard that could block a legitimate "rider paid me at the counter on the way past"
   settle. Not user-visible today.
-- **X2-OBS-2 (LOW, OPEN) — two implementations of "is this rider holding another live food offer" use
-  different predicates.** The neutral `common/food-dispatch-lock.ts:hasLiveFoodDispatchOffer` scopes its
-  query with `orderType: "merchant"`; `NearestRiderDispatchStrategy.pickCandidate`'s inline
-  `holdingOtherOffer` check does not. Harmless today by construction (only merchant orders ever populate
-  `dispatchOfferedRiderId`, so the predicate is redundant, not wrong), but it is exactly the
-  un-propagated-sibling drift shape WD-023/DS21-02 have each fixed once elsewhere: if a future order
-  type ever writes that column, the two "same condition" call sites diverge silently. A one-line
-  defensive tightening, deliberately not bundled into the X2 diff.
+- **X2-OBS-2 (LOW, FIXED by LM-02) — two implementations of "is this rider holding another live food
+  offer" use different predicates.** The neutral `common/food-dispatch-lock.ts:hasLiveFoodDispatchOffer`
+  scoped its query with `orderType: "merchant"` + `status: "open_for_offers"`;
+  `NearestRiderDispatchStrategy.pickCandidate`'s inline `holdingOtherOffer` check did not. Harmless by
+  construction at the time (only merchant orders ever populate `dispatchOfferedRiderId`, so the
+  predicate was redundant, not wrong), but exactly the un-propagated-sibling drift shape WD-023/DS21-02
+  have each fixed once elsewhere. Closed by the 2026-08-23 order-assignment logic-model audit — see LM-02.
 
 Also corrected in the same PR (not a code defect — a docs one): `docs/LAUNCH-EXECUTION-RUNBOOK.md` §11.1
 originally described the CASH golden pass as "place → accept → call → request/confirm payment → ready".
@@ -2308,6 +2307,35 @@ UNTESTED with its source test or rationale) is in `docs/LOGIC-MODEL-AUDIT-2026-0
 the PR body. No DUPLICATED logic found inside the lane itself; the pre-existing `X2-OBS-2` OPEN row (two
 divergent "live food offer" predicates) is a C3/merchant-dispatch concern adjacent to, not inside, this
 lane's Express/parcel scope and was left as-is.
+
+## Logic-model audit 2026-08-23 — order assignment (C3 food dispatch) — `docs/LOGIC-MODEL-AUDIT-2026-08-23.md`
+
+Second run of the weekly logic-model-audit lane. Phase 0 re-verified LM-01/LM-01-pin (bid acceptance)
+intact against current code; rotation moved to the next never-audited lane, **order assignment** —
+the merchant/food single-rider auto-dispatch (`FoodDispatchService`, `NearestRiderDispatchStrategy`,
+`common/food-dispatch-lock.ts`), distinct from the bid-acceptance auction already covered. Modeled the
+full (state × actor × action) truth table for `tick`/`sweepExpiredOffers`/`acceptDispatch`/
+`declineDispatch`/`dropDispatch`/`resumeSearch`/`cancelFromHold`/`confirmPickup`, including every
+concurrency cell (lost-CAS races, double-sweep overlap, the `one_active_ride` cross-order race). One
+DUPLICATED-predicate defect (the pre-existing X2-OBS-2 OPEN row, now confirmed to be inside this
+lane's own scope) fixed same-run; three concurrency cells found UNTESTED and pinned; one stale
+docstring corrected. `pnpm typecheck` + `pnpm test` green (api +4 tests: 1 unification regression + 3
+concurrency pins).
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| LM-02 | `NearestRiderDispatchStrategy.pickCandidate`'s inline `holdingOtherOffer` query (the "is this candidate already mid-offer on a DIFFERENT food order" exclusion) omitted the `orderType: "merchant"` + `status: "open_for_offers"` filters that `common/food-dispatch-lock.ts:hasLiveFoodDispatchOffer` — the single-rider version of the exact same check, used by the parcel side's own C3 soft-lock — always applied. Previously logged as `X2-OBS-2` (OPEN, LOW): harmless today only because nothing but `FoodDispatchService` ever writes `dispatchOfferedRiderId`, so the predicate was redundant rather than wrong, but a latent drift the moment that assumption stops holding. | `apps/api/src/merchant/dispatch-strategy.ts` (`pickCandidate`), `apps/api/src/common/food-dispatch-lock.ts` | LOW (dormant duplication, not a live bug — reachable only if a future order type ever populates `dispatchOfferedRiderId`) | **FIXED** — extracted the shared condition as `LIVE_FOOD_DISPATCH_OFFER_WHERE` in `food-dispatch-lock.ts` and spread it into both call sites (the single-rider `findFirst` and the batched `findMany`), so the two predicates can no longer diverge independently. Regression: `dispatch-strategy.spec.ts` "scopes the offered-elsewhere query to LIVE_FOOD_DISPATCH_OFFER_WHERE" — captures the actual `where` object passed to the batched query and asserts it matches. |
+| LM-03 | Three concurrency cells in the assignment truth table had guard logic but no test exercising the losing side of the race: (1) `FoodDispatchService.tick`'s offer-write CAS losing after a candidate was already picked (a second overlapping sweep, or a drop/hold landing between `tick`'s read and its write); (2) the same CAS shape on the "no candidate, park for next poll" self-loop write; (3) `dropDispatch`'s in-`$transaction` CAS losing (order already dropped/reassigned between the pre-transaction read and the transaction's own write). All three guards were already correct (no code change) — they simply had never been proven to degrade cleanly (no phantom `FoodDispatchAttempt` row, no phantom push, no strike applied against a drop that didn't happen) rather than throwing an unhandled error or double-committing. | `apps/api/src/merchant/food-dispatch.service.ts` (`tick`, `dropDispatch`) | n/a (pinning tests, no behavior change — all three pass unmodified against current code) | **PINNED** — `food-dispatch.service.spec.ts`: "skips (no attempt log, no push) when the offer-write CAS itself loses a race after picking a candidate", "skips (not 'searching') when the no-candidate park-for-next-poll CAS loses a race", "409s 'Order changed, retry' when the in-transaction CAS loses a race". |
+
+Full truth table (all C3 states/actors/actions incl. the `FoodDispatchOutcome` sub-state-machine, the
+D-34 merchant-hold branch, and every concurrency cell) is in `docs/LOGIC-MODEL-AUDIT-2026-08-23.md` and
+verbatim in the PR body. Also corrected in the same PR (not a logic defect — a stale comment):
+`food-order.service.ts:confirmPickup`'s docstring claimed the endpoint was "unreachable via HTTP until
+C3's dispatch sets `Order.riderId`" — false since `merchant-order.controller.ts` wires it live and
+`acceptDispatch` (this lane) already sets `riderId`; corrected to say so. No new DUPLICATED logic found
+beyond the pre-existing X2-OBS-2 (now LM-02); `X2-OBS-1` (`confirmReturnedCash`'s missing status guard)
+is C4 debt-ledger scope, adjacent to but outside this lane, and was left as-is per the same
+scope-boundary reasoning the 2026-08-16 audit used for X2-OBS-2.
 
 ## Test-prune sweep 2026-08-17 (weekly useless-test pruning routine) — `docs/TEST-PRUNE-2026-08-17.md`
 

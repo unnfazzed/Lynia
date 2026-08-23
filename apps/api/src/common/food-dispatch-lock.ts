@@ -14,7 +14,18 @@ import type { PrismaService } from "../prisma/prisma.service";
  * cleared together on accept/decline/expire (food-dispatch.service.ts), so an unexpired pair is
  * always exactly "this rider has an outstanding offer right now", no extra status/orderType filter
  * needed for correctness (kept anyway, cheap and self-documenting).
+ *
+ * `LIVE_FOOD_DISPATCH_OFFER_WHERE` is the single source of truth for that "kept anyway" half of the
+ * predicate — both this file's single-rider check AND `dispatch-strategy.ts`'s batched
+ * "who else is mid-offer" query spread it in, so the two can never drift apart the way they did
+ * before (X2-OBS-2: the batched query was missing both fields, harmless only because nothing but this
+ * service currently ever sets `dispatchOfferedRiderId`).
  */
+export const LIVE_FOOD_DISPATCH_OFFER_WHERE = {
+  orderType: "merchant",
+  status: "open_for_offers",
+} as const;
+
 export async function hasLiveFoodDispatchOffer(
   prisma: PrismaService | Prisma.TransactionClient,
   riderId: string,
@@ -23,8 +34,7 @@ export async function hasLiveFoodDispatchOffer(
     where: {
       dispatchOfferedRiderId: riderId,
       dispatchOfferExpiresAt: { gt: new Date() },
-      orderType: "merchant",
-      status: "open_for_offers",
+      ...LIVE_FOOD_DISPATCH_OFFER_WHERE,
     },
     select: { id: true },
   });

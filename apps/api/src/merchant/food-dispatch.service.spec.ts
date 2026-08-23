@@ -178,6 +178,53 @@ describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
   });
 
+  // LM-02 (order-assignment audit, concurrency cell): the read-time re-check above (line 168) only
+  // catches a race that lands BEFORE tick's own read. A second tick — another overlapping sweep pass,
+  // or this same order being dropped/held between the read and the write — can still land in the
+  // window between that read and the offer CAS itself. The CAS's own `claimed.count === 0` branch was
+  // reachable in the "no candidate" park-for-next-poll case only via manual trace, never exercised by
+  // a test; pin that a lost CAS race here also degrades to "skipped" without logging a phantom
+  // FoodDispatchAttempt or pushing a notification for an offer that was never actually placed.
+  it("skips (no attempt log, no push) when the offer-write CAS itself loses a race after picking a candidate", async () => {
+    const attemptCreate = vi.fn(async () => ({}));
+    const orderUpdateMany = vi.fn(async () => ({ count: 0 }));
+    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "r1", distanceM: 800 })) };
+    const { svc, gateway } = build(
+      {
+        order: {
+          findMany: async () => [{ id: orderId }],
+          findUnique: async () => baseOrder(),
+          updateMany: orderUpdateMany,
+        },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { create: attemptCreate },
+      },
+      strategy,
+    );
+    const result = await svc.sweepSearch();
+    expect(result).toEqual({ offered: 0, held: 0 });
+    expect(attemptCreate).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
+    expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
+  });
+
+  // Same lost-CAS race, but on the "no candidate found" self-loop write (line 204-213) — pin that it
+  // also degrades cleanly to "skipped" rather than reporting a phantom "searching" outcome.
+  it("skips (not 'searching') when the no-candidate park-for-next-poll CAS loses a race", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 0 }));
+    const strategy: DispatchStrategy = { pickCandidate: async () => null };
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+      },
+      strategy,
+    );
+    const result = await svc.sweepSearch();
+    expect(result).toEqual({ offered: 0, held: 0 });
+  });
+
   it("skips an order that raced to hold/assigned since the sweep's own read (defensive re-check)", async () => {
     const strategy: DispatchStrategy = { pickCandidate: vi.fn() };
     const { svc } = build(
@@ -392,6 +439,27 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
   it("rejects a drop after pickup (D-33 no drop after pickup)", async () => {
     const { svc } = build({ order: { findFirst: async () => ({ status: "picked_up" } as never) } }, { pickCandidate: async () => null });
     await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/already with you/i);
+  });
+
+  // LM-02 (order-assignment audit, concurrency cell): the in-transaction CAS (status=order.status AND
+  // riderId=caller) losing its race — e.g. the order was already dropped/reassigned between the
+  // pre-transaction findFirst read and the transaction's own write — was never exercised by a test.
+  // Pin that it surfaces as the documented "Order changed, retry" 409, not a silent no-op or a strike
+  // applied against a drop that didn't actually happen.
+  it("409s 'Order changed, retry' when the in-transaction CAS loses a race", async () => {
+    const riderUpdate = vi.fn(async () => ({}));
+    const { svc } = build(
+      {
+        order: {
+          findFirst: async () => ({ status: "assigned", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID }),
+          updateMany: async () => ({ count: 0 }),
+        },
+        rider: { findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 100, onHold: false, heldReason: null, cooldownUntil: null }), update: riderUpdate },
+      },
+      { pickCandidate: async () => null },
+    );
+    await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/order changed, retry/i);
+    expect(riderUpdate).not.toHaveBeenCalled();
   });
 });
 

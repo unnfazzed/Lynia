@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { LIVE_FOOD_DISPATCH_OFFER_WHERE } from "../common/food-dispatch-lock";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
@@ -68,6 +69,7 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
       where: {
         dispatchOfferedRiderId: { in: candidateIds },
         dispatchOfferExpiresAt: { gt: new Date() },
+        ...LIVE_FOOD_DISPATCH_OFFER_WHERE,
       },
       select: { dispatchOfferedRiderId: true },
     });
