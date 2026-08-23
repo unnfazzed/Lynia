@@ -51,7 +51,7 @@ const child = spawn("npx", ["next", "dev", "--webpack", "-p", String(app.port), 
     ...process.env,
     NODE_ENV: "development",
     ADMIN_CONSOLE_REQUIRE_AUTH: "false",
-    // CF (crash-fuzz 2026-08-23): merchant talks to the API straight from the BROWSER
+    // CF-06 (crash-fuzz 2026-08-23): merchant talks to the API straight from the BROWSER
     // (app/lib/config.ts), which only ever reads the NEXT_PUBLIC_-prefixed, build-time-inlined var —
     // never the plain API_BASE_URL this script forwards for admin's server-side proxy. Without this,
     // "point API_BASE_URL at a seeded instance for populated states" (the comment above) silently did
