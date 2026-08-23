@@ -20,7 +20,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("AcknowledgeButton — CF-04-SIB (crash-fuzz 2026-08-23)", () => {
+describe("AcknowledgeButton — CF-02-SIB-4 (crash-fuzz 2026-08-23)", () => {
   it("a same-tick double-click acknowledges only once (server-side CAS already covers this; the client shouldn't rely on it alone)", async () => {
     const { acknowledgeSos } = await import("./actions");
     const gate = deferred<void>();

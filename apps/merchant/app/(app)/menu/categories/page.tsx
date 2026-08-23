@@ -37,7 +37,7 @@ export default function CategoryManagePage() {
   // Synchronous double-submit guard (CF-01 class) — see menu/page.tsx: createCategory is NOT
   // idempotent, so a same-tick double-tap on "Save" genuinely creates two categories.
   const submittingRef = useRef(false);
-  // CF-04-SIB (crash-fuzz 2026-08-23): `run()` below — the shared helper behind move/toggle/delete —
+  // CF-02-SIB-5 (crash-fuzz 2026-08-23): `run()` below — the shared helper behind move/toggle/delete —
   // guarded only with `busyId` (React state), the same async-state-only race CF-02 fixed elsewhere.
   // move/toggle recompute an identical target value on both same-tick calls (harmless duplicate
   // write, like the accepted hours/shop non-fix), but delete does not: two same-tick taps would send

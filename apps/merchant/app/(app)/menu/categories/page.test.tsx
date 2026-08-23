@@ -6,7 +6,7 @@ import CategoryManagePage from "./page";
 import { deleteCategory, listCategories } from "../../../lib/menu-api";
 
 /**
- * CF-04-SIB (crash-fuzz 2026-08-23): `run()` — the shared helper behind move/toggle/delete — guarded
+ * CF-02-SIB-5 (crash-fuzz 2026-08-23): `run()` — the shared helper behind move/toggle/delete — guarded
  * only with `busyId` (React state), the same async-state-only race CF-02 fixed elsewhere. Unlike
  * move/toggle (which recompute an identical target value on both same-tick calls — the accepted
  * hours/shop non-fix shape), a same-tick double-tap on Delete sends two DELETE calls for one id.
@@ -54,7 +54,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("menu/categories/page.tsx — CF-04-SIB (crash-fuzz 2026-08-23)", () => {
+describe("menu/categories/page.tsx — CF-02-SIB-5 (crash-fuzz 2026-08-23)", () => {
   it("a same-tick double-click on Delete sends only one DELETE for that category", async () => {
     vi.mocked(listCategories).mockResolvedValue([category()]);
     const gate = deferred<{ ok: true }>();

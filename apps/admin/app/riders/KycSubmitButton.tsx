@@ -18,7 +18,7 @@ import { setKyc } from "./actions";
 export function KycApproveButton({ profileId }: { profileId: string }): React.ReactElement {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  // CF-04-SIB (crash-fuzz 2026-08-23, KYC gating — sensitive lane): same guard-shape defect as
+  // CF-02-SIB-4 (crash-fuzz 2026-08-23, KYC gating — sensitive lane): same guard-shape defect as
   // ConfirmModal.tsx's CF-02 fix — `pending` only reflects the first of two same-tick clicks.
   // `adminSetKyc` deliberately re-records an audit row on every call (by design, per its own code
   // comment) — a double-tap race must not multiply that further than one genuine extra click would.

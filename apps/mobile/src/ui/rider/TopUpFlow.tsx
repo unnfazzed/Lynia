@@ -60,7 +60,7 @@ export function TopUpFlow({
   onExit: () => void;
 }): React.ReactElement {
   const fail = useActionError();
-  // CF-04-SIB: `isStarting` (React Query's `create.isPending`) only reflects the FIRST of two
+  // CF-02-SIB-3: `isStarting` (React Query's `create.isPending`) only reflects the FIRST of two
   // same-tick taps on "Request … via …" — a fast double-tap fired createTopup() twice (confirmed
   // live via the tools/parity mobile harness). The deterministic `idempotencyKey` below means the
   // server should dedupe both calls to one intent, but the wasted duplicate request is still the

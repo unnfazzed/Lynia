@@ -20,7 +20,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("KycApproveButton — CF-04-SIB (crash-fuzz 2026-08-23, KYC gating — sensitive lane)", () => {
+describe("KycApproveButton — CF-02-SIB-4 (crash-fuzz 2026-08-23, KYC gating — sensitive lane)", () => {
   it("a same-tick double-click approves only once", async () => {
     const { setKyc } = await import("./actions");
     const gate = deferred<void>();

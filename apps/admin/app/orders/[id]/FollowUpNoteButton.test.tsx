@@ -20,7 +20,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("FollowUpNoteButton — CF-04-SIB (crash-fuzz 2026-08-23)", () => {
+describe("FollowUpNoteButton — CF-02-SIB-4 (crash-fuzz 2026-08-23)", () => {
   it("a same-tick double-click logs the note only once (was: two distinct audit_logs rows ~2ms apart)", async () => {
     const { logOrderFollowUpNote } = await import("../../actions/audit");
     const gate = deferred<void>();

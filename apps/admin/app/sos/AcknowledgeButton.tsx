@@ -15,7 +15,7 @@ import { acknowledgeSos } from "./actions";
 export function AcknowledgeButton({ id, disabled = false }: { id: string; disabled?: boolean }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  // CF-04-SIB (crash-fuzz 2026-08-23): same guard-shape defect as ConfirmModal.tsx's CF-02 fix —
+  // CF-02-SIB-4 (crash-fuzz 2026-08-23): same guard-shape defect as ConfirmModal.tsx's CF-02 fix —
   // `pending` only reflects the first of two same-tick clicks. `SosService.acknowledge`'s own
   // CAS (`updateMany({ acknowledgedAt: null })`) already makes a double-fire harmless server-side,
   // but the client shouldn't rely on that alone — fixed here too, for consistency and in case a

@@ -71,7 +71,7 @@ export default function AccountTabScreen(): React.ReactElement {
     // `shield` rather than a settings/cog glyph: the design kit's 38-icon subset has none, and this
     // row's contents ARE permissions, privacy and sign-out — so the shield is honest, not a stand-in.
     { icon: "shield", label: "Settings", sub: "Permissions, privacy and sign out", onPress: () => router.push("/settings") },
-    // CF-04-SIB (crash-fuzz 2026-08-23, MOB-BOOT-02 class — "a screen rendering a decision it has
+    // MOB-BOOT-02-SIB-3 (crash-fuzz 2026-08-23, MOB-BOOT-02 class — "a screen rendering a decision it has
     // not yet made"): while `me` is still loading, `isRider` falls back to the stale/absent
     // `session?.role`, which can read "customer" for an account that is actually a verified rider —
     // live-reproduced via the tools/parity mobile harness as a ~1.5-2s flash of "Become a rider" on
