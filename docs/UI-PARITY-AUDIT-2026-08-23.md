@@ -25,8 +25,9 @@ All three checks green, no failures:
 | `node tools/parity/extract-expected.mjs --check` | **67/67** keys reproduce byte-for-byte |
 | `pnpm --filter ./apps/mobile exec jest rendered-conformance` | **31/31** tests passing (7 coverage-ledger checks + 24 asserted screens) |
 
-**Regressions vs. the prior run: none — this is the first run, there is no prior report to diff
-against.** The next run diffs against this one.
+**No regression comparison is possible this run** — this is the first run, so there is no prior
+report to diff against; every mismatch below is a first-time observed finding, not a regression. The
+next run will be the first to diff against a baseline (this report).
 
 One tooling note surfaced in the course of Phase 1: this session's checkout was missing
 `tools/parity/.vendor/` (gitignored, populated by `tools/parity/lib/vendor.mjs`'s `ensureVendor()`)
@@ -75,7 +76,8 @@ SOS beyond Commission) are the already-documented honest divergence noted in
 ## Phase 3 — explanations
 
 See the per-row root cause and recommendation in the table above and in the `docs/KNOWN_BUGS.md`
-`UIP-01`…`UIP-06` rows (this run's ledger entries carry the same explanations verbatim). No divergence
+`UIP-01`…`UIP-06` rows (the ledger entries carry the corresponding explanations, expanded with more
+detail than this report's summary table). No divergence
 listed here duplicates an `APPROVED` entry in `docs/DESIGN-DEVIATIONS.md` (D-10, D-11, D-12, D-29 were
 each encountered and correctly excluded as sanctioned, not re-flagged).
 

@@ -2384,7 +2384,9 @@ First run of the new report-only weekly UI parity audit (`docs/ROUTINES.md` §"U
 regressions. Phase 1's machine-checkable sweep is fully green: `node tools/parity/codegen/cli.mjs
 check` (43/43 adopted views structurally congruent), `node tools/parity/extract-expected.mjs --check`
 (67/67 keys reproduce byte-for-byte) and `pnpm --filter ./apps/mobile exec jest rendered-conformance`
-(31/31 passing) — no regressions. Deep-dive category (first in the rotation): **customer food (RC)**.
+(31/31 passing) — no failures; with no prior report, this run cannot yet compare for regressions, so
+every row below is a first-time observed finding, not a regression. Deep-dive category (first in the
+rotation): **customer food (RC)**.
 Every row below is **report-only**: no app, design or tracker code changed as part of this audit.
 
 | ID | Description | Area | Sev | Status | Owner |
