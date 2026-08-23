@@ -39,6 +39,15 @@ jest.mock("../../../src/auth/auth-context", () => ({
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../src/api/orders", () => ({ getActiveOrder: async () => null }));
 jest.mock("../../../src/api/riders", () => ({ setOnline: async () => ({ online: false }) }));
+// Was unmocked: useNotificationsUnreadCount (both Account tabs) made a REAL network call in every
+// one of this file's many renders, with no bound on how long it could stay pending/retrying —
+// caught while chasing an order-dependent settle flake this file's `copyOf` helper had (a later
+// test's render sometimes never reflected its resolved query state within any tick count tried,
+// traced to lingering real-fetch activity from earlier tests' unmocked queries, not a real product
+// bug). Matches the mock account-harmony.test.tsx already carries for the same hook.
+jest.mock("../../../src/api/notifications", () => ({
+  getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }),
+}));
 
 import CustomerAccountTab from "../account";
 import RiderAccountTab from "../../rider/(tabs)/account";

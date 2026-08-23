@@ -39,11 +39,12 @@ export default function CategoryManagePage() {
   const submittingRef = useRef(false);
   // CF-02-SIB-5 (crash-fuzz 2026-08-23): `run()` below — the shared helper behind move/toggle/delete —
   // guarded only with `busyId` (React state), the same async-state-only race CF-02 fixed elsewhere.
-  // move/toggle recompute an identical target value on both same-tick calls (harmless duplicate
-  // write, like the accepted hours/shop non-fix), but delete does not: two same-tick taps would send
-  // two DELETE calls for one id. Per-id (a `Set`, not a single ref) so unrelated rows stay independent
-  // — same shape as ReturnsSection.tsx's goodsBackInFlightRef.
-  const rowInFlightIdsRef = useRef<Set<string>>(new Set());
+  // A SINGLE global in-flight flag, not per-id: `rowDisabled` below already treats the whole list as
+  // one-mutation-at-a-time (`busyId !== null` disables every row, not just the busy one), because a
+  // reorder writes MULTIPLE rows' sortOrder in one `run()` call — a per-id guard would only block a
+  // same-tick double-tap on the SAME row and let two DIFFERENT rows' reorders race each other with
+  // overlapping patch sets (caught in review). Matches this file's own `submittingRef` shape.
+  const runInFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -63,10 +64,8 @@ export default function CategoryManagePage() {
    *  actually holds. A reorder is several writes; if one fails halfway the merchant must see the real
    *  half-applied order, not an optimistic one that never landed. */
   async function run(id: string | null, fn: () => Promise<unknown>, fallback: string) {
-    if (id != null) {
-      if (rowInFlightIdsRef.current.has(id)) return;
-      rowInFlightIdsRef.current.add(id);
-    }
+    if (runInFlightRef.current) return;
+    runInFlightRef.current = true;
     setBusyId(id);
     setListError(null);
     let signedOut = false;
@@ -79,7 +78,7 @@ export default function CategoryManagePage() {
       }
       setListError(err instanceof ApiError ? err.message : fallback);
     } finally {
-      if (id != null) rowInFlightIdsRef.current.delete(id);
+      runInFlightRef.current = false;
       // A dead session is already on its way to /login — don't fire a doomed refetch behind it.
       if (!signedOut) await refresh();
       setBusyId(null);
