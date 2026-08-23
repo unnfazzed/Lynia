@@ -1,3 +1,4 @@
+import type { RestaurantListItem } from "@lynia/shared";
 import { RESTAURANTS_PRICING } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
@@ -6,16 +7,33 @@ import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-rout
 import { ScrollView, Text, View } from "react-native";
 import { useFoodCart } from "../../src/food/cart-context";
 import type { FoodCartLine } from "../../src/logic/food-cart";
+import { fmtClock } from "../../src/logic/format-time";
+import { etaRange, restaurantMeta } from "../../src/logic/food-list";
+import { useHomeLocation } from "../../src/logic/home-location";
 import { formatMoney } from "../../src/logic/money";
+import { useNow } from "../../src/logic/use-now";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { AppBar, Card, Icon, Money, Screen, Tappable } from "../../src/ui";
-import { QtyStepper } from "../../src/ui/home/QtyStepper";
 import { addLine, MAX_ITEM_QTY, removeLine } from "../../src/logic/food-cart";
 import { CartNoteSheet } from "../../src/ui/food/CartNoteSheet";
-import { NoteField } from "../../src/ui/food/NoteField";
 import { PriceMath } from "../../src/ui/food/PriceMath";
 import { CartCheckoutBarView } from "./cart-checkout-bar.view";
 import { CartEmptyView } from "./cart-empty.view";
+
+/** Kit RC.cart (r-customer-a.jsx:315): "Arrives in 30–40 min · 10:11–10:21, confirmed the moment the
+ *  kitchen accepts" — an ESTIMATE, not a promise (the copy says so). The cart has no drop-off yet
+ *  (checkout captures it — D-11), so this reuses the same honest-estimate path RC.list's per-row ETA
+ *  already uses: prep time + a haversine leg from the customer's CURRENT fix as the best available
+ *  stand-in, refined once a real drop-off exists. Null without a customer fix or a restaurant location
+ *  — never an invented number. */
+function cartEtaBanner(restaurant: RestaurantListItem | null, customerPoint: RestaurantListItem["location"], now: Date): { range: string; arrive: string } | null {
+  if (!restaurant) return null;
+  const meta = restaurantMeta(restaurant, customerPoint);
+  const band = meta.etaMinutes != null ? etaRange([meta]) : null;
+  if (!band) return null;
+  const clockAt = (mins: number) => fmtClock(new Date(now.getTime() + mins * 60_000).toISOString());
+  return { range: `${band.low}–${band.high} min`, arrive: `${clockAt(band.low)}–${clockAt(band.high)}` };
+}
 
 interface Reconciled {
   lines: FoodCartLine[];
@@ -60,6 +78,10 @@ export default function FoodCartScreen(): React.ReactElement {
   const cart = useFoodCart();
   usePrewarmRoutes(cart.cart.lines.length > 0 ? CART_PREWARM : NO_PREWARM);
   const { menu } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
+  // Same live fix RC.list/checkout use — feeds the estimate-before-checkout banner below.
+  const location = useHomeLocation();
+  const now = useNow();
+  const etaBanner = cartEtaBanner(menu?.restaurant ?? null, location.point, now);
 
   const latestByDish = useMemo(() => {
     if (!menu) return null;
@@ -71,17 +93,19 @@ export default function FoodCartScreen(): React.ReactElement {
   const [dismissedNotice, setDismissedNotice] = useState(false);
   const reconciled = useMemo(() => reconcile(cart.cart.lines, latestByDish), [cart.cart.lines, latestByDish]);
 
-  // R3·2 (cart_note): which line's note the bottom sheet is currently editing (null = sheet closed).
-  // A line is identified by (dishId, note) — the same composite key the cart itself uses — because two
-  // lines of the same dish with different notes are deliberately separate rows.
-  const [noteTarget, setNoteTarget] = useState<{ dishId: string; note: string; name: string } | null>(null);
+  // R3·2 (cart_note): which target the bottom sheet is currently editing (null = sheet closed) — a
+  // specific line (dishId, note) using the same composite key the cart itself uses (two lines of the
+  // same dish with different notes are deliberately separate rows), or "whole-order" when opened from
+  // the card's own whole-order-note row, which has no dish to attach a per-dish note to.
+  const [noteTarget, setNoteTarget] = useState<{ dishId: string; note: string; name: string; quantity: number } | "whole-order" | null>(null);
 
-  /** Re-key a cart line onto a new note. `addLine` merges it into an existing identical (dish, note)
-   *  row rather than leaving a duplicate — the same upsert the menu's "add" already goes through. */
-  const saveLineNote = (target: { dishId: string; note: string }, nextNote: string): void => {
+  /** Re-key a cart line onto a new note/quantity in one write. `addLine` merges it into an existing
+   *  identical (dish, note) row rather than leaving a duplicate — the same upsert the menu's "add"
+   *  already goes through. */
+  const saveLineEdit = (target: { dishId: string; note: string }, nextNote: string, nextQuantity: number): void => {
     const line = cart.cart.lines.find((l) => l.dishId === target.dishId && l.note === target.note);
-    if (!line || line.note === nextNote) return;
-    cart.replaceLines(addLine(removeLine(cart.cart.lines, line.dishId, line.note), { ...line, note: nextNote }));
+    if (!line || (line.note === nextNote && line.quantity === nextQuantity)) return;
+    cart.replaceLines(addLine(removeLine(cart.cart.lines, line.dishId, line.note), { ...line, note: nextNote, quantity: nextQuantity }));
   };
 
   // Apply the reconciliation once per menu fetch (not every render) — an OOS/price-change banner
@@ -141,37 +165,74 @@ export default function FoodCartScreen(): React.ReactElement {
       ) : null}
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Card>
+        {/* Kit RC.cart EtaLine (r-customer-a.jsx:315): "Arrives in <range> · <arrive>, confirmed the
+            moment the kitchen accepts" — omitted (not a placeholder) when there's no honest estimate yet. */}
+        {etaBanner ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, marginBottom: 12 }}>
+            <Icon name="clock" size={17} color={tokens.color.accentText} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>
+                Arrives in {etaBanner.range} <Text style={{ color: tokens.color.muted, fontWeight: "600" }}>· {etaBanner.arrive}</Text>
+              </Text>
+              <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 16 }}>Confirmed the moment the kitchen accepts.</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <Card style={{ padding: 14 }}>
           {cart.cart.lines.map((line, i) => (
             <View
               key={`${line.dishId}-${line.note}`}
-              style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: tokens.color.line }}
+              style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: tokens.color.line }}
             >
+              {/* Kit RestRow-style qty badge (r-customer-a.jsx:319): a static count, not a stepper — the
+                  mock's editing surface for quantity is the Item Sheet (r-customer-a.jsx:279-286), which
+                  this line's note affordance below now opens (CartNoteSheet carries the same stepper). */}
+              <View style={{ minWidth: 28, height: 28, borderRadius: 8, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{line.quantity}</Text>
+              </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
-                  {line.name}
-                </Text>
-                <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>{formatMoney(line.priceUsd)} each</Text>
-                {/* R3·2 (cart_note): the note is EDITABLE from the cart, not only at the moment the dish
-                    was added — "leg not breast" is exactly the thing you remember once the basket is in
-                    front of you. Opens the note sheet on this line. */}
+                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>{line.name}</Text>
+                {/* R3·2 (cart_note): opens the note+quantity sheet for this line — not only at the moment
+                    the dish was added, since "leg not breast" is exactly the thing you remember once the
+                    basket is in front of you. D-39: shown even with no note yet (the mock's static sample
+                    never draws that empty state) because it's this line's only in-cart edit entry point. */}
                 <Tappable
-                  onPress={() => setNoteTarget({ dishId: line.dishId, note: line.note, name: line.name })}
+                  onPress={() => setNoteTarget({ dishId: line.dishId, note: line.note, name: line.name, quantity: line.quantity })}
                   accessibilityRole="button"
-                  accessibilityLabel={line.note ? `Edit the note for ${line.name}: ${line.note}` : `Add a note for ${line.name}`}
+                  accessibilityLabel={line.note ? `Edit ${line.name}: quantity ${line.quantity}, note ${line.note}` : `Edit ${line.name}: quantity ${line.quantity}, add a note`}
                   style={{ flexDirection: "row", alignItems: "center", gap: 5, minHeight: tokens.touchTargetMin, paddingRight: 4 }}
                 >
-                  <Icon name="pencil" size={13} color={tokens.color.accentText} />
+                  <Icon name="pencil" size={12} color={tokens.color.accentText} />
                   <Text style={{ flex: 1, fontSize: 12, fontWeight: line.note ? "400" : "700", color: tokens.color.accentText }} numberOfLines={2}>
                     {line.note || "Note for the kitchen"}
                   </Text>
                 </Tappable>
               </View>
-              <QtyStepper value={line.quantity} onChange={(n) => cart.setQuantity(line.dishId, line.note, n)} max={MAX_ITEM_QTY} />
-              <Money v={line.priceUsd * line.quantity} style={{ minWidth: 52, textAlign: "right" }} />
+              <Money v={line.priceUsd * line.quantity} size={14} weight="600" style={{ minWidth: 52, textAlign: "right" }} />
             </View>
           ))}
-          {/* Kit R3·1 (r-customer-a.jsx:323-327): the cart's own way back into the menu, so adding a
+
+          {/* Kit RC.cart (r-customer-a.jsx:332-338): the whole-order note sits INSIDE the card, between
+              the lines and "Add more items" — a tappable summary row (muted pencil, matching the mock's
+              own icon colour here — distinct from a per-dish note's accent pencil), not the free-standing
+              textarea this used to render outside the card. */}
+          <Tappable
+            onPress={() => setNoteTarget("whole-order")}
+            accessibilityRole="button"
+            accessibilityLabel={cart.cart.orderNote ? `Edit the note for the whole order: ${cart.cart.orderNote}` : "Add a note for the whole order"}
+            style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: tokens.touchTargetMin, marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: tokens.color.line }}
+          >
+            <Icon name="pencil" size={13} color={tokens.color.muted} style={{ marginTop: 2 }} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted }}>NOTE FOR THE WHOLE ORDER</Text>
+              <Text style={{ fontSize: 13, color: cart.cart.orderNote ? tokens.color.ink : tokens.color.muted, lineHeight: 17.5 }} numberOfLines={2}>
+                {cart.cart.orderNote || "Pack the sadza separately from the stew"}
+              </Text>
+            </View>
+          </Tappable>
+
+          {/* Kit R3·1 (r-customer-a.jsx:339-343): the cart's own way back into the menu, so adding a
               forgotten drink doesn't mean hunting for the back button. */}
           <Tappable
             onPress={() => router.push(`/food/${cart.cart.restaurantId}`)}
@@ -192,20 +253,6 @@ export default function FoodCartScreen(): React.ReactElement {
             <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.accentText }}>Add more items</Text>
           </Tappable>
         </Card>
-
-        <NoteField
-          label="NOTE FOR THE WHOLE ORDER"
-          value={cart.cart.orderNote}
-          onChangeText={cart.setOrderNote}
-          placeholder="Pack the sadza separately from the stew"
-          maxLength={300}
-        />
-        <View style={{ flexDirection: "row", gap: 8, padding: 12, backgroundColor: tokens.color.surface, borderRadius: tokens.radius.input, marginBottom: 12 }}>
-          <Icon name="circle-alert" size={15} color={tokens.color.muted} />
-          <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted, lineHeight: 17 }}>
-            A note can&apos;t change the price. If what you want costs more, the kitchen will call you before cooking.
-          </Text>
-        </View>
 
         {belowMin ? (
           <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
@@ -246,12 +293,14 @@ export default function FoodCartScreen(): React.ReactElement {
           until checkout places the order. */}
       {noteTarget ? (
         <CartNoteSheet
-          dishName={noteTarget.name}
-          dishNote={noteTarget.note}
+          dishName={noteTarget === "whole-order" ? undefined : noteTarget.name}
+          dishNote={noteTarget === "whole-order" ? undefined : noteTarget.note}
+          quantity={noteTarget === "whole-order" ? undefined : noteTarget.quantity}
+          maxQuantity={MAX_ITEM_QTY}
           orderNote={cart.cart.orderNote}
           onClose={() => setNoteTarget(null)}
-          onSave={({ dishNote, orderNote }) => {
-            saveLineNote(noteTarget, dishNote);
+          onSave={({ dishNote, orderNote, quantity }) => {
+            if (noteTarget !== "whole-order") saveLineEdit(noteTarget, dishNote, quantity ?? noteTarget.quantity);
             if (orderNote !== cart.cart.orderNote) cart.setOrderNote(orderNote);
             setNoteTarget(null);
           }}

@@ -32,9 +32,37 @@ function attrsOf(tagSnippet) {
   const el = expr(tagSnippet);
   return el.openingElement.attributes;
 }
-/** Wrap a JSXElement node in `<Wrapper …attrs>{el}</Wrapper>`. */
+/** True when `el`'s own transpiled `style={{...}}` sets `position: "absolute"` (an RN object literal —
+ *  this runs post-transpile, not against the mock's CSS). */
+function hasAbsolutePosition(el) {
+  const style = el.openingElement?.attributes?.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
+  const obj = style?.value?.expression;
+  if (obj?.type !== "ObjectExpression") return false;
+  return obj.properties.some(
+    (p) => p.type === "ObjectProperty" && !p.computed && (p.key.name || p.key.value) === "position" && p.value.type === "StringLiteral" && p.value.value === "absolute",
+  );
+}
+
+/**
+ * Wrap a JSXElement node in `<Wrapper …attrs>{el}</Wrapper>`.
+ *
+ * UIP-06: RN has no CSS "nearest positioned ancestor" — `position:"absolute"` is always relative to the
+ * IMMEDIATE parent (Yoga's model; react-native-web's base styles replicate it by defaulting every
+ * View/Pressable to `position:"relative"`). A transparent interaction wrapper (Tappable et al.) around
+ * an absolutely-positioned element therefore becomes ITS new positioning parent — and since the wrapper
+ * itself carries no position of its own, it sits in normal document flow whenever an earlier sibling
+ * exists (e.g. a cover-photo band before it), silently shifting the wrapped element down by that flow
+ * offset. Anchoring the wrapper at `position:"absolute", top:0, left:0` (zero offset, exactly where the
+ * wrapped element's own top/left already expect to measure from) fixes this without touching the
+ * wrapped element's own style — which the structural guardrail (normalize.mjs) DOES compare against the
+ * mock, whereas Tappable/Pressable/Touchable/Fragment are structurally transparent to it (its
+ * TRANSPARENT set), so a style added only to the wrapper never affects that comparison.
+ */
 function wrap(el, wrapperTag, attrsSnippet) {
   const attrs = attrsSnippet ? attrsOf(`<${wrapperTag} ${attrsSnippet} />`) : [];
+  if (hasAbsolutePosition(el)) {
+    attrs.push(...attrsOf(`<${wrapperTag} style={{ position: "absolute", top: 0, left: 0 }} />`));
+  }
   return t.jsxElement(
     t.jsxOpeningElement(t.jsxIdentifier(wrapperTag), attrs, false),
     t.jsxClosingElement(t.jsxIdentifier(wrapperTag)),

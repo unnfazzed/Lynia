@@ -199,8 +199,9 @@ export default function RestaurantListScreen(): React.ReactElement {
           <FlatList
             data={visible}
             keyExtractor={(r) => r.id}
-            renderItem={({ item }: { item: RestaurantListItem }) => (
-              <RestaurantRow r={item} now={now} onPress={() => router.push(`/food/${item.id}`)} />
+            renderItem={({ item, index }: { item: RestaurantListItem; index: number }) => (
+              // Kit RestRow (r-parts.jsx:353): only the first row of the list renders as the hero card.
+              <RestaurantRow r={item} now={now} customerPoint={location.point} hero={index === 0} onPress={() => router.push(`/food/${item.id}`)} />
             )}
             showsVerticalScrollIndicator={false}
             onEndReached={() => {

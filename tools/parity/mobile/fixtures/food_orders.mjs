@@ -71,7 +71,12 @@ const history = [
 ];
 
 installRouter([
-  { match: /^\/orders\/mine\/active-order$/, json: activeOrder },
+  // The LIST endpoint (plural — GET /orders/mine/active-orders) is what orders.tsx actually calls;
+  // the old singular match here never hit, so activeOrders fell through to the router's blanket `{}`
+  // default and orders.tsx's unguarded `activeOrders.map(...)` (building liveIds) threw, blanking the
+  // whole screen with no error boundary to catch it (UIP-02). food_orders_empty.mjs already had the
+  // plural match right; this fixture just hadn't been updated to match.
+  { match: /^\/orders\/mine\/active-orders$/, json: [activeOrder] },
   { match: "/orders/history", json: history },
 ]);
 

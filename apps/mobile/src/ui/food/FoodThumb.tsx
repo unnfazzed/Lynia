@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { Text, View } from "react-native";
+import { Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { RemoteImage } from "../RemoteImage";
 import { avatarTint } from "../../logic/avatar";
 
@@ -19,11 +19,15 @@ export function FoodThumb({
   photoUrl,
   size = 76,
   radius = 14,
+  style,
 }: {
   name: string;
   photoUrl?: string | null;
   size?: number;
   radius?: number;
+  /** Dimension override for a non-square slot (RC.list's hero row: a 100%-wide photo band) — the
+   *  monogram glyph still sizes off `size`, matching the mock's own `RestRow` (r-parts.jsx:350-352). */
+  style?: StyleProp<ViewStyle>;
 }): React.ReactElement {
   const [failed, setFailed] = useState(false);
   const showPhoto = !!photoUrl && !failed;
@@ -35,7 +39,7 @@ export function FoodThumb({
         onError={() => setFailed(true)}
         accessibilityElementsHidden
         importantForAccessibility="no"
-        style={{ width: size, height: size, borderRadius: radius, backgroundColor: tokens.color.surface }}
+        style={[{ width: size, height: size, borderRadius: radius, backgroundColor: tokens.color.surface }, style as never]}
       />
     );
   }
@@ -44,7 +48,7 @@ export function FoodThumb({
     <View
       accessibilityElementsHidden
       importantForAccessibility="no"
-      style={{ width: size, height: size, borderRadius: radius, backgroundColor: avatarTint(name), alignItems: "center", justifyContent: "center" }}
+      style={[{ width: size, height: size, borderRadius: radius, backgroundColor: avatarTint(name), alignItems: "center", justifyContent: "center" }, style]}
     >
       <Text style={{ fontSize: size * 0.32, fontWeight: "700", color: tokens.color.ink }}>{firstGlyph(name)}</Text>
     </View>

@@ -131,7 +131,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header aligned 2026-08-19: live deliver-to + chevron picker, all four filter chips, count line. Row meta line & hero row still open — see doc |
+| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header aligned 2026-08-19: live deliver-to + chevron picker, all four filter chips, count line. Row meta line & hero row FIXED 2026-08-23 (UIP-03, `docs/KNOWN_BUGS.md`) — `RestaurantRow` now wires ★rating/distance/ETA/fee via `restaurantMeta()`, first row renders as the hero card. Still 👁 not ✅: RC.list/RC.search stay in `tools/parity/rendered-conformance.pending.json` (not yet in the jest suite's ASSERTED set), so no machine guardrail actively passes on them yet — that's the remaining step to earn ✅ |
 | ⬜ | C3·2 | `RC list_loading` | List loading  [FOOD] | | |
 | 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
 | ✅ | C3·4 | `RC menu` | Menu  [FOOD] | **region-adopted (Foundation-E)** — first machine-guarded INTERACTIVE screen: cover / dish-rows / cart-bar are generated guarded fragments the container composes; per-region congruence + composition check green (`tools/parity/codegen/cli.mjs check`) | cover band + overhanging shop logo + floating back button; tabs/ItemSheet/RemindWhenOpen/just-closed stay live glue; backend-gated meta line honest-kept (non-region) |
@@ -178,7 +178,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 |---|---|---|---|---|---|
 | ⬜ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | | |
 | ⬜ | C6·2 | `RC track_secured` | Rider secured  [FOOD] | | |
-| 👁 | C6·3 | `RC track_way` | On the way  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | map-bg+sheet + RiderCard are honest deviations (gray-map stub, no rider identity in food API) — see doc |
+| 👁 | C6·3 | `RC track_way` | On the way  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | map-bg+sheet + RiderCard are honest deviations (gray-map stub, no rider identity in food API) — see doc. UIP-05 (`docs/KNOWN_BUGS.md`, 2026-08-23): the status timeline + "Follow route in Google Maps" row the mock never draws on this screen are now removed (food + `en_route_dropoff` only). PARTIALLY open still: the mock's full-bleed map + bottom-sheet layout vs. the app's AppBar + contained map box + linear scroll is unchanged — deferred as a dedicated restructure (touches `LiveTrackingCard`, shared with the parcel tracker) |
 | 👁 | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
 | 👁 | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
 
