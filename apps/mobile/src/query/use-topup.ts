@@ -38,7 +38,7 @@ export interface TopUpController {
   /** True once an intent has been opened, whatever its status. */
   hasIntent: boolean;
   isStarting: boolean;
-  start: (input: TopUpStart) => void;
+  start: (input: TopUpStart, options?: { onSettled?: () => void }) => void;
   /** Drop the current intent from view so the rider can begin a fresh attempt. Does not cancel the
    *  server-side intent — it stays open until it confirms or its window closes, which is exactly what
    *  the durable marker exists to reconcile. */

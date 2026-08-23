@@ -187,6 +187,16 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
   });
 
+  // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body is a truthy non-array that `?? []` used to
+  // let through into `.map()`, crashing the whole home tab — live-reproduced via the tools/parity
+  // mobile harness (`TypeError: activeOrders.map is not a function`, no error boundary to catch it).
+  it("does not crash when getActiveCustomerOrders resolves a non-array body — degrades to tiles only", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue({ orders: [] } as unknown);
+    activeTree = renderHome();
+    await settle();
+    expect(has(activeTree, /on the way/)).toBe(false);
+  });
+
   // Owner instruction 2026-08-12: a background poll the customer never triggered must NOT raise an
   // error card over a working home. This used to be evidence-gated (UX-2026-08-05) — now it never
   // renders, so a leftover hint from a pre-removal build can't resurrect it either.

@@ -107,6 +107,17 @@ describe("NotificationsScreen (B-O1: capped-but-still-multi-row list must be vir
     const first = mockRows[0]!;
     expect(list.props.keyExtractor(first)).toBe(first.id);
   });
+
+  // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body from getNotificationsFeed is a truthy
+  // non-array that `?? []` used to let straight through into `.map()`, crashing the whole screen
+  // with no error boundary — live-reproduced via the tools/parity mobile harness on the sibling
+  // home/orders queries. Sibling-swept fix here too.
+  it("does not crash when getNotificationsFeed resolves a non-array body — renders the empty state, not a crash", async () => {
+    mockGetNotificationsFeed.mockResolvedValue({ notifications: [] } as unknown);
+    const tree = renderScreen();
+    await expect(settle()).resolves.toBeUndefined();
+    expect(tree.root.findAll((n) => n.props.title === "No notifications yet").length).toBeGreaterThan(0);
+  });
 });
 
 /**

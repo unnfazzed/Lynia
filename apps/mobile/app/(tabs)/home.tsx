@@ -197,7 +197,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
   useForegroundRefetch(() => {
     invalidateIfStale(qc, ACTIVE_ORDERS_KEY);
   });
-  const activeOrders = activeOrdersQ.data ?? [];
+  // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array that `?? []` lets
+  // straight through into `.map()` below (CF-04 — confirmed live; same query as orders.tsx).
+  const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
   const riderNames = useRiderNames(activeOrders);
   // No failed-check banner here (owner instruction 2026-08-12): a background poll the customer never
   // triggered must not raise an error card over a working screen. A failed check simply shows no live

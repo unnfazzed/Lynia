@@ -311,8 +311,13 @@ export default function OrderScreen(): React.ReactElement {
     if (status === "open_for_offers") void qc.invalidateQueries({ queryKey: offersKey(orderId) });
   });
 
+  // Array.isArray, not raw `.data`: a malformed 200 body is a truthy non-array, and `.find()`/`.map()`
+  // below would throw on it (CF-04 sibling — sensitive lane, so every offersQ.data read goes through
+  // this one guarded array rather than patching each call site separately).
+  const offers = Array.isArray(offersQ.data) ? offersQ.data : [];
+
   // Announce a newly-arrived bid for screen-reader users — the streaming list updates silently.
-  const liveBidCount = offersQ.data?.length ?? 0;
+  const liveBidCount = offers.length;
   const prevBidCount = useRef(0);
   // Seed the baseline on the FIRST settled offers load, so opening an auction that already has bids
   // doesn't buzz/announce them as if they just arrived (0→N on mount). Only genuine later increases fire.
@@ -391,7 +396,7 @@ export default function OrderScreen(): React.ReactElement {
   // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
   // Offer ordering (roadmap 3.5): the pure ranking/sort logic now lives in src/logic/order-offers
   // (unit-tested there); the screen just memoizes it over the current offers + sort mode.
-  const orderedOffers = useMemo(() => orderOffers(offersQ.data ?? [], sortMode), [offersQ.data, sortMode]);
+  const orderedOffers = useMemo(() => orderOffers(offers, sortMode), [offers, sortMode]);
 
   const showSelectRaceNotice = (): void => {
     setSelectNotice("That rider was just taken — choose another.");
@@ -409,7 +414,7 @@ export default function OrderScreen(): React.ReactElement {
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: "assigned" } : o));
       // LC-C08: captured here (mutate-time), not re-derived in onError — by the time a 409 comes back
       // the offers list may already have been invalidated/cleared out from under the tapped offer.
-      const selectedRiderId = offersQ.data?.find((o) => o.id === offerId)?.rider.profileId ?? null;
+      const selectedRiderId = offers.find((o) => o.id === offerId)?.rider.profileId ?? null;
       return { prev, selectedRiderId };
     },
     onSuccess: (res) => {
@@ -645,7 +650,7 @@ export default function OrderScreen(): React.ReactElement {
     setSelectingId(offerId);
     // Cache the chosen rider's public identity so the tracking card can show their face + name (the
     // assigned-order snapshot won't carry it). Best-effort; the tracker degrades to no identity card.
-    const chosen = offersQ.data?.find((o) => o.id === offerId);
+    const chosen = offers.find((o) => o.id === offerId);
     if (chosen) {
       const identity: RiderIdentity = {
         orderId,
