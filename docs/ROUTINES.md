@@ -107,6 +107,49 @@ All four follow the universal policies unchanged: Phase-0 `KNOWN_BUGS.md` read +
 fix-in-same-run, ledger + dated report in the same PR, sensitive-lane doctrine, merge-on-green,
 never merge red. They dedupe through `docs/KNOWN_BUGS.md` like the existing bug-finders.
 
+## UI Parity Audit (report-only) — added 2026-08-23
+
+User instruction (2026-08-23): a thirteenth routine dedicated to comparing the shipped app against
+its design mocks and **reporting** the result — never implementing it. Runs weekly, **Sunday 11:00
+UTC = Sunday 13:00 Harare** (the requested "1pm Zimbabwean time"; Harare is CAT, UTC+2, no DST — see
+the overlap note below). Model pinned programmatically like the four 2026-08-16 lanes. Created via
+the in-session `create_trigger` MCP path; prompt mirror `docs/routines/ui-parity-audit.md`.
+
+| Routine | trigger_id | Cron (UTC) | Harare | Environment | Mirror file |
+|---|---|---|---|---|---|
+| UI Parity Audit | `trig_0127SoaWZoTXA7Xjvo6DPVsb` | `0 11 * * 0` | Sun 13:00 | env_01V3Lw… | `docs/routines/ui-parity-audit.md` |
+
+> **Known overlap with Performance watch.** `0 11 * * 0` UTC is also the Performance watch slot (see
+> that section below) — the one hour on the "serial by construction" Sunday grid (§"Weekly Sunday
+> chain") this lane does not keep clear, because the requested time ("1pm Zimbabwean time") lands
+> exactly on it. Accepted deliberately rather than silently moving the requested time: this lane never
+> writes app/design code and touches no shared runtime state outside its own docs-only PR, so the
+> collision's cost is two concurrent sessions billing at once, not a correctness hazard. Move one of
+> the two lanes by an hour if that turns out to matter in practice.
+
+**Mission:** the mocks in `packages/design/` are the source of truth for structure, card design and
+every UI element (`CLAUDE.md` → "Pixel parity"). This lane renders every wired screen's mock next to
+its app render (`tools/parity/pair.mjs`), runs the existing machine-checkable structural-conformance
+suite (`tools/parity/codegen/cli.mjs check`, `extract-expected.mjs --check`, the mobile
+`rendered-conformance` jest spec) across the full wired set every run to catch **regressions** on
+already-aligned screens, and — on a rotating one-category-per-week deep dive (customer food →
+customer send/auth/account → rider → merchant → admin) — does a full structure/geometry/colour/
+type/copy comparison against the mock at the same bar as an alignment PR. Every mismatch found gets a
+root-cause explanation and a concrete recommendation; **none get implemented.**
+
+**Report-only is a permanent, explicit exception** to universal policy 2 ("no deferred bug fixes") —
+modeled on the existing LC-loop-D infra carve-out above, not a precedent for any other lane to invoke.
+Findings are logged in `docs/KNOWN_BUGS.md` under a new **`UIP-`** prefix, status OPEN, owner
+"design/alignment — report-only, no autonomous fix"; a `UIP-` row is a recommendation for a future
+alignment PR (or the user) to act on, not a bug another routine should silently patch on this lane's
+behalf. The dated report (`docs/UI-PARITY-AUDIT-<date>.md`) follows the same report-retention
+convention as every other lane (only the newest stays on `main`). The routine never edits
+`packages/design/**`, app/shared code, `docs/PIXEL-PARITY-TRACKER.md`'s status marks (that tracker's
+✅ is a machine-guardrail state owned by the alignment workflow, not this audit — see
+`docs/PIXEL-PARITY-TRACKER.md` → "Standing drift watch"), or `docs/DESIGN-DEVIATIONS.md` (new
+deviations need the user's explicit approval) — its PR is docs-only by construction, so merge-on-green
+(universal policy 1) still applies but is trivially satisfied.
+
 ## Weekly Sunday chain — 2026-08-04
 
 Per user instruction (2026-08-04): **run these routines once a week, on Sunday.** This replaces the

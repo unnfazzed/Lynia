@@ -22,6 +22,14 @@ All eight run **weekly, on Sunday (UTC)** as of 2026-08-04 — see `routine-chai
 | `logic-model-audit.md` | Logic model audit | `0 21 * * 0` |
 | `flag-retirement.md` | Flag retirement | `0 23 * * 0` |
 | `useless-test-pruning.md` | Useless-test pruning | `0 0 * * 1` |
+| `ui-parity-audit.md` | UI Parity Audit | `0 11 * * 0` |
+
+> **UI Parity Audit added 2026-08-23** (user instruction: a report-only routine comparing shipped
+> screens against their design mocks — structure, card design and UI elements first — that explains
+> mismatches and recommends fixes without implementing them; see `docs/ROUTINES.md` §"UI Parity Audit
+> (report-only)"). Created via the in-session `create_trigger` MCP path like the four lanes below, so
+> its model is pinned (`claude-sonnet-5`) and this mirror file is authoritative from the same change
+> that created the trigger.
 
 > **Four Sunday-night lanes added 2026-08-16** (owner instruction: weekly from 22:00 Harare, on
 > Sonnet 5, not Fable — see `docs/ROUTINES.md` §"Four Sunday-night maintenance lanes"). These four
