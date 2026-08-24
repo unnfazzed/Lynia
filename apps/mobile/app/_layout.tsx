@@ -24,7 +24,7 @@ import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
-import { BootSplashHold } from "./boot-splash-hold.view";
+import { BootSplashHold } from "../src/boot/boot-splash-hold";
 import ForceUpdateScreen from "./force-update";
 
 /**
@@ -44,7 +44,7 @@ import ForceUpdateScreen from "./force-update";
  * missing its splash pin, its font prewarm or its crash reporter is strictly better than no boot, and
  * each of these is an optimisation or a nicety, never a correctness precondition — the app re-does or
  * tolerates all of it downstream (fonts fall back to system, prewarm's consumers call it again from
- * their own effects, the splash hides on first paint regardless).
+ * their own effects, and a splash that was never pinned simply auto-hides on first paint).
  */
 function bootStep(step: () => unknown): void {
   try {
@@ -68,14 +68,18 @@ function bootStep(step: () => unknown): void {
 // through bootStep, because this is the statement that must not be the one that kills the launch.
 bootStep(initSentry);
 
-// Keep the native splash up until the fonts register (nothing else holds it — expo-router's
-// keep-alive no-ops without expo-splash-screen). Rejects if already prevented (e.g. Fast Refresh).
+// Keep the native splash up until the DESTINATION screen has presented (MOB-BOOT-05: the cold start
+// is ONE screen — the native splash — released by src/boot/boot-splash-hold.tsx, not by the font
+// gate). Rejects if already prevented (e.g. Fast Refresh).
 bootStep(() => SplashScreen.preventAutoHideAsync().catch(() => {}));
-// The cold start is ONE screen and it does not animate (owner instruction 2026-08-18). `fade` is
-// already the library default on both platforms, but it is a DEFAULT — pin it, because the frame it
-// would cross-fade to is the identical picture (app/splash.view.tsx), so a fade here could only ever
-// render as the brand mark dipping in opacity against itself for no reason.
-bootStep(() => SplashScreen.setOptions({ fade: false }));
+// The cold start is ONE screen and it does not animate (owner instructions 2026-08-18/2026-08-24).
+// `duration: 0` is the half that actually matters on Android: SplashScreenManager.kt (verified at
+// expo-splash-screen@0.29.24) IGNORES `fade` and always runs its exit as an alpha animation over
+// `duration` — default 400ms. With the splash now released onto the destination screen (not onto an
+// identical green frame), a 400ms fade would render as the destination fading in, i.e. an animation
+// in a boot sequence that is supposed to have none. `fade: false` stays for the platforms/versions
+// that do read it.
+bootStep(() => SplashScreen.setOptions({ fade: false, duration: 0 }));
 
 // Start the fonts and every device-local boot read NOW, at module evaluation, so the native side works
 // on them while the JS thread finishes evaluating the startup graph. Previously all of this began only
@@ -142,9 +146,9 @@ export const stackScreenOptions = {
  * route (including a push-tap deep link), so scoping by route name would be a list that rots. Scoping
  * by PHASE covers every destination and expires on its own — see src/boot/boot-phase.tsx.
  *
- * `BootSplashHold` covers this handoff with an identical green frame either way; the suppression is
- * what makes it deterministic rather than a race between that overlay's release and a transition
- * still in flight.
+ * The native splash (held by `BootSplashHold` until the destination presents) covers this handoff;
+ * the suppression is what makes it deterministic rather than a race between the splash release and a
+ * transition still in flight.
  */
 export const bootStackScreenOptions = {
   ...stackScreenOptions,
@@ -183,9 +187,9 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
   useEffect(() => {
     captureException(error);
   }, [error]);
-  // Belt-and-braces: RootLayout's hide effect never commits when the throw happens on the mount pass
-  // that would have run it, so this screen would otherwise render UNDER a splash still held up by the
-  // module-scope preventAutoHideAsync() above — a frozen icon instead of a recoverable error. Today
+  // Belt-and-braces: BootSplashHold's release never fires when the throw happens on the mount pass
+  // that would have mounted it, so this screen would otherwise render UNDER a splash still held up by
+  // the module-scope preventAutoHideAsync() above — a frozen icon instead of a recoverable error. Today
   // expo-router's own boundary also force-hides (views/Try.tsx), but the invariant "whatever renders
   // first drops the splash" belongs next to the code that holds it, not in a framework internal.
   useEffect(() => {
@@ -209,12 +213,13 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
 }
 
 function RootLayout(): React.ReactElement | null {
-  // Self-hosted Inter — the splash stays up until the fonts register so no
-  // Text mounts before its family is available. Font assets are bundled (no network), so on the
-  // rare load error we fall through to the system-font fallback rather than block the app.
+  // Self-hosted Inter — the native splash covers the whole boot (held by BootSplashHold), so no
+  // Text is ever VISIBLE before its family is available. Font assets are bundled (no network), so on
+  // the rare load error we fall through to the system-font fallback rather than block the app.
   // `useAppFonts` is TIME-BOUNDED (src/ui/fonts.ts): it reports an error rather than pending past
-  // FONT_LOAD_TIMEOUT_MS, because this gate holds the splash and a font load that never settles
-  // would otherwise strand the app on it forever — the 0.17.12 "installs but won't open" bug.
+  // FONT_LOAD_TIMEOUT_MS — since MOB-BOOT-05 the splash release no longer waits on fonts at all
+  // (only the boot_paint mark does), but the bound stays so a stalled font load can never wedge the
+  // gate's consumers — the 0.17.12 "installs but won't open" bug class.
   const [fontsLoaded, fontError] = useAppFonts();
   const fontsReady = fontsLoaded || fontError != null;
 
@@ -227,12 +232,14 @@ function RootLayout(): React.ReactElement | null {
   // Pause React Query's refetchInterval polling while backgrounded (see wireFocusManager).
   useEffect(() => wireFocusManager(), []);
 
-  // Drop the splash once fonts resolve (loaded or errored), and record the first half of the cold
-  // start: bundle evaluation started → the user can actually see the app. Everything before this
-  // instant is module evaluation plus the font gate.
+  // Record the first half of the cold start once fonts resolve (loaded or errored): bundle
+  // evaluation started → the tree is fully paintable. The splash is deliberately NOT dropped here
+  // any more (MOB-BOOT-05): hiding on this commit raced RN's first PRESENTED frame, and losing that
+  // race exposed the window background for a few frames — the intermittent white flash. The one
+  // release now lives in src/boot/boot-splash-hold.tsx, after the destination has settled. The font
+  // gate's own timeout (src/ui/fonts.ts) still bounds this mark; the splash no longer depends on it.
   useEffect(() => {
     if (!fontsReady) return;
-    SplashScreen.hideAsync().catch(() => {});
     enqueueBoot("boot_paint");
   }, [fontsReady]);
 
@@ -287,10 +294,10 @@ function RootLayout(): React.ReactElement | null {
                   <View style={{ flex: 1 }}>
                     <AppNavigator />
                   </View>
-                  {/* Cold-start splash hold (RCA §1.2 full fix): the brand-green frame stays up until
-                      the first REAL screen's frame is presented, so boot reads green → destination with
-                      no gap. Last sibling → stacks above the navigator; renders null forever once
-                      released. Dismisses on ANY route + a hard cap — see the component's header. */}
+                  {/* Cold-start splash hold (MOB-BOOT-05): holds the NATIVE splash — the boot's one
+                      and only screen — until the first REAL screen's frame is presented, then hides
+                      it, ends the boot phase and schedules the window-background reset. Renders
+                      nothing. Dismisses on ANY route + a hard cap — see the component's header. */}
                   <BootSplashHold />
                 </View>
               </BootPhaseProvider>

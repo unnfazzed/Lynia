@@ -46,7 +46,9 @@ export default function Index(): React.ReactElement {
   if (!bootResolved) {
     // Pre-auth boot IS the splash (customer/rider 0·1): the brand-green dove moment, not a spinner
     // (skeletons need a screen shape we don't have yet, and the DS bans bare page-level spinners).
-    // The drawn tree lives in ./splash.view (mock screens.jsx `Splash`).
+    // On a production cold start this frame stays UNDER the held native splash (MOB-BOOT-05 — the
+    // boot is one screen, released by src/boot/boot-splash-hold.tsx); it is what shows on dev
+    // reloads, where the native splash is already gone. The drawn tree lives in ./splash.view.
     return <SplashView />;
   }
   // A brand-new user (no session, onboarding not yet seen) meets the carousel first; it saves the flag
