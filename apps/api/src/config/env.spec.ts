@@ -159,7 +159,7 @@ describe("loadEnv — production JWT-secret boot-guard", () => {
       JWT_SIGNING_SECRET_PREVIOUS: "another-strong-previous-secret-0123456789",
       TOKEN_HASH_SECRET: "a-strong-dedicated-hash-secret-0123456789",
     });
-    expect(env.TOKEN_HASH_SECRET).toBeDefined();
+    expect(env.TOKEN_HASH_SECRET).toBe("a-strong-dedicated-hash-secret-0123456789");
   });
 });
 

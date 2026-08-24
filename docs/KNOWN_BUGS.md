@@ -6,7 +6,10 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-08-23 (**`FLAG-01`** re-verification — second run of the weekly
+**Last consolidated:** 2026-08-24 (**`TP-09`..`TP-11`** — second run of the weekly test-prune routine.
+Ledger prefix `TP-`. 3 vacuous tests condemned and fixed by mutation, 1 candidate cleared. Net diff: 3
+test files changed, 0 source files. See the "Test-prune sweep 2026-08-24" entry below.)
+Prior: 2026-08-23 (**`FLAG-01`** re-verification — second run of the weekly
 flag-retirement routine. Ledger prefix `FLAG-`. `pnpm test` on clean `main` initially showed 2 failures,
 both in `app/rider/(tabs)/__tests__/index.test.tsx` (a `FlatList` render timeout + a KYC-pending-state
 assertion seeing stale content); re-running that file alone came back 56/56 green, confirming full-suite
@@ -2391,6 +2394,43 @@ and the policy-layer test carries 2 boundary cases the money-layer test lacks, s
 full, duplicate); `order-offers.test.ts`'s `recommended` boolean-type check (refuted — catches a real
 numeric-vs-boolean shape regression the neighboring truthiness check can't). Full findings, every
 mutation applied verbatim, and observed outcomes are in `docs/TEST-PRUNE-2026-08-17.md`.
+
+## Test-prune sweep 2026-08-24 (weekly useless-test pruning routine) — `docs/TEST-PRUNE-2026-08-24.md`
+
+Second run of the weekly test-prune lane, continuing `TP-` numbering from the 2026-08-17 run (TP-01..08
+above). `pnpm typecheck && pnpm test` on clean `main` initially showed the same 2 failures the
+2026-08-23 `FLAG-01` re-verification already recorded, both in `app/rider/(tabs)/__tests__/index.test.tsx`
+(a `FlatList` render timeout + a KYC-pending-state assertion seeing stale content); re-running that file
+alone came back 56/56 green (confirmed again, full-suite worker-contention flake, not a defect), and a
+subsequent full `pnpm test` run also came back fully green (192/192 suites, 1569/1569 mobile tests) —
+proceeded from a confirmed-clean baseline. Three parallel read-only hunts (api; mobile; admin+merchant+
+shared), explicitly excluding every file already fixed/cleared by TP-01..08, swept every remaining test
+file for cannot-fail patterns. The scope came back unusually thin — both the mobile and the
+admin/merchant/shared hunts independently noted the suites look like they've already absorbed prior
+pruning rounds — so only 4 total candidates were shortlisted rather than padding to a target count, per
+the routine's own quality-over-quantity instruction. All 4 were investigated by actual mutation (source
+changed, target test run against the mutation, outcome recorded, mutation reverted) — never condemned or
+cleared on reading alone. 3 of the 4 condemned (below); 1 CLEARED as a false positive. `pnpm typecheck` +
+`pnpm test` green after (api unchanged, mobile 1569/1569 unchanged count, admin/merchant/shared
+unchanged). Net diff: 3 test files changed, 0 source files (every proving mutation reverted). No
+guardrail-suite test touched; no sensitive-lane test involved this run.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| TP-09 | `food-checkout.test.ts`'s "mirrors the server's own haversineKm + deliveryFeeForDistance computation" test used a fixture pair (~1.05km apart) whose real fee computes to exactly $1.50 — byte-identical to the N-01 floor value the very next test already pins — so the assertion `toBeGreaterThanOrEqual(1.5)` could not distinguish "correctly mirrors the server's per-km formula" from "always returns the floor regardless of distance." Mutation: `estimateDeliveryFee` hardcoded to always call `deliveryFeeForDistance(0)` (ignoring the real computed distance) — test still passed. | `apps/mobile/src/logic/food-checkout.ts` (`estimateDeliveryFee`), test in `apps/mobile/src/logic/__tests__/food-checkout.test.ts` | LOW (checkout price-preview only; the server's own `food-order.service.ts:placeOrder` computation is authoritative and separately tested) | **FIXED** — swapped the fixture to two points ~4.01km apart (fee lands well above the floor at exactly $3.00) and pinned the exact value with `.toBe(3)`. Confirmed failing against the mutation, passing after. |
+| TP-10 | `order-offers.test.ts`'s "best returns one entry per input..." test only checked set-membership of ids (`new Set(...)`) plus "some entry has `recommended: true`" — never the actual output order or WHICH offer was recommended, the two things `rankOffers`' price/rating/ETA blend (roadmap D-d) exists to produce. Mutation: `orderOffers`'s `ranked.map` wired to `offers[(r.index + 1) % offers.length]` (an off-by-one that silently misattributes every ranked slot to the wrong offer) — test still passed, since the mutation is a permutation of the same 3 ids and still leaves exactly one `recommended: true` somewhere. | `apps/mobile/src/logic/order-offers.ts` (`orderOffers`), test in `apps/mobile/src/logic/__tests__/order-offers.test.ts` | LOW (customer-facing offer ordering/recommendation, not a money-mutation path — a misattribution would show the wrong rider's price/ETA next to the "Recommended" badge) | **FIXED** — hand-computed the exact `rankOffers` blend for the fixture (`DEFAULT_OFFER_WEIGHTS` price .45/rating .35/eta .2) and pinned the full ordered `{id, recommended}` sequence (`c` recommended, then `a`, then `b`). Confirmed failing against the mutation (showed the exact wrong-shape diff), passing after. |
+| TP-11 | `env.spec.ts`'s "accepts strong rotation + hash secrets in production" test asserted only `expect(env.TOKEN_HASH_SECRET).toBeDefined()` — true regardless of what value `loadEnv` actually returns — where every other value-passthrough assertion in the same 200+-line file uses an exact `.toBe(...)`. Mutation: added a `.transform()` to the `TOKEN_HASH_SECRET` zod field that appends `"-corrupted"` to any defined value — all 52 tests in the file still passed (including this one, and the neighboring "rejects a weak `TOKEN_HASH_SECRET`" test, since the corrupted value is still ≥16 chars). | `apps/api/src/config/env.ts` (`TOKEN_HASH_SECRET` schema field), test in `apps/api/src/config/env.spec.ts` | LOW (config-validation test only — `TOKEN_HASH_SECRET` backs OTP/refresh-token HMAC hashing, but no production traffic path was exercised by this test either way) | **FIXED** — pinned the exact expected value `.toBe("a-strong-dedicated-hash-secret-0123456789")`. Confirmed failing against the mutation, passing after. |
+
+One additional candidate was investigated and CLEARED by mutation (not condemned — no code changes):
+`packages/shared/src/design-tokens.test.ts`'s "maps each role to a real raw-palette value (the two-layer
+contract)" test — flagged as borderline because it compares two exports of the same module to each other
+rather than to an independent expected value, and provides no protection against a raw hex value itself
+changing (that's `apps/api/src/design-tokens.drift.spec.ts`'s job per CLAUDE.md's token-conformance
+guardrail). But mutating the actual thing this test claims to guard — the role→raw MAPPING (`semantic.text.body`
+pointed at `color.muted` instead of `color.ink`) — failed immediately with a clear diff, confirming the
+test does exactly what its own name says and nothing more; the "borderline" read was scope confusion, not
+a defect. Full findings, every mutation applied verbatim, and observed outcomes are in
+`docs/TEST-PRUNE-2026-08-24.md`.
 
 ## Sentry triage 2026-08-17 — `docs/SENTRY-TRIAGE-2026-08-17.md`
 
