@@ -24,7 +24,7 @@ import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
-import { BootSplashHold } from "../src/boot/boot-splash-hold";
+import { BootSplashHold, useBootSplashRelease } from "../src/boot/boot-splash-hold";
 import ForceUpdateScreen from "./force-update";
 
 /**
@@ -192,9 +192,13 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
   // the module-scope preventAutoHideAsync() above — a frozen icon instead of a recoverable error. Today
   // expo-router's own boundary also force-hides (views/Try.tsx), but the invariant "whatever renders
   // first drops the splash" belongs next to the code that holds it, not in a framework internal.
+  // Goes through the ONE shared release (native hide + window-background reset + boot-phase end);
+  // this tree mounts outside BootPhaseProvider, where the default context's endBoot is a no-op —
+  // correct, since there is no navigator here to un-suppress.
+  const release = useBootSplashRelease();
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
+    release();
+  }, [release]);
   return (
     <SafeAreaProvider>
       <Screen>

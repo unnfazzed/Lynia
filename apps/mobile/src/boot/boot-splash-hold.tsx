@@ -1,6 +1,6 @@
 import * as SplashScreen from "expo-splash-screen";
 import { usePathname } from "expo-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { InteractionManager } from "react-native";
 import { useBootPhase } from "./boot-phase";
 import { scheduleWindowBackgroundReset } from "./window-background";
@@ -54,23 +54,47 @@ export const BOOT_HOLD_ABS_CAP_MS = 8_000;
 /** Post-commit settle bound — release even if the destination's interactions never drain. */
 export const BOOT_HOLD_SETTLE_CAP_MS = 2_000;
 
-export function BootSplashHold(): null {
-  const pathname = usePathname();
+// One native release per process, whichever caller fires first — this controller's triggers, the
+// force-update gate, or the root ErrorBoundary. A module latch rather than per-component state
+// because the cold start is a process-lifetime fact (same reasoning as window-background's latch),
+// and because idempotence across CALLERS is the point: the absolute-cap timer must not re-run the
+// side effects a screen that replaced the navigator already ran.
+let nativeReleased = false;
+
+/** Test seam: forget the one-shot latch so each test exercises a fresh cold start. */
+export function resetBootSplashReleaseForTest(): void {
+  nativeReleased = false;
+}
+
+function releaseNativeSplash(): void {
+  if (nativeReleased) return;
+  nativeReleased = true;
+  // hideAsync is a JS wrapper around a sync native call; `async` folds a sync throw into the
+  // rejection this catch already swallows. In dev/Fast Refresh the splash is long gone — no-op.
+  SplashScreen.hideAsync().catch(() => {});
+  scheduleWindowBackgroundReset();
+}
+
+/**
+ * The ONE way to end the cold-start splash — native hide + window-background reset + boot-phase end,
+ * as a single idempotent step. Everything that can stand in for the navigator during boot releases
+ * through this: `BootSplashHold` (the ordinary path), the force-update gate and the root
+ * ErrorBoundary (both replace the Stack while the pathname stays "/", so the route trigger can never
+ * fire for them). A caller outside `BootPhaseProvider` (the ErrorBoundary's own tree) gets the
+ * default context's no-op `endBoot`, which is correct — there is no navigator to un-suppress there.
+ */
+export function useBootSplashRelease(): () => void {
   const { endBoot } = useBootPhase();
-  // One release for the whole cold start, whichever trigger fires first. A ref rather than state
-  // because nothing re-renders on release — this component draws nothing either way.
-  const released = useRef(false);
-  const release = useCallback(() => {
-    if (released.current) return;
-    released.current = true;
-    // hideAsync is a JS wrapper around a sync native call; `async` folds a sync throw into the
-    // rejection this catch already swallows. In dev/Fast Refresh the splash is long gone — no-op.
-    SplashScreen.hideAsync().catch(() => {});
-    scheduleWindowBackgroundReset();
-    // Idempotent (a plain setState to false); the default context's is a no-op, so a BootSplashHold
-    // mounted without the provider (tests) still releases the splash standalone.
+  return useCallback(() => {
+    releaseNativeSplash();
+    // Idempotent (a plain setState to false) — safe to repeat after another caller released.
     endBoot();
   }, [endBoot]);
+}
+
+export function BootSplashHold(): null {
+  const pathname = usePathname();
+  const release = useBootSplashRelease();
 
   useEffect(() => {
     const t = setTimeout(release, BOOT_HOLD_ABS_CAP_MS);

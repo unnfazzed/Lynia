@@ -1,6 +1,6 @@
-import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { Linking } from "react-native";
+import { useBootSplashRelease } from "../src/boot/boot-splash-hold";
 import { STORE_URL } from "../src/config";
 import { DoveMark } from "../src/ui/Brand";
 import { ForceUpdateView } from "./force-update.view";
@@ -23,11 +23,13 @@ import { ForceUpdateView } from "./force-update.view";
 export default function ForceUpdateScreen(): React.ReactElement {
   // This screen REPLACES the Stack, so the router never leaves "/" and BootSplashHold's route
   // trigger cannot fire — without this the gate would sit under the held native splash until the
-  // absolute cap. Same belt-and-braces shape as the root ErrorBoundary: whatever renders in place of
-  // the navigator drops the splash itself. No-op when the splash is already gone.
+  // absolute cap. Whatever renders in place of the navigator releases the boot itself, through the
+  // ONE shared release (native hide + window-background reset + boot-phase end, idempotent), so the
+  // cap timer later re-firing is a no-op. No-op when the splash is already gone (warm version trip).
+  const release = useBootSplashRelease();
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
+    release();
+  }, [release]);
   return (
     <ForceUpdateView
       mark={<DoveMark size={56} on="green" />}
