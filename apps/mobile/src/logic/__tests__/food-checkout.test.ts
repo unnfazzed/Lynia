@@ -6,12 +6,11 @@ describe("estimateDeliveryFee", () => {
   });
 
   it("mirrors the server's own haversineKm + deliveryFeeForDistance computation", () => {
-    // Same two points food-order.service.spec.ts's own fixtures use — ~1.1km apart in Harare.
+    // ~4.01km apart in Harare — far enough that the fee sits above the N-01 floor, so this pins the
+    // actual per-km computation rather than a value that would also pass at the floor.
     const merchant = { lat: -17.8292, lng: 31.0522 };
-    const dropoff = { lat: -17.8200, lng: 31.0500 };
-    const fee = estimateDeliveryFee(merchant, dropoff);
-    expect(fee).not.toBeNull();
-    expect(fee).toBeGreaterThanOrEqual(1.5); // N-01's floor
+    const dropoff = { lat: -17.8, lng: 31.03 };
+    expect(estimateDeliveryFee(merchant, dropoff)).toBe(3);
   });
 
   it("never goes below the N-01 minimum for a near-zero distance", () => {

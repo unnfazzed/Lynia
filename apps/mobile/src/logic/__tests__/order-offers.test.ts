@@ -43,12 +43,15 @@ describe("orderOffers (extracted from the order screen, roadmap 3.5)", () => {
     expect(orderOffers(OFFERS, "rated" as never).map((x) => x.offer.id)).toEqual(["a", "c", "b"]);
   });
 
-  it("best returns one entry per input, each original offer once, carrying a recommended flag", () => {
+  it("best blends price/rating/eta and pins the exact rankOffers order + the one recommended offer", () => {
+    // Hand-computed from rankOffers' DEFAULT_OFFER_WEIGHTS (price .45/rating .35/eta .2) against OFFERS:
+    // score(a)=.483, score(b)=.45, score(c)=.675 → best-first c, a, b; only the top scorer is recommended.
     const r = orderOffers(OFFERS, "best");
-    expect(r).toHaveLength(OFFERS.length);
-    expect(new Set(r.map((x) => x.offer.id))).toEqual(new Set(["a", "b", "c"]));
-    expect(r.some((x) => x.recommended)).toBe(true);
-    expect(r.every((x) => typeof x.recommended === "boolean")).toBe(true);
+    expect(r.map((x) => ({ id: x.offer.id, recommended: x.recommended }))).toEqual([
+      { id: "c", recommended: true },
+      { id: "a", recommended: false },
+      { id: "b", recommended: false },
+    ]);
   });
 
   it("does not mutate the input array", () => {
