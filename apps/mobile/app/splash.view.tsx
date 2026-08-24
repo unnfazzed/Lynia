@@ -19,10 +19,13 @@ import { SPLASH_DOVE_SIZE, SPLASH_GAP, SPLASH_WORDMARK_SIZE } from "../src/ui/sp
  * 32px, tinted white for the green ground. Rendering a plain <Text> would silently substitute Inter.
  *
  * The three sizes come from `src/ui/splash-lockup.ts` rather than sitting as literals here, because
- * the NATIVE launch screen is generated from the same constants (scripts/build-splash-icon.mjs).
- * The cold start shows this picture three times — native launch screen, this view on route "/", then
- * `BootSplashHold` over the destination — and it is supposed to look like one screen that never
- * moves, which only holds if all three are drawn from one set of numbers.
+ * the NATIVE launch screen is generated from the same constants (scripts/build-splash-icon.mjs —
+ * the Android vector drawable and the iOS raster both). Since MOB-BOOT-05 the production cold start
+ * shows ONE screen — the native splash, held until the destination presents
+ * (src/boot/boot-splash-hold.tsx) — so on a real boot this view never reaches the glass. It stays as
+ * the identical fallback frame for the contexts where the native splash is already gone (dev / Fast
+ * Refresh reloads) and as the parity target for LJ.splash, which only works if it keeps drawing from
+ * the same numbers as the native asset.
  *
  * Presentational only — `app/index.tsx` renders it while the boot reads (session, onboarding flag,
  * saved role, cold-start push) are still settling. Default-exported so the parity lane can mount the

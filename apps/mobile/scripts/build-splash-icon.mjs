@@ -12,9 +12,12 @@
  *   node scripts/build-splash-icon.mjs            # write the assets
  *   node scripts/build-splash-icon.mjs --check    # fail if a committed asset has drifted
  *
- * Writes `assets/splash-icon.svg` (the generated source, committed so a reviewer can read the diff)
- * and `assets/splash-icon.png` (what `app.config.ts` hands to expo-splash-screen). Run it after
- * touching the lockup geometry or the brand paths.
+ * Writes `assets/splash-icon.svg` (the generated source, committed so a reviewer can read the diff),
+ * `assets/splash-icon.png` (the iOS storyboard image `app.config.ts` hands to expo-splash-screen)
+ * and `assets/splashscreen_logo.xml` (the Android VectorDrawable the plugin's `android.drawable`
+ * prop copies verbatim into `res/drawable/` — resolution-independent, so the density-bucket
+ * resampling that softened the PNG lane never runs on Android). Run it after touching the lockup
+ * geometry or the brand paths.
  *
  * `--check` runs in `pnpm lint` (the convention `contract-snapshot.mjs --check` already uses) and
  * covers the half a unit test cannot. `src/ui/__tests__/splash-lockup.test.ts` compares the committed
@@ -80,11 +83,14 @@ async function loadLockupModule() {
   }
 }
 
-const { splashLockupSvg, SPLASH_LOCKUP_WIDTH, SPLASH_LOCKUP_HEIGHT, SPLASH_IMAGE_WIDTH } = await loadLockupModule();
+const { splashLockupSvg, splashLogoVectorDrawableXml, SPLASH_LOCKUP_WIDTH, SPLASH_LOCKUP_HEIGHT, SPLASH_IMAGE_WIDTH } =
+  await loadLockupModule();
 
 const svg = splashLockupSvg();
+const vectorXml = splashLogoVectorDrawableXml();
 const svgPath = path.join(mobileRoot, "assets/splash-icon.svg");
 const pngPath = path.join(mobileRoot, "assets/splash-icon.png");
+const vectorPath = path.join(mobileRoot, "assets/splashscreen_logo.xml");
 
 // Transparent ground: expo-splash-screen composites this over its own `backgroundColor`, so the
 // green must NOT be baked in — see the note on splashLockupSvg().
@@ -142,6 +148,13 @@ if (CHECK_ONLY) {
   if (committedSvg === null) fail("assets/splash-icon.svg is missing");
   if (committedSvg !== svg) fail("assets/splash-icon.svg has drifted from src/ui/splash-lockup.ts");
 
+  // The vector is byte-comparable (it never goes through a rasteriser), so the check is equality —
+  // the same contract as the SVG. It is ALSO covered by splash-lockup.test.ts; this duplicates that
+  // check only because --check is what runs when jest doesn't (the lint lane).
+  const committedVector = await readFile(vectorPath, "utf8").catch(() => null);
+  if (committedVector === null) fail("assets/splashscreen_logo.xml is missing");
+  if (committedVector !== vectorXml) fail("assets/splashscreen_logo.xml has drifted from src/ui/splash-lockup.ts");
+
   const committedPng = await readFile(pngPath).catch(() => null);
   if (committedPng === null) fail("assets/splash-icon.png is missing");
 
@@ -157,12 +170,13 @@ if (CHECK_ONLY) {
     fail(`assets/splash-icon.png does not match the lockup (mean channel drift ${drift.toFixed(3)})`);
   }
   console.log(
-    `splash-icon --check: OK — svg matches the module, png matches the lockup ` +
+    `splash-icon --check: OK — svg and vector drawable match the module, png matches the lockup ` +
       `(drift ${drift.toFixed(3)}, tolerance ${PIXEL_TOLERANCE})`,
   );
 } else {
   await writeFile(svgPath, svg);
   await writeFile(pngPath, png);
+  await writeFile(vectorPath, vectorXml);
 
   const { width: outWidth, height: outHeight } = await sharp(png).metadata();
   console.log(

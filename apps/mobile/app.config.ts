@@ -123,6 +123,24 @@ const config: ExpoConfig = {
     : { enabled: false },
   orientation: "portrait",
   userInterfaceStyle: "light",
+  /**
+   * The Android window background (`AppTheme` → `android:windowBackground`, via prebuild's
+   * `activityBackground` colour) and the iOS root-view background — the surface that shows whenever
+   * the window is visible with no React frame on it yet. Expo's default is WHITE, and it was the
+   * only white surface in the entire cold start (every app-controlled frame is brand green or
+   * accentWash), so the intermittently reported white flash between the splash and the destination
+   * (2026-08-24) could only be this: the native splash dismissing a few frames before the RN
+   * surface presented. Brand green makes that gap invisible — the boot literally cannot show a
+   * non-green frame any more, whatever the timing.
+   *
+   * Boot-scoped by RUNTIME flip, not by theme: once the destination screen is on glass the window
+   * background resets to the app's white (src/boot/window-background.ts, called from the boot
+   * release) so a keyboard resize on a white screen can never expose a green strip. #00B14F =
+   * tokens.color.accent (same literal convention as the splash plugin below).
+   *
+   * NATIVE (theme + colors resource) — ships only in a store build, not by OTA.
+   */
+  backgroundColor: "#00B14F",
   platforms: ["android", "ios"],
   /**
    * React Native's New Architecture (Fabric + TurboModules) — OFF, reverted 2026-08-21 (MOB-BOOT-04).
@@ -189,24 +207,42 @@ const config: ExpoConfig = {
       "expo-splash-screen",
       // The native splash IS the design's splash (journey 0·1, screens.jsx `Splash`): full-bleed
       // brand green with the white dove AND the LyniaGo wordmark under it — the identical picture
-      // app/splash.view.tsx paints once JS is up, so the native→JS handoff is a visual no-op.
+      // app/splash.view.tsx paints, so the native frame and the JS tree are one design.
       //
       // It did not used to be. splash-icon.png was the bare dove, so the wordmark APPEARED at the
       // handoff and the (vertically centred) mark jumped up by half the wordmark block — an
-      // animation in a boot sequence that is supposed to have none. The asset is now the whole
-      // lockup, generated from the same geometry the RN tree renders
-      // (src/ui/splash-lockup.ts → scripts/build-splash-icon.mjs), with a test failing on drift.
+      // animation in a boot sequence that is supposed to have none. Both assets are generated from
+      // the same geometry the RN tree renders (src/ui/splash-lockup.ts →
+      // scripts/build-splash-icon.mjs), with a test failing on drift.
       //
-      // imageWidth is the lockup's HEIGHT (154), not its width, and that is not a typo: the plugin
-      // fits the image `contain` into a SQUARE imageWidth×imageWidth box centred on a 288dp canvas
-      // (@expo/prebuild-config .../withAndroidSplashImages.js). The lockup is taller than it is
-      // wide, so its height is what the box side has to be; passing the width would render every
-      // element ~22% small against the JS frame that replaces it. Keep it equal to
-      // SPLASH_IMAGE_WIDTH — the splash-lockup test pins the pair.
+      // ANDROID RENDERS A VECTOR, NOT THE PNG (MOB-BOOT-05). The PNG lane was resampled twice
+      // between the committed asset and the screen — prebuild's density-bucket resize
+      // (@expo/image-utils falls back to Jimp bilinear without sharp-cli, the EAS-worker case) and
+      // Android 12+'s display-time icon scaling — so the boot's first frame rendered visibly softer
+      // than the vector JS frame (reported 2026-08-24). `android.drawable` hands the plugin a
+      // VectorDrawable copied VERBATIM to res/drawable/splashscreen_logo.xml, skipping PNG
+      // generation entirely (verified against @expo/prebuild-config@8.2.0 withAndroidSplashImages —
+      // the `config.drawable` early return): the OS rasterises the same paths react-native-svg
+      // draws, at the screen's own resolution. With `drawable` set the plugin ignores `imageWidth`
+      // on Android; size comes from the drawable's intrinsic 288dp canvas (the same canvas the PNG
+      // pipeline composed, so on-screen geometry is unchanged — see splashLogoVectorDrawableXml).
+      //
+      // iOS has no drawable seam (the storyboard wants an image), so `image` + `imageWidth` stay
+      // for it. imageWidth is the lockup's HEIGHT (154), not its width, and that is not a typo: the
+      // storyboard lane fits the image `contain` into a SQUARE imageWidth×imageWidth box. The
+      // lockup is taller than it is wide, so its height is what the box side has to be; passing the
+      // width would render every element ~22% small against the JS frame that replaces it. Keep it
+      // equal to SPLASH_IMAGE_WIDTH — the splash-lockup test pins the pair.
       //
       // #00B14F = tokens.color.accent (native config can't read the TS tokens; same literal
       // convention as expo-notifications' color below).
-      { image: "./assets/splash-icon.png", imageWidth: 154, resizeMode: "contain", backgroundColor: "#00B14F" },
+      {
+        image: "./assets/splash-icon.png",
+        imageWidth: 154,
+        resizeMode: "contain",
+        backgroundColor: "#00B14F",
+        android: { drawable: { icon: "./assets/splashscreen_logo.xml" } },
+      },
     ],
     [
       "expo-location",

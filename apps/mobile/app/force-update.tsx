@@ -1,4 +1,5 @@
-import React from "react";
+import * as SplashScreen from "expo-splash-screen";
+import React, { useEffect } from "react";
 import { Linking } from "react-native";
 import { STORE_URL } from "../src/config";
 import { DoveMark } from "../src/ui/Brand";
@@ -20,6 +21,13 @@ import { ForceUpdateView } from "./force-update.view";
  * The primary hides when no store URL is configured rather than opening a dead link.
  */
 export default function ForceUpdateScreen(): React.ReactElement {
+  // This screen REPLACES the Stack, so the router never leaves "/" and BootSplashHold's route
+  // trigger cannot fire — without this the gate would sit under the held native splash until the
+  // absolute cap. Same belt-and-braces shape as the root ErrorBoundary: whatever renders in place of
+  // the navigator drops the splash itself. No-op when the splash is already gone.
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
   return (
     <ForceUpdateView
       mark={<DoveMark size={56} on="green" />}

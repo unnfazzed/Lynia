@@ -1,26 +1,30 @@
 /**
- * BootSplashHold — the cold-start splash hold (RCA 2026-08-17 §1.2 full fix). The contract worth
- * pinning is the two-sided guarantee: the green frame stays up until the FIRST real screen's frame
- * settles (dismiss-on-ANY-route — no per-screen cooperation), and it can NEVER strand — a settle cap
- * bounds a route whose interactions never drain, and an absolute cap bounds everything else.
+ * BootSplashHold — the cold-start hold on the NATIVE splash (MOB-BOOT-05: the boot is ONE screen).
+ * The contract worth pinning is the two-sided guarantee: the native splash stays up until the FIRST
+ * real screen's frame settles (dismiss-on-ANY-route — no per-screen cooperation), and it can NEVER
+ * strand — a settle cap bounds a route whose interactions never drain, and an absolute cap bounds
+ * everything else. Releasing must do all three things exactly once: hide the native splash, end the
+ * boot phase (the transition suppression), and schedule the window-background green→white reset.
  */
+import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { controlInteractions, type InteractionControl } from "../../src/testing/interactions";
+import { controlInteractions, type InteractionControl } from "../../testing/interactions";
 
 let mockPathname = "/";
 jest.mock("expo-router", () => ({ usePathname: () => mockPathname }));
 
-// SplashView pulls the Brand SVG tree; a marker stub keeps this test about the HOLD logic.
-jest.mock("../splash.view", () => {
-  const React_ = require("react");
-  const { Text: Text_ } = require("react-native");
-  return { SplashView: () => React_.createElement(Text_, null, "SPLASH-FRAME") };
-});
+const mockHideAsync = jest.fn(async () => true);
+jest.mock("expo-splash-screen", () => ({ hideAsync: () => mockHideAsync() }));
 
-import { BOOT_HOLD_ABS_CAP_MS, BOOT_HOLD_SETTLE_CAP_MS, BootSplashHold } from "../boot-splash-hold.view";
-import { BootPhaseProvider, useBootPhase } from "../../src/boot/boot-phase";
+const mockScheduleReset = jest.fn();
+jest.mock("../window-background", () => ({
+  scheduleWindowBackgroundReset: () => mockScheduleReset(),
+}));
 
-const shown = (tree: renderer.ReactTestRenderer): boolean => JSON.stringify(tree.toJSON() ?? "").includes("SPLASH-FRAME");
+import { BOOT_HOLD_ABS_CAP_MS, BOOT_HOLD_SETTLE_CAP_MS, BootSplashHold } from "../boot-splash-hold";
+import { BootPhaseProvider, useBootPhase } from "../boot-phase";
+
+const released = (): boolean => mockHideAsync.mock.calls.length > 0;
 
 let interactions: InteractionControl;
 let rafQueue: ((time: number) => void)[];
@@ -35,6 +39,8 @@ beforeEach(() => {
     return rafQueue.length;
   }) as never);
   mockPathname = "/";
+  mockHideAsync.mockClear();
+  mockScheduleReset.mockClear();
 });
 afterEach(() => {
   rafSpy.mockRestore();
@@ -58,12 +64,18 @@ const flushFrame = (): void => {
 };
 
 describe("BootSplashHold", () => {
-  it("holds the splash frame while the boot route is still current", () => {
+  it("holds the native splash while the boot route is still current", () => {
     const tree = render();
-    expect(shown(tree)).toBe(true);
+    expect(released()).toBe(false);
     // Frames pass on the splash route itself — that must not release anything.
     flushFrame();
-    expect(shown(tree)).toBe(true);
+    expect(released()).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("renders nothing — the one screen the user sees is the native splash, not a JS copy", () => {
+    const tree = render();
+    expect(tree.toJSON()).toBeNull();
     act(() => tree.unmount());
   });
 
@@ -74,9 +86,11 @@ describe("BootSplashHold", () => {
       tree.update(<BootSplashHold />);
     });
     // Committed but not yet presented: still held.
-    expect(shown(tree)).toBe(true);
+    expect(released()).toBe(false);
     flushFrame();
-    expect(shown(tree)).toBe(false);
+    expect(released()).toBe(true);
+    // The release is one atomic step: splash gone AND the window-background reset scheduled.
+    expect(mockScheduleReset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 
@@ -89,16 +103,16 @@ describe("BootSplashHold", () => {
     act(() => {
       jest.advanceTimersByTime(BOOT_HOLD_SETTLE_CAP_MS + 1);
     });
-    expect(shown(tree)).toBe(false);
+    expect(released()).toBe(true);
     act(() => tree.unmount());
   });
 
-  it("absolute cap: can never strand a green screen, whatever the router does", () => {
+  it("absolute cap: can never strand the splash, whatever the router does", () => {
     const tree = render();
     act(() => {
       jest.advanceTimersByTime(BOOT_HOLD_ABS_CAP_MS + 1);
     });
-    expect(shown(tree)).toBe(false);
+    expect(released()).toBe(true);
     act(() => tree.unmount());
   });
 
@@ -125,14 +139,14 @@ describe("BootSplashHold", () => {
     act(() => {
       tree = renderer.create(mount());
     });
-    expect(seen.at(-1)).toBe(true); // still booting while the green frame is up
+    expect(seen.at(-1)).toBe(true); // still booting while the splash is up
     mockPathname = "/home";
     act(() => {
       tree.update(mount());
     });
     expect(seen.at(-1)).toBe(true); // committed but not presented — still suppressing
     flushFrame();
-    expect(shown(tree)).toBe(false);
+    expect(released()).toBe(true);
     expect(seen.at(-1)).toBe(false); // destination is on screen: animations restored
     act(() => tree.unmount());
   });
@@ -159,19 +173,24 @@ describe("BootSplashHold", () => {
     act(() => tree.unmount());
   });
 
-  it("once released it stays released — warm navigation never resurrects it", () => {
+  it("releases exactly once — later navigations and the caps can never double-fire it", () => {
     const tree = render();
     mockPathname = "/home";
     act(() => {
       tree.update(<BootSplashHold />);
     });
     flushFrame();
-    expect(shown(tree)).toBe(false);
+    expect(mockHideAsync).toHaveBeenCalledTimes(1);
     mockPathname = "/send";
     act(() => {
       tree.update(<BootSplashHold />);
     });
-    expect(shown(tree)).toBe(false);
+    flushFrame();
+    act(() => {
+      jest.advanceTimersByTime(BOOT_HOLD_ABS_CAP_MS + 1);
+    });
+    expect(mockHideAsync).toHaveBeenCalledTimes(1);
+    expect(mockScheduleReset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });
