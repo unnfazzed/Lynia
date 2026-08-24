@@ -21,7 +21,12 @@ jest.mock("../window-background", () => ({
   scheduleWindowBackgroundReset: () => mockScheduleReset(),
 }));
 
-import { BOOT_HOLD_ABS_CAP_MS, BOOT_HOLD_SETTLE_CAP_MS, BootSplashHold } from "../boot-splash-hold";
+import {
+  BOOT_HOLD_ABS_CAP_MS,
+  BOOT_HOLD_SETTLE_CAP_MS,
+  BootSplashHold,
+  resetBootSplashReleaseForTest,
+} from "../boot-splash-hold";
 import { BootPhaseProvider, useBootPhase } from "../boot-phase";
 
 const released = (): boolean => mockHideAsync.mock.calls.length > 0;
@@ -41,6 +46,7 @@ beforeEach(() => {
   mockPathname = "/";
   mockHideAsync.mockClear();
   mockScheduleReset.mockClear();
+  resetBootSplashReleaseForTest();
 });
 afterEach(() => {
   rafSpy.mockRestore();
