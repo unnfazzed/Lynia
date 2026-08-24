@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.2](https://github.com/unnfazzed/Lynia/compare/v0.48.1...v0.48.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* retire the disconnected WALLET_REVEAL wallet-visibility kill switch (FLAG-01) ([#885](https://github.com/unnfazzed/Lynia/issues/885)) ([d2efa6b](https://github.com/unnfazzed/Lynia/commit/d2efa6b890b2cc0c70df3225786021dee4116a76))
+
 ## [0.48.1](https://github.com/unnfazzed/Lynia/compare/v0.48.0...v0.48.1) (2026-08-24)
 
 
