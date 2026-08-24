@@ -1095,6 +1095,48 @@
 > nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
 > exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
+> **Status (2026-08-24 — v0.48.3 shipped to the internal track on an explicit "deploy app to expo
+> build and playstore internal testing" request; clean first-attempt run.)**
+>
+> **Ownership guards ran rather than were assumed**, per `CLAUDE.md`: no open PRs
+> (`list_pull_requests` empty), no in-flight `mobile-release.yml` run (last was run #39, completed
+> 2026-08-22 13:57 UTC), CI green on the dispatched commit (run `32711756664` on `main`@`915ef03`,
+> release-please `chore(main): release 0.48.3` merging #888), and `pnpm install --frozen-lockfile`
+> clean on pnpm 10.33.0 with `pnpm-lock.yaml`/`apps/mobile/eas.json` unmoved against
+> `origin/main`@`915ef03`.
+>
+> **Why the mobile build was genuinely due.** Since the last shipped build (`3af39eeb`, v0.48.0 at
+> `b72210f`), `apps/mobile` picked up the cold-start single-native-splash fix (MOB-BOOT-05, #887),
+> the idempotent boot-splash release refactor shared by the hold/force-update gate/error boundary
+> (#889), and the CF-04..CF-06 malformed-array crash fixes (#883). Real boot-path changes, not a
+> version-string bump.
+>
+> Dispatched `mobile-release.yml` run #40 (`32719656727`) explicitly with **`profile: preview`,
+> `submit: true`** — never the bare/default dispatch, per the standing warning above and the
+> 2026-08-16 incident. Ref `main`@`915ef03b371b3e56f76b5bc80791df6655840cfe` (app version
+> **0.48.3**). The dispatcher job succeeded in 56 s (11:00:45 → 11:01:41 UTC), which under
+> `--no-wait` proves only that the build was queued.
+>
+> EAS build `6c692598-4ca7-4757-8598-3e853c578019` (profile `preview`, created 11:01:35 UTC, app
+> version **0.48.3**, **versionCode 32** auto-incremented from 31 — captured from the dispatcher
+> log this time) reached **FINISHED**: 596.3 s Gradle build, signed `.aab` **33.7 MB** raw
+> pre-split. Its submission `02025b8d-e00f-4051-ac71-0370473b8542` reached **FINISHED**, track
+> **`internal`**, no error — confirmed via `eas-build-status.yml` run `32721848196`, ~25 minutes
+> after dispatch, no retries needed. The dispatcher log's submit config showed the preview lane
+> exactly as expected: `Release track: internal`, `Rollout: undefined` — not the production
+> profile's staged rollout.
+>
+> **The `runtime=?` gap first recorded 2026-08-16 is still open** — the Recap again rendered
+> `runtime=?` for every listed build, so this run cannot confirm the runtimeVersion fingerprint
+> held. The data was not returned; that is not evidence it changed. Still out of scope for a
+> ship-and-track request.
+>
+> **What this run does NOT establish** — unchanged from every entry since 2026-08-12: still the
+> **internal** track only; `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design;
+> §8 step 2 (closed test, its mandatory ~14-day clock, production access) remains untouched and
+> nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
+> exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
