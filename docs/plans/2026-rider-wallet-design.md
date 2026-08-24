@@ -306,8 +306,9 @@ Wallet. Wallet's hierarchy: balance hero (surface treatment analogous to the ear
 hero; `--danger-wash` variant when negative) → **Top up** primary pill (`--cta-fill`,
 52px, the screen's ONE primary CTA) → receipt history (`Card` rows) → honest-copy
 info card (highlight-wash, reusing the existing earnings explainer slot). One money
-number per screen; the gate state deep-links straight into Wallet. The reveal flag
-(OV#5) toggles exactly the Earnings row + the Wallet route.
+number per screen; the gate state deep-links straight into Wallet. **Retired (`FLAG-01`,
+2026-08-24):** the reveal flag (OV#5) that used to gate the Earnings row + the Wallet route
+is gone — both are unconditionally visible now (see the OV#5 addendum above).
 
 **Interaction-state coverage** (extends the DESIGN.md table; states describe what the
 rider SEES). **AMENDED 2026-07-16/17 (DOC-16-02):** the `Top-up (EcoCash)` and
@@ -318,7 +319,7 @@ support" instruction card. Kept for reference:
 ```
 FEATURE          | LOADING             | EMPTY                        | ERROR                        | SUCCESS                    | PARTIAL
 -----------------|---------------------|------------------------------|------------------------------|----------------------------|------------------
-Wallet screen    | SkeletonRows        | reveal first-open: balance   | offline → cached balance +   | balance + receipts render  | stale cache label
+Wallet screen    | SkeletonRows        | first-open: balance          | offline → cached balance +   | balance + receipts render  | stale cache label
                  |                     | pre-seeded w/ grace credit,  | OfflineBanner + "last saved" |                            | ("as of Tue 14:02")
                  |                     | warm copy (below)            | label; retry                 |                            |
 Receipt history  | SkeletonRows        | "Your commission history     | load fail → retry card       | show-the-math rows         | pagination as
