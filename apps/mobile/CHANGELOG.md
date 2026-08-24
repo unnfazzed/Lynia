@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.3](https://github.com/unnfazzed/Lynia/compare/v0.48.2...v0.48.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* **mobile:** cold start is one native splash — vector logo, green window background, held to destination (MOB-BOOT-05) ([2459823](https://github.com/unnfazzed/Lynia/commit/24598239fd075de47114ba62faa5b9a6ff21204d))
+
 ## [0.48.2](https://github.com/unnfazzed/Lynia/compare/v0.48.1...v0.48.2) (2026-08-24)
 
 
