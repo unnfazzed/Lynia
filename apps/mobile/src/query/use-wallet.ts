@@ -3,18 +3,18 @@ import type { CommissionConfig, Wallet, WalletEntry } from "@lynia/shared";
 import { getWallet, getWalletConfig, getWalletLedger } from "../api/wallet";
 
 /**
- * Wallet data hooks. The config drives feature visibility (the Earnings row + the Wallet route), so it's
- * cheap to read app-wide and cached a little longer than the balance. Balance + ledger revalidate on
- * reconnect via the shared query client defaults; the wallet SCREEN additionally refetches on focus and
- * exposes pull-to-refresh (the global client sets refetchOnWindowFocus:false), so a support-credit shows
- * up as soon as the rider returns to the screen.
+ * Wallet data hooks. The config carries the commission rate + policy, so it's cheap to read app-wide
+ * and cached a little longer than the balance. Balance + ledger revalidate on reconnect via the shared
+ * query client defaults; the wallet SCREEN additionally refetches on focus and exposes pull-to-refresh
+ * (the global client sets refetchOnWindowFocus:false), so a support-credit shows up as soon as the
+ * rider returns to the screen.
  */
 
 export const walletConfigKey = ["wallet", "config"] as const;
 export const walletKey = ["wallet", "balance"] as const;
 export const walletLedgerKey = ["wallet", "ledger"] as const;
 
-/** The commission feature flag + policy. Longer staleTime — it changes only at the flip. */
+/** The commission rate + policy. Longer staleTime — it changes only at the flip. */
 export function useWalletConfig(): { config: CommissionConfig | undefined; isLoading: boolean } {
   const q = useQuery({ queryKey: walletConfigKey, queryFn: getWalletConfig, staleTime: 5 * 60_000 });
   return { config: q.data, isLoading: q.isLoading };

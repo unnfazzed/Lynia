@@ -301,13 +301,6 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.coerce.number().min(0).max(100).default(10),
   ),
-  // Server-driven wallet visibility flag (design OV-5A). Controls the rider-facing wallet surfaces
-  // (Earnings balance row + Wallet route); the rate flip (>0) also reveals them regardless. **Default
-  // on** (product decision 2026-07-15): the wallet is shown from launch even at 0% commission — riders
-  // see their $0 prepaid balance and the honest "no commission yet" copy, and no one is gated
-  // (`commission_low_balance` only fires once the rate is > 0, so visibility never blocks going online).
-  // Set to "false" to hide it again (a kill-switch). "true"/"false".
-  WALLET_REVEAL: z.enum(["true", "false"]).default("true"),
   // --- Non-core kill switches (roadmap 3.1) ---
   // NON-CORE surface kill switch. The in-app notifications feed (GET /notifications/feed) is derived
   // from ~9 reads per open; it is NOT on the money path (browse → bid → accept → pay → settle). If it

@@ -79,13 +79,9 @@ describe("loadEnv — OTP send caps", () => {
 });
 
 describe("loadEnv — commission wallet", () => {
-  it("reveals the wallet by default (visible from launch, even at 0% commission)", () => {
+  it("has no default commission rate override (COMMISSION_RATE_PCT unset until the flip)", () => {
     const env = loadEnv({ ...base });
-    expect(env.WALLET_REVEAL).toBe("true");
     expect(env.COMMISSION_RATE_PCT).toBeUndefined();
-  });
-  it("still accepts an explicit kill-switch to hide it", () => {
-    expect(loadEnv({ ...base, WALLET_REVEAL: "false" }).WALLET_REVEAL).toBe("false");
   });
 });
 

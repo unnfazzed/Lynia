@@ -77,7 +77,7 @@ function harness(topUp: TopUp, startBalance = 0, metrics?: MetricsService) {
     },
   } as unknown as PrismaService;
 
-  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10, WALLET_REVEAL: "false" } as unknown as Env, prisma, undefined, metrics);
+  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10 } as unknown as Env, prisma, undefined, metrics);
   return { svc, state, setFailLedgerCreate: (v: boolean) => { failLedgerCreate = v; } };
 }
 

@@ -268,7 +268,14 @@ reference to the settlement era):
    not the default-hidden gate this paragraph originally specified. Admin surfaces, the
    ledger, shadow
    metrics and every backend path are live from day one regardless; internal/test
-   riders can be flagged visible earlier to exercise the UI.
+   riders can be flagged visible earlier to exercise the UI. **Superseded again (`FLAG-01`,
+   2026-08-24):** the kill-switch described above was never actually wired to anything —
+   the RJM one-app tab merge retired conditional tab visibility and no mobile code ever read
+   the resulting `CommissionConfig.enabled`, so `WALLET_REVEAL=false` stopped hiding anything
+   without anyone noticing. Found by the 2026-08-16 flag-retirement routine, ledgered, and
+   deleted once an owner ship-or-delete call landed — see `docs/KNOWN_BUGS.md` `FLAG-01` and
+   `docs/FLAG-RETIREMENT-2026-08-16.md`. The wallet is now unconditionally visible with no
+   server-side visibility switch at all; only the rate (`ratePct`) is still server-driven.
    **Collection-integrity metrics (CEO review OV#2):** the metrics layer also tracks
    declared-fare distribution over time, repeat-pair average-fare trend (does a
    matched customer–rider pair's declared fare fall after the flip?), and matched-pair
