@@ -268,7 +268,14 @@ reference to the settlement era):
    not the default-hidden gate this paragraph originally specified. Admin surfaces, the
    ledger, shadow
    metrics and every backend path are live from day one regardless; internal/test
-   riders can be flagged visible earlier to exercise the UI.
+   riders can be flagged visible earlier to exercise the UI. **Superseded again (`FLAG-01`,
+   2026-08-24):** the kill-switch described above was never actually wired to anything —
+   the RJM one-app tab merge retired conditional tab visibility and no mobile code ever read
+   the resulting `CommissionConfig.enabled`, so `WALLET_REVEAL=false` stopped hiding anything
+   without anyone noticing. Found by the 2026-08-16 flag-retirement routine, ledgered, and
+   deleted once an owner ship-or-delete call landed — see `docs/KNOWN_BUGS.md` `FLAG-01` and
+   `docs/FLAG-RETIREMENT-2026-08-16.md`. The wallet is now unconditionally visible with no
+   server-side visibility switch at all; only the rate (`ratePct`) is still server-driven.
    **Collection-integrity metrics (CEO review OV#2):** the metrics layer also tracks
    declared-fare distribution over time, repeat-pair average-fare trend (does a
    matched customer–rider pair's declared fare fall after the flip?), and matched-pair
@@ -299,8 +306,9 @@ Wallet. Wallet's hierarchy: balance hero (surface treatment analogous to the ear
 hero; `--danger-wash` variant when negative) → **Top up** primary pill (`--cta-fill`,
 52px, the screen's ONE primary CTA) → receipt history (`Card` rows) → honest-copy
 info card (highlight-wash, reusing the existing earnings explainer slot). One money
-number per screen; the gate state deep-links straight into Wallet. The reveal flag
-(OV#5) toggles exactly the Earnings row + the Wallet route.
+number per screen; the gate state deep-links straight into Wallet. **Retired (`FLAG-01`,
+2026-08-24):** the reveal flag (OV#5) that used to gate the Earnings row + the Wallet route
+is gone — both are unconditionally visible now (see the OV#5 addendum above).
 
 **Interaction-state coverage** (extends the DESIGN.md table; states describe what the
 rider SEES). **AMENDED 2026-07-16/17 (DOC-16-02):** the `Top-up (EcoCash)` and
@@ -311,7 +319,7 @@ support" instruction card. Kept for reference:
 ```
 FEATURE          | LOADING             | EMPTY                        | ERROR                        | SUCCESS                    | PARTIAL
 -----------------|---------------------|------------------------------|------------------------------|----------------------------|------------------
-Wallet screen    | SkeletonRows        | reveal first-open: balance   | offline → cached balance +   | balance + receipts render  | stale cache label
+Wallet screen    | SkeletonRows        | first-open: balance          | offline → cached balance +   | balance + receipts render  | stale cache label
                  |                     | pre-seeded w/ grace credit,  | OfflineBanner + "last saved" |                            | ("as of Tue 14:02")
                  |                     | warm copy (below)            | label; retry                 |                            |
 Receipt history  | SkeletonRows        | "Your commission history     | load fail → retry card       | show-the-math rows         | pagination as

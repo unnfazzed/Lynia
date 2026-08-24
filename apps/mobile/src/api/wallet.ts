@@ -1,7 +1,7 @@
 import type { CommissionConfig, CreateTopupRequest, Topup, Wallet, WalletLedgerPage } from "@lynia/shared";
 import { apiFetch } from "./client";
 
-/** The commission feature flag + policy (server-authoritative — the app never hardcodes a rate). */
+/** The commission rate + policy (server-authoritative — the app never hardcodes a rate). */
 export function getWalletConfig(): Promise<CommissionConfig> {
   return apiFetch("/wallet/config");
 }

@@ -77,15 +77,9 @@ export class WalletService {
     return resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT);
   }
 
-  /** Whether the rider-facing wallet surfaces are revealed: the reveal flag, or once the rate flips. */
-  get walletEnabled(): boolean {
-    return this.env.WALLET_REVEAL === "true" || isCommissionActive(this.ratePct);
-  }
-
-  /** The feature flag + policy every client reads (server-authoritative — clients never hardcode a rate). */
+  /** The commission rate + policy every client reads (server-authoritative — clients never hardcode a rate). */
   getConfig(): CommissionConfig {
     return {
-      enabled: this.walletEnabled,
       ratePct: this.ratePct,
       floor: COMMISSION.lowBalanceBlockBelow,
       graceCredit: COMMISSION.graceCredit,

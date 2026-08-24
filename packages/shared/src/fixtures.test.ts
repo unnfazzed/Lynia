@@ -117,7 +117,7 @@ describe("fixtures parse against their shared zod contracts", () => {
 
   it("makeCommissionConfig → CommissionConfig (.strict), inert by default and when flipped on", () => {
     expect(CommissionConfig.parse(makeCommissionConfig())).toEqual(makeCommissionConfig());
-    const active = makeCommissionConfig({ enabled: true, ratePct: 12.5 });
+    const active = makeCommissionConfig({ ratePct: 12.5 });
     expect(CommissionConfig.parse(active)).toEqual(active);
   });
 });

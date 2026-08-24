@@ -234,13 +234,13 @@ export function makeTopup(overrides?: Partial<Topup>): Topup {
 }
 
 /**
- * The wallet feature-flag + policy config — parses against `CommissionConfig` (`.strict()`). Defaults
- * to the launch-inert state (`enabled: false`, `ratePct: 0`) so a fixture consumer opts INTO an active
+ * The wallet commission rate + policy config — parses against `CommissionConfig` (`.strict()`).
+ * Defaults to the launch-inert rate (`ratePct: 0`) so a fixture consumer opts INTO an active
  * commission regime explicitly.
  */
 export function makeCommissionConfig(overrides?: Partial<CommissionConfig>): CommissionConfig {
   return make<CommissionConfig>(
-    { enabled: false, ratePct: 0, floor: 2, graceCredit: 1, minTopUp: 1, maxTopUp: 100 },
+    { ratePct: 0, floor: 2, graceCredit: 1, minTopUp: 1, maxTopUp: 100 },
     overrides,
   );
 }

@@ -8,7 +8,7 @@ import { WalletService } from "./wallet.service";
 
 /** A WalletService over a stub prisma + the given env overrides. Only the fields a test touches exist. */
 function build(env: Partial<Env> = {}, prisma: Record<string, unknown> = {}, notifications?: NotificationsService) {
-  const fullEnv = { COMMISSION_SHADOW_RATE_PCT: 10, WALLET_REVEAL: "false", WALLET_MANUAL_CREDIT_CAP_USD: 50, ...env } as unknown as Env;
+  const fullEnv = { COMMISSION_SHADOW_RATE_PCT: 10, WALLET_MANUAL_CREDIT_CAP_USD: 50, ...env } as unknown as Env;
   return new WalletService(fullEnv, prisma as unknown as PrismaService, notifications);
 }
 
@@ -52,23 +52,20 @@ describe("perRideCommission (reads the resolved rate, not a constant)", () => {
 });
 
 describe("WalletService.getConfig (server-authoritative)", () => {
-  it("is disabled at 0% with the reveal flag off (pre-flip riders see no commission)", () => {
-    const cfg = build({ COMMISSION_RATE_PCT: undefined, WALLET_REVEAL: "false" } as Partial<Env>).getConfig();
-    expect(cfg.enabled).toBe(false);
+  it("serves the launch rate + policy at 0% (pre-flip)", () => {
+    const cfg = build({ COMMISSION_RATE_PCT: undefined } as Partial<Env>).getConfig();
     expect(cfg.ratePct).toBe(0);
     expect(cfg.floor).toBe(COMMISSION.lowBalanceBlockBelow);
     expect(cfg.minTopUp).toBe(COMMISSION.minTopUp);
     expect(cfg.maxTopUp).toBe(COMMISSION.maxTopUp);
   });
-  it("reveals early for internal/test riders via the reveal flag, still at 0%", () => {
-    const cfg = build({ WALLET_REVEAL: "true" } as Partial<Env>).getConfig();
-    expect(cfg.enabled).toBe(true);
-    expect(cfg.ratePct).toBe(0);
-  });
-  it("auto-reveals and serves the resolved rate once the flip happens", () => {
+  it("serves the resolved rate once the flip happens", () => {
     const cfg = build({ COMMISSION_RATE_PCT: 10 } as Partial<Env>).getConfig();
-    expect(cfg.enabled).toBe(true);
     expect(cfg.ratePct).toBe(10);
+  });
+  it("returns exactly the rate/policy fields — no stray `enabled` (or any other) field survives a future regression", () => {
+    const cfg = build().getConfig();
+    expect(Object.keys(cfg).sort()).toEqual(["floor", "graceCredit", "maxTopUp", "minTopUp", "ratePct"]);
   });
 });
 

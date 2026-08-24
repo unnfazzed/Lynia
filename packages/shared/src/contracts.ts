@@ -641,15 +641,13 @@ export type TopupStatus = z.infer<typeof TopupStatus>;
 export const TOPUP_WINDOW_MS = 90_000;
 
 /**
- * `GET /wallet/config` — the feature flag + policy the whole wallet UI reads (design decision 2A:
- * server-authoritative). `enabled` gates every rider-facing surface (Earnings row + Wallet route);
- * pre-flip it is false and the rider sees no commission anywhere. `ratePct` is the resolved live rate
- * (the env "flip" value, not the bundled constant) — all client-side money maths read it, never a
- * hardcoded percentage. `floor` = the go-online balance floor; `graceCredit` = the flip starting credit.
+ * `GET /wallet/config` — the commission rate + policy the whole wallet UI reads (design decision 2A:
+ * server-authoritative). `ratePct` is the resolved live rate (the env "flip" value, not the bundled
+ * constant) — all client-side money maths read it, never a hardcoded percentage. `floor` = the
+ * go-online balance floor; `graceCredit` = the flip starting credit.
  */
 export const CommissionConfig = z
   .object({
-    enabled: z.boolean(),
     ratePct: z.number().min(0).max(100),
     floor: z.number().nonnegative(),
     graceCredit: z.number().nonnegative(),
