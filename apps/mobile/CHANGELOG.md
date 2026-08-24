@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/unnfazzed/Lynia/compare/v0.48.0...v0.48.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* execute UI-PARITY-AUDIT-2026-08-23 findings (UIP-01..06) ([11ae7b0](https://github.com/unnfazzed/Lynia/commit/11ae7b02d20d3560ae52683e2ec20cfe29b228a8))
+
 ## [0.48.0](https://github.com/unnfazzed/Lynia/compare/v0.47.0...v0.48.0) (2026-08-22)
 
 
