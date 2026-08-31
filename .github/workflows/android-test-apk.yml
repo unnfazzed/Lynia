@@ -73,7 +73,7 @@ jobs:
           cache: pnpm
 
       # Expo SDK 52 / RN 0.76 build on JDK 17.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
