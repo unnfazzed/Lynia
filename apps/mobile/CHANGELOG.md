@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.1](https://github.com/unnfazzed/Lynia/compare/v0.49.0...v0.49.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **mobile:** submit the closed lane to the track that has the testers ([#908](https://github.com/unnfazzed/Lynia/issues/908)) ([208aec5](https://github.com/unnfazzed/Lynia/commit/208aec56d99ec133064c13089bf2e10d91d95885))
+
 ## [0.49.0](https://github.com/unnfazzed/Lynia/compare/v0.48.4...v0.49.0) (2026-09-01)
 
 
