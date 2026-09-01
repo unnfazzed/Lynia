@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.48.4](https://github.com/unnfazzed/Lynia/compare/v0.48.3...v0.48.4) (2026-09-01)
+
+
+### Bug Fixes
+
+* **mobile:** pin babel-preset-expo back to the SDK 52-compatible 12.x line ([#900](https://github.com/unnfazzed/Lynia/issues/900)) ([18afe6e](https://github.com/unnfazzed/Lynia/commit/18afe6e07d0674d25e0d80af910fc1c1467d3d11))
+* **mobile:** re-pin babel-preset-expo, this time with a Dependabot ignore rule ([#903](https://github.com/unnfazzed/Lynia/issues/903)) ([f93f47d](https://github.com/unnfazzed/Lynia/commit/f93f47d9b816c2e7cb1ce2fa8d830bfb8c58758f))
+
 ## [0.48.3](https://github.com/unnfazzed/Lynia/compare/v0.48.2...v0.48.3) (2026-08-24)
 
 
