@@ -318,10 +318,12 @@ prose.
 
 _Added 2026-09-01 (product decision this session — see `docs/DESIGN-DEVIATIONS.md` D-40 for the OTP
 screens' copy change). Backend integration is **complete and unit-tested**
-(`apps/api/src/auth/bird-verify.ts`, `apps/api/src/auth/bird-verify.spec.ts`), but unlike Bird SMS
-above, **nothing below has been armed or verified against a real Bird workspace yet** — this was built
-against Bird's public API documentation only. `OTP_CHANNEL` still defaults to `whatsapp`; nothing here
-is live until someone with Bird dashboard access works through the checklist._
+(`apps/api/src/auth/bird-verify.ts`, `apps/api/src/auth/bird-verify.spec.ts`). **Live-tested the same
+day** against a real Zimbabwean handset (`+263778831938`) using the existing `BIRD_ACCESS_KEY`: a create
+call returned `200` with `last_channel: "whatsapp"` and the code arrived on WhatsApp. That run
+disproved two assumptions this doc previously made — see the corrections inline below. `OTP_CHANNEL`
+still defaults to `whatsapp` in code; it is live in production once the checklist below and the repo
+Variable flip land._
 
 Bird's **Verify** API (`docs.bird.com/api/verify-api`) is a different product from the plain-SMS
 integration above: it owns code generation, delivery, expiry and attempt-limiting entirely, so this
@@ -340,11 +342,13 @@ generates/hashes/verifies the code and Bird is only ever a delivery pipe.
   device-binding signup caps, the post-verify retry grace (§6) — unchanged and engine-agnostic. The one
   Bird-specific wrinkle (a second check on an already-resolved verification 404s) is mapped straight into
   that same existing retry grace rather than a new mechanism.
-- Channels requested: **WhatsApp first, SMS as Bird's own automatic fallback**
-  (`options.channels: ["whatsapp","sms"]`) — reverting the 2026-07-18 "SMS while WhatsApp BSP onboarding
-  is pending" workaround back to WhatsApp-primary now that Verify can deliver over WhatsApp directly.
-  `code_length: 6` is pinned to match the app's fixed 6-digit UI/validation (Bird's own default isn't
-  documented as 6).
+- Channels requested: **WhatsApp only, no SMS fallback** (`options.channels: ["whatsapp"]` — product
+  decision 2026-09-01, revised the same day the WhatsApp-first-with-SMS-fallback version below was
+  live-tested). Omitting `"sms"` means an undeliverable WhatsApp attempt fails the create/check call
+  loud instead of Bird silently sending a text; a "retry" is just the app's existing resend affordance
+  (`verify.tsx` `requestFreshCode`), which is a WhatsApp retry every time since every create call only
+  ever asks for `"whatsapp"`. `code_length: 6` is pinned to match the app's fixed 6-digit UI/validation
+  (Bird's own default isn't documented as 6).
 - The OTP screens show whichever channel Bird actually used for a given send (`deliveryChannel` in the
   API response, threaded through `phone.tsx` → `verify.tsx` → `profile/setup.tsx`) — never a hardcoded
   claim, since falling back to SMS is a normal, expected outcome, not an error.
@@ -358,7 +362,7 @@ generates/hashes/verifies the code and Bird is only ever a delivery pipe.
 |---|---|---|---|
 | `OTP_CHANNEL` | repo Variable | ✅ set to `bird-verify` | flips the live channel |
 | `BIRD_VERIFY_ENABLED` | repo Variable | ✅ set to `true` | arms the `release.yml` injection block (mirrors `BIRD_ENABLED`/`LOCAL_SMS_ENABLED`) |
-| `BIRD_VERIFY_API_KEY` | Secret Manager | ✅ | Bird dashboard → API keys, scoped to **Verify** — a **DIFFERENT** key from `BIRD_ACCESS_KEY` above (that one is scoped to SMS only and does not carry Verify access) |
+| `BIRD_VERIFY_API_KEY` | Secret Manager | ✅ | A separate Secret Manager entry from `BIRD_ACCESS_KEY` above, for independent rotation — but **live-tested 2026-09-01: the same key VALUE works for both** (Bird's keys here are workspace-scoped, not product-scoped, contrary to what this doc assumed before that test). Fastest path: copy `BIRD_ACCESS_KEY`'s current value into a new `BIRD_VERIFY_API_KEY` secret rather than minting one from the dashboard |
 
 The request this service sends on `requestOtp`:
 
@@ -367,7 +371,7 @@ POST https://{region}.platform.bird.com/v1/verify/verifications
 Authorization: Bearer {BIRD_VERIFY_API_KEY}
 Content-Type: application/json
 
-{"to":{"phone_number":"+263771234567"},"options":{"code_length":6,"channels":["whatsapp","sms"]}}
+{"to":{"phone_number":"+263771234567"},"options":{"code_length":6,"channels":["whatsapp"]}}
 ```
 
 and on `verifyOtp`:
@@ -384,57 +388,51 @@ Content-Type: application/json
 region the Verify-scoped key was minted in**; the two Bird products can live in different regions of the
 same workspace, so don't assume it matches the SMS integration's confirmed `eu1`.
 
-### Arming checklist (in order) — NONE of this has been done yet
+### Arming checklist (in order)
 
-Unlike the Bird SMS checklist above (verified end-to-end against a real Econet handset, 2026-07-25),
-**nothing below has been confirmed against a real Bird workspace.** Real credentials and a live device
-test are needed before flipping `OTP_CHANNEL` in any real deployment.
-
-1. ☐ **Confirm the Verify product is enabled** on the `LyniaGo` workspace
-   (`ws_01kxv3schvem4a89399mk86188`, the same workspace the SMS integration already uses) — Verify may
-   need its own enablement/billing setup separate from the SMS product.
-2. ☐ **Confirm WhatsApp OTP is available for Zimbabwe (+263)** in this workspace's per-country channel
-   configuration. Channel availability varies by country and cannot be verified without Bird
-   dashboard/account access. If WhatsApp isn't available for +263, Bird's own SMS fallback still makes
-   the channel usable end-to-end, but the "WhatsApp" copy (D-40) would then rarely if ever be shown.
-3. ☐ **Mint a Verify-scoped API key** (Settings → API keys, scope: Verify) → becomes
-   `BIRD_VERIFY_API_KEY`. **Do not reuse `BIRD_ACCESS_KEY`** — that key is scoped to SMS only (see the
-   arming checklist above), and a wrongly-scoped key surfaces as a generic 401/403 from Bird, not a clear
-   error from this app.
-4. ☐ **Store it in Secret Manager** as `BIRD_VERIFY_API_KEY` — the container is now pre-listed in
-   `infra/terraform/secrets.tf` and `scripts/adopt-vendor-secrets.sh` (same pattern as `BIRD_ACCESS_KEY`):
+1. ☑ **Verify product is enabled** on the `LyniaGo` workspace (`ws_01kxv3schvem4a89399mk86188`, the
+   same workspace the SMS integration uses) — **confirmed 2026-09-01**: a live create call succeeded.
+2. ☑ **WhatsApp OTP is available for Zimbabwe (+263)** — **confirmed 2026-09-01**: `last_channel` came
+   back `"whatsapp"` and the code was received on a real handset (`+263778831938`). Since the channel is
+   now WhatsApp-only (no SMS fallback — see above), a future destination where WhatsApp genuinely isn't
+   reachable will fail loud rather than silently landing as SMS; that's the deliberate tradeoff.
+3. ☑ **API key** — **no separate mint needed.** Live-tested 2026-09-01: the existing `BIRD_ACCESS_KEY`
+   value works against the Verify endpoints too (Bird's keys are workspace-scoped here, not
+   product-scoped, contradicting what this checklist assumed before the test). Copy that value into a
+   new `BIRD_VERIFY_API_KEY` Secret Manager entry (step 4) rather than minting a fresh one from the
+   dashboard — keep it a separate secret name so the two remain independently rotatable later.
+4. ☐ **Store it in Secret Manager** as `BIRD_VERIFY_API_KEY` — the container is pre-listed in
+   `infra/terraform/secrets.tf` and `scripts/adopt-vendor-secrets.sh` (same pattern as `BIRD_ACCESS_KEY`).
+   Since the value is just a copy of the existing `BIRD_ACCESS_KEY`, the create step reads from Secret
+   Manager directly instead of asking for a value from the dashboard:
    ```bash
    PROJECT=lynia-500911
    RUNTIME_SA=lynia-run@lynia-500911.iam.gserviceaccount.com
-   printf '%s' "<BIRD_VERIFY_API_KEY_VALUE>" | gcloud secrets create BIRD_VERIFY_API_KEY \
+   KEY=$(gcloud secrets versions access latest --secret=BIRD_ACCESS_KEY --project="$PROJECT")
+   printf '%s' "$KEY" | gcloud secrets create BIRD_VERIFY_API_KEY \
      --project "$PROJECT" --replication-policy=automatic --data-file=- \
-     || printf '%s' "<BIRD_VERIFY_API_KEY_VALUE>" | gcloud secrets versions add BIRD_VERIFY_API_KEY \
+     || printf '%s' "$KEY" | gcloud secrets versions add BIRD_VERIFY_API_KEY \
         --project "$PROJECT" --data-file=-
    gcloud secrets add-iam-policy-binding BIRD_VERIFY_API_KEY --project "$PROJECT" \
      --member="serviceAccount:$RUNTIME_SA" --role=roles/secretmanager.secretAccessor
    scripts/adopt-vendor-secrets.sh "$PROJECT"
    ```
-5. ☐ **Smoke-test the key** against a real number you control:
-   ```bash
-   curl -i -X POST "https://eu1.platform.bird.com/v1/verify/verifications" \
-     -H "Authorization: Bearer <BIRD_VERIFY_API_KEY>" -H "Content-Type: application/json" \
-     -d '{"to":{"phone_number":"+263771234567"},"options":{"code_length":6,"channels":["whatsapp","sms"]}}'
-   # note the returned "id" and "last_channel"; confirm the message actually arrives, then:
-   curl -i -X POST "https://eu1.platform.bird.com/v1/verify/verifications/check" \
-     -H "Authorization: Bearer <BIRD_VERIFY_API_KEY>" -H "Content-Type: application/json" \
-     -d '{"to":{"phone_number":"+263771234567"},"code":"<the code you received>"}'
-   ```
-6. ☐ **Set the repo Variables and redeploy**:
-   ```bash
-   gh variable set OTP_CHANNEL --body "bird-verify"
-   gh variable set BIRD_VERIFY_ENABLED --body "true"
-   gh workflow run release.yml --ref main
-   ```
-   The release job's "Validate production launch-hygiene config" step confirms Bird Verify is armed
-   before it builds — same fail-fast contract as every other channel.
-7. ☐ **Verify on a real device** — request an OTP from the app and confirm sign-in works; if you can
-   arrange a number Bird can't reach on WhatsApp, also confirm the SMS-fallback path verifies correctly
-   and the app's copy correctly says "SMS" for that send.
+5. ☑ **Smoke-test the key** — **done 2026-09-01** against `+263778831938`: create call `200`,
+   `last_channel: "whatsapp"`, code received on WhatsApp. (For reference, the create call now sends
+   `"channels":["whatsapp"]`, not `["whatsapp","sms"]` — see the no-fallback decision above.)
+6. ☑ **Repo Variables set** — `OTP_CHANNEL=bird-verify`, `BIRD_VERIFY_ENABLED=true` (2026-09-01).
+   Redeploy (`gh workflow run release.yml --ref main`, or a normal merge to `main`) to pick them up —
+   the release job's "Validate production launch-hygiene config" step confirms Bird Verify is armed
+   before it builds, same fail-fast contract as every other channel.
+7. ☐ **Verify on a real device** against the deployed app (not just the raw API, which step 5 already
+   covers) — request an OTP from the app itself and confirm sign-in completes end to end.
+
+**Sender branding — "Bird Verify" vs "Authifly":** the first live send (step 5) arrived branded as
+"Bird Verify," Bird's default shared WhatsApp sender identity — not "Authifly," which is what this
+integration was named for originally. This is a **dashboard setting, not something the API request
+controls**: Bird dashboard → **Verify → Configure → Channels tab**, WhatsApp row, switch the sender
+identity from "Bird Verify" to "Authifly" (the SMS row has the same choice, for consistency if the
+plain-SMS channel is ever active again). Takes effect on the next send, no code change or redeploy.
 
 ### Rollback
 

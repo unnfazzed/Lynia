@@ -1841,3 +1841,16 @@ rather than asserting a channel up front.
 `A·5`) — D-01 already confirmed that is a real, separate product decision, not OTP, and this entry does
 not touch it. The merchant kitchen sign-in (`apps/merchant/app/login/page.tsx`) was never channel-specific
 copy ("Enter the code we sent to {phone}.") and needed no change.
+
+**Addendum, same day — SMS fallback removed (product decision 2026-09-01, after live-testing against a
+real handset).** The paragraph above describing "WhatsApp-first, with an automatic SMS fallback" no
+longer matches `bird-verify.ts`: `options.channels` now requests `["whatsapp"]` only, so Bird never
+falls back to SMS — an undeliverable WhatsApp attempt fails loud, and a retry (the app's resend
+affordance) is a WhatsApp retry, never a silent drop to SMS. The dynamic-copy mechanism this entry
+introduced (§ "Changed, and why each is safe to make dynamic") is unaffected and stays in place — it
+still correctly drives "SMS" copy on `OTP_CHANNEL=bird`/`local-sms` (real, static-per-deployment SMS
+channels) and now always resolves to "WhatsApp" for `bird-verify`, rather than becoming a second
+hardcoded claim. Live-tested 2026-09-01 against `+263778831938`: create call `200`,
+`last_channel: "whatsapp"`, code received on WhatsApp. See `docs/BIRD-SETUP.md` "Bird Verify" for the
+full arming record, including the same-session discovery that the send arrives branded "Bird Verify"
+rather than "Authifly" by default (a Bird dashboard sender-identity setting, not an app or copy issue).

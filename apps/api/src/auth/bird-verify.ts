@@ -10,15 +10,16 @@ const logger = new Logger("BirdVerify");
 const BIRD_VERIFY_TIMEOUT_MS = 10_000;
 
 /**
- * WhatsApp first, SMS as the automatic fallback (docs.bird.com/api/verify-api): the 2026-07 product
- * decision that made plain-SMS-via-Bird the launch channel (otp-sender.ts BirdOtpSender) was working
- * AROUND a WhatsApp Business (BSP) onboarding delay, never a preference for SMS over WhatsApp — see that
- * file's and docs/BIRD-SETUP.md's "schedule insurance" language. Now that Bird's Verify product can
- * deliver over WhatsApp directly, SMS reverts to being the fallback it always should have been. Email
- * and Telegram are real Verify channels too but are never requested here — this app has no email/Telegram
+ * WhatsApp only — no SMS fallback (product decision 2026-09-01, after live-testing Bird Verify against
+ * a real +263 handset). Bird's Verify API would otherwise fall back to SMS automatically if channels
+ * included "sms"; omitting it means an undeliverable WhatsApp attempt fails the create/check call
+ * instead of silently landing as a text. A "retry" is just the existing resend affordance
+ * (verify.tsx requestFreshCode → a fresh POST /auth/otp/request) — since every create call only ever
+ * asks Bird for "whatsapp", every retry is a WhatsApp retry too, never a silent drop to SMS. Email and
+ * Telegram are real Verify channels but are never requested here — this app has no email/Telegram
  * identity to verify against.
  */
-const CHANNELS = ["whatsapp", "sms"] as const;
+const CHANNELS = ["whatsapp"] as const;
 
 export interface BirdVerifyCheckResult {
   success: boolean;

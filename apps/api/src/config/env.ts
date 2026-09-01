@@ -144,7 +144,10 @@ export const envSchema = z.object({
   // "bird-verify" delegates the ENTIRE code lifecycle (generate/send/verify/expiry/attempts) to Bird's
   // Verify API instead of the WhatsApp/bird/local-sms/sms channels, which only ever deliver a code this
   // service still generates and checks itself (product decision 2026-09-01 — see auth/bird-verify.ts and
-  // docs/BIRD-SETUP.md "Bird Verify"). "console" logs the code for local/dev testing without any provider.
+  // docs/BIRD-SETUP.md "Bird Verify"). WhatsApp only, no SMS fallback (product decision 2026-09-01,
+  // revised same day after live-testing against a real handset) — an undeliverable WhatsApp attempt
+  // fails loud instead of silently landing as SMS; a retry (the app's resend affordance) is a WhatsApp
+  // retry too. "console" logs the code for local/dev testing without any provider.
   OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "local-sms", "bird-verify", "console"]).default("whatsapp"),
   // QA/test only: comma-separated phone numbers for which requestOtp returns the code in its
   // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
@@ -224,11 +227,14 @@ export const envSchema = z.object({
   LOCAL_SMS_API_URL: z.string().optional(),
   LOCAL_SMS_API_KEY: z.string().optional(),
   // Bird Verify API — only needed when OTP_CHANNEL=bird-verify. A DIFFERENT Bird product from the plain-
-  // SMS BIRD_ACCESS_KEY above: Verify owns code generation, delivery (WhatsApp first, SMS fallback —
-  // see auth/bird-verify.ts), expiry and attempt-limiting entirely, so this service only calls its
-  // create/check endpoints. Needs its OWN workspace API key scoped to the Verify product — the existing
-  // BIRD_ACCESS_KEY is scoped to SMS only and does not carry Verify access. Region is embedded in the key
-  // prefix (`bk_<region>_…`), so — unlike BIRD_BASE_URL — no separate base-url var is needed; a key that
+  // SMS BIRD_ACCESS_KEY above: Verify owns code generation, delivery (WhatsApp only — see
+  // auth/bird-verify.ts), expiry and attempt-limiting entirely, so this service only calls its
+  // create/check endpoints. Docs previously assumed this needed a SEPARATELY-scoped key from
+  // BIRD_ACCESS_KEY; live-tested 2026-09-01 against the real workspace and that was wrong — Bird's keys
+  // here are workspace-scoped, not product-scoped, so the existing BIRD_ACCESS_KEY value works for both
+  // and can be copied into this secret rather than minting a new one (still a separate Secret Manager
+  // entry, so each can be rotated independently later). Region is embedded in the key prefix
+  // (`bk_<region>_…`), so — unlike BIRD_BASE_URL — no separate base-url var is needed; a key that
   // doesn't match that shape fails loud at first use rather than silently hitting the wrong host. See
   // docs/BIRD-SETUP.md "Bird Verify (WhatsApp OTP)".
   BIRD_VERIFY_API_KEY: z.string().optional(),
