@@ -33,7 +33,11 @@ export function LoginView({
   }}>
     <BrandLockup />
     <Heading>Welcome to Lynia</Heading>
-    <Sub>We'll SMS a one-time code to this number.</Sub>
+    {/* D-40 (docs/DESIGN-DEVIATIONS.md): the mock still draws SMS copy here (rev 2 export, D-01) —
+        this line is a deliberate, ledgered divergence, not drift. A future `codegen gen LJ.login`
+        run from the CURRENT mock will silently put "SMS" back; check the ledger before assuming
+        the mock is right again. */}
+    <Sub>We'll WhatsApp a one-time code to this number.</Sub>
     <Field label="Phone number" value={phone} onChangeText={onChangePhone} placeholder="0771234567" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" error={error} />
     <Button label="Send code" onPress={onSubmit} loading={loading} disabled={submitDisabled} />
   </View>;

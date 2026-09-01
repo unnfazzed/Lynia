@@ -28,7 +28,8 @@ function splitName(full: string): { firstName: string; lastName: string } {
  * `needsProfile` is true. We collect the name once, PATCH it to /auth/me, then continue to the role
  * fork (brand-new account) or straight home (a returning user who already picked a role). Mirrors the
  * design mockup's calm copy (0·6): name + a national ID for the account record. The phone is already
- * verified on WhatsApp.
+ * verified — over whichever channel (WhatsApp or SMS) actually delivered the code, per the
+ * `deliveryChannel` threaded from verify.tsx.
  *
  * LC-C10: this collects the exact same fields (name + national ID) as the become-a-rider KYC form, which
  * already survives an app kill via `kyc-draft.ts` — this screen previously held them in plain React state
@@ -39,9 +40,11 @@ function splitName(full: string): { firstName: string; lastName: string } {
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
   const { session, signIn, signOut } = useAuth();
-  // The just-verified number, threaded from verify.tsx; shown read-only in the "Verified" phone field.
-  const params = useLocalSearchParams<{ phone?: string }>();
+  // The just-verified number (and the channel that verified it — D-40, docs/DESIGN-DEVIATIONS.md),
+  // threaded from verify.tsx; shown read-only in the "Verified" phone field.
+  const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
+  const verifiedByWhatsApp = params.deliveryChannel === "whatsapp";
   const [fullName, setFullName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [busy, setBusy] = useState(false);
@@ -163,7 +166,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
           onChangeText={() => {}}
           editable={false}
           keyboardType="phone-pad"
-          hint="Verified by SMS ✓"
+          hint={`Verified by ${verifiedByWhatsApp ? "WhatsApp" : "SMS"} ✓`}
         />
         <View style={{ position: "absolute", top: 30, right: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
           <Icon name="check" size={13} color={tokens.color.accentText} />

@@ -15,12 +15,20 @@
  */
 import renderer, { act } from "react-test-renderer";
 
+// mock-prefixed per Jest's out-of-scope-variable rule for hoisted jest.mock factories (same pattern
+// as mockReplace in app/profile/__tests__/setup.test.tsx) — mutable so individual tests can vary the
+// route params without re-declaring the whole expo-router mock.
+let mockLocalSearchParams: { phone: string; deliveryChannel?: string } = { phone: "+263772451180" };
 jest.mock("expo-router", () => ({
   useRouter: () => ({ back: jest.fn(), replace: jest.fn(), push: jest.fn() }),
-  useLocalSearchParams: () => ({ phone: "+263772451180" }),
+  useLocalSearchParams: () => mockLocalSearchParams,
 }));
 jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ signIn: jest.fn() }) }));
 jest.mock("../../src/api/auth", () => ({ requestOtp: jest.fn(async () => undefined), verifyOtp: jest.fn(async () => ({})) }));
+
+beforeEach(() => {
+  mockLocalSearchParams = { phone: "+263772451180" };
+});
 
 import VerifyScreen, { type VerifyScreenProps } from "../verify";
 
@@ -79,5 +87,37 @@ describe("OTP screen states match their mocks", () => {
     expect(out).toContain("1:00");
     expect(out).not.toContain("A fresh code is on its way");
     expect(out).not.toContain("That code has expired.");
+  });
+});
+
+/**
+ * D-40 (docs/DESIGN-DEVIATIONS.md): the screen no longer hardcodes "by SMS" — it says whichever
+ * channel the API reports the code actually went out on (phone.tsx threads `deliveryChannel` from
+ * requestOtp's response into this screen's route params), since Bird Verify can fall back from
+ * WhatsApp to SMS on a per-send basis and a hardcoded claim would then sometimes be wrong either way.
+ */
+describe("OTP screen copy reflects the real delivery channel (D-40)", () => {
+  it("says WhatsApp when requestOtp reported the code went out over WhatsApp", () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
+    const out = render({ initialCooldownS: 0 });
+    expect(out).toContain("by WhatsApp.");
+    expect(out).toContain("WhatsApp can take a minute on a busy network.");
+    expect(out).not.toContain("by SMS.");
+    expect(out).not.toContain(HINT);
+  });
+
+  it("still says SMS when requestOtp reported sms (Bird's automatic fallback)", () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "sms" };
+    const out = render({ initialCooldownS: 0 });
+    expect(out).toContain("by SMS.");
+    expect(out).toContain(HINT);
+    expect(out).not.toContain("by WhatsApp.");
+  });
+
+  it("falls back to the SMS wording when deliveryChannel is absent (e.g. an older cached route)", () => {
+    mockLocalSearchParams = { phone: "+263772451180" };
+    const out = render({ initialCooldownS: 0 });
+    expect(out).toContain("by SMS.");
+    expect(out).toContain(HINT);
   });
 });

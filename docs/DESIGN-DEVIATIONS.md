@@ -14,7 +14,10 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39.** D-39 was authored by
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40.** D-40 reopens D-01
+(WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
+decision — the mocks were not re-exported as part of it, so it stands as a ledgered app-side divergence
+until they are. D-39 was authored by
 this session executing UIP-04, not a quoted owner instruction like the rest — flag it for explicit
 confirmation rather than treating it as settled. D-33 was RETIRED on the day it was
 opened — the mocks were redrawn without the browser step, so nothing diverges (its entry carries an
@@ -26,6 +29,9 @@ non-interactive per Foundation-E · checkout live drop-off capture · cart upsel
 ---
 
 ## D-01 · WhatsApp OTP → SMS OTP — RETIRED by the rev 2 export (2026-08-10)
+
+> **Reopened by D-40 (2026-09-01):** the app now shows WhatsApp OTP copy again (dynamically, per the
+> actual delivery channel) — see D-40 below for what changed and why. This entry is kept for history.
 
 **No longer a deviation.** The 2026-08-10 **rev 2** export changed the mocks themselves to SMS, so
 there is nothing left to substitute — align to the mock copy verbatim, as everywhere else.
@@ -1787,3 +1793,51 @@ note moved from a free-standing textarea below the card into a tappable summary 
 r-customer-a.jsx:332-338 — muted pencil, ink-coloured value, between the lines and "Add more items"),
 and the duplicate "a note can't change the price" disclaimer was removed from the main page (it already
 lives correctly on the note sheet, matching kit r-customer-a.jsx:614).
+
+---
+
+## D-40 · SMS OTP copy → WhatsApp OTP copy — APPROVED (2026-09-01)
+
+**User decision, this session (2026-09-01):** reopens D-01 (WhatsApp OTP → SMS OTP, RETIRED by the
+2026-08-10 rev 2 export). D-01's own retirement note said the WhatsApp→SMS substitution existed only
+because WhatsApp Business (BSP) onboarding was delayed (product decision 2026-07-18) and Bird's plain-SMS
+API was "schedule insurance" in the meantime (`otp-sender.ts` `BirdOtpSender`, `docs/BIRD-SETUP.md`). The
+user has now decided to move the OTP channel to Bird's **Verify** API (WhatsApp-first, with an automatic
+SMS fallback if WhatsApp delivery fails for a given number — see `apps/api/src/auth/bird-verify.ts` and
+`docs/BIRD-SETUP.md` "Bird Verify"), which is the scenario D-01's retirement did not anticipate: the app
+now sometimes delivers over WhatsApp again, so mock copy that unconditionally says "SMS" would misdescribe
+a real send. This is a new, deliberate reopening of that decision, not drift.
+
+**Mock still says SMS — this is the divergence.** The gallery source (`screens.jsx`/`rider-screens.jsx`
+`Login`/`Otp`, `ui_kits/mobile/app.js`) and `LJ register`/`RJ register` still draw the rev-2 SMS copy
+("We'll SMS a one-time code…", "Check your messages" / "…by SMS", "Verified by SMS ✓"). Nothing in
+`packages/design/**` was touched by this entry — per CLAUDE.md, that package mirrors the external design
+tool and is never hand-edited to match the app. **A real design re-export reflecting the WhatsApp-first
+channel is the follow-up this entry is standing in for**; until it lands, the screens below are a ledgered
+app-side deviation, exactly like D-01 was in its original (pre-rev-2) form.
+
+**Changed, and why each is safe to make dynamic rather than a second static claim:** because Bird Verify
+can fall back to SMS on a per-send basis, a hardcoded "WhatsApp" string would sometimes be as wrong as the
+mock's hardcoded "SMS" — so the app now says whichever channel the send actually used
+(`AuthService.requestOtp`'s new `deliveryChannel` field, threaded through the OTP screens' route params),
+rather than asserting a channel up front.
+
+- `apps/mobile/app/phone.view.tsx` (LJ.login / RJ.login, via the shared phone.tsx container — one screen
+  serves both roles pre-role-fork): "We'll SMS a one-time code…" → "We'll WhatsApp a one-time code…". This
+  file is codegen-GENERATED (`tools/parity/codegen`) — the structural-snapshot guardrail
+  (`apps/api/src/parity/structure-snapshot.spec.ts`) explicitly does not check text, only tree shape, so
+  this hand-edit cannot fail it, but a future `codegen gen LJ.login` run against the CURRENT (SMS) mock
+  will silently regenerate the old copy with no test catching the reversion — check this entry first.
+- `apps/mobile/app/verify.tsx` (LJ.otp / RJ.otp, hand-written, not codegen'd): "…by SMS." and "SMS can
+  take a minute…" now read "…by WhatsApp."/"WhatsApp can take a minute…" when `deliveryChannel ===
+  "whatsapp"`, else the original SMS wording — both driven by the real `deliveryChannel` from the API, not
+  a hardcoded claim. Untouched: "Check your messages" (channel-neutral already) and the locked-state copy
+  ("Codes last 10 minutes, and 5 wrong tries locks one." — also channel-neutral).
+- `apps/mobile/app/profile/setup.tsx` (LJ.register / RJ.register): "Verified by SMS ✓" → dynamic
+  "Verified by WhatsApp ✓" / "Verified by SMS ✓", same `deliveryChannel` threaded one hop further from
+  verify.tsx.
+
+**Deliberately unchanged:** Help & support still routes to WhatsApp in the mocks (`map.jsx`/`rider-map.jsx`
+`A·5`) — D-01 already confirmed that is a real, separate product decision, not OTP, and this entry does
+not touch it. The merchant kitchen sign-in (`apps/merchant/app/login/page.tsx`) was never channel-specific
+copy ("Enter the code we sent to {phone}.") and needed no change.

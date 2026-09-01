@@ -204,6 +204,7 @@ jobs:
           BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
           LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
           LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
         run: |
           set -euo pipefail
           errors=()
@@ -255,6 +256,16 @@ jobs:
               errors+=("OTP_CHANNEL=local-sms but LOCAL_SMS_ENABLED != true — no gateway credentials are injected, so every production sign-in OTP would 503. Arm it (LOCAL_SMS_ENABLED=true + LOCAL_SMS_API_URL repo Variable + LOCAL_SMS_API_KEY secret) or set OTP_CHANNEL=whatsapp.")
             elif [ -z "$(printf '%s' "$LOCAL_SMS_API_URL" | tr -d '[:space:]')" ]; then
               errors+=("LOCAL_SMS_ENABLED=true but LOCAL_SMS_API_URL repo Variable is empty — the service boots green yet every requestOtp 503s. Set it to your A2P gateway's send endpoint.")
+            fi
+          fi
+          # Same "must actually SEND" guard for the Bird Verify channel (docs/BIRD-SETUP.md "Bird
+          # Verify"). birdVerifyStart/birdVerifyCheck (apps/api/src/auth/bird-verify.ts) require
+          # BIRD_VERIFY_API_KEY; a missing key boots green and 503s every requestOtp/verifyOtp. Like
+          # bird/local-sms, no pre-launch ack window — this is a channel chosen precisely to be armed
+          # when set, not a known-unarmed pre-launch state.
+          if [ "$OTP_CHANNEL" = "bird-verify" ]; then
+            if [ "$BIRD_VERIFY_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=bird-verify but BIRD_VERIFY_ENABLED != true — no Bird Verify credentials are injected, so every production sign-in OTP would 503. Arm it (BIRD_VERIFY_ENABLED=true + the BIRD_VERIFY_API_KEY secret) or set OTP_CHANNEL=whatsapp.")
             fi
           fi
           ack_active=false
@@ -623,6 +634,16 @@ jobs:
               ENV_VARS="${ENV_VARS};LOCAL_SMS_ANDROID_HASH=${{ vars.LOCAL_SMS_ANDROID_HASH }}"
             fi
             SECRETS="${SECRETS},LOCAL_SMS_API_KEY=LOCAL_SMS_API_KEY:latest"
+          fi
+
+          # Bird Verify OTP wiring (docs/BIRD-SETUP.md "Bird Verify", docs/DESIGN-DEVIATIONS.md D-40) is
+          # OPT-IN via BIRD_VERIFY_ENABLED=true — same reason as the others: don't reference
+          # BIRD_VERIFY_API_KEY before it exists in Secret Manager. This is a DIFFERENT key/secret from
+          # BIRD_ACCESS_KEY above (Verify-scoped, not SMS-scoped) — arming the SMS channel does not arm
+          # this one. Needs no other repo Variable: the region is read from the key's own bk_<region>_…
+          # prefix, and Verify's create call needs no sender id the way the plain-SMS API does.
+          if [ "${{ vars.BIRD_VERIFY_ENABLED }}" = "true" ]; then
+            SECRETS="${SECRETS},BIRD_VERIFY_API_KEY=BIRD_VERIFY_API_KEY:latest"
           fi
 
           # Sentry crash reporting (roadmap 1.1 / LR20) is OPT-IN via SENTRY_ENABLED=true — same reason

@@ -207,6 +207,14 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
     expect(env.LOCAL_SMS_SENDER_ID).toBe("LyniaGo");
   });
 
+  it("allows OTP_CHANNEL=bird-verify in production (bird-verify.ts is real; fails loud at first use)", () => {
+    // Same rationale as bird/local-sms: a fully-implemented delivery channel that 503s at send/check if
+    // BIRD_VERIFY_API_KEY is unset, caught by the release workflow's BIRD_VERIFY_ENABLED guard — not an
+    // unimplemented stub like OTP_CHANNEL=sms, so this boots green rather than being rejected here.
+    const env = loadEnv({ ...prodBase, OTP_CHANNEL: "bird-verify" });
+    expect(env.OTP_CHANNEL).toBe("bird-verify");
+  });
+
   it("rejects a non-empty OTP_TEST_PHONES in production", () => {
     expect(() => loadEnv({ ...prodBase, OTP_TEST_PHONES: "+263770000011" })).toThrow(/OTP_TEST_PHONES/);
   });

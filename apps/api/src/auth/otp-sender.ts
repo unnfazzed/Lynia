@@ -5,6 +5,31 @@ import type { Env } from "../config/env";
 
 export type OtpChannel = "whatsapp" | "sms" | "bird" | "local-sms" | "console";
 
+/**
+ * What the UI tells the customer to go check — distinct from `OtpChannel`/`Env["OTP_CHANNEL"]`, which
+ * identify a delivery MECHANISM (including dev-only ones like "console") rather than a real channel a
+ * person reads a message on. Bird Verify (bird-verify.ts) reports this per-request from its own
+ * `last_channel`, since it can fall back from WhatsApp to SMS per-send; every other channel here always
+ * uses exactly one real channel, so it is a pure function of the sender.
+ */
+export type OtpDeliveryChannel = "whatsapp" | "sms";
+
+/** The user-facing channel for a fixed-channel sender (every OtpSender except Bird Verify, which isn't
+ *  one — see selectOtpSender's default case). Only "whatsapp" reads as WhatsApp; every SMS-flavoured
+ *  channel (bird, local-sms, the "sms" stub) and the dev-only console channel read as "sms" — console
+ *  never actually delivers anything, so its label is just a reasonable default for a QA build. */
+export function deliveryChannelFor(channel: OtpChannel): OtpDeliveryChannel {
+  return channel === "whatsapp" ? "whatsapp" : "sms";
+}
+
+/** Same mapping as `deliveryChannelFor`, but from config alone and with no I/O — for AuthService's
+ *  demo-account bypass, which never calls a sender (there is nothing to deliver) but still needs a
+ *  channel label for the response shape. Takes the full `Env["OTP_CHANNEL"]` (unlike `OtpChannel`,
+ *  that also includes "bird-verify", which isn't a sender at all — see selectOtpSender). */
+export function previewDeliveryChannel(otpChannel: Env["OTP_CHANNEL"]): OtpDeliveryChannel {
+  return otpChannel === "whatsapp" || otpChannel === "bird-verify" ? "whatsapp" : "sms";
+}
+
 /** Send-adapter (E4): the channel is a flag, so an SMS/console fallback is config-only insurance
  *  against WhatsApp BSP onboarding delay — the auth subsystem is identical either way. */
 export interface OtpSender {
@@ -293,6 +318,10 @@ export function selectOtpSender(env: Env): OtpSender {
     case "local-sms":
       return new LocalSmsOtpSender(env);
     default:
+      // "bird-verify" also lands here: it isn't an OtpSender at all (Bird Verify owns the whole
+      // generate/send/verify cycle — see bird-verify.ts) — AuthService branches on it directly,
+      // before this sender is ever touched. Constructing one anyway keeps this factory total over
+      // Env["OTP_CHANNEL"] with no dead case to maintain; it is simply never called in that mode.
       return new WhatsAppOtpSender(env);
   }
 }

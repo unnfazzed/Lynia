@@ -27,6 +27,15 @@ export type VerifyScreenProps = {
   initialLocked?: boolean;
 };
 
+/** What the screen tells the customer to go check. Mirrors the API's OtpDeliveryChannel — kept as a
+ *  local literal union rather than a shared import since neither client currently shares these OTP
+ *  response types with the API (each has its own local copy; see src/api/auth.ts). */
+type DeliveryChannel = "whatsapp" | "sms";
+
+function asDeliveryChannel(v: unknown): DeliveryChannel {
+  return v === "whatsapp" ? "whatsapp" : "sms";
+}
+
 export default function VerifyScreen({
   initialCooldownS = RESEND_COOLDOWN_S,
   initialResent = false,
@@ -34,10 +43,14 @@ export default function VerifyScreen({
 }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { signIn } = useAuth();
-  const params = useLocalSearchParams<{ phone?: string; devCode?: string }>();
+  const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
   const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
+  // The channel the code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — starts from what
+  // phone.tsx just learned from requestOtp, and is re-set on every resend below, since a resend can
+  // land on a DIFFERENT channel (e.g. Bird falling back from WhatsApp to SMS).
+  const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(asDeliveryChannel(params.deliveryChannel));
   const [busy, setBusy] = useState(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
@@ -81,7 +94,8 @@ export default function VerifyScreen({
     setError(null);
     setResending(true);
     try {
-      await requestOtp(phone);
+      const res = await requestOtp(phone);
+      setDeliveryChannel(asDeliveryChannel(res.deliveryChannel));
       setResent(true);
       setLocked(false);
       setCode("");
@@ -115,9 +129,10 @@ export default function VerifyScreen({
       // profile-setup step FIRST (finding C12) before the role fork / home. That screen routes onward
       // to /role or /home itself once the name is saved.
       if (res.needsProfile) {
-        // Carry the just-verified number to the setup screen so it can show the read-only "Verified"
-        // phone field the mock draws (LJ.register); setup.tsx has no other source for it.
-        router.replace({ pathname: "/profile/setup", params: { phone } });
+        // Carry the just-verified number (and the channel that verified it — D-40) to the setup screen
+        // so it can show the read-only "Verified" phone field the mock draws (LJ.register); setup.tsx
+        // has no other source for either.
+        router.replace({ pathname: "/profile/setup", params: { phone, deliveryChannel } });
         return;
       }
       // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
@@ -147,8 +162,14 @@ export default function VerifyScreen({
           bottom ghost "Back". */}
       <Heading>Check your messages</Heading>
       {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
-          don't claim one was. Real users still see the "we sent a code" copy. */}
-      <Sub>{prefilled ? "Test build: code pre-filled — tap Verify." : `We sent a 6-digit code to ${phone ? formatPhoneDisplay(phone) : "your phone"} by SMS.`}</Sub>
+          don't claim one was. Real users see the "we sent a code" copy naming whichever channel the
+          code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — never a hardcoded claim that
+          could be wrong the moment Bird falls back from WhatsApp to SMS on a given send. */}
+      <Sub>
+        {prefilled
+          ? "Test build: code pre-filled — tap Verify."
+          : `We sent a 6-digit code to ${phone ? formatPhoneDisplay(phone) : "your phone"} by ${deliveryChannel === "whatsapp" ? "WhatsApp" : "SMS"}.`}
+      </Sub>
 
       {/* Calm confirmation after a resend, announced to screen readers. */}
       {resent && !locked ? (
@@ -182,16 +203,24 @@ export default function VerifyScreen({
         placeholder="000000"
         keyboardType="number-pad"
         maxLength={6}
-        // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving by
-        // SMS; `oneTimeCode` drives iOS Security-Code AutoFill. Together they auto-populate this field
-        // now that the OTP is delivered over SMS (Bird) rather than WhatsApp.
+        // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving
+        // by SMS; `oneTimeCode` drives iOS Security-Code AutoFill (which also covers SMS/iMessage, not
+        // WhatsApp). Both are harmless no-ops when this send actually went out over WhatsApp — there is
+        // no autofill hook for a WhatsApp message, so the user just types/pastes it — and still help on
+        // the SMS-fallback case, so they stay on regardless of `deliveryChannel`.
         autoComplete="sms-otp"
         textContentType="oneTimeCode"
         // Drawn in the IDLE mock only (screens.jsx `Otp`). The cooldown / resent / locked mocks
         // (screens-safety.jsx `OtpState`) draw the field with no hint under it — the countdown row,
         // the banner and the lockout card are the guidance in those states — so it is not rendered
         // there. Not drawn ⇒ not rendered.
-        hint={cooldown > 0 || locked ? undefined : "SMS can take a minute on a busy network."}
+        hint={
+          cooldown > 0 || locked
+            ? undefined
+            : deliveryChannel === "whatsapp"
+              ? "WhatsApp can take a minute on a busy network."
+              : "SMS can take a minute on a busy network."
+        }
         error={locked ? "That code has expired." : undefined}
       />
 
