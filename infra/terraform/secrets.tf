@@ -101,6 +101,11 @@ resource "google_secret_manager_secret_iam_member" "runtime_access" {
 # When local-SMS OTP gets armed (release.yml wires LOCAL_SMS_API_KEY the same way), add that name
 # here and re-run the script.
 #
+# BIRD_VERIFY_API_KEY is pre-listed the same way, ahead of the Bird Verify (WhatsApp OTP) channel's
+# arming (docs/BIRD-SETUP.md "Bird Verify" — product decision 2026-09-01, see docs/DESIGN-DEVIATIONS.md
+# D-40). It is a DIFFERENT key from BIRD_ACCESS_KEY above (Verify-scoped, not SMS-scoped) — do not
+# collapse the two into one secret.
+#
 # Deliberately NO `labels` (unlike the runtime secrets above): the hand-created containers carry
 # none, so a labels argument would leave a standing in-place diff that nags the nightly drift
 # audit until someone applies right next to live credentials. Add labels in a real apply session
@@ -112,6 +117,7 @@ resource "google_secret_manager_secret" "vendor" {
     "WHATSAPP_ACCESS_TOKEN",
     "BIRD_ACCESS_KEY",
     "BIRD_WEBHOOK_SECRET",
+    "BIRD_VERIFY_API_KEY",
   ])
   secret_id = each.key
   project   = local.project_id

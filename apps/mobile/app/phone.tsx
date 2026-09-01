@@ -28,7 +28,12 @@ export default function PhoneScreen(): React.ReactElement {
     try {
       const res = await requestOtp(phone.trim());
       // devCode is present only on the console channel outside production — prefill it for local dev.
-      router.push({ pathname: "/verify", params: { phone: phone.trim(), devCode: res.devCode ?? "" } });
+      // deliveryChannel drives the OTP screen's "check WhatsApp/SMS" copy — the real channel Bird (or
+      // whichever sender is configured) actually used, not a guess made before the send happened.
+      router.push({
+        pathname: "/verify",
+        params: { phone: phone.trim(), devCode: res.devCode ?? "", deliveryChannel: res.deliveryChannel },
+      });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't send the code. Check your connection.");
     } finally {

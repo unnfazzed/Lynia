@@ -122,7 +122,7 @@ describe("AuthService — Play-review demo account (§7.1)", () => {
     const store = new InMemoryOtpStore();
     const svc = new AuthService(demoEnv, demoPrisma() as unknown as PrismaService, new TokenService(demoEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
     const res = await svc.requestOtp("+263770000777", "9.9.9.9");
-    expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
+    expect(res).toEqual({ sent: true, channel: "console", deliveryChannel: "sms" }); // no devCode key, ever
     expect(sent).toBe(0); // BSP/SMS never invoked
     expect(await store.get("+263770000777")).toBeNull(); // no OTP record written
   });
@@ -205,7 +205,7 @@ describe("AuthService — Play-review demo account (§7.1)", () => {
         const store = new InMemoryOtpStore();
         const svc = new AuthService(multiEnv, demoPrisma() as unknown as PrismaService, new TokenService(multiEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
         const res = await svc.requestOtp(typed, "1.1.1.1");
-        expect(res).toEqual({ sent: true, channel: "console" }); // no devCode key, ever
+        expect(res).toEqual({ sent: true, channel: "console", deliveryChannel: "sms" }); // no devCode key, ever
         expect(sent).toBe(0);
         expect(await store.get(normalized)).toBeNull();
       }
@@ -784,6 +784,89 @@ describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
     await svc.verifyOtp("+263770000047", "654321");
     await expect(svc.verifyOtp("+263770000047", "654321")).resolves.toMatchObject({ profileId: "p1" });
     await expect(svc.verifyOtp("+263770000047", "654321")).resolves.toMatchObject({ profileId: "p1" });
+  });
+});
+
+describe("AuthService — bird-verify channel (end-to-end through requestOtp/verifyOtp)", () => {
+  const birdEnv = { ...baseEnv, OTP_CHANNEL: "bird-verify", BIRD_VERIFY_API_KEY: "bk_eu1_testkey" } as Env;
+  const profileRow = { id: "p1", role: "customer", firstName: "" };
+  const fakePrisma = () => ({
+    profile: { findUnique: async () => ({ ...profileRow, sessions: [] }), upsert: async () => profileRow },
+    session: { create: async () => ({ id: "s1" }) },
+  });
+
+  /** Swap global fetch for the duration of fn, then restore (even on throw) — mirrors bird-verify.spec.ts. */
+  async function withFetch<T>(f: typeof fetch, fn: () => Promise<T>): Promise<T> {
+    const orig = globalThis.fetch;
+    globalThis.fetch = f;
+    try {
+      return await fn();
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
+  it("requestOtp calls Bird Verify's create endpoint and returns the channel Bird actually used", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () =>
+      new Response(JSON.stringify({ id: "vrf_1", last_channel: "whatsapp" }), { status: 200 })) as unknown as typeof fetch;
+    const res = await withFetch(fetchMock, () => svc.requestOtp("+263770000080", "1.1.1.1"));
+    expect(res).toEqual({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
+  });
+
+  it("verifyOtp mints a session on a successful Bird check", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () => new Response(JSON.stringify({ success: true }), { status: 200 })) as unknown as typeof fetch;
+    const res = await withFetch(fetchMock, () => svc.verifyOtp("+263770000081", "123456", "ua", "device-1"));
+    expect(res).toMatchObject({ profileId: "p1", role: "customer" });
+    expect(res.accessToken).toBeTruthy();
+  });
+
+  it("verifyOtp maps Bird's attempts_exhausted to the same 'too many' error as the local engine", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () =>
+      new Response(JSON.stringify({ success: false, reason: "attempts_exhausted" }), { status: 200 })) as unknown as typeof fetch;
+    await expect(withFetch(fetchMock, () => svc.verifyOtp("+263770000082", "000000"))).rejects.toThrow(/too many/i);
+  });
+
+  it("verifyOtp maps a wrong code to the same 'invalid code' error as the local engine", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () =>
+      new Response(JSON.stringify({ success: false, reason: "incorrect_code" }), { status: 200 })) as unknown as typeof fetch;
+    await expect(withFetch(fetchMock, () => svc.verifyOtp("+263770000083", "000000"))).rejects.toThrow(/invalid code/i);
+  });
+
+  // The Bird-specific retry shape: a client that timed out on a successful check retries with the SAME
+  // code; Bird 404s the second check (already final), and this must heal via the SAME post-verify grace
+  // the local engine relies on (§6) — not a hard "expired" that strands the user needing a whole new OTP.
+  it("a retry after a successful Bird check (Bird now 404s it) heals via the grace path instead of failing", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    let calls = 0;
+    const fetchMock = (async () => {
+      calls++;
+      return calls === 1
+        ? new Response(JSON.stringify({ success: true }), { status: 200 })
+        : new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    const first = await withFetch(fetchMock, () => svc.verifyOtp("+263770000084", "123456"));
+    const retry = await withFetch(fetchMock, () => svc.verifyOtp("+263770000084", "123456"));
+    expect(retry).toMatchObject({ profileId: "p1", role: "customer" });
+    // A fresh session, not a crash and not "expired" — the exact point of the engine-agnostic grace.
+    expect(retry.refreshToken).not.toBe(first.refreshToken);
+  });
+
+  it("a genuinely expired/never-requested Bird verification (404, no prior success) is a real 'expired' error", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () => new Response("", { status: 404 })) as unknown as typeof fetch;
+    await expect(withFetch(fetchMock, () => svc.verifyOtp("+263770000085", "123456"))).rejects.toThrow(/expired or never/i);
+  });
+
+  it("a Bird outage (5xx) surfaces as a real error, never a silent 'invalid code' against the user's attempt budget", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const fetchMock = (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch;
+    const err = await withFetch(fetchMock, () => svc.verifyOtp("+263770000086", "123456")).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).not.toMatch(/invalid code/i);
   });
 });
 

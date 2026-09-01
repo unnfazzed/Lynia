@@ -141,8 +141,11 @@ export const envSchema = z.object({
   // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending;
   // "local-sms" delivers via a local A2P gateway (the Zimbabwe fallback for when Bird's international
   // route is throttled on Econet — same product decision). Both are one-line flips to/from "whatsapp".
-  // "console" logs the code for local/dev testing without any messaging provider.
-  OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "local-sms", "console"]).default("whatsapp"),
+  // "bird-verify" delegates the ENTIRE code lifecycle (generate/send/verify/expiry/attempts) to Bird's
+  // Verify API instead of the WhatsApp/bird/local-sms/sms channels, which only ever deliver a code this
+  // service still generates and checks itself (product decision 2026-09-01 — see auth/bird-verify.ts and
+  // docs/BIRD-SETUP.md "Bird Verify"). "console" logs the code for local/dev testing without any provider.
+  OTP_CHANNEL: z.enum(["whatsapp", "sms", "bird", "local-sms", "bird-verify", "console"]).default("whatsapp"),
   // QA/test only: comma-separated phone numbers for which requestOtp returns the code in its
   // response, so end-to-end signup is testable on a real device with no WhatsApp BSP. ONLY
   // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
@@ -220,6 +223,15 @@ export const envSchema = z.object({
   // vars — the release workflow validates them before a production deploy.
   LOCAL_SMS_API_URL: z.string().optional(),
   LOCAL_SMS_API_KEY: z.string().optional(),
+  // Bird Verify API — only needed when OTP_CHANNEL=bird-verify. A DIFFERENT Bird product from the plain-
+  // SMS BIRD_ACCESS_KEY above: Verify owns code generation, delivery (WhatsApp first, SMS fallback —
+  // see auth/bird-verify.ts), expiry and attempt-limiting entirely, so this service only calls its
+  // create/check endpoints. Needs its OWN workspace API key scoped to the Verify product — the existing
+  // BIRD_ACCESS_KEY is scoped to SMS only and does not carry Verify access. Region is embedded in the key
+  // prefix (`bk_<region>_…`), so — unlike BIRD_BASE_URL — no separate base-url var is needed; a key that
+  // doesn't match that shape fails loud at first use rather than silently hitting the wrong host. See
+  // docs/BIRD-SETUP.md "Bird Verify (WhatsApp OTP)".
+  BIRD_VERIFY_API_KEY: z.string().optional(),
   // Alphanumeric sender ID shown as the SMS "from" AND the brand in the body ("<code> is your <sender>
   // verification code."). Zimbabwe allows alphanumeric senders up to 11 chars — "LyniaGo" fits. Register
   // it with the operators/POTRAZ; you can send on a default route while the branded ID is pending.

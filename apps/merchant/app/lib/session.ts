@@ -22,9 +22,18 @@ export interface MerchantSession {
 
 export const SESSION_COOKIE = "lynia_merchant_session";
 
-/** Refresh tokens are valid ~30 days server-side (auth.service.ts REFRESH_TTL) — match the cookie's
- *  own lifetime to that so the cookie never outlives (or badly underlives) the token it holds. */
-export const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * Refresh tokens are valid 365 days server-side by default (auth.service.ts REFRESH_TTL_SECONDS — the
+ * "stay signed in" product decision 2026-07-25: opening the app/dashboard once a year never re-prompts
+ * for a code) and ROTATE on every use, re-stamping that window each time (see doRefresh in
+ * api-client.ts, which calls saveMerchantSession — and so re-sets this cookie with a fresh max-age — on
+ * every successful refresh). Keep this constant in sync with apps/api/src/config/env.ts's
+ * REFRESH_TTL_SECONDS default: this was previously 30 days, which meant a merchant who left the
+ * dashboard closed for over a month (but under a year) found the COOKIE gone — forcing a re-login —
+ * even though the underlying refresh token was still valid server-side, contradicting the
+ * "never re-prompted unless you sign out" model everywhere else in the product.
+ */
+export const SESSION_COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
 /** Parse a session cookie value. Never throws — a corrupt/foreign cookie value reads as "no session"
  *  (the recoverable path: re-authenticate) rather than crashing the app. */

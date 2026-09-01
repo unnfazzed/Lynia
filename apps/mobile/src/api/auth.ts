@@ -4,6 +4,9 @@ import { apiFetch } from "./client";
 export interface OtpRequestResult {
   sent: true;
   channel: string;
+  /** The real channel the code went out on (WhatsApp vs SMS) — for the OTP screens' copy. Distinct
+   *  from `channel`, which is an internal/ops label and can be a dev-only value like "console". */
+  deliveryChannel: "whatsapp" | "sms";
   devCode?: string;
 }
 export interface VerifyResult {

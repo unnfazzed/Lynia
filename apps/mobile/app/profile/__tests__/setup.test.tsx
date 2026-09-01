@@ -25,6 +25,9 @@ const mockSignOut = jest.fn(async () => {
   delete secureStore[PROFILE_DRAFT_KEY];
 });
 const mockReplace = jest.fn();
+// Mutable so individual tests can vary the route params (D-40, docs/DESIGN-DEVIATIONS.md) without
+// re-declaring the whole expo-router mock — see the reset in beforeEach below.
+let mockLocalSearchParams: { phone: string; deliveryChannel?: string } = { phone: "+263 77 245 1180" };
 
 let secureStore: Record<string, string> = {};
 const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
@@ -37,7 +40,7 @@ const mockDeleteItemAsync = jest.fn(async (key: string) => {
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: mockReplace }),
-  useLocalSearchParams: () => ({ phone: "+263 77 245 1180" }),
+  useLocalSearchParams: () => mockLocalSearchParams,
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: (...args: [string]) => mockGetItemAsync(...args),
@@ -84,6 +87,7 @@ beforeEach(() => {
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
+  mockLocalSearchParams = { phone: "+263 77 245 1180" };
 });
 
 /**
@@ -253,5 +257,39 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     // record and the server's duplicate-ID hash agree however the customer punctuated it.
     expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42" });
     expect(secureStore["lynia.profileDraft.v1"]).toBeUndefined();
+  });
+});
+
+/**
+ * D-40 (docs/DESIGN-DEVIATIONS.md): the read-only "Verified" phone field's hint no longer hardcodes
+ * "by SMS" — it names whichever channel verify.tsx actually verified the code over, threaded here as
+ * the `deliveryChannel` route param.
+ */
+describe("profile setup — 'Verified by X' hint reflects the actual delivery channel (D-40)", () => {
+  function verifiedHint(tree: renderer.ReactTestRenderer): string | undefined {
+    const field = tree.root.findAll(
+      (n) => n.props.label === "Phone number" && typeof n.props.hint === "string",
+    )[0];
+    return field?.props.hint as string | undefined;
+  }
+
+  it("reads 'Verified by WhatsApp' when the OTP verified over WhatsApp", async () => {
+    mockLocalSearchParams = { phone: "+263 77 245 1180", deliveryChannel: "whatsapp" };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(verifiedHint(tree)).toBe("Verified by WhatsApp ✓");
+  });
+
+  it("reads 'Verified by SMS' when deliveryChannel is sms or absent", async () => {
+    mockLocalSearchParams = { phone: "+263 77 245 1180" };
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(verifiedHint(tree)).toBe("Verified by SMS ✓");
   });
 });

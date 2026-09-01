@@ -37,8 +37,20 @@
   ],
   "note": "",
   "dynamic": [],
-  "extra": [],
-  "undrawn": [],
+  "extra": [
+    {
+      "text": "We'll WhatsApp a one-time code to this number.",
+      "reason": "OTP delivery moved to Bird Verify (WhatsApp-first, SMS fallback) per an explicit 2026-09-01 user decision reopening D-01; the mocks still draw SMS copy pending a real design re-export.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-40"
+    }
+  ],
+  "undrawn": [
+    {
+      "mock": "We'll SMS a one-time code to this number.",
+      "reason": "Superseded by the WhatsApp-first copy above (D-40) — the mock has not been re-exported yet, so this string is still the committed mock text but no longer what the app renders.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-40"
+    }
+  ],
   "tree": {
     "role": "container",
     "children": [

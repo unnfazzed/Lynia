@@ -19,8 +19,9 @@ import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { birdVerifyCheck, birdVerifyStart } from "./bird-verify";
 import { carrierFromPhone } from "./otp-carrier";
-import { OTP_SENDER, type OtpSender } from "./otp-sender";
+import { deliveryChannelFor, OTP_SENDER, previewDeliveryChannel, type OtpDeliveryChannel, type OtpSender } from "./otp-sender";
 import { OTP_STORE, type OtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
 
@@ -313,23 +314,34 @@ export class AuthService {
     return this.getProfile(profileId);
   }
 
-  async requestOtp(rawPhone: string, ip: string): Promise<{ sent: true; channel: string; devCode?: string }> {
+  async requestOtp(
+    rawPhone: string,
+    ip: string,
+  ): Promise<{ sent: true; channel: string; deliveryChannel: OtpDeliveryChannel; devCode?: string }> {
     // Canonicalize to E.164 at the boundary so every downstream key (OTP store, rate limit, and the
     // profile identity in verifyOtp) is the same string regardless of how the number was typed.
     const phone = normalizePhone(rawPhone);
     if (!phone) throw new BadRequestException("Enter a valid phone number");
     // Play-review demo account (§7.1): the reviewer already has the fixed code from the App-access
     // form, so there is nothing to send. Short-circuit BEFORE the rate limiters and the sender — no
-    // BSP cost, no OTP record written (verifyOtp checks the fixed code directly), and crucially no
-    // devCode ever echoed. Same `{ sent: true }` shape as a real request so the client flow is
+    // BSP/Bird cost, no OTP record written (verifyOtp checks the fixed code directly), and crucially
+    // no devCode ever echoed. Same `{ sent: true }` shape as a real request so the client flow is
     // identical and the demo number is not distinguishable from a normal one by the response.
     if (this.isDemoPhone(phone)) {
-      return { sent: true, channel: this.sender.channel() };
+      return { sent: true, channel: this.env.OTP_CHANNEL, deliveryChannel: previewDeliveryChannel(this.env.OTP_CHANNEL) };
     }
     const rl = rlFrom(this.env);
     await this.enforceRate(`rl:phone:${phone}`, rl.phone);
     await this.enforceRate(`rl:ip:${ip}`, rl.ip);
     await this.enforceRate("rl:global", rl.global);
+
+    // Bird Verify owns the whole generate/send lifecycle (bird-verify.ts) — there is no local code to
+    // store or a devCode to echo on this path (Bird never returns the code to us).
+    if (this.env.OTP_CHANNEL === "bird-verify") {
+      const { channel: deliveryChannel } = await birdVerifyStart(this.env, phone);
+      this.metrics.incOtpRequested(carrierFromPhone(phone));
+      return { sent: true, channel: this.env.OTP_CHANNEL, deliveryChannel };
+    }
 
     const code = this.tokens.randomOtp();
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
@@ -347,7 +359,12 @@ export class AuthService {
       consoleChannel && (this.env.NODE_ENV !== "production" || this.isTestPhone(phone));
     const devCode = exposeCode ? code : undefined;
     // Never leak whether the phone exists — always "sent".
-    return { sent: true, channel: this.sender.channel(), ...(devCode ? { devCode } : {}) };
+    return {
+      sent: true,
+      channel: this.sender.channel(),
+      deliveryChannel: deliveryChannelFor(this.sender.channel()),
+      ...(devCode ? { devCode } : {}),
+    };
   }
 
   /**
@@ -468,12 +485,29 @@ export class AuthService {
       throw new UnauthorizedException("Invalid code");
     }
     try {
-      const rec = await this.store.get(phone);
-      if (!rec) {
-        // No live OTP — this may be a timed-out client retrying a code the server already
-        // accepted (§6). A grace hit mints a fresh session; a miss falls through to the exact
-        // same error as having no grace record at all, so a probe can't distinguish "recently
-        // verified, wrong guess" from "nothing here" (no oracle).
+      // Bird Verify (bird-verify.ts) owns generation/expiry/attempt-limiting entirely and has no
+      // store of its own to consult here; the local engine (checkLocalOtp) is everything else. Both
+      // report the same three-reason shape so the branches below are identical either way.
+      const checked =
+        this.env.OTP_CHANNEL === "bird-verify"
+          ? await birdVerifyCheck(this.env, phone, code)
+          : await this.checkLocalOtp(phone, code);
+
+      if (!checked.success) {
+        if (checked.reason === "locked") {
+          record("locked");
+          throw new UnauthorizedException("Too many attempts — request a new code");
+        }
+        if (checked.reason === "invalid") {
+          record("invalid");
+          throw new UnauthorizedException("Invalid code");
+        }
+        // "expired" — no live OTP (TTL lapsed or never requested), OR — Bird only — a SECOND check
+        // of an already-final verification (Bird 404s that; birdVerifyCheck maps it here). Either
+        // way this may be a timed-out client retrying a code the server already accepted (§6). A
+        // grace hit mints a fresh session; a miss falls through to the exact same error as having no
+        // grace record at all, so a probe can't distinguish "recently verified, wrong guess" from
+        // "nothing here" (no oracle).
         const graced = await this.verifyViaGrace(phone, code, userAgent);
         if (graced) {
           record("grace_ok");
@@ -482,29 +516,13 @@ export class AuthService {
         record("expired");
         throw new UnauthorizedException("Code expired or never requested");
       }
-
-      // Atomically consume one attempt BEFORE evaluating the guess. incrAttempts is a single
-      // Redis HINCRBY (one round-trip) or a single synchronous mutation in memory, so N concurrent
-      // verifies receive N distinct counts and only the first MAX_OTP_ATTEMPTS can ever reach the
-      // compare below. This closes the check-then-increment TOCTOU where concurrent guesses all
-      // passed a stale attempts==0 gate, defeating the 5-attempt cap.
-      const attempts = await this.store.incrAttempts(phone);
-      if (attempts > MAX_OTP_ATTEMPTS) {
-        await this.store.del(phone);
-        record("locked");
-        throw new UnauthorizedException("Too many attempts — request a new code");
-      }
-
-      if (!this.tokens.safeEqualHex(this.tokens.hash(code), rec.hash)) {
-        record("invalid");
-        throw new UnauthorizedException("Invalid code");
-      }
-      // Write the grace record (code hash only — never the raw code, never tokens) BEFORE deleting
-      // the live OTP: a crash between the two just leaves the live record to be re-verified
-      // normally, whereas the reverse order would reopen the exact "committed but client never got
-      // tokens" gap the grace record exists to heal.
-      await this.store.graceSet(phone, rec.hash, OTP_GRACE_TTL_SECONDS);
-      await this.store.del(phone);
+      // Engine-agnostic retry-safety grace (§6): store the just-confirmed code's hash — identical to
+      // what checkLocalOtp's own `rec.hash` would be at this point — so a client timeout + retry with
+      // this SAME code is recognized even once the engine itself can no longer re-answer it (Bird
+      // 404s a second check on an already-final verification; the local engine already deleted its
+      // record). Written BEFORE any further work: a crash right after only means this retry-heal is
+      // unavailable, never that a session leaks with nothing to show for it.
+      await this.store.graceSet(phone, this.tokens.hash(code), OTP_GRACE_TTL_SECONDS);
 
       // KB-IDENTITY-BINDING L1/L0 — device binding. The upsert below stays the atomic writer; this is
       // an advisory read that gates signup throttling + the recycle signal.
@@ -552,6 +570,35 @@ export class AuthService {
       if (!(err instanceof UnauthorizedException)) record("error");
       throw err;
     }
+  }
+
+  /**
+   * The local OTP engine's check — everything AuthService.verifyOtp did inline before Bird Verify
+   * existed, extracted unchanged so both engines report through the same three-reason shape. Consumes
+   * one attempt before comparing (see the TOCTOU note this replaces) and deletes the live record on
+   * either a lock or a match, exactly as before; a plain wrong guess (still has attempts left) deletes
+   * nothing, so the caller can retry the same live code.
+   */
+  private async checkLocalOtp(phone: string, code: string): Promise<{ success: boolean; reason?: "invalid" | "expired" | "locked" }> {
+    const rec = await this.store.get(phone);
+    if (!rec) return { success: false, reason: "expired" };
+
+    // Atomically consume one attempt BEFORE evaluating the guess. incrAttempts is a single Redis
+    // HINCRBY (one round-trip) or a single synchronous mutation in memory, so N concurrent verifies
+    // receive N distinct counts and only the first MAX_OTP_ATTEMPTS can ever reach the compare below.
+    // This closes the check-then-increment TOCTOU where concurrent guesses all passed a stale
+    // attempts==0 gate, defeating the 5-attempt cap.
+    const attempts = await this.store.incrAttempts(phone);
+    if (attempts > MAX_OTP_ATTEMPTS) {
+      await this.store.del(phone);
+      return { success: false, reason: "locked" };
+    }
+
+    if (!this.tokens.safeEqualHex(this.tokens.hash(code), rec.hash)) {
+      return { success: false, reason: "invalid" };
+    }
+    await this.store.del(phone);
+    return { success: true };
   }
 
   /**
