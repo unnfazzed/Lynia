@@ -213,12 +213,28 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 
 | Profile | Channel | Submit track | Usable now? |
 |---|---|---|---|
-| `preview` | `preview` | `internal` | ✅ the working lane |
+| `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
+| `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
 | `production` (workflow default) | `production` | `production`, 10% staged rollout | ❌ SA holds testing-track permissions only, and Play has not granted production access |
 
 A default dispatch therefore builds fine and then fails at submission, burning one of a limited
-monthly EAS build allowance. Pass `profile: preview` explicitly until the production train is
-armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
+monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
+check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
+
+**⚠️ The app has TWO closed-testing tracks and the testers are not on the default one.** Play's
+built-in closed track is **Alpha** (API id `alpha`); the founder created a second one named
+**Closed testing**, enrolled the testers there, and promoted 0.48.3 into it on 2026-08-25. **A
+track's API id is its name as typed in Play Console**, case- and space-sensitive — which is why
+`eas.json` reads `"track": "Closed testing"` and not an alias. Assuming `alpha` was "the closed
+track" is exactly how build `a788a131` delivered 0.49.0 to a track with nobody on it
+(2026-09-01). Never swap that string for a tidier-looking alias.
+
+**Correcting a submission does not require a new build.** `mobile-submit.yml` (dispatch:
+`profile`, optional `build_id`) runs `eas submit` alone against an existing EAS build — the lane
+for a failed/cancelled submission, or for adding an untouched build to another track. It waits,
+so the job's conclusion is the answer. Play rejects a versionCode it has already accepted, so a
+build Play *already took* is moved between tracks by **promoting the release in Play Console**,
+not by re-submitting.
 
 **Verifying a deployment** — `eas-build-status.yml` is the read-only bridge (dispatchable, not
 environment-gated, mutates nothing). Since PR #631 its Recap answers both halves of "did it

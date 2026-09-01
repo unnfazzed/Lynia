@@ -33,11 +33,20 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      # `closed` (added 2026-09-01) submits to Play's default Closed testing track (API name
-      # `alpha` — see apps/mobile/eas.json submit.closed), which already has testers enrolled;
-      # it builds identically to `preview` (same channel/environment), only the submit
+      # `closed` (added 2026-09-01) submits to the closed-testing track that holds the enrolled
+      # testers; it builds identically to `preview` (same channel/environment), only the submit
       # destination differs. Distinct from `preview` -> internal and `production` -> the
       # production track.
+      #
+      # ⚠️ This app has TWO closed-testing tracks, and the testers are NOT on the default one.
+      # Play's built-in closed track is named **Alpha** (API id `alpha`); the founder created a
+      # second one named **Closed testing**, enrolled the testers there, and promoted 0.48.3 into
+      # it on 2026-08-25. The first `closed` dispatch (build a788a131, 2026-09-01) assumed the
+      # default and delivered 0.49.0 to Alpha — a track with no testers on it. A track's API id is
+      # its NAME as typed in Play Console ("Enter a track name. The track title identifies the
+      # track in Play Console and Google Play Developer API"), case- and space-sensitive, so
+      # apps/mobile/eas.json now carries `"track": "Closed testing"`. Do not "correct" that to an
+      # alias — `alpha` is a different track.
       profile:
         description: "EAS build profile"
         type: choice

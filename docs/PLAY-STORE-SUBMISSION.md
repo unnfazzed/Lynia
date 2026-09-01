@@ -1137,6 +1137,66 @@
 > nothing here started that clock; a FINISHED submission does not prove the binary *runs* — the real
 > exit test remains the device smoke in `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 
+> **Status (2026-09-01 — v0.49.0 built and submitted, but to the WRONG closed track; the testers
+> still have 0.48.3. Track map corrected in `eas.json`; the release itself needs a founder promote.)**
+>
+> **What the console shows** (founder screenshot, 21:35 SAST): Testing → Closed testing lists **two
+> active tracks**, not one.
+>
+> | Play row | API track id | Release on it | Testers |
+> |---|---|---|---|
+> | `Closed testing - Closed testing` | **`Closed testing`** | 32 (**0.48.3**), 2026-08-25 | ✅ the enrolled testers |
+> | `Closed testing - Alpha` | `alpha` | **0.49.0**, 2026-09-01 | ❌ nobody |
+>
+> **The wrong assumption.** #906 added the `closed` build/submit profile on the belief that Play's
+> *default* closed track (`alpha`) was the one with testers on it. It is not: the founder created a
+> **second** closed track named `Closed testing` and promoted 0.48.3 into it on 2026-08-25, which is
+> where the 14-day clock and the tester list live. So the dispatch worked exactly as configured and
+> still reached nobody — the same "green ≠ shipped" class as an ERRORED submission, one level up.
+>
+> **The rule that was missing.** A Play track's API id is its **name as typed in the console** —
+> *"Enter a track name. The track title identifies the track in Play Console and Google Play
+> Developer API"* — case- and space-sensitive, and `alpha`/`beta`/`internal`/`production` are only
+> the ids of the four **built-in** tracks. `eas.json` now carries `"track": "Closed testing"`
+> (eas-cli accepts any track string; the four-alias restriction in older EAS docs is stale).
+>
+> **Three builds burned today, only one of them useful** — evidence from `eas-build-status.yml` run
+> `33551128020`:
+>
+> | Build | Profile | Build | Submission |
+> |---|---|---|---|
+> | `fea2f32d-615c-4581-a3db-829c64d45e8e` (17:50 UTC) | `preview` | FINISHED | **both attempts ERRORED**, track `internal` — `SUBMISSION_SERVICE_ANDROID_UNKNOWN_ERROR` / "Fastlane supply failed" |
+> | `e009646a-42ff-4304-bc69-4ef0f921ecc7` (18:36 UTC) | `closed` | **ERRORED** | `ca015d1d` CANCELED, track `alpha` |
+> | `a788a131-3cb9-4036-99bc-d8f3d820056e` (18:58 UTC) | `closed` | FINISHED | `8f247a7e` **FINISHED**, track `alpha` — this is the 0.49.0 sitting on Alpha |
+>
+> **Why the fix is not "re-submit `a788a131` to the right track".** Play refuses a versionCode it has
+> already accepted, and that build's alpha submission FINISHED — so `eas submit` would fail on the
+> version conflict before the track ever mattered. Moving an artifact Play already holds is a
+> **console promotion**, not an upload.
+>
+> **Owed by the founder (console-only, no build quota):**
+> 1. **Promote 0.49.0 into `Closed testing`** — Play Console → Testing → Closed testing → *Alpha* →
+>    Manage track → the 0.49.0 release → **Promote release** → target `Closed testing`. That is what
+>    puts today's Bird Verify WhatsApp-only build in front of the enrolled testers.
+> 2. **Retire the Alpha row.** The built-in `alpha` track **cannot be deleted** (only custom tracks
+>    can); deactivate its release so it drops out of *Active tracks*. Nothing in the repo targets it
+>    any more.
+>
+> **Repo side, landed here:** `eas.json` `submit.closed.android.track` → `Closed testing`; the
+> two-closed-tracks trap written into `mobile-release.yml` and `CLAUDE.md`; and a new
+> **`mobile-submit.yml`** — `eas submit` against an *existing* build, so a failed or mis-tracked
+> submission no longer costs one of ~15 monthly build slots.
+>
+> **Still open, not fixed here:** the `preview` → `internal` submissions of `fea2f32d` errored twice
+> with a generic "Fastlane supply failed", and `eas-build-status.yml` surfaces the submission's error
+> *code* but not its log, so the cause is unknown. It did not block anything today (the `closed` lane
+> submits fine), but the internal lane is not currently proven working.
+>
+> **What this does NOT establish:** unchanged — still testing tracks only;
+> `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2's 14-day clock
+> runs on the `Closed testing` track and nothing here restarted it; and a FINISHED submission still
+> does not prove the binary runs — that remains `docs/QA-DEVICE-CHECKLIST.md` on a handset.
+
 ---
 
 ## 1. App identity
@@ -1587,6 +1647,11 @@ Once §7.1 and §7.2 are closed:
    target network. This is also where the sensitive-permission review usually surfaces questions.
    When the window completes, **apply for production access** and answer the questionnaire about
    the test.
+   **Which closed track:** there are two, and only one has testers. The clock and the tester list
+   live on the custom track named **`Closed testing`** (0.48.3 promoted into it 2026-08-25); Play's
+   built-in **Alpha** (`alpha`) is empty and nothing targets it. Ship to the testers with
+   *Mobile Release (Play)* → `profile: closed`, which submits to `Closed testing` because a track's
+   API id is its console name — not with `preview` (→ `internal`, nobody) and not with `alpha`.
 3. **Production, staged.** First set the repo variable **`EAS_TAG_RELEASES_ENABLED=true`** — the
    tag trigger is separately gated (2026-08-03) so that release-please's near-daily `v*` tags can
    never burn EAS build quota on premature production submits; arming it is the deliberate act of
