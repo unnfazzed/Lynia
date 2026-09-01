@@ -227,7 +227,9 @@ built-in closed track is **Alpha** (API id `alpha`); the founder created a secon
 track's API id is its name as typed in Play Console**, case- and space-sensitive — which is why
 `eas.json` reads `"track": "Closed testing"` and not an alias. Assuming `alpha` was "the closed
 track" is exactly how build `a788a131` delivered 0.49.0 to a track with nobody on it
-(2026-09-01). Never swap that string for a tidier-looking alias.
+(2026-09-01). Never swap that string for a tidier-looking alias. **Proven, not assumed:** build
+`44538dd1` (versionCode 36) submitted with that exact string and its submission reached FINISHED
+with `track=Closed testing` — Play accepts the space-bearing name through `eas submit`.
 
 **Correcting a submission does not require a new build.** `mobile-submit.yml` (dispatch:
 `profile`, optional `build_id`) runs `eas submit` alone against an existing EAS build — the lane
