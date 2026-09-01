@@ -1197,6 +1197,52 @@
 > runs on the `Closed testing` track and nothing here restarted it; and a FINISHED submission still
 > does not prove the binary runs — that remains `docs/QA-DEVICE-CHECKLIST.md` on a handset.
 
+> **Status (2026-09-01, later — v0.49.0 is on the TESTER track. First EAS submission ever to reach
+> `Closed testing`; the custom-track name works end to end.)**
+>
+> Dispatched `mobile-release.yml` run `33552964121` explicitly with **`profile: closed`,
+> `submit: true`** on `main`@`208aec56` — the merge commit of #908, i.e. the first dispatch carrying
+> `"track": "Closed testing"`. Pre-dispatch guards ran rather than were assumed: `main` synced,
+> `pnpm install --frozen-lockfile` clean on pnpm 10.33.0 (the fingerprint-parity check that killed
+> build `5906d2f0`), and the merged `eas.json` re-read from disk.
+>
+> The dispatcher job succeeded in 48 s (20:02:23 → 20:03:11 UTC) and its log printed the resolved
+> submit config — the half that was wrong last time:
+>
+> ```
+> Release track:   Closed testing
+> Release status:  COMPLETED
+> Rollout:         undefined
+> Build ID    :  44538dd1-24ef-4c82-9954-dae8b8f3d989
+> App Version :  0.49.0
+> Version code:  36          (auto-incremented from 35)
+> ```
+>
+> **Outcome, confirmed against EAS rather than inferred** (`eas-build-status.yml` run
+> `33556221793`, 20:36 UTC): build `44538dd1-24ef-4c82-9954-dae8b8f3d989` **FINISHED**, and its
+> submission `4818b1df-141e-492d-9793-be9166db05d2` **FINISHED, `track=Closed testing`**. Play
+> accepted the space-bearing custom track name through `eas submit` → fastlane supply, which is the
+> empirical proof behind #908's claim that a track's API id is its console name. `alpha` was not in
+> the path at any point.
+>
+> **State of the two closed tracks now:** `Closed testing` holds **0.49.0 / versionCode 36** and is
+> the one with enrolled testers — they get this build. `Alpha` still holds the mis-tracked
+> **versionCode 35** build from 19:00 UTC; the promote described in the entry above is **no longer
+> needed** (this build supersedes it), but the founder should still deactivate that release so Alpha
+> drops out of *Active tracks*. The built-in `alpha` track itself cannot be deleted.
+>
+> **Build quota:** four EAS builds consumed on 2026-09-01 (`fea2f32d` preview, `e009646a` errored,
+> `a788a131` → alpha, `44538dd1` → Closed testing) against a ~15/month allowance. The last one was
+> the founder's explicit call: it reaches the testers with no console step and validates the track
+> string, where a console promote would have done neither.
+>
+> **What this run does NOT establish:** the app is on **testing tracks only** —
+> `play.google.com/store/apps/details?id=zw.co.lynia` still 404s by design; §8 step 2's 14-day clock
+> runs on `Closed testing` and this build does not restart or complete it; the `preview` → `internal`
+> submission failure logged above (`fea2f32d`, "Fastlane supply failed", twice) is still
+> unexplained; and a FINISHED submission still does not prove the binary *runs* — that remains
+> `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+
 ---
 
 ## 1. App identity
