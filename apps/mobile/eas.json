@@ -24,6 +24,14 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "closed": {
+      "extends": "base",
+      "channel": "preview",
+      "environment": "preview",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
@@ -37,6 +45,11 @@
         "track": "production",
         "releaseStatus": "inProgress",
         "rollout": 0.1
+      }
+    },
+    "closed": {
+      "android": {
+        "track": "alpha"
       }
     }
   }
