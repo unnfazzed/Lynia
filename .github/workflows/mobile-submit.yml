@@ -1,0 +1,112 @@
+name: Mobile Submit (Play)
+
+# Submit an EXISTING EAS build to a Play track — no new build, no EAS build quota consumed.
+#
+# `mobile-release.yml` builds and submits in one shot (`eas build --auto-submit`), so the only way
+# to correct a submission was to build again. Two failure modes made that expensive on 2026-09-01,
+# the day this lane was added:
+#
+#   1. **Right build, wrong track.** Build `a788a131` (v0.49.0, profile `closed`) submitted cleanly
+#      to `alpha` — Play's *default* closed track, which has no testers on it. The testers are on a
+#      second closed track named `Closed testing` (see apps/mobile/eas.json). Re-pointing eas.json
+#      fixes the next build; this lane re-submits one that already exists.
+#   2. **Good build, failed submission.** Build `fea2f32d` (profile `preview`) FINISHED, then both
+#      of its `internal` submissions ERRORED (`SUBMISSION_SERVICE_ANDROID_UNKNOWN_ERROR` —
+#      "Fastlane supply failed"). The .aab was fine; only the upload leg failed. Retrying that leg
+#      should not cost a 15-per-month build slot.
+#
+# ⚠️ Play refuses a versionCode it has already accepted. Re-submitting a build whose artifact Play
+# already took (case 1 above — the alpha submission FINISHED) fails on that conflict, not on the
+# track. For a build Play already has, promote the release between tracks in Play Console instead;
+# this lane is for builds Play has NOT accepted yet (failed/cancelled submissions), and for
+# submitting an untouched build to an additional track.
+#
+# Read-only status for anything dispatched here: eas-build-status.yml (build + submission + track).
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        # The submit profile decides the track — apps/mobile/eas.json `submit.<profile>.android`:
+        #   closed     -> `Closed testing` (the custom closed track that has the enrolled testers)
+        #   preview    -> `internal`
+        #   production -> `production`, staged at 10% (needs Play production access — not granted)
+        description: "EAS submit profile (decides the Play track)"
+        type: choice
+        options: [closed, preview, production]
+        default: closed
+      build_id:
+        description: "EAS build id to submit (default: the latest finished Android build)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# Shared with mobile-release.yml on purpose: a submit must not race a build's own auto-submit.
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: eas submit
+    runs-on: ubuntu-latest
+    if: ${{ vars.EAS_RELEASE_ENABLED == 'true' }}
+    # Same gate as the build lane: this writes to the Play Console, unlike eas-build-status.yml.
+    environment: production-mobile
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # eas-cli resolves the project through app.config.ts, which imports workspace deps.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS CLI
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Print the destination BEFORE submitting: "which track did this actually go to?" was the
+      # question this whole lane exists to answer, and the answer must survive in the job log.
+      - name: Resolve target track
+        id: track
+        working-directory: apps/mobile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          TRACK="$(jq -er --arg p "$PROFILE" '.submit[$p].android.track' eas.json)" || {
+            echo "::error::eas.json has no submit.$PROFILE.android.track — nothing to submit to."
+            exit 1
+          }
+          echo "track=$TRACK" >> "$GITHUB_OUTPUT"
+          echo "Profile \`$PROFILE\` submits to Play track \`$TRACK\`." >> "$GITHUB_STEP_SUMMARY"
+
+      # No --no-wait here (unlike the build lane): `eas submit` waits for the Play upload and exits
+      # non-zero if it fails, so this job's conclusion IS the shipped/not-shipped answer.
+      - name: Submit to Play
+        working-directory: apps/mobile
+        env:
+          PROFILE: ${{ inputs.profile }}
+          BUILD_ID: ${{ inputs.build_id }}
+          TRACK: ${{ steps.track.outputs.track }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BUILD_ID}" ]; then
+            TARGET=(--id "$BUILD_ID")
+          else
+            TARGET=(--latest)
+          fi
+          eas submit --platform android --profile "$PROFILE" --non-interactive "${TARGET[@]}"
+          echo "Submitted ${BUILD_ID:-the latest Android build} to track \`$TRACK\`." >> "$GITHUB_STEP_SUMMARY"
