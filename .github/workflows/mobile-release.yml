@@ -33,10 +33,15 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      # `closed` (added 2026-09-01) submits to Play's default Closed testing track (API name
+      # `alpha` — see apps/mobile/eas.json submit.closed), which already has testers enrolled;
+      # it builds identically to `preview` (same channel/environment), only the submit
+      # destination differs. Distinct from `preview` -> internal and `production` -> the
+      # production track.
       profile:
         description: "EAS build profile"
         type: choice
-        options: [production, preview]
+        options: [production, preview, closed]
         default: production
       submit:
         description: "Auto-submit to Play after the build"
