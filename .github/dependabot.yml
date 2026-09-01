@@ -56,6 +56,17 @@ updates:
       # major can only move when posthog's dist stops requiring the removed subpath.
       - dependency-name: "@babel/runtime"
         update-types: ["version-update:semver-major"]
+      # babel-preset-expo's own version numbers do not track the Expo SDK version — 12.x is what
+      # actually pairs with this app's expo ~52.0.0 / react-native 0.76.9. A grouped dev-deps bump
+      # (#892, then again #897 right after the first fix) jumped it straight to 57.x, which stops
+      # down-leveling ES private class fields for Hermes and breaks every Android JS bundle export
+      # ("private properties are not supported") plus mobile jest (can't resolve
+      # 'expo/virtual/env' under the same broken preset) — both silently, since #897's auto-merge
+      # went through despite those exact checks failing (see the Dependabot auto-merge workflow
+      # comment; branch protection may not mark them required). Move this only in a deliberate PR
+      # paired with an actual Expo SDK upgrade, the same discipline as expo/expo-*/react-native above.
+      - dependency-name: "babel-preset-expo"
+        update-types: ["version-update:semver-major"]
       # Expo-SDK-managed native layer — these packages' versions are pinned by the Expo SDK, not
       # chosen independently, and must move in lockstep during a deliberate `expo install` / SDK
       # upgrade. They are 0.x, so Dependabot classifies a breaking bump (e.g. react-native
