@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/unnfazzed/Lynia/compare/v0.48.4...v0.49.0) (2026-09-01)
+
+
+### Features
+
+* **mobile:** add a closed-testing submit profile for EAS release ([#906](https://github.com/unnfazzed/Lynia/issues/906)) ([0e5e359](https://github.com/unnfazzed/Lynia/commit/0e5e359a6f422618c5a1b4019466e0f63aca9730))
+
 ## [0.48.4](https://github.com/unnfazzed/Lynia/compare/v0.48.3...v0.48.4) (2026-09-01)
 
 
