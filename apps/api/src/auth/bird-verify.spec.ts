@@ -39,7 +39,7 @@ describe("birdVerifyStart", () => {
     );
   });
 
-  it("POSTs to the region-scoped create endpoint with a Bearer key, code_length 6, and WhatsApp-first channels", async () => {
+  it("POSTs to the region-scoped create endpoint with a Bearer key, code_length 6, and WhatsApp only (no SMS fallback)", async () => {
     let called: { url: string; init: RequestInit } | undefined;
     const fetchMock = (async (url: string, init: RequestInit) => {
       called = { url, init };
@@ -51,18 +51,11 @@ describe("birdVerifyStart", () => {
     expect(headers.authorization).toBe("Bearer bk_eu1_testkey");
     const body = JSON.parse(called!.init.body as string);
     expect(body.to).toEqual({ phone_number: "+263771234567" });
-    expect(body.options).toEqual({ code_length: 6, channels: ["whatsapp", "sms"] });
+    expect(body.options).toEqual({ code_length: 6, channels: ["whatsapp"] });
     expect(res).toEqual({ channel: "whatsapp" });
   });
 
-  it("reports the channel Bird actually used, not always whatsapp", async () => {
-    const fetchMock = (async () =>
-      new Response(JSON.stringify({ id: "vrf_2", last_channel: "sms" }), { status: 200 })) as unknown as typeof fetch;
-    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263771234567"));
-    expect(res).toEqual({ channel: "sms" });
-  });
-
-  it("falls back to 'sms' for an unrecognized last_channel (defensive, never crashes a real sign-in)", async () => {
+  it("falls back to 'sms' for an unrecognized last_channel — defensive display mapping only; Bird was never asked to send SMS", async () => {
     const fetchMock = (async () =>
       new Response(JSON.stringify({ id: "vrf_3", last_channel: "telegram" }), { status: 200 })) as unknown as typeof fetch;
     const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263771234567"));
