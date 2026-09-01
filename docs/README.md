@@ -54,6 +54,7 @@ older parts of the status board.
 | [`APP-SIZE.md`](./APP-SIZE.md) | 🟢 Living (guardrail) | Download/OTA size playbook + the CI-enforced per-PR bundle-size budget and its audit trail. |
 | [`LOAD-MODEL.md`](./LOAD-MODEL.md) | 🟢 Living (plan) | The launch load envelope (1×/×5) and k6 scenario plan (`apps/api/load/`); SLO assertions LR10–LR15. |
 | [`CLOUDFLARE.md`](./CLOUDFLARE.md) | 🟢 Living | Why DNS is grey-cloud/DNS-only (TLS issuance, cert pinning, `trust proxy`), plus the Cloudflare MCP wiring for agent sessions. |
+| [`GCP-BILLING-DOMAIN-SETUP.md`](./GCP-BILLING-DOMAIN-SETUP.md) | 🟢 Living (runbook) | Founder runbook: standing up Google Workspace for `lyniafinance.com` so a domain-matched admin (`shepherd@lyniafinance.com`) can be granted GCP billing-account admin. |
 | [`BIRD-SETUP.md`](./BIRD-SETUP.md) | 🟢 Living (runbook) | OTP channel arming: Bird SMS (priority channel, verified to Econet) + the WhatsApp Cloud API fallback section. |
 | [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) | 🟢 Living (runbook) | Ordered verify-and-rollback sequence for the default-off Terraform hardening flags. |
 | [`GCP-PENDING-REVIEW-2026-07-13.md`](./GCP-PENDING-REVIEW-2026-07-13.md) | 📋 Campaign tracker | Live GCP pending/drift state — cited by the CI drift/diagnose workflows; includes the provisioned-inventory appendix behind `scripts/gcp-provisioning-verify.sh`. |
