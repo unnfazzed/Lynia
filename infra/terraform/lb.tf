@@ -70,9 +70,12 @@ resource "google_compute_backend_service" "api" {
     group = google_compute_region_network_endpoint_group.api.id
   }
 
+  # sample_rate is var.lb_log_sample_rate on every backend, never a literal: while the Cloud Armor
+  # WAF runs in preview (armor.tf), these logs are the ONLY place a would-have-blocked match is
+  # recorded, so the rate is a WAF-tuning input and not just a cost dial. See variables.tf.
   log_config {
     enable      = true
-    sample_rate = 1.0
+    sample_rate = var.lb_log_sample_rate
   }
 }
 
