@@ -96,9 +96,10 @@ resource "google_compute_backend_service" "admin" {
     group = google_compute_region_network_endpoint_group.admin[0].id
   }
 
+  # Shared with every other backend — see the note in lb.tf and variables.tf.
   log_config {
     enable      = true
-    sample_rate = 1.0
+    sample_rate = var.lb_log_sample_rate
   }
 }
 
