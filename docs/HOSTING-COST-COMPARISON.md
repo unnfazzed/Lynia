@@ -3,11 +3,17 @@
 > **Question asked (2026-09-16):** *"Which would be cheaper for hosting — GCP, Azure or AWS? Suggest
 > other start-up friendly options."*
 >
-> **Short answer:** the provider is the *smallest* of the three levers. At Lynia's current size the
-> spread between the big three is roughly **$50–80/month**; the spread between the stack **as
-> currently configured** and the same stack **configured for a pilot** is about the same; and the
-> spread in **startup credits** is $2,000 to $150,000. Ranked by money-per-unit-of-effort, the order
-> is: **trim the GCP bill → claim the credits → (much later) consider moving**.
+> **Short answer:** the provider is the *smallest* of the three levers, and after the invoice was
+> read (§2) it is smaller still. The measured GCP bill is **~$47.53/mo average to date, trending to
+> ~$105/mo** — about half what this document first estimated. Against that, the spread between the
+> big three is perhaps $20–50/month, while the spread in **startup credits** is $2,000 to $150,000 —
+> and $2,000 alone is ~19 months of hosting. Ranked by money-per-unit-of-effort the order is:
+> **claim the credits → trim the GCP bill → (much later, at a different scale) consider moving.**
+>
+> **Correction, 2026-09-16:** the original estimate here was **~$150–230/mo** and it was roughly
+> **2× too high**. Every figure in §2 is now measured from the billing console. §2 also records
+> which specific line items the estimate got wrong and why, including one it had **backwards**
+> (Memorystore, not Cloud SQL, is the largest service).
 >
 > This doc is analysis, not a decision. The cloud decision of record remains
 > **Google Cloud / `africa-south1`** (`docs/PILOT-READINESS.md`, 2026-06-27). Nothing here changes
@@ -18,7 +24,7 @@
 ## Table of contents
 
 1. [What we actually run](#1-what-we-actually-run)
-2. [What it costs today](#2-what-it-costs-today--and-why-our-own-estimate-is-low)
+2. [What it costs today — measured](#2-what-it-costs-today--measured)
 3. [The hard constraint: the region](#3-the-hard-constraint-the-region)
 4. [GCP vs Azure vs AWS, like for like](#4-gcp-vs-azure-vs-aws-like-for-like)
 5. [Credits — the lever that actually dominates](#5-credits--the-lever-that-actually-dominates)
@@ -60,30 +66,82 @@ Two facts from that list carry most of the cost story:
 
 ---
 
-## 2. What it costs today — and why our own estimate is low
+## 2. What it costs today — measured
 
-`docs/ENG-REVIEW.md` records **~$95–110/mo** (Cloud SQL ~$50 + Memorystore ~$35 + connector ~$10).
-That estimate predates the external HTTPS load balancer and Cloud Armor landing, and it assumes
-Cloud Run rounds to zero. Adding the missing lines:
+**Superseding the estimate.** This section originally carried a bottom-up list-price estimate of
+**~$150–230/mo**. The founder produced the actual GCP billing console on **2026-09-16** and it is
+roughly **half that**. The measured numbers below replace the estimate; the estimate is kept at the
+end of the section only because *how* it was wrong is instructive.
 
-| Line item | ~$/mo (list, `africa-south1`) | Notes |
+### The console, as read (project `lynia-500911`, window Sep 1 2025 – Sep 30 2026)
+
+GCP headline: **average monthly total cost $47.53**.
+
+| Service | Actual to date | Forecast additional | Share of forecast |
+|---|---:|---:|---:|
+| **Cloud Memorystore for Redis** | **$71.82** | **$42.84** | **41.0%** |
+| Cloud SQL | $59.74 | $30.95 | 29.6% |
+| Networking | $29.39 | $16.90 | 16.2% |
+| Artifact Registry | $15.00 | $7.07 | 6.8% |
+| Compute Engine | $12.99 | $6.75 | 6.5% |
+| **Total** | **$188.94** | **$104.51** | |
+
+Two readings of the run rate, because the console does not state one directly:
+
+- **$47.53/mo** is GCP's own figure. `$188.94 ÷ $47.53 = 3.98`, so it is an average over **four**
+  periods — and the trend chart shows spend only in the most recent ones, because the project was
+  provisioned progressively through mid-2026. It is therefore a **blend that includes near-empty
+  months** and understates today.
+- **~$105/mo** is the forward-looking read: GCP's own "forecasted additional" totals $104.51, and
+  the latest bar in the trend chart is the tallest. Treat this as the current run rate.
+
+**So: roughly $50/mo billed to date on average, trending to ~$105/mo as the stack fills out.** Either
+way, well under the $150–230 this document previously asserted.
+
+### What the measurement changes
+
+1. **Memorystore is the single largest line item — bigger than the database.** 41% of the forward
+   bill, ahead of Cloud SQL's 30%. The estimate had these **the wrong way round** (Cloud SQL $60–75
+   vs Memorystore $35–45). Redis is a 1 GB BASIC instance with no replica, serving BullMQ, Socket.IO
+   pub/sub and OTP counters for a pilot — and it is the most expensive thing we run. That reorders
+   §8 (see the revised priority there).
+2. **Compute Engine $12.99 / $6.75 forward is almost certainly the VPC connector**, since Terraform
+   defines no other VMs. That gives the Direct VPC egress change a *measured* value instead of an
+   estimated one, and confirms the direction, though at ~$7/mo forward rather than the $12–18 guessed.
+3. **Artifact Registry is 6.8% of the bill — a line the estimate buried in "other".** This is
+   container-image storage. Every release pushes `$IMAGE:$GITHUB_SHA` **and** `:latest`, and nothing
+   prunes. That is pure accumulation with no cleanup policy, and it is the cheapest fix available
+   (see §8 item 2a).
+4. **Cloud Run and Cloud Armor are not in the top five at all** — both below Compute Engine's $12.99.
+   The estimate's claim that WebSockets holding instances warm was worth $5–40/mo was **wrong, or at
+   least immaterial**: whatever the mechanism costs, it is smaller than the connector. The
+   "WebSockets defeat scale-to-zero" reasoning in §1 stands as an architectural observation and
+   should not be read as a cost claim.
+5. **"Networking" at 16% covers the ALB, egress and connector throughput together.** The estimate had
+   the ALB alone at $18–25/mo; the whole networking category is $29.39 cumulative. The load balancer
+   is materially cheaper than asserted.
+
+The one part of the estimate that survives: **the fixed floor dominates and the variable part is
+nearly zero.** Memorystore + Cloud SQL + Networking + Compute Engine = **93% of the forward bill**,
+and none of it scales down with an idle pilot. That is still the shape of the problem.
+
+### Why the estimate ran ~2× high (kept as a caution)
+
+Every line was biased the same direction: full-month always-on billing at `africa-south1` list price
+with an assumed regional premium, no free tiers, no proration, and no sustained-use discount. Applied
+across seven line items, the individually-defensible roundings compounded into a doubling. **The
+lesson is the one this section originally flagged and then ignored — read the invoice.** The prior
+estimate table:
+
+| Line item | estimated $/mo | |
 |---|---:|---|
-| Cloud SQL `db-custom-1-3840`, ZONAL, 20 GB PD_SSD, PITR | 60–75 | Joburg carries a premium over US regions; PITR/WAL + backup storage on top |
-| Memorystore Redis BASIC 1 GB | 35–45 | no replica at BASIC — we pay for managed, not for HA |
-| Serverless VPC connector (2 × always-on instances) | 12–18 | billed as VMs, idle or not |
-| External HTTPS ALB (2 forwarding rules + data processing) | 18–25 | ~$0.025/hr covers ≤5 forwarding rules, plus per-GB processing |
-| Cloud Armor (1 policy @ $5 + ~7 rules @ $1) | ~12 | plus $0.75/M requests (negligible at pilot volume) |
-| Cloud Run (no min instances, but WS holds instances warm) | 5–40 | the wide band **is** the WebSocket effect; add the OTEL sidecar if enabled |
-| GCS + Artifact Registry + Secret Manager + Scheduler + KMS + logging | 5–15 | Cloud Logging is free to 50 GiB, then $0.50/GiB |
-| **Total** | **≈ $150–230/mo** | before credits |
-
-**So the real number is roughly 1.5–2× what `ENG-REVIEW` records, and about $85/mo of it is edge and
-plumbing** (connector + ALB + Armor) rather than database or compute. That is the single most
-useful finding in this document, and it is true regardless of which provider we pick.
-
-> Figures are approximate list prices for `africa-south1` as of 2026-09. They are for *relative*
-> comparison. Use the live billing export for anything that matters — nobody in this repo has read
-> the actual invoice into a doc yet, which is itself worth fixing.
+| Cloud SQL | 60–75 | vs ~$31/mo forward measured |
+| Memorystore | 35–45 | vs ~$43/mo forward measured — **the only line estimated too low** |
+| VPC connector | 12–18 | vs ~$7/mo forward measured |
+| ALB | 18–25 | folded into Networking, ~$17/mo forward for the whole category |
+| Cloud Armor | ~12 | not in the top five |
+| Cloud Run | 5–40 | not in the top five |
+| Everything else | 5–15 | Artifact Registry alone is ~$7/mo forward |
 
 ---
 
@@ -130,7 +188,7 @@ TLS edge, WAF — in each provider's ZA region, at pilot scale:
 | Private networking | connector ~$12–18, **or Direct VPC egress at $0 compute** | VNet integration, no per-hour connector VM | **NAT Gateway ~$35–45/mo + $0.045/GB** if the tasks sit in private subnets |
 | WAF | Cloud Armor $5 + $1/rule | Front Door WAF / App Gateway WAF (pricier entry) | AWS WAF $5 + $1/rule + $0.60/M |
 | PostGIS | ✅ | ✅ | ✅ |
-| **Pilot-scale total (approx.)** | **$150–230** as built; **$70–100** trimmed | **$45–90** | **$110–180** |
+| **Pilot-scale total (approx.)** | **~$105 measured** (§2), ~$60–70 trimmed | **$45–90** | **$110–180** |
 
 **Ranking on list price at our size: Azure < GCP (trimmed) < GCP (as built) < AWS.**
 
@@ -147,9 +205,13 @@ The three things driving that ranking — none of which is "Azure is a cheaper c
    `us-east-1`, AWS is the most expensive of the three for this shape. (AWS Lightsail in Cape Town
    sidesteps both the ALB and the NAT Gateway with fixed-price bundles — see §6.)
 
-**But note the magnitude.** Azure-vs-GCP is worth perhaps $60–100/mo. A migration is a Terraform
-rewrite plus a live data migration (§7). At $80/mo saved, the payback period on even two weeks of
-work is measured in years.
+**But note the magnitude — and it got smaller.** The Azure/AWS columns are still list-price
+estimates; only the GCP column is measured. Against a **measured ~$105/mo**, the plausible saving
+from moving to Azure is perhaps **$20–50/mo**, not the $60–100 this document estimated before the
+invoice was read. A migration is a Terraform rewrite plus a live data migration (§7), against a
+**total annual bill of roughly $1,300**. The payback period is not measured in years; there isn't
+one. Treat the provider comparison below as background for a future decision at a different scale,
+not as a live option.
 
 ---
 
@@ -163,11 +225,15 @@ At this stage the credit programme is worth 10–100× the list-price difference
 | **Google for Startups Cloud** | **up to $2,000** (Start tier: <5 yrs old, no prior credits beyond free trial) | $200,000 (Growth/Scale, pre-seed–Series A) · $350,000 (AI track) |
 | **AWS Activate** | **$1,000** (Founders tier) | $100,000 (Portfolio, via qualifying VC/accelerator) · $300,000 (GenAI) |
 
-Read against Lynia's position (bootstrapped, Zimbabwe, no institutional round recorded in this repo):
+**At a measured ~$105/mo, a $2,000 credit is ~19 months of runway and the entire annual bill is
+~$1,300.** That makes the credit programme worth more than every other lever in this document
+combined, and it makes the provider comparison academic. Read against Lynia's position (bootstrapped,
+Zimbabwe, no institutional round recorded in this repo):
 
 - The self-serve tiers are all in the same $1k–$5k band. **Credits alone do not justify a move.**
-  Azure's ladder is nominally the largest self-serve pool ($5k vs $2k vs $1k) — worth about six
-  weeks of current runway. Not a reason to migrate; a good reason to *hold* the credits.
+  Azure's ladder is nominally the largest self-serve pool ($5k vs $2k vs $1k) — at the measured run
+  rate that is **~4 years** of hosting, not the six weeks this document guessed from the inflated
+  estimate. Still not a reason to migrate; an even better reason to *hold* the credits.
 - The large tiers all require institutional funding or accelerator membership. `docs/PILOT-READINESS.md`
   notes **Google for Startups Accelerator: Africa** as the route to the larger GCP tier. That is the
   highest-value single action available here and it is a *founder* action, not an engineering one.
@@ -229,30 +295,43 @@ A move means re-authoring `infra/terraform/` against a new provider, re-solving 
 a live Postgres with PostGIS data, re-issuing certs, and re-pointing the mobile app — **whose
 certificate pinning is baked into a native build** (`docs/MOBILE-CERT-PINNING.md`), so an endpoint
 change cannot be delivered by OTA and needs a store release (`REL-01`). Realistically **2–4 weeks**,
-during a pilot, to save ~$80/mo. That is the trade, stated honestly.
+during a pilot, to save perhaps ~$30/mo against a measured ~$105/mo bill (§2). That is the trade,
+stated honestly.
 
 ---
 
 ## 8. Recommendation
 
-**Stay on GCP. Trim the bill. Claim the credits.** Ordered by saving-per-unit-of-risk:
+**Stay on GCP. Claim the credits. Trim the bill.** That order changed when the invoice was read
+(§2): at a measured **~$105/mo**, the $2k credit is ~19 months of hosting and outweighs every
+engineering action below put together.
+
+The measurement also **reordered the engineering items**. Memorystore, not Cloud SQL, is the largest
+line (41% of the forward bill), so the item this document previously held back is now the biggest
+lever available. Ordered by saving-per-unit-of-risk, with measured shares:
 
 | # | Action | ~Saving/mo | Risk | Effort |
 |---|---|---:|---|---|
-| 1 | **Replace the Serverless VPC connector with Direct VPC egress.** GA since 2024-04-23; identical network rates, **zero compute charge**, and it scales to zero with the service. Our connector is `min_instances = 2` billed as always-on VMs. ✅ **WIRED** — gated behind `direct_vpc_egress_enabled` + the `DIRECT_VPC_EGRESS` repo variable; cutover is [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) §7. Not yet applied: that is a founder `terraform apply`. | **$12–18** | Low — a deploy-flag change (`--network`/`--subnet` for `--vpc-connector`), reversible | Small |
-| 2 | **Claim Google for Startups Start-tier credits ($2k)** if not already claimed, and **open Microsoft for Startups Founders Hub in parallel ($1k + $4k)** as the D7 hedge. | up to ~$6k one-off | None | Founder, ~1 hour |
+| 1 | **Claim Google for Startups Start-tier credits ($2k)** if not already claimed, and **open Microsoft for Startups Founders Hub in parallel ($1k + $4k)** as the D7 hedge. At the measured run rate this is ~19 months of hosting — more than everything else here combined. | **~$105/mo, for ~19 months** | None | Founder, ~1 hour |
+| 1a | **Add an Artifact Registry cleanup policy.** 6.8% of the forward bill is container-image storage. Every release pushes `$IMAGE:$GITHUB_SHA` *and* `:latest` and nothing prunes, so this grows monotonically forever. Keep the last N releases + `latest`. **New — the estimate missed this entirely.** | **~$5–7** | Low — retention only, images are rebuildable from the SHA | Small |
+| 2 | **Replace the Serverless VPC connector with Direct VPC egress.** GA since 2024-04-23; identical network rates, **zero compute charge**, and it scales to zero with the service. Our connector is `min_instances = 2` billed as always-on VMs. ✅ **WIRED** — gated behind `direct_vpc_egress_enabled` + the `DIRECT_VPC_EGRESS` repo variable; cutover is [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) §7. Not yet applied: that is a founder `terraform apply`. | **~$7 measured** (the Compute Engine line, §2) — less than the $12–18 estimated | Low — a deploy-flag change (`--network`/`--subnet` for `--vpc-connector`), reversible | Small |
 | 3 | **Finish Cloud Armor's preview stage.** The 5 OWASP rules are `preview = true` — they log and do not block, and Armor bills $1/rule/mo either way. The sequence already exists as [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) §5 (watch preview logs → tune exceptions → enforce); what was missing is that indefinite preview means paying full price for no enforcement, now noted there. | $0–5, or *protection we're already buying* | Low if enforced deliberately, with a watch on false positives | Founder apply |
 | 4 | **Move media to Cloudflare R2** behind the existing `StorageAdapter`. Zero egress, Harare PoP, and the first real exercise of the D7 seam. | small now, larger as photo volume grows | Low — but see the seam note below | **Larger than it looks** |
-| 5 | **Replace Memorystore BASIC with Redis on an `e2-small`** in the same VPC. | **$20–30** | ⚠️ Medium — see caveat below | Medium |
-| 6 | **Downsize `db_tier` to `db-g1-small`** (already flagged in `variables.tf`). | $25–30 | ⚠️ Medium — see caveat below | Small |
+| 5 | **Replace Memorystore BASIC with Redis on an `e2-small`** in the same VPC. **Now the single biggest lever — 41% of the forward bill, ahead of the database.** | **~$30–35** (most of the $42.84 forward Memorystore line) | ⚠️ Medium — see caveat below | Medium |
+| 6 | **Downsize `db_tier` to `db-g1-small`** (already flagged in `variables.tf`). | ~$15–20 (of the $30.95 forward Cloud SQL line) | ⚠️ Medium — see caveat below | Small |
 
-Items 1–4 are close to free money and I would do them. **Items 5 and 6 I would hold**, and the
-reasons are in this repo:
+Items 1–4 are close to free money and I would do them. **Items 5 and 6 I would still hold — but item
+5's hold is now expensive**, and the reasons are in this repo:
 
 - **(5)** Redis holds BullMQ jobs, Socket.IO pub/sub and OTP/rate-limit counters. BASIC tier has no
   replica, so the *durability* bar genuinely does not drop — but we would be taking on patching,
   monitoring and restart behaviour for a component whose loss drops in-flight offer-expiry jobs.
-  Worth doing **after** the k6 load run, not during a pilot.
+  Worth doing **after** the k6 load run, not during a pilot. **What the invoice changes is the
+  urgency, not the verdict:** at 41% of the bill this is the most expensive thing we run, so the
+  right response is to *bring the k6 run forward* (`docs/LOAD-MODEL.md` needs a staging stack, which
+  is itself a cost decision — see §9) rather than to swap Redis blind. A cheaper interim: Memorystore
+  bills per GB, so confirming 1 GB is actually needed — or that the instance is not oversized for
+  the pilot's key count — is a console check, not a migration.
 - **(6)** `LC-INF2` raised the disk to 20 GB specifically to lift the PD_SSD IOPS ceiling for the
   write-heavy GPS workload, and the note already warns that the 1-vCPU tier can cap effective IOPS
   anyway. Shrinking the tier before `docs/LOAD-MODEL.md`'s scenarios have ever been run against a
@@ -279,15 +358,16 @@ to enforce it. That is worth doing on its own merits (it is the seam working as 
 tested API change, not an adapter drop-in, and it should not ride a cost PR. **Item 4 is therefore
 specified here and not implemented.**
 
-Doing 1 + 3 + 4 lands the bill at roughly **$120–190/mo**; adding 5 + 6 after load evidence lands it
-at roughly **$70–110/mo** — which is at or below what a like-for-like Azure build would cost, with no
-migration, no data move, and no store release.
+Doing 1a + 2 + 3 + 4 takes ~$105/mo to roughly **$90/mo**; adding 5 + 6 after load evidence lands it
+near **$45–55/mo** — below a like-for-like Azure build, with no migration, no data move and no store
+release. Item 1 (the credits) makes all of it free for about a year and a half regardless.
 
-**On the literal question — "which is cheaper?"** At our size, **Azure**, by roughly $60–100/mo,
-mostly because of burstable Postgres and bundled ingress. **AWS is the most expensive** of the three
-for this shape, chiefly the NAT Gateway plus the `af-south-1` premium. **That difference is not
-worth a migration today**, and it is smaller than the money currently sitting in our own
-configuration.
+**On the literal question — "which is cheaper?"** At our size, **Azure**, mostly because of burstable
+Postgres and bundled ingress; **AWS is the most expensive** of the three, chiefly the NAT Gateway
+plus the `af-south-1` premium. But the honest answer after reading the invoice is that **the question
+does not matter yet**. The whole GCP bill is ~$1,300/year. The provider spread is a rounding error
+against a single credit grant, and it is smaller than the Memorystore line alone. Revisit at scale
+(§9), not now.
 
 ---
 
@@ -303,11 +383,16 @@ Revisit if any of these fire:
 - **An institutional round or accelerator place lands.** $100k–$350k of credits makes the
   list-price comparison irrelevant for two years, and the right provider becomes whichever one
   granted the credits.
+- **The bill stops looking like §2.** The measurement there is a single console reading on
+  2026-09-16, during a pilot whose resources were still being provisioned — so the trend is upward
+  by construction. Re-read the console (or better, wire the billing export) before acting on any
+  number in this document; a figure this load-bearing should not stay a screenshot.
 - **Traffic reaches ~10× the `LOAD-MODEL` 1× envelope.** At that point the fixed edge overhead stops
   dominating, per-request and egress pricing starts to matter, and the comparison should be redone
   against measured usage rather than a shape.
 - **The staging stack is switched on** (`staging_enabled = true`). That is a second Cloud SQL + a
-  second Redis — realistically **+$80–120/mo**, roughly doubling the bill. `docs/LOAD-MODEL.md`
+  second Redis. On the measured numbers that is **+$70–75/mo** — it does not just dent the bill, it
+  roughly **doubles** it, and it lands on the two most expensive services we run. `docs/LOAD-MODEL.md`
   requires it for the load run. Budget for it deliberately, and consider tearing it down between
   runs rather than leaving it standing.
 - **Fly.io ships Managed Postgres in `jnb`.** That single change would make the Fly hybrid in §6 the

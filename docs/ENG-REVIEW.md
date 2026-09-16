@@ -262,12 +262,14 @@ runs `CREATE EXTENSION IF NOT EXISTS postgis`, app user has `cloudsqlsuperuser`)
 (~$35/mo) + VPC connector (~$10/mo) dominate; Cloud Run / Storage / AR are ~$0 at pilot traffic. **~$95–110/mo**
 before Google for Startups credits; downsize `db_tier` to `db-g1-small` to stretch further.
 
-> **Superseded as a current figure (2026-09-16).** This estimate predates the external HTTPS load
-> balancer and Cloud Armor landing, and it assumes Cloud Run rounds to zero — which the `--timeout
-> 3600` Socket.IO tracking connection prevents, since held WebSockets keep an instance warm through
-> operating hours. Re-costed with those lines in, it is **~$150–230/mo**, of which ~$85 is edge and
-> plumbing rather than database or compute. The review record above stands as written; the current
-> number, the provider comparison and the trim list are
+> **Superseded as a current figure (2026-09-16) — and this estimate was the closer of the two.**
+> Measured from the GCP billing console on 2026-09-16: **$47.53/mo average to date, trending to
+> ~$105/mo** as the stack fills out. The ~$95–110 above is therefore about right for the current
+> run rate, though it lands there by luck rather than by line item: **Memorystore is the largest
+> service ($42.84 forward, 41%), ahead of Cloud SQL ($30.95, 30%)** — the reverse of the ordering
+> assumed here. A same-day re-estimate that put the total at ~$150–230/mo was ~2× high and has
+> itself been withdrawn. The review record above stands as written; the measured numbers, the
+> provider comparison and the trim list are
 > [`HOSTING-COST-COMPARISON.md`](./HOSTING-COST-COMPARISON.md).
 
 **Post-apply addendum** (project provisioned `lynia-500911`, external HTTPS LB landed). Prior fixes verified
