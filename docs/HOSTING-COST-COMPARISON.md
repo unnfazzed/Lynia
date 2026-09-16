@@ -239,10 +239,10 @@ during a pilot, to save ~$80/mo. That is the trade, stated honestly.
 
 | # | Action | ~Saving/mo | Risk | Effort |
 |---|---|---:|---|---|
-| 1 | **Replace the Serverless VPC connector with Direct VPC egress.** GA since 2024-04-23; identical network rates, **zero compute charge**, and it scales to zero with the service. Our connector is `min_instances = 2` billed as always-on VMs. | **$12–18** | Low — a deploy-flag change (`--network`/`--subnet` for `--vpc-connector`), reversible | Small |
+| 1 | **Replace the Serverless VPC connector with Direct VPC egress.** GA since 2024-04-23; identical network rates, **zero compute charge**, and it scales to zero with the service. Our connector is `min_instances = 2` billed as always-on VMs. ✅ **WIRED** — gated behind `direct_vpc_egress_enabled` + the `DIRECT_VPC_EGRESS` repo variable; cutover is [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) §7. Not yet applied: that is a founder `terraform apply`. | **$12–18** | Low — a deploy-flag change (`--network`/`--subnet` for `--vpc-connector`), reversible | Small |
 | 2 | **Claim Google for Startups Start-tier credits ($2k)** if not already claimed, and **open Microsoft for Startups Founders Hub in parallel ($1k + $4k)** as the D7 hedge. | up to ~$6k one-off | None | Founder, ~1 hour |
-| 3 | **Fix Cloud Armor's preview rules.** The 5 OWASP rules are `preview = true` — they log and do not block. We pay $1/rule/mo for rules that currently protect nothing. Either **enforce them** (`armor_waf_preview = false`, the intended end state) or drop them. | $0–5, or *protection we're already buying* | Low if enforced deliberately, with a watch on false positives | Small |
-| 4 | **Move media to Cloudflare R2** behind the existing `StorageAdapter`. Zero egress, Harare PoP, and the first real exercise of the D7 seam. | small now, larger as photo volume grows | Low — the seam exists for this | Medium |
+| 3 | **Finish Cloud Armor's preview stage.** The 5 OWASP rules are `preview = true` — they log and do not block, and Armor bills $1/rule/mo either way. The sequence already exists as [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) §5 (watch preview logs → tune exceptions → enforce); what was missing is that indefinite preview means paying full price for no enforcement, now noted there. | $0–5, or *protection we're already buying* | Low if enforced deliberately, with a watch on false positives | Founder apply |
+| 4 | **Move media to Cloudflare R2** behind the existing `StorageAdapter`. Zero egress, Harare PoP, and the first real exercise of the D7 seam. | small now, larger as photo volume grows | Low — but see the seam note below | **Larger than it looks** |
 | 5 | **Replace Memorystore BASIC with Redis on an `e2-small`** in the same VPC. | **$20–30** | ⚠️ Medium — see caveat below | Medium |
 | 6 | **Downsize `db_tier` to `db-g1-small`** (already flagged in `variables.tf`). | $25–30 | ⚠️ Medium — see caveat below | Small |
 
@@ -257,6 +257,27 @@ reasons are in this repo:
   write-heavy GPS workload, and the note already warns that the 1-vCPU tier can cap effective IOPS
   anyway. Shrinking the tier before `docs/LOAD-MODEL.md`'s scenarios have ever been run against a
   staging stack is optimising a number we have not measured.
+
+### The R2 swap is not a one-liner — the seam leaks (found while costing item 4)
+
+`StorageAdapter` abstracts URL *generation* cleanly, but the GCS-specific **upload size bound** escapes
+it. `GcsStorage.createUploadUrl` binds `x-goog-content-length-range` into the V4 signature, and
+`apps/api/src/uploads/uploads.controller.ts:127` then hands the client that **same GCS header name
+verbatim**. So the controller — business logic, on the cloud-agnostic side of the seam — knows a
+Google header. Two consequences:
+
+- A second storage impl cannot satisfy the interface alone; the controller has to change too, which is
+  precisely what D7 promised would not happen.
+- The bound itself does not port. S3/R2 **presigned PUT cannot enforce a content-length *range*** the
+  way GCS does (presigned POST policies can; presigned PUT can only pin an exact length). Swapping
+  naively would quietly weaken a real security control — an attacker-chosen multi-GB object against a
+  URL minted for a photo.
+
+The honest fix is to move the size bound *into* the interface — have `createUploadUrl` return the
+required request headers rather than have the controller name them — and then decide per-provider how
+to enforce it. That is worth doing on its own merits (it is the seam working as designed), but it is a
+tested API change, not an adapter drop-in, and it should not ride a cost PR. **Item 4 is therefore
+specified here and not implemented.**
 
 Doing 1 + 3 + 4 lands the bill at roughly **$120–190/mo**; adding 5 + 6 after load evidence lands it
 at roughly **$70–110/mo** — which is at or below what a like-for-like Azure build would cost, with no

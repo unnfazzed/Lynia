@@ -262,6 +262,14 @@ runs `CREATE EXTENSION IF NOT EXISTS postgis`, app user has `cloudsqlsuperuser`)
 (~$35/mo) + VPC connector (~$10/mo) dominate; Cloud Run / Storage / AR are ~$0 at pilot traffic. **~$95–110/mo**
 before Google for Startups credits; downsize `db_tier` to `db-g1-small` to stretch further.
 
+> **Superseded as a current figure (2026-09-16).** This estimate predates the external HTTPS load
+> balancer and Cloud Armor landing, and it assumes Cloud Run rounds to zero — which the `--timeout
+> 3600` Socket.IO tracking connection prevents, since held WebSockets keep an instance warm through
+> operating hours. Re-costed with those lines in, it is **~$150–230/mo**, of which ~$85 is edge and
+> plumbing rather than database or compute. The review record above stands as written; the current
+> number, the provider comparison and the trim list are
+> [`HOSTING-COST-COMPARISON.md`](./HOSTING-COST-COMPARISON.md).
+
 **Post-apply addendum** (project provisioned `lynia-500911`, external HTTPS LB landed). Prior fixes verified
 present in source. New finding worth carrying:
 

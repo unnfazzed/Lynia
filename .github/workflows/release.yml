@@ -23,7 +23,15 @@ name: Release (Cloud Run)
 #     GCP_ARTIFACT_REPO    Artifact Registry repo name (e.g. lynia)
 #     CLOUD_RUN_SERVICE    Cloud Run service name (e.g. lynia-api)
 #     CLOUD_SQL_INSTANCE   Cloud SQL connection name (project:region:instance) — for migrations
-#     VPC_CONNECTOR        Serverless VPC Access connector (so Cloud Run reaches Redis)
+#     VPC_CONNECTOR        Serverless VPC Access connector (so Cloud Run reaches Redis).
+#                          Not required when DIRECT_VPC_EGRESS=true.
+#     DIRECT_VPC_EGRESS    'true' switches Cloud Run off the always-on connector onto Direct
+#                          VPC egress (same private reach, no idle compute charge). Needs
+#                          RUN_VPC_NETWORK + RUN_VPC_SUBNET, and the subnet to exist
+#                          (terraform direct_vpc_egress_enabled = true).
+#                          Cutover sequence: docs/INFRA-HARDENING-ROLLOUT.md §7.
+#     RUN_VPC_NETWORK      VPC name for --network   (Direct VPC egress only)
+#     RUN_VPC_SUBNET       Subnet name for --subnet (Direct VPC egress only)
 #     CLOUD_RUN_SERVICE_ACCOUNT  runtime SA email (run as lynia-run, not the default compute SA)
 #     GCP_WORKLOAD_IDENTITY_PROVIDER  WIF provider resource name (keyless CI auth)
 #     GCP_SERVICE_ACCOUNT  deployer SA email the workflow impersonates via WIF
@@ -161,6 +169,8 @@ jobs:
           CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
           CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
           VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
+          RUN_VPC_NETWORK: ${{ vars.RUN_VPC_NETWORK }}
+          RUN_VPC_SUBNET: ${{ vars.RUN_VPC_SUBNET }}
           CLOUD_RUN_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -168,7 +178,17 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE VPC_CONNECTOR CLOUD_RUN_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          required="GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO CLOUD_RUN_SERVICE CLOUD_SQL_INSTANCE CLOUD_RUN_SERVICE_ACCOUNT GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT"
+          # Cloud Run's route to private-IP Redis is EITHER the connector OR Direct VPC egress, and
+          # the two need different config. Requiring the wrong set is how a deploy lands a service
+          # that starts, passes CI and then fails every BullMQ job at runtime — so demand exactly the
+          # set the selected path uses. Terraform enforces the same either/or at plan time
+          # (terraform_data.vpc_egress_path_guard).
+          if [ "${{ vars.DIRECT_VPC_EGRESS }}" = "true" ]; then
+            required="$required RUN_VPC_NETWORK RUN_VPC_SUBNET"
+          else
+            required="$required VPC_CONNECTOR"
+          fi
           # MIGRATE_DATABASE_URL (the Auth-Proxy URL) is only needed for the public-IP migration path.
           # In DB_PRIVATE_ONLY mode migrations run as an in-VPC Cloud Run job over the DATABASE_URL secret.
           if [ "${{ vars.DB_PRIVATE_ONLY }}" != "true" ]; then
@@ -404,14 +424,26 @@ jobs:
         if: ${{ vars.DB_PRIVATE_ONLY == 'true' }}
         run: |
           set -euo pipefail
+          # Cloud Run reaches private-IP Redis over EITHER the always-on Serverless VPC Access
+          # connector (default) or Direct VPC egress, which reaches the same addresses at the same
+          # per-GB rates with no idle compute charge and scales to zero with the service
+          # (docs/HOSTING-COST-COMPARISON.md §8). Selected by the DIRECT_VPC_EGRESS repo variable so
+          # the cutover is a variable flip with an instant rollback, not a code change; the subnet
+          # must already exist (terraform direct_vpc_egress_enabled = true). --vpc-egress stays
+          # private-ranges-only on both paths, so egress behaviour is unchanged either way.
+          if [ "${{ vars.DIRECT_VPC_EGRESS }}" = "true" ]; then
+            VPC_FLAGS="--network ${{ vars.RUN_VPC_NETWORK }} --subnet ${{ vars.RUN_VPC_SUBNET }} --vpc-egress private-ranges-only"
+          else
+            VPC_FLAGS="--vpc-connector ${{ vars.VPC_CONNECTOR }} --vpc-egress private-ranges-only"
+          fi
+
           gcloud run jobs deploy lynia-migrate \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --region "${{ vars.GCP_REGION }}" \
             --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
             --set-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
-            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-            --vpc-egress private-ranges-only \
+            $VPC_FLAGS \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest" \
             --max-retries 1 \
             --task-timeout 600 \
@@ -672,6 +704,19 @@ jobs:
             SECRETS="${SECRETS},DEMO_OTP_PHONE=DEMO_OTP_PHONE:latest,DEMO_OTP_CODE=DEMO_OTP_CODE:latest"
           fi
 
+          # Cloud Run reaches private-IP Redis over EITHER the always-on Serverless VPC Access
+          # connector (default) or Direct VPC egress, which reaches the same addresses at the same
+          # per-GB rates with no idle compute charge and scales to zero with the service
+          # (docs/HOSTING-COST-COMPARISON.md §8). Selected by the DIRECT_VPC_EGRESS repo variable so
+          # the cutover is a variable flip with an instant rollback, not a code change; the subnet
+          # must already exist (terraform direct_vpc_egress_enabled = true). --vpc-egress stays
+          # private-ranges-only on both paths, so egress behaviour is unchanged either way.
+          if [ "${{ vars.DIRECT_VPC_EGRESS }}" = "true" ]; then
+            VPC_FLAGS="--network ${{ vars.RUN_VPC_NETWORK }} --subnet ${{ vars.RUN_VPC_SUBNET }} --vpc-egress private-ranges-only"
+          else
+            VPC_FLAGS="--vpc-connector ${{ vars.VPC_CONNECTOR }} --vpc-egress private-ranges-only"
+          fi
+
           # OTel collector sidecar (docs/OBSERVABILITY.md → Production activation): when the
           # OTEL_SIDECAR_ENABLED repo Variable is true, the release deploys BOTH containers
           # explicitly — the revision spec is fully code-driven, so a hand-edited or broken sidecar
@@ -698,8 +743,7 @@ jobs:
               --max-instances 10 \
               --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
               --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
-              --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-              --vpc-egress private-ranges-only \
+              $VPC_FLAGS \
               --ingress internal-and-cloud-load-balancing \
               --allow-unauthenticated \
               --container api \
@@ -726,8 +770,7 @@ jobs:
               --max-instances 10 \
               --service-account "${{ vars.CLOUD_RUN_SERVICE_ACCOUNT }}" \
               --add-cloudsql-instances "${{ vars.CLOUD_SQL_INSTANCE }}" \
-              --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-              --vpc-egress private-ranges-only \
+              $VPC_FLAGS \
               --ingress internal-and-cloud-load-balancing \
               --set-env-vars "$ENV_VARS" \
               --set-secrets "$SECRETS" \

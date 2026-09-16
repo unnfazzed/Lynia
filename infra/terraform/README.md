@@ -74,7 +74,9 @@ terraform apply
 
 `terraform output arming_guide` prints the full checklist. In short — set repo
 **Variables** `GCP_DEPLOY_ENABLED=true`, `GCP_PROJECT_ID`, `GCP_REGION`,
-`GCP_ARTIFACT_REPO`, `CLOUD_RUN_SERVICE`, `CLOUD_SQL_INSTANCE`, `VPC_CONNECTOR`,
+`GCP_ARTIFACT_REPO`, `CLOUD_RUN_SERVICE`, `CLOUD_SQL_INSTANCE`, `VPC_CONNECTOR`
+(or, after the Direct VPC egress cutover, `DIRECT_VPC_EGRESS=true` +
+`RUN_VPC_NETWORK` + `RUN_VPC_SUBNET` — see `docs/INFRA-HARDENING-ROLLOUT.md` §7),
 `CLOUD_RUN_SERVICE_ACCOUNT`, plus the **keyless** auth pair
 `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`; set the one repo
 **Secret** `MIGRATE_DATABASE_URL` (`terraform output -raw MIGRATE_DATABASE_URL`).
