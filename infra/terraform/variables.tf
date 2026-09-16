@@ -143,6 +143,25 @@ variable "armor_rate_limit_interval_sec" {
   default     = 60
 }
 
+variable "armor_waf_enabled" {
+  # Cost gate, added 2026-09-16 after the first real SKU export. Cloud Armor bills per RULE per month
+  # (~$1 each) on top of the policy, and these five were costing ~$5/mo while in PREVIEW — that is,
+  # while blocking precisely nothing. A preview rule earns its money only by producing false-positive
+  # evidence against REAL traffic; with the pilot still pre-launch there is no traffic to learn from,
+  # so the rules were paying to observe an empty road.
+  #
+  # What this does NOT gate: the per-IP rate-limit rule (priority 1000) and the default-allow, which
+  # stay unconditionally. That throttle is the only per-IP DoS backstop in front of a public endpoint,
+  # so it is never the thing you switch off to save a dollar.
+  #
+  # Flip to true as part of launch prep, BEFORE real traffic arrives, so the preview window has
+  # something to observe; then flip armor_waf_preview to false to enforce. Re-enabling is one bool and
+  # costs nothing but the monthly rule fee.
+  description = "Create the five preconfigured OWASP WAF rules (SQLi/XSS/LFI/RCE/scanner) on the API security policy. Default false: they bill ~$1/rule/month and, in preview mode with no live traffic, produce no evidence. Arm at launch prep. The per-IP rate limit is NOT gated by this and always applies."
+  type        = bool
+  default     = false
+}
+
 variable "armor_waf_preview" {
   description = "Run the OWASP WAF rulesets in PREVIEW (log-only) instead of enforcing (deny 403). Default true so a launch can observe false positives against real traffic first; set false to enforce."
   type        = bool
@@ -176,6 +195,46 @@ variable "artifact_repo" {
   description = "Artifact Registry Docker repo id. Must match GCP_ARTIFACT_REPO in the release workflow."
   type        = string
   default     = "lynia"
+}
+
+variable "artifact_cleanup_dry_run" {
+  # Ships TRUE on purpose. A cleanup policy is evaluated by a background job, and the only way to see
+  # what it WOULD delete is to run it in dry-run and read the audit logs (~1 day later). Enforcing on
+  # the first apply would delete against a policy nobody has ever seen the output of.
+  description = "Run the Artifact Registry cleanup policies in dry-run (log what they would delete, delete nothing). Default true — read one day of Cloud Logging audit output, confirm the buildcache tag and any rollback targets survive, THEN set false to enforce."
+  type        = bool
+  default     = true
+}
+
+variable "artifact_keep_recent_versions" {
+  # Sized from the real cadence, not a round number: release.yml fires on every non-docs push to main,
+  # which over the 30 days to 2026-09-16 was 52 commits (90 total, 38 docs-only). So ~1.7 images/day,
+  # and this keep_count is about five weeks of rollback range.
+  #
+  # This is the number to get right. Cloud Run revisions pin image DIGESTS, so deleting the image
+  # behind a retained revision does not degrade it — it makes that rollback target unstartable, and
+  # you find out at the worst possible moment. An earlier draft of this work proposed keep_count = 10,
+  # which at this cadence is FOUR DAYS. Re-derive this if the merge rate changes materially.
+  description = "How many recent image versions the cleanup policy keeps, per package. Must exceed the number of releases you would ever roll back across — Cloud Run revisions pin digests, so a swept image is a dead rollback target. ~52 images/month at the 2026-09 cadence, so 60 is roughly five weeks."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.artifact_keep_recent_versions >= 30
+    error_message = "artifact_keep_recent_versions must be at least 30. At the observed ~1.7 images/day release cadence anything lower is under three weeks of rollback range, and Cloud Run revisions pin image digests — a swept image is a rollback target that cannot start."
+  }
+}
+
+variable "artifact_untagged_retention" {
+  # 30 days, not the 7 an earlier draft proposed, and the reason is the buildx cache rather than
+  # caution for its own sake. release.yml pushes `$IMAGE:buildcache` with mode=max,image-manifest=true:
+  # the TAG survives any untagged sweep, but that tag is an index over child manifests which are
+  # themselves untagged. Sweeping those orphans the cache, every later build cold-misses, and nothing
+  # anywhere reports an error — CI just gets slower. At ~1.7 builds/day nothing the cache still
+  # references is 30 days old, so this window clears real garbage without touching a live cache chain.
+  description = "Age after which UNTAGGED image versions are deleted, as a duration in seconds. Kept generous (30d) because the buildx registry cache is a tagged index over untagged child manifests — sweeping those silently cold-misses every subsequent build."
+  type        = string
+  default     = "2592000s"
 }
 
 variable "cloud_run_service" {
