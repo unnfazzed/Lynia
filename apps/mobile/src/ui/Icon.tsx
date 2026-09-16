@@ -47,7 +47,10 @@ import ShoppingBag from "lucide-react-native/dist/cjs/icons/shopping-bag";
 import Star from "lucide-react-native/dist/cjs/icons/star";
 import Store from "lucide-react-native/dist/cjs/icons/store";
 import Timer from "lucide-react-native/dist/cjs/icons/timer";
-import Trash from "lucide-react-native/dist/cjs/icons/trash-2";
+// lucide-react-native 1.45 (dependabot #916, 1.37 -> 1.45) consolidated trash-2 into trash. It kept a
+// TYPES-only alias — dist/types/icons/trash-2.d.ts is `export { default } from './trash.js'` — but
+// shipped no dist/cjs/icons/trash-2.js, so every module reaching this file failed to resolve.
+import Trash from "lucide-react-native/dist/cjs/icons/trash";
 import TriangleAlert from "lucide-react-native/dist/cjs/icons/triangle-alert";
 import Utensils from "lucide-react-native/dist/cjs/icons/utensils";
 import User from "lucide-react-native/dist/cjs/icons/user";
