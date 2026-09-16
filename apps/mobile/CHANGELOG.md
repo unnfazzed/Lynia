@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.50.0](https://github.com/unnfazzed/Lynia/compare/v0.49.0...v0.50.0) (2026-09-16)
+
+
+### Features
+
+* **infra:** Artifact Registry retention + gate the preview-only Cloud Armor rules ([#921](https://github.com/unnfazzed/Lynia/issues/921)) ([de53cb1](https://github.com/unnfazzed/Lynia/commit/de53cb12876b8c8537f1beb7b85e6b7dda0768a3))
+
+
+### Bug Fixes
+
+* **mobile:** submit the closed lane to the track that has the testers ([#908](https://github.com/unnfazzed/Lynia/issues/908)) ([208aec5](https://github.com/unnfazzed/Lynia/commit/208aec56d99ec133064c13089bf2e10d91d95885))
+
 ## [0.49.0](https://github.com/unnfazzed/Lynia/compare/v0.48.4...v0.49.0) (2026-09-01)
 
 
