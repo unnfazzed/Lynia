@@ -106,17 +106,48 @@ describe("LB request-log sampling", () => {
     ).toBe(true);
   });
 
-  it("keeps the sample rate at 1.0 while the Cloud Armor WAF is in preview", () => {
+  it("keeps the sample rate at 1.0 while OWASP rules exist AND are in preview", () => {
+    // Two gates now, because armor_waf_enabled (2026-09-16) can remove the rulesets entirely:
+    //
+    //   enabled=false            -> no OWASP rules exist    -> no evidence to lose  -> rate is free
+    //   enabled=true, preview=T  -> rules log, block nothing -> the log IS the WAF  -> rate MUST be 1.0
+    //   enabled=true, preview=F  -> rules return 403         -> the 403 is evidence -> rate is free
+    //
+    // Only the middle row couples them. Writing it this way means the invariant RE-ARMS by itself the
+    // day someone flips armor_waf_enabled back on for launch prep, rather than needing to be
+    // remembered — which is the entire reason it is a test and not a comment.
+    const wafEnabled = variableDefault(variables, "armor_waf_enabled");
     const wafPreview = variableDefault(variables, "armor_waf_preview");
     const sampleRate = variableDefault(variables, "lb_log_sample_rate");
+    expect(wafEnabled, "armor_waf_enabled must exist — it gates this invariant").not.toBeNull();
     expect(wafPreview, "armor_waf_preview must exist — it gates this invariant").not.toBeNull();
 
-    if (wafPreview === "true") {
+    if (wafEnabled === "true" && wafPreview === "true") {
       expect(
         Number(sampleRate),
-        "armor_waf_preview is true, so the OWASP rulesets only LOG their matches into the LB request log. Sampling below 1.0 tunes the WAF on a fraction of its false positives and enforces blind on the rest. Flip armor_waf_preview to false first, then lower lb_log_sample_rate.",
+        "The OWASP rulesets are armed and in preview, so they only LOG their matches into the LB request log. Sampling below 1.0 tunes the WAF on a fraction of its false positives and enforces blind on the rest. Flip armor_waf_preview to false first, then lower lb_log_sample_rate.",
       ).toBe(1);
     }
+  });
+
+  it("gates the OWASP rules without touching the per-IP rate limit", () => {
+    // The cost argument for armor_waf_enabled=false is that a PREVIEW rule blocks nothing, so removing
+    // it removes no protection. That argument does NOT extend to the throttle at priority 1000, which
+    // is always enforced and is the only per-IP DoS backstop in front of a public endpoint. This asserts
+    // nobody later folds it into the same gate to save another dollar.
+    const armor = read("armor.tf");
+    const throttle = /rule\s*\{[^}]*?action\s*=\s*"throttle"[\s\S]*?priority\s*=\s*1000/.test(armor);
+    expect(throttle, "armor.tf must keep an unconditional throttle rule at priority 1000").toBe(true);
+    expect(
+      /dynamic\s+"rule"\s*\{[\s\S]*?for_each\s*=\s*var\.armor_waf_enabled/.test(armor),
+      "the OWASP rulesets must be the gated ones (a dynamic rule block keyed on var.armor_waf_enabled)",
+    ).toBe(true);
+    // The throttle must sit OUTSIDE that dynamic block: everything before the first `dynamic "rule"`.
+    const beforeDynamic = armor.slice(0, armor.indexOf('dynamic "rule"'));
+    expect(
+      /action\s*=\s*"throttle"/.test(beforeDynamic),
+      "the per-IP throttle must be a plain, ungated rule — never inside the armor_waf_enabled dynamic block",
+    ).toBe(true);
   });
 
   it("routes every backend's sample_rate through the variable, never a literal", () => {
