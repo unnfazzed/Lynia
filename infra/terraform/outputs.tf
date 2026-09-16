@@ -25,8 +25,18 @@ output "CLOUD_SQL_INSTANCE" {
 }
 
 output "VPC_CONNECTOR" {
-  description = "Serverless VPC Access connector — wire into release.yml's `gcloud run deploy --vpc-connector` so Cloud Run can reach Redis."
-  value       = google_vpc_access_connector.connector.name
+  description = "Serverless VPC Access connector — wire into release.yml's `gcloud run deploy --vpc-connector` so Cloud Run can reach Redis. Empty once vpc_connector_enabled = false, i.e. after the Direct VPC egress cutover (docs/INFRA-HARDENING-ROLLOUT.md §7); the DIRECT_VPC_EGRESS repo variable then selects --network/--subnet instead and this variable is unset."
+  value       = one(google_vpc_access_connector.connector[*].name)
+}
+
+output "RUN_DIRECT_SUBNET" {
+  description = "Subnet for Cloud Run Direct VPC egress — wire into release.yml's `gcloud run deploy --subnet` (with --network lynia-vpc) in place of --vpc-connector. Null until direct_vpc_egress_enabled = true."
+  value       = one(google_compute_subnetwork.run_direct[*].name)
+}
+
+output "RUN_DIRECT_NETWORK" {
+  description = "VPC network name for `gcloud run deploy --network`, the companion to RUN_DIRECT_SUBNET."
+  value       = google_compute_network.vpc.name
 }
 
 output "CLOUD_RUN_SERVICE_ACCOUNT" {
@@ -77,7 +87,10 @@ output "arming_guide" {
       GCP_ARTIFACT_REPO         = ${google_artifact_registry_repository.api.repository_id}
       CLOUD_RUN_SERVICE         = ${var.cloud_run_service}
       CLOUD_SQL_INSTANCE        = ${google_sql_database_instance.main.connection_name}
-      VPC_CONNECTOR             = ${google_vpc_access_connector.connector.name}
+      VPC_CONNECTOR             = ${coalesce(one(google_vpc_access_connector.connector[*].name), "(none — Direct VPC egress)")}
+      DIRECT_VPC_EGRESS         = ${var.direct_vpc_egress_enabled ? "true — also set RUN_VPC_NETWORK/RUN_VPC_SUBNET below" : "false (connector path)"}
+      RUN_VPC_NETWORK           = ${google_compute_network.vpc.name}
+      RUN_VPC_SUBNET            = ${coalesce(one(google_compute_subnetwork.run_direct[*].name), "(not created — direct_vpc_egress_enabled = false)")}
       CLOUD_RUN_SERVICE_ACCOUNT = ${google_service_account.runtime.email}
       GCP_WORKLOAD_IDENTITY_PROVIDER = ${google_iam_workload_identity_pool_provider.github.name}
       GCP_SERVICE_ACCOUNT       = ${google_service_account.deployer.email}

@@ -125,6 +125,32 @@ variable "redis_tls_enabled" {
   default     = false
 }
 
+# --- Private networking / Cloud Run egress (network.tf) ---
+# Cost lane, not a hardening lane: the Serverless VPC Access connector is billed as always-on VMs
+# (min_instances = 2) whether or not a request is served. Cloud Run's Direct VPC egress reaches the
+# same private addresses at the same per-GB network rates with no compute charge, and scales to zero
+# with the service. Rationale + numbers: docs/HOSTING-COST-COMPARISON.md §8; rollout: §7 of
+# docs/INFRA-HARDENING-ROLLOUT.md. Both default to today's deployed behaviour, so a plain apply is a
+# no-op, and the two flags are deliberately SEPARATE so the connector is destroyed only after the
+# service is verified on the new path.
+variable "direct_vpc_egress_enabled" {
+  description = "Create the subnet Cloud Run Direct VPC egress needs. Additive — creating it changes no running service; the service moves only when release.yml is told to (DIRECT_VPC_EGRESS repo variable)."
+  type        = bool
+  default     = false
+}
+
+variable "direct_vpc_egress_cidr" {
+  description = "CIDR for the Direct VPC egress subnet. Must not overlap the connector's 10.8.0.0/28 or the private-services peering range 10.10.0.0/16. Cloud Run consumes one address per instance."
+  type        = string
+  default     = "10.9.0.0/24"
+}
+
+variable "vpc_connector_enabled" {
+  description = "Keep the Serverless VPC Access connector. Set false ONLY after Cloud Run is confirmed serving on Direct VPC egress — the running revision still references the connector until it is redeployed, so destroying it early severs the API's only route to Redis."
+  type        = bool
+  default     = true
+}
+
 # --- Cloud Armor (armor.tf) ---
 variable "armor_rate_limit_count" {
   # 3000/60s (LC-INF1, 2026-08-01): raised from 600. Zimbabwe carriers run carrier-grade NAT, so
