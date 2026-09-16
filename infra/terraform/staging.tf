@@ -239,9 +239,12 @@ resource "google_compute_backend_service" "staging" {
     group = google_compute_region_network_endpoint_group.staging[0].id
   }
 
+  # Shared with every other backend — see the note in lb.tf and variables.tf. Staging deliberately
+  # gets the SAME rate as prod: the k6 abuse scenario above is where WAF false positives are meant
+  # to surface first, so sampling staging lower than prod would defeat the rehearsal.
   log_config {
     enable      = true
-    sample_rate = 1.0
+    sample_rate = var.lb_log_sample_rate
   }
 }
 

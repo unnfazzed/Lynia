@@ -149,6 +149,28 @@ variable "armor_waf_preview" {
   default     = true
 }
 
+variable "lb_log_sample_rate" {
+  # Lives NEXT TO armor_waf_preview because the two are coupled, and that coupling is the whole
+  # reason this is a variable rather than four literals. A Cloud Armor rule in PREVIEW mode does not
+  # block anything — it only records a would-have-matched entry in the LOAD BALANCER request log. So
+  # while armor_waf_preview is true, this sample rate IS the WAF's evidence rate: at 0.1 you tune the
+  # OWASP rulesets on a tenth of the false positives and enforce on the other nine tenths blind.
+  #
+  # Which is why the default stays 1.0 and this refactor is deliberately zero-diff. Sampling down is
+  # a real saving, but it is only safe to take AFTER armor_waf_preview flips to false, and the ceiling
+  # on that saving is the LB log ingest line — not something to trade WAF tuning data for. The
+  # invariant (preview ⇒ 1.0) is enforced in CI by apps/api/src/infra/lb-log-sampling.spec.ts, in the
+  # same idiom as infra/maps-tfvars.spec.ts.
+  description = "Fraction of load-balancer requests written to Cloud Logging, applied to every backend service (api, admin, merchant, staging). MUST stay 1.0 while armor_waf_preview is true — preview-mode WAF matches are only visible in these logs. Lower it only after the WAF is enforcing."
+  type        = number
+  default     = 1.0
+
+  validation {
+    condition     = var.lb_log_sample_rate > 0 && var.lb_log_sample_rate <= 1.0
+    error_message = "lb_log_sample_rate must be greater than 0 and at most 1.0. Use enable=false on a backend to turn logging off entirely; a 0.0 sample rate silently keeps logging enabled while recording nothing."
+  }
+}
+
 # --- Artifact Registry / Cloud Run ---
 variable "artifact_repo" {
   description = "Artifact Registry Docker repo id. Must match GCP_ARTIFACT_REPO in the release workflow."

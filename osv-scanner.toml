@@ -19,6 +19,22 @@
 # `brace-expansion@2.1.2`: `2.1.4`, `brace-expansion@>=5.0.0 <5.0.9`: `>=5.0.9`) — no vulnerable
 # version remains in `pnpm-lock.yaml`, so no exception entry is needed for either advisory.
 
+# ── decode-uri-component: DO NOT override (2026-09-09) ──────────────────────────────────────────
+# Not an IgnoredVulns entry, because it does not need one — a note so the next person does not make
+# the mistake this comment is downstream of.
+#
+# GHSA-vcc3-ghjq-m6fr flags decode-uri-component 0.2.2, fixed in 0.5.0. It is CVSS **6.6**, below the
+# CVSS>=7 band the CI gate actually fails on, so it never blocks a build. But osv-scanner prints its
+# FULL findings table when the gate trips on some other package, and 6.6 sits in that table looking
+# exactly like the 7.5s around it. Bumping it "while we are in here" is the trap: 0.5.0 is ESM-only
+# (`export default function decodeUriComponent`), and its sole importer is query-string@7.1.3, which
+# `require()`s it from CJS. The override therefore breaks apps/mobile's Jest run at import time —
+# 4 suites, 13 tests — through expo-router -> @react-navigation/core -> getPathFromState ->
+# query-string. There is no CJS fix: 0.5.0 is the first fixed version and it is ESM.
+#
+# So: read the gate's own jq filter (`max_severity >= 7` in ci.yml), not the printed table, when
+# deciding what a red audit actually requires. Revisit only if query-string moves off the 7.x line.
+
 # ── image-size (2026-08-10) ──────────────────────────────────────────────────────────────────────
 # Two DoS advisories against `image-size`, both accepted here because THERE IS NO FIXED VERSION IN
 # ANY MAJOR — not because a bump is inconvenient. OSV records `last_affected: 2.0.2` on both, and
