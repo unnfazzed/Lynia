@@ -60,6 +60,8 @@ jobs:
           GCP_REGION: ${{ vars.GCP_REGION }}
           GCP_ARTIFACT_REPO: ${{ vars.GCP_ARTIFACT_REPO }}
           VPC_CONNECTOR: ${{ vars.VPC_CONNECTOR }}
+          RUN_VPC_NETWORK: ${{ vars.RUN_VPC_NETWORK }}
+          RUN_VPC_SUBNET: ${{ vars.RUN_VPC_SUBNET }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
           STAGING_CLOUD_SQL_INSTANCE: ${{ vars.STAGING_CLOUD_SQL_INSTANCE }}
@@ -68,7 +70,15 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO VPC_CONNECTOR \
+          # Staging shares the production VPC (staging.tf: same project, same network), so it
+          # follows prod onto Direct VPC egress rather than keeping the connector alive by itself —
+          # a connector destroyed after the prod cutover would otherwise red every staging deploy.
+          if [ "${{ vars.DIRECT_VPC_EGRESS }}" = "true" ]; then
+            VPC_REQUIRED="RUN_VPC_NETWORK RUN_VPC_SUBNET"
+          else
+            VPC_REQUIRED="VPC_CONNECTOR"
+          fi
+          for v in GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPO $VPC_REQUIRED \
                    GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT \
                    STAGING_CLOUD_SQL_INSTANCE STAGING_CLOUD_RUN_SERVICE_ACCOUNT \
                    MIGRATE_DATABASE_URL_STAGING; do
@@ -188,6 +198,12 @@ jobs:
 
           SECRETS="DATABASE_URL=DATABASE_URL_STAGING:latest,REDIS_URL=REDIS_URL_STAGING:latest,JWT_SIGNING_SECRET=JWT_SIGNING_SECRET_STAGING:latest,PII_ENCRYPTION_KEY=PII_ENCRYPTION_KEY_STAGING:latest"
 
+          if [ "${{ vars.DIRECT_VPC_EGRESS }}" = "true" ]; then
+            VPC_FLAGS="--network ${{ vars.RUN_VPC_NETWORK }} --subnet ${{ vars.RUN_VPC_SUBNET }} --vpc-egress private-ranges-only"
+          else
+            VPC_FLAGS="--vpc-connector ${{ vars.VPC_CONNECTOR }} --vpc-egress private-ranges-only"
+          fi
+
           gcloud run deploy "$SERVICE" \
             --image "$IMAGE:${GITHUB_SHA}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
@@ -198,8 +214,7 @@ jobs:
             --max-instances 2 \
             --service-account "${{ vars.STAGING_CLOUD_RUN_SERVICE_ACCOUNT }}" \
             --add-cloudsql-instances "${{ vars.STAGING_CLOUD_SQL_INSTANCE }}" \
-            --vpc-connector "${{ vars.VPC_CONNECTOR }}" \
-            --vpc-egress private-ranges-only \
+            $VPC_FLAGS \
             --ingress internal-and-cloud-load-balancing \
             --set-env-vars "$ENV_VARS" \
             --set-secrets "$SECRETS" \

@@ -36,6 +36,15 @@
 # armor_waf_preview  = false   # enforce the OWASP WAF (deny 403) instead of log-only. Runbook §5 (observe preview first).
 # bucket_cors_origins = ["https://admin.lyniafinance.com"]  # only if the admin console does browser uploads; never ["*"].
 
+# -- Cost: Cloud Run Direct VPC egress (Runbook §7) --
+# Drops the ~$12-18/mo always-on VPC connector for an equivalent path with no idle compute charge.
+# The two flags are SEPARATE on purpose and belong to DIFFERENT runbook steps: step 1 creates the
+# subnet (additive, safe), step 6 destroys the connector — and step 6 comes only after the service is
+# verified on the new path. Enabling both at once tears down the old route in the same apply that
+# builds the new one, while the running revision still points at the connector.
+# direct_vpc_egress_enabled = true   # step 1: create the subnet. Changes no running service.
+# vpc_connector_enabled     = false  # step 6: ONLY after DIRECT_VPC_EGRESS=true is verified in prod.
+
 # =============================================================================
 # Admin console tier (admin.tf; docs/plans/2026-admin-console-deployment.md)
 # -----------------------------------------------------------------------------
