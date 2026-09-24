@@ -3,8 +3,13 @@ import {
   consoleAuthRequired,
   evaluateConsoleAccess,
   isPublicConsolePath,
+  EASY_AUTH_SIGNOUT_URL,
+  IAP_SIGNOUT_URL,
+  isEasyAuthProxyHeader,
   normalizeOperator,
+  parseOperatorAllowlist,
   resolveProxyOperator,
+  resolveSignOutUrl,
 } from "./console-auth";
 
 /**
@@ -121,5 +126,132 @@ describe("evaluateConsoleAccess", () => {
     });
     expect(d.allow).toBe(false);
     expect(d.status).toBe(401);
+  });
+});
+
+describe("parseOperatorAllowlist", () => {
+  it("is null when unset or empty", () => {
+    expect(parseOperatorAllowlist(undefined)).toBeNull();
+    expect(parseOperatorAllowlist("")).toBeNull();
+    expect(parseOperatorAllowlist(" , ,")).toBeNull();
+  });
+  it("splits on commas, trims, lower-cases and drops blanks", () => {
+    expect(parseOperatorAllowlist(" Alice@Corp.com, bob@corp.com ,,")).toEqual(["alice@corp.com", "bob@corp.com"]);
+  });
+});
+
+describe("isEasyAuthProxyHeader", () => {
+  it("matches the Easy Auth header case-insensitively", () => {
+    expect(isEasyAuthProxyHeader("x-ms-client-principal-name")).toBe(true);
+    expect(isEasyAuthProxyHeader("X-MS-CLIENT-PRINCIPAL-NAME")).toBe(true);
+  });
+  it("does not match the IAP header", () => {
+    expect(isEasyAuthProxyHeader("x-goog-authenticated-user-email")).toBe(false);
+  });
+});
+
+describe("evaluateConsoleAccess — operator allowlist", () => {
+  const base = { nodeEnv: "production", requireAuthOverride: undefined, pathname: "/riders" };
+  const allow = parseOperatorAllowlist("alice@corp.com,Ops.Lead@corp.onmicrosoft.com");
+
+  it("admits a listed operator, case-insensitively, and attributes them", () => {
+    const d = evaluateConsoleAccess({ ...base, operator: "ALICE@corp.com", allowedOperators: allow });
+    expect(d.allow).toBe(true);
+    expect(d.operator).toBe("ALICE@corp.com");
+    expect(
+      evaluateConsoleAccess({ ...base, operator: "ops.lead@CORP.onmicrosoft.com", allowedOperators: allow }).allow,
+    ).toBe(true);
+  });
+
+  it("FAILS CLOSED (403) for an authenticated operator not on the list", () => {
+    const d = evaluateConsoleAccess({ ...base, operator: "mallory@corp.com", allowedOperators: allow });
+    expect(d.allow).toBe(false);
+    expect(d.operator).toBeNull();
+    expect(d.status).toBe(403);
+  });
+
+  it("does not match on a substring or suffix", () => {
+    expect(evaluateConsoleAccess({ ...base, operator: "lice@corp.com", allowedOperators: allow }).allow).toBe(false);
+    expect(evaluateConsoleAccess({ ...base, operator: "alice@corp.com.evil", allowedOperators: allow }).allow).toBe(
+      false,
+    );
+  });
+
+  it("admits a listed operator under Easy Auth", () => {
+    const d = evaluateConsoleAccess({
+      ...base,
+      operator: "alice@corp.com",
+      allowedOperators: allow,
+      requireAllowlist: true,
+    });
+    expect(d.allow).toBe(true);
+  });
+
+  it("keeps the GCP behaviour when unset: any authenticated operator is admitted", () => {
+    const d = evaluateConsoleAccess({ ...base, operator: "anyone@corp.com", allowedOperators: null });
+    expect(d.allow).toBe(true);
+    expect(d.operator).toBe("anyone@corp.com");
+  });
+
+  it("FAILS CLOSED under Easy Auth when the allowlist is unset", () => {
+    const d = evaluateConsoleAccess({
+      ...base,
+      operator: "anyone@corp.com",
+      allowedOperators: null,
+      requireAllowlist: true,
+    });
+    expect(d.allow).toBe(false);
+    expect(d.operator).toBeNull();
+    expect(d.status).toBe(403);
+    expect(d.message).toMatch(/ADMIN_CONSOLE_ALLOWED_OPERATORS/);
+  });
+
+  it("still 401s an anonymous request before the allowlist is consulted", () => {
+    const d = evaluateConsoleAccess({ ...base, operator: null, allowedOperators: allow, requireAllowlist: true });
+    expect(d.allow).toBe(false);
+    expect(d.status).toBe(401);
+  });
+
+  it("is not consulted when auth is off (dev) or for public paths", () => {
+    expect(
+      evaluateConsoleAccess({
+        ...base,
+        nodeEnv: "development",
+        operator: null,
+        allowedOperators: allow,
+        requireAllowlist: true,
+      }).allow,
+    ).toBe(true);
+    expect(
+      evaluateConsoleAccess({
+        ...base,
+        pathname: "/api/healthz",
+        operator: null,
+        allowedOperators: null,
+        requireAllowlist: true,
+      }).allow,
+    ).toBe(true);
+  });
+});
+
+describe("resolveSignOutUrl", () => {
+  it("defaults to the IAP cookie-clear URL (unchanged GCP behaviour)", () => {
+    expect(IAP_SIGNOUT_URL).toBe("/?gcp-iap-mode=CLEAR_LOGIN_COOKIE");
+    expect(resolveSignOutUrl({ configured: undefined, proxyHeaderName: undefined })).toBe(IAP_SIGNOUT_URL);
+    expect(resolveSignOutUrl({ configured: undefined, proxyHeaderName: "x-goog-authenticated-user-email" })).toBe(
+      IAP_SIGNOUT_URL,
+    );
+  });
+  it("follows Easy Auth when the proxy header is the Easy Auth one", () => {
+    expect(EASY_AUTH_SIGNOUT_URL).toBe("/.auth/logout");
+    expect(resolveSignOutUrl({ configured: undefined, proxyHeaderName: "x-ms-client-principal-name" })).toBe(
+      EASY_AUTH_SIGNOUT_URL,
+    );
+  });
+  it("lets ADMIN_CONSOLE_SIGNOUT_URL win, ignoring a blank value", () => {
+    expect(resolveSignOutUrl({ configured: "/custom/logout", proxyHeaderName: "x-ms-client-principal-name" })).toBe(
+      "/custom/logout",
+    );
+    expect(resolveSignOutUrl({ configured: "  ", proxyHeaderName: undefined })).toBe(IAP_SIGNOUT_URL);
   });
 });

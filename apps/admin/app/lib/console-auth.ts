@@ -10,8 +10,13 @@
  *     `X-Goog-IAP-JWT-Assertion` (see `iap-jwt.ts`). The plaintext email header is NOT trusted here —
  *     verification makes the identity unforgeable even if the Cloud Run ingress is ever misconfigured
  *     and the service is hit directly. Enabled by setting ADMIN_CONSOLE_IAP_AUDIENCE.
- *   - Proxy-header (OAuth2-proxy / legacy IAP without JWT verification, or dev): the operator is read
- *     from a trusted header the proxy sets. Used only when no IAP audience is configured.
+ *   - Proxy-header (Azure Easy Auth, OAuth2-proxy / legacy IAP without JWT verification, or dev): the
+ *     operator is read from a trusted header the proxy sets. Used only when no IAP audience is configured.
+ *
+ * Authorization on top of authentication: `ADMIN_CONSOLE_ALLOWED_OPERATORS` (optional) restricts the
+ * console to named operators and fails closed for anyone else. It is REQUIRED under Easy Auth
+ * (`x-ms-client-principal-name`), where an unset list refuses everyone rather than admitting every
+ * principal the tenant can sign in; on GCP an unset list keeps the old IAP-policy-only behaviour.
  *
  * `evaluateConsoleAccess` is a pure, synchronous function over an ALREADY-RESOLVED operator (no
  * Next/Node imports, no crypto, no I/O) so the allow/deny truth table is unambiguous and independently
@@ -31,6 +36,18 @@ export interface ConsoleAccessInput {
    * policy trusts — the adapter must never pass an unverified/client-supplied value here.
    */
   operator: string | null;
+  /**
+   * Parsed `ADMIN_CONSOLE_ALLOWED_OPERATORS` (see `parseOperatorAllowlist`): lower-cased identities, or
+   * null when the variable is unset/blank. When non-null, an authenticated operator NOT on the list is
+   * refused — the proxy proves who the operator is, this list decides whether they may use the console.
+   */
+  allowedOperators?: readonly string[] | null;
+  /**
+   * True when the trust mode offers no authorization of its own beyond "signed in", so an UNSET
+   * allowlist must fail closed rather than admit every authenticated principal. Set for Azure Easy
+   * Auth (`isEasyAuthProxyHeader`); false for GCP IAP, whose own access policy is the allowlist.
+   */
+  requireAllowlist?: boolean;
 }
 
 export interface ConsoleAccessDecision {
@@ -52,7 +69,10 @@ export function isPublicConsolePath(pathname: string): boolean {
     pathname.startsWith("/icon.") ||
     pathname.startsWith("/brand/") ||
     pathname.startsWith("/fonts/") ||
-    pathname === "/robots.txt"
+    pathname === "/robots.txt" ||
+    // Liveness probe for the container host — returns a static {status:"ok"}, touches no admin data.
+    // Exact match so nothing else under /api/ rides along.
+    pathname === "/api/healthz"
   );
 }
 
@@ -90,6 +110,46 @@ export function resolveProxyOperator(input: {
   return null;
 }
 
+/** The header Azure App Service / Container Apps Easy Auth sets (and overwrites) with the principal. */
+export const EASY_AUTH_PRINCIPAL_HEADER = "x-ms-client-principal-name";
+
+/** Whether a proxy-header name is the Easy Auth one (header names are case-insensitive). */
+export function isEasyAuthProxyHeader(proxyHeaderName: string): boolean {
+  return proxyHeaderName.trim().toLowerCase() === EASY_AUTH_PRINCIPAL_HEADER;
+}
+
+/**
+ * Parse `ADMIN_CONSOLE_ALLOWED_OPERATORS` — comma-separated emails/UPNs, compared case-insensitively.
+ * Returns null when unset or when it holds no entries (so "" or " , " reads as "not configured", and
+ * `requireAllowlist` then decides whether that fails closed).
+ */
+export function parseOperatorAllowlist(raw: string | undefined): string[] | null {
+  if (raw === undefined) return null;
+  const entries = raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e !== "");
+  return entries.length > 0 ? entries : null;
+}
+
+/** Default sign-out target: clearing the IAP login cookie bounces the operator back through Google. */
+export const IAP_SIGNOUT_URL = "/?gcp-iap-mode=CLEAR_LOGIN_COOKIE";
+/** Easy Auth's built-in sign-out endpoint. */
+export const EASY_AUTH_SIGNOUT_URL = "/.auth/logout";
+
+/**
+ * The Sidebar's sign-out link. `ADMIN_CONSOLE_SIGNOUT_URL` wins when set; otherwise it follows the
+ * trust mode — Easy Auth's `/.auth/logout` when the proxy header is the Easy Auth one, else the IAP
+ * cookie-clear URL (unchanged GCP behaviour). Read server-side at request time (the layout is
+ * force-dynamic), so one image serves either host without a rebuild.
+ */
+export function resolveSignOutUrl(input: { configured: string | undefined; proxyHeaderName: string | undefined }): string {
+  const configured = input.configured?.trim();
+  if (configured) return configured;
+  if (input.proxyHeaderName && isEasyAuthProxyHeader(input.proxyHeaderName)) return EASY_AUTH_SIGNOUT_URL;
+  return IAP_SIGNOUT_URL;
+}
+
 export function evaluateConsoleAccess(input: ConsoleAccessInput): ConsoleAccessDecision {
   if (isPublicConsolePath(input.pathname)) return { allow: true, operator: null };
 
@@ -98,6 +158,31 @@ export function evaluateConsoleAccess(input: ConsoleAccessInput): ConsoleAccessD
   if (!requireAuth) return { allow: true, operator: null };
 
   if (input.operator && input.operator.trim() !== "") {
+    const allowed = input.allowedOperators ?? null;
+    if (allowed === null) {
+      // No allowlist configured. On GCP the IAP access policy is the allowlist, so an authenticated
+      // operator is admitted (unchanged behaviour). Under Easy Auth "authenticated" can mean any
+      // principal the tenant can sign in, so an unset list fails CLOSED (plan C4 / S3).
+      if (input.requireAllowlist) {
+        return {
+          allow: false,
+          operator: null,
+          status: 403,
+          message:
+            "Admin console operator allowlist is not configured. Set ADMIN_CONSOLE_ALLOWED_OPERATORS " +
+            "(comma-separated emails/UPNs) for this deployment.",
+        };
+      }
+      return { allow: true, operator: input.operator };
+    }
+    if (!allowed.includes(input.operator.trim().toLowerCase())) {
+      return {
+        allow: false,
+        operator: null,
+        status: 403,
+        message: "This account is not authorized to use the admin console.",
+      };
+    }
     return { allow: true, operator: input.operator };
   }
 

@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   consoleAuthRequired,
   evaluateConsoleAccess,
+  isEasyAuthProxyHeader,
+  parseOperatorAllowlist,
   resolveProxyOperator,
 } from "./app/lib/console-auth";
 import { verifyIapAssertion } from "./app/lib/iap-jwt";
@@ -28,7 +30,11 @@ let warnedProxyFallback = false;
  * Config:
  *   - ADMIN_CONSOLE_REQUIRE_AUTH  — "true"/"false" to force the gate on/off (default: on in production).
  *   - ADMIN_CONSOLE_IAP_AUDIENCE  — enables IAP-JWT mode; the LB backend-service audience string.
- *   - ADMIN_CONSOLE_PROXY_HEADER  — header the proxy sets in proxy-header mode (default IAP's header).
+ *   - ADMIN_CONSOLE_PROXY_HEADER  — header the proxy sets in proxy-header mode (default IAP's header;
+ *                                   `x-ms-client-principal-name` on Azure Easy Auth).
+ *   - ADMIN_CONSOLE_ALLOWED_OPERATORS — optional comma-separated emails/UPNs (case-insensitive); anyone
+ *                                   else is refused 403. Mandatory under Easy Auth (unset = refuse all).
+ *   - ADMIN_CONSOLE_SIGNOUT_URL   — Sidebar sign-out link (read by layout.tsx; see resolveSignOutUrl).
  *
  * When allowed, the resolved operator is forwarded to downstream pages/actions as `x-lynia-operator`
  * so admin mutations can be attributed to a real human in the audit log.
@@ -47,6 +53,9 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // assets and dev). IAP-JWT mode wins when an audience is configured; otherwise fall back to the
   // proxy header. A failed/absent JWT resolves to null → the policy fails closed below.
   let operator: string | null = null;
+  // Set only in proxy-header mode with the Easy Auth header: that mode has no authorization of its own,
+  // so an unset ADMIN_CONSOLE_ALLOWED_OPERATORS must fail closed (see console-auth.ts).
+  let requireAllowlist = false;
   if (consoleAuthRequired({ nodeEnv, requireAuthOverride, pathname })) {
     const iapAudience = process.env.ADMIN_CONSOLE_IAP_AUDIENCE;
     if (iapAudience && iapAudience.trim() !== "") {
@@ -67,11 +76,19 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         );
       }
       const proxyHeaderName = process.env.ADMIN_CONSOLE_PROXY_HEADER ?? "x-goog-authenticated-user-email";
+      requireAllowlist = isEasyAuthProxyHeader(proxyHeaderName);
       operator = resolveProxyOperator({ proxyHeaderName, getHeader: (name) => req.headers.get(name) });
     }
   }
 
-  const decision = evaluateConsoleAccess({ nodeEnv, requireAuthOverride, pathname, operator });
+  const decision = evaluateConsoleAccess({
+    nodeEnv,
+    requireAuthOverride,
+    pathname,
+    operator,
+    allowedOperators: parseOperatorAllowlist(process.env.ADMIN_CONSOLE_ALLOWED_OPERATORS),
+    requireAllowlist,
+  });
 
   if (!decision.allow) {
     return new NextResponse(decision.message ?? "Unauthorized", {
