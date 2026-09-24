@@ -294,6 +294,18 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().email().optional(),
   ),
+  // Which scheduler identity AdminOrSchedulerGuard accepts (plan C3): "google" = the Cloud Scheduler
+  // OIDC token pinned by SCHEDULER_SERVICE_ACCOUNT above; "azure" = an Entra managed-identity token
+  // from the Container Apps cron job, pinned by the three SCHEDULER_* ids below (the boot-guard
+  // requires all three when azure is selected). "" coerces to the google default.
+  SCHEDULER_AUTH: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["google", "azure"]).default("google")),
+  // Entra tenant (directory) id the cron job's token must be issued by (`iss` + `tid`).
+  SCHEDULER_TENANT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().uuid().optional()),
+  // App-ID URI of the dedicated scheduler app registration (the token's `aud`).
+  SCHEDULER_AUDIENCE: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).optional()),
+  // Object id of the cron job's managed identity (the token's `oid`) — the real authorization, since
+  // any principal in the tenant can mint a token for SCHEDULER_AUDIENCE.
+  SCHEDULER_PRINCIPAL_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().uuid().optional()),
   // --- Broadcast reach (policy BROADCAST) ---
   // Optional per-deploy overrides for the initial broadcast radius and the ghost-rider heartbeat
   // cutoff (common/broadcast-policy.ts reads them at the use site). Validated here so a malformed
@@ -436,6 +448,21 @@ export const envSchema = z.object({
           "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
         );
       }
+    }
+  }
+
+  // Scheduler auth (plan C3): selecting azure without its three ids is a dead config in any
+  // environment — every scheduled sweep would 401 — so it is rejected everywhere, not just in prod.
+  if (env.SCHEDULER_AUTH === "azure") {
+    const breaks = "SCHEDULER_AUTH=azure cannot verify the cron job's Entra token, so the scheduled retention purge and wallet integrity check would 401";
+    if (!env.SCHEDULER_TENANT_ID) {
+      reject("SCHEDULER_TENANT_ID", `Missing SCHEDULER_TENANT_ID: ${breaks}. Fix: set it to the Entra tenant (directory) id, or set SCHEDULER_AUTH=google`);
+    }
+    if (!env.SCHEDULER_AUDIENCE) {
+      reject("SCHEDULER_AUDIENCE", `Missing SCHEDULER_AUDIENCE: ${breaks}. Fix: set it to the scheduler app registration's app-ID URI, or set SCHEDULER_AUTH=google`);
+    }
+    if (!env.SCHEDULER_PRINCIPAL_ID) {
+      reject("SCHEDULER_PRINCIPAL_ID", `Missing SCHEDULER_PRINCIPAL_ID: ${breaks}. Fix: set it to the cron job managed identity's object id, or set SCHEDULER_AUTH=google`);
     }
   }
 

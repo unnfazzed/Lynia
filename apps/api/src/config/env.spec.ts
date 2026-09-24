@@ -374,3 +374,44 @@ describe("loadEnv — Play-review demo account (§7.1)", () => {
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "999999" })).toThrow(/guessable/);
   });
 });
+
+describe("loadEnv — scheduler auth (plan C3)", () => {
+  const azure = {
+    SCHEDULER_AUTH: "azure",
+    SCHEDULER_TENANT_ID: "3f1c6a8e-2b4d-4e6f-9a1b-7c8d9e0f1a2b",
+    SCHEDULER_AUDIENCE: "api://lynia-scheduler",
+    SCHEDULER_PRINCIPAL_ID: "5b2e8f1a-6c3d-4a7e-b9f0-1d2c3b4a5e6f",
+  };
+
+  it("defaults to google, and treats an empty SCHEDULER_AUTH as the default", () => {
+    expect(loadEnv(base).SCHEDULER_AUTH).toBe("google");
+    expect(loadEnv({ ...prodBase, SCHEDULER_AUTH: "" }).SCHEDULER_AUTH).toBe("google");
+  });
+
+  it("does not require the Entra ids on the google path", () => {
+    expect(() => loadEnv(prodBase)).not.toThrow();
+  });
+
+  it("accepts azure with all three ids set", () => {
+    const env = loadEnv({ ...prodBase, ...azure });
+    expect(env.SCHEDULER_AUTH).toBe("azure");
+    expect(env.SCHEDULER_AUDIENCE).toBe("api://lynia-scheduler");
+  });
+
+  it("rejects an unknown SCHEDULER_AUTH value", () => {
+    expect(() => loadEnv({ ...base, SCHEDULER_AUTH: "aws" })).toThrow(/SCHEDULER_AUTH/);
+  });
+
+  it.each(["SCHEDULER_TENANT_ID", "SCHEDULER_AUDIENCE", "SCHEDULER_PRINCIPAL_ID"])(
+    "rejects azure without %s, in any environment, with a what-breaks + fix message",
+    (key) => {
+      expect(() => loadEnv({ ...base, ...azure, [key]: "" })).toThrow(new RegExp(`Missing ${key}: .*would 401\\. Fix: `));
+      expect(() => loadEnv({ ...prodBase, ...azure, [key]: "" })).toThrow(new RegExp(`Missing ${key}`));
+    },
+  );
+
+  it("rejects a tenant or principal id that is not a GUID", () => {
+    expect(() => loadEnv({ ...base, ...azure, SCHEDULER_TENANT_ID: "contoso" })).toThrow(/SCHEDULER_TENANT_ID/);
+    expect(() => loadEnv({ ...base, ...azure, SCHEDULER_PRINCIPAL_ID: "cron-job" })).toThrow(/SCHEDULER_PRINCIPAL_ID/);
+  });
+});
