@@ -147,7 +147,6 @@ resource "azurerm_container_app" "api" {
   depends_on = [
     azurerm_role_assignment.kv_secret_reader,
     azurerm_role_assignment.acr_pull,
-    azurerm_private_endpoint.vault,
   ]
 }
 
@@ -276,7 +275,6 @@ resource "azurerm_container_app" "web" {
   depends_on = [
     azurerm_role_assignment.kv_secret_reader,
     azurerm_role_assignment.acr_pull,
-    azurerm_private_endpoint.vault,
   ]
 }
 

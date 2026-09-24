@@ -107,8 +107,19 @@ variable "redis_sku" {
   default     = "Balanced_B0"
 }
 
+variable "data_tier_enabled" {
+  description = "false HIBERNATES staging: removes Postgres, Redis (+ its private endpoint) and the two secrets Terraform writes, keeping the apps, domain, certificate and identities, so waking needs no DNS change. Staging only; production must stay true. The cost lever from the 2026-09-24 savings review."
+  type        = bool
+  default     = true
+
+  validation {
+    condition     = var.data_tier_enabled || var.environment == "staging"
+    error_message = "data_tier_enabled = false (hibernate) is allowed for staging only."
+  }
+}
+
 variable "log_daily_quota_gb" {
-  description = "Log Analytics daily ingestion cap in GB. Null = 1 in production, 0.5 in staging."
+  description = "Log Analytics daily ingestion cap in GB. Null = 0.2 in production, 0.1 in staging (a pilot logs far less; the cap bounds a runaway-log bill at ~$2/month over the 5 GB free grant)."
   type        = number
   default     = null
 }

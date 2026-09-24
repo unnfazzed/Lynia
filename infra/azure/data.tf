@@ -7,11 +7,13 @@
 # state (and in DATABASE-URL). The state account is Entra-only, versioned, shared-key off and
 # not public (bootstrap.sh). Phase 8 moves PG to Entra auth and removes it.
 resource "random_password" "postgres_admin" {
+  count   = local.data_on ? 1 : 0
   length  = 32
   special = false # URL-safe; urlencode() is still applied when it is embedded in DATABASE-URL
 }
 
 resource "azurerm_postgresql_flexible_server" "main" {
+  count               = local.data_on ? 1 : 0
   name                = local.names.postgres
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
@@ -23,7 +25,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   storage_mb = var.postgres_storage_mb
 
   administrator_login    = "lynia_admin"
-  administrator_password = random_password.postgres_admin.result
+  administrator_password = random_password.postgres_admin[0].result
 
   backup_retention_days        = 7 # PITR 7 days
   geo_redundant_backup_enabled = false
@@ -45,14 +47,16 @@ resource "azurerm_postgresql_flexible_server" "main" {
 # PostGIS is the only extension (prisma/migrations/0001_init). It must be allow-listed before
 # `CREATE EXTENSION postgis` can succeed (Gate 1).
 resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  count     = local.data_on ? 1 : 0
   name      = "azure.extensions"
-  server_id = azurerm_postgresql_flexible_server.main.id
+  server_id = azurerm_postgresql_flexible_server.main[0].id
   value     = "POSTGIS"
 }
 
 resource "azurerm_postgresql_flexible_server_database" "lynia" {
+  count     = local.data_on ? 1 : 0
   name      = "lynia"
-  server_id = azurerm_postgresql_flexible_server.main.id
+  server_id = azurerm_postgresql_flexible_server.main[0].id
   charset   = "UTF8"
   collation = "en_US.utf8"
 }
@@ -67,6 +71,7 @@ resource "azurerm_postgresql_flexible_server_database" "lynia" {
 # BullMQ do not speak here), and Terraform reads the key back to build REDIS-URL, so the key is in
 # state. Phase 8 moves Redis to Entra auth and removes it.
 resource "azurerm_managed_redis" "main" {
+  count                     = local.data_on ? 1 : 0
   name                      = local.names.redis
   location                  = azurerm_resource_group.main.location
   resource_group_name       = azurerm_resource_group.main.name
@@ -85,6 +90,7 @@ resource "azurerm_managed_redis" "main" {
 }
 
 resource "azurerm_private_endpoint" "redis" {
+  count               = local.data_on ? 1 : 0
   name                = "pe-redis-lynia-${local.env_short}"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
@@ -93,7 +99,7 @@ resource "azurerm_private_endpoint" "redis" {
 
   private_service_connection {
     name                           = "redis"
-    private_connection_resource_id = azurerm_managed_redis.main.id
+    private_connection_resource_id = azurerm_managed_redis.main[0].id
     subresource_names              = ["redisEnterprise"]
     is_manual_connection           = false
   }
@@ -130,7 +136,9 @@ resource "azurerm_storage_account" "media" {
   min_tls_version                 = "TLS1_2"
 
   # Public endpoint stays ENABLED: phones and the merchant browser PUT/GET blobs directly with a
-  # SAS (E3). The API's own traffic uses the private endpoint below.
+  # SAS (E3). The API reaches it the same way, with its managed identity over TLS. There is no
+  # private endpoint (savings review 2026-09-24): with public access on, a PE only re-routed the
+  # API's own traffic at ~$7.30/month per environment and protected nothing that was exposed.
   public_network_access_enabled = true
 
   blob_properties {
@@ -159,26 +167,6 @@ resource "azurerm_storage_container" "media" {
   container_access_type = "private"
 }
 
-resource "azurerm_private_endpoint" "blob" {
-  name                = "pe-blob-lynia-${local.env_short}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  subnet_id           = azurerm_subnet.pe.id
-  tags                = local.tags
-
-  private_service_connection {
-    name                           = "blob"
-    private_connection_resource_id = azurerm_storage_account.media.id
-    subresource_names              = ["blob"]
-    is_manual_connection           = false
-  }
-
-  private_dns_zone_group {
-    name                 = "blob"
-    private_dns_zone_ids = [azurerm_private_dns_zone.zone["blob"].id]
-  }
-}
-
 # ============================ Container Registry ============================
 
 resource "azurerm_container_registry" "main" {
@@ -190,4 +178,30 @@ resource "azurerm_container_registry" "main" {
   # identity over OIDC (AcrPush). Nothing long-lived (D12).
   admin_enabled = false
   tags          = local.tags
+}
+
+# ---- State moves for the data_tier_enabled switch (no rebuild of existing servers) ----
+moved {
+  from = random_password.postgres_admin
+  to   = random_password.postgres_admin[0]
+}
+moved {
+  from = azurerm_postgresql_flexible_server.main
+  to   = azurerm_postgresql_flexible_server.main[0]
+}
+moved {
+  from = azurerm_postgresql_flexible_server_configuration.extensions
+  to   = azurerm_postgresql_flexible_server_configuration.extensions[0]
+}
+moved {
+  from = azurerm_postgresql_flexible_server_database.lynia
+  to   = azurerm_postgresql_flexible_server_database.lynia[0]
+}
+moved {
+  from = azurerm_managed_redis.main
+  to   = azurerm_managed_redis.main[0]
+}
+moved {
+  from = azurerm_private_endpoint.redis
+  to   = azurerm_private_endpoint.redis[0]
 }

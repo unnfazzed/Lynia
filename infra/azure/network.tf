@@ -63,8 +63,7 @@ locals {
   private_dns_zones = {
     postgres = "lynia-${local.env_short}.private.postgres.database.azure.com"
     redis    = "privatelink.redis.azure.net"
-    blob     = "privatelink.blob.core.windows.net"
-    vault    = "privatelink.vaultcore.azure.net"
+    # blob / vault zones removed with their private endpoints (savings review 2026-09-24).
   }
 }
 

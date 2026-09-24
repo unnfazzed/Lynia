@@ -133,3 +133,20 @@ canary. So `api_session_affinity` defaults to **false**. The options:
 - (c) Force WebSocket-only transport on the client. This needs a new binary.
 
 Gate G-WS on staging measures (a).
+
+## Hibernate staging (savings, 2026-09-24)
+
+Staging's cost is almost all Postgres + Redis. When you aren't testing:
+
+1. **Hibernate:** GitHub → Actions → **Terraform apply (Azure)** → Run workflow → environment
+   `staging`, action **`hibernate-staging`**. Approve the plan, read it (it removes only Postgres,
+   Redis, the Redis private endpoint and the two Terraform-written secrets), then approve the apply.
+2. Set repo Variable **`AZ_STAGING_ENABLED=false`**, or production releases wait on a staging deploy
+   that cannot pass.
+
+Apps, the `staging.lyniafinance.com` domain + certificate, identities and Key Vault app secrets stay,
+so waking needs no DNS change and costs ~$6/month while asleep (registry + logs).
+
+**Wake:** run the same workflow with action **`apply`** (about 20–30 min for Postgres + Redis), set
+`AZ_STAGING_ENABLED=true`, then dispatch **Deploy Staging (Azure)**. Staging's database starts empty
+each time — it is a test tier.
