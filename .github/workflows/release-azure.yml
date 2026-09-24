@@ -187,8 +187,8 @@ jobs:
       # boot if a QA repo Variable leaks into prod — but that failure otherwise surfaces only after a
       # ~3-min build + migrate as an opaque Cloud Run "container failed to start on :3000". Mirror the
       # guards here so the misconfig fails in seconds with an actionable message. Effective values are
-      # computed exactly as the deploy step below; KYC_MODE is never injected, so it is the app default
-      # "auto" (hence KYC_PROVIDER=stub ⇒ rejected).
+      # computed exactly as the deploy step below. KYC_PROVIDER=stub is rejected even when the KYC_MODE
+      # Variable is "manual" (conservative: stub must never be the vendor behind real riders).
       - name: Validate production launch-hygiene config
         env:
           OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
@@ -391,6 +391,9 @@ jobs:
           OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
           OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
           KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+          # auto (default) | manual. manual = onboarding creates NO paid Didit session; riders wait for
+          # an operator decision (admin → Riders → KYC). Used for the post-migration re-approval window.
+          KYC_MODE: ${{ vars.KYC_MODE || 'auto' }}
           # E5: noop until the new Firebase project + its credential exist (with fcm and no credential
           # the C5 boot-guard refuses to boot). Set the PUSH_PROVIDER Variable to fcm once M2 lands.
           PUSH_PROVIDER: ${{ vars.PUSH_PROVIDER || 'noop' }}
@@ -435,7 +438,8 @@ jobs:
           # drop NAME... — remove these while the vendor's *_ENABLED flag is off.
           drop() { UNSET+=("$@"); }
 
-          SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "PUSH_PROVIDER=$PUSH_PROVIDER")
+          case "$KYC_MODE" in auto|manual) ;; *) echo "::error::KYC_MODE must be auto or manual (got '$KYC_MODE')"; exit 1 ;; esac
+          SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "KYC_MODE=$KYC_MODE" "PUSH_PROVIDER=$PUSH_PROVIDER")
           opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
           opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
