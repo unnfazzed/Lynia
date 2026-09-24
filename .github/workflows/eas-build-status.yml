@@ -85,16 +85,29 @@ jobs:
       # Variable NAMES only — enough to prove whether a build-time variable (e.g. the LR20 Sentry
       # pair the app.config.ts guard requires) actually exists in the environment an EAS build
       # resolves, without printing any value. Secret-visibility values are never returned by the
-      # CLI anyway; this trims plaintext ones too.
+      # CLI anyway; plaintext and sensitive ones ARE (as NAME=value), and this repo's Actions logs
+      # are public — so stdout is reduced to the NAME token of each NAME=value line and nothing else
+      # is echoed (finding 62b3c8f6: the old `grep -iE "name|^[A-Z0-9_]+"` kept whole NAME=value
+      # lines). stderr is not captured, so a CLI error (auth, bad flag) still shows in the log.
       - name: List EAS environment variable names (preview + production)
         working-directory: apps/mobile
         run: |
           set -euo pipefail
           for envname in preview production; do
-            echo "::group::eas env:list — ${envname}"
+            echo "::group::eas env:list — ${envname} (names only)"
             # `eas env:list` takes no --non-interactive flag (it is non-interactive already); passing
             # one exits "Nonexistent flag" without listing anything.
-            eas env:list --environment "$envname" 2>&1 | grep -iE "name|^[A-Z0-9_]+" || true
+            if ! out="$(eas env:list --environment "$envname")"; then
+              echo "eas env:list failed for ${envname} (CLI error above)."
+            else
+              names="$(printf '%s\n' "$out" | sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*$/\1/p')"
+              if [ -n "$names" ]; then
+                printf '%s\n' "$names"
+              else
+                # Never fall back to printing the raw output: an unrecognised format could carry values.
+                echo "(no NAME=value lines recognised; $(printf '%s\n' "$out" | wc -l) output lines withheld)"
+              fi
+            fi
             echo "::endgroup::"
           done
 
