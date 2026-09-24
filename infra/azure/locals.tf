@@ -25,7 +25,8 @@ locals {
   merchant_hostname = var.merchant_hostname != "" ? var.merchant_hostname : (local.is_prod ? "lyniagomerchant.lyniafinance.com" : "")
 
   api_min_replicas   = var.api_min_replicas != null ? var.api_min_replicas : (local.is_prod ? 1 : 0)
-  log_daily_quota_gb = var.log_daily_quota_gb != null ? var.log_daily_quota_gb : (local.is_prod ? 1 : 0.5)
+  log_daily_quota_gb = var.log_daily_quota_gb != null ? var.log_daily_quota_gb : (local.is_prod ? 0.2 : 0.1)
+  data_on            = var.data_tier_enabled
   monthly_budget_usd = var.monthly_budget_usd != null ? var.monthly_budget_usd : (local.is_prod ? 150 : 60)
 
   # Container app and job names are the SAME in both environments; the resource group is what

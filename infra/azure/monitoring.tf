@@ -125,9 +125,10 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_missed" {
 # E9: B1ms allows ~50 connections; 5 replicas × 5 + jobs ≈ 27. Above 40 means a pool leak or a
 # replica cap raised without the SKU.
 resource "azurerm_monitor_metric_alert" "pg_connections" {
+  count               = local.data_on ? 1 : 0
   name                = "alert-lynia-${local.env_short}-pg-connections"
   resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_postgresql_flexible_server.main.id]
+  scopes              = [azurerm_postgresql_flexible_server.main[0].id]
   description         = "Postgres active_connections > 40 (B1ms ceiling ~50, E9)."
   severity            = 2
   frequency           = "PT5M"
@@ -179,4 +180,9 @@ resource "azurerm_consumption_budget_resource_group" "main" {
   lifecycle {
     ignore_changes = [time_period]
   }
+}
+
+moved {
+  from = azurerm_monitor_metric_alert.pg_connections
+  to   = azurerm_monitor_metric_alert.pg_connections[0]
 }

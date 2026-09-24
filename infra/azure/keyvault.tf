@@ -41,6 +41,7 @@ locals {
 # ---- Secrets Terraform writes (accepted S1 exceptions) ----
 
 resource "azurerm_key_vault_secret" "database_url" {
+  count        = local.data_on ? 1 : 0
   name         = local.kv_terraform_written.DATABASE_URL
   key_vault_id = data.azurerm_key_vault.main.id
   content_type = "postgresql connection string (written by infra/azure)"
@@ -48,23 +49,24 @@ resource "azurerm_key_vault_secret" "database_url" {
   # DATABASE_CONNECTION_LIMIT (prisma.service.ts), set to 5 on the container (E9).
   value = format(
     "postgresql://%s:%s@%s:5432/%s?sslmode=require",
-    azurerm_postgresql_flexible_server.main.administrator_login,
-    urlencode(random_password.postgres_admin.result),
-    azurerm_postgresql_flexible_server.main.fqdn,
-    azurerm_postgresql_flexible_server_database.lynia.name,
+    azurerm_postgresql_flexible_server.main[0].administrator_login,
+    urlencode(random_password.postgres_admin[0].result),
+    azurerm_postgresql_flexible_server.main[0].fqdn,
+    azurerm_postgresql_flexible_server_database.lynia[0].name,
   )
   tags = local.tags
 }
 
 resource "azurerm_key_vault_secret" "redis_url" {
+  count        = local.data_on ? 1 : 0
   name         = local.kv_terraform_written.REDIS_URL
   key_vault_id = data.azurerm_key_vault.main.id
   content_type = "rediss:// URL, TLS port 10000 (written by infra/azure)"
   value = format(
     "rediss://:%s@%s:%d",
-    urlencode(azurerm_managed_redis.main.default_database[0].primary_access_key),
-    azurerm_managed_redis.main.hostname,
-    azurerm_managed_redis.main.default_database[0].port,
+    urlencode(azurerm_managed_redis.main[0].default_database[0].primary_access_key),
+    azurerm_managed_redis.main[0].hostname,
+    azurerm_managed_redis.main[0].default_database[0].port,
   )
   tags = local.tags
 }
@@ -74,7 +76,8 @@ resource "azurerm_key_vault_secret" "redis_url" {
 locals {
   # identity key => list of vault secret names it may read.
   kv_readers = {
-    api = values(local.api_secret_env)
+    # Hibernated staging has no Terraform-written secrets, so no role can be scoped to them.
+    api = [for n in values(local.api_secret_env) : n if local.data_on || !contains(values(local.kv_terraform_written), n)]
     web = concat([local.kv_admin_token], var.admin_auth_client_id != "" ? [local.admin_auth_secret_kv] : [])
   }
   kv_reader_pairs = merge([
@@ -100,27 +103,16 @@ resource "azurerm_role_assignment" "kv_secret_reader" {
   depends_on = [azurerm_key_vault_secret.database_url, azurerm_key_vault_secret.redis_url]
 }
 
-# ---- Private endpoint from this environment's VNet (E3) ----
-# Public network access on the vault stays ENABLED (RBAC-only data plane): bootstrap runs from
-# Cloud Shell and Terraform runs from GitHub-hosted runners, neither of which is in the VNet.
-# In-VNet traffic (Key Vault references resolved by the environment) uses this endpoint.
+# No private endpoint for the vault (savings review 2026-09-24): public network access stays
+# enabled with an RBAC-only data plane (bootstrap runs from Cloud Shell, Terraform from GitHub
+# runners), and Key Vault references resolve over that same TLS endpoint with the managed
+# identity. The PE only re-routed in-VNet reads at ~$7.30/month per environment.
 
-resource "azurerm_private_endpoint" "vault" {
-  name                = "pe-kv-lynia-${local.env_short}"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  subnet_id           = azurerm_subnet.pe.id
-  tags                = local.tags
-
-  private_service_connection {
-    name                           = "kv"
-    private_connection_resource_id = data.azurerm_key_vault.main.id
-    subresource_names              = ["vault"]
-    is_manual_connection           = false
-  }
-
-  private_dns_zone_group {
-    name                 = "vault"
-    private_dns_zone_ids = [azurerm_private_dns_zone.zone["vault"].id]
-  }
+moved {
+  from = azurerm_key_vault_secret.database_url
+  to   = azurerm_key_vault_secret.database_url[0]
+}
+moved {
+  from = azurerm_key_vault_secret.redis_url
+  to   = azurerm_key_vault_secret.redis_url[0]
 }
