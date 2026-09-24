@@ -43,7 +43,10 @@ jobs:
   deploy:
     name: build · migrate · deploy (staging)
     runs-on: ubuntu-latest
-    if: ${{ vars.GCP_STAGING_ENABLED == 'true' }}
+    # HARD-OFF: GCP project lynia-500911 has been suspended since 2026-09-17. Every run fails, and deploy-autoheal
+    # turns each failure into issue noise. This stays off whatever GCP_STAGING_ENABLED says, until GCP is retired
+    # (docs/plans/2026-09-24-gcp-to-azure-migration.md §6). Azure equivalents: the *-azure.yml workflows.
+    if: ${{ false && vars.GCP_STAGING_ENABLED == 'true' }}
     environment: staging # auto-deploys: no reviewers on staging — fast feedback is the point
     permissions:
       contents: read

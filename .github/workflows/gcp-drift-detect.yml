@@ -36,7 +36,10 @@ concurrency:
 jobs:
   drift:
     name: audit live GCP vs repo
-    if: ${{ vars.GCP_DEPLOY_ENABLED == 'true' }}
+    # HARD-OFF: GCP project lynia-500911 has been suspended since 2026-09-17. Every run fails, and deploy-autoheal
+    # turns each failure into issue noise. This stays off whatever GCP_DEPLOY_ENABLED says, until GCP is retired
+    # (docs/plans/2026-09-24-gcp-to-azure-migration.md §6). Azure equivalents: the *-azure.yml workflows.
+    if: ${{ false && vars.GCP_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
