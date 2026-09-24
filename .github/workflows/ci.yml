@@ -376,6 +376,12 @@ jobs:
           ./actionlint -no-color -oneline -shellcheck= -pyflakes=
           echo "actionlint: all workflows compile."
 
+      # S8 (docs/plans/2026-09-24-gcp-to-azure-migration.md): the repo's Actions logs are public, so no
+      # Azure workflow (or the scripts/azure-*.sh helpers they run) may call an az subcommand whose
+      # output is a secret value. The script lists the three forbidden subcommands.
+      - name: "S8 · no secret-reading az subcommands in Azure workflows"
+        run: bash scripts/check-azure-secret-commands.sh
+
   terraform-validate:
     name: terraform validate · defaults only
     runs-on: ubuntu-latest

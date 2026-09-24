@@ -1,0 +1,214 @@
+name: Deploy Admin Console (Azure)
+
+# Builds the admin console (apps/admin), smoke-tests the exact image, pushes it to ACR and deploys it
+# to ca-lynia-admin (docs/plans/2026-09-24-gcp-to-azure-migration.md §6; replaces deploy-admin.yml).
+# Same boot-gated shape as the Cloud Run version: a new revision at 0%, wait until it is provisioned
+# and healthy, then promote — a crash-on-boot revision fails here while the old one keeps serving.
+#
+# buildx, not `az acr build`: the admin Dockerfile.dockerignore needs BuildKit (plan §6).
+#
+# AUTH ON AZURE (plan D9/C4): Easy Auth + an Entra app with assignment required sits in front of the
+# app (configured by infra/azure). The console runs in proxy-header mode on the header Easy Auth
+# rewrites (ADMIN_CONSOLE_PROXY_HEADER=x-ms-client-principal-name); ADMIN_CONSOLE_IAP_AUDIENCE is
+# removed because IAP-JWT mode would win over proxy-header mode and fail every request.
+# ADMIN_CONSOLE_ALLOWED_OPERATORS (C4's fail-closed allowlist) is passed through when the Variable is
+# set. HOSTNAME=0.0.0.0 because the platform sets HOSTNAME to the replica name and Next.js standalone
+# binds to it.
+#
+# TRIGGERS: a push to main deploys PRODUCTION (as deploy-admin.yml did). workflow_dispatch takes one
+# input, `environment` (default staging), for a staging admin app (X6).
+#
+# DORMANT UNTIL ARMED: production needs AZURE_DEPLOY_ENABLED == 'true', staging AZURE_STAGING_ENABLED.
+#   Variables: AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID_{PRODUCTION,STAGING},
+#              AZURE_ACR_NAME, AZURE_RESOURCE_GROUP_{PRODUCTION,STAGING},
+#              ADMIN_API_BASE_URL (production) / STAGING_ADMIN_API_BASE_URL (staging),
+#              optional ADMIN_CONSOLE_ALLOWED_OPERATORS / STAGING_ADMIN_CONSOLE_ALLOWED_OPERATORS
+#   Container-app secret (Key Vault reference, infra/azure): admin-api-token → ADMIN-API-TOKEN.
+# Never write `${{ }}` inside a run: block in this file.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-admin-azure.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-admin-azure-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · smoke · deploy (Azure)
+    runs-on: ubuntu-latest
+    if: >-
+      ((github.event_name != 'workflow_dispatch' || inputs.environment == 'production')
+      && vars.AZURE_DEPLOY_ENABLED == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging'
+      && vars.AZURE_STAGING_ENABLED == 'true')
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+      RG: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.AZURE_RESOURCE_GROUP_PRODUCTION || vars.AZURE_RESOURCE_GROUP_STAGING }}
+      ACR: ${{ vars.AZURE_ACR_NAME }}
+      IMAGE: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/lynia-admin
+      APP: ca-lynia-admin
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required deploy config
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.AZURE_CLIENT_ID_PRODUCTION || vars.AZURE_CLIENT_ID_STAGING }}
+          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+          API_BASE_URL: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.ADMIN_API_BASE_URL || vars.STAGING_ADMIN_API_BASE_URL }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID AZURE_ACR_NAME RG API_BASE_URL; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Admin deploy to ${TIER} is armed but these are unset: ${missing[*]} (AZURE_CLIENT_ID/RG/API_BASE_URL resolve from the ${TIER} Variables). See docs/plans/2026-09-24-gcp-to-azure-migration.md §6." >&2
+            exit 1
+          fi
+          if [ "$TIER" = "production" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Production deploys run from main only (got ${REF})." >&2
+            exit 1
+          fi
+          echo "Admin deploy config OK for ${TIER}."
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.AZURE_CLIENT_ID_PRODUCTION || vars.AZURE_CLIENT_ID_STAGING }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name "$ACR"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build once and LOAD locally so the boot smoke runs the exact image that ships. The admin image
+      # carries no environment-specific build args, so one :sha serves both tiers.
+      - name: Build admin image (load for smoke)
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/admin/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+            -t "$IMAGE:${GITHUB_SHA}" \
+            --load .
+
+      # Same proof as deploy-admin.yml, in the Azure auth mode: a public asset serves, and a gated
+      # route with no Easy Auth principal header fails closed (401) instead of rendering.
+      - name: Container boot smoke
+        run: |
+          set -euo pipefail
+          docker run -d --name admin-smoke -p 8080:8080 \
+            -e NODE_ENV=production -e ADMIN_CONSOLE_REQUIRE_AUTH=true \
+            -e ADMIN_CONSOLE_PROXY_HEADER=x-ms-client-principal-name \
+            "$IMAGE:${GITHUB_SHA}"
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8080/favicon.ico"; then break; fi
+            sleep 1
+            if [ "$i" = "30" ]; then echo "::error::admin container never served /favicon.ico"; docker logs admin-smoke || true; exit 1; fi
+          done
+          code_public=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/favicon.ico")
+          code_gated=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/")
+          echo "public /favicon.ico -> $code_public ; gated / -> $code_gated"
+          docker logs admin-smoke || true
+          docker rm -f admin-smoke || true
+          if [ "$code_public" != "200" ]; then echo "::error::public asset did not 200 ($code_public) — standalone static/public copy layout is likely wrong"; exit 1; fi
+          if [ "$code_gated" != "401" ]; then echo "::error::gated route did not fail closed ($code_gated) — the access middleware is not enforcing"; exit 1; fi
+
+      - name: Push admin image
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE:${GITHUB_SHA}"
+          if [ "$TIER" = "production" ]; then
+            docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:${GITHUB_SHA}"
+          fi
+
+      - name: Capture serving revision and pin traffic to it
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(bash scripts/azure-aca.sh pin "$APP" "$RG")"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Serving revision: ${PREV:-<none — first deploy>}"
+
+      - name: Deploy new revision (0%), wait for health, promote
+        id: deploy
+        env:
+          API_BASE_URL: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.ADMIN_API_BASE_URL || vars.STAGING_ADMIN_API_BASE_URL }}
+          ALLOWED_OPERATORS: ${{ (github.event_name != 'workflow_dispatch' || inputs.environment == 'production') && vars.ADMIN_CONSOLE_ALLOWED_OPERATORS || vars.STAGING_ADMIN_CONSOLE_ALLOWED_OPERATORS }}
+          PREV: ${{ steps.prev.outputs.revision }}
+        run: |
+          set -euo pipefail
+          SET=(
+            "API_BASE_URL=$API_BASE_URL"
+            "ADMIN_CONSOLE_REQUIRE_AUTH=true"
+            "ADMIN_CONSOLE_PROXY_HEADER=x-ms-client-principal-name"
+            "HOSTNAME=0.0.0.0"
+            "ADMIN_API_TOKEN=secretref:admin-api-token"
+            "NODE_ENV=production"
+          )
+          UNSET=(ADMIN_CONSOLE_IAP_AUDIENCE)
+          if [ -n "$(printf '%s' "$ALLOWED_OPERATORS" | tr -d '[:space:]')" ]; then
+            SET+=("ADMIN_CONSOLE_ALLOWED_OPERATORS=$ALLOWED_OPERATORS")
+          else
+            UNSET+=(ADMIN_CONSOLE_ALLOWED_OPERATORS)
+          fi
+          bash scripts/azure-aca.sh require-secrets "$APP" "$RG" admin-api-token
+          existing=" $(bash scripts/azure-aca.sh env-names "$APP" "$RG" | tr '\n' ' ') "
+          REMOVE=()
+          for n in "${UNSET[@]}"; do
+            case "$existing" in *" $n "*) REMOVE+=("$n") ;; esac
+          done
+
+          SUFFIX="r${GITHUB_SHA:0:7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CANDIDATE="${APP}--${SUFFIX}"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          args=(containerapp update -n "$APP" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" --revision-suffix "$SUFFIX" --set-env-vars "${SET[@]}")
+          if [ ${#REMOVE[@]} -gt 0 ]; then args+=(--remove-env-vars "${REMOVE[@]}"); fi
+          az "${args[@]}" -o none
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$CANDIDATE" 600
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$CANDIDATE" 100
+          bash scripts/azure-aca.sh prune "$APP" "$RG" "$CANDIDATE" "$PREV"
+
+      - name: Roll back traffic on failure
+        if: ${{ failure() && steps.prev.outputs.revision != '' && steps.deploy.outcome == 'failure' }}
+        env:
+          PREV: ${{ steps.prev.outputs.revision }}
+        run: |
+          set -euo pipefail
+          echo "::warning::Admin deploy failed — routing 100% back to ${PREV}."
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$PREV" 100
+
+      - name: Summary
+        if: ${{ success() }}
+        env:
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          echo "Admin console ${IMAGE}:${GITHUB_SHA} → ${APP} (${TIER}, ${RG}) as ${CANDIDATE}." >> "$GITHUB_STEP_SUMMARY"

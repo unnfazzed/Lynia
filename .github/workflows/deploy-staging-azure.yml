@@ -1,0 +1,223 @@
+name: Deploy Staging (Azure)
+
+# The Azure pre-prod tier (docs/plans/2026-09-24-gcp-to-azure-migration.md §6; replaces
+# deploy-staging.yml). Every merge to main builds the API image ONCE into ACR, migrates the staging
+# database through the staging resource group's in-VNet migrate job, and routes 100% of the staging
+# app to the new revision — staging IS the canary tier, the graduated rollout protects prod only.
+# Runs prod-shaped (NODE_ENV=production) in the STAGING tier (APP_ENV=staging), which permits the
+# vendor-free QA config (console OTP, test phones, stub KYC) the k6 harness and QA devices use.
+#
+# PIPELINE POSITION: release-azure.yml's staging-gate polls THIS file for the same sha and then
+# promotes this exact :sha image to production. A failure is retried once and then escalated as a
+# `deploy-failure` issue by deploy-autoheal.yml (it matches this workflow's `name:` above — keep them
+# in sync).
+#
+# The smoke gate asserts the /healthz BODY reports `status == "ok"` (E6), not just HTTP 200: a
+# TLS-less BullMQ connection answers 200 with `status: "degraded"` and must fail here.
+#
+# DORMANT UNTIL ARMED — gated on the repo Variable AZURE_STAGING_ENABLED == 'true'.
+#   Variables: AZURE_STAGING_ENABLED, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#              AZURE_CLIENT_ID_STAGING (federated to environment:staging), AZURE_ACR_NAME,
+#              AZURE_RESOURCE_GROUP_STAGING
+#   Optional:  STAGING_HEALTH_URL, STAGING_OTP_TEST_PHONES, STAGING_MIN_SUPPORTED_APP_VERSION,
+#              STAGING_CORS_ALLOWED_ORIGINS, STAGING_{RESTAURANTS,MERCHANT_DISPATCH_AUTO,
+#              MERCHANT_WALLET}_ENABLED, STAGING_MICRO_CACHE_REDIS_L2 (same Variables deploy-staging.yml reads)
+# No secrets: OIDC for Azure, Key Vault references for the app. Ownership split and the secretref
+# naming rule are documented in release-azure.yml's header. Never write `${{ }}` inside a run: block.
+#
+# NOTE: the first armed run can fail the smoke step while the staging DNS record + managed cert are
+# still being issued (E11) — re-run once the Azure Diagnose Recap shows the cert as Succeeded.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-staging-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · migrate · deploy (Azure staging)
+    runs-on: ubuntu-latest
+    if: ${{ vars.AZURE_STAGING_ENABLED == 'true' }}
+    environment: staging # no reviewers: fast feedback is the point (E14); branch policy main-only (S5)
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
+      ACR: ${{ vars.AZURE_ACR_NAME }}
+      IMAGE: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/lynia-api
+      APP: ca-lynia-api
+      MIGRATE_JOB: caj-lynia-migrate
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required staging config
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID_STAGING: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+          AZURE_RESOURCE_GROUP_STAGING: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_STAGING AZURE_ACR_NAME AZURE_RESOURCE_GROUP_STAGING; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::AZURE_STAGING_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-09-24-gcp-to-azure-migration.md §6." >&2
+            exit 1
+          fi
+          echo "All required Azure staging config present."
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name "$ACR"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Staging OWNS the :buildcache write and is the only armed-mode builder: release-azure.yml's
+      # gate serializes prod strictly after this run and then promotes this :sha instead of rebuilding.
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/api/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+            -t "$IMAGE:${GITHUB_SHA}" \
+            --push .
+
+      - name: Apply database migrations (staging caj-lynia-migrate)
+        run: |
+          set -euo pipefail
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" -o none
+          EXECUTION="$(az containerapp job start -n "$MIGRATE_JOB" -g "$RG" --query name -o tsv)"
+          [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
+          echo "Started $MIGRATE_JOB execution $EXECUTION"
+          bash scripts/azure-aca.sh wait-job "$MIGRATE_JOB" "$RG" "$EXECUTION" 900
+
+      - name: Capture serving revision and pin traffic to it
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(bash scripts/azure-aca.sh pin "$APP" "$RG")"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Serving revision: ${PREV:-<none — first deploy>}"
+
+      # APP_ENV=staging relaxes ONLY the launch-hygiene guards (env.ts); secret-strength and Redis
+      # guards still apply. Values arrive via env: as separate argv elements (no delimiter injection);
+      # the flags are whitelist-validated.
+      - name: Deploy new revision and route 100% to it
+        id: deploy
+        env:
+          OTP_TEST_PHONES: ${{ vars.STAGING_OTP_TEST_PHONES }}
+          MIN_SUPPORTED_APP_VERSION: ${{ vars.STAGING_MIN_SUPPORTED_APP_VERSION }}
+          RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
+          MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
+          MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
+          MICRO_CACHE_REDIS_L2: ${{ vars.STAGING_MICRO_CACHE_REDIS_L2 }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
+          PREV: ${{ steps.prev.outputs.revision }}
+        run: |
+          set -euo pipefail
+          SET=("OTP_CHANNEL=console" "KYC_PROVIDER=stub" "PUSH_PROVIDER=noop")
+          UNSET=()
+          SECRET_NAMES=()
+          opt() { if [ -n "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then SET+=("$1=$2"); else UNSET+=("$1"); fi; }
+          secret() { local s; s="$(printf '%s' "$1" | tr 'A-Z_' 'a-z-')"; SET+=("$1=secretref:$s"); SECRET_NAMES+=("$s"); }
+
+          opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
+          opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+            _val="${!_flag:-false}"
+            case "$_val" in
+              true|false) ;;
+              *) echo "::error::STAGING_${_flag} must be exactly 'true' or 'false' (got '${_val}')"; exit 1 ;;
+            esac
+            SET+=("${_flag}=${_val}")
+          done
+
+          # Empty by default: no browser client points at staging today, and default-deny is correct.
+          _cors="$(printf '%s' "${CORS_ALLOWED_ORIGINS:-}" | tr -d '[:space:]')"
+          if [ -n "$_cors" ]; then
+            IFS=',' read -ra _origins <<< "$_cors" || true
+            for _o in "${_origins[@]:-}"; do
+              [ -z "$_o" ] && continue
+              case "$_o" in
+                https://*/*|http://*/*) echo "::error::CORS origin '$_o' has a path or trailing slash — use scheme://host[:port] only"; exit 1 ;;
+                https://?*|http://?*) ;;
+                *) echo "::error::CORS origin '$_o' must be an absolute origin starting with https:// (http:// only for a local origin)"; exit 1 ;;
+              esac
+            done
+          fi
+          opt CORS_ALLOWED_ORIGINS "$_cors"
+
+          secret DATABASE_URL
+          secret REDIS_URL
+          secret JWT_SIGNING_SECRET
+          secret PII_ENCRYPTION_KEY
+
+          SET+=("NODE_ENV=production" "APP_ENV=staging")
+
+          bash scripts/azure-aca.sh require-secrets "$APP" "$RG" "${SECRET_NAMES[@]}"
+          existing=" $(bash scripts/azure-aca.sh env-names "$APP" "$RG" | tr '\n' ' ') "
+          REMOVE=()
+          for n in "${UNSET[@]}"; do
+            case "$existing" in *" $n "*) REMOVE+=("$n") ;; esac
+          done
+
+          SUFFIX="r${GITHUB_SHA:0:7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CANDIDATE="${APP}--${SUFFIX}"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          args=(containerapp update -n "$APP" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" --revision-suffix "$SUFFIX" --set-env-vars "${SET[@]}")
+          if [ ${#REMOVE[@]} -gt 0 ]; then
+            echo "Removing env no longer configured: ${REMOVE[*]}"
+            args+=(--remove-env-vars "${REMOVE[@]}")
+          fi
+          az "${args[@]}" -o none
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$CANDIDATE" 600
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$CANDIDATE" 100
+          # Keep the previous revision as rollback-azure.yml's instant target; deactivate the rest.
+          bash scripts/azure-aca.sh prune "$APP" "$RG" "$CANDIDATE" "$PREV"
+
+      - name: Smoke staging /healthz (status must be "ok")
+        env:
+          URL: ${{ vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz' }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            if bash scripts/azure-aca.sh healthz "$URL"; then
+              echo "Staging healthy."
+              exit 0
+            fi
+            echo "Attempt $i: not ok yet; retrying in 10s…"
+            sleep 10
+          done
+          echo "::error::Staging /healthz never reported status \"ok\". First armed run? The managed certificate can take a while after the DNS switch (E11) — check the Azure Diagnose Recap, then re-run."
+          exit 1
+
+      - name: Summary
+        if: ${{ success() }}
+        env:
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          echo "Staging deployed ${IMAGE}:${GITHUB_SHA} to ${APP} (${RG}) as ${CANDIDATE}." >> "$GITHUB_STEP_SUMMARY"

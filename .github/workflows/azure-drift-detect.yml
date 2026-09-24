@@ -1,0 +1,170 @@
+name: Azure Drift Detect
+
+# Nightly READ-ONLY audit: has live Azure drifted from what Terraform recorded? (docs/plans/
+# 2026-09-24-gcp-to-azure-migration.md §6; replaces gcp-drift-detect.yml). Per environment it runs
+#   terraform plan -refresh-only -lock=false -detailed-exitcode
+# against infra/azure: exit 2 means someone changed a resource outside Terraform (portal, CLI). The
+# plan never writes state (-lock=false, refresh-only is not applied) and nothing here can mutate Azure.
+#
+# READER IDENTITY: plans authenticate as AZURE_CLIENT_ID_READER — an identity holding Reader on the
+# subscription and Storage Blob Data Reader on the state container, federated to
+# `repo:unnfazzed/Lynia:ref:refs/heads/main` (this job declares no GitHub environment, so a nightly run
+# never waits on the `infra` reviewers and never holds a deploy or apply role). Until that Variable is
+# set, the run records a warning and does nothing.
+#
+# Findings open (or refresh — one per environment, never a stack) an `azure-drift` issue; a clean
+# night closes it. The issue step is `if: always()`: gcp-drift-detect.yml could never file its issue
+# when an earlier step failed, which is exactly the night the issue matters.
+#
+# DORMANT UNTIL ARMED: staging needs AZURE_STAGING_ENABLED, production AZURE_DEPLOY_ENABLED.
+# Inputs (X6): `environment` only (default staging); the schedule audits both.
+
+on:
+  schedule:
+    - cron: "15 5 * * *" # 07:15 Harare — after the 03:00/04:00 cron jobs, before the workday
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to audit"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-drift-detect
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: audit live Azure vs Terraform (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.environment) || '["staging","production"]') }}
+    permissions:
+      contents: read
+      id-token: write # OIDC for the reader identity
+      issues: write # the azure-drift issue
+    env:
+      TIER: ${{ matrix.environment }}
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_READER }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TFSTATE_RG: ${{ vars.AZURE_TFSTATE_RG }}
+      AZURE_TFSTATE_ACCOUNT: ${{ vars.AZURE_TFSTATE_ACCOUNT }}
+      AZURE_TFSTATE_CONTAINER: ${{ vars.AZURE_TFSTATE_CONTAINER }}
+    steps:
+      - name: Is this environment armed?
+        id: armed
+        env:
+          STAGING_ENABLED: ${{ vars.AZURE_STAGING_ENABLED }}
+          DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          flag="$STAGING_ENABLED"
+          [ "$TIER" = "production" ] && flag="$DEPLOY_ENABLED"
+          if [ "$flag" != "true" ]; then
+            echo "${TIER} is not armed — nothing to audit."
+            echo "armed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -z "$ARM_CLIENT_ID" ]; then
+            echo "::warning::AZURE_CLIENT_ID_READER is unset — the drift audit needs the read-only identity (see this file's header). Skipping ${TIER}."
+            echo "armed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::The reader identity is federated to main only (got ${REF})."; exit 1
+          fi
+          echo "armed=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: ${{ steps.armed.outputs.armed == 'true' }}
+
+      - name: Set up Terraform
+        if: ${{ steps.armed.outputs.armed == 'true' }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: terraform plan -refresh-only
+        id: plan
+        if: ${{ steps.armed.outputs.armed == 'true' }}
+        run: |
+          set +e
+          bash scripts/azure-tf-init.sh "$TIER" > init.log 2>&1
+          code=$?
+          if [ "$code" -eq 3 ]; then
+            cat init.log
+            echo "exit=absent" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$code" -ne 0 ]; then
+            tail -n 60 init.log | tee plan-tail.txt
+            echo "exit=init-failed" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          cd infra/azure
+          terraform plan -refresh-only -input=false -lock=false -no-color -detailed-exitcode > plan.log 2>&1
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          tail -n 150 plan.log > ../../plan-tail.txt
+          tail -n 60 plan.log
+
+      - name: Open / refresh / close the azure-drift issue
+        if: ${{ always() && steps.armed.outputs.armed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_EXIT: ${{ steps.plan.outputs.exit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Azure drift (${TIER}): live resources have diverged from Terraform"
+          findings=()
+          case "${PLAN_EXIT:-}" in
+            0|absent) ;;
+            2) findings+=("**Live ${TIER} resources differ from recorded Terraform state** (refresh-only plan exit 2) — something was changed outside Terraform.") ;;
+            1) findings+=("**terraform plan errored** — the drift probe itself is broken (plan exit 1).") ;;
+            init-failed) findings+=("**terraform init failed** — the state backend is unreadable by the reader identity (Storage Blob Data Reader on the state container?).") ;;
+            *) findings+=("**The drift probe did not complete** (step outcome unknown) — see the run.") ;;
+          esac
+
+          gh label create azure-drift --force -R "$GITHUB_REPOSITORY" \
+            --description "Live Azure state has drifted from Terraform (opened by azure-drift-detect.yml)" \
+            --color D93F0B || true
+
+          EXISTING="$(gh issue list -R "$GITHUB_REPOSITORY" --label azure-drift --state open --json number,title \
+            | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)] | first | .number // empty')"
+
+          if [ ${#findings[@]} -eq 0 ]; then
+            echo "No drift in ${TIER} (plan exit ${PLAN_EXIT:-?})."
+            if [ -n "$EXISTING" ]; then
+              gh issue close -R "$GITHUB_REPOSITORY" "$EXISTING" \
+                --comment "✅ Tonight's ${TIER} audit came back clean ([run](${RUN_URL})) — closing. _(azure-drift-detect.yml)_"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "Nightly Azure drift audit (${TIER}) found problems ([run](${RUN_URL}), $(date -u +%FT%TZ)):"
+            echo
+            for f in "${findings[@]}"; do echo "- $f"; done
+            echo
+            if [ -s plan-tail.txt ]; then
+              echo "<details><summary>terraform plan tail</summary>"
+              echo; echo '```'; sed 's/```/`` `/g' plan-tail.txt; echo '```'; echo "</details>"
+            fi
+            echo
+            echo "_Read-only audit — nothing was changed. Fix path: adopt the change in infra/azure, or revert it by dispatching Terraform Apply (Azure) for ${TIER}. (azure-drift-detect.yml)_"
+          } > /tmp/issue-body.md
+
+          if [ -n "$EXISTING" ]; then
+            echo "Refreshing existing azure-drift issue #${EXISTING}."
+            gh issue comment -R "$GITHUB_REPOSITORY" "$EXISTING" --body-file /tmp/issue-body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --label azure-drift --body-file /tmp/issue-body.md
+          fi

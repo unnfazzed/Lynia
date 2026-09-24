@@ -1,0 +1,697 @@
+name: Release (Azure)
+
+# Production release of the API to Azure Container Apps (docs/plans/2026-09-24-gcp-to-azure-migration.md
+# §6 "release-azure.yml in detail"; replaces release.yml once the GCP tier is retired). Same shape as
+# the Cloud Run release, retargeted:
+#
+#   1. staging-gate + launch-hygiene preflight, VERBATIM from release.yml (cloud-agnostic) — the gate
+#      now polls deploy-staging-azure.yml;
+#   2. azure/login@v2 over OIDC (federated credential repo:unnfazzed/Lynia:environment:production);
+#   3. buildx → ACR with the registry layer cache in ACR, PROMOTING the :sha image staging built and
+#      smoke-tested instead of rebuilding it;
+#   4. start the in-VNet migrate job (caj-lynia-migrate) and wait for it to succeed;
+#   5. pin traffic to NAMED revisions, then create the new revision at 0%;
+#   6. smoke the candidate on its revision-LABEL URL (a direct URL Cloud Run never gave us);
+#   7. shift 10 → 50 → 100, each step gated on the public /healthz body `status == "ok"` (E6: HTTP 200
+#      alone also covers "degraded", i.e. dead queues), candidate revision health, and the candidate's
+#      5xx rate from `az monitor metrics list` on `Requests`;
+#   8. roll back automatically on any failed gate.
+#
+# DORMANT UNTIL ARMED: every job is gated on the repo Variable AZURE_DEPLOY_ENABLED == 'true', so this
+# workflow is a clean no-op on every push until a maintainer arms it.
+#
+# Repo Variables (Settings → Secrets and variables → Actions). No secrets — OIDC throughout.
+#   AZURE_DEPLOY_ENABLED             "true" to arm
+#   AZURE_STAGING_ENABLED            "true" once deploy-staging-azure.yml is armed (turns the gate on)
+#   AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   AZURE_CLIENT_ID_PRODUCTION       deploy identity federated to environment:production (S5: AcrPush +
+#                                    Container Apps Contributor on its resource group — never Owner)
+#   AZURE_ACR_NAME                   registry name (images are <name>.azurecr.io/lynia-api)
+#   AZURE_RESOURCE_GROUP_PRODUCTION  rg-lynia-production-san
+#   Optional tunables: CANARY_STEPS ("10 50"), CANARY_OBSERVE_SECONDS (120), CANARY_MIN_SAMPLE (20),
+#   CANARY_MAX_5XX_PCT (5), CANARY_DISABLED, PUBLIC_HEALTH_URL, STAGING_GATE_TIMEOUT_MINUTES (60).
+#   The launch-hygiene / vendor Variables (OTP_CHANNEL, KYC_PROVIDER, WHATSAPP_*, BIRD_*, …) are the
+#   same ones release.yml reads.
+#
+# OWNERSHIP SPLIT (plan D11): Terraform (infra/azure) owns the app shell — ingress, scale, identity,
+# the Key Vault-referenced `secrets` list and infra-derived env (CLOUD_PROVIDER, AZURE_STORAGE_*,
+# AZURE_CLIENT_ID, SCHEDULER_*, DATABASE_CONNECTION_LIMIT, FCM wiring) — with ignore_changes on
+# template/image/traffic. CI owns revisions, traffic, and the release-policy env below: the hardcoded
+# tier (APP_ENV=production), the Variable-driven flags release.yml set, and which secrets are mounted
+# as env (`NAME=secretref:<name>`; container-app secret names are the env name lower-cased with `-`
+# for `_`, e.g. DATABASE_URL → database-url → Key Vault DATABASE-URL). Every secretref is checked
+# against the app's secret NAMES before the revision is created, so a missing Key Vault reference
+# fails in seconds with the fix instead of as a crash-looping revision.
+#
+# S8: no workflow step reads a secret VALUE; ci.yml greps every *azure*.yml for the subcommands that
+# would. Never write `${{ }}` inside a run: block in this file — inputs, Variables and step outputs
+# arrive through env: (shell-injection sink, and KB-CI-EXPR-EMPTY).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Progressive-delivery ordering, identical to release.yml: production only ships a commit that the
+  # Azure staging tier already deployed AND smoke-tested (deploy-staging-azure.yml). Keeps waiting
+  # through a first staging failure (deploy-autoheal.yml retries it), gives up once staging is red on
+  # attempt >= 2 or the timeout lapses. Staging unarmed → passes through; workflow_dispatch → skipped.
+  # The job NAME is load-bearing: deploy-autoheal.yml recognises a gate-only failure by it.
+  staging-gate:
+    name: wait for green staging deploy
+    runs-on: ubuntu-latest
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Wait for deploy-staging success on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_ENABLED: ${{ vars.AZURE_STAGING_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          GATE_TIMEOUT_MINUTES: ${{ vars.STAGING_GATE_TIMEOUT_MINUTES || '60' }}
+        run: |
+          set -euo pipefail
+          if [ "$STAGING_ENABLED" != "true" ]; then
+            echo "AZURE_STAGING_ENABLED != 'true' — no staging tier to gate on; proceeding straight to prod."
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — skipping the staging wait (human judgment overrides the gate)."
+            exit 0
+          fi
+          DEADLINE=$((SECONDS + GATE_TIMEOUT_MINUTES * 60))
+          APPEAR_DEADLINE=$((SECONDS + 600))
+          while :; do
+            RUN="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-staging-azure.yml/runs?head_sha=${GITHUB_SHA}&per_page=1" \
+              --jq '.workflow_runs[0] // empty')"
+            if [ -z "$RUN" ]; then
+              # Both workflows share the same push trigger + paths-ignore, so a missing staging run
+              # is unexpected — but give the Actions API a grace window before declaring it absent.
+              if [ "$SECONDS" -ge "$APPEAR_DEADLINE" ]; then
+                echo "::error::No deploy-staging run appeared for ${GITHUB_SHA} within 10 min. If staging was intentionally not run for this commit, release manually via workflow_dispatch (which bypasses this gate)." >&2
+                exit 1
+              fi
+              echo "No staging run for this sha yet — waiting…"
+            else
+              STATUS="$(echo "$RUN" | jq -r '.status')"
+              CONCLUSION="$(echo "$RUN" | jq -r '.conclusion // empty')"
+              ATTEMPT="$(echo "$RUN" | jq -r '.run_attempt // 1')"
+              URL="$(echo "$RUN" | jq -r '.html_url')"
+              if [ "$STATUS" != "completed" ]; then
+                echo "Staging run in progress (attempt ${ATTEMPT}): ${URL} — waiting…"
+              elif [ "$CONCLUSION" = "success" ]; then
+                echo "Staging is green for ${GITHUB_SHA} (attempt ${ATTEMPT}): ${URL} — promoting to production."
+                exit 0
+              elif [ "$ATTEMPT" -ge 2 ]; then
+                echo "::error::Staging is red for ${GITHUB_SHA} even after the automatic retry (conclusion: ${CONCLUSION}, attempt ${ATTEMPT}): ${URL}. deploy-autoheal.yml has escalated it as a deploy-failure issue — fix staging (or land the fix on main) and the next merge promotes normally. Production was NOT deployed and keeps serving the previous revision." >&2
+                exit 1
+              else
+                # First failure: deploy-autoheal.yml re-runs the failed jobs shortly. Keep waiting —
+                # the run's conclusion flips back to in-progress once the retry starts.
+                echo "Staging attempt 1 concluded ${CONCLUSION}: ${URL} — waiting for the automatic retry (deploy-autoheal.yml)…"
+              fi
+            fi
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::Staging still not green after ${GATE_TIMEOUT_MINUTES} min — giving up without deploying to production. Inspect the staging run, then either land a fix on main or release manually via workflow_dispatch." >&2
+              exit 1
+            fi
+            sleep 30
+          done
+
+
+  deploy:
+    name: build · migrate · canary (Azure)
+    runs-on: ubuntu-latest
+    needs: staging-gate
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' }}
+    # E14/S5: the production federated credential is bound to this environment; its deployment branch
+    # policy (main only) is what stops a branch workflow from minting the production token.
+    environment: production
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # OIDC token azure/login exchanges for the deploy identity
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP_PRODUCTION }}
+      ACR: ${{ vars.AZURE_ACR_NAME }}
+      IMAGE: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/lynia-api
+      APP: ca-lynia-api
+      MIGRATE_JOB: caj-lynia-migrate
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required deploy config
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID_PRODUCTION: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+          AZURE_RESOURCE_GROUP_PRODUCTION: ${{ vars.AZURE_RESOURCE_GROUP_PRODUCTION }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_PRODUCTION AZURE_ACR_NAME AZURE_RESOURCE_GROUP_PRODUCTION; do
+            [ -n "${!v:-}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::AZURE_DEPLOY_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-09-24-gcp-to-azure-migration.md §6." >&2
+            exit 1
+          fi
+          # Defence in depth only; the production environment's branch policy is the binding control.
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Production releases run from main only (got ${REF})." >&2
+            exit 1
+          fi
+          echo "All required Azure deploy config present."
+
+      # Pre-flight the PRODUCTION launch-hygiene boot-guards (apps/api/src/config/env.ts) BEFORE the
+      # build. release.yml hardcodes APP_ENV=production, so these three guards reject the container at
+      # boot if a QA repo Variable leaks into prod — but that failure otherwise surfaces only after a
+      # ~3-min build + migrate as an opaque Cloud Run "container failed to start on :3000". Mirror the
+      # guards here so the misconfig fails in seconds with an actionable message. Effective values are
+      # computed exactly as the deploy step below; KYC_MODE is never injected, so it is the app default
+      # "auto" (hence KYC_PROVIDER=stub ⇒ rejected).
+      - name: Validate production launch-hygiene config
+        env:
+          OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
+          OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
+          KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+          WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
+          OTP_WHATSAPP_UNARMED_ACK: ${{ vars.OTP_WHATSAPP_UNARMED_ACK }}
+          OTP_WHATSAPP_UNARMED_ACK_EXPIRES: ${{ vars.OTP_WHATSAPP_UNARMED_ACK_EXPIRES }}
+          BIRD_ENABLED: ${{ vars.BIRD_ENABLED }}
+          BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
+          LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
+          LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
+        run: |
+          set -euo pipefail
+          errors=()
+          if [ "$OTP_CHANNEL" = "console" ]; then
+            errors+=("OTP_CHANNEL=console is a dev-only channel and must not be used in production — clear the OTP_CHANNEL repo Variable (defaults to whatsapp) or set it to whatsapp/sms.")
+          fi
+          if [ -n "$(printf '%s' "$OTP_TEST_PHONES" | tr -d '[:space:]')" ]; then
+            errors+=("OTP_TEST_PHONES must be empty in production — it exposes live OTP codes in the response. Clear the OTP_TEST_PHONES repo Variable.")
+          fi
+          if [ "$KYC_PROVIDER" = "stub" ]; then
+            errors+=("KYC_PROVIDER=stub auto-passes verification and must not ship to production — stub KYC must never gate real riders. Clear the KYC_PROVIDER repo Variable (defaults to didit) or switch to manual review.")
+          fi
+          # OTP must actually be able to SEND, not just boot. These two misconfigs pass the env-schema
+          # boot-guards and the canary /healthz gate, then 503 every requestOtp at runtime — production
+          # shipped exactly this way twice (2026-07-08 un-armed, 2026-07-13 half-armed with empty vars;
+          # docs/GCP-PENDING-REVIEW-2026-07-13.md §3). WhatsAppOtpSender.send() requires phone-number-id,
+          # token, and template (apps/api/src/auth/otp-sender.ts), so guard all of them here.
+          #
+          # Pre-launch exception: OTP_WHATSAPP_UNARMED_ACK=true plus a not-yet-passed
+          # OTP_WHATSAPP_UNARMED_ACK_EXPIRES (YYYY-MM-DD) downgrades an unarmed-WhatsApp finding from a
+          # hard failure to a loud warning, so unrelated bug/UX fixes can keep shipping during the known,
+          # time-boxed pre-launch window where WhatsApp isn't armed yet. It never goes silent: the warning
+          # prints on every single deploy, and once the expiry date passes this reverts to a hard failure
+          # automatically — the ack can't be set once and forgotten.
+          whatsapp_errors=()
+          if [ "$OTP_CHANNEL" = "whatsapp" ]; then
+            if [ "$WHATSAPP_ENABLED" != "true" ]; then
+              whatsapp_errors+=("OTP_CHANNEL=whatsapp (the default) but WHATSAPP_ENABLED != true — no WhatsApp credentials are injected, so every production sign-in OTP would 503. Arm WhatsApp (WHATSAPP_ENABLED=true + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_TEMPLATE_NAME repo Variables + WHATSAPP_ACCESS_TOKEN secret) or set OTP_CHANNEL=sms.")
+            elif [ -z "$(printf '%s' "$WHATSAPP_PHONE_NUMBER_ID" | tr -d '[:space:]')" ] || [ -z "$(printf '%s' "$WHATSAPP_TEMPLATE_NAME" | tr -d '[:space:]')" ]; then
+              whatsapp_errors+=("WHATSAPP_ENABLED=true but WHATSAPP_PHONE_NUMBER_ID and/or WHATSAPP_TEMPLATE_NAME repo Variables are empty — the service boots green yet every requestOtp 503s. Set both (Meta Business → WhatsApp → API setup; template must be an approved authentication-category template).")
+            fi
+          fi
+          # Same "must actually SEND" guard for the Bird SMS channel. BirdOtpSender.send() requires the
+          # access key, workspace id, and SMS channel id (apps/api/src/auth/otp-sender.ts); a missing one
+          # boots green and 503s every requestOtp. No pre-launch ack window (unlike WhatsApp) — bird is
+          # the fast path chosen precisely to be armed now, so an unarmed bird deploy is always an error.
+          if [ "$OTP_CHANNEL" = "bird" ]; then
+            if [ "$BIRD_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=bird but BIRD_ENABLED != true — no Bird credentials are injected, so every production sign-in OTP would 503. Arm Bird (BIRD_ENABLED=true + BIRD_SMS_FROM repo Variable + BIRD_ACCESS_KEY secret) or set OTP_CHANNEL=whatsapp.")
+            elif [ -z "$(printf '%s' "$BIRD_SMS_FROM" | tr -d '[:space:]')" ]; then
+              errors+=("BIRD_ENABLED=true but the BIRD_SMS_FROM repo Variable is empty — Zimbabwe (+263) has no eligible sender in Bird's shared pool, so every OTP send is rejected with E12003 ('No eligible sender is available for this message') while the service still boots green. Set it to the registered sender ID (e.g. LyniaGo).")
+            fi
+          fi
+          # Same "must actually SEND" guard for the local A2P SMS channel. LocalSmsOtpSender.send()
+          # requires the gateway URL + API key (apps/api/src/auth/otp-sender.ts); a missing one boots
+          # green and 503s every requestOtp. Like bird, no pre-launch ack window.
+          if [ "$OTP_CHANNEL" = "local-sms" ]; then
+            if [ "$LOCAL_SMS_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=local-sms but LOCAL_SMS_ENABLED != true — no gateway credentials are injected, so every production sign-in OTP would 503. Arm it (LOCAL_SMS_ENABLED=true + LOCAL_SMS_API_URL repo Variable + LOCAL_SMS_API_KEY secret) or set OTP_CHANNEL=whatsapp.")
+            elif [ -z "$(printf '%s' "$LOCAL_SMS_API_URL" | tr -d '[:space:]')" ]; then
+              errors+=("LOCAL_SMS_ENABLED=true but LOCAL_SMS_API_URL repo Variable is empty — the service boots green yet every requestOtp 503s. Set it to your A2P gateway's send endpoint.")
+            fi
+          fi
+          # Same "must actually SEND" guard for the Bird Verify channel (docs/BIRD-SETUP.md "Bird
+          # Verify"). birdVerifyStart/birdVerifyCheck (apps/api/src/auth/bird-verify.ts) require
+          # BIRD_VERIFY_API_KEY; a missing key boots green and 503s every requestOtp/verifyOtp. Like
+          # bird/local-sms, no pre-launch ack window — this is a channel chosen precisely to be armed
+          # when set, not a known-unarmed pre-launch state.
+          if [ "$OTP_CHANNEL" = "bird-verify" ]; then
+            if [ "$BIRD_VERIFY_ENABLED" != "true" ]; then
+              errors+=("OTP_CHANNEL=bird-verify but BIRD_VERIFY_ENABLED != true — no Bird Verify credentials are injected, so every production sign-in OTP would 503. Arm it (BIRD_VERIFY_ENABLED=true + the BIRD_VERIFY_API_KEY secret) or set OTP_CHANNEL=whatsapp.")
+            fi
+          fi
+          ack_active=false
+          if [ ${#whatsapp_errors[@]} -gt 0 ]; then
+            if [ "$OTP_WHATSAPP_UNARMED_ACK" = "true" ] && [ -n "$OTP_WHATSAPP_UNARMED_ACK_EXPIRES" ]; then
+              expires_epoch="$(date -d "$OTP_WHATSAPP_UNARMED_ACK_EXPIRES" +%s 2>/dev/null || true)"
+              now_epoch="$(date +%s)"
+              if [ -n "$expires_epoch" ] && [ "$now_epoch" -lt "$expires_epoch" ]; then
+                ack_active=true
+              fi
+            fi
+            if [ "$ack_active" = "true" ]; then
+              for e in "${whatsapp_errors[@]}"; do echo "::warning::$e"; done
+              echo "::warning::OTP_WHATSAPP_UNARMED_ACK is active until $OTP_WHATSAPP_UNARMED_ACK_EXPIRES — deploying anyway with WhatsApp OTP known broken. Production sign-in will 503 until WhatsApp is armed."
+            else
+              errors+=("${whatsapp_errors[@]}")
+              if [ "$OTP_WHATSAPP_UNARMED_ACK" = "true" ]; then
+                errors+=("OTP_WHATSAPP_UNARMED_ACK is true but OTP_WHATSAPP_UNARMED_ACK_EXPIRES is missing, unparseable, or in the past — the pre-launch exception has expired or is misconfigured. Arm WhatsApp, or set a fresh future OTP_WHATSAPP_UNARMED_ACK_EXPIRES (YYYY-MM-DD) to extend the window.")
+              fi
+            fi
+          fi
+          if [ ${#errors[@]} -gt 0 ]; then
+            for e in "${errors[@]}"; do echo "::error::$e"; done
+            echo "::error::Production launch-hygiene guards (apps/api/src/config/env.ts) would reject this deploy at container boot. Fix the repo Variables above, then re-run. See docs/PILOT-READINESS.md." >&2
+            exit 1
+          fi
+          whatsapp_note=""
+          if [ "$OTP_CHANNEL" = "whatsapp" ]; then
+            if [ "$ack_active" = "true" ]; then
+              whatsapp_note=", WhatsApp UNARMED (ack active until $OTP_WHATSAPP_UNARMED_ACK_EXPIRES)"
+            else
+              whatsapp_note=", WhatsApp armed"
+            fi
+          fi
+          echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty${whatsapp_note})."
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Entra token → docker credential for ACR (admin user is disabled; plan §2 Registry).
+      - name: Log in to ACR
+        run: az acr login --name "$ACR"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Same-image promotion: deploy-staging-azure.yml built, migrated and smoke-tested this exact :sha
+      # in the same registry, so production adds :latest to that digest instead of rebuilding. A full
+      # build (warm from the ACR layer cache) only happens when the tag is absent — staging unarmed, or
+      # a manual dispatch of a sha staging never built.
+      - name: Promote staging image (or build if absent)
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:${GITHUB_SHA}" >/dev/null 2>&1; then
+            echo "Reusing $IMAGE:${GITHUB_SHA} built and smoke-tested by deploy-staging-azure — no rebuild; adding :latest."
+            docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:${GITHUB_SHA}"
+            exit 0
+          fi
+          echo "No prebuilt image for ${GITHUB_SHA} — building from scratch."
+          docker buildx build \
+            -f apps/api/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+            -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" \
+            --push .
+
+      # In-VNet migrations (plan D4/H2): the job runs the SAME image inside the Container Apps
+      # environment, reaching the private Flexible Server over the DATABASE_URL Key Vault reference —
+      # nothing crosses the public internet and the runner never holds a database credential. The job
+      # command (`prisma migrate deploy`), identity and secrets are Terraform's; CI only points it at
+      # this release's image. Runs BEFORE any traffic moves; safe because migrations are
+      # expand-only/online-safe (src/prisma/migration-safety.spec.ts), so the serving revision keeps
+      # working against the migrated schema.
+      - name: Apply database migrations (caj-lynia-migrate)
+        run: |
+          set -euo pipefail
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" -o none
+          EXECUTION="$(az containerapp job start -n "$MIGRATE_JOB" -g "$RG" --query name -o tsv)"
+          [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
+          echo "Started $MIGRATE_JOB execution $EXECUTION"
+          bash scripts/azure-aca.sh wait-job "$MIGRATE_JOB" "$RG" "$EXECUTION" 900
+
+      # Rollback target + pinning. Whatever serves now is re-expressed as a NAMED revision at 100%, so
+      # the revision created next starts at 0% instead of inheriting a `latest` weight. Empty on the
+      # first-ever deploy (the canary is then skipped: a new app must route 100% somewhere).
+      - name: Capture serving revision and pin traffic to it
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV="$(bash scripts/azure-aca.sh pin "$APP" "$RG")"
+          echo "revision=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Serving revision (rollback target): ${PREV:-<none — first deploy>}"
+
+      # New revision at 0%. Values arrive through env: and each KEY=VALUE is its own argv element, so a
+      # Variable value cannot inject a second key (the GCP ENV_VARS delimiter problem does not exist
+      # here); the true|false flags are still whitelist-validated so a typo fails loudly. APP_ENV and
+      # NODE_ENV are hardcoded and appended LAST — nothing can relax the launch-hygiene boot-guards on
+      # the live app. Optional values that are empty are REMOVED from the template when present (so
+      # clearing a Variable, e.g. OTP_TEST_PHONES, actually clears it), and so are the secret refs of a
+      # vendor whose *_ENABLED flag is off.
+      - name: Deploy new revision (0% traffic)
+        id: deploy
+        env:
+          OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
+          OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
+          KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+          # E5: noop until the new Firebase project + its credential exist (with fcm and no credential
+          # the C5 boot-guard refuses to boot). Set the PUSH_PROVIDER Variable to fcm once M2 lands.
+          PUSH_PROVIDER: ${{ vars.PUSH_PROVIDER || 'noop' }}
+          MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
+          REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
+          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
+          MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
+          MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
+          MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
+          MERCHANT_DASHBOARD_ORIGIN: ${{ vars.MERCHANT_DASHBOARD_ORIGIN }}
+          CORS_EXTRA_ORIGINS: ${{ vars.CORS_EXTRA_ORIGINS }}
+          DIDIT_ENABLED: ${{ vars.DIDIT_ENABLED }}
+          DIDIT_WORKFLOW_ID: ${{ vars.DIDIT_WORKFLOW_ID }}
+          DIDIT_CALLBACK_URL: ${{ vars.DIDIT_CALLBACK_URL }}
+          WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
+          WHATSAPP_TEMPLATE_LANG: ${{ vars.WHATSAPP_TEMPLATE_LANG }}
+          BIRD_ENABLED: ${{ vars.BIRD_ENABLED }}
+          BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
+          BIRD_BASE_URL: ${{ vars.BIRD_BASE_URL }}
+          BIRD_BRAND_NAME: ${{ vars.BIRD_BRAND_NAME }}
+          BIRD_ANDROID_SMS_HASH: ${{ vars.BIRD_ANDROID_SMS_HASH }}
+          BIRD_WEBHOOK_ENABLED: ${{ vars.BIRD_WEBHOOK_ENABLED }}
+          LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
+          LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          LOCAL_SMS_SENDER_ID: ${{ vars.LOCAL_SMS_SENDER_ID }}
+          LOCAL_SMS_ANDROID_HASH: ${{ vars.LOCAL_SMS_ANDROID_HASH }}
+          BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
+          SENTRY_ENABLED: ${{ vars.SENTRY_ENABLED }}
+          SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
+          DEMO_ACCOUNT_ENABLED: ${{ vars.DEMO_ACCOUNT_ENABLED }}
+        run: |
+          set -euo pipefail
+          SET=()
+          UNSET=()
+          SECRET_NAMES=()
+          # opt NAME VALUE — set when non-blank, otherwise schedule removal.
+          opt() { if [ -n "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then SET+=("$1=$2"); else UNSET+=("$1"); fi; }
+          # secret NAME — mount the container-app secret <name-lower-hyphen> as env NAME.
+          secret() { local s; s="$(printf '%s' "$1" | tr 'A-Z_' 'a-z-')"; SET+=("$1=secretref:$s"); SECRET_NAMES+=("$s"); }
+          # drop NAME... — remove these while the vendor's *_ENABLED flag is off.
+          drop() { UNSET+=("$@"); }
+
+          SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "PUSH_PROVIDER=$PUSH_PROVIDER")
+          opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
+          opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
+          opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
+
+          # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+            _val="${!_flag:-false}"
+            case "$_val" in
+              true|false) ;;
+              *) echo "::error::${_flag} must be exactly 'true' or 'false' (got '${_val}')"; exit 1 ;;
+            esac
+            SET+=("${_flag}=${_val}")
+          done
+
+          # CORS (apps/api/src/common/cors.ts; docs/KNOWN_BUGS.md OPS-CORS-01): the merchant origin is
+          # always present, CORS_EXTRA_ORIGINS appends. Same bare-origin validation as release.yml.
+          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://lyniagomerchant.lyniafinance.com}"
+          if [ -n "${CORS_EXTRA_ORIGINS:-}" ]; then
+            CORS_ORIGINS="${CORS_ORIGINS},${CORS_EXTRA_ORIGINS}"
+          fi
+          CORS_ORIGINS="$(printf '%s' "$CORS_ORIGINS" | tr -d '[:space:]')"
+          IFS=',' read -ra _origins <<< "$CORS_ORIGINS" || true
+          for _o in "${_origins[@]:-}"; do
+            [ -z "$_o" ] && continue
+            case "$_o" in
+              https://*/*|http://*/*) echo "::error::CORS origin '$_o' has a path or trailing slash — use scheme://host[:port] only"; exit 1 ;;
+              https://?*|http://?*) ;;
+              *) echo "::error::CORS origin '$_o' must be an absolute origin starting with https:// (http:// only for a local origin)"; exit 1 ;;
+            esac
+          done
+          echo "CORS_ALLOWED_ORIGINS=$CORS_ORIGINS"
+          SET+=("CORS_ALLOWED_ORIGINS=$CORS_ORIGINS")
+
+          # Core secrets (Key Vault references defined by infra/azure).
+          secret DATABASE_URL
+          secret REDIS_URL
+          secret JWT_SIGNING_SECRET
+          secret PII_ENCRYPTION_KEY
+
+          # Opt-in vendors — same gates as release.yml, so arming one is a Variable flip.
+          if [ "$DIDIT_ENABLED" = "true" ]; then
+            SET+=("DIDIT_WORKFLOW_ID=$DIDIT_WORKFLOW_ID")
+            opt DIDIT_CALLBACK_URL "$DIDIT_CALLBACK_URL" # an empty value fails the URL schema at boot
+            secret DIDIT_API_KEY
+            secret DIDIT_WEBHOOK_SECRET
+          else
+            drop DIDIT_WORKFLOW_ID DIDIT_CALLBACK_URL DIDIT_API_KEY DIDIT_WEBHOOK_SECRET
+          fi
+          if [ "$WHATSAPP_ENABLED" = "true" ]; then
+            SET+=("WHATSAPP_PHONE_NUMBER_ID=$WHATSAPP_PHONE_NUMBER_ID" "WHATSAPP_TEMPLATE_NAME=$WHATSAPP_TEMPLATE_NAME")
+            opt WHATSAPP_TEMPLATE_LANG "$WHATSAPP_TEMPLATE_LANG"
+            secret WHATSAPP_ACCESS_TOKEN
+          else
+            drop WHATSAPP_PHONE_NUMBER_ID WHATSAPP_TEMPLATE_NAME WHATSAPP_TEMPLATE_LANG WHATSAPP_ACCESS_TOKEN
+          fi
+          if [ "$BIRD_ENABLED" = "true" ]; then
+            SET+=("BIRD_SMS_FROM=$BIRD_SMS_FROM")
+            opt BIRD_BASE_URL "$BIRD_BASE_URL"
+            opt BIRD_BRAND_NAME "$BIRD_BRAND_NAME"
+            opt BIRD_ANDROID_SMS_HASH "$BIRD_ANDROID_SMS_HASH"
+            secret BIRD_ACCESS_KEY
+            if [ "$BIRD_WEBHOOK_ENABLED" = "true" ]; then secret BIRD_WEBHOOK_SECRET; else drop BIRD_WEBHOOK_SECRET; fi
+          else
+            drop BIRD_SMS_FROM BIRD_BASE_URL BIRD_BRAND_NAME BIRD_ANDROID_SMS_HASH BIRD_ACCESS_KEY BIRD_WEBHOOK_SECRET
+          fi
+          if [ "$LOCAL_SMS_ENABLED" = "true" ]; then
+            SET+=("LOCAL_SMS_API_URL=$LOCAL_SMS_API_URL")
+            opt LOCAL_SMS_SENDER_ID "$LOCAL_SMS_SENDER_ID"
+            opt LOCAL_SMS_ANDROID_HASH "$LOCAL_SMS_ANDROID_HASH"
+            secret LOCAL_SMS_API_KEY
+          else
+            drop LOCAL_SMS_API_URL LOCAL_SMS_SENDER_ID LOCAL_SMS_ANDROID_HASH LOCAL_SMS_API_KEY
+          fi
+          if [ "$BIRD_VERIFY_ENABLED" = "true" ]; then secret BIRD_VERIFY_API_KEY; else drop BIRD_VERIFY_API_KEY; fi
+          # E12: armed at cutover, environment=production-azure so post-cutover errors are separable.
+          if [ "$SENTRY_ENABLED" = "true" ]; then
+            SET+=("SENTRY_ENVIRONMENT=production-azure")
+            opt SENTRY_TRACES_SAMPLE_RATE "$SENTRY_TRACES_SAMPLE_RATE"
+            secret SENTRY_DSN
+          else
+            drop SENTRY_ENVIRONMENT SENTRY_TRACES_SAMPLE_RATE SENTRY_DSN
+          fi
+          if [ "$DEMO_ACCOUNT_ENABLED" = "true" ]; then secret DEMO_OTP_PHONE; secret DEMO_OTP_CODE; else drop DEMO_OTP_PHONE DEMO_OTP_CODE; fi
+
+          # The tier itself, hardcoded and last.
+          SET+=("NODE_ENV=production" "APP_ENV=production")
+
+          bash scripts/azure-aca.sh require-secrets "$APP" "$RG" "${SECRET_NAMES[@]}"
+
+          existing=" $(bash scripts/azure-aca.sh env-names "$APP" "$RG" | tr '\n' ' ') "
+          REMOVE=()
+          for n in "${UNSET[@]}"; do
+            case "$existing" in *" $n "*) REMOVE+=("$n") ;; esac
+          done
+
+          SUFFIX="r${GITHUB_SHA:0:7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CANDIDATE="${APP}--${SUFFIX}"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          args=(containerapp update -n "$APP" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" --revision-suffix "$SUFFIX" --set-env-vars "${SET[@]}")
+          if [ ${#REMOVE[@]} -gt 0 ]; then
+            echo "Removing env no longer configured: ${REMOVE[*]}"
+            args+=(--remove-env-vars "${REMOVE[@]}")
+          fi
+          # -o none: the update response echoes the whole template; nothing of it belongs in a public log.
+          az "${args[@]}" -o none
+          echo "Created $CANDIDATE — waiting for it to provision and pass its health probes (0% traffic)…"
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$CANDIDATE" 600
+
+      # The candidate's own URL, before a single live request reaches it. The `canary` label is moved
+      # onto the candidate; /healthz there must report status "ok" (db, redis AND both queues — E6).
+      - name: Smoke the candidate on its revision-label URL
+        id: smoke
+        env:
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          az containerapp revision label remove -n "$APP" -g "$RG" --label canary -o none 2>/dev/null || true
+          az containerapp revision label add -n "$APP" -g "$RG" --label canary --revision "$CANDIDATE" --yes -o none
+          URL="$(bash scripts/azure-aca.sh label-url "$APP" "$RG" canary)/healthz"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 12); do
+            if bash scripts/azure-aca.sh healthz "$URL"; then
+              echo "Candidate healthy on $URL."
+              exit 0
+            fi
+            echo "Attempt $i: candidate not ok yet; retrying in 10s…"
+            sleep 10
+          done
+          echo "::error::Candidate $CANDIDATE never reported status \"ok\" on its label URL — no traffic was moved."
+          exit 1
+
+      # Progressive promotion (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2b), three gates per step:
+      #   1. /healthz through the public hostname AND on the candidate's label URL stays `status: ok`
+      #      for the whole observation window;
+      #   2. the candidate revision is still provisioned, Healthy and not Failed/Degraded;
+      #   3. the candidate's 5xx rate from the built-in `Requests` metric stays under
+      #      CANARY_MAX_5XX_PCT once CANARY_MIN_SAMPLE requests have hit it. Ingestion lags a minute or
+      #      two, so the window is cumulative since the first shift and "no data yet" is an
+      #      inconclusive pass (gates 1+2 still hard-gate); a failed metrics call warns and passes.
+      # Any failure fails this step and the rollback step re-points 100% to the previous revision.
+      - name: Canary — graduated shift, observe, promote
+        id: canary
+        env:
+          PREV: ${{ steps.prev.outputs.revision }}
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+          CANDIDATE_URL: ${{ steps.smoke.outputs.url }}
+          CANARY_DISABLED: ${{ vars.CANARY_DISABLED }}
+          STEPS: ${{ vars.CANARY_STEPS || '10 50' }}
+          OBSERVE: ${{ vars.CANARY_OBSERVE_SECONDS || '120' }}
+          HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz' }}
+          MIN_SAMPLE: ${{ vars.CANARY_MIN_SAMPLE || '20' }}
+          MAX_5XX_PCT: ${{ vars.CANARY_MAX_5XX_PCT || '5' }}
+        run: |
+          set -euo pipefail
+          H=scripts/azure-aca.sh
+          echo "Candidate revision: $CANDIDATE (previous: ${PREV:-<none>})"
+          if [ -z "$PREV" ] || [ "$CANARY_DISABLED" = "true" ]; then
+            echo "Canary skipped ($([ -z "$PREV" ] && echo 'first deploy' || echo 'CANARY_DISABLED=true')) — routing 100% to the new revision."
+            bash "$H" route "$APP" "$RG" "$CANDIDATE" 100
+            exit 0
+          fi
+          for p in $STEPS; do
+            case "$p" in ''|*[!0-9]*) echo "::error::CANARY_STEPS must be integers between 1 and 99 (got '$p')"; exit 1 ;; esac
+            if [ "$p" -lt 1 ] || [ "$p" -gt 99 ]; then echo "::error::CANARY_STEPS must be integers between 1 and 99 (got '$p')"; exit 1; fi
+          done
+
+          APP_ID="$(az containerapp show -n "$APP" -g "$RG" --query id -o tsv)"
+          START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          observe_health() {
+            echo "Observing $HEALTH_URL and $CANDIDATE_URL for ${OBSERVE}s…"
+            local end=$((SECONDS + OBSERVE))
+            while [ "$SECONDS" -lt "$end" ]; do
+              bash "$H" healthz "$HEALTH_URL" >/dev/null \
+                || { bash "$H" healthz "$HEALTH_URL" || true; echo "::error::Public /healthz not ok during the canary window."; return 1; }
+              bash "$H" healthz "$CANDIDATE_URL" >/dev/null \
+                || { bash "$H" healthz "$CANDIDATE_URL" || true; echo "::error::Candidate /healthz not ok during the canary window."; return 1; }
+              sleep 5
+            done
+          }
+
+          assert_ready() {
+            local state health running prov
+            state="$(az containerapp revision show -n "$APP" -g "$RG" --revision "$CANDIDATE" -o json)"
+            prov="$(printf '%s' "$state" | jq -r '.properties.provisioningState // "Unknown"')"
+            health="$(printf '%s' "$state" | jq -r '.properties.healthState // "Unknown"')"
+            running="$(printf '%s' "$state" | jq -r '.properties.runningState // "Unknown"')"
+            echo "Candidate: provisioning=$prov health=$health running=$running"
+            [ "$prov" = "Provisioned" ] && [ "$health" = "Healthy" ] \
+              || { echo "::error::Candidate $CANDIDATE is not Provisioned+Healthy after the observation window."; return 1; }
+            case "$running" in
+              Failed|Degraded|Stopped) echo "::error::Candidate $CANDIDATE running state is $running."; return 1 ;;
+            esac
+          }
+
+          # VERIFY ON STAGING: the `Requests` metric's dimension names (`revisionName`,
+          # `statusCodeCategory`) and the category values ("5xx") are taken from the Container Apps
+          # metrics reference and have not yet been observed against this subscription. If staging
+          # shows different spellings, fix them HERE — a wrong dimension silently yields "no data",
+          # which this gate treats as inconclusive rather than failing.
+          check_error_rate() {
+            local resp total err5xx
+            resp="$(az monitor metrics list --resource "$APP_ID" --metric Requests \
+              --aggregation Total --interval PT1M \
+              --start-time "$START_TS" --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --filter "revisionName eq '${CANDIDATE}' and statusCodeCategory eq '*'" -o json)" \
+              || { echo "::warning::Metrics query failed (deploy identity missing Monitoring Reader?) — relying on the health/readiness gates for this step."; return 0; }
+            total="$(printf '%s' "$resp" | jq '[.value[]?.timeseries[]?.data[]?.total // 0] | add // 0 | floor')"
+            err5xx="$(printf '%s' "$resp" | jq '[.value[]?.timeseries[]? | select([.metadatavalues[]? | select((.name.value | ascii_downcase) == "statuscodecategory") | .value] | index("5xx")) | .data[]?.total // 0] | add // 0 | floor')"
+            echo "Candidate requests since ${START_TS}: total=${total}, 5xx=${err5xx}"
+            if [ "$total" -lt "$MIN_SAMPLE" ]; then
+              echo "Fewer than ${MIN_SAMPLE} candidate requests observed — 5xx gate inconclusive (metric ingestion lag)."
+              return 0
+            fi
+            if [ $((err5xx * 100)) -gt $((total * MAX_5XX_PCT)) ]; then
+              echo "::error::Candidate 5xx rate $((err5xx * 100 / total))% over ${total} requests exceeds ${MAX_5XX_PCT}% — failing the canary."
+              return 1
+            fi
+          }
+
+          for PERCENT in $STEPS; do
+            echo "Shifting ${PERCENT}% of traffic to $CANDIDATE…"
+            bash "$H" route "$APP" "$RG" "$CANDIDATE" "$PERCENT" "$PREV"
+            observe_health
+            assert_ready
+            check_error_rate
+          done
+
+          echo "All canary steps healthy — promoting $CANDIDATE to 100%."
+          bash "$H" route "$APP" "$RG" "$CANDIDATE" 100
+          # Keep the previous revision active as the instant rollback target; deactivate anything
+          # older (every active revision holds minReplicas, so leftovers cost money).
+          bash "$H" prune "$APP" "$RG" "$CANDIDATE" "$PREV"
+
+      # Automatic rollback on ANY failed gate after the candidate exists (smoke or canary). A failed
+      # build/migrate never created a revision; pinning already kept 100% on PREV, so re-routing is
+      # idempotent. A traffic change, not a rebuild — it lands in seconds. Manual path: rollback-azure.yml.
+      - name: Roll back traffic on a failed gate
+        if: ${{ failure() && steps.prev.outputs.revision != '' && steps.deploy.outcome != 'skipped' }}
+        env:
+          PREV: ${{ steps.prev.outputs.revision }}
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          echo "::warning::A release gate failed — routing 100% of traffic back to ${PREV}."
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$PREV" 100
+          if [ -n "$CANDIDATE" ]; then
+            az containerapp revision deactivate -n "$APP" -g "$RG" --revision "$CANDIDATE" -o none \
+              || echo "::warning::Could not deactivate $CANDIDATE (it carries no traffic either way)."
+          fi
+          echo "Rolled back to ${PREV}." >> "$GITHUB_STEP_SUMMARY"
+
+      # Best-effort post-mortem IN the Actions log: the candidate's state plus the Container Apps
+      # SYSTEM log (revision/replica events: image pull, probe failures, Key Vault reference errors).
+      # Console output is deliberately not dumped — this repo's logs are public.
+      - name: Dump failed revision diagnostics
+        if: ${{ failure() }}
+        env:
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          set +e
+          if [ -z "$CANDIDATE" ]; then echo "No candidate revision was created."; exit 0; fi
+          echo "::group::Candidate revision $CANDIDATE — state"
+          az containerapp revision show -n "$APP" -g "$RG" --revision "$CANDIDATE" -o json \
+            | jq '{name, active: .properties.active, provisioningState: .properties.provisioningState, provisioningError: .properties.provisioningError, healthState: .properties.healthState, runningState: .properties.runningState, runningStateDetails: .properties.runningStateDetails, replicas: .properties.replicas, trafficWeight: .properties.trafficWeight, image: [.properties.template.containers[]?.image]}'
+          echo "::endgroup::"
+          echo "::group::System log for $APP (last 60 lines)"
+          az containerapp logs show -n "$APP" -g "$RG" --type system --tail 60 --format text 2>&1 | tail -n 60
+          echo "::endgroup::"
+          echo "Full Recap: run the Azure Diagnose workflow (environment: production)."
+
+      - name: Summary
+        if: ${{ success() }}
+        env:
+          PREV: ${{ steps.prev.outputs.revision }}
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          echo "Deployed ${IMAGE}:${GITHUB_SHA} to ${APP} (${RG}) as ${CANDIDATE} via canary (previous revision ${PREV:-none})." >> "$GITHUB_STEP_SUMMARY"

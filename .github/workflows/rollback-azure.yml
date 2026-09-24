@@ -1,0 +1,114 @@
+name: Rollback (Azure)
+
+# Manual, one-command API rollback on Azure Container Apps (docs/plans/2026-09-24-gcp-to-azure-migration.md
+# §6; replaces rollback.yml). Rolling back is a traffic re-point — seconds, no rebuild, no migration:
+#   az containerapp ingress traffic set --revision-weight <revision>=100   (every other revision → 0)
+# Run with `revision` empty to LIST the traffic split and recent revisions, then re-run with the name.
+# An inactive revision is re-activated and waited on until healthy before any traffic moves to it.
+#
+# Inputs (X6): `environment` (default staging) + `revision`. Both reach the shell through env: only
+# and the revision name is whitelist-validated — rollback.yml interpolated inputs.revision straight
+# into run:, a shell-injection sink this file must not reintroduce.
+#
+# Schema note: migrations are expand-only/online-safe (CI-enforced), so an older revision keeps working
+# against the current schema. Rolling back traffic never rolls back the database.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to roll back"
+        type: choice
+        options: [staging, production]
+        default: staging
+      revision:
+        description: "Revision name to route 100% of traffic to (leave empty to list revisions)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize with that tier's deploys — never fight a canary mid-promotion.
+  group: ${{ inputs.environment == 'production' && 'release-azure' || 'deploy-staging-azure' }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: ${{ inputs.revision && 'route 100% to revision' || 'list revisions' }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    if: >-
+      (inputs.environment == 'production' && vars.AZURE_DEPLOY_ENABLED == 'true')
+      || (inputs.environment == 'staging' && vars.AZURE_STAGING_ENABLED == 'true')
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TIER: ${{ inputs.environment }}
+      REVISION: ${{ inputs.revision }}
+      RG: ${{ inputs.environment == 'production' && vars.AZURE_RESOURCE_GROUP_PRODUCTION || vars.AZURE_RESOURCE_GROUP_STAGING }}
+      APP: ca-lynia-api
+      HEALTH_URL: ${{ inputs.environment == 'production' && (vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz') || (vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz') }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate inputs
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ -n "$RG" ] || { echo "::error::The ${TIER} resource-group Variable is unset."; exit 1; }
+          if [ -n "$REVISION" ] && ! printf '%s' "$REVISION" | grep -qE '^[a-z0-9][a-z0-9-]{0,99}$'; then
+            echo "::error::revision must be a Container Apps revision name (lowercase letters, digits, '-')."; exit 1
+          fi
+          if [ "$TIER" = "production" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Production rollbacks run from main only (got ${REF})."; exit 1
+          fi
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.environment == 'production' && vars.AZURE_CLIENT_ID_PRODUCTION || vars.AZURE_CLIENT_ID_STAGING }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: List traffic and revisions (no revision given)
+        if: ${{ inputs.revision == '' }}
+        run: |
+          set -euo pipefail
+          echo "Current traffic split on $APP ($TIER):"
+          az containerapp ingress traffic show -n "$APP" -g "$RG" -o json \
+            | jq -r '.[] | "  \(if .latestRevision then "latest" else .revisionName end)  \(.weight)%\(if .label then "  label=\(.label)" else "" end)"'
+          echo
+          echo "Recent revisions (newest first) — re-run this workflow with one of these names:"
+          az containerapp revision list -n "$APP" -g "$RG" --all -o json \
+            | jq -r 'sort_by(.properties.createdTime) | reverse | .[:15][]
+                | "  \(.name)  created=\(.properties.createdTime)  active=\(.properties.active)  health=\(.properties.healthState // "?")  traffic=\(.properties.trafficWeight // 0)%"'
+
+      - name: Route 100% of traffic to the requested revision
+        if: ${{ inputs.revision != '' }}
+        run: |
+          set -euo pipefail
+          ACTIVE="$(az containerapp revision show -n "$APP" -g "$RG" --revision "$REVISION" --query properties.active -o tsv)" \
+            || { echo "::error::Revision $REVISION not found on $APP in $RG."; exit 1; }
+          if [ "$ACTIVE" != "true" ]; then
+            echo "$REVISION is inactive — activating it first."
+            az containerapp revision activate -n "$APP" -g "$RG" --revision "$REVISION" -o none
+          fi
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$REVISION" 300
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$REVISION" 100
+          echo "Verifying health through the public hostname…"
+          ok=false
+          for _ in $(seq 1 6); do
+            if bash scripts/azure-aca.sh healthz "$HEALTH_URL"; then ok=true; break; fi
+            sleep 10
+          done
+          echo "Rolled back ${TIER}: 100% of traffic → ${REVISION} (health ok: ${ok})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ok" != "true" ]; then
+            echo "::error::Traffic now routes to $REVISION, but /healthz is not reporting status \"ok\". Run the Azure Diagnose workflow for the Recap."
+            exit 1
+          fi
