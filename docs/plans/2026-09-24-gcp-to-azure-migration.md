@@ -2,7 +2,7 @@
 ## Implementation plan
 # GCP → Azure migration plan
 
-**Status:** PROPOSED 2026-09-24. **Nothing in this plan has been executed.** Owner decisions in §12 gate
+**Status:** APPROVED by the owner 2026-09-24 ("go"; see §14). Execution has started. Owner decisions in §12 gate
 Phase 1 onward. Do not treat any section as approved until the owner signs off in this file's review log
 (§14).
 
@@ -559,6 +559,14 @@ General Purpose Postgres) will roughly double the data-tier lines.
 ## 14. Review log
 
 Owner sign-off, gstack reviews, and decisions recorded against §12 go here.
+
+- **2026-09-24, owner sign-off: "go".**
+  - Ratifies every applied review option: E1–E15 (§5a), X1–X7 (DX) and S1–S8 (security), exactly as written.
+  - Q1: payments-profile flag, so fix billing, but it does not gate the migration.
+  - Q2: fresh start, with Didit-backed manual re-approval.
+  - The user list is recovered from Bird: 17 numbers across SMS and WhatsApp. It is held outside the repo.
+  - Q3–Q7 take their defaults.
+  - Q8 (POTRAZ) stays with the owner and counsel.
 ## Review record
 
 ### Review-pipeline note (2026-09-24)
@@ -1664,9 +1672,6 @@ state namespace for 30 days (run `1790263858252-c5b8560c9f1f5dbb`). Next operati
 | Security (cso) | `/cso --infra` | Trust boundaries & secrets | 1 | partial | 1 supported low finding (`62b3c8f6`); 8 design requirements S1–S8 |
 
 - **OUTSIDE COVERAGE:** codex, plan-review: unavailable in all passes; no findings recorded. cso ran a static pass only (no qualified scanners).
-- **VERDICT:** No review is CLEAR. Every row has an applied option; the reviews clear once the owner ratifies E1–E15, X1–X7 and S1–S8. **Eng review required** (ratification).
+- **VERDICT:** CEO, eng, DX and security rows were all ratified by the owner on 2026-09-24 ("go"). Ready to implement. Outside voice is still missing coverage.
 
-**UNRESOLVED DECISIONS:**
-- E1–E15: engineering options applied (§5a), awaiting owner ratification
-- X1–X7: DX options applied, awaiting owner ratification
-- S1–S8: security design requirements applied, awaiting owner ratification
+NO UNRESOLVED DECISIONS
