@@ -1409,20 +1409,193 @@ and a named alternative. **None has an owner answer**, so all 15 stay listed as 
 | Parallelization | 5 lanes, 5 parallel |
 | Lake Score | 8/10 (E10 is a shortcut; E2, E9, E11, E13 and E14 differ in kind and are excluded) |
 
+### /plan-devex-review (2026-09-24)
+
+**Product type:** Platform (infra + deploy workflows), with an owner-operated runbook as its main
+"developer" surface. **Mode:** DX POLISH. The plan's scope is right (HOLD, from the CEO review), so
+this pass hardens the touchpoints and adds no features. **Decisions:** every row below is
+**auto-chosen (recommended), awaiting owner ratification**, for the same reason as the eng review:
+the session resumed with an instruction to finish without asking more questions.
+
+#### Developer persona
+
+```
+TARGET DEVELOPER PERSONA
+========================
+Who:       The solo founder-operator. Operates from a phone: GitHub mobile, a mobile browser with
+           GCP Cloud Shell and Azure Cloud Shell, the Play Console app, and Expo. No laptop.
+Context:   The backend has been down for 7 days. Testers are waiting. Every owner step happens
+           in snatched minutes, on a small screen, over mobile data.
+Tolerance: About 10 min per sitting. Paste-and-run blocks only. Anything long-running must not
+           depend on the screen staying on.
+Expects:   One place that says what to do next, whether it worked, and what to do if it didn't.
+           Claude sessions do the code; the owner does identity, billing, consoles and approvals.
+```
+
+#### Empathy narrative (predicted from the plan text; not observed)
+
+> I open the PR on my phone. The plan is good, but my own steps are spread across §6 (disarm
+> Variables), §7 (Firebase, keys, EAS, Play), §8 (Azure account, Cloud Identity, bootstrap), §9
+> (salvage in Cloud Shell) and §12 (eight questions). I scroll back and forth to work out the order.
+> §8 says "Bootstrap, once, from Cloud Shell" but gives no command. It doesn't say who runs
+> Terraform. If I'm meant to, the Postgres create takes a long time, and Azure Cloud Shell drops
+> after 20 idle minutes if my screen locks. The salvage `pg_dump` has the same problem in GCP
+> Cloud Shell. When a step fails, I get raw CLI output with no "if you see X, do Y". After
+> cutover, how do I know from my phone that everything is green? I would have to open the
+> Container Apps blade.
+
+#### Competitive benchmark (DX choices, not measured times)
+
+| Tool | Start → result | Time + evidence | DX choice | Source |
+|---|---|---|---|---|
+| This plan (today) | Azure sub created → staging `/healthz` 200 | ~2–3 h wall clock, owner-active unknown (estimated) | Scattered steps, unspecified bootstrap | this file §8 |
+| Azure Developer CLI (`azd up`) | Template → running Container App | Reported "minutes"; varies with data tier | One command, then status printed | learn.microsoft.com (azd) |
+| This repo's own EAS lane | Dispatch → build/submit verdict | Observed: the eas-build-status Recap | Read-only status workflow with a recap tail | `eas-build-status.yml` (CLAUDE.md) |
+
+**Clock and target** (auto-chosen, recommended). The clock runs from "Azure subscription exists" to
+"`azure-diagnose.yml` Recap shows staging `/healthz` `status: ok` on the managed cert". Target: **≤ 30 min
+of owner-active time**, in sittings of ≤ 10 min each. Wall clock is expected to be ~90 min, most of
+it Postgres and Redis provisioning in CI. Honest tier: *Needs Work* on wall clock, which provisioning
+dominates and review can't change. *Competitive* on owner-active time.
+
+#### Magical moment
+
+**The tester's installed 0.49.0 app signs in again with no update** (M1, already in the plan). For
+the operator: the first **green Recap on the phone**. This uses `azure-diagnose.yml`, already in §6,
+with its output specified below (X5). No new capability.
+
+#### Journey trace and friction
+
+| Stage | Owner does | Friction (evidence) | Row → fix | Status |
+|---|---|---|---|---|
+| 1. Discover | Reads the PR | Owner steps are spread over §6, §7, §8, §9 and §12 | X1: one ordered runbook | fixed |
+| 2. Install | Azure Cloud Shell bootstrap | §8 names no command. Azure Cloud Shell ends after **20 min without interactive activity** (MS Learn FAQ), and PG Flexible + AMR creation runs longer | X2: short bootstrap; Terraform only in CI | fixed |
+| 3. Hello world | Dispatch staging apply → first `/healthz` | "Did it work?" means reading raw logs on a phone | X5: Recap tail | fixed |
+| 4. Real usage | Salvage in GCP Cloud Shell | The VM terminates after **40 min inactive**. tmux survives a tab refresh, but not VM loss (Google docs). A long dump can die mid-stream | X3: resumable stages | fixed |
+| 5. Debug | A revision fails on a missing secret | Key Vault `DATABASE-URL` vs env `DATABASE_URL` (H6) is a classic confusion | X4: boot-guard errors say problem + cause + fix | fixed |
+| 6. Upgrade | Rollback, retire GCP | `rollback-azure.yml` and the Variables disarm are already planned | — | ok |
+
+#### First-time operator confusion report (predicted)
+
+```
+T+0:00  Opens §8 Phase 0. Creates the Azure account. OK.
+T+0:10  Phase 1 "Bootstrap, once, from Cloud Shell". Which command? Looks in §6, then §H8. Stuck.   → X1/X2
+T+0:25  Runs terraform by hand in Cloud Shell. Postgres create is still running; the screen locks. → X2
+T+0:50  Session gone. Unsure whether state is half-applied.                                         → X2 (CI + remote state lock)
+T+1:30  Staging deploy "green" in Actions. Is /healthz actually ok, or just 200 while queues are dead? → X5 + E6
+```
+
+#### Passes (score now → after amendments)
+
+| # | Pass | Now | After | Evidenced gap → fix |
+|---|---|---|---|---|
+| 1 | Getting started | 3 | 7 | No bootstrap command or runner named → X1, X2. Wall clock stays provisioning-bound |
+| 2 | Interfaces (workflows / inputs) | 6 | 8 | Workflows are Variable-gated, following the repo's pattern (good). `workflow_dispatch` inputs are unnamed → X6: every Azure workflow takes only `environment` (`staging`\|`production`) plus the one input it needs, with safe defaults (staging) |
+| 3 | Errors & debugging | 4 | 8 | Raw CLI failures; the Key Vault name mapping is invisible → X4, X5 |
+| 4 | Docs | 4 | 8 | Owner steps are not consolidated → X1 |
+| 5 | Upgrade / rollback | 7 | 8 | Rollback and disarm are planned; X5 shows the active revision and its weights |
+| 6 | Environment / tooling | 5 | 8 | Cloud Shell timeouts are unhandled → X2, X3 |
+| 7 | Community / ecosystem | N/A→6 | 6 | Solo operator. The existing `deploy-failure` issue label is the channel (E7). No gap in scope |
+| 8 | Measurement | 3 | 7 | TTHW is not measured → X7: the runbook records a start and end timestamp per sitting in §14 |
+
+#### DX decision ledger (X1–X7)
+
+Every row below is **auto-chosen (recommended), awaiting owner ratification**.
+
+- **X1 — one owner runbook.** Create `docs/AZURE-OWNER-RUNBOOK.md` as the only list of owner steps, in execution order. For each step it gives:
+  - **where** (phone app / Azure Cloud Shell / GCP Cloud Shell / GitHub mobile / Play Console);
+  - a **paste block**;
+  - the **expected output**;
+  - **if you see X, do Y**.
+
+  It covers Q1–Q8, Phase 0, bootstrap, salvage, arming Variables, cutover DNS, M2 console steps and the three tester messages, with each step ≤ 10 min. §8 then links to it instead of repeating the steps.
+
+  *Alternative:* keep the steps inline in §8.
+- **X2 — the bootstrap stays under 5 min; Terraform runs only in CI.** Create `infra/azure/bootstrap.sh`, idempotent and re-runnable. It creates only:
+  - `rg-lynia-tfstate`;
+  - the state storage account (versioning, blob lease locking);
+  - the three UAMIs;
+  - their federated credentials (E14).
+
+  It ends by printing the GitHub Variables block. If `gh` is present and authenticated in Cloud Shell, it sets the Variables itself (**verify that `gh` ships in Azure Cloud Shell**; unconfirmed). Every `terraform apply` runs in `terraform-apply-azure.yml`, dispatched from GitHub mobile and approved at the `infra` environment gate (E14). A dropped phone session can't leave state half-applied, because the runner holds the lease.
+
+  *Alternative:* run Terraform in Cloud Shell under `nohup`. Rejected: the 20-min timeout ends the session anyway.
+- **X3 — a resumable salvage.** `scripts/gcp-salvage.sh` (C9) has stages: `secrets`, `db-dump`, `media`, `verify`.
+  - Each stage writes a done-marker under `$HOME/.lynia-salvage/`. GCP Cloud Shell `$HOME` is 5 GB persistent and survives VM recycling.
+  - A re-run skips the stages that are done.
+  - `media` uses `gcloud storage rsync`, which restarts incrementally.
+  - `db-dump` restarts from zero, but writes to a new blob name, so a partial dump is never mistaken for a complete one.
+  - The script tells the owner to start it inside `tmux`, and prints each stage's elapsed time.
+  - **No row data in any output**, as C9 already requires.
+- **X4 — boot-guard error format.** Every Azure boot-guard message (C1, C3, C5) is one line in the form:
+  `Missing <ENV_VAR>: <what breaks>. Fix: set Key Vault secret <KV-NAME> (hyphens) and reference it as <ENV_VAR> in the container app.`
+  The names come from the same map the Terraform module uses. Tested in the C8 specs.
+- **X5 — a Recap for the phone.** `azure-diagnose.yml` (already in §6) ends with a fixed Recap block, following the `eas-build-status.yml` pattern. It shows, per environment:
+  - `/healthz` body (`status`, `db`, `redis`, `queues`);
+  - the active revision and its traffic weights;
+  - managed-cert state per host;
+  - each cron job's last execution result and time;
+  - the Key Vault reference errors.
+
+  Read-only and dispatchable. This is the "did it work?" answer at every runbook step.
+- **X6 — workflow inputs.** Every Azure workflow's dispatch inputs are an `environment` choice defaulting to `staging`, plus at most one other input. Inputs are passed through `env:` (the §6 injection fix). Production dispatches need the `main` branch.
+- **X7 — measure TTHW.** The runbook's Phase 1 has the owner paste the time at the start of the first sitting and at the first green staging Recap into §14. One line each. No telemetry.
+
+#### NOT in scope
+
+A mobile-friendly web dashboard (X5 covers it). `azd` templates (a second IaC path, rejected in D11). Chat-ops bots.
+
+#### What already exists
+
+- `eas-build-status.yml` Recap pattern (reused by X5).
+- The repo-Variable gating pattern (§6).
+- `deploy-failure` issue label (E7).
+- `infra/scripts/arm-admin.sh` shape for secret minting.
+- `docs/GCP-BILLING-DOMAIN-SETUP.md` domain-verification steps (reused by X1, with the CEO-8 correction).
+
+#### Implementation tasks (DX review)
+
+- [ ] **T13 (P1, human ~3h / CC ~20m)** — docs — write `docs/AZURE-OWNER-RUNBOOK.md` (X1, X7). Verify: every step has where / paste / expected output / if-X-do-Y.
+- [ ] **T14 (P1, human ~3h / CC ~20m)** — infra — `infra/azure/bootstrap.sh`, idempotent, under 5 min (X2). Verify: run it twice in Azure Cloud Shell; the second run is a no-op; shellcheck is clean.
+- [ ] **T15 (P1, human ~2h / CC ~15m)** — scripts — salvage stage markers and resume (X3). Verify: kill the script mid-`media`, re-run it, and it resumes. Dry run against a synthetic DB (C9).
+- [ ] **T16 (P2, human ~1h / CC ~10m)** — api — boot-guard message format (X4). Verify: C8 specs assert the exact text.
+- [ ] **T17 (P2, human ~2h / CC ~15m)** — ci — the `azure-diagnose.yml` Recap and X6 inputs (X5, X6). Verify: dispatch it against staging and read the Recap on a phone.
+
+#### DX scorecard
+
+```
++====================================================================+
+|              DX PLAN REVIEW — SCORECARD                             |
++====================================================================+
+| Getting Started   3 → 7 | Interfaces   6 → 8 | Errors      4 → 8   |
+| Docs              4 → 8 | Upgrade      7 → 8 | Environment 5 → 8   |
+| Community         6     | Measurement  3 → 7 |                     |
+| TTHW (owner-active) unknown → ≤30 min target; wall clock ~90 min   |
+| Competitive rank: Needs Work (wall clock) / Competitive (active)   |
+| Magical moment: designed, via M1 + the X5 green Recap              |
+| Overall DX        4 → 7.5                                          |
++====================================================================+
+```
+
+Outside voice: unavailable (Codex absent; no `TaskOutput`). Coverage is missing, not clean.
+
+Sources for the timeouts:
+- [Azure Cloud Shell FAQ](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting)
+- [How Cloud Shell works (Google)](https://docs.cloud.google.com/shell/docs/how-cloud-shell-works)
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 1 critical gap (E6, now handed off and remedied in §5a) |
-| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 10 issues + 22 test gaps specified, 0 critical gaps |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 1 critical gap (E6, handed off and remedied in §5a) |
+| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review (CEO, eng, DX passes) |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 32 issues, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | skipped (no UI scope) |
-| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 1 | ISSUES OPEN | score: 4/10 → 7.5/10, TTHW: unknown → ≤30 min owner-active |
 
-- **OUTSIDE COVERAGE:** codex, plan-review: unavailable in both the CEO and eng passes; no findings recorded.
-- **VERDICT:** No review is CLEAR. The eng review mapped every row; it clears once the owner ratifies E1–E15. **Eng review required** (ratification).
+- **OUTSIDE COVERAGE:** codex, plan-review: unavailable in all three passes; no findings recorded.
+- **VERDICT:** No review is CLEAR. Every CEO/eng/DX row has an applied option; the reviews clear once the owner ratifies E1–E15 and X1–X7. **Eng review required** (ratification).
 
 **UNRESOLVED DECISIONS:**
-- E1–E5, E7–E9, E11–E15: recommended options applied (§5a), awaiting owner ratification
-- E6: the remedy is applied (queue health + deploy gate), awaiting owner ratification
-- E10: a shortcut option applied (SA key), awaiting owner ratification; upgrade trigger TODO-2
+- E1–E15: engineering options applied (§5a), awaiting owner ratification
+- X1–X7: DX options applied (this section), awaiting owner ratification
