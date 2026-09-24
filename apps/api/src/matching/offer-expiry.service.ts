@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Op
 import { BROADCAST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { sampleQueueDepth } from "../common/queue-metrics";
+import { bullmqConnectionFromUrl, pingQueueClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -37,19 +38,6 @@ export function jitteredDelayMs(): number {
   return OFFER_WINDOW_MS + Math.floor(Math.random() * JITTER_MAX_MS);
 }
 
-/** Plain ioredis options (structurally typed) so BullMQ owns its connections — avoids
- *  cross-version ioredis instance mismatches between the api and bullmq's bundled copy. */
-function connectionFromUrl(url: string) {
-  const u = new URL(url);
-  return {
-    host: u.hostname,
-    port: u.port ? Number(u.port) : 6379,
-    username: u.username || undefined,
-    password: u.password || undefined,
-    maxRetriesPerRequest: null,
-  };
-}
-
 @Injectable()
 export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OfferExpiryService.name);
@@ -69,7 +57,7 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     const url = this.env.REDIS_URL;
     if (url) {
-      const connection = connectionFromUrl(url);
+      const connection = bullmqConnectionFromUrl(url);
 
       this.queue = new Queue(QUEUE_NAME, { connection });
       this.worker = new Worker(
@@ -181,6 +169,13 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`reconcileStaleOffers sweep failed: ${(err as Error).message}`);
     }
     return { expired };
+  }
+
+  /** E6: PING this queue's own BullMQ Redis connection for `/healthz` (2 s budget). `"skipped"` when
+   *  no `REDIS_URL` (no queue). Distinct from the health probe's shared client, which can be green
+   *  while BullMQ's connections are dead. */
+  pingQueue(): Promise<boolean | "skipped"> {
+    return pingQueueClient(this.queue);
   }
 
   async onModuleDestroy(): Promise<void> {

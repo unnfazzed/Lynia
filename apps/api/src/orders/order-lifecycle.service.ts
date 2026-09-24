@@ -17,6 +17,7 @@ import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalt
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { sampleQueueDepth } from "../common/queue-metrics";
+import { bullmqConnectionFromUrl, pingQueueClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -24,7 +25,6 @@ import { MetricsService } from "../observability/metrics.service";
 import {
   CANCEL_STRIKE_LIMIT,
   type CancelResult,
-  connectionFromUrl,
   CUSTOMER_CANCELLABLE,
   DELIVERY_PROOF_STATUSES,
   FORWARD,
@@ -92,7 +92,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     const url = this.env.REDIS_URL;
     if (url) {
-      const connection = connectionFromUrl(url);
+      const connection = bullmqConnectionFromUrl(url);
       this.queue = new Queue(QUEUE_NAME, { connection });
       this.worker = new Worker(QUEUE_NAME, async (job) => this.completeOrder(job.data.orderId as string), {
         connection,
@@ -120,6 +120,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     void this.reconcileStaleDeliveries();
     this.sweep = setInterval(() => void this.reconcileStaleDeliveries(), RECONCILE_INTERVAL_MS);
     this.sweep.unref?.();
+  }
+
+  /** E6: PING this queue's own BullMQ Redis connection for `/healthz` (2 s budget). `"skipped"` when
+   *  no `REDIS_URL` (no queue). Distinct from the health probe's shared client, which can be green
+   *  while BullMQ's connections are dead. */
+  pingQueue(): Promise<boolean | "skipped"> {
+    return pingQueueClient(this.queue);
   }
 
   async onModuleDestroy(): Promise<void> {

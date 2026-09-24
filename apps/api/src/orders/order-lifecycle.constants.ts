@@ -61,15 +61,3 @@ export interface CancelResult {
   cancelledBy: "customer" | "rider";
   cooldownUntil: Date | null;
 }
-
-/** Plain ioredis options so BullMQ owns its connections (mirrors offer-expiry.service.ts). */
-export function connectionFromUrl(url: string) {
-  const u = new URL(url);
-  return {
-    host: u.hostname,
-    port: u.port ? Number(u.port) : 6379,
-    username: u.username || undefined,
-    password: u.password || undefined,
-    maxRetriesPerRequest: null,
-  };
-}

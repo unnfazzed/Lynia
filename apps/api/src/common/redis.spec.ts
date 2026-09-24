@@ -1,6 +1,14 @@
 import { Logger } from "@nestjs/common";
-import { describe, expect, it, vi } from "vitest";
-import { createRedisClient, REDIS_FAIL_FAST } from "./redis";
+import { Queue } from "bullmq";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  bullmqConnectionFromUrl,
+  createRedisClient,
+  type PingableQueue,
+  pingQueueClient,
+  QUEUE_PING_TIMEOUT_MS,
+  REDIS_FAIL_FAST,
+} from "./redis";
 
 /**
  * DS15-01 regression. An ioredis client is a plain Node EventEmitter: an `error` event emitted with NO
@@ -102,5 +110,98 @@ describe("createRedisClient — LC-C01 request-path fail-fast", () => {
     // With the offline queue disabled a command on a non-connected client rejects promptly, so the
     // caller's try/catch fallback runs — rather than the promise pending until reconnect.
     await expect(client.get("lc-c01")).rejects.toThrow();
+  });
+});
+
+/**
+ * C2 regression. The two former `connectionFromUrl` copies built host/port options and dropped the
+ * `rediss:` scheme, so BullMQ connected in plaintext and could never reach a TLS-only Redis (Azure
+ * Managed Redis, port 10000) — offer expiry and rating auto-close silently dead. The shared helper
+ * sets `tls` for `rediss://` (pinning REDIS_CA_CERT like createRedisClient) and leaves `redis://` as-is.
+ */
+describe("bullmqConnectionFromUrl — C2 BullMQ TLS", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("plain redis:// parses host/port/credentials with maxRetriesPerRequest null and NO tls (GCP path unchanged)", () => {
+    const c = bullmqConnectionFromUrl("redis://user:pass@host.example:6380");
+    expect(c).toEqual({ host: "host.example", port: 6380, username: "user", password: "pass", maxRetriesPerRequest: null });
+    expect("tls" in c).toBe(false);
+    // Default port when absent.
+    expect(bullmqConnectionFromUrl("redis://localhost").port).toBe(6379);
+  });
+
+  it("rediss:// sets tls (empty options → system trust store) when REDIS_CA_CERT is unset", () => {
+    vi.stubEnv("REDIS_CA_CERT", "");
+    const c = bullmqConnectionFromUrl("rediss://:secret@lynia.redis.azure.net:10000");
+    expect(c).toMatchObject({ host: "lynia.redis.azure.net", port: 10000, password: "secret", maxRetriesPerRequest: null });
+    expect(c.tls).toEqual({});
+  });
+
+  it("rediss:// pins REDIS_CA_CERT as the tls CA when set", () => {
+    vi.stubEnv("REDIS_CA_CERT", "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
+    const c = bullmqConnectionFromUrl("rediss://lynia.redis.azure.net:10000");
+    expect(c.tls).toEqual({ ca: ["-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----"] });
+  });
+
+  it("percent-decodes a base64 access key (WHATWG URL re-encodes '=' in userinfo)", () => {
+    const c = bullmqConnectionFromUrl("rediss://:abc%2Bdef%3D@lynia.redis.azure.net:10000");
+    expect(c.password).toBe("abc+def=");
+  });
+});
+
+/** Stub of BullMQ 6's `queue.getBackend().client` — the queue's own connection, lazily resolved. */
+function queueWith(client: () => Promise<object>): PingableQueue {
+  return { getBackend: () => ({ get client() { return client(); } }) };
+}
+
+describe("pingQueueClient — E6 queue health", () => {
+  it("'skipped' when the queue was never built (no REDIS_URL)", async () => {
+    await expect(pingQueueClient(undefined)).resolves.toBe("skipped");
+  });
+
+  it("true when the queue's own client answers PONG", async () => {
+    await expect(pingQueueClient(queueWith(() => Promise.resolve({ ping: async () => "PONG" })))).resolves.toBe(true);
+  });
+
+  it("false (never throws) when the queue's client rejects", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as unknown as Logger);
+    await expect(pingQueueClient(queueWith(() => Promise.reject(new Error("ECONNREFUSED"))))).resolves.toBe(false);
+    warn.mockRestore();
+  });
+
+  it("false when the PING itself rejects", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as unknown as Logger);
+    const client = { ping: () => Promise.reject(new Error("NOAUTH")) };
+    await expect(pingQueueClient(queueWith(() => Promise.resolve(client)))).resolves.toBe(false);
+    warn.mockRestore();
+  });
+
+  it("a REAL BullMQ Queue satisfies PingableQueue and reports false fast when its Redis is unreachable", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as unknown as Logger);
+    // Port 1: nothing listens, so the queue's own connection never becomes ready. Pins the BullMQ API
+    // shape (`getBackend().client`) against a version bump silently turning the probe into a no-op.
+    const queue = new Queue("e6-ping-spec", { connection: bullmqConnectionFromUrl("redis://127.0.0.1:1") });
+    queue.on("error", () => undefined);
+    try {
+      await expect(pingQueueClient(queue, 200)).resolves.toBe(false);
+    } finally {
+      await queue.close().catch(() => undefined);
+      warn.mockRestore();
+    }
+  });
+
+  it("false after the timeout when the client never becomes ready (dead / TLS-misconfigured Redis)", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as unknown as Logger);
+    try {
+      const p = pingQueueClient(queueWith(() => new Promise(() => {})));
+      await vi.advanceTimersByTimeAsync(QUEUE_PING_TIMEOUT_MS);
+      await expect(p).resolves.toBe(false);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

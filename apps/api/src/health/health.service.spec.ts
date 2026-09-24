@@ -3,6 +3,8 @@ import { loadEnv } from "../config/env";
 import type { Env } from "../config/env";
 import { HealthService } from "./health.service";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { OfferExpiryService } from "../matching/offer-expiry.service";
+import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 
 // No REDIS_URL → the Redis leg reports "skipped", so these tests isolate the DB-ping behaviour.
 const noRedisEnv: Env = loadEnv({ DATABASE_URL: "postgresql://localhost/lynia" } as NodeJS.ProcessEnv);
@@ -38,5 +40,54 @@ describe("HealthService.check — DB liveness (DS15-08)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** Stub queue owner — only the `pingQueue()` slice HealthService reads. */
+function queueOwner<T>(result: () => Promise<boolean | "skipped">): T {
+  return { pingQueue: result } as unknown as T;
+}
+
+function serviceWithQueues(
+  offerExpiry: () => Promise<boolean | "skipped">,
+  orderLifecycle: () => Promise<boolean | "skipped">,
+): HealthService {
+  const prisma = { ping: async () => true } as unknown as PrismaService;
+  return new HealthService(
+    prisma,
+    noRedisEnv,
+    queueOwner<OfferExpiryService>(offerExpiry),
+    queueOwner<OrderLifecycleService>(orderLifecycle),
+  );
+}
+
+/**
+ * E6 regression. `redis` pings a separate TLS-aware client, so on a TLS-only Redis it read `true` while
+ * BullMQ's own connections were dead. `queues` pings each queue's OWN client and any `false` degrades.
+ */
+describe("HealthService.check — BullMQ queue health (E6)", () => {
+  it("reports both queues true and status ok when each queue's own client answers PONG", async () => {
+    const report = await serviceWithQueues(async () => true, async () => true).check();
+    expect(report).toMatchObject({ status: "ok", queues: { offerExpiry: true, orderLifecycle: true } });
+  });
+
+  it("a dead offer-expiry queue degrades status even though db and redis are fine", async () => {
+    const report = await serviceWithQueues(async () => false, async () => true).check();
+    expect(report).toMatchObject({ status: "degraded", db: true, queues: { offerExpiry: false, orderLifecycle: true } });
+  });
+
+  it("a dead order-lifecycle queue degrades status", async () => {
+    const report = await serviceWithQueues(async () => true, async () => false).check();
+    expect(report).toMatchObject({ status: "degraded", queues: { offerExpiry: true, orderLifecycle: false } });
+  });
+
+  it("no REDIS_URL → both queues 'skipped' and status stays ok", async () => {
+    const report = await serviceWithQueues(async () => "skipped", async () => "skipped").check();
+    expect(report).toMatchObject({ status: "ok", queues: { offerExpiry: "skipped", orderLifecycle: "skipped" } });
+  });
+
+  it("unwired queue owners (unit harness) report 'skipped'", async () => {
+    const report = await serviceWith(async () => true).check();
+    expect(report.queues).toEqual({ offerExpiry: "skipped", orderLifecycle: "skipped" });
   });
 });

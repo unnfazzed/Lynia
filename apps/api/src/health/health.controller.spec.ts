@@ -11,7 +11,13 @@ function controllerWith(report: HealthReport, source: NodeJS.ProcessEnv = baseSo
   return new HealthController(service, loadEnv(source));
 }
 
-const okReport: HealthReport = { status: "ok", db: true, redis: true, provider: "gcp" };
+const okReport: HealthReport = {
+  status: "ok",
+  db: true,
+  redis: true,
+  queues: { offerExpiry: true, orderLifecycle: true },
+  provider: "gcp",
+};
 
 describe("HealthController — healthz", () => {
   it("returns the report when the DB is reachable", async () => {
@@ -21,6 +27,20 @@ describe("HealthController — healthz", () => {
   it("answers 503 when the DB is down so the LB pulls the instance", async () => {
     const down: HealthReport = { ...okReport, status: "degraded", db: false };
     await expect(controllerWith(down).healthz()).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it("Redis down stays 200 (degraded body) — a Redis blip must not 503 every instance", async () => {
+    const redisDown: HealthReport = { ...okReport, status: "degraded", redis: false };
+    await expect(controllerWith(redisDown).healthz()).resolves.toEqual(redisDown);
+  });
+
+  it("E6: a dead BullMQ queue stays 200 with status degraded (deploy gates key on status)", async () => {
+    const queueDown: HealthReport = {
+      ...okReport,
+      status: "degraded",
+      queues: { offerExpiry: false, orderLifecycle: true },
+    };
+    await expect(controllerWith(queueDown).healthz()).resolves.toEqual(queueDown);
   });
 });
 
