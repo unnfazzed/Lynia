@@ -127,12 +127,16 @@ jobs:
             fi
             echo '```'
             # head, not tail: the change list comes first; on an oversized plan lose the tail.
-            terraform -chdir=infra/azure show -no-color tfplan | head -c 60000
+            # Render to a file first: piping `terraform show` straight into `head -c` SIGPIPEs
+            # terraform once head has its 60 KB, and under `set -o pipefail` that exit 141 fails
+            # the step. That is what failed the first staging plan (run 36069706717).
+            terraform -chdir=infra/azure show -no-color tfplan > plan-show.txt
+            head -c 60000 plan-show.txt
             echo ''
             echo '[output truncated at 60000 bytes if the plan was larger]'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          rm -f infra/azure/tfplan plan.json # the binary plan embeds unredacted state — never kept
+          rm -f infra/azure/tfplan plan.json plan-show.txt # the binary plan embeds unredacted state — never kept
 
   apply:
     name: apply (${{ inputs.environment }}, second approval)
