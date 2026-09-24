@@ -10,6 +10,7 @@
 #
 #   serving       <app> <rg>                     revision carrying the most traffic ("" if none)
 #   pin           <app> <rg>                     route 100% to the serving revision BY NAME; prints it
+#                                                (Single revision mode: prints it, touches nothing)
 #   wait-ready    <app> <rg> <rev> [timeout_s]   provisioned + healthy, or fail with its state
 #   label-url     <app> <rg> <label>             https URL of a revision label
 #   route         <app> <rg> <rev> <pct> [<other>]  rev=pct, other=100-pct, every other revision 0
@@ -28,6 +29,12 @@ az config set extension.use_dynamic_install=yes_without_prompt --only-show-error
 die() { echo "::error::$*" >&2; exit 1; }
 
 traffic_json() { az containerapp ingress traffic show -n "$1" -g "$2" -o json 2>/dev/null || echo '[]'; }
+
+# "Multiple" (the API: canary by revision weights) or "Single" (admin, merchant: the platform swaps
+# to a new revision only once it is ready and keeps the old one serving if it never gets there).
+revision_mode() {
+  az containerapp show -n "$1" -g "$2" --query properties.configuration.activeRevisionsMode -o tsv 2>/dev/null || echo Unknown
+}
 
 cmd_serving() {
   local app="$1" rg="$2" traffic latest
@@ -48,6 +55,10 @@ cmd_pin() {
   serving="$(cmd_serving "$app" "$rg")"
   if [ -z "$serving" ]; then
     echo "" # first deploy: nothing serves yet, nothing to pin
+    return 0
+  fi
+  if [ "$(revision_mode "$app" "$rg")" = "Single" ]; then
+    echo "$serving" # Single mode has no weights to pin; the platform owns the swap
     return 0
   fi
   cmd_route "$app" "$rg" "$serving" 100 >&2
@@ -95,6 +106,14 @@ cmd_route() {
   local app="$1" rg="$2" rev="$3" pct="$4" other="${5:-}" traffic
   case "$pct" in ''|*[!0-9]*) die "route: weight must be an integer 0-100 (got '$pct')" ;; esac
   [ "$pct" -le 100 ] || die "route: weight must be <= 100 (got $pct)"
+  if [ "$(revision_mode "$app" "$rg")" = "Single" ]; then
+    # Nothing to split: the platform already serves its latest READY revision. Succeed only when that
+    # is what the caller asked for, so a rollback request is never reported as done when it is not.
+    local ready
+    ready="$(az containerapp show -n "$app" -g "$rg" --query properties.latestReadyRevisionName -o tsv 2>/dev/null || true)"
+    [ "$pct" -eq 100 ] && [ "$ready" = "$rev" ] && { echo "traffic: $rev serves 100% (Single revision mode)"; return 0; }
+    die "$app is in Single revision mode and serves $ready; it cannot route $pct% to $rev. Redeploy that revision's image instead."
+  fi
   local -a weights=("${rev}=${pct}")
   if [ -n "$other" ] && [ "$other" != "$rev" ]; then
     weights+=("${other}=$((100 - pct))")
@@ -118,6 +137,10 @@ cmd_route() {
 cmd_prune() {
   local app="$1" rg="$2"; shift 2
   local keep=" $* " traffic n w
+  if [ "$(revision_mode "$app" "$rg")" = "Single" ]; then
+    echo "prune: $app is in Single revision mode — the platform deactivates old revisions itself."
+    return 0
+  fi
   traffic="$(traffic_json "$app" "$rg")"
   while IFS= read -r n; do
     [ -n "$n" ] || continue

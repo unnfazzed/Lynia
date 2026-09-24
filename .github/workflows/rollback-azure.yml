@@ -40,8 +40,8 @@ jobs:
     name: ${{ inputs.revision && 'route 100% to revision' || 'list revisions' }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
     if: >-
-      (inputs.environment == 'production' && vars.AZURE_DEPLOY_ENABLED == 'true')
-      || (inputs.environment == 'staging' && vars.AZURE_STAGING_ENABLED == 'true')
+      (inputs.environment == 'production' && vars.AZ_DEPLOY_ENABLED == 'true')
+      || (inputs.environment == 'staging' && vars.AZ_STAGING_ENABLED == 'true')
     environment: ${{ inputs.environment }}
     timeout-minutes: 20
     permissions:
@@ -50,18 +50,24 @@ jobs:
     env:
       TIER: ${{ inputs.environment }}
       REVISION: ${{ inputs.revision }}
-      RG: ${{ inputs.environment == 'production' && vars.AZURE_RESOURCE_GROUP_PRODUCTION || vars.AZURE_RESOURCE_GROUP_STAGING }}
-      APP: ca-lynia-api
-      HEALTH_URL: ${{ inputs.environment == 'production' && (vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz') || (vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz') }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate inputs
+      - name: Resolve target and validate inputs
+        id: target
         env:
           REF: ${{ github.ref }}
+          P_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          S_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          P_RG: ${{ vars.AZ_RESOURCE_GROUP }}
+          S_RG: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
+          P_APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+          S_APP: ${{ vars.AZ_CONTAINERAPP_API_STAGING || 'ca-lynia-api' }}
+          P_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
+          S_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
         run: |
           set -euo pipefail
-          [ -n "$RG" ] || { echo "::error::The ${TIER} resource-group Variable is unset."; exit 1; }
+          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG APP HEALTH_URL
           if [ -n "$REVISION" ] && ! printf '%s' "$REVISION" | grep -qE '^[a-z0-9][a-z0-9-]{0,99}$'; then
             echo "::error::revision must be a Container Apps revision name (lowercase letters, digits, '-')."; exit 1
           fi
@@ -72,7 +78,7 @@ jobs:
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ inputs.environment == 'production' && vars.AZURE_CLIENT_ID_PRODUCTION || vars.AZURE_CLIENT_ID_STAGING }}
+          client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 

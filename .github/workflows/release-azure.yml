@@ -8,7 +8,7 @@ name: Release (Azure)
 #      now polls deploy-staging-azure.yml;
 #   2. azure/login@v2 over OIDC (federated credential repo:unnfazzed/Lynia:environment:production);
 #   3. buildx → ACR with the registry layer cache in ACR, PROMOTING the :sha image staging built and
-#      smoke-tested instead of rebuilding it;
+#      smoke-tested (imported from the staging registry) instead of rebuilding it;
 #   4. start the in-VNet migrate job (caj-lynia-migrate) and wait for it to succeed;
 #   5. pin traffic to NAMED revisions, then create the new revision at 0%;
 #   6. smoke the candidate on its revision-LABEL URL (a direct URL Cloud Run never gave us);
@@ -17,25 +17,27 @@ name: Release (Azure)
 #      5xx rate from `az monitor metrics list` on `Requests`;
 #   8. roll back automatically on any failed gate.
 #
-# DORMANT UNTIL ARMED: every job is gated on the repo Variable AZURE_DEPLOY_ENABLED == 'true', so this
+# DORMANT UNTIL ARMED: every job is gated on the repo Variable AZ_DEPLOY_ENABLED == 'true', so this
 # workflow is a clean no-op on every push until a maintainer arms it.
 #
 # Repo Variables (Settings → Secrets and variables → Actions). No secrets — OIDC throughout.
-#   AZURE_DEPLOY_ENABLED             "true" to arm
-#   AZURE_STAGING_ENABLED            "true" once deploy-staging-azure.yml is armed (turns the gate on)
-#   AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
-#   AZURE_CLIENT_ID_PRODUCTION       deploy identity federated to environment:production (S5: AcrPush +
-#                                    Container Apps Contributor on its resource group — never Owner)
-#   AZURE_ACR_NAME                   registry name (images are <name>.azurecr.io/lynia-api)
-#   AZURE_RESOURCE_GROUP_PRODUCTION  rg-lynia-production-san
+#   AZ_DEPLOY_ENABLED            "true" to arm (set LAST — infra/azure `terraform output arming_guide`)
+#   AZ_STAGING_ENABLED           "true" once deploy-staging-azure.yml is armed (turns the gate on)
+#   AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID_PRODUCTION   (infra/azure/bootstrap.sh;
+#                                the client id is federated to environment:production — S5 roles:
+#                                Container Apps Contributor, AcrPush, Monitoring Reader; never Owner)
+#   From `terraform output github_variables` (production = no suffix, staging = _STAGING):
+#   AZ_RESOURCE_GROUP, AZ_ACR_NAME, AZ_ACR_LOGIN_SERVER, AZ_CONTAINERAPP_API, AZ_MIGRATE_JOB,
+#   AZ_API_HOSTNAME; and AZ_ACR_NAME_STAGING / AZ_ACR_LOGIN_SERVER_STAGING for image promotion.
 #   Optional tunables: CANARY_STEPS ("10 50"), CANARY_OBSERVE_SECONDS (120), CANARY_MIN_SAMPLE (20),
-#   CANARY_MAX_5XX_PCT (5), CANARY_DISABLED, PUBLIC_HEALTH_URL, STAGING_GATE_TIMEOUT_MINUTES (60).
+#   CANARY_MAX_5XX_PCT (5), CANARY_DISABLED, STAGING_GATE_TIMEOUT_MINUTES (60).
 #   The launch-hygiene / vendor Variables (OTP_CHANNEL, KYC_PROVIDER, WHATSAPP_*, BIRD_*, …) are the
 #   same ones release.yml reads.
 #
 # OWNERSHIP SPLIT (plan D11): Terraform (infra/azure) owns the app shell — ingress, scale, identity,
 # the Key Vault-referenced `secrets` list and infra-derived env (CLOUD_PROVIDER, AZURE_STORAGE_*,
-# AZURE_CLIENT_ID, SCHEDULER_*, DATABASE_CONNECTION_LIMIT, FCM wiring) — with ignore_changes on
+# AZURE_CLIENT_ID, SCHEDULER_*, DATABASE_CONNECTION_LIMIT, TOKEN_HASH_SECRET; `terraform output
+# api_env_contract`) — with ignore_changes on
 # template/image/traffic. CI owns revisions, traffic, and the release-policy env below: the hardcoded
 # tier (APP_ENV=production), the Variable-driven flags release.yml set, and which secrets are mounted
 # as env (`NAME=secretref:<name>`; container-app secret names are the env name lower-cased with `-`
@@ -71,7 +73,7 @@ jobs:
   staging-gate:
     name: wait for green staging deploy
     runs-on: ubuntu-latest
-    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.AZ_DEPLOY_ENABLED == 'true' }}
     timeout-minutes: 75
     permissions:
       contents: read
@@ -80,13 +82,13 @@ jobs:
       - name: Wait for deploy-staging success on this commit
         env:
           GH_TOKEN: ${{ github.token }}
-          STAGING_ENABLED: ${{ vars.AZURE_STAGING_ENABLED }}
+          STAGING_ENABLED: ${{ vars.AZ_STAGING_ENABLED }}
           EVENT_NAME: ${{ github.event_name }}
           GATE_TIMEOUT_MINUTES: ${{ vars.STAGING_GATE_TIMEOUT_MINUTES || '60' }}
         run: |
           set -euo pipefail
           if [ "$STAGING_ENABLED" != "true" ]; then
-            echo "AZURE_STAGING_ENABLED != 'true' — no staging tier to gate on; proceeding straight to prod."
+            echo "AZ_STAGING_ENABLED != 'true' — no staging tier to gate on; proceeding straight to prod."
             exit 0
           fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -137,7 +139,7 @@ jobs:
     name: build · migrate · canary (Azure)
     runs-on: ubuntu-latest
     needs: staging-gate
-    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.AZ_DEPLOY_ENABLED == 'true' }}
     # E14/S5: the production federated credential is bound to this environment; its deployment branch
     # policy (main only) is what stops a branch workflow from minting the production token.
     environment: production
@@ -146,11 +148,11 @@ jobs:
       contents: read
       id-token: write # OIDC token azure/login exchanges for the deploy identity
     env:
-      RG: ${{ vars.AZURE_RESOURCE_GROUP_PRODUCTION }}
-      ACR: ${{ vars.AZURE_ACR_NAME }}
-      IMAGE: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/lynia-api
-      APP: ca-lynia-api
-      MIGRATE_JOB: caj-lynia-migrate
+      RG: ${{ vars.AZ_RESOURCE_GROUP }}
+      ACR: ${{ vars.AZ_ACR_NAME }}
+      IMAGE: ${{ vars.AZ_ACR_LOGIN_SERVER }}/lynia-api
+      APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+      MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -159,17 +161,18 @@ jobs:
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           AZURE_CLIENT_ID_PRODUCTION: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
-          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
-          AZURE_RESOURCE_GROUP_PRODUCTION: ${{ vars.AZURE_RESOURCE_GROUP_PRODUCTION }}
+          AZ_ACR_NAME: ${{ vars.AZ_ACR_NAME }}
+          AZ_ACR_LOGIN_SERVER: ${{ vars.AZ_ACR_LOGIN_SERVER }}
+          AZ_RESOURCE_GROUP: ${{ vars.AZ_RESOURCE_GROUP }}
           REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           missing=()
-          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_PRODUCTION AZURE_ACR_NAME AZURE_RESOURCE_GROUP_PRODUCTION; do
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_PRODUCTION AZ_ACR_NAME AZ_ACR_LOGIN_SERVER AZ_RESOURCE_GROUP; do
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::AZURE_DEPLOY_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-09-24-gcp-to-azure-migration.md §6." >&2
+            echo "::error::AZ_DEPLOY_ENABLED is true but these repo Variables are unset: ${missing[*]}. They come from infra/azure/bootstrap.sh and terraform output github_variables (see its arming_guide)." >&2
             exit 1
           fi
           # Defence in depth only; the production environment's branch policy is the binding control.
@@ -313,18 +316,32 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       # Same-image promotion: deploy-staging-azure.yml built, migrated and smoke-tested this exact :sha
-      # in the same registry, so production adds :latest to that digest instead of rebuilding. A full
-      # build (warm from the ACR layer cache) only happens when the tag is absent — staging unarmed, or
-      # a manual dispatch of a sha staging never built.
+      # in the STAGING registry (each environment has its own ACR). `az acr import` copies that digest
+      # into the production registry server-side — what staging tested is what ships. It needs the
+      # production deploy identity to be able to read the staging registry; without that grant (or with
+      # staging unarmed, or a manual dispatch of a sha staging never built) this falls back to a full
+      # build of the same commit, warm from the production registry's layer cache, and says so.
       - name: Promote staging image (or build if absent)
+        env:
+          STAGING_ACR: ${{ vars.AZ_ACR_NAME_STAGING }}
+          STAGING_LOGIN_SERVER: ${{ vars.AZ_ACR_LOGIN_SERVER_STAGING }}
         run: |
           set -euo pipefail
           if docker buildx imagetools inspect "$IMAGE:${GITHUB_SHA}" >/dev/null 2>&1; then
-            echo "Reusing $IMAGE:${GITHUB_SHA} built and smoke-tested by deploy-staging-azure — no rebuild; adding :latest."
+            echo "$IMAGE:${GITHUB_SHA} already in the production registry — adding :latest."
             docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:${GITHUB_SHA}"
             exit 0
           fi
-          echo "No prebuilt image for ${GITHUB_SHA} — building from scratch."
+          if [ -n "${STAGING_ACR:-}" ] && [ -n "${STAGING_LOGIN_SERVER:-}" ]; then
+            if az acr import --name "$ACR" --registry "$STAGING_ACR" \
+                --source "lynia-api:${GITHUB_SHA}" \
+                --image "lynia-api:${GITHUB_SHA}" --image "lynia-api:latest" --force -o none; then
+              echo "Promoted ${STAGING_LOGIN_SERVER}/lynia-api:${GITHUB_SHA} (built and smoke-tested by deploy-staging-azure) into $IMAGE — no rebuild."
+              exit 0
+            fi
+            echo "::warning::Could not import lynia-api:${GITHUB_SHA} from the staging registry (not built there, or the production deploy identity cannot read it) — building the same commit instead."
+          fi
+          echo "Building $IMAGE:${GITHUB_SHA} from scratch."
           docker buildx build \
             -f apps/api/Dockerfile \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
@@ -334,15 +351,17 @@ jobs:
 
       # In-VNet migrations (plan D4/H2): the job runs the SAME image inside the Container Apps
       # environment, reaching the private Flexible Server over the DATABASE_URL Key Vault reference —
-      # nothing crosses the public internet and the runner never holds a database credential. The job
-      # command (`prisma migrate deploy`), identity and secrets are Terraform's; CI only points it at
-      # this release's image. Runs BEFORE any traffic moves; safe because migrations are
+      # nothing crosses the public internet and the runner never holds a database credential. Identity
+      # and secret are Terraform's (infra/azure/jobs.tf); CI sets the image and the command
+      # (`prisma migrate deploy`), replacing Terraform's placeholder. Runs BEFORE any traffic moves; safe because migrations are
       # expand-only/online-safe (src/prisma/migration-safety.spec.ts), so the serving revision keeps
       # working against the migrated schema.
       - name: Apply database migrations (caj-lynia-migrate)
         run: |
           set -euo pipefail
-          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" -o none
+          # WORKDIR is /repo/apps/api; prisma is an @lynia/api dependency, so its bin is local.
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" \
+            --command /repo/apps/api/node_modules/.bin/prisma --args migrate deploy -o none
           EXECUTION="$(az containerapp job start -n "$MIGRATE_JOB" -g "$RG" --query name -o tsv)"
           [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
           echo "Started $MIGRATE_JOB execution $EXECUTION"
@@ -566,7 +585,7 @@ jobs:
           CANARY_DISABLED: ${{ vars.CANARY_DISABLED }}
           STEPS: ${{ vars.CANARY_STEPS || '10 50' }}
           OBSERVE: ${{ vars.CANARY_OBSERVE_SECONDS || '120' }}
-          HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz' }}
+          HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
           MIN_SAMPLE: ${{ vars.CANARY_MIN_SAMPLE || '20' }}
           MAX_5XX_PCT: ${{ vars.CANARY_MAX_5XX_PCT || '5' }}
         run: |

@@ -17,8 +17,10 @@ name: Azure Diagnose (read-only)
 # is reduced with jq field selection, the /healthz body is reduced to four fields, and system-log lines
 # are filtered to secret/vault events and truncated.
 #
-# Inputs (X6): `environment` only (default staging). Staging needs AZURE_STAGING_ENABLED, production
-# AZURE_DEPLOY_ENABLED; each authenticates as that environment's federated identity.
+# Inputs (X6): `environment` only (default staging). Staging needs AZ_STAGING_ENABLED, production
+# AZ_DEPLOY_ENABLED; each authenticates as that environment's federated deploy identity (its
+# Container Apps Contributor, Monitoring Reader and Log Analytics Reader roles cover every probe).
+# Names come from `terraform output github_variables` (production: no suffix; staging: _STAGING).
 
 on:
   workflow_dispatch:
@@ -41,8 +43,8 @@ jobs:
     name: diagnose (${{ inputs.environment }})
     runs-on: ubuntu-latest
     if: >-
-      (inputs.environment == 'production' && vars.AZURE_DEPLOY_ENABLED == 'true')
-      || (inputs.environment == 'staging' && vars.AZURE_STAGING_ENABLED == 'true')
+      (inputs.environment == 'production' && vars.AZ_DEPLOY_ENABLED == 'true')
+      || (inputs.environment == 'staging' && vars.AZ_STAGING_ENABLED == 'true')
     environment: ${{ inputs.environment }}
     timeout-minutes: 15
     permissions:
@@ -50,18 +52,43 @@ jobs:
       id-token: write
     env:
       TIER: ${{ inputs.environment }}
-      RG: ${{ inputs.environment == 'production' && vars.AZURE_RESOURCE_GROUP_PRODUCTION || vars.AZURE_RESOURCE_GROUP_STAGING }}
-      HEALTH_URL: ${{ inputs.environment == 'production' && (vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz') || (vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz') }}
-      APPS: ca-lynia-api ca-lynia-admin ca-lynia-merchant
-      JOBS: caj-lynia-retention caj-lynia-wallet-integrity caj-lynia-migrate
       RECAP: /tmp/recap.txt
     steps:
       - uses: actions/checkout@v7
 
+      - name: Resolve target
+        id: target
+        env:
+          P_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          S_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          P_RG: ${{ vars.AZ_RESOURCE_GROUP }}
+          S_RG: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
+          P_API_APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+          S_API_APP: ${{ vars.AZ_CONTAINERAPP_API_STAGING || 'ca-lynia-api' }}
+          P_ADMIN_APP: ${{ vars.AZ_CONTAINERAPP_ADMIN || 'ca-lynia-admin' }}
+          S_ADMIN_APP: ${{ vars.AZ_CONTAINERAPP_ADMIN_STAGING || 'ca-lynia-admin' }}
+          P_MERCHANT_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT || 'ca-lynia-merchant' }}
+          S_MERCHANT_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT_STAGING || 'ca-lynia-merchant' }}
+          P_RETENTION_JOB: ${{ vars.AZ_RETENTION_JOB || 'caj-lynia-retention' }}
+          S_RETENTION_JOB: ${{ vars.AZ_RETENTION_JOB_STAGING || 'caj-lynia-retention' }}
+          P_WALLET_JOB: ${{ vars.AZ_WALLET_INTEGRITY_JOB || 'caj-lynia-wallet-integrity' }}
+          S_WALLET_JOB: ${{ vars.AZ_WALLET_INTEGRITY_JOB_STAGING || 'caj-lynia-wallet-integrity' }}
+          P_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
+          S_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB_STAGING || 'caj-lynia-migrate' }}
+          P_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
+          S_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
+          P_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID }}
+          S_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID_STAGING }}
+          OPTIONAL: LAW_ID
+        run: |
+          set -euo pipefail
+          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG API_APP ADMIN_APP MERCHANT_APP \
+            RETENTION_JOB WALLET_JOB MIGRATE_JOB HEALTH_URL LAW_ID
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ inputs.environment == 'production' && vars.AZURE_CLIENT_ID_PRODUCTION || vars.AZURE_CLIENT_ID_STAGING }}
+          client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
@@ -75,7 +102,7 @@ jobs:
       - name: Revisions and traffic
         run: |
           set -uo pipefail
-          for app in $APPS; do
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
             echo "=== $app"
             if ! traffic="$(az containerapp ingress traffic show -n "$app" -g "$RG" -o json 2>/dev/null)"; then
               echo "traffic   : $app — unavailable (app absent or not readable by this identity)" >> "$RECAP"
@@ -91,7 +118,7 @@ jobs:
       - name: Managed certificates per host
         run: |
           set -uo pipefail
-          for app in $APPS; do
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
             envid="$(az containerapp show -n "$app" -g "$RG" --query properties.managedEnvironmentId -o tsv 2>/dev/null)" || envid=""
             if [ -z "$envid" ]; then echo "cert      : $app — unavailable" >> "$RECAP"; continue; fi
             env_name="${envid##*/}"
@@ -111,7 +138,7 @@ jobs:
       - name: Job executions (cron + migrate)
         run: |
           set -uo pipefail
-          for job in $JOBS; do
+          for job in $RETENTION_JOB $WALLET_JOB $MIGRATE_JOB; do
             if ! ex="$(az containerapp job execution list -n "$job" -g "$RG" -o json 2>/dev/null)"; then
               echo "job       : $job — unavailable (job absent or not readable)" >> "$RECAP"
               continue
@@ -130,7 +157,7 @@ jobs:
         run: |
           set -uo pipefail
           found=0
-          for app in $APPS; do
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
             msgs="$(az containerapp revision list -n "$app" -g "$RG" -o json 2>/dev/null \
               | jq -r '.[] | select(.properties.active) | [.name, (.properties.provisioningError // ""), (.properties.runningStateDetails // "")] | select((.[1] + .[2]) | test("vault|secret"; "i")) | "\(.[0]): \((.[1] + " " + .[2]) | .[0:300])"')" || msgs=""
             logs="$(az containerapp logs show -n "$app" -g "$RG" --type system --tail 200 --format text 2>/dev/null \
@@ -141,7 +168,24 @@ jobs:
               [ -n "$logs" ] && printf '%s\n' "$logs" | sed "s/^/kv-ref    : $app system-log /" | tee -a "$RECAP"
             fi
           done
-          [ "$found" = "1" ] || echo "kv-ref    : none found (active revisions + last 200 system-log lines per app)" | tee -a "$RECAP"
+          # Log Analytics (24 h, apps AND jobs): the system log table the E7 alerts read. Reason +
+          # truncated message only; the column_ifexists guards match infra/azure/monitoring.tf.
+          if [ -n "${LAW_ID:-}" ]; then
+            q='ContainerAppSystemLogs_CL
+              | where TimeGenerated > ago(24h)
+              | extend msg = tostring(column_ifexists("Log_s", "")), reason = tostring(column_ifexists("Reason_s", "")),
+                       src = strcat(tostring(column_ifexists("ContainerAppName_s", "")), tostring(column_ifexists("JobName_s", "")))
+              | where msg has_any ("keyvault", "key vault", "secretref") or reason has "Secret"
+              | summarize n = count(), last = max(TimeGenerated) by src, reason, msg = substring(msg, 0, 200)
+              | top 10 by last desc'
+            if rows="$(az monitor log-analytics query -w "$LAW_ID" --analytics-query "$q" -o json 2>/dev/null)"; then
+              lines="$(printf '%s' "$rows" | jq -r '.[] | "kv-ref    : \(.src) log-analytics \(.reason) ×\(.n) last=\(.last) \(.msg)"')"
+              if [ -n "$lines" ]; then found=1; printf '%s\n' "$lines" | tee -a "$RECAP"; fi
+            else
+              echo "kv-ref    : log-analytics query unavailable (Log Analytics Reader on the workspace?)" | tee -a "$RECAP"
+            fi
+          fi
+          [ "$found" = "1" ] || echo "kv-ref    : none found (active revisions, last 200 system-log lines per app, 24 h of Log Analytics)" | tee -a "$RECAP"
 
       - name: Recap
         if: always()

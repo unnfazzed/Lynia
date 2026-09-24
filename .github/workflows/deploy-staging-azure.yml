@@ -8,18 +8,20 @@ name: Deploy Staging (Azure)
 # vendor-free QA config (console OTP, test phones, stub KYC) the k6 harness and QA devices use.
 #
 # PIPELINE POSITION: release-azure.yml's staging-gate polls THIS file for the same sha and then
-# promotes this exact :sha image to production. A failure is retried once and then escalated as a
+# promotes this exact :sha image (imported from the staging registry) to production. A failure is retried once and then escalated as a
 # `deploy-failure` issue by deploy-autoheal.yml (it matches this workflow's `name:` above — keep them
 # in sync).
 #
 # The smoke gate asserts the /healthz BODY reports `status == "ok"` (E6), not just HTTP 200: a
 # TLS-less BullMQ connection answers 200 with `status: "degraded"` and must fail here.
 #
-# DORMANT UNTIL ARMED — gated on the repo Variable AZURE_STAGING_ENABLED == 'true'.
-#   Variables: AZURE_STAGING_ENABLED, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-#              AZURE_CLIENT_ID_STAGING (federated to environment:staging), AZURE_ACR_NAME,
-#              AZURE_RESOURCE_GROUP_STAGING
-#   Optional:  STAGING_HEALTH_URL, STAGING_OTP_TEST_PHONES, STAGING_MIN_SUPPORTED_APP_VERSION,
+# DORMANT UNTIL ARMED — gated on the repo Variable AZ_STAGING_ENABLED == 'true' (set it LAST).
+#   Variables: AZ_STAGING_ENABLED, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID_STAGING
+#              (bootstrap.sh; federated to environment:staging), and from the staging state's
+#              `terraform output github_variables`: AZ_RESOURCE_GROUP_STAGING, AZ_ACR_NAME_STAGING,
+#              AZ_ACR_LOGIN_SERVER_STAGING, AZ_CONTAINERAPP_API_STAGING, AZ_MIGRATE_JOB_STAGING,
+#              AZ_API_HOSTNAME_STAGING
+#   Optional:  STAGING_OTP_TEST_PHONES, STAGING_MIN_SUPPORTED_APP_VERSION,
 #              STAGING_CORS_ALLOWED_ORIGINS, STAGING_{RESTAURANTS,MERCHANT_DISPATCH_AUTO,
 #              MERCHANT_WALLET}_ENABLED, STAGING_MICRO_CACHE_REDIS_L2 (same Variables deploy-staging.yml reads)
 # No secrets: OIDC for Azure, Key Vault references for the app. Ownership split and the secretref
@@ -47,18 +49,18 @@ jobs:
   deploy:
     name: build · migrate · deploy (Azure staging)
     runs-on: ubuntu-latest
-    if: ${{ vars.AZURE_STAGING_ENABLED == 'true' }}
+    if: ${{ vars.AZ_STAGING_ENABLED == 'true' }}
     environment: staging # no reviewers: fast feedback is the point (E14); branch policy main-only (S5)
     timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
     env:
-      RG: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
-      ACR: ${{ vars.AZURE_ACR_NAME }}
-      IMAGE: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/lynia-api
-      APP: ca-lynia-api
-      MIGRATE_JOB: caj-lynia-migrate
+      RG: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
+      ACR: ${{ vars.AZ_ACR_NAME_STAGING }}
+      IMAGE: ${{ vars.AZ_ACR_LOGIN_SERVER_STAGING }}/lynia-api
+      APP: ${{ vars.AZ_CONTAINERAPP_API_STAGING || 'ca-lynia-api' }}
+      MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB_STAGING || 'caj-lynia-migrate' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -67,16 +69,17 @@ jobs:
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           AZURE_CLIENT_ID_STAGING: ${{ vars.AZURE_CLIENT_ID_STAGING }}
-          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
-          AZURE_RESOURCE_GROUP_STAGING: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
+          AZ_ACR_NAME_STAGING: ${{ vars.AZ_ACR_NAME_STAGING }}
+          AZ_ACR_LOGIN_SERVER_STAGING: ${{ vars.AZ_ACR_LOGIN_SERVER_STAGING }}
+          AZ_RESOURCE_GROUP_STAGING: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
         run: |
           set -euo pipefail
           missing=()
-          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_STAGING AZURE_ACR_NAME AZURE_RESOURCE_GROUP_STAGING; do
+          for v in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID_STAGING AZ_ACR_NAME_STAGING AZ_ACR_LOGIN_SERVER_STAGING AZ_RESOURCE_GROUP_STAGING; do
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::AZURE_STAGING_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-09-24-gcp-to-azure-migration.md §6." >&2
+            echo "::error::AZ_STAGING_ENABLED is true but these repo Variables are unset: ${missing[*]}. They come from infra/azure/bootstrap.sh and the staging state's terraform output github_variables." >&2
             exit 1
           fi
           echo "All required Azure staging config present."
@@ -109,7 +112,9 @@ jobs:
       - name: Apply database migrations (staging caj-lynia-migrate)
         run: |
           set -euo pipefail
-          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" -o none
+          # WORKDIR is /repo/apps/api; prisma is an @lynia/api dependency, so its bin is local.
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE:${GITHUB_SHA}" \
+            --command /repo/apps/api/node_modules/.bin/prisma --args migrate deploy -o none
           EXECUTION="$(az containerapp job start -n "$MIGRATE_JOB" -g "$RG" --query name -o tsv)"
           [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
           echo "Started $MIGRATE_JOB execution $EXECUTION"
@@ -201,7 +206,7 @@ jobs:
 
       - name: Smoke staging /healthz (status must be "ok")
         env:
-          URL: ${{ vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz' }}
+          URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
         run: |
           set -euo pipefail
           for i in $(seq 1 12); do

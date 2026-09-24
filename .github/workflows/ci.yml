@@ -405,3 +405,19 @@ jobs:
           fi
           terraform init -backend=false -input=false -no-color
           terraform validate -no-color
+
+      # Same premise for the Azure module (docs/plans/2026-09-24-gcp-to-azure-migration.md D11): its
+      # CI applies (terraform-apply-azure.yml) pass only `-var environment=…`, so the module must be
+      # valid on defaults alone. -backend=false: no state access from a PR. Skipped on a ref that does
+      # not carry infra/azure yet.
+      - name: Validate infra/azure with no tfvars present
+        if: ${{ hashFiles('infra/azure/*.tf') != '' }}
+        working-directory: infra/azure
+        run: |
+          set -euo pipefail
+          if ls ./*.tfvars ./*.tfvars.json >/dev/null 2>&1; then
+            echo "::error::A tfvars file is committed under infra/azure. This step must run on DEFAULTS ONLY — remove it."
+            exit 1
+          fi
+          terraform init -backend=false -input=false -no-color
+          terraform validate -no-color
