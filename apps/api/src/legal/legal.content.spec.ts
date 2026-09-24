@@ -84,10 +84,18 @@ describe("privacy notice page", () => {
 
   it("discloses that data leaves Zimbabwe, naming the hosting country", () => {
     // The single claim most likely to be quietly dropped in a future edit, and the one that would
-    // turn this notice into a misrepresentation: the database runs in africa-south1, so ordinary
-    // operation is a continuous cross-border transfer under the Act.
+    // turn this notice into a misrepresentation: the database runs in Azure South Africa North, so
+    // ordinary operation is a continuous cross-border transfer under the Act.
     expect(html).toContain(HOSTING_COUNTRY);
     expect(html).toContain(HOSTING_REGION);
+    // Pinned literally (C6), so the constants can't drift back to the pre-migration host unnoticed.
+    expect(HOSTING_COUNTRY).toBe("South Africa");
+    expect(HOSTING_REGION).toBe("South Africa North (Johannesburg)");
+    expect(html).toContain("LyniaGo runs on Microsoft Azure in the");
+    expect(html).not.toMatch(/Google Cloud|africa-south1/);
+    // Google stays named for what it still does: push (FCM) and maps.
+    expect(html).toContain("Firebase Cloud Messaging");
+    expect(html).toContain("Google Maps");
     expect(html).toMatch(/cross-border/i);
     expect(html).toMatch(/not in Zimbabwe/i);
   });

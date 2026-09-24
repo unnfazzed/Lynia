@@ -78,7 +78,7 @@ export const envSchema = z.object({
   MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: z.coerce.number().int().min(0).max(50_400_000).optional(),
   // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
   // cloud would slot in.
-  CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),
+  CLOUD_PROVIDER: z.enum(["gcp", "azure"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.
@@ -99,6 +99,10 @@ export const envSchema = z.object({
   PUSH_PROVIDER: z.enum(["fcm", "noop"]).default("noop"),
   // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
   FCM_PROJECT_ID: z.string().optional(),
+  // Path to the Firebase service-account JSON. firebase-admin's applicationDefault() reads it straight
+  // from process.env; it is declared here only so the off-GCP push boot-guard (push.module.ts) can
+  // require it. On Cloud Run it stays unset (ADC comes from the attached SA).
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window
