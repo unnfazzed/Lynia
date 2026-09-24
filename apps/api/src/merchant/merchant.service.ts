@@ -29,6 +29,8 @@ import type {
 } from "@lynia/shared";
 import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
+import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { MicroCache } from "../common/micro-cache";
 import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { maskPhone } from "../common/phone-mask";
@@ -111,7 +113,23 @@ export class MerchantService {
     @Inject(ENV) private readonly env?: Env,
     private readonly metricsSvc?: MetricsService,
     private readonly l2?: MicroCacheL2Provider,
+    // C1/E8 attach-time upload check — @Global-provided like the two above; absent only in unit harnesses.
+    private readonly uploads?: UploadVerifier,
   ) {}
+
+  /**
+   * C1/E8: gate a photo key before it is recorded on a merchant/dish row. The key must sit under the
+   * caller's own upload namespace (`banner/<profileId>/` for cover + logo, `dish/<profileId>/` for dishes —
+   * what POST /uploads/merchant-*-photo mints), mirroring the rider KYC/pickup guards; then the stored
+   * object is verified (exists, within the D-32 cap, really a JPEG/PNG). The namespace check comes first
+   * because a failed verification deletes the object. Re-saving the value the row already holds is a
+   * no-op, so an unchanged photo is never re-checked.
+   */
+  private async verifyPhotoKey(key: string, current: string | null, profileId: string, kind: UploadKind): Promise<void> {
+    if (key === current) return;
+    if (!key.startsWith(ownNamespace(kind, profileId))) throw new BadRequestException("Invalid photo key");
+    await this.uploads?.verify(key, kind);
+  }
 
   /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule —
    *  mirrors OrdersService.microCacheBypassed. */
@@ -154,8 +172,14 @@ export class MerchantService {
     const data: Prisma.MerchantUpdateInput = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.description !== undefined) data.description = body.description;
-    if (body.coverPhotoUrl !== undefined) data.coverPhotoUrl = body.coverPhotoUrl;
-    if (body.logoUrl !== undefined) data.logoUrl = body.logoUrl;
+    if (body.coverPhotoUrl !== undefined) {
+      await this.verifyPhotoKey(body.coverPhotoUrl, merchant.coverPhotoUrl, profileId, "banner");
+      data.coverPhotoUrl = body.coverPhotoUrl;
+    }
+    if (body.logoUrl !== undefined) {
+      await this.verifyPhotoKey(body.logoUrl, merchant.logoUrl, profileId, "banner");
+      data.logoUrl = body.logoUrl;
+    }
     if (body.cuisineTags !== undefined) data.cuisineTags = body.cuisineTags;
     if (body.priceLevel !== undefined) data.priceLevel = body.priceLevel;
     const updated = await this.prisma.merchant.update({
@@ -302,6 +326,7 @@ export class MerchantService {
   async createDish(profileId: string, body: MerchantDishRequest): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
     const category = await this.findOwnCategoryOrThrow(merchantId, body.categoryId);
+    if (body.photoUrl) await this.verifyPhotoKey(body.photoUrl, null, profileId, "dish");
     const created = await this.prisma.merchantDish.create({
       data: {
         categoryId: category.id,
@@ -319,7 +344,7 @@ export class MerchantService {
 
   async updateDish(profileId: string, dishId: string, body: UpdateMerchantDishRequest): Promise<MerchantDishResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    await this.findOwnDishOrThrow(merchantId, dishId);
+    const dish = await this.findOwnDishOrThrow(merchantId, dishId);
 
     const data: Prisma.MerchantDishUpdateInput = {};
     if (body.categoryId !== undefined) {
@@ -333,6 +358,7 @@ export class MerchantService {
     // D-31: a photo landing clears the draft flag; omitting photoUrl on an edit never re-drafts a
     // dish that already has one.
     if (body.photoUrl !== undefined) {
+      await this.verifyPhotoKey(body.photoUrl, dish.photoUrl, profileId, "dish");
       data.photoUrl = body.photoUrl;
       data.isDraft = false;
     }

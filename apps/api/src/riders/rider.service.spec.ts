@@ -84,6 +84,43 @@ describe("RiderService.becomeRider", () => {
     ).rejects.toThrow(/invalid photo key/i);
   });
 
+  describe("attach-time photo verification (C1 / E8)", () => {
+    const livePrisma = () => ({
+      rider: { findUnique: async () => null, create: vi.fn(async () => ({})) },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      $transaction: vi.fn(async (ops: unknown[]) => ops),
+    });
+    const withVerifier = (prisma: Record<string, unknown>, verify: (key: string, kind: string) => Promise<unknown>, vendor: KycVendor) =>
+      new RiderService(prisma as unknown as PrismaService, { KYC_MODE: "auto" } as Env, vendor, pii, trackingStub, gatewayStub, notificationsStub, {
+        verify: vi.fn(verify),
+      } as unknown as import("../adapters/storage/upload-verifier").UploadVerifier);
+
+    it("verifies the KYC photo as kind `kyc` before submitting to the vendor", async () => {
+      const order: string[] = [];
+      const vendor: KycVendor = { submit: async () => (order.push("submit"), { ref: "s", status: "pending", url: "u" }) };
+      const s = withVerifier(livePrisma(), async (key, kind) => order.push(`verify:${key}:${kind}`), vendor);
+      await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
+      expect(order).toEqual(["verify:kyc/p1/photo.jpg:kyc", "submit"]);
+    });
+
+    it("a rejected photo (422) blocks onboarding: no paid vendor session, no rider row", async () => {
+      const submit = vi.fn();
+      const prisma = livePrisma();
+      const { UnprocessableEntityException } = await import("@nestjs/common");
+      const s = withVerifier(prisma, async () => { throw new UnprocessableEntityException({ reason: "upload_bad_content" }); }, { submit } as unknown as KycVendor);
+      await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(UnprocessableEntityException);
+      expect(submit).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("never verifies (and so never deletes) a key outside the caller's namespace", async () => {
+      const verify = vi.fn(async () => ({}));
+      const s = withVerifier(livePrisma(), verify, new StubKycVendor());
+      await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/victim/photo.jpg" })).rejects.toThrow(/invalid photo key/i);
+      expect(verify).not.toHaveBeenCalled();
+    });
+  });
+
   it("auto mode submits to the vendor and returns the verification url", async () => {
     let submitted: string | undefined;
     const vendor: KycVendor = {

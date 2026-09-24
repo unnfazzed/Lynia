@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { isCommissionActive, resolveCommissionRatePct, SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
+import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
@@ -54,6 +55,10 @@ export class RiderService {
     // on RidersModule, so this stays acyclic (same wiring admin-riders.service uses).
     private readonly gateway: TrackingGateway,
     private readonly notifications: NotificationsService,
+    // C1/E8 attach-time upload check. StorageModule is @Global, so Nest always injects it (no @Optional:
+    // a missing provider fails boot rather than silently skipping the check); TS-optional only so the
+    // existing positional spec constructions stay valid.
+    private readonly uploads?: UploadVerifier,
   ) {}
 
   /**
@@ -221,6 +226,11 @@ export class RiderService {
         message: "This national ID is already linked to another account. Contact support if it's yours.",
       });
     }
+    // C1/E8: the photo must really be there, in budget, and really a JPEG/PNG before it is recorded (an
+    // Azure SAS binds neither type nor size). Runs after the namespace check above — a rejection deletes
+    // the object — and before vendor.submit, so a bad photo never bills a paid Didit session.
+    await this.uploads?.verify(data.photoUrl, "kyc");
+
     const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile.idNumberHash)) > 0;
     if (duplicateIdFlag) {
       this.logger.warn(`Rider ${profileId} onboarding with a national ID on another erased/legacy account — flagged for KYC review (A-04)`);

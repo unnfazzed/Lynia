@@ -1,6 +1,6 @@
 import { Storage } from "@google-cloud/storage";
 import { Logger } from "@nestjs/common";
-import type { CloudProvider, StorageAdapter, UploadTarget } from "./storage.interface";
+import type { CloudProvider, ObjectStat, StorageAdapter, StoredObject, UploadTarget } from "./storage.interface";
 
 export interface GcsStorageOptions {
   projectId?: string;
@@ -12,10 +12,13 @@ export interface GcsStorageOptions {
   credentials?: { client_email: string; private_key: string };
 }
 
+/** A GCS/HTTP error carries the status on `code`. */
+const isNotFound = (err: unknown): boolean => (err as { code?: unknown } | null)?.code === 404;
+
 /**
- * Google Cloud Storage adapter (primary — GCP is the chosen cloud). Generates V4 signed URLs so the
- * client PUTs/GETs the object directly and the API never proxies bytes. Everything behind the seam —
- * switching clouds is a `CLOUD_PROVIDER` change, no business-logic edits (D7).
+ * Google Cloud Storage adapter. Generates V4 signed URLs so the client PUTs/GETs the object directly
+ * and the API never proxies bytes. Everything behind the seam — switching clouds is a `CLOUD_PROVIDER`
+ * change, no business-logic edits (D7).
  */
 export class GcsStorage implements StorageAdapter {
   private readonly logger = new Logger(GcsStorage.name);
@@ -39,6 +42,7 @@ export class GcsStorage implements StorageAdapter {
     expiresInSeconds = 900,
     maxBytes?: number,
   ): Promise<UploadTarget> {
+    const range = maxBytes != null ? `0,${maxBytes}` : undefined;
     const [url] = await this.storage
       .bucket(this.bucket)
       .file(key)
@@ -51,9 +55,16 @@ export class GcsStorage implements StorageAdapter {
         // Bind an upper size bound into the signature: the client echoes this exact
         // `X-Goog-Content-Length-Range` header on the PUT and GCS rejects any object outside [0,
         // maxBytes], so a signed photo URL can't be reused to store an arbitrary multi-GB object.
-        ...(maxBytes != null ? { extensionHeaders: { "x-goog-content-length-range": `0,${maxBytes}` } } : {}),
+        ...(range ? { extensionHeaders: { "x-goog-content-length-range": range } } : {}),
       });
-    return { url, key };
+    // The signed URL binds BOTH the content-type and the size range, so the PUT must send these exact
+    // headers or the V4 signature won't match. The adapter owns them (C1) so the controller and the
+    // clients stay provider-agnostic.
+    return {
+      url,
+      key,
+      headers: { "Content-Type": contentType, ...(range ? { "X-Goog-Content-Length-Range": range } : {}) },
+    };
   }
 
   async createReadUrl(key: string, expiresInSeconds = 900): Promise<string> {
@@ -66,6 +77,44 @@ export class GcsStorage implements StorageAdapter {
         expires: Date.now() + expiresInSeconds * 1000,
       });
     return url;
+  }
+
+  async stat(key: string): Promise<ObjectStat | null> {
+    try {
+      const [meta] = await this.storage.bucket(this.bucket).file(key).getMetadata();
+      return {
+        size: Number(meta.size ?? 0),
+        contentType: meta.contentType ?? null,
+        etag: meta.etag ?? null,
+      };
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async readHead(key: string, bytes: number): Promise<Buffer | null> {
+    try {
+      // `end` is inclusive.
+      const [buf] = await this.storage.bucket(this.bucket).file(key).download({ start: 0, end: bytes - 1 });
+      return buf;
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async *listObjects(prefix: string): AsyncIterable<StoredObject> {
+    const bucket = this.storage.bucket(this.bucket);
+    let pageToken: string | undefined;
+    do {
+      const [files, next] = await bucket.getFiles({ prefix, autoPaginate: false, maxResults: 500, pageToken });
+      for (const f of files) {
+        const created = f.metadata.timeCreated ?? f.metadata.updated;
+        yield { key: f.name, createdAt: created ? new Date(created) : new Date(0) };
+      }
+      pageToken = (next as { pageToken?: string } | null | undefined)?.pageToken;
+    } while (pageToken);
   }
 
   /**
