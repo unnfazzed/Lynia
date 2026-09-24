@@ -55,7 +55,7 @@ Re-running is always safe. Existing secrets are never replaced.
 Approve the `infra` gate when it asks.
 
 **Expected output:** the job ends green and prints an `arming_guide` with a Variables list (the
-`…_STAGING` names). The workflow sets them, or copy them into Variables.
+`…_STAGING` names). The workflow cannot write repo Variables (GitHub's token lacks that permission); its run summary prints ready-to-paste `gh variable set` lines. Paste them in Azure Cloud Shell, or add them in Settings → Secrets and variables → Actions → Variables.
 
 **If it fails with…**
 
