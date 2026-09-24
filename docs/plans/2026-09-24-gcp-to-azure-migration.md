@@ -530,7 +530,7 @@ General Purpose Postgres) will roughly double the data-tier lines.
 
 | # | Question | Why it matters | Default if unanswered |
 |---|---|---|---|
-| Q1 | What does Google's suspension email say: billing or policy, and is there a deletion date? Search the inbox for `from:google-cloud-compliance@google.com` (policy suspension) or Google Payments (billing) | It decides whether the data can be salvaged, and whether a new Google project under the same person or card risks the same fate | Assume billing, and treat the data as at risk until Google confirms otherwise (CEO-2) |
+| Q1 | **Answered by owner 2026-09-24: a payment issue.** Google flagged the payments profile as suspicious activity because of VPN use. Billing on the project stopped (the 09-16 `billing to be enabled` error), and the project suspension followed on 09-17 | It decides whether the data can be salvaged. A payments-profile flag is the most recoverable case | **Fix billing first:** verify the payments profile at pay.google.com with the VPN off, and use free Cloud Billing support if needed. Then re-link billing and check the project's Appeals page. Once it is back, run the §9 salvage immediately. Fall back to a fresh start after 3 working days only if Q2 = no real money |
 | Q2 | Is there any real money in rider wallets (cash top-ups recorded in admin)? | It decides whether a fresh start is acceptable | Assume **yes** until confirmed, and treat salvage as required |
 | Q3 | Do you already have an Azure account? Which identity? Startup credits? | Phase 0 | New pay-as-you-go. Verify `lyniafinance.com` in the Entra tenant (TXT record only, so mail is untouched) |
 | Q4 | Admin IdP: Microsoft Entra (recommended) or Google via Easy Auth? | C4 / D9 | Entra |
