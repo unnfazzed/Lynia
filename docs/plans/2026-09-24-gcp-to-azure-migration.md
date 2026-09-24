@@ -261,6 +261,66 @@ every SKU is offered in South Africa North. Azure Managed Redis is the one to ch
 - **C9 — `scripts/gcp-salvage.sh`** (approved as CEO-7). An owner-run, Cloud Shell-only export: streaming, `age`-encrypted, secrets piped into Key Vault, counts printed, and nothing written to GitHub or devices. Its "no row data in output" contract needs a shellcheck-clean review and a dry run against a synthetic PostGIS database.
 - **C8 — Specs that hard-code GCP.** `push.spec.ts`, `storage.spec.ts`, `health.controller.spec.ts`, `admin-or-scheduler.guard.spec.ts`, `uploads.controller.spec.ts`. Extend each; don't delete.
 
+### 5a. Amendments from `/plan-eng-review` (2026-09-24; ledger rows E1–E15 in the Review record)
+
+These rows were decided by the engineering review using its recommended option. The session
+had been told to finish without asking more questions, so **none of them has an owner answer
+yet**. Each one is reversible until the azure-portability PR merges. The owner can overrule any
+row by replying with its id.
+
+- **C2 is extended (E6, CRITICAL).** `/healthz` currently pings Redis through
+  `createRedisClient` (`common/redis.ts`), which *does* negotiate TLS for `rediss://`. BullMQ
+  builds its own connections through the two TLS-dropping `connectionFromUrl` copies. The result
+  on Azure: **`/healthz` says `redis: true` while both queues are dead.**
+  - `HealthReport` gains `queues: { offerExpiry: boolean | "skipped", orderLifecycle: boolean | "skipped" }`. Each value is a 2 s-raced `PING` on the queue's own client (`await queue.client`). Any `false` makes `status: "degraded"`.
+  - HTTP stays 200. A Redis blip must not 503 every replica, and the existing contract at `health.controller.ts:17-21` says so.
+  - Deploy gates in `release-azure.yml` / `deploy-staging-azure.yml` assert `status == "ok"`, not just HTTP 200. So a TLS misconfiguration fails the canary instead of shipping.
+  - The external uptime monitor uses a **keyword check** on `"status":"ok"`.
+  - What is left once this lands: offer expiry already has a DB reconciler every 2 min (`offer-expiry.service.ts:24,107-108`), and so does rating auto-close (`order-lifecycle.service.ts:120-121`). The **broadcast-widening `expand` ticks do not** (`offer-expiry.service.ts:141-145`). While queues are down, offers stay at their first radius until the window expires. That was already true on GCP, so it is a TODO, not a migration blocker.
+- **C1: `stat` semantics (E8).** On attach:
+  - 404 → `422 upload_missing`.
+  - 0 bytes, or over the per-kind cap → delete, then `422`.
+  - Blob `Content-Type` not in `{image/jpeg, image/png}` → delete, then `422`.
+  - **Magic bytes** (range-GET bytes 0–11; JPEG `FF D8 FF`, PNG `89 50 4E 47 0D 0A 1A 0A`) must match the declared type. Otherwise delete, then `422`. The client sets `Content-Type` itself, so the header alone proves nothing.
+  - Storage 5xx or timeout → `503`, retryable, and the attach is **not** accepted. Never accept a blob we couldn't verify.
+  - Record the blob's `etag` and size on the row at attach.
+- **C1: SAS shape (E13).** Keep `cw`, because a create-only `c` makes a client's network retry after a successful PUT return 409. Old binaries show that as a failure, and fixing it needs a client change. Instead:
+  - upload SAS expiry is **10 minutes**;
+  - the key is server-generated and unique per request;
+  - the attach-time `etag` makes a later overwrite detectable.
+- **C1: no quarantine prefix (E2).** Attach-time `stat` plus the orphan sweep is enough. The sweep deletes blobs under upload prefixes that are older than 24 h and not referenced by any row. It runs as the retention job's second step, not as another in-process `setInterval`.
+- **C3 is refactored (E1, E15).** Use an **Entra managed-identity token**, not a Key Vault admin JWT: nothing long-lived to leak or rotate.
+  - Extract a `SchedulerTokenVerifier` interface (`verify(token, req): Promise<boolean>`) with `GoogleOidcVerifier` (today's `verifySchedulerOidc`, moved as-is) and `EntraVerifier`.
+  - `SCHEDULER_AUTH` selects one of them, and a boot-guard enforces that its env is complete.
+  - The existing `oidcClient` test seam becomes a `verifier` seam.
+  - **Accepted regression:** the Google path bound `aud` to the route URL, and Entra can't (C3). Mitigation: the Entra verifier admits only the two exact scheduled routes, `POST /admin/retention/purge` (`privacy.controller.ts:21`) and `/admin/wallet/integrity-check` (`wallet-integrity.controller.ts:18`), matching `infra/terraform/scheduler.tf:14,16`.
+- **C5: push (E5, E10).**
+  - `PUSH_PROVIDER=noop` from cutover until the new Firebase project and its credential exist. With `fcm` and no credential, the new C5 boot-guard would stop the API from booting.
+  - Then set `fcm`. That can happen **before** M2: it serves nothing until new-binary tokens arrive.
+  - Add `messaging/mismatched-credential` to the prune list (`fcm.push.ts:8-11`). The first send to an old-project token then deletes it, instead of erroring on every send.
+  - Firebase credential: a **service-account JSON key in Key Vault**, mounted as a file, rotated every 90 days. Keyless Google WIF from an Azure managed identity doesn't fit Container Apps: its identity endpoint needs a per-replica `X-IDENTITY-HEADER`, which a static `external_account` file can't carry. It would need executable-sourced credentials. That is TODO-2.
+- **D4: Postgres (E9).**
+  - Stay on **B1ms**, with the API's **max replicas capped at 5** for the pilot and `DATABASE_CONNECTION_LIMIT=5` (`prisma.service.ts:8,22-35`). That is 25 API connections, plus 1–2 per job, under B1ms's 50.
+  - Raise the replica cap only together with the SKU: B2s allows about 430 connections.
+  - Alert when `active_connections` is above 40.
+- **D15: scaling (E4).**
+  - Start at `concurrentRequests: 150`.
+  - **Gate G-WS before cutover:** a 30-min k6 Socket.IO soak on staging (`apps/api/load`) with 300 simulated riders across 2 forced replicas. Pass: no disconnect storms at revision swap, no cross-replica event loss (Redis adapter), and p95 emit→receive under 1 s.
+  - Set ingress **`stickySessions: sticky`**. The mobile client allows a polling fallback (`transports: ["websocket", "polling"]`, `apps/mobile/src/realtime/socket.ts:37`), and Socket.IO polling breaks across replicas without affinity. Soak G-WS covers both transports.
+- **Networking (E3).** Private throughout:
+  - VNet-integrated environment;
+  - PG private access (free);
+  - private endpoints for Redis, Blob and Key Vault (about $7–8/mo each).
+  - The in-VNet migrate job removes the only reason for public database access.
+  - Blob stays **publicly reachable for SAS** (clients upload directly), with the private endpoint used for the API's own traffic. Set `publicNetworkAccess: Enabled` + `allowSharedKeyAccess: false`.
+- **Cron alerts (E7).** An Azure Monitor log alert on `ContainerAppSystemLogs_CL` job executions with `Reason == "Failed"` or `"BackoffLimitExceeded"`, plus a **missed-run** alert: no successful execution in 26 h. Both go to email and to the GitHub `deploy-failure` issue label through an action group webhook.
+- **Certificates (E11).** No pre-validation. The backend is already down, so a few minutes of TLS errors while the managed certificate is issued after the DNS switch costs nothing, and the installed build is unpinned. The A record and the `asuid.<host>` TXT go in together. The cutover step waits for the cert to be `Succeeded` before messaging testers.
+- **Sentry (E12).** Armed at cutover. `SENTRY_DSN` goes into Key Vault with the other secrets (§10), `environment=production-azure`, so post-cutover errors are separable from GCP-era history.
+- **OIDC scoping (E14).**
+  - Three federated credentials, one per GitHub environment (`production`, `staging`, `infra`), each on its own identity with a least-privilege role.
+  - **Required reviewers only on `infra`** (Terraform apply). The owner can approve those from the GitHub mobile app.
+  - `production` relies on the canary gates plus a `main`-only branch policy. A reviewer gate there would block the merge-on-green flow CLAUDE.md sets.
+
 ## 6. CI/CD changes
 
 **Disarm now (Variables only, no code):**
@@ -1146,18 +1206,223 @@ are in `infra/otel-collector` comments and this plan; the GCP ones become stale 
 - CEO-7: D4;
 - CEO-2, CEO-3, CEO-8 to CEO-11: factual corrections, no decision needed.
 
+### /plan-eng-review (2026-09-24)
+
+**Target:** this file, `## Implementation plan`, plus the 15 pending rows E1–E15 from the CEO
+review. **Report file:** this file.
+
+**How decisions were made.** The session resumed with an instruction to finish without asking the
+owner more questions. So each row below uses the review's **recommended** option, marked
+`auto-chosen (recommended) — awaiting owner ratification`. None is an owner approval. Each
+is reversible until the azure-portability PR merges. To overrule a row, reply with its id and the
+alternative listed.
+
+#### Step 0: Scope challenge
+
+1. **What already exists.**
+   - The reconcilers (`offer-expiry.service.ts:107-108`, `order-lifecycle.service.ts:120-121`) and the queue depth/age gauges (`metrics.service.ts:349-355`) already cover part of E6.
+   - `poolConfig()` (`prisma.service.ts:22-35`) already honours `connection_limit` and `DATABASE_CONNECTION_LIMIT` (E9).
+   - `createRedisClient()` (`common/redis.ts`) already handles `rediss://` and `REDIS_CA_CERT`, so C2 reuses it instead of writing new TLS code.
+   - `applicationDefault()` already reads `GOOGLE_APPLICATION_CREDENTIALS` (E10).
+2. **Minimum change.** The five code changes C1–C5, plus the C2 health extension. Everything else is IaC and workflows.
+3. **Complexity.** C1–C9 touch about 20 files and add 2 classes (`AzureBlobStorage`, `EntraVerifier`), so the 8-file gate trips. **No cut is proposed.** HOLD SCOPE was the owner's answer (CEO D3), and every change is on the critical path to reviving the app. Structure: `Original arrangement` kept, with one smaller change: E15 folds both verifiers behind one interface, instead of growing the guard with a second inline branch. *Auto-chosen (recommended); awaiting owner ratification.*
+4. **Search check.** Searched: Container Apps managed-cert validation, Azure Managed Redis cluster policy, and Container Apps job alerts, via Microsoft Learn during the CEO pass. Knowledge only, not searched this pass: Container Apps' managed-identity endpoint (`IDENTITY_ENDPOINT` + `X-IDENTITY-HEADER`) and why that blocks a static Google `external_account` file (E10) **[Layer 1]**.
+5. **TODOS.md:** none of its items blocks this plan. Two new TODOs are proposed below.
+6. **Distribution:** no new artifact type. Container images go to ACR through the new workflows (§6), and the mobile binary uses the existing EAS lane.
+
+#### Section 1: Architecture (5 issues)
+
+| # | Finding | Sev | Conf | Evidence | Row → disposition |
+|---|---|---|---|---|---|
+| A1 | `/healthz` pings Redis through the TLS-aware shared client while BullMQ uses its own TLS-dropping connections, so health is green while queues are dead | P0 | 9 | `health.service.ts:80,93` uses `createRedisClient`; `offer-expiry.service.ts:71-75` uses `connectionFromUrl` | E6 → §5a C2 extension |
+| A2 | Socket.IO clients allow polling fallback, so multi-replica ingress needs affinity | P1 | 9 | `apps/mobile/src/realtime/socket.ts:37` `transports: ["websocket", "polling"]` | E4 → §5a D15, `sticky` + G-WS soak |
+| A3 | 10 replicas × the default pool of 10 = 100, which is over B1ms's ~50 connections | P1 | 8 | `prisma.service.ts:8` `DEFAULT_CONNECTION_LIMIT = "10"` | E9 → cap 5×5 |
+| A4 | Private vs public data plane | P2 | 7 | `infra/terraform/sql.tf` public IP existed only for the runner proxy (H3) | E3 → private + in-VNet migrate |
+| A5 | Entra `aud` can't bind a route URL the way Google OIDC did | P2 | 9 | `admin-or-scheduler.guard.ts:73-75` (audience pinned to request URL) | E1/E15 → exact-route allowlist |
+
+#### Section 2: Code quality (3 issues)
+
+| # | Finding | Sev | Conf | Evidence | Row → disposition |
+|---|---|---|---|---|---|
+| Q1 | `connectionFromUrl` is duplicated; both copies drop TLS | P0 | 9 | `offer-expiry.service.ts:42-51`, `order-lifecycle.constants.ts:66-75` | C2 (already approved in plan): one helper in `common/redis.ts`. Shared-code rubric: 2 verified callers, about −20 / +12 implementation lines, and the blast radius is both queues, covered by a shared spec |
+| Q2 | Scheduler verification is an inline Google branch; adding Entra inline would double the guard's auth surface | P2 | 8 | `admin-or-scheduler.guard.ts:65-89` | E15 → `SchedulerTokenVerifier` interface |
+| Q3 | FCM prune list lacks `messaging/mismatched-credential`, so old-project tokens error on every send after the Firebase move | P2 | 7 | `fcm.push.ts:8-11` | E5 → add the code |
+
+Error-handling edges: E8, the `stat` failure matrix in §5a. E13 is settled as `cw` plus a
+10-minute expiry and an attach-time `etag`.
+
+#### Section 3: Tests
+
+Framework: Jest (`apps/api`, `*.spec.ts`), per CLAUDE.md `pnpm test`.
+
+```
+CODE PATHS (proposed)                                      USER FLOWS
+[+] health.service.check()                                 [+] Canary deploy
+  ├── [GAP] queues ok → status ok                            ├── [GAP][→E2E] TLS misconfig → gate fails on status≠ok
+  ├── [GAP] queue ping false → degraded, HTTP 200            └── [GAP] Redis blip → 200 degraded, no mass 503
+  └── [GAP] no REDIS_URL → queues "skipped"                [+] Photo upload (rider KYC / proof / merchant)
+[+] common/redis connectionFromUrl() (dedup)                 ├── [GAP][→E2E] PUT via SAS → attach → accepted
+  ├── [GAP] rediss:// → tls set (+ CA when REDIS_CA_CERT)    ├── [GAP] attach before PUT → 422 upload_missing
+  └── [GAP] redis:// → no tls (GCP path unchanged)           ├── [GAP] PNG bytes labelled image/jpeg → 422, blob deleted
+[+] AzureBlobStorage                                         └── [GAP] storage 5xx → 503, attach not recorded
+  ├── [GAP] delegation key cached, refreshed before expiry [+] Scheduled jobs
+  ├── [GAP] upload SAS perms cw, expiry 10m, https only      ├── [GAP] Entra token for retention route → 200
+  └── [GAP] stat(): 404 / 0-byte / oversize / magic / 5xx    ├── [GAP] Entra token, other route → 401
+[+] SchedulerTokenVerifier                                   └── [GAP] wrong tid/oid/aud → 401
+  ├── [★★★ TESTED] Google path — admin-or-scheduler.guard.spec.ts (moves with the extraction)
+  └── [GAP] Entra: iss v1+v2, tid, aud, oid, exact-route allowlist
+[+] push: prune mismatched-credential; boot-guard off-GCP
+  └── [GAP] fcm + no credential → boot fails; noop → boots
+[+] uploads.controller headers from adapter
+  └── [★★ TESTED] GCS header path — uploads.controller.spec.ts (extend: azure headers)
+
+COVERAGE (proposed): 2/24 paths have an existing test; 22 gaps (2 E2E), all specified below
+```
+
+**REGRESSION RULE (CRITICAL).** Three existing behaviours are at risk.
+
+| At-risk behaviour | Where it lives today | Required regression assertion (unchanged) |
+|---|---|---|
+| Google OIDC scheduler verification | `admin-or-scheduler.guard.spec.ts` | Stays green after the E15 extraction |
+| GCS upload headers | `uploads.controller.spec.ts` | Still returns `X-Goog-Content-Length-Range` |
+| Redis-blip health contract | `health.controller.spec.ts` | Redis down stays HTTP 200 |
+
+This contract preserves today's behaviour and was already implied by C8 ("extend each; don't
+delete"), so it carries forward without a new question.
+
+**Required tests** (proof of C1–C5 and §5a; no new policy):
+- `health.service.spec.ts`: queue ping true, false and skipped.
+- `common/redis.spec.ts`: TLS and CA branches.
+- `azure-blob.storage.spec.ts`: SAS permissions and expiry, key refresh, the `stat` matrix, magic bytes.
+- `admin-or-scheduler.guard.spec.ts`: the Entra claims matrix and the route allowlist.
+- `push.spec.ts`: prune code, boot-guard.
+- `uploads.controller.spec.ts`: Azure headers.
+- `legal.content.spec.ts`: Azure text.
+- **E2E, on staging, recorded in the cutover checklist:** the canary gate failing on `status≠ok` (inject a bad `REDIS_CA_CERT`), and the full SAS upload→attach flow from the installed 0.49.0 build.
+
+Test plan artifact: `~/.gstack/projects/unnfazzed-Lynia/` (`*-eng-review-test-plan-*.md`).
+
+#### Section 4: Performance (2 issues)
+
+| # | Finding | Sev | Conf | Evidence | Disposition |
+|---|---|---|---|---|---|
+| P1 | 7 in-process `setInterval` sweeps run on **every** replica. Their per-row CAS and locks keep that correct, but it multiplies DB load with the replica count | P3 | 7 | `grep setInterval` → 7 non-spec sites; e.g. `offer-expiry.service.ts:108` | Bounded by the 5-replica cap (E9); TODO-1 |
+| P2 | Magic-byte check adds one ranged GET (12 bytes) per attach | P3 | 8 | proposed §5a E8 | Accepted; one extra call on low-volume attach paths |
+
+#### Outside voice
+
+Codex CLI is not installed, and this session has no `TaskOutput`/`TaskStop`, so the native
+fallback can't run a bounded wait. **Outside voice unavailable.** Coverage is recorded as missing,
+not clean.
+
+#### Decision ledger (E1–E15)
+
+Every row below is **auto-chosen (recommended) — awaiting owner ratification.**
+
+| Row | Choice applied | Alternative the owner can pick instead | Completeness |
+|---|---|---|---|
+| E1 | Entra managed-identity token | Key Vault admin JWT (long-lived secret) | 9 vs 6 |
+| E2 | Attach-time `stat` + 24 h orphan sweep | Quarantine prefix + promote-on-attach | kind |
+| E3 | Private data plane; Blob public only for SAS | Public + firewall rules | 9 vs 6 |
+| E4 | `concurrentRequests` 150, sticky affinity, soak gate G-WS | Default scale rule, no soak | 9 vs 5 |
+| E5 | `noop` until the new Firebase credential exists, then `fcm`; prune `mismatched-credential` | `fcm` at cutover (API won't boot without creds) | 9 vs 3 |
+| E6 | `queues` in `/healthz` + gates assert `status=="ok"` + keyword uptime check | Log-only | 10 vs 4 |
+| E7 | Failed-execution and missed-run (26 h) alerts | Failed-only | 10 vs 7 |
+| E8 | Full `stat` matrix incl. magic bytes; 5xx → 503 | Size + content-type only | 10 vs 7 |
+| E9 | B1ms, max replicas 5, pool 5, alert above 40 | B2s now (~$25/mo more), replicas 10 | kind |
+| E10 | SA JSON key in Key Vault, 90-day rotation (TODO-2 for keyless) | Executable-sourced WIF now | 6 vs 9 (shortcut) |
+| E11 | No cert pre-validation; wait for `Succeeded` before messaging testers | Pre-validate via TXT first | kind |
+| E12 | Sentry armed at cutover, `environment=production-azure` | Arm after soak | 9 vs 6 |
+| E13 | `cw` + 10-min expiry + `etag` at attach | `c` create-only (client-visible 409 on retry) | kind |
+| E14 | Per-env identities; required reviewers on `infra` only | Reviewers on `production` too | kind |
+| E15 | `SchedulerTokenVerifier` interface | Inline second branch | 8 vs 6 |
+
+E10 is the only row where the recommended option is itself a shortcut (completeness ≤ 7). If the
+owner ratifies it, TODO-2 is its upgrade trigger.
+
+**Approval readiness: PASS for readiness bookkeeping only.** All 15 rows have an applied option
+and a named alternative. **None has an owner answer**, so all 15 stay listed as unresolved below.
+
+#### TODOs proposed (not yet added to TODOS.md; awaiting owner)
+
+- **TODO-1: Leader-elect the in-process sweeps.** Use a Redis `SET NX PX` lease, so that one
+  replica runs each sweep. Why: sweep load stops growing with the replica count. Depends on:
+  cutover. Where to start: the 7 `setInterval` sites.
+- **TODO-2: Keyless Firebase credential.** Google WIF with an executable-sourced credential
+  reading the Container Apps identity endpoint, then delete the SA key. Depends on: M2.
+- **TODO-3: DB backstop for `expand` broadcast ticks.** While queues are down, offers never
+  widen. This is pre-existing and was already true on GCP. Where to start:
+  `offer-expiry.service.ts:141-145`.
+
+#### Failure modes (new paths)
+
+| Path | Realistic failure | Handled? | User sees |
+|---|---|---|---|
+| BullMQ over TLS | CA missing → workers can't connect | E6: gate fails, uptime keyword alert | Nothing: the deploy is blocked |
+| SAS upload | Client PUTs a non-image | E8: 422, blob deleted | A clear error to retry |
+| Entra cron | Identity or role drift → 401 | E7: failed-run alert | Nothing; the operator is alerted |
+| Push after Firebase move | Old-binary tokens | E5: pruned on first send | No push until M2 (known) |
+| WebSocket across replicas | Polling without affinity | E4: sticky + G-WS | Nothing if the gate passes |
+
+**Critical gaps: 0.** E6 now has detection and a gate.
+
+#### Parallelization
+
+| Step | Modules | Depends on |
+|---|---|---|
+| C1 storage | `apps/api/src/adapters/storage`, `uploads`, attach services | — |
+| C2 redis + health | `apps/api/src/common`, `matching`, `orders`, `health` | — |
+| C3 scheduler | `apps/api/src/auth` | — |
+| C4 admin | `apps/admin` | — |
+| C5 + C6 push, legal | `apps/api/src/adapters/push`, `legal` | — |
+| C7 mobile guard | `apps/mobile` | — |
+| IaC `infra/azure/` | `infra/azure` | — |
+| Workflows | `.github/workflows` | IaC outputs |
+
+- Lane A: C1. Lane B: C2 → C3 (both touch the API's `auth` and `common` wiring through the module graph). Lane C: C4. Lane D: C5 + C6 + C7. Lane E: IaC → workflows.
+- Launch A–E together. Merge A–D into the one azure-portability PR, then run the staging gates from Lane E.
+
+#### Implementation tasks (eng review)
+
+- [ ] **T7 (P1, human ~3h / CC ~20m)** — health — add a `queues` ping to `/healthz`. Make the deploy gates assert `status=="ok"`. Surfaced by: A1/E6. Verify: `pnpm --filter api test health`.
+- [ ] **T8 (P1, human ~4h / CC ~25m)** — storage — the `stat` matrix + magic bytes + `etag` at attach. Surfaced by: E8/E13. Verify: `azure-blob.storage.spec.ts`.
+- [ ] **T9 (P1, human ~3h / CC ~20m)** — auth — the `SchedulerTokenVerifier` extraction + Entra verifier + route allowlist. Surfaced by: A5/E15. Verify: the guard spec, with the Google cases unchanged.
+- [ ] **T10 (P1, human ~1h / CC ~10m)** — infra — ingress `sticky`, `concurrentRequests` 150, max replicas 5, `DATABASE_CONNECTION_LIMIT=5`. Surfaced by: A2/A3. Verify: `terraform plan` + the G-WS soak.
+- [ ] **T11 (P2, human ~30m / CC ~5m)** — push — prune `messaging/mismatched-credential`. Surfaced by: Q3. Verify: `push.spec.ts`.
+- [ ] **T12 (P2, human ~2h / CC ~15m)** — observability — job failed and missed-run alerts, keyword uptime check, `active_connections` alert. Surfaced by: E7/E9. Verify: fire a failing job on staging.
+
+#### Completion summary (eng review)
+
+| Area | Result |
+|---|---|
+| Step 0: Scope Challenge | Scope accepted as-is (HOLD); structure kept, E15 extraction |
+| Architecture | 5 issues |
+| Code quality | 3 issues |
+| Tests | Diagram produced; 22 gaps specified |
+| Performance | 2 issues |
+| NOT in scope | TODO-1…3; edge WAF (D7 launch prep); PG17 upgrade |
+| What already exists | Written (Step 0 §1) |
+| TODOS.md updates | 3 proposed, not added |
+| Failure modes | 0 critical gaps |
+| Unresolved decisions | 15 (E1–E15 applied, awaiting owner ratification) |
+| Outside voice | Unavailable (Codex absent; no TaskOutput) |
+| Parallelization | 5 lanes, 5 parallel |
+| Lake Score | 8/10 (E10 is a shortcut; E2, E9, E11, E13 and E14 differ in kind and are excluded) |
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 1 critical gap |
-| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review (Codex absent; no TaskOutput for native fallback) |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | — |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 1 critical gap (E6, now handed off and remedied in §5a) |
+| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 10 issues + 22 test gaps specified, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | skipped (no UI scope) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex, plan-review: unavailable (CLI not installed; the native fallback can't run without `TaskOutput`); findings: none recorded.
-- **VERDICT:** No review is CLEAR yet. CEO review: 6 decisions approved, 1 critical gap handed to eng. **Eng review required.**
+- **OUTSIDE COVERAGE:** codex, plan-review: unavailable in both the CEO and eng passes; no findings recorded.
+- **VERDICT:** No review is CLEAR. The eng review mapped every row; it clears once the owner ratifies E1–E15. **Eng review required** (ratification).
 
 **UNRESOLVED DECISIONS:**
-- E6: BullMQ connection failures are invisible to `/healthz` (CRITICAL; owner `/plan-eng-review`)
+- E1–E5, E7–E9, E11–E15: recommended options applied (§5a), awaiting owner ratification
+- E6: the remedy is applied (queue health + deploy gate), awaiting owner ratification
+- E10: a shortcut option applied (SA key), awaiting owner ratification; upgrade trigger TODO-2
