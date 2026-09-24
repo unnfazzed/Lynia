@@ -76,13 +76,19 @@ export const envSchema = z.object({
   // cache's ±10% TTL jitter the worst-case entry lives 15.4 h of the URL's 24 h validity, so any
   // served URL keeps ≥8.6 h of signed life; a higher override would erode that jitter-aware margin.
   MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: z.coerce.number().int().min(0).max(50_400_000).optional(),
-  // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
-  // cloud would slot in.
-  CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),
+  // Selects the storage adapter (adapters/storage/storage.module.ts selectStorage, C1). "gcp" = GCS V4
+  // signed URLs; "azure" = Blob Storage user-delegation SAS (docs/plans/2026-09-24-gcp-to-azure-migration.md).
+  CLOUD_PROVIDER: z.enum(["gcp", "azure"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.
   GCP_STORAGE_PROJECT_ID: z.string().optional(),
+  // Azure Blob (CLOUD_PROVIDER=azure). Non-secret config: the SAS is signed with a user-delegation key
+  // fetched by the API's managed identity, so no account key lives anywhere. AZURE_CLIENT_ID is the
+  // user-assigned identity's client id (DefaultAzureCredential's managedIdentityClientId).
+  AZURE_STORAGE_ACCOUNT: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AZURE_STORAGE_CONTAINER: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AZURE_CLIENT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
   // --- Crash / error reporting (Sentry, roadmap 1.1 / LR20) ---
@@ -353,6 +359,24 @@ export const envSchema = z.object({
       "REDIS_URL",
       "REDIS_URL is required in production — the in-memory OTP/rate-limit store and Socket.IO adapter are per-instance without it",
     );
+  }
+
+  // Boot-guard (C1, X4 message format): the Azure storage adapter can't mint a single SAS without its
+  // account + container, and in production it must sign as the container app's user-assigned managed
+  // identity. Checked in every environment for the account/container (a dead config anywhere); the
+  // identity only in production, so local dev can sign via `az login`. All three are non-secret config.
+  if (env.CLOUD_PROVIDER === "azure") {
+    const plainConfig = (name: string, breaks: string): void =>
+      reject(name, `Missing ${name}: ${breaks}. Fix: set ${name} as a plain (non-secret) environment variable in the container app.`);
+    if (!env.AZURE_STORAGE_ACCOUNT) {
+      plainConfig("AZURE_STORAGE_ACCOUNT", "every photo upload and read URL fails (no Blob Storage account to sign for)");
+    }
+    if (!env.AZURE_STORAGE_CONTAINER) {
+      plainConfig("AZURE_STORAGE_CONTAINER", "every photo upload and read URL fails (no Blob container to sign for)");
+    }
+    if (env.NODE_ENV === "production" && !env.AZURE_CLIENT_ID) {
+      plainConfig("AZURE_CLIENT_ID", "the API can't pick its managed identity, so the user-delegation key fetch and every photo upload fail");
+    }
   }
 
   if (env.NODE_ENV === "production") {

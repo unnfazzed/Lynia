@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { RESTAURANTS_COMMISSION } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import { MerchantService } from "./merchant.service";
 
@@ -162,6 +163,85 @@ describe("MerchantService profile self-service", () => {
     const res = await s.setBusyMode("p1", { active: true });
     expect(receivedData).toEqual({ busyMode: true });
     expect(res.busy).toBe(true);
+  });
+});
+
+describe("MerchantService attach-time photo verification (C1 / E8)", () => {
+  const profileRow = {
+    id: "m1",
+    name: "Shop",
+    ownerProfile: { phone: null },
+    description: null,
+    coverPhotoUrl: "banner/p1/old-cover.jpg",
+    logoUrl: null,
+    cuisineTags: [],
+    priceLevel: null,
+    hours: null,
+    cashRule: "collect_and_return",
+    busyMode: false,
+    pilotEnabled: false,
+  };
+  const dishRow = (photoUrl: string | null) => ({ id: "d1", categoryId: "c1", merchantId: "m1", name: "Sadza", description: null, priceUsd: 5, photoUrl, isDraft: !photoUrl, outOfStockUntil: null, sortOrder: 0 });
+
+  function withVerifier(prisma: Record<string, unknown>, verify = vi.fn(async (_key: string, _kind: string) => ({}))) {
+    const p = { $transaction: async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg), ...prisma };
+    const s = new MerchantService(p as unknown as PrismaService, defaultStorageStub as never, undefined, undefined, undefined, {
+      verify,
+    } as unknown as UploadVerifier);
+    return { s, verify };
+  }
+
+  it("updateProfile verifies a NEW cover + logo as kind `banner`, and skips the unchanged one", async () => {
+    const update = vi.fn(async () => profileRow);
+    const { s, verify } = withVerifier({ merchant: { findUnique: async () => profileRow, update } });
+    await s.updateProfile("p1", { coverPhotoUrl: "banner/p1/old-cover.jpg", logoUrl: "banner/p1/logo.jpg" });
+    expect(verify.mock.calls).toEqual([["banner/p1/logo.jpg", "banner"]]);
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("400s a cover/logo key outside the caller's own banner namespace — never verified, so never deleted", async () => {
+    const update = vi.fn();
+    const { s, verify } = withVerifier({ merchant: { findUnique: async () => profileRow, update } });
+    await expect(s.updateProfile("p1", { logoUrl: "kyc/victim/selfie.jpg" })).rejects.toThrow(/invalid photo key/i);
+    await expect(s.updateProfile("p1", { coverPhotoUrl: "banner/other-owner/x.jpg" })).rejects.toThrow(/invalid photo key/i);
+    expect(verify).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("a rejected photo is never recorded (profile, create dish, update dish)", async () => {
+    const { UnprocessableEntityException } = await import("@nestjs/common");
+    const reject = vi.fn(async () => {
+      throw new UnprocessableEntityException({ reason: "upload_too_large" });
+    });
+    const profileUpdate = vi.fn();
+    const dishCreate = vi.fn();
+    const dishUpdate = vi.fn();
+    const { s } = withVerifier(
+      {
+        merchant: { findUnique: async () => profileRow, update: profileUpdate },
+        merchantCategory: { findFirst: async () => ({ id: "c1", merchantId: "m1" }) },
+        merchantDish: { findFirst: async () => dishRow(null), create: dishCreate, update: dishUpdate },
+      },
+      reject,
+    );
+    await expect(s.updateProfile("p1", { coverPhotoUrl: "banner/p1/new.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/x.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p1/y.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    expect(reject.mock.calls).toEqual([["banner/p1/new.jpg", "banner"], ["dish/p1/x.jpg", "dish"], ["dish/p1/y.jpg", "dish"]]);
+    expect(profileUpdate).not.toHaveBeenCalled();
+    expect(dishCreate).not.toHaveBeenCalled();
+    expect(dishUpdate).not.toHaveBeenCalled();
+  });
+
+  it("dish photos must sit under the caller's own dish namespace", async () => {
+    const { s, verify } = withVerifier({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantCategory: { findFirst: async () => ({ id: "c1", merchantId: "m1" }) },
+      merchantDish: { findFirst: async () => dishRow("dish/p1/current.jpg") },
+    });
+    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "banner/p1/x.jpg" })).rejects.toThrow(/invalid photo key/i);
+    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p2/x.jpg" })).rejects.toThrow(/invalid photo key/i);
+    expect(verify).not.toHaveBeenCalled();
   });
 });
 

@@ -85,6 +85,47 @@ describe("loadEnv — commission wallet", () => {
   });
 });
 
+describe("loadEnv — CLOUD_PROVIDER + Azure storage boot-guard (C1, X4 message format)", () => {
+  const azure = { AZURE_STORAGE_ACCOUNT: "lyniamedia", AZURE_STORAGE_CONTAINER: "media", AZURE_CLIENT_ID: "11111111-2222-3333-4444-555555555555" };
+  const fieldErrors = (source: NodeJS.ProcessEnv): Record<string, string[]> => {
+    try {
+      loadEnv(source);
+    } catch (e) {
+      return JSON.parse((e as Error).message.replace(/^Invalid environment configuration: /, "")) as Record<string, string[]>;
+    }
+    throw new Error("expected loadEnv to throw");
+  };
+
+  it("defaults to gcp and needs no Azure vars there", () => {
+    expect(loadEnv(base).CLOUD_PROVIDER).toBe("gcp");
+    expect(loadEnv(prodBase).CLOUD_PROVIDER).toBe("gcp");
+  });
+
+  it("accepts azure with account + container (+ the managed identity in production)", () => {
+    expect(loadEnv({ ...base, CLOUD_PROVIDER: "azure", ...azure }).AZURE_STORAGE_CONTAINER).toBe("media");
+    expect(loadEnv({ ...prodBase, CLOUD_PROVIDER: "azure", ...azure }).AZURE_CLIENT_ID).toBe(azure.AZURE_CLIENT_ID);
+  });
+
+  it("rejects an unknown provider", () => {
+    expect(() => loadEnv({ ...base, CLOUD_PROVIDER: "aws" })).toThrow(/CLOUD_PROVIDER/);
+  });
+
+  it("rejects azure without account/container in every environment, one line in the X4 shape", () => {
+    const errs = fieldErrors({ ...base, CLOUD_PROVIDER: "azure", AZURE_STORAGE_CONTAINER: "" });
+    expect(errs.AZURE_STORAGE_ACCOUNT).toEqual([
+      "Missing AZURE_STORAGE_ACCOUNT: every photo upload and read URL fails (no Blob Storage account to sign for). Fix: set AZURE_STORAGE_ACCOUNT as a plain (non-secret) environment variable in the container app.",
+    ]);
+    expect(errs.AZURE_STORAGE_CONTAINER?.[0]).toMatch(/^Missing AZURE_STORAGE_CONTAINER: .+\. Fix: set AZURE_STORAGE_CONTAINER as a plain \(non-secret\) environment variable in the container app\.$/);
+    // Local dev may sign via `az login`, so the identity is only required in production.
+    expect(errs.AZURE_CLIENT_ID).toBeUndefined();
+  });
+
+  it("requires AZURE_CLIENT_ID in production (the managed identity that fetches the delegation key)", () => {
+    const errs = fieldErrors({ ...prodBase, CLOUD_PROVIDER: "azure", ...azure, AZURE_CLIENT_ID: "" });
+    expect(errs.AZURE_CLIENT_ID?.[0]).toMatch(/^Missing AZURE_CLIENT_ID: .+\. Fix: set AZURE_CLIENT_ID as a plain/);
+  });
+});
+
 describe("loadEnv — production REDIS_URL boot-guard", () => {
   it("rejects production without REDIS_URL (in-memory OTP/rate-limit store is per-instance)", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/Invalid environment configuration/);

@@ -3,6 +3,7 @@ import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
+import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { OrdersService } from "./orders.service";
@@ -14,7 +15,7 @@ const tokens = new TokenService({ JWT_SIGNING_SECRET: "lifecycle-test-secret-012
 const noopNotifications = { notifyOrderStatus: async () => {}, notifyProfiles: async () => {} } as unknown as NotificationsService;
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
-function build(methods: Record<string, unknown>) {
+function build(methods: Record<string, unknown>, opts: { verify?: (key: string, kind: string) => Promise<unknown> } = {}) {
   const emits: Array<[string, string]> = [];
   const jobCancelled: Array<[string, boolean, string]> = [];
   const rebroadcasts: Array<[string, string]> = [];
@@ -63,6 +64,9 @@ function build(methods: Record<string, unknown>) {
     orders as unknown as OrdersService,
     wallet as unknown as WalletService,
     storage as unknown as StorageAdapter,
+    undefined,
+    // C1/E8: the attach-time verifier, only when a test wires one (absent ⇒ the unit harness skips it).
+    opts.verify ? ({ verify: opts.verify } as unknown as UploadVerifier) : undefined,
   );
   return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, evictedFromSupply, orders, prisma, wallet, storage, deletedObjects };
 }
@@ -397,6 +401,53 @@ describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", (
     expect(queryInsideTx).toBe(true);
     expect(updateInsideTx).toBe(true);
     expect(h.deletedObjects).toEqual([concurrentlyCommitted]);
+  });
+});
+
+describe("OrderLifecycleService attach-time photo verification (C1 / E8)", () => {
+  const pickupKey = "pickup/r1/11111111-1111-4111-8111-111111111111.jpg";
+  const proofKey = "delivery-proof/r1/11111111-1111-4111-8111-111111111111.jpg";
+  const pickupRow = [{ status: "en_route_pickup", rider_id: "r1", pickup_photo_key: null }];
+  const proofRow = [{ status: "en_route_dropoff", rider_id: "r1", delivery_proof_key: null }];
+
+  it("verifies the pickup photo (kind `pickup`) BEFORE the row-locked transaction", async () => {
+    const order: string[] = [];
+    const h = build(
+      { $queryRaw: async () => (order.push("lock"), pickupRow), order: { update: async () => (order.push("write"), {}) } },
+      { verify: async (key, kind) => order.push(`verify:${key}:${kind}`) },
+    );
+    await h.svc.attachPickupPhoto("o1", "r1", pickupKey);
+    expect(order).toEqual([`verify:${pickupKey}:pickup`, "lock", "write"]);
+  });
+
+  it("verifies the delivery proof as kind `delivery-proof`", async () => {
+    const verify = vi.fn(async () => ({}));
+    const h = build({ $queryRaw: async () => proofRow, order: { update: async () => ({}) } }, { verify });
+    await h.svc.attachDeliveryProof("o1", "r1", proofKey);
+    expect(verify).toHaveBeenCalledWith(proofKey, "delivery-proof");
+  });
+
+  it("a rejected (422) or unverifiable (503) photo is never recorded", async () => {
+    const { ServiceUnavailableException, UnprocessableEntityException } = await import("@nestjs/common");
+    for (const err of [new UnprocessableEntityException({ reason: "upload_missing" }), new ServiceUnavailableException({ reason: "uploads_unavailable" })]) {
+      const update = vi.fn(async () => ({}));
+      const h = build({ $queryRaw: async () => pickupRow, order: { update } }, { verify: async () => { throw err; } });
+      await expect(h.svc.attachPickupPhoto("o1", "r1", pickupKey)).rejects.toBe(err);
+      expect(update).not.toHaveBeenCalled();
+      const proofUpdate = vi.fn(async () => ({}));
+      const p = build({ $queryRaw: async () => proofRow, order: { update: proofUpdate } }, { verify: async () => { throw err; } });
+      await expect(p.svc.attachDeliveryProof("o1", "r1", proofKey)).rejects.toBe(err);
+      expect(proofUpdate).not.toHaveBeenCalled();
+    }
+  });
+
+  it("never verifies (a rejection deletes!) a key outside the caller's own namespace — the 400 still wins", async () => {
+    const verify = vi.fn(async () => ({}));
+    const h = build({ $queryRaw: async () => pickupRow }, { verify });
+    await expect(h.svc.attachPickupPhoto("o1", "r1", "pickup/victim/p.jpg")).rejects.toThrow(/invalid photo key/i);
+    const p = build({ $queryRaw: async () => proofRow }, { verify });
+    await expect(p.svc.attachDeliveryProof("o1", "r1", "delivery-proof/victim/p.jpg")).rejects.toThrow(/invalid photo key/i);
+    expect(verify).not.toHaveBeenCalled();
   });
 });
 
