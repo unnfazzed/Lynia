@@ -376,6 +376,12 @@ jobs:
           ./actionlint -no-color -oneline -shellcheck= -pyflakes=
           echo "actionlint: all workflows compile."
 
+      # S8 (docs/plans/2026-09-24-gcp-to-azure-migration.md): the repo's Actions logs are public, so no
+      # Azure workflow (or the scripts/azure-*.sh helpers they run) may call an az subcommand whose
+      # output is a secret value. The script lists the three forbidden subcommands.
+      - name: "S8 · no secret-reading az subcommands in Azure workflows"
+        run: bash scripts/check-azure-secret-commands.sh
+
   terraform-validate:
     name: terraform validate · defaults only
     runs-on: ubuntu-latest
@@ -395,6 +401,22 @@ jobs:
           # test, turning it into a silent no-op that reports green.
           if ls ./*.tfvars ./*.tfvars.json >/dev/null 2>&1; then
             echo "::error::A tfvars file is committed under infra/terraform. This job must run on DEFAULTS ONLY — with one present it validates the opposite of what it is for. Remove it (they are gitignored for a reason)."
+            exit 1
+          fi
+          terraform init -backend=false -input=false -no-color
+          terraform validate -no-color
+
+      # Same premise for the Azure module (docs/plans/2026-09-24-gcp-to-azure-migration.md D11): its
+      # CI applies (terraform-apply-azure.yml) pass only `-var environment=…`, so the module must be
+      # valid on defaults alone. -backend=false: no state access from a PR. Skipped on a ref that does
+      # not carry infra/azure yet.
+      - name: Validate infra/azure with no tfvars present
+        if: ${{ hashFiles('infra/azure/*.tf') != '' }}
+        working-directory: infra/azure
+        run: |
+          set -euo pipefail
+          if ls ./*.tfvars ./*.tfvars.json >/dev/null 2>&1; then
+            echo "::error::A tfvars file is committed under infra/azure. This step must run on DEFAULTS ONLY — remove it."
             exit 1
           fi
           terraform init -backend=false -input=false -no-color

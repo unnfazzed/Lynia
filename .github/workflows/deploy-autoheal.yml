@@ -25,7 +25,9 @@ name: Deploy Autoheal
 
 on:
   workflow_run:
-    workflows: ["Deploy Staging (Cloud Run)", "Release (Cloud Run)"]
+    # Matched by workflow NAME (not file): keep in sync with the `name:` of each deploy workflow. The
+    # Azure pair (deploy-staging-azure.yml, release-azure.yml) runs the same two-tier choreography.
+    workflows: ["Deploy Staging (Cloud Run)", "Release (Cloud Run)", "Deploy Staging (Azure)", "Release (Azure)"]
     types: [completed]
 
 permissions:
@@ -66,6 +68,7 @@ jobs:
           FAILED="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
             --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join("|")')"
           echo "Failed jobs (attempt 1): ${FAILED:-<none>}"
+          # Same job name in release.yml and release-azure.yml — keep them identical.
           if [ "$FAILED" = "wait for green staging deploy" ]; then
             echo "Only the staging gate failed — the staging workflow's own autoheal run handles retry and escalation. Nothing to heal here."
             echo "handle=false" >> "$GITHUB_OUTPUT"
@@ -143,9 +146,9 @@ jobs:
             echo "- Failed jobs: ${FAILED_JOBS:-unknown}"
             echo
             echo "Please diagnose from the log tail below and drive this back to green:"
-            echo "1. **Code or workflow bug** → open a PR against \`main\` with the fix. The merge redeploys staging, and a green staging run auto-promotes the same image to production (release.yml staging-gate)."
-            echo "2. **Missing/invalid GCP config** (repo Variables/Secrets, IAM, Terraform) → do NOT guess values; comment here with the exact arming step from docs/LAUNCH-EXECUTION-RUNBOOK.md the founder must run."
-            echo "3. **Production canary failure** → traffic was already rolled back automatically to the previous revision (release.yml); verify \`/healthz\` first, then treat the candidate revision's defect as case 1 or 2."
+            echo "1. **Code or workflow bug** → open a PR against \`main\` with the fix. The merge redeploys staging, and a green staging run auto-promotes the same image to production (the release workflow's staging-gate)."
+            echo "2. **Missing/invalid cloud config** (repo Variables/Secrets, IAM/RBAC, Terraform; for an Azure run, dispatch the Azure Diagnose workflow and paste its Recap) → do NOT guess values; comment here with the exact arming step from docs/LAUNCH-EXECUTION-RUNBOOK.md the founder must run."
+            echo "3. **Production canary failure** → traffic was already rolled back automatically to the previous revision (release.yml / release-azure.yml); verify \`/healthz\` first, then treat the candidate revision's defect as case 1 or 2."
             echo
             echo "<details><summary>Failed-job log tail (attempt 2, last 40 KB)</summary>"
             echo

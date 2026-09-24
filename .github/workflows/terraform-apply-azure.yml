@@ -1,0 +1,206 @@
+name: Terraform apply (Azure)
+
+# Runs infra/azure `terraform plan` / `apply` from CI behind the `infra` environment's human approval
+# (docs/plans/2026-09-24-gcp-to-azure-migration.md §6, E14, S5; infra/azure/README.md Step 2; replaces
+# terraform-apply.yml). It keeps the controls terraform-apply.yml earned in its adversarial review:
+#
+#  1. NO `${{ }}` INSIDE ANY run: BLOCK. Inputs arrive via env: and are whitelist-validated.
+#  2. THE PLAN IS NEVER PERSISTED. A binary plan embeds the prior state unredacted (the PG admin
+#     password and Redis key are the two accepted S1 exceptions in state), so it is never uploaded;
+#     the apply job re-plans inside the gate and applies in the same workspace. The approval binds
+#     INTENT, so the destroy guard re-runs inside the gated job.
+#  3. main-ONLY. The binding controls are the `infra` environment's deployment-branch policy (main)
+#     and its required reviewers (bootstrap.sh / README Step 1); the ref checks are defence in depth.
+#  4. DESTROY GUARD. A plan that deletes or forgets anything fails unless action=apply-allow-destroy.
+#
+# IDENTITY — `environment: infra` ONLY. Both jobs run in the `infra` environment and authenticate as
+# AZURE_CLIENT_ID_INFRA (id-lynia-infra), whose only federated credential is
+# `repo:unnfazzed/Lynia:environment:infra` (E14). So the owner approves twice: once to let the plan
+# run (its step summary is the review), then the apply job after reading it. action=plan stops there.
+#
+# Inputs (X6): `environment` (which state: staging.tfstate | production.tfstate; default staging) and
+# `action` (default apply — the README Step 2 flow; the two approvals are the brake).
+# Optional Variable AZ_ALERT_EMAILS: a JSON list (["owner@example.com"]) → TF_VAR_alert_emails.
+# DORMANT UNTIL ARMED: no-op until bootstrap.sh has set AZURE_CLIENT_ID_INFRA and
+# AZ_TFSTATE_STORAGE_ACCOUNT. No secrets: OIDC only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which environment's Terraform state to plan/apply"
+        type: choice
+        options: [staging, production]
+        default: staging
+      action:
+        description: "apply = plan, then apply after a second approval; plan = review only; apply-allow-destroy = also permit deletions"
+        type: choice
+        options: [apply, plan, apply-allow-destroy]
+        default: apply
+
+concurrency:
+  group: terraform-apply-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TIER: ${{ inputs.environment }}
+  ACTION: ${{ inputs.action }}
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_INFRA }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZ_TFSTATE_STORAGE_ACCOUNT: ${{ vars.AZ_TFSTATE_STORAGE_ACCOUNT }}
+  AZ_TFSTATE_RESOURCE_GROUP: ${{ vars.AZ_TFSTATE_RESOURCE_GROUP }}
+  AZ_TFSTATE_CONTAINER: ${{ vars.AZ_TFSTATE_CONTAINER }}
+  AZ_ALERT_EMAILS: ${{ vars.AZ_ALERT_EMAILS }}
+
+jobs:
+  plan:
+    name: plan (${{ inputs.environment }})
+    if: ${{ vars.AZURE_CLIENT_ID_INFRA != '' && vars.AZ_TFSTATE_STORAGE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: infra
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard — main only, validated inputs
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::terraform-apply-azure may only run from main (got ${REF})."; exit 1; }
+          case "$TIER" in staging|production) ;; *) echo "::error::invalid environment"; exit 1 ;; esac
+          case "$ACTION" in plan|apply|apply-allow-destroy) ;; *) echo "::error::invalid action"; exit 1 ;; esac
+          if [ -n "$AZ_ALERT_EMAILS" ] && ! printf '%s' "$AZ_ALERT_EMAILS" | jq -e 'type == "array" and all(type == "string")' >/dev/null 2>&1; then
+            echo "::error::AZ_ALERT_EMAILS must be a JSON list of strings, e.g. [\"owner@example.com\"]."; exit 1
+          fi
+
+      - name: Azure login (OIDC, infra identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_INFRA }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: terraform plan
+        id: plan
+        run: |
+          set -euo pipefail
+          [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
+          bash scripts/azure-tf-init.sh "$TIER"
+          set +e
+          terraform -chdir=infra/azure plan -input=false -no-color -lock=false -detailed-exitcode \
+            -var "environment=${TIER}" -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then
+            echo "::error::terraform plan failed"; cat plan.txt; exit 1
+          fi
+          terraform -chdir=infra/azure show -json tfplan > plan.json
+          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
+          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ]; then
+            echo "::warning title=PLAN DELETES RESOURCES::${destroys} resource(s) would be deleted/forgotten — the apply job will refuse unless action=apply-allow-destroy."
+          fi
+          {
+            echo "### Terraform plan — ${TIER} (${destroys} deletion(s)/forget(s)), action=${ACTION}"
+            if [ "$destroys" -gt 0 ]; then
+              echo '**Resources being REMOVED:**'
+              echo '```'
+              jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
+              echo '```'
+            fi
+            echo '```'
+            # head, not tail: the change list comes first; on an oversized plan lose the tail.
+            terraform -chdir=infra/azure show -no-color tfplan | head -c 60000
+            echo ''
+            echo '[output truncated at 60000 bytes if the plan was larger]'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f infra/azure/tfplan plan.json # the binary plan embeds unredacted state — never kept
+
+  apply:
+    name: apply (${{ inputs.environment }}, second approval)
+    needs: plan
+    # exitcode 2 = changes pending; 0 = nothing to apply, so don't wake a human for nothing.
+    if: ${{ startsWith(inputs.action, 'apply') && needs.plan.outputs.exitcode == '2' }}
+    runs-on: ubuntu-latest
+    environment: infra
+    timeout-minutes: 90 # Postgres + Redis creation is the long pole (README Step 2: ~30 min)
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard — main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::apply may only run from main (got ${REF})."; exit 1; }
+
+      - name: Azure login (OIDC, infra identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_INFRA }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: terraform plan + apply (inside the gate)
+        run: |
+          set -euo pipefail
+          [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
+          bash scripts/azure-tf-init.sh "$TIER"
+          terraform -chdir=infra/azure plan -input=false -no-color -var "environment=${TIER}" -out=tfplan
+          terraform -chdir=infra/azure show -json tfplan > plan.json
+          destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
+          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ]; then
+            echo "::error::plan deletes/forgets ${destroys} resource(s) (state may have moved since review); re-run with action=apply-allow-destroy if intended."
+            jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
+            exit 1
+          fi
+          rm -f plan.json
+          terraform -chdir=infra/azure apply -input=false -no-color tfplan
+
+      # Only the two outputs that are meant to be read: arming_guide (text) and github_variables (a
+      # map of resource names). Neither is sensitive (infra/azure/outputs.tf), and nothing else is
+      # printed — `terraform output -json` on its own would dump every output.
+      # GITHUB_TOKEN cannot write repository Variables, so the summary lists them as `gh variable set`
+      # lines to paste (or set them in Settings → Secrets and variables → Actions → Variables).
+      - name: Arming guide and Variables for this environment
+        run: |
+          set -euo pipefail
+          {
+            echo "### Applied (${TIER})"
+            echo '```'
+            terraform -chdir=infra/azure output -raw arming_guide || echo "(arming_guide output unavailable)"
+            echo '```'
+            echo "#### Repo Variables from \`github_variables\`"
+            echo '```bash'
+            terraform -chdir=infra/azure output -json github_variables \
+              | jq -r 'to_entries[] | "gh variable set \(.key) --body \(.value | @sh)"' \
+              || echo "# (github_variables output unavailable)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
