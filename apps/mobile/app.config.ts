@@ -47,18 +47,30 @@ const easProjectId = process.env.EAS_PROJECT_ID ?? "25b2785d-94e0-4ecc-9940-bd9f
  * and local evaluation is NOT guaranteed to see EAS environment variables — failing there would break
  * the release lane for a config problem that doesn't exist, the same failure class as builds 5/6/7.
  * Local dev, `expo prebuild`, and the QA APK lane are all unaffected.
+ *
+ * Every store-bound profile in eas.json is listed, mapped to the EAS `environment` it resolves its
+ * variables from (the remediation hint must name the environment, not the profile). `closed` — the
+ * lane that reaches the enrolled testers — was once missing, so the build that actually ships skipped
+ * both guards (plan C7). Keep this in step with eas.json's `build.*.environment`.
  */
+const RELEASE_PROFILE_ENVIRONMENT: Record<string, string> = {
+  preview: "preview",
+  production: "production",
+  closed: "preview",
+};
 const releaseBuildProfile =
-  process.env.EAS_BUILD === "true" && ["preview", "production"].includes(process.env.EAS_BUILD_PROFILE ?? "")
+  process.env.EAS_BUILD === "true" &&
+  Object.prototype.hasOwnProperty.call(RELEASE_PROFILE_ENVIRONMENT, process.env.EAS_BUILD_PROFILE ?? "")
     ? process.env.EAS_BUILD_PROFILE
     : undefined;
+const releaseBuildEnvironment = releaseBuildProfile ? RELEASE_PROFILE_ENVIRONMENT[releaseBuildProfile] : undefined;
 if (releaseBuildProfile) {
   const missing = ["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_AUTH_TOKEN"].filter((name) => !process.env[name]?.trim());
   if (missing.length) {
     throw new Error(
       `Sentry is not provisioned for EAS build profile "${releaseBuildProfile}": ${missing.join(", ")} unset. ` +
         "A release build must ship readable crash telemetry (LR20). Set them with " +
-        `\`eas env:create --scope project --environment ${releaseBuildProfile} --name <NAME> --value <value>\` ` +
+        `\`eas env:create --scope project --environment ${releaseBuildEnvironment} --name <NAME> --value <value>\` ` +
         "— see docs/QA-DEVICE-CHECKLIST.md → LR20. Refusing to build a blind release.",
     );
   }
@@ -78,7 +90,7 @@ if (releaseBuildProfile) {
     throw new Error(
       `GOOGLE_MAPS_API_KEY is unset for EAS build profile "${releaseBuildProfile}". The Android map is ` +
         "native — a build without this key renders a blank map on /send and CANNOT be fixed by an OTA. " +
-        `Set it with \`eas env:create --scope project --environment ${releaseBuildProfile} ` +
+        `Set it with \`eas env:create --scope project --environment ${releaseBuildEnvironment} ` +
         '--name GOOGLE_MAPS_API_KEY --visibility sensitive --value <key>` (visibility MUST be Sensitive, ' +
         "not Secret — a Secret is unreadable by the CLI and desynchronises the fingerprint; see " +
         "docs/PLAY-STORE-SUBMISSION.md, 2026-08-04). Refusing to build a mapless release.",
