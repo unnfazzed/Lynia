@@ -1,14 +1,19 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleDestroy, Optional } from "@nestjs/common";
 import type IORedis from "ioredis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { createRedisClient } from "../common/redis";
+import { OfferExpiryService } from "../matching/offer-expiry.service";
+import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 export interface HealthReport {
   status: "ok" | "degraded";
   db: boolean;
   redis: boolean | "skipped";
+  /** E6: a PING on each BullMQ queue's OWN connection. `redis` above uses a separate client, so it can
+   *  be green while the queues are dead (e.g. BullMQ misconfigured for a TLS-only Redis). */
+  queues: { offerExpiry: boolean | "skipped"; orderLifecycle: boolean | "skipped" };
   provider: Env["CLOUD_PROVIDER"];
 }
 
@@ -41,13 +46,23 @@ export class HealthService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(ENV) private readonly env: Env,
+    // @Optional so unit harnesses can construct without the queue owners; a missing one reports
+    // "skipped". HealthModule imports MatchingModule + OrdersModule, so both are injected in the app.
+    @Optional() private readonly offerExpiry?: OfferExpiryService,
+    @Optional() private readonly orderLifecycle?: OrderLifecycleService,
   ) {}
 
   async check(): Promise<HealthReport> {
-    const db = await this.pingDb();
-    const redis = await this.pingRedis();
-    const status = db && redis !== false ? "ok" : "degraded";
-    return { status, db, redis, provider: this.env.CLOUD_PROVIDER };
+    const [db, redis, offerExpiry, orderLifecycle] = await Promise.all([
+      this.pingDb(),
+      this.pingRedis(),
+      this.offerExpiry?.pingQueue() ?? ("skipped" as const),
+      this.orderLifecycle?.pingQueue() ?? ("skipped" as const),
+    ]);
+    // Any `false` degrades. HTTP stays 200 unless the DB is down (health.controller.ts) — a Redis or
+    // queue blip must not 503 every replica; deploy gates key on `status`, not the HTTP code.
+    const status = db && redis !== false && offerExpiry !== false && orderLifecycle !== false ? "ok" : "degraded";
+    return { status, db, redis, queues: { offerExpiry, orderLifecycle }, provider: this.env.CLOUD_PROVIDER };
   }
 
   /**

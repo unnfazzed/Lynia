@@ -1,7 +1,8 @@
-import { Body, Controller, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Inject, Logger, Post, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { STORAGE, type StorageAdapter, type UploadTarget } from "../adapters/storage/storage.interface";
+import { MAX_BANNER_PHOTO_BYTES, MAX_DISH_PHOTO_BYTES, MAX_PHOTO_BYTES } from "../adapters/storage/upload-kinds";
 import { CurrentUser } from "../common/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Throttle } from "../common/throttle.guard";
@@ -10,22 +11,16 @@ import { MerchantGuard } from "../merchant/merchant.guard";
 import { RestaurantsEnabledGuard } from "../merchant/restaurants-enabled.guard";
 
 // Restrict to the formats expo-image-picker yields, so a signed URL is never minted for an arbitrary
-// content type. The PUT must send this exact Content-Type or the V4 signature won't match.
+// content type. The PUT must send this exact Content-Type (GCS binds it into the V4 signature; on every
+// provider the attach-time UploadVerifier rejects anything that isn't really a JPEG/PNG).
 const PhotoUpload = z.object({ contentType: z.enum(["image/jpeg", "image/png"]) });
 const EXT: Record<z.infer<typeof PhotoUpload>["contentType"], string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
 };
-// Cap an uploaded photo at 8 MiB — well above a phone-camera JPEG/PNG, far below storage-abuse/DoS
-// territory. Bound into the signed URL so the object store rejects anything larger, not just the client.
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
-// D-32 "we compress on the merchant's behalf and say so": these are the target sizes named in the
-// design contract, enforced the same way as MAX_PHOTO_BYTES — bound into the signed URL's
-// X-Goog-Content-Length-Range so the object store rejects an over-budget PUT, not just the client's
-// own downscale step (apps/mobile/src/logic/image-downscale.ts, which already lands most photos in
-// this range but never guarantees it).
-const MAX_DISH_PHOTO_BYTES = 300 * 1024;
-const MAX_BANNER_PHOTO_BYTES = 250 * 1024;
+// Per-kind size caps (8 MiB photos; D-32's 300 KB dish / 250 KB banner) live in upload-kinds.ts, shared
+// with the attach-time check. GCS also binds the cap into the signed URL's X-Goog-Content-Length-Range;
+// an Azure SAS can't, so there the attach-time stat is the enforcement.
 
 interface MintedUpload {
   uploadUrl: string;
@@ -40,6 +35,8 @@ interface MintedUpload {
 @Controller("uploads")
 @UseGuards(JwtAuthGuard)
 export class UploadsController {
+  private readonly logger = new Logger(UploadsController.name);
+
   constructor(@Inject(STORAGE) private readonly storage: StorageAdapter) {}
 
   /**
@@ -109,23 +106,29 @@ export class UploadsController {
     return this.mint(`banner/${profileId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType, MAX_BANNER_PHOTO_BYTES);
   }
 
-  /** One minting path for every photo upload — same TTL + signed-header contract; the size cap is
-   *  per-call so merchant photos (D-32) can carry a tighter budget than the 8 MiB default. */
+  /** One minting path for every photo upload — same TTL + adapter-owned header contract; the size cap
+   *  is per-call so merchant photos (D-32) can carry a tighter budget than the 8 MiB default. */
   private async mint(
     key: string,
     contentType: z.infer<typeof PhotoUpload>["contentType"],
     maxBytes: number = MAX_PHOTO_BYTES,
   ): Promise<MintedUpload> {
-    const target = await this.storage.createUploadUrl(key, contentType, 600, maxBytes);
+    let target: UploadTarget;
+    try {
+      target = await this.storage.createUploadUrl(key, contentType, 600, maxBytes);
+    } catch (err) {
+      // A signing failure (GCS signBlob quota, an Azure delegation-key fetch that failed its one retry)
+      // is transient from the client's side: a retryable 503, not a generic 500 (E8).
+      this.logger.error(`Upload mint failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw new ServiceUnavailableException({ reason: "uploads_unavailable", message: "Couldn't upload, try again" });
+    }
     return {
       uploadUrl: target.url,
       key: target.key,
-      // The signed URL binds BOTH the content-type and a size range, so the PUT must send these exact
-      // headers or the V4 signature won't match. Returned so the client stays decoupled from the cap.
-      headers: {
-        "Content-Type": contentType,
-        "X-Goog-Content-Length-Range": `0,${maxBytes}`,
-      },
+      // The adapter owns the provider headers (C1): GCS returns Content-Type + the signed
+      // X-Goog-Content-Length-Range, Azure returns Content-Type + x-ms-blob-type. The client echoes
+      // them verbatim on the PUT, so it stays decoupled from both the provider and the cap.
+      headers: target.headers,
     };
   }
 }

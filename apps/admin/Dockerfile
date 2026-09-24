@@ -37,6 +37,10 @@ ENV NODE_ENV=production
 # Next standalone binds HOSTNAME:PORT. Pin PORT=8080 so the image listens on the same port EXPOSE
 # advertises and the boot-smoke curls — Next standalone otherwise defaults to 3000. Cloud Run injects
 # its own PORT (also 8080) at runtime, which harmlessly matches. Bind all interfaces.
+# HOSTNAME=0.0.0.0 is REQUIRED on any container host, not just Cloud Run: Kubernetes-based hosts
+# (Azure Container Apps included) set HOSTNAME to the replica name, and Next standalone would bind to
+# that name only, so probes and ingress fail. If the host overrides env, set HOSTNAME=0.0.0.0 in the
+# app's env too (plan C4). Liveness probe: GET /api/healthz (public, returns {"status":"ok"}).
 ENV HOSTNAME=0.0.0.0
 ENV PORT=8080
 WORKDIR /repo

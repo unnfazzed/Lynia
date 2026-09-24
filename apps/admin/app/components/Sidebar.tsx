@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
+import { IAP_SIGNOUT_URL } from "../lib/console-auth";
 import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconStore, IconUser } from "./icons";
 
 /**
@@ -58,7 +59,16 @@ function isActive(entry: NavEntry, pathname: string, kycMode: boolean): boolean 
   return pathname === entry.match || pathname.startsWith(`${entry.match}/`);
 }
 
-export function Sidebar({ operator, counts }: { operator?: string | null; counts?: NavCounts | null }) {
+export function Sidebar({
+  operator,
+  counts,
+  signOutUrl = IAP_SIGNOUT_URL,
+}: {
+  operator?: string | null;
+  counts?: NavCounts | null;
+  /** The proxy's sign-out endpoint (resolved server-side by layout.tsx via resolveSignOutUrl). */
+  signOutUrl?: string;
+}) {
   const pathname = usePathname() || "/";
   const search = useSearchParams();
   const kycMode = search.get("kyc") !== null || pathname.endsWith("/kyc");
@@ -104,11 +114,11 @@ export function Sidebar({ operator, counts }: { operator?: string | null; counts
       <div className="foot">
         <b>{operator || "Ops admin"}</b>
         ops admin · Harare pilot
-        {/* IAP sign-out: clearing the IAP login cookie bounces the operator back through Google. Only
-            shown when there's a real signed-in identity (the dev/offline path has none). */}
+        {/* Proxy sign-out (IAP cookie-clear on GCP, /.auth/logout on Azure Easy Auth). Only shown when
+            there's a real signed-in identity (the dev/offline path has none). */}
         {operator ? (
           <a
-            href="/?gcp-iap-mode=CLEAR_LOGIN_COOKIE"
+            href={signOutUrl}
             style={{ display: "block", marginTop: 6, color: "var(--accent-text)", textDecoration: "none", fontWeight: 600 }}
           >
             Sign out

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CANCEL_STRIKE_LIMIT,
-  connectionFromUrl,
   CUSTOMER_CANCELLABLE,
   FORWARD,
   POST_PICKUP_FOR_UNDELIVERED,
@@ -32,12 +31,5 @@ describe("order-lifecycle constants (extracted, roadmap 3.4)", () => {
 
   it("CANCEL_STRIKE_LIMIT is the T4 no-show threshold", () => {
     expect(CANCEL_STRIKE_LIMIT).toBe(3);
-  });
-
-  it("connectionFromUrl parses an ioredis connection with maxRetriesPerRequest null (BullMQ requirement)", () => {
-    const c = connectionFromUrl("redis://user:pass@host.example:6380");
-    expect(c).toMatchObject({ host: "host.example", port: 6380, username: "user", password: "pass", maxRetriesPerRequest: null });
-    // Default port when absent.
-    expect(connectionFromUrl("redis://localhost").port).toBe(6379);
   });
 });

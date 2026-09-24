@@ -1,0 +1,171 @@
+name: Deploy Merchant Dashboard (Azure)
+
+# Builds the merchant dashboard (apps/merchant), smoke-tests the exact image, pushes it to ACR and
+# deploys a new revision of the merchant container app (docs/plans/2026-09-24-gcp-to-azure-migration.md
+# §6; replaces deploy-merchant.yml). SINGLE revision mode (infra/azure containerapps.tf): the platform
+# switches to the new revision only once it is ready, so a crash-on-boot build fails this job while
+# the old revision keeps serving.
+#
+# buildx, not `az acr build`: the merchant Dockerfile.dockerignore needs BuildKit (plan §6).
+# NEXT_PUBLIC_API_BASE_URL is unchanged: a `--build-arg` inlined into the browser bundle at BUILD time
+# (Next.js contract), from the same MERCHANT_API_BASE_URL Variable deploy-merchant.yml uses (staging:
+# STAGING_MERCHANT_API_BASE_URL); when unset it defaults to https://<AZ_API_HOSTNAME[_STAGING]>. Each
+# environment has its own registry, so a staging build (with the staging URL baked in) can never be
+# the image production runs. The dashboard holds no secret; its OTP-session middleware is the auth
+# boundary.
+#
+# TRIGGERS: a push to main deploys PRODUCTION (as deploy-merchant.yml did). workflow_dispatch takes one
+# input, `environment` (default staging) (X6).
+#
+# DORMANT UNTIL ARMED: AZ_MERCHANT_ENABLED == 'true' (staging additionally needs AZ_STAGING_ENABLED).
+#   Variables: AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID_{PRODUCTION,STAGING}
+#              (bootstrap.sh); AZ_RESOURCE_GROUP, AZ_ACR_NAME, AZ_ACR_LOGIN_SERVER,
+#              AZ_CONTAINERAPP_MERCHANT, AZ_API_HOSTNAME (+ the _STAGING set) from
+#              `terraform output github_variables`.
+# Never write `${{ }}` inside a run: block in this file.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/merchant/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-merchant-azure.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-merchant-azure-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · smoke · deploy (Azure)
+    runs-on: ubuntu-latest
+    if: >-
+      vars.AZ_MERCHANT_ENABLED == 'true'
+      && (github.event_name != 'workflow_dispatch' || inputs.environment == 'production'
+      || vars.AZ_STAGING_ENABLED == 'true')
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve target
+        id: target
+        env:
+          REF: ${{ github.ref }}
+          P_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          S_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          P_RG: ${{ vars.AZ_RESOURCE_GROUP }}
+          S_RG: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
+          P_ACR: ${{ vars.AZ_ACR_NAME }}
+          S_ACR: ${{ vars.AZ_ACR_NAME_STAGING }}
+          P_REGISTRY: ${{ vars.AZ_ACR_LOGIN_SERVER }}
+          S_REGISTRY: ${{ vars.AZ_ACR_LOGIN_SERVER_STAGING }}
+          P_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT || 'ca-lynia-merchant' }}
+          S_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT_STAGING || 'ca-lynia-merchant' }}
+          P_MERCHANT_API_BASE_URL: ${{ vars.MERCHANT_API_BASE_URL || (vars.AZ_API_HOSTNAME && format('https://{0}', vars.AZ_API_HOSTNAME)) }}
+          S_MERCHANT_API_BASE_URL: ${{ vars.STAGING_MERCHANT_API_BASE_URL || (vars.AZ_API_HOSTNAME_STAGING && format('https://{0}', vars.AZ_API_HOSTNAME_STAGING)) }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ] \
+            || { echo "::error::AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID are unset (infra/azure/bootstrap.sh prints them)."; exit 1; }
+          if [ "$TIER" = "production" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Production deploys run from main only (got ${REF})."; exit 1
+          fi
+          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG ACR REGISTRY APP MERCHANT_API_BASE_URL
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ steps.target.outputs.client_id }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name "$ACR"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build merchant image (load for smoke)
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            -f apps/merchant/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="$MERCHANT_API_BASE_URL" \
+            --cache-from "type=registry,ref=$REGISTRY/lynia-merchant:buildcache" \
+            --cache-to "type=registry,ref=$REGISTRY/lynia-merchant:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+            -t "$REGISTRY/lynia-merchant:${GITHUB_SHA}" \
+            --load .
+
+      # Same three proofs as deploy-merchant.yml: the server serves, the standalone copy layout kept
+      # static assets, and the fail-closed middleware redirects an unauthenticated `/` to /login.
+      - name: Container boot smoke
+        run: |
+          set -euo pipefail
+          docker run -d --name merchant-smoke -p 8080:8080 "$REGISTRY/lynia-merchant:${GITHUB_SHA}"
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8080/api/healthz"; then break; fi
+            sleep 1
+            if [ "$i" = "30" ]; then echo "::error::merchant container never served /api/healthz"; docker logs merchant-smoke || true; exit 1; fi
+          done
+          healthz_body="$(curl -sf "http://127.0.0.1:8080/api/healthz")"
+          code_asset=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/brand/lyniago-mark.svg")
+          headers="$(curl -s -D - -o /dev/null "http://127.0.0.1:8080/")"
+          code_root="$(printf '%s' "$headers" | head -1 | awk '{print $2}')"
+          echo "healthz -> $healthz_body ; asset -> $code_asset ; gated / -> $code_root"
+          docker logs merchant-smoke || true
+          docker rm -f merchant-smoke || true
+          if ! printf '%s' "$healthz_body" | grep -q '"app":"merchant"'; then echo "::error::/api/healthz did not report the expected body"; exit 1; fi
+          if [ "$code_asset" != "200" ]; then echo "::error::static asset did not 200 ($code_asset) — standalone static/public copy layout is likely wrong"; exit 1; fi
+          case "$code_root" in
+            307|308) ;;
+            *) echo "::error::unauthenticated / did not redirect ($code_root) — the merchant-access middleware is not enforcing"; exit 1 ;;
+          esac
+          if ! printf '%s' "$headers" | grep -qi '^location: */login'; then
+            echo "::error::unauthenticated / did not redirect to /login: $headers"
+            exit 1
+          fi
+
+      - name: Push merchant image
+        run: |
+          set -euo pipefail
+          docker push "$REGISTRY/lynia-merchant:${GITHUB_SHA}"
+          docker buildx imagetools create -t "$REGISTRY/lynia-merchant:latest" "$REGISTRY/lynia-merchant:${GITHUB_SHA}"
+
+      - name: Deploy new revision and wait for it to serve
+        id: deploy
+        run: |
+          set -euo pipefail
+          SUFFIX="r${GITHUB_SHA:0:7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CANDIDATE="${APP}--${SUFFIX}"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          az containerapp update -n "$APP" -g "$RG" --image "$REGISTRY/lynia-merchant:${GITHUB_SHA}" --revision-suffix "$SUFFIX" \
+            --set-env-vars "NODE_ENV=production" "HOSTNAME=0.0.0.0" -o none
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$CANDIDATE" 600
+          # Multiple-mode safety net: if the app is ever switched to Multiple, route explicitly.
+          bash scripts/azure-aca.sh route "$APP" "$RG" "$CANDIDATE" 100
+
+      - name: Summary
+        if: ${{ success() }}
+        env:
+          CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+        run: |
+          echo "Merchant dashboard ${REGISTRY}/lynia-merchant:${GITHUB_SHA} → ${APP} (${TIER}, ${RG}) as ${CANDIDATE}." >> "$GITHUB_STEP_SUMMARY"

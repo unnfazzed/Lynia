@@ -8,6 +8,9 @@ import { maskToken, type PushAdapter, type PushMessage, type PushResult } from "
 const DEAD_TOKEN_CODES = new Set([
   "messaging/registration-token-not-registered",
   "messaging/invalid-registration-token",
+  // A token minted under a different Firebase project (e.g. the pre-migration one) can never be
+  // delivered by this sender's credential — prune on first send instead of erroring on every send.
+  "messaging/mismatched-credential",
 ]);
 
 /** FCM `sendEach` accepts at most 500 messages per call; larger fan-outs are chunked to this size. */

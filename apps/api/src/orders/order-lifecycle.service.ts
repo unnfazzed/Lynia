@@ -17,6 +17,7 @@ import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalt
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
 import { sampleQueueDepth } from "../common/queue-metrics";
+import { bullmqConnectionFromUrl, pingQueueClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -24,7 +25,6 @@ import { MetricsService } from "../observability/metrics.service";
 import {
   CANCEL_STRIKE_LIMIT,
   type CancelResult,
-  connectionFromUrl,
   CUSTOMER_CANCELLABLE,
   DELIVERY_PROOF_STATUSES,
   FORWARD,
@@ -40,6 +40,8 @@ import {
 import { OrdersService } from "./orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { UploadVerifier } from "../adapters/storage/upload-verifier";
+import type { UploadKind } from "../adapters/storage/upload-kinds";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 
@@ -74,7 +76,21 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // @Optional for the same reason as storage: unit harnesses construct without the (@Global)
     // ObservabilityModule; a missing service just skips the queue depth/age gauges.
     @Optional() private readonly metrics?: MetricsService,
+    // C1/E8 attach-time upload check. Deliberately NOT @Optional: StorageModule is @Global, so a missing
+    // provider fails boot instead of silently accepting unverified photos. TS-optional only so the
+    // existing positional unit harnesses stay valid.
+    private readonly uploads?: UploadVerifier,
   ) {}
+
+  /**
+   * C1/E8: verify an attached photo before the locked write. Only a key already inside the caller's own
+   * namespace is verified — a rejection DELETES the object, so a foreign key must never reach it; the
+   * namespace check inside the transaction still owns the 400 for those. Runs outside (before) the DB
+   * transaction: storage round-trips must never sit under a `FOR UPDATE` row lock.
+   */
+  private async verifyAttach(key: string, namespace: string, kind: UploadKind): Promise<void> {
+    if (key.startsWith(namespace)) await this.uploads?.verify(key, kind);
+  }
 
   private sweep?: ReturnType<typeof setInterval>;
 
@@ -92,7 +108,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     const url = this.env.REDIS_URL;
     if (url) {
-      const connection = connectionFromUrl(url);
+      const connection = bullmqConnectionFromUrl(url);
       this.queue = new Queue(QUEUE_NAME, { connection });
       this.worker = new Worker(QUEUE_NAME, async (job) => this.completeOrder(job.data.orderId as string), {
         connection,
@@ -120,6 +136,13 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     void this.reconcileStaleDeliveries();
     this.sweep = setInterval(() => void this.reconcileStaleDeliveries(), RECONCILE_INTERVAL_MS);
     this.sweep.unref?.();
+  }
+
+  /** E6: PING this queue's own BullMQ Redis connection for `/healthz` (2 s budget). `"skipped"` when
+   *  no `REDIS_URL` (no queue). Distinct from the health probe's shared client, which can be green
+   *  while BullMQ's connections are dead. */
+  pingQueue(): Promise<boolean | "skipped"> {
+    return pingQueueClient(this.queue);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -264,6 +287,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // two: the second caller blocks on FOR UPDATE until the first commits, then reads the first's just-
     // committed key and correctly deletes IT as superseded — no orphan. The lock also subsumes the old CAS
     // (nothing can move the row between the locked read and the write), so a plain `update` is safe here.
+    await this.verifyAttach(key, `pickup/${riderId}/`, "pickup");
     const previousKey = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
         Array<{ status: string; rider_id: string | null; pickup_photo_key: string | null }>
@@ -316,6 +340,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // GCS object past the right-to-erasure purge; the lock subsumes the old status CAS, so a plain `update`
     // is safe (a concurrent transition that would have failed the CAS instead moves the row to a status this
     // locked read rejects with the same 409).
+    await this.verifyAttach(key, `delivery-proof/${riderId}/`, "delivery-proof");
     const previousKey = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
         Array<{ status: string; rider_id: string | null; delivery_proof_key: string | null }>

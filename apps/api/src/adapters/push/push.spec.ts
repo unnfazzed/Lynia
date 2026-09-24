@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../config/env";
 import { buildFcmMessage, FcmPush } from "./fcm.push";
@@ -22,6 +23,48 @@ describe("push adapter selection (D7 portability)", () => {
 
   it("selects FCM when PUSH_PROVIDER=fcm — a config-only switch", () => {
     expect(selectPush({ ...base, PUSH_PROVIDER: "fcm" })).toBeInstanceOf(FcmPush);
+  });
+
+  it("on GCP, fcm without FCM_PROJECT_ID still boots (ADC supplies the project) — warning only", () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      expect(selectPush({ ...base, PUSH_PROVIDER: "fcm" })).toBeInstanceOf(FcmPush);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("FCM_PROJECT_ID is unset"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("noop never trips the off-GCP boot-guard, even with no Firebase config (the cutover setting)", () => {
+    expect(selectPush({ ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "noop" })).toBeInstanceOf(NoopPush);
+  });
+
+  describe("off-GCP boot-guard (C5): fcm requires FCM_PROJECT_ID + GOOGLE_APPLICATION_CREDENTIALS", () => {
+    const azure = { ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "fcm" } as Env;
+    const fix =
+      "Fix: set Key Vault secret FCM-SERVICE-ACCOUNT-JSON (mounted as a file) and point GOOGLE_APPLICATION_CREDENTIALS at it.";
+
+    it("boots with FcmPush when both are set", () => {
+      expect(
+        selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", GOOGLE_APPLICATION_CREDENTIALS: "/mnt/secrets/fcm.json" }),
+      ).toBeInstanceOf(FcmPush);
+    });
+
+    it("fails boot when FCM_PROJECT_ID is missing, in the one-line X4 format", () => {
+      expect(() => selectPush({ ...azure, GOOGLE_APPLICATION_CREDENTIALS: "/mnt/secrets/fcm.json" })).toThrow(
+        `Missing FCM_PROJECT_ID: every FCM push send fails (no Firebase project to address). ${fix}`,
+      );
+    });
+
+    it("fails boot when GOOGLE_APPLICATION_CREDENTIALS is missing, in the one-line X4 format", () => {
+      expect(() => selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm" })).toThrow(
+        `Missing GOOGLE_APPLICATION_CREDENTIALS: every FCM push send fails (no Firebase credential off GCP). ${fix}`,
+      );
+    });
+
+    it("fails boot when both are missing (names FCM_PROJECT_ID first)", () => {
+      expect(() => selectPush(azure)).toThrow(/^Missing FCM_PROJECT_ID: /);
+    });
   });
 
   it("constructing FcmPush does no network/credential work (lazy init)", () => {

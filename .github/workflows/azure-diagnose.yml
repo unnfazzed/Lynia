@@ -1,0 +1,201 @@
+name: Azure Diagnose (read-only)
+
+# The "did it work?" answer at every runbook step (docs/plans/2026-09-24-gcp-to-azure-migration.md,
+# DX review X5; replaces gcp-diagnose.yml). Dispatch-only, makes NO changes, and ends with a FIXED
+# Recap block (the eas-build-status.yml pattern) so a short tail of the job log — read on a phone —
+# answers it. Per environment the Recap shows:
+#   - the /healthz body: status, db, redis, queues (E6 — "degraded" means dead queues);
+#   - each app's active revisions and traffic weights;
+#   - managed-certificate state per custom host (E11 — testers are messaged only once Succeeded);
+#   - each Container Apps job's last execution result and time (retention, wallet-integrity, migrate);
+#   - Key Vault reference errors surfaced by revisions and the system log.
+# Every probe is best-effort: a missing role or an unarmed resource records a note instead of
+# failing, so one run maps both the fault and our reach.
+#
+# S8 — STATES AND NAMES ONLY, NEVER A SECRET VALUE (this repo's Actions logs are public): no step
+# reads a secret value (ci.yml greps every *azure*.yml for the subcommands that could), all az JSON
+# is reduced with jq field selection, the /healthz body is reduced to four fields, and system-log lines
+# are filtered to secret/vault events and truncated.
+#
+# Inputs (X6): `environment` only (default staging). Staging needs AZ_STAGING_ENABLED, production
+# AZ_DEPLOY_ENABLED; each authenticates as that environment's federated deploy identity (its
+# Container Apps Contributor, Monitoring Reader and Log Analytics Reader roles cover every probe).
+# Names come from `terraform output github_variables` (production: no suffix; staging: _STAGING).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to diagnose"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-diagnose-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: diagnose (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    if: >-
+      (inputs.environment == 'production' && vars.AZ_DEPLOY_ENABLED == 'true')
+      || (inputs.environment == 'staging' && vars.AZ_STAGING_ENABLED == 'true')
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TIER: ${{ inputs.environment }}
+      RECAP: /tmp/recap.txt
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve target
+        id: target
+        env:
+          P_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          S_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_STAGING }}
+          P_RG: ${{ vars.AZ_RESOURCE_GROUP }}
+          S_RG: ${{ vars.AZ_RESOURCE_GROUP_STAGING }}
+          P_API_APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+          S_API_APP: ${{ vars.AZ_CONTAINERAPP_API_STAGING || 'ca-lynia-api' }}
+          P_ADMIN_APP: ${{ vars.AZ_CONTAINERAPP_ADMIN || 'ca-lynia-admin' }}
+          S_ADMIN_APP: ${{ vars.AZ_CONTAINERAPP_ADMIN_STAGING || 'ca-lynia-admin' }}
+          P_MERCHANT_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT || 'ca-lynia-merchant' }}
+          S_MERCHANT_APP: ${{ vars.AZ_CONTAINERAPP_MERCHANT_STAGING || 'ca-lynia-merchant' }}
+          P_RETENTION_JOB: ${{ vars.AZ_RETENTION_JOB || 'caj-lynia-retention' }}
+          S_RETENTION_JOB: ${{ vars.AZ_RETENTION_JOB_STAGING || 'caj-lynia-retention' }}
+          P_WALLET_JOB: ${{ vars.AZ_WALLET_INTEGRITY_JOB || 'caj-lynia-wallet-integrity' }}
+          S_WALLET_JOB: ${{ vars.AZ_WALLET_INTEGRITY_JOB_STAGING || 'caj-lynia-wallet-integrity' }}
+          P_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
+          S_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB_STAGING || 'caj-lynia-migrate' }}
+          P_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
+          S_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
+          P_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID }}
+          S_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID_STAGING }}
+          OPTIONAL: LAW_ID
+        run: |
+          set -euo pipefail
+          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG API_APP ADMIN_APP MERCHANT_APP \
+            RETENTION_JOB WALLET_JOB MIGRATE_JOB HEALTH_URL LAW_ID
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ steps.target.outputs.client_id }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: /healthz
+        run: |
+          set -uo pipefail
+          line="$(bash scripts/azure-aca.sh healthz "$HEALTH_URL")"
+          echo "$line"
+          echo "healthz   : ${line#healthz }" >> "$RECAP"
+
+      - name: Revisions and traffic
+        run: |
+          set -uo pipefail
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
+            echo "=== $app"
+            if ! traffic="$(az containerapp ingress traffic show -n "$app" -g "$RG" -o json 2>/dev/null)"; then
+              echo "traffic   : $app — unavailable (app absent or not readable by this identity)" >> "$RECAP"
+              continue
+            fi
+            split="$(printf '%s' "$traffic" | jq -r '[.[] | select((.weight // 0) > 0 or .label) | "\(if .latestRevision then "latest" else .revisionName end)=\(.weight)%\(if .label then "(\(.label))" else "" end)"] | join(" ")')"
+            echo "traffic   : $app ${split:-<no traffic>}" >> "$RECAP"
+            az containerapp revision list -n "$app" -g "$RG" -o json 2>/dev/null \
+              | jq -r '.[] | select(.properties.active) | "revision  :   \(.name) health=\(.properties.healthState // "?") running=\(.properties.runningState // "?") replicas=\(.properties.replicas // 0) created=\(.properties.createdTime // "?")"' \
+              | tee -a "$RECAP"
+          done
+
+      - name: Managed certificates per host
+        run: |
+          set -uo pipefail
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
+            envid="$(az containerapp show -n "$app" -g "$RG" --query properties.managedEnvironmentId -o tsv 2>/dev/null)" || envid=""
+            if [ -z "$envid" ]; then echo "cert      : $app — unavailable" >> "$RECAP"; continue; fi
+            env_name="${envid##*/}"
+            env_rg="$(printf '%s' "$envid" | awk -F/ '{for (i=1;i<NF;i++) if (tolower($i)=="resourcegroups") print $(i+1)}')"
+            certs="$(az containerapp env certificate list -n "$env_name" -g "$env_rg" --managed-certificates-only -o json 2>/dev/null || echo '[]')"
+            hosts="$(az containerapp hostname list -n "$app" -g "$RG" -o json 2>/dev/null || echo '[]')"
+            if [ "$(printf '%s' "$hosts" | jq 'length')" = "0" ]; then
+              echo "cert      : $app — no custom hostname bound" >> "$RECAP"
+              continue
+            fi
+            printf '%s' "$hosts" | jq -r --arg app "$app" --argjson certs "$certs" '.[] | . as $h
+              | ([$certs[] | select(.properties.subjectName == $h.name)] | first) as $c
+              | "cert      : \($h.name) (\($app)) binding=\($h.bindingType // "?") managed-cert=\($c.properties.provisioningState // "none")"' \
+              | tee -a "$RECAP"
+          done
+
+      - name: Job executions (cron + migrate)
+        run: |
+          set -uo pipefail
+          for job in $RETENTION_JOB $WALLET_JOB $MIGRATE_JOB; do
+            if ! ex="$(az containerapp job execution list -n "$job" -g "$RG" -o json 2>/dev/null)"; then
+              echo "job       : $job — unavailable (job absent or not readable)" >> "$RECAP"
+              continue
+            fi
+            printf '%s' "$ex" | jq -r --arg j "$job" '
+              (sort_by(.properties.startTime // "") | last) as $l
+              | if $l == null then "job       : \($j) — never executed"
+                else "job       : \($j) last=\($l.properties.status // "?") started=\($l.properties.startTime // "?") ended=\($l.properties.endTime // "-")" end' \
+              | tee -a "$RECAP"
+          done
+
+      # Key Vault reference failures show up as a revision provisioning/running error and as system-log
+      # events. Only lines mentioning a secret or the vault are kept, truncated — they carry secret
+      # NAMES and vault URLs, never values.
+      - name: Key Vault reference errors
+        run: |
+          set -uo pipefail
+          found=0
+          for app in $API_APP $ADMIN_APP $MERCHANT_APP; do
+            msgs="$(az containerapp revision list -n "$app" -g "$RG" -o json 2>/dev/null \
+              | jq -r '.[] | select(.properties.active) | [.name, (.properties.provisioningError // ""), (.properties.runningStateDetails // "")] | select((.[1] + .[2]) | test("vault|secret"; "i")) | "\(.[0]): \((.[1] + " " + .[2]) | .[0:300])"')" || msgs=""
+            logs="$(az containerapp logs show -n "$app" -g "$RG" --type system --tail 200 --format text 2>/dev/null \
+              | grep -iE 'keyvault|key vault|secretref|secret .*(fail|error|denied|not found)' | tail -n 5 | cut -c1-300)" || logs=""
+            if [ -n "$msgs$logs" ]; then
+              found=1
+              [ -n "$msgs" ] && printf '%s\n' "$msgs" | sed "s/^/kv-ref    : $app revision /" | tee -a "$RECAP"
+              [ -n "$logs" ] && printf '%s\n' "$logs" | sed "s/^/kv-ref    : $app system-log /" | tee -a "$RECAP"
+            fi
+          done
+          # Log Analytics (24 h, apps AND jobs): the system log table the E7 alerts read. Reason +
+          # truncated message only; the column_ifexists guards match infra/azure/monitoring.tf.
+          if [ -n "${LAW_ID:-}" ]; then
+            q='ContainerAppSystemLogs_CL
+              | where TimeGenerated > ago(24h)
+              | extend msg = tostring(column_ifexists("Log_s", "")), reason = tostring(column_ifexists("Reason_s", "")),
+                       src = strcat(tostring(column_ifexists("ContainerAppName_s", "")), tostring(column_ifexists("JobName_s", "")))
+              | where msg has_any ("keyvault", "key vault", "secretref") or reason has "Secret"
+              | summarize n = count(), last = max(TimeGenerated) by src, reason, msg = substring(msg, 0, 200)
+              | top 10 by last desc'
+            if rows="$(az monitor log-analytics query -w "$LAW_ID" --analytics-query "$q" -o json 2>/dev/null)"; then
+              lines="$(printf '%s' "$rows" | jq -r '.[] | "kv-ref    : \(.src) log-analytics \(.reason) ×\(.n) last=\(.last) \(.msg)"')"
+              if [ -n "$lines" ]; then found=1; printf '%s\n' "$lines" | tee -a "$RECAP"; fi
+            else
+              echo "kv-ref    : log-analytics query unavailable (Log Analytics Reader on the workspace?)" | tee -a "$RECAP"
+            fi
+          fi
+          [ "$found" = "1" ] || echo "kv-ref    : none found (active revisions, last 200 system-log lines per app, 24 h of Log Analytics)" | tee -a "$RECAP"
+
+      - name: Recap
+        if: always()
+        run: |
+          echo "=== RECAP: Azure ${TIER} (${RG:-resource group Variable unset}) · $(date -u +%FT%TZ) ==="
+          if [ -s "$RECAP" ]; then
+            cat "$RECAP"
+          else
+            echo "(no probe completed — check the Azure login step and the ${TIER} Variables)"
+          fi
+          echo "Reading it: healthz status must be ok (degraded = a queue/Redis TLS problem, E6);"
+          echo "the serving revision must be Healthy; certs must be Succeeded before testers are told;"
+          echo "cron jobs must show Succeeded within the last 26 h (E7); kv-ref must be none."

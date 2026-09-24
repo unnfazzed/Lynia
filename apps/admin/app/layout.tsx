@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "./components/Sidebar";
 import { adminFetch } from "./lib/api";
+import { resolveSignOutUrl } from "./lib/console-auth";
 import type { NavCounts } from "./lib/adminTypes";
 
 export const metadata: Metadata = {
@@ -23,6 +24,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Cheap attention badges (KYC backlog / open disputes / un-acked SOS) rendered shell-wide. Best-effort:
   // null on the offline/unconfigured path, so the sidebar simply renders no badges.
   const counts = await adminFetch<NavCounts>("/admin/nav-counts");
+  // Sign-out target for the operator's proxy (IAP cookie-clear on GCP, `/.auth/logout` on Azure Easy
+  // Auth). Resolved here at request time rather than via a NEXT_PUBLIC_ var, which would be baked in at
+  // build time and force a per-host image.
+  const signOutUrl = resolveSignOutUrl({
+    configured: process.env.ADMIN_CONSOLE_SIGNOUT_URL,
+    proxyHeaderName: process.env.ADMIN_CONSOLE_PROXY_HEADER,
+  });
 
   return (
     <html lang="en">
@@ -33,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         {/* Ops-console shell: 216px sidebar (kit shell.js) + the page's own <main>. */}
         <div className="shell">
-          <Sidebar operator={operator} counts={counts} />
+          <Sidebar operator={operator} counts={counts} signOutUrl={signOutUrl} />
           <div id="main-content" tabIndex={-1} style={{ display: "flex", flex: 1, minWidth: 0 }}>
             {children}
           </div>

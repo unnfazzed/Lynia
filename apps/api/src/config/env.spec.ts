@@ -85,6 +85,47 @@ describe("loadEnv — commission wallet", () => {
   });
 });
 
+describe("loadEnv — CLOUD_PROVIDER + Azure storage boot-guard (C1, X4 message format)", () => {
+  const azure = { AZURE_STORAGE_ACCOUNT: "lyniamedia", AZURE_STORAGE_CONTAINER: "media", AZURE_CLIENT_ID: "11111111-2222-3333-4444-555555555555" };
+  const fieldErrors = (source: NodeJS.ProcessEnv): Record<string, string[]> => {
+    try {
+      loadEnv(source);
+    } catch (e) {
+      return JSON.parse((e as Error).message.replace(/^Invalid environment configuration: /, "")) as Record<string, string[]>;
+    }
+    throw new Error("expected loadEnv to throw");
+  };
+
+  it("defaults to gcp and needs no Azure vars there", () => {
+    expect(loadEnv(base).CLOUD_PROVIDER).toBe("gcp");
+    expect(loadEnv(prodBase).CLOUD_PROVIDER).toBe("gcp");
+  });
+
+  it("accepts azure with account + container (+ the managed identity in production)", () => {
+    expect(loadEnv({ ...base, CLOUD_PROVIDER: "azure", ...azure }).AZURE_STORAGE_CONTAINER).toBe("media");
+    expect(loadEnv({ ...prodBase, CLOUD_PROVIDER: "azure", ...azure }).AZURE_CLIENT_ID).toBe(azure.AZURE_CLIENT_ID);
+  });
+
+  it("rejects an unknown provider", () => {
+    expect(() => loadEnv({ ...base, CLOUD_PROVIDER: "aws" })).toThrow(/CLOUD_PROVIDER/);
+  });
+
+  it("rejects azure without account/container in every environment, one line in the X4 shape", () => {
+    const errs = fieldErrors({ ...base, CLOUD_PROVIDER: "azure", AZURE_STORAGE_CONTAINER: "" });
+    expect(errs.AZURE_STORAGE_ACCOUNT).toEqual([
+      "Missing AZURE_STORAGE_ACCOUNT: every photo upload and read URL fails (no Blob Storage account to sign for). Fix: set AZURE_STORAGE_ACCOUNT as a plain (non-secret) environment variable in the container app.",
+    ]);
+    expect(errs.AZURE_STORAGE_CONTAINER?.[0]).toMatch(/^Missing AZURE_STORAGE_CONTAINER: .+\. Fix: set AZURE_STORAGE_CONTAINER as a plain \(non-secret\) environment variable in the container app\.$/);
+    // Local dev may sign via `az login`, so the identity is only required in production.
+    expect(errs.AZURE_CLIENT_ID).toBeUndefined();
+  });
+
+  it("requires AZURE_CLIENT_ID in production (the managed identity that fetches the delegation key)", () => {
+    const errs = fieldErrors({ ...prodBase, CLOUD_PROVIDER: "azure", ...azure, AZURE_CLIENT_ID: "" });
+    expect(errs.AZURE_CLIENT_ID?.[0]).toMatch(/^Missing AZURE_CLIENT_ID: .+\. Fix: set AZURE_CLIENT_ID as a plain/);
+  });
+});
+
 describe("loadEnv — production REDIS_URL boot-guard", () => {
   it("rejects production without REDIS_URL (in-memory OTP/rate-limit store is per-instance)", () => {
     expect(() => loadEnv({ ...base, NODE_ENV: "production" })).toThrow(/Invalid environment configuration/);
@@ -331,5 +372,46 @@ describe("loadEnv — Play-review demo account (§7.1)", () => {
   it("rejects a trivially guessable code (sequential or repeated)", () => {
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "123456" })).toThrow(/guessable/);
     expect(() => loadEnv({ ...prodBase, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "999999" })).toThrow(/guessable/);
+  });
+});
+
+describe("loadEnv — scheduler auth (plan C3)", () => {
+  const azure = {
+    SCHEDULER_AUTH: "azure",
+    SCHEDULER_TENANT_ID: "3f1c6a8e-2b4d-4e6f-9a1b-7c8d9e0f1a2b",
+    SCHEDULER_AUDIENCE: "api://lynia-scheduler",
+    SCHEDULER_PRINCIPAL_ID: "5b2e8f1a-6c3d-4a7e-b9f0-1d2c3b4a5e6f",
+  };
+
+  it("defaults to google, and treats an empty SCHEDULER_AUTH as the default", () => {
+    expect(loadEnv(base).SCHEDULER_AUTH).toBe("google");
+    expect(loadEnv({ ...prodBase, SCHEDULER_AUTH: "" }).SCHEDULER_AUTH).toBe("google");
+  });
+
+  it("does not require the Entra ids on the google path", () => {
+    expect(() => loadEnv(prodBase)).not.toThrow();
+  });
+
+  it("accepts azure with all three ids set", () => {
+    const env = loadEnv({ ...prodBase, ...azure });
+    expect(env.SCHEDULER_AUTH).toBe("azure");
+    expect(env.SCHEDULER_AUDIENCE).toBe("api://lynia-scheduler");
+  });
+
+  it("rejects an unknown SCHEDULER_AUTH value", () => {
+    expect(() => loadEnv({ ...base, SCHEDULER_AUTH: "aws" })).toThrow(/SCHEDULER_AUTH/);
+  });
+
+  it.each(["SCHEDULER_TENANT_ID", "SCHEDULER_AUDIENCE", "SCHEDULER_PRINCIPAL_ID"])(
+    "rejects azure without %s, in any environment, with a what-breaks + fix message",
+    (key) => {
+      expect(() => loadEnv({ ...base, ...azure, [key]: "" })).toThrow(new RegExp(`Missing ${key}: .*would 401\\. Fix: `));
+      expect(() => loadEnv({ ...prodBase, ...azure, [key]: "" })).toThrow(new RegExp(`Missing ${key}`));
+    },
+  );
+
+  it("rejects a tenant or principal id that is not a GUID", () => {
+    expect(() => loadEnv({ ...base, ...azure, SCHEDULER_TENANT_ID: "contoso" })).toThrow(/SCHEDULER_TENANT_ID/);
+    expect(() => loadEnv({ ...base, ...azure, SCHEDULER_PRINCIPAL_ID: "cron-job" })).toThrow(/SCHEDULER_PRINCIPAL_ID/);
   });
 });

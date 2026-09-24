@@ -76,13 +76,19 @@ export const envSchema = z.object({
   // cache's ±10% TTL jitter the worst-case entry lives 15.4 h of the URL's 24 h validity, so any
   // served URL keeps ≥8.6 h of signed life; a higher override would erode that jitter-aware margin.
   MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: z.coerce.number().int().min(0).max(50_400_000).optional(),
-  // Cloud chosen: GCP (2026-06-27). Single value today; the adapter seam (D7) is where a second
-  // cloud would slot in.
-  CLOUD_PROVIDER: z.enum(["gcp"]).default("gcp"),
+  // Selects the storage adapter (adapters/storage/storage.module.ts selectStorage, C1). "gcp" = GCS V4
+  // signed URLs; "azure" = Blob Storage user-delegation SAS (docs/plans/2026-09-24-gcp-to-azure-migration.md).
+  CLOUD_PROVIDER: z.enum(["gcp", "azure"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.
   GCP_STORAGE_PROJECT_ID: z.string().optional(),
+  // Azure Blob (CLOUD_PROVIDER=azure). Non-secret config: the SAS is signed with a user-delegation key
+  // fetched by the API's managed identity, so no account key lives anywhere. AZURE_CLIENT_ID is the
+  // user-assigned identity's client id (DefaultAzureCredential's managedIdentityClientId).
+  AZURE_STORAGE_ACCOUNT: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AZURE_STORAGE_CONTAINER: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AZURE_CLIENT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
   // --- Crash / error reporting (Sentry, roadmap 1.1 / LR20) ---
@@ -99,6 +105,10 @@ export const envSchema = z.object({
   PUSH_PROVIDER: z.enum(["fcm", "noop"]).default("noop"),
   // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
   FCM_PROJECT_ID: z.string().optional(),
+  // Path to the Firebase service-account JSON. firebase-admin's applicationDefault() reads it straight
+  // from process.env; it is declared here only so the off-GCP push boot-guard (push.module.ts) can
+  // require it. On Cloud Run it stays unset (ADC comes from the attached SA).
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window
@@ -288,6 +298,18 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().email().optional(),
   ),
+  // Which scheduler identity AdminOrSchedulerGuard accepts (plan C3): "google" = the Cloud Scheduler
+  // OIDC token pinned by SCHEDULER_SERVICE_ACCOUNT above; "azure" = an Entra managed-identity token
+  // from the Container Apps cron job, pinned by the three SCHEDULER_* ids below (the boot-guard
+  // requires all three when azure is selected). "" coerces to the google default.
+  SCHEDULER_AUTH: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["google", "azure"]).default("google")),
+  // Entra tenant (directory) id the cron job's token must be issued by (`iss` + `tid`).
+  SCHEDULER_TENANT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().uuid().optional()),
+  // App-ID URI of the dedicated scheduler app registration (the token's `aud`).
+  SCHEDULER_AUDIENCE: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).optional()),
+  // Object id of the cron job's managed identity (the token's `oid`) — the real authorization, since
+  // any principal in the tenant can mint a token for SCHEDULER_AUDIENCE.
+  SCHEDULER_PRINCIPAL_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().uuid().optional()),
   // --- Broadcast reach (policy BROADCAST) ---
   // Optional per-deploy overrides for the initial broadcast radius and the ghost-rider heartbeat
   // cutoff (common/broadcast-policy.ts reads them at the use site). Validated here so a malformed
@@ -355,6 +377,24 @@ export const envSchema = z.object({
     );
   }
 
+  // Boot-guard (C1, X4 message format): the Azure storage adapter can't mint a single SAS without its
+  // account + container, and in production it must sign as the container app's user-assigned managed
+  // identity. Checked in every environment for the account/container (a dead config anywhere); the
+  // identity only in production, so local dev can sign via `az login`. All three are non-secret config.
+  if (env.CLOUD_PROVIDER === "azure") {
+    const plainConfig = (name: string, breaks: string): void =>
+      reject(name, `Missing ${name}: ${breaks}. Fix: set ${name} as a plain (non-secret) environment variable in the container app.`);
+    if (!env.AZURE_STORAGE_ACCOUNT) {
+      plainConfig("AZURE_STORAGE_ACCOUNT", "every photo upload and read URL fails (no Blob Storage account to sign for)");
+    }
+    if (!env.AZURE_STORAGE_CONTAINER) {
+      plainConfig("AZURE_STORAGE_CONTAINER", "every photo upload and read URL fails (no Blob container to sign for)");
+    }
+    if (env.NODE_ENV === "production" && !env.AZURE_CLIENT_ID) {
+      plainConfig("AZURE_CLIENT_ID", "the API can't pick its managed identity, so the user-delegation key fetch and every photo upload fail");
+    }
+  }
+
   if (env.NODE_ENV === "production") {
     // A publicly-known or low-entropy JWT secret means anyone can forge access tokens (incl. admin).
     // Reject the shipped default and anything below MIN_PROD_SECRET_LEN — a missing Secret Manager
@@ -412,6 +452,21 @@ export const envSchema = z.object({
           "KYC_PROVIDER=stub auto-passes verification; production must use the real vendor (KYC_PROVIDER=didit) or manual review (KYC_MODE=manual)",
         );
       }
+    }
+  }
+
+  // Scheduler auth (plan C3): selecting azure without its three ids is a dead config in any
+  // environment — every scheduled sweep would 401 — so it is rejected everywhere, not just in prod.
+  if (env.SCHEDULER_AUTH === "azure") {
+    const breaks = "SCHEDULER_AUTH=azure cannot verify the cron job's Entra token, so the scheduled retention purge and wallet integrity check would 401";
+    if (!env.SCHEDULER_TENANT_ID) {
+      reject("SCHEDULER_TENANT_ID", `Missing SCHEDULER_TENANT_ID: ${breaks}. Fix: set it to the Entra tenant (directory) id, or set SCHEDULER_AUTH=google`);
+    }
+    if (!env.SCHEDULER_AUDIENCE) {
+      reject("SCHEDULER_AUDIENCE", `Missing SCHEDULER_AUDIENCE: ${breaks}. Fix: set it to the scheduler app registration's app-ID URI, or set SCHEDULER_AUTH=google`);
+    }
+    if (!env.SCHEDULER_PRINCIPAL_ID) {
+      reject("SCHEDULER_PRINCIPAL_ID", `Missing SCHEDULER_PRINCIPAL_ID: ${breaks}. Fix: set it to the cron job managed identity's object id, or set SCHEDULER_AUTH=google`);
     }
   }
 

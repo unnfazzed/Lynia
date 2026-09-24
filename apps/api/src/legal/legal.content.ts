@@ -43,7 +43,7 @@
  */
 
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
-export const LEGAL_LAST_UPDATED = "29 July 2026";
+export const LEGAL_LAST_UPDATED = "24 September 2026";
 
 /**
  * Contact for privacy requests. Deliberately the SAME inbox the app already routes support to
@@ -57,9 +57,10 @@ export const LEGAL_CONTACT_EMAIL = "support@lyniafinance.com";
 export const ANDROID_PACKAGE = "zw.co.lynia";
 
 /**
- * Where personal data physically sits. `infra/terraform/variables.tf` pins the primary region to
- * **africa-south1 (Johannesburg)** — the lowest-latency GCP region to Harare — which means every
- * database row, storage object and backup lives in **South Africa, outside Zimbabwe**.
+ * Where personal data physically sits. The service is hosted on **Microsoft Azure, South Africa North
+ * (Johannesburg)** — the lowest-latency Azure region to Harare (docs/plans/2026-09-24-gcp-to-azure-migration.md
+ * C6) — which means every database row, storage object and backup lives in **South Africa, outside
+ * Zimbabwe**.
  *
  * That makes ordinary operation a continuous cross-border transfer under the CDPA, which permits it
  * only where the destination affords adequate protection or another ground (such as the data
@@ -70,7 +71,7 @@ export const ANDROID_PACKAGE = "zw.co.lynia";
  * Johannesburg is a misrepresentation to every user and to the regulator.
  */
 export const HOSTING_COUNTRY = "South Africa";
-export const HOSTING_REGION = "africa-south1 (Johannesburg)";
+export const HOSTING_REGION = "South Africa North (Johannesburg)";
 
 /**
  * The data categories this notice declares, in the same shape as the Play Data safety form.
@@ -230,9 +231,12 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
       "A restaurant sees what you ordered, any note you attached to a dish, the delivery point, and — if you submitted one — your payment reference so they can confirm they were paid. They do not see your national ID, your saved addresses, your other orders, or your order history with any other shop.",
   },
   {
-    who: "Google (Firebase Cloud Messaging, Google Maps, Google Cloud)",
-    what:
-      "Push notifications are delivered via Firebase; maps and address search are rendered by Google Maps Platform; the service, its database and its backups run on Google Cloud.",
+    who: "Google (Firebase Cloud Messaging, Google Maps)",
+    what: "Push notifications are delivered via Firebase; maps and address search are rendered by Google Maps Platform.",
+  },
+  {
+    who: "Microsoft (Azure)",
+    what: "The service, its database and its backups run on Microsoft Azure.",
   },
   {
     who: "Our identity-verification provider",
@@ -426,7 +430,7 @@ ${sharing}
 </ul>
 
 <h2>4. Where your data is stored, and transfers outside Zimbabwe</h2>
-<p>LyniaGo runs on Google Cloud in the <strong>${HOSTING_REGION}</strong> region. That means your
+<p>LyniaGo runs on Microsoft Azure in the <strong>${HOSTING_REGION}</strong> region. That means your
 personal data — the database, uploaded images, and backups — is stored in
 <strong>${HOSTING_COUNTRY}</strong>, not in Zimbabwe. We use that region because it is the closest
 to Harare, which makes the app faster and cheaper to use on a mobile connection.</p>
