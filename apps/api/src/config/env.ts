@@ -105,6 +105,10 @@ export const envSchema = z.object({
   PUSH_PROVIDER: z.enum(["fcm", "noop"]).default("noop"),
   // Optional project override. On Cloud Run ADC supplies the project, so this is usually unset.
   FCM_PROJECT_ID: z.string().optional(),
+  // Path to the Firebase service-account JSON. firebase-admin's applicationDefault() reads it straight
+  // from process.env; it is declared here only so the off-GCP push boot-guard (push.module.ts) can
+  // require it. On Cloud Run it stays unset (ADC comes from the attached SA).
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window

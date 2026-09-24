@@ -121,6 +121,31 @@ describe("FcmPush.sendEach — a mid-loop chunk failure is isolated per chunk (D
     ]);
   });
 
+  it("prunes a token from another Firebase project (messaging/mismatched-credential) on first send", async () => {
+    const resp = {
+      responses: [{ success: false, error: { code: "messaging/mismatched-credential" } }],
+      successCount: 0,
+      failureCount: 1,
+    };
+    mocks.getMessaging.mockReturnValue({ send: vi.fn(), sendEach: vi.fn().mockResolvedValue(resp) });
+
+    const results = await new FcmPush("test-project").sendEach([msg("old-project")]);
+
+    expect(results).toEqual([{ ok: false, invalidToken: true }]);
+  });
+
+  it("single send also prunes on messaging/mismatched-credential, but not on a transient error", async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("wrong project"), { code: "messaging/mismatched-credential" }))
+      .mockRejectedValueOnce(Object.assign(new Error("unavailable"), { code: "messaging/server-unavailable" }));
+    mocks.getMessaging.mockReturnValue({ send, sendEach: vi.fn() });
+    const push = new FcmPush("test-project");
+
+    await expect(push.send(msg("old-project"))).resolves.toEqual({ ok: false, invalidToken: true });
+    await expect(push.send(msg("live"))).resolves.toEqual({ ok: false, invalidToken: false });
+  });
+
   it("resolves every message to a non-dead ok:false when init itself fails (never throws, never prunes)", async () => {
     mocks.getMessaging.mockImplementation(() => {
       throw new Error("ADC unavailable");
