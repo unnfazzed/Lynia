@@ -1583,19 +1583,90 @@ Sources for the timeouts:
 - [Azure Cloud Shell FAQ](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting)
 - [How Cloud Shell works (Google)](https://docs.cloud.google.com/shell/docs/how-cloud-shell-works)
 
+### /cso security review (2026-09-24)
+
+**Status: partial.** This was a static, infra-scoped helper run (`1790263858252-c5b8560c9f1f5dbb`,
+10-minute budget). Scanners were unavailable: this container has no qualified
+gitleaks/zizmor/trivy/osv image. What was covered, and what was not:
+
+| Area | Coverage |
+|---|---|
+| CI/CD (`rollback.yml`, `eas-build-status.yml`) | Partial |
+| Application model (from this plan) | Partial |
+| Secrets history, dependencies, infrastructure, integrations | Not assessed this run |
+| The planned Azure boundaries | Not built yet, so reviewed as **design requirements** (S1–S8), not as source findings |
+
+Challenge mode: *sequential challenge; independent agent unavailable*.
+
+#### Supported source finding
+
+| ID | Sev | Conf | Location | Impact |
+|---|---|---|---|---|
+| `62b3c8f6` | low | medium | `.github/workflows/eas-build-status.yml:98` | `grep -iE "name\|^[A-Z0-9_]+"` keeps `NAME=value` lines from `eas env:list`, so every **plaintext** EAS variable is printed into the job log. The repo is public, so anyone can read that log. The step's own comment says "names only". Values exposed today are already embedded in the APK. A future plaintext token would leak |
+
+**Repair:** emit names only, e.g. `sed -E 's/=.*$/=<redacted>/'`, or `--format json` and print just `.name`.
+M2 step 3 creates new EAS variables, so land this fix **before** M2. Counter-evidence considered:
+the workflow is `workflow_dispatch`-only, so outsiders can't trigger it, but its logs are still public.
+
+Not a finding: the `rollback.yml:67` `inputs.revision` interpolation. Dispatch requires write
+access, which already lets an attacker edit workflows, so no boundary is crossed. It stays hardening
+in §6 (`rollback-azure.yml` passes inputs via `env:`).
+
+#### Design requirements for the planned Azure boundaries (awaiting owner ratification)
+
+- **S1 — No secret material in Terraform state.** On GCP, the state bucket held the generated JWT and PII secrets in plaintext (H17).
+  - On Azure, generate `JWT-SIGNING-SECRET`, `PII-ENCRYPTION-KEY`, `TOKEN-HASH-SECRET` and `ADMIN-API-TOKEN` **outside Terraform**: bootstrap or salvage writes them to Key Vault with `az keyvault secret set`. Terraform only references the secret *names*.
+  - The Redis access key and PG admin password are the unavoidable exceptions. Lock down the state account: shared-key auth off, Entra RBAC data-plane only, versioning, and no public blob access.
+  - Phase 8 moves Redis and PG to Entra auth, which removes both from state.
+- **S2 — Entra scheduler tokens: pinning `oid` is load-bearing.** Any service principal in the tenant can get an app-only token for a resource's app-ID URI; without an app-role assignment the token simply lacks `roles`. So `aud` + `tid` alone admit **every identity in the tenant**.
+  - C3's `oid == SCHEDULER_PRINCIPAL_ID` check is the real authorization.
+  - Add an app role (`Scheduler.Invoke`) assigned only to the cron identity, and require it in `roles`. That is defence in depth if an `oid` is ever misconfigured.
+  - Spec: a token from another managed identity in the same tenant returns 401 (extends G-JOB).
+- **S3 — The Easy Auth header has exactly one path in.** `ADMIN_CONSOLE_PROXY_HEADER` is trusted only because Easy Auth strips and rewrites it.
+  - Verify on staging (G-ADM) that the **revision-label URL and the `*.azurecontainerapps.io` FQDN** also enforce Easy Auth. A bypass hostname would turn the header into a forgeable login.
+  - Keep the fail-closed operator allowlist (C4).
+- **S4 — SAS scope.**
+  - Upload SAS: `cw`, 10 min, `https` only, one blob path (E13).
+  - **Read SAS for KYC and national-ID images: 5 min**, generated per view, never cached in logs or analytics.
+  - The user-delegation key lifetime stays ≤ 24 h. The delegation-key cache lives only in memory.
+- **S5 — Federated credentials.**
+  - Subjects are per GitHub environment (E14). Put a **deployment branch policy (`main` only) on `staging`, `production` and `infra`**. Without it, a branch workflow that declares `environment: production` can mint the production token.
+  - The deploy identity's roles are scoped to its resource group: AcrPush + Container Apps Contributor, **never Owner or User Access Administrator**.
+- **S6 — Salvage leaves no credentials behind.** C9 runs `az login --use-device-code` inside **GCP** Cloud Shell. That token cache (`~/.azure`) lands on a persistent 5 GB `$HOME`.
+  - The script's last stage runs `az logout`, then `rm -rf ~/.azure ~/.lynia-salvage`. X3 markers are deleted only after `verify` passes.
+  - The `age` **private** identity never enters GCP Cloud Shell. Only the recipient public key is used there. The private identity sits in Key Vault and is read by the in-VNet restore job.
+- **S7 — Firebase service-account key.**
+  - The key lives in the new Google project, which holds nothing else.
+  - Role: `roles/firebasecloudmessaging.admin` only.
+  - Key Vault access is granted to the API identity alone. Rotate every 90 days.
+  - Alert on key use from outside the Azure egress IP if Google's audit logs allow it. Otherwise TODO-2 (keyless) is the upgrade.
+- **S8 — No secret values in public Actions logs from the new workflows.**
+  - Never call `list-keys`, `show-connection-string` or `keyvault secret show` in workflows.
+  - Wrap `az` JSON output that could carry secrets in `jq` field selection.
+  - The X5 Recap prints states and names only.
+  - `ci.yml` gains a check that greps `.github/workflows/*azure*.yml` for those subcommands.
+
+Legal exposure (POTRAZ 24-hour notice) stays **Q8, owner + counsel**. It isn't decided here.
+
+Outside voice: unavailable (Codex absent). The security helper report is retained under its private
+state namespace for 30 days (run `1790263858252-c5b8560c9f1f5dbb`). Next operation: `recheck
+62b3c8f6e1ffc5314a59383c44245790` after the fix lands.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 1 critical gap (E6, handed off and remedied in §5a) |
-| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review (CEO, eng, DX passes) |
+| Outside Review | codex (not installed) | Independent 2nd opinion | 0 | unavailable | no completed external review (CEO, eng, DX, cso passes) |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 32 issues, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | skipped (no UI scope) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 1 | ISSUES OPEN | score: 4/10 → 7.5/10, TTHW: unknown → ≤30 min owner-active |
+| Security (cso) | `/cso --infra` | Trust boundaries & secrets | 1 | partial | 1 supported low finding (`62b3c8f6`); 8 design requirements S1–S8 |
 
-- **OUTSIDE COVERAGE:** codex, plan-review: unavailable in all three passes; no findings recorded.
-- **VERDICT:** No review is CLEAR. Every CEO/eng/DX row has an applied option; the reviews clear once the owner ratifies E1–E15 and X1–X7. **Eng review required** (ratification).
+- **OUTSIDE COVERAGE:** codex, plan-review: unavailable in all passes; no findings recorded. cso ran a static pass only (no qualified scanners).
+- **VERDICT:** No review is CLEAR. Every row has an applied option; the reviews clear once the owner ratifies E1–E15, X1–X7 and S1–S8. **Eng review required** (ratification).
 
 **UNRESOLVED DECISIONS:**
 - E1–E15: engineering options applied (§5a), awaiting owner ratification
-- X1–X7: DX options applied (this section), awaiting owner ratification
+- X1–X7: DX options applied, awaiting owner ratification
+- S1–S8: security design requirements applied, awaiting owner ratification
