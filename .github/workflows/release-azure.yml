@@ -377,6 +377,19 @@ jobs:
           PREV="$(bash scripts/azure-aca.sh pin "$APP" "$RG")"
           echo "revision=$PREV" >> "$GITHUB_OUTPUT"
           echo "Serving revision (rollback target): ${PREV:-<none — first deploy>}"
+          # The very first API release replaces Terraform's placeholder image, whose /healthz is not the
+          # API's JSON contract — so a canary that splits public traffic with it can never pass (release
+          # run 36135056692: candidate smoke green, then "HTTP 200, no JSON body" from the placeholder's
+          # 90%). Such a PREV is still the rollback target, but the canary treats it as a first deploy.
+          PLACEHOLDER=false
+          if [ -n "$PREV" ]; then
+            PREV_IMAGE="$(az containerapp revision show -n "$APP" -g "$RG" --revision "$PREV" --query 'properties.template.containers[0].image' -o tsv)"
+            case "$PREV_IMAGE" in
+              "$IMAGE":*) ;;
+              *) PLACEHOLDER=true; echo "Serving revision runs ${PREV_IMAGE:-<unknown image>}, not ${IMAGE} — first real release, canary will be skipped." ;;
+            esac
+          fi
+          echo "placeholder=$PLACEHOLDER" >> "$GITHUB_OUTPUT"
 
       # New revision at 0%. Values arrive through env: and each KEY=VALUE is its own argv element, so a
       # Variable value cannot inject a second key (the GCP ENV_VARS delimiter problem does not exist
@@ -595,6 +608,7 @@ jobs:
           CANDIDATE: ${{ steps.deploy.outputs.candidate }}
           CANDIDATE_URL: ${{ steps.smoke.outputs.url }}
           CANARY_DISABLED: ${{ vars.CANARY_DISABLED }}
+          PREV_IS_PLACEHOLDER: ${{ steps.prev.outputs.placeholder }}
           STEPS: ${{ vars.CANARY_STEPS || '10 50' }}
           OBSERVE: ${{ vars.CANARY_OBSERVE_SECONDS || '120' }}
           HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'api.lyniago.com' }}/healthz
@@ -604,8 +618,11 @@ jobs:
           set -euo pipefail
           H=scripts/azure-aca.sh
           echo "Candidate revision: $CANDIDATE (previous: ${PREV:-<none>})"
-          if [ -z "$PREV" ] || [ "$CANARY_DISABLED" = "true" ]; then
-            echo "Canary skipped ($([ -z "$PREV" ] && echo 'first deploy' || echo 'CANARY_DISABLED=true')) — routing 100% to the new revision."
+          if [ -z "$PREV" ] || [ "$PREV_IS_PLACEHOLDER" = "true" ] || [ "$CANARY_DISABLED" = "true" ]; then
+            if [ -z "$PREV" ]; then why="first deploy"
+            elif [ "$PREV_IS_PLACEHOLDER" = "true" ]; then why="replacing the placeholder image"
+            else why="CANARY_DISABLED=true"; fi
+            echo "Canary skipped (${why}) — routing 100% to the new revision."
             bash "$H" route "$APP" "$RG" "$CANDIDATE" 100
             exit 0
           fi
