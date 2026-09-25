@@ -150,3 +150,19 @@ so waking needs no DNS change and costs ~$6/month while asleep (registry + logs)
 **Wake:** run the same workflow with action **`apply`** (about 20–30 min for Postgres + Redis), set
 `AZ_STAGING_ENABLED=true`, then dispatch **Deploy Staging (Azure)**. Staging's database starts empty
 each time — it is a test tier.
+
+## Destroy staging (one environment per region, 2026-09-25)
+
+A new subscription may hold only **one Container Apps environment per region**. Production's first
+apply failed on it (`MaxNumberOfRegionalEnvironmentsInSubExceeded`, run 36074627308) because staging
+held South Africa North's slot. Owner decision: retire staging and run the pre-cutover checks against
+production, which nobody can reach until DNS points at it.
+
+1. GitHub → Actions → **Terraform apply (Azure)** → environment `staging`, action
+   **`destroy-staging`**. Approve the plan, check that every line is a staging (`-staging`/`stg`)
+   resource, then approve the apply.
+2. Re-run the production apply (environment `production`, action `apply`); it resumes where it stopped.
+
+`AZ_STAGING_ENABLED` stays unset, so releases do not wait on staging. To bring staging back, first get
+a quota increase (Azure portal → Quotas → Container Apps → managed environments, South Africa North),
+then run action `apply` for `staging`.
