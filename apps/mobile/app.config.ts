@@ -371,7 +371,7 @@ const config: ExpoConfig = {
     ...(googleServicesFile ? { googleServicesFile } : {}),
   },
   extra: {
-    apiUrl: "https://lyniago.lyniafinance.com",
+    apiUrl: "https://api.lyniago.com",
     // NOTE — there is deliberately NO `googlePlacesKey` entry here, unlike every other EXPO_PUBLIC_
     // value below. It used to mirror `EXPO_PUBLIC_GOOGLE_PLACES_KEY` as a "parity fallback", which made
     // the Places key a FINGERPRINT input: `@expo/fingerprint` hashes the whole resolved `extra` section

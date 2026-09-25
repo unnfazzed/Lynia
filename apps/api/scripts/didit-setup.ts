@@ -184,7 +184,7 @@ async function main(): Promise<void> {
   if (cmd === "webhook") {
     const apiKey = await getApiKey();
     const url =
-      process.env.DIDIT_WEBHOOK_URL || (await ask("Webhook URL (your /kyc/callback)", "https://lyniago.lyniafinance.com/kyc/callback"));
+      process.env.DIDIT_WEBHOOK_URL || (await ask("Webhook URL (your /kyc/callback)", "https://api.lyniago.com/kyc/callback"));
     const secret = await registerWebhook(apiKey, url);
     summary({ apiKey, webhookSecret: secret, callbackUrl: process.env.DIDIT_CALLBACK_URL });
     return;
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
   }
 
   const webhookUrl =
-    process.env.DIDIT_WEBHOOK_URL || (await ask("Webhook URL (your /kyc/callback)", "https://lyniago.lyniafinance.com/kyc/callback"));
+    process.env.DIDIT_WEBHOOK_URL || (await ask("Webhook URL (your /kyc/callback)", "https://api.lyniago.com/kyc/callback"));
   const webhookSecret = await registerWebhook(apiKey, webhookUrl);
 
   summary({ apiKey, workflowId, webhookSecret, callbackUrl: process.env.DIDIT_CALLBACK_URL });

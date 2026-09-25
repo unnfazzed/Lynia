@@ -75,8 +75,8 @@ jobs:
           S_WALLET_JOB: ${{ vars.AZ_WALLET_INTEGRITY_JOB_STAGING || 'caj-lynia-wallet-integrity' }}
           P_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
           S_MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB_STAGING || 'caj-lynia-migrate' }}
-          P_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
-          S_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
+          P_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'api.lyniago.com' }}/healthz
+          S_HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging-api.lyniago.com' }}/healthz
           P_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID }}
           S_LAW_ID: ${{ vars.AZ_LOG_ANALYTICS_WORKSPACE_ID_STAGING }}
           OPTIONAL: LAW_ID

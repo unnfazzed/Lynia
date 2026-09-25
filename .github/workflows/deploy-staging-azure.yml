@@ -206,7 +206,7 @@ jobs:
 
       - name: Smoke staging /healthz (status must be "ok")
         env:
-          URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging.lyniafinance.com' }}/healthz
+          URL: https://${{ vars.AZ_API_HOSTNAME_STAGING || 'staging-api.lyniago.com' }}/healthz
         run: |
           set -euo pipefail
           for i in $(seq 1 12); do
