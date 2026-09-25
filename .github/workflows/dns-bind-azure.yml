@@ -8,8 +8,11 @@ name: DNS + bind (Cloudflare → Azure)
 #   2. Upserts in the lyniago.com Cloudflare zone: CNAME <host> → FQDN (DNS only — an orange-cloud
 #      proxy breaks the managed certificate) and TXT asuid.<host> → verification id.
 #      It REFUSES to touch an A/AAAA record at that name, or any record it would have to delete.
-#   3. Optionally runs `az containerapp hostname bind --validation-method CNAME` (retrying while
-#      DNS propagates) and prints the binding state.
+#   3. Registers the hostname on the app (`az containerapp hostname add`), then prints the one-line
+#      certificate bind for the owner's Cloud Shell. The deploy identity deliberately cannot bind:
+#      managed certificates need Microsoft.App/managedEnvironments/managedCertificates/write, which
+#      Container Apps Contributor lacks, and widening bootstrap's constrained role-assignment set for
+#      three one-off binds is not worth it (first run 36101152763 hit exactly that).
 #
 # Secret: CLOUDFLARE_API_TOKEN — "Edit zone DNS" scoped to lyniago.com only (owner-created,
 # 2026-09-25). Never printed. Runs in the `production` environment: its federated credential and
@@ -23,10 +26,6 @@ on:
         type: choice
         options: [api, admin, merchant]
         default: api
-      bind:
-        description: "Also bind the managed certificate in Azure (after DNS is in place)"
-        type: boolean
-        default: true
 
 concurrency:
   group: dns-bind-azure
@@ -37,7 +36,7 @@ permissions:
 
 jobs:
   dns:
-    name: dns + bind (${{ inputs.host }}.lyniago.com)
+    name: dns + register (${{ inputs.host }}.lyniago.com)
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 30
@@ -141,24 +140,24 @@ jobs:
           upsert TXT "asuid.${NAME}" "$VERIFY"
           upsert CNAME "$NAME" "$FQDN"
 
-      - name: Bind managed certificate
-        if: ${{ inputs.bind }}
+      - name: Register hostname on the app; print the owner's certificate bind
         env:
           APP: ${{ steps.target.outputs.app }}
           NAME: ${{ steps.target.outputs.name }}
         run: |
           set -euo pipefail
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if az containerapp hostname bind -g "$RG" -n "$APP" --hostname "$NAME" --environment "$CAE" --validation-method CNAME -o none; then
-              echo "bound ${NAME} (attempt $i)"; break
-            fi
-            [ "$i" -lt 10 ] || { echo "::error::bind still failing after 10 attempts — DNS may not have propagated yet; re-run later."; exit 1; }
-            echo "bind attempt $i failed; DNS may still be propagating — retrying in 30s"; sleep 30
-          done
-          az containerapp hostname list -g "$RG" -n "$APP" -o table
+          if az containerapp hostname list -g "$RG" -n "$APP" --query "[?name=='${NAME}'] | length(@)" -o tsv | grep -qx 0; then
+            az containerapp hostname add -g "$RG" -n "$APP" --hostname "$NAME" -o none
+            echo "registered ${NAME} on ${APP}"
+          else
+            echo "${NAME} already registered on ${APP}"
+          fi
+          BIND="az containerapp hostname bind -g $RG -n $APP --hostname $NAME --environment $CAE --validation-method CNAME -o none"
           {
             echo "### ${NAME} → ${APP}"
-            echo '```'
-            az containerapp hostname list -g "$RG" -n "$APP" -o table
+            echo "DNS is in place and the hostname is registered. Bind the managed certificate in Cloud Shell:"
+            echo '```bash'
+            echo "bash -c '${BIND} && az containerapp hostname list -g $RG -n $APP -o table'"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "Owner step (Cloud Shell): ${BIND}"

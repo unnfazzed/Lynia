@@ -75,6 +75,9 @@ locals {
   deploy_roles = {
     # Create revisions, shift traffic, start the migrate job, read revision state.
     containerapps = { scope = azurerm_resource_group.main.id, role = "Container Apps Contributor" }
+    # Update + start the migrate job (release-azure) and the cron jobs. Container Apps Contributor
+    # covers Microsoft.App/containerApps only, not Microsoft.App/jobs (first prod release, run 36117803076).
+    jobs = { scope = azurerm_resource_group.main.id, role = "Container Apps Jobs Contributor" }
     # Push images (buildx → ACR).
     acrpush = { scope = azurerm_container_registry.main.id, role = "AcrPush" }
     # Canary 5xx gate reads the Requests metric by revision (H18).
