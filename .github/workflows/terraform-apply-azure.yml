@@ -62,6 +62,9 @@ env:
   AZ_TFSTATE_RESOURCE_GROUP: ${{ vars.AZ_TFSTATE_RESOURCE_GROUP }}
   AZ_TFSTATE_CONTAINER: ${{ vars.AZ_TFSTATE_CONTAINER }}
   AZ_ALERT_EMAILS: ${{ vars.AZ_ALERT_EMAILS }}
+  # JSON map ENV_VAR → Key Vault base name, e.g. {"BIRD_ACCESS_KEY":"BIRD-ACCESS-KEY"} → var.vendor_secrets.
+  # Written by infra/azure/vendor-secrets.sh once each secret exists in the vault.
+  AZ_VENDOR_SECRETS: ${{ vars.AZ_VENDOR_SECRETS }}
 
 jobs:
   plan:
@@ -90,6 +93,9 @@ jobs:
           if [ -n "$AZ_ALERT_EMAILS" ] && ! printf '%s' "$AZ_ALERT_EMAILS" | jq -e 'type == "array" and all(type == "string")' >/dev/null 2>&1; then
             echo "::error::AZ_ALERT_EMAILS must be a JSON list of strings, e.g. [\"owner@example.com\"]."; exit 1
           fi
+          if [ -n "$AZ_VENDOR_SECRETS" ] && ! printf '%s' "$AZ_VENDOR_SECRETS" | jq -e 'type == "object" and all(.[]; type == "string" and test("^[A-Z0-9-]+$")) and all(keys[]; test("^[A-Z][A-Z0-9_]*$"))' >/dev/null 2>&1; then
+            echo "::error::AZ_VENDOR_SECRETS must be a JSON object of ENV_VAR → KEY-VAULT-NAME, e.g. {\"SENTRY_DSN\":\"SENTRY-DSN\"}."; exit 1
+          fi
 
       - name: Azure login (OIDC, infra identity)
         uses: azure/login@v2
@@ -109,6 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
+          [ -z "$AZ_VENDOR_SECRETS" ] || export TF_VAR_vendor_secrets="$AZ_VENDOR_SECRETS"
           bash scripts/azure-tf-init.sh "$TIER"
           set +e
           terraform -chdir=infra/azure plan -input=false -no-color -lock=false -detailed-exitcode \
@@ -183,6 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
+          [ -z "$AZ_VENDOR_SECRETS" ] || export TF_VAR_vendor_secrets="$AZ_VENDOR_SECRETS"
           bash scripts/azure-tf-init.sh "$TIER"
           terraform -chdir=infra/azure plan -input=false -no-color -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" ${DESTROY_FLAG:+"$DESTROY_FLAG"} -out=tfplan
           terraform -chdir=infra/azure show -json tfplan > plan.json
