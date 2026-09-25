@@ -18,19 +18,15 @@ Two rules apply to every Cloud Shell step:
 - [x] Staging infrastructure (Terraform run 36071128440).
 - [x] GCP deploy workflows switched off (#926). Cost savings merged (#929).
 
-## 1. Staging Variables + scheduler permission (Cloud Shell, ~3 min)
+## 1. Retire staging (GitHub app, 2 taps + ~10 min)
 
-Paste the command Claude gave you. It sets 15 `AZ_*_STAGING` Variables plus
-`AZ_STAGING_ENABLED=true`, then re-runs `bootstrap.sh`.
+Azure allows this subscription only one Container Apps environment in South Africa North, and staging
+had it (production's first apply failed on that). Decision 2026-09-25: staging goes; the checks run
+on production before the DNS switch. GitHub → Actions → **Terraform apply (Azure)** → the
+`destroy-staging` run → approve the plan, then approve the apply once Claude has read it. You no longer
+need the staging Variables command.
 
-- **You should see:** `set AZ_…` lines, then `6/7 … staging: Scheduler.Invoke → id-lynia-jobs-staging`.
-- **If `gh: not logged in`:** press Enter at the code prompt, open github.com/login/device, enter the code.
-- **If `ERROR:`:** paste the line to Claude.
-
-Until DNS is ready, staging is tested on Azure's own address
-(`AZ_API_HOSTNAME_STAGING` = the `*.azurecontainerapps.io` FQDN).
-
-## 2. Production infrastructure (GitHub app, 2 taps + ~25 min)
+## 2. Production infrastructure (GitHub app, 2 taps + ~15 min; re-run after step 1)
 
 GitHub → Actions → **Terraform apply (Azure)** → the waiting run.
 
@@ -44,25 +40,13 @@ GitHub → Actions → **Terraform apply (Azure)** → the waiting run.
 Claude sends a command like step 1, with the production values from the apply log. Do **not** set
 `AZ_DEPLOY_ENABLED=true` yet; that happens at cutover (step 6).
 
-## 4. Cloudflare DNS for staging (browser, ~3 min), whenever Cloudflare is sorted
+## 4. (Staging DNS: no longer needed; staging is retired)
 
-dash.cloudflare.com → lyniafinance.com → DNS → Records:
+## 5. Production checks pass on Azure's own address, then send tester message 1 if you haven't
 
-| Action | Type | Name | Value | Proxy |
-|---|---|---|---|---|
-| Delete | A | `staging` | `8.232.107.208` (dead GCP) | |
-| Add | CNAME | `staging` | the staging `cname.value` Claude gives you | **DNS only** (grey) |
-| Add | TXT | `asuid.staging` | the staging `txt.value` Claude gives you | |
-
-Then tell Claude. It switches `AZ_API_HOSTNAME_STAGING` back to `staging.lyniafinance.com` and gives
-you a single `az containerapp hostname bind …` command to paste.
-
-**Never set the orange cloud (proxied)** on these records. It breaks the Azure-managed certificate.
-
-## 5. Staging checks pass, then send tester message 1 if you haven't
-
-Claude reports each check (G-API, G-OTP, G-UPL, G-WS, G-Q, G-JOB, G-ADM, G-IP, G-MIG, G-RB).
-You don't need to do anything unless one fails and Claude asks.
+Claude deploys production with `AZ_API_HOSTNAME` pointing at the `*.azurecontainerapps.io` address and
+reports each check (G-API, G-OTP, G-UPL, G-WS, G-Q, G-JOB, G-ADM, G-IP, G-MIG, G-RB). Nobody else can
+reach it until the DNS step on cutover day.
 
 ## 6. Cutover day (~20 min, pick a quiet hour)
 
@@ -83,8 +67,7 @@ You don't need to do anything unless one fails and Claude asks.
 
 ## 7. After cutover
 
-- Staging: Claude runs **hibernate-staging**. Then you set Variable **`AZ_STAGING_ENABLED=false`**,
-  or production releases will wait on a staging deploy that can't happen. Staging then costs about $6/month.
+- Staging is already gone. To bring it back later, request a Container Apps environment quota increase first (`infra/azure/README.md` § Destroy staging).
 - When Google billing is fixed: settle the GCP balance, then delete project `lynia-500911`
   (plan §9 "GCP exit checklist"). That removes the old personal data held there.
 - Legal (Q8): the POTRAZ 24-hour notice question stays with you and counsel.

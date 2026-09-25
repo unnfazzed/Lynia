@@ -33,9 +33,9 @@ on:
         options: [staging, production]
         default: staging
       action:
-        description: "apply = plan, then apply after a second approval; plan = review only; apply-allow-destroy = also permit deletions; hibernate-staging = remove staging Postgres + Redis (wake with apply)"
+        description: "apply = plan, then apply after a second approval; plan = review only; apply-allow-destroy = also permit deletions; hibernate-staging = remove staging Postgres + Redis (wake with apply); destroy-staging = delete ALL of staging (frees the one-per-region Container Apps environment for production)"
         type: choice
-        options: [apply, plan, apply-allow-destroy, hibernate-staging]
+        options: [apply, plan, apply-allow-destroy, hibernate-staging, destroy-staging]
         default: apply
 
 concurrency:
@@ -50,6 +50,10 @@ env:
   ACTION: ${{ inputs.action }}
   # hibernate-staging turns the data tier off (infra/azure var data_tier_enabled); every other action keeps it on.
   DATA_TIER: ${{ inputs.action == 'hibernate-staging' && 'false' || 'true' }}
+  # destroy-staging plans a full `terraform destroy` of the staging state. Why it exists: a new
+  # subscription may hold only ONE Container Apps environment per region
+  # (MaxNumberOfRegionalEnvironmentsInSubExceeded, prod run 36074627308), and staging had it.
+  DESTROY_FLAG: ${{ inputs.action == 'destroy-staging' && '-destroy' || '' }}
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_INFRA }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -81,8 +85,8 @@ jobs:
           set -euo pipefail
           [ "$REF" = "refs/heads/main" ] || { echo "::error::terraform-apply-azure may only run from main (got ${REF})."; exit 1; }
           case "$TIER" in staging|production) ;; *) echo "::error::invalid environment"; exit 1 ;; esac
-          case "$ACTION" in plan|apply|apply-allow-destroy|hibernate-staging) ;; *) echo "::error::invalid action"; exit 1 ;; esac
-          if [ "$ACTION" = hibernate-staging ] && [ "$TIER" != staging ]; then echo "::error::hibernate-staging is for environment=staging only"; exit 1; fi
+          case "$ACTION" in plan|apply|apply-allow-destroy|hibernate-staging|destroy-staging) ;; *) echo "::error::invalid action"; exit 1 ;; esac
+          case "$ACTION" in hibernate-staging|destroy-staging) [ "$TIER" = staging ] || { echo "::error::${ACTION} is for environment=staging only"; exit 1; } ;; esac
           if [ -n "$AZ_ALERT_EMAILS" ] && ! printf '%s' "$AZ_ALERT_EMAILS" | jq -e 'type == "array" and all(type == "string")' >/dev/null 2>&1; then
             echo "::error::AZ_ALERT_EMAILS must be a JSON list of strings, e.g. [\"owner@example.com\"]."; exit 1
           fi
@@ -108,7 +112,7 @@ jobs:
           bash scripts/azure-tf-init.sh "$TIER"
           set +e
           terraform -chdir=infra/azure plan -input=false -no-color -lock=false -detailed-exitcode \
-            -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" -out=tfplan > plan.txt 2>&1
+            -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" ${DESTROY_FLAG:+"$DESTROY_FLAG"} -out=tfplan > plan.txt 2>&1
           code=$?
           set -e
           echo "exitcode=$code" >> "$GITHUB_OUTPUT"
@@ -117,7 +121,7 @@ jobs:
           fi
           terraform -chdir=infra/azure show -json tfplan > plan.json
           destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
-          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ] && [ "$ACTION" != "hibernate-staging" ]; then
+          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ] && [ "$ACTION" != "hibernate-staging" ] && [ "$ACTION" != "destroy-staging" ]; then
             echo "::warning title=PLAN DELETES RESOURCES::${destroys} resource(s) would be deleted/forgotten — the apply job will refuse unless action=apply-allow-destroy."
           fi
           {
@@ -145,7 +149,7 @@ jobs:
     name: apply (${{ inputs.environment }}, second approval)
     needs: plan
     # exitcode 2 = changes pending; 0 = nothing to apply, so don't wake a human for nothing.
-    if: ${{ (startsWith(inputs.action, 'apply') || inputs.action == 'hibernate-staging') && needs.plan.outputs.exitcode == '2' }}
+    if: ${{ (startsWith(inputs.action, 'apply') || inputs.action == 'hibernate-staging' || inputs.action == 'destroy-staging') && needs.plan.outputs.exitcode == '2' }}
     runs-on: ubuntu-latest
     environment: infra
     timeout-minutes: 90 # Postgres + Redis creation is the long pole (README Step 2: ~30 min)
@@ -180,10 +184,10 @@ jobs:
           set -euo pipefail
           [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
           bash scripts/azure-tf-init.sh "$TIER"
-          terraform -chdir=infra/azure plan -input=false -no-color -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" -out=tfplan
+          terraform -chdir=infra/azure plan -input=false -no-color -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" ${DESTROY_FLAG:+"$DESTROY_FLAG"} -out=tfplan
           terraform -chdir=infra/azure show -json tfplan > plan.json
           destroys=$(jq '[.resource_changes[]? | select(.change.actions[]? | IN("delete","forget"))] | length' plan.json)
-          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ] && [ "$ACTION" != "hibernate-staging" ]; then
+          if [ "$destroys" -gt 0 ] && [ "$ACTION" != "apply-allow-destroy" ] && [ "$ACTION" != "hibernate-staging" ] && [ "$ACTION" != "destroy-staging" ]; then
             echo "::error::plan deletes/forgets ${destroys} resource(s) (state may have moved since review); re-run with action=apply-allow-destroy if intended."
             jq -r '.resource_changes[]? | select(.change.actions[]? | IN("delete","forget")) | "  REMOVE " + .address' plan.json
             exit 1
@@ -199,6 +203,15 @@ jobs:
       - name: Arming guide and Variables for this environment
         run: |
           set -euo pipefail
+          if [ "$ACTION" = destroy-staging ]; then
+            {
+              echo "### Staging destroyed"
+              echo '> Every staging resource is gone; the Container Apps environment slot is free for production.'
+              echo '> Leave `AZ_STAGING_ENABLED` unset (or `false`) so releases do not wait on staging.'
+              echo '> Rebuild later with action=apply (needs a free environment slot or a quota increase).'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           {
             echo "### Applied (${TIER})"
             if [ "$ACTION" = hibernate-staging ]; then
