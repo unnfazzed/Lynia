@@ -190,7 +190,7 @@ ensure_role "$ME_OID" User "Key Vault Secrets Officer" "$KV_ID"
 # Administrator, Contributor, or itself anything new.
 ALLOWED_ROLES=(
   "AcrPull" "AcrPush" "Storage Blob Data Contributor" "Storage Blob Delegator"
-  "Key Vault Secrets User" "Container Apps Contributor" "Monitoring Reader"
+  "Key Vault Secrets User" "Container Apps Contributor" "Container Apps Jobs Contributor" "Monitoring Reader"
   "Log Analytics Reader" "Managed Identity Operator"
 )
 guids=()
