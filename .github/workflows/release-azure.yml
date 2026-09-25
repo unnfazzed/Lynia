@@ -439,6 +439,14 @@ jobs:
           drop() { UNSET+=("$@"); }
 
           case "$KYC_MODE" in auto|manual) ;; *) echo "::error::KYC_MODE must be auto or manual (got '$KYC_MODE')"; exit 1 ;; esac
+          # Azure has no Firebase credential wiring yet (no FCM_PROJECT_ID, no mounted service-account
+          # file), so PUSH_PROVIDER=fcm here is a guaranteed boot crash (C5 guard in push.module.ts) —
+          # release #4 burned two 10-minute activation timeouts on exactly that. Refuse before deploying.
+          case "$PUSH_PROVIDER" in
+            noop) ;;
+            fcm) echo "::error::PUSH_PROVIDER=fcm, but this workflow does not wire FCM_PROJECT_ID / GOOGLE_APPLICATION_CREDENTIALS on Azure, so the API would refuse to boot. Set the PUSH_PROVIDER Variable to noop until Firebase is wired (M2)."; exit 1 ;;
+            *) echo "::error::PUSH_PROVIDER must be noop or fcm (got '$PUSH_PROVIDER')"; exit 1 ;;
+          esac
           SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "KYC_MODE=$KYC_MODE" "PUSH_PROVIDER=$PUSH_PROVIDER")
           opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
           opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
