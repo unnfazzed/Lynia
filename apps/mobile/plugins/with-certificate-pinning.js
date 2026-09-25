@@ -46,11 +46,11 @@ function parsePins() {
 
 /** Extract the API host from app.config's extra.apiUrl (falls back to the known prod host). */
 function apiHost(config) {
-  const url = config?.extra?.apiUrl ?? "https://lyniago.lyniafinance.com";
+  const url = config?.extra?.apiUrl ?? "https://api.lyniago.com";
   try {
     return new URL(url).hostname;
   } catch {
-    return "lyniago.lyniafinance.com";
+    return "api.lyniago.com";
   }
 }
 

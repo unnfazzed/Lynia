@@ -42,19 +42,19 @@ variable "key_vault_name" {
 # --- Hostnames (custom domains + free managed certificates, E11) ---
 
 variable "api_hostname" {
-  description = "Public API hostname. Empty = the environment default (production: lyniago.lyniafinance.com, staging: staging.lyniafinance.com)."
+  description = "Public API hostname. Empty = the environment default (production: api.lyniago.com, staging: staging-api.lyniago.com)."
   type        = string
   default     = ""
 }
 
 variable "admin_hostname" {
-  description = "Admin console hostname. Empty = production: lyniagoadmin.lyniafinance.com; staging: no custom domain (use the *.azurecontainerapps.io FQDN)."
+  description = "Admin console hostname. Empty = production: admin.lyniago.com; staging: no custom domain (use the *.azurecontainerapps.io FQDN)."
   type        = string
   default     = ""
 }
 
 variable "merchant_hostname" {
-  description = "Merchant dashboard hostname. Empty = production: lyniagomerchant.lyniafinance.com; staging: no custom domain. It (or the FQDN) is also the Blob CORS origin (D5)."
+  description = "Merchant dashboard hostname. Empty = production: merchant.lyniago.com; staging: no custom domain. It (or the FQDN) is also the Blob CORS origin (D5)."
   type        = string
   default     = ""
 }
