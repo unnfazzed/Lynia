@@ -452,6 +452,14 @@ jobs:
           drop() { UNSET+=("$@"); }
 
           case "$KYC_MODE" in auto|manual) ;; *) echo "::error::KYC_MODE must be auto or manual (got '$KYC_MODE')"; exit 1 ;; esac
+          # Login OTPs are WhatsApp ONLY (owner decision 2026-09-25, restating the 2026-09-01 product
+          # decision): no SMS, no fallback. bird-verify requests channels=["whatsapp"] only
+          # (auth/bird-verify.ts) and whatsapp is Meta's Cloud API; every other channel (bird, local-sms,
+          # sms) delivers by SMS and console is dev-only. A Variable flip must not be able to reroute login.
+          case "$OTP_CHANNEL" in
+            bird-verify|whatsapp) ;;
+            *) echo "::error::OTP_CHANNEL must be bird-verify or whatsapp — login OTPs are WhatsApp-only, no SMS (got '$OTP_CHANNEL')."; exit 1 ;;
+          esac
           # Azure has no Firebase credential wiring yet (no FCM_PROJECT_ID, no mounted service-account
           # file), so PUSH_PROVIDER=fcm here is a guaranteed boot crash (C5 guard in push.module.ts) —
           # release #4 burned two 10-minute activation timeouts on exactly that. Refuse before deploying.
