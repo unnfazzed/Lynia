@@ -54,15 +54,11 @@ reach it until the DNS step on cutover day.
    Confirm the app update that points at `api.lyniago.com` has reached testers: the installed builds
    have `lyniago.lyniafinance.com` built in, so they cannot find the new servers until they update.
 1. Claude deploys production (you approve nothing extra; production deploys are `main`-only).
-2. **Cloudflare** (dash.cloudflare.com → **lyniago.com** → DNS → Records). **Grey cloud (DNS only), never orange**: proxying breaks the Azure-managed certificate. For each host:
-
-   | Host (in the **lyniago.com** zone) | New records |
-   |---|---|
-   | `api` (the app's backend) | CNAME + TXT `asuid.api` from Claude |
-   | `admin` | CNAME + TXT `asuid.admin` when admin is armed |
-   | `merchant` | CNAME + TXT `asuid.merchant` when merchant is armed |
-
-3. Paste the `bind` command(s) Claude gives you. Wait for `DOMAIN_BOUND`.
+2. **DNS + certificate: one click per host.** GitHub → Actions → **DNS + bind (Cloudflare → Azure)** →
+   host `api` (later `admin`, `merchant`). It reads the target from Azure, writes the CNAME (grey cloud,
+   DNS only) and `asuid.` TXT in the lyniago.com zone with the `CLOUDFLARE_API_TOKEN` secret, then binds
+   Azure's managed certificate. It refuses to delete or overwrite an A/AAAA record. Claude can dispatch it.
+3. Wait for the run to show the hostname bound (`SniEnabled`).
 4. Open the **installed** app on your phone. Sign in with your number, place a test order, open
    tracking. Tell Claude what you see.
 5. Send **tester message 2** (below).

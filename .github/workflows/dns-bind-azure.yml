@@ -1,0 +1,164 @@
+name: DNS + bind (Cloudflare → Azure)
+
+# Points a lyniago.com hostname at its production Container App and binds Azure's free managed
+# certificate — the cutover DNS step (docs/AZURE-OWNER-RUNBOOK.md §6), without copying values by hand.
+#
+#   1. Reads the target from Azure itself (deploy identity, OIDC): the app's ingress FQDN and the
+#      environment's custom-domain verification id. Nothing is typed in, so nothing can be mistyped.
+#   2. Upserts in the lyniago.com Cloudflare zone: CNAME <host> → FQDN (DNS only — an orange-cloud
+#      proxy breaks the managed certificate) and TXT asuid.<host> → verification id.
+#      It REFUSES to touch an A/AAAA record at that name, or any record it would have to delete.
+#   3. Optionally runs `az containerapp hostname bind --validation-method CNAME` (retrying while
+#      DNS propagates) and prints the binding state.
+#
+# Secret: CLOUDFLARE_API_TOKEN — "Edit zone DNS" scoped to lyniago.com only (owner-created,
+# 2026-09-25). Never printed. Runs in the `production` environment: its federated credential and
+# main-only branch policy gate the Azure side exactly as release-azure.yml does.
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Which hostname (in lyniago.com) to point and bind"
+        type: choice
+        options: [api, admin, merchant]
+        default: api
+      bind:
+        description: "Also bind the managed certificate in Azure (after DNS is in place)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: dns-bind-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dns:
+    name: dns + bind (${{ inputs.host }}.lyniago.com)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      HOST_KEY: ${{ inputs.host }}
+      ZONE: lyniago.com
+      RG: ${{ vars.AZ_RESOURCE_GROUP || 'rg-lynia-prod-san' }}
+      CAE: ${{ vars.AZ_CONTAINERAPP_ENV || 'cae-lynia-prod' }}
+      APP_API: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+      APP_ADMIN: ${{ vars.AZ_CONTAINERAPP_ADMIN || 'ca-lynia-admin' }}
+      APP_MERCHANT: ${{ vars.AZ_CONTAINERAPP_MERCHANT || 'ca-lynia-merchant' }}
+    steps:
+      - name: Guard — main only, validated inputs
+        env:
+          REF: ${{ github.ref }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::dns-bind-azure may only run from main (got ${REF})."; exit 1; }
+          case "$HOST_KEY" in api|admin|merchant) ;; *) echo "::error::invalid host"; exit 1 ;; esac
+          [ -n "$CF_TOKEN" ] || { echo "::error::Repository secret CLOUDFLARE_API_TOKEN is not set (Cloudflare → API Tokens → Edit zone DNS, zone lyniago.com)."; exit 1; }
+
+      - name: Azure login (OIDC, production deploy identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Read target from Azure
+        id: target
+        run: |
+          set -euo pipefail
+          case "$HOST_KEY" in
+            api) APP="$APP_API" ;;
+            admin) APP="$APP_ADMIN" ;;
+            merchant) APP="$APP_MERCHANT" ;;
+          esac
+          FQDN=$(az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)
+          VERIFY=$(az containerapp env show -g "$RG" -n "$CAE" --query properties.customDomainConfiguration.customDomainVerificationId -o tsv)
+          [ -n "$FQDN" ] || { echo "::error::$APP has no ingress FQDN in $RG"; exit 1; }
+          [ -n "$VERIFY" ] || { echo "::error::$CAE returned no custom-domain verification id"; exit 1; }
+          {
+            echo "app=$APP"
+            echo "fqdn=$FQDN"
+            echo "verify=$VERIFY"
+            echo "name=${HOST_KEY}.${ZONE}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Target: ${HOST_KEY}.${ZONE} → $FQDN (app $APP)"
+
+      - name: Upsert Cloudflare records (DNS only)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NAME: ${{ steps.target.outputs.name }}
+          FQDN: ${{ steps.target.outputs.fqdn }}
+          VERIFY: ${{ steps.target.outputs.verify }}
+        run: |
+          set -euo pipefail
+          api() { # api METHOD PATH [JSON]
+            local out args=(-sS -X "$1" "https://api.cloudflare.com/client/v4$2"
+              -H "Authorization: Bearer ${CF_TOKEN}" -H "Content-Type: application/json")
+            [ $# -lt 3 ] || args+=(--data "$3")
+            out=$(curl "${args[@]}")
+            if [ "$(printf '%s' "$out" | jq -r '.success')" != "true" ]; then
+              echo "::error::Cloudflare $1 $2 failed: $(printf '%s' "$out" | jq -c '.errors')" >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
+          ZID=$(api GET "/zones?name=${ZONE}" | jq -r '.result[0].id // empty')
+          [ -n "$ZID" ] || { echo "::error::Zone ${ZONE} not visible to this token."; exit 1; }
+
+          # upsert TYPE NAME CONTENT — update the single record of that type/name, or create it.
+          upsert() {
+            local type=$1 name=$2 content=$3 existing id cur body
+            existing=$(api GET "/zones/${ZID}/dns_records?type=${type}&name=${name}")
+            [ "$(printf '%s' "$existing" | jq '.result | length')" -le 1 ] || { echo "::error::More than one ${type} record at ${name}; fix it by hand first."; exit 1; }
+            id=$(printf '%s' "$existing" | jq -r '.result[0].id // empty')
+            cur=$(printf '%s' "$existing" | jq -r '.result[0].content // empty')
+            if [ "$type" = CNAME ]; then
+              body=$(jq -nc --arg n "$name" --arg c "$content" '{type:"CNAME",name:$n,content:$c,ttl:300,proxied:false}')
+            else
+              body=$(jq -nc --arg n "$name" --arg c "$content" '{type:"TXT",name:$n,content:$c,ttl:300}')
+            fi
+            if [ -z "$id" ]; then
+              api POST "/zones/${ZID}/dns_records" "$body" >/dev/null && echo "created ${type} ${name}"
+            elif [ "${cur//\"/}" = "$content" ] && { [ "$type" != CNAME ] || [ "$(printf '%s' "$existing" | jq -r '.result[0].proxied')" = false ]; }; then
+              echo "unchanged ${type} ${name}"
+            else
+              api PUT "/zones/${ZID}/dns_records/${id}" "$body" >/dev/null && echo "updated ${type} ${name}"
+            fi
+          }
+
+          # A CNAME cannot coexist with A/AAAA at the same name; never delete someone else's record.
+          others=$(api GET "/zones/${ZID}/dns_records?name=${NAME}" | jq -r '[.result[] | select(.type=="A" or .type=="AAAA")] | length')
+          [ "$others" -eq 0 ] || { echo "::error::${NAME} already has an A/AAAA record. Delete it in Cloudflare, then re-run."; exit 1; }
+
+          upsert TXT "asuid.${NAME}" "$VERIFY"
+          upsert CNAME "$NAME" "$FQDN"
+
+      - name: Bind managed certificate
+        if: ${{ inputs.bind }}
+        env:
+          APP: ${{ steps.target.outputs.app }}
+          NAME: ${{ steps.target.outputs.name }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if az containerapp hostname bind -g "$RG" -n "$APP" --hostname "$NAME" --environment "$CAE" --validation-method CNAME -o none; then
+              echo "bound ${NAME} (attempt $i)"; break
+            fi
+            [ "$i" -lt 10 ] || { echo "::error::bind still failing after 10 attempts — DNS may not have propagated yet; re-run later."; exit 1; }
+            echo "bind attempt $i failed; DNS may still be propagating — retrying in 30s"; sleep 30
+          done
+          az containerapp hostname list -g "$RG" -n "$APP" -o table
+          {
+            echo "### ${NAME} → ${APP}"
+            echo '```'
+            az containerapp hostname list -g "$RG" -n "$APP" -o table
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
