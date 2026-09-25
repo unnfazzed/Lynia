@@ -706,8 +706,12 @@ jobs:
           az containerapp revision show -n "$APP" -g "$RG" --revision "$CANDIDATE" -o json \
             | jq '{name, active: .properties.active, provisioningState: .properties.provisioningState, provisioningError: .properties.provisioningError, healthState: .properties.healthState, runningState: .properties.runningState, runningStateDetails: .properties.runningStateDetails, replicas: .properties.replicas, trafficWeight: .properties.trafficWeight, image: [.properties.template.containers[]?.image]}'
           echo "::endgroup::"
-          echo "::group::System log for $APP (last 60 lines)"
-          az containerapp logs show -n "$APP" -g "$RG" --type system --tail 60 --format text 2>&1 | tail -n 60
+          echo "::group::System log for $APP (last 60 events)"
+          # System logs are JSON-only ("only json logs supported for system logs" — release #4 lost its
+          # post-mortem to --format text). One line per event; lines that aren't JSON pass through.
+          az containerapp logs show -n "$APP" -g "$RG" --type system --tail 60 --format json 2>&1 \
+            | jq -Rr '(fromjson? | [.TimeStamp, (.RevisionName // "-"), (.Reason // "-"), (.Msg // .Message // tostring)] | join("  ")) // .' \
+            | tail -n 60
           echo "::endgroup::"
           echo "Full Recap: run the Azure Diagnose workflow (environment: production)."
 
