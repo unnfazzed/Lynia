@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.50.0](https://github.com/unnfazzed/Lynia/compare/v0.49.0...v0.50.0) (2026-09-25)
+
+
+### Features
+
+* Azure portability — API adapters, infra/azure Terraform, Azure CI/CD ([#925](https://github.com/unnfazzed/Lynia/issues/925)) ([23d8843](https://github.com/unnfazzed/Lynia/commit/23d8843d57dad0a27f88fba31e9158f9fe1c75f5))
+* **azure:** move app hostnames to lyniago.com (api/admin/merchant/staging-api) ([#931](https://github.com/unnfazzed/Lynia/issues/931)) ([4595065](https://github.com/unnfazzed/Lynia/commit/45950658b5b806a1f5336f390c651be2da239417))
+* **infra:** Artifact Registry retention + gate the preview-only Cloud Armor rules ([#921](https://github.com/unnfazzed/Lynia/issues/921)) ([de53cb1](https://github.com/unnfazzed/Lynia/commit/de53cb12876b8c8537f1beb7b85e6b7dda0768a3))
+
+
+### Bug Fixes
+
+* **mobile:** submit the closed lane to the track that has the testers ([#908](https://github.com/unnfazzed/Lynia/issues/908)) ([208aec5](https://github.com/unnfazzed/Lynia/commit/208aec56d99ec133064c13089bf2e10d91d95885))
+
 ## [0.49.0](https://github.com/unnfazzed/Lynia/compare/v0.48.4...v0.49.0) (2026-09-01)
 
 
