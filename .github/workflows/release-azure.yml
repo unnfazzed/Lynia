@@ -456,7 +456,7 @@ jobs:
 
           # CORS (apps/api/src/common/cors.ts; docs/KNOWN_BUGS.md OPS-CORS-01): the merchant origin is
           # always present, CORS_EXTRA_ORIGINS appends. Same bare-origin validation as release.yml.
-          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://lyniagomerchant.lyniafinance.com}"
+          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://merchant.lyniago.com}"
           if [ -n "${CORS_EXTRA_ORIGINS:-}" ]; then
             CORS_ORIGINS="${CORS_ORIGINS},${CORS_EXTRA_ORIGINS}"
           fi
@@ -589,7 +589,7 @@ jobs:
           CANARY_DISABLED: ${{ vars.CANARY_DISABLED }}
           STEPS: ${{ vars.CANARY_STEPS || '10 50' }}
           OBSERVE: ${{ vars.CANARY_OBSERVE_SECONDS || '120' }}
-          HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'lyniago.lyniafinance.com' }}/healthz
+          HEALTH_URL: https://${{ vars.AZ_API_HOSTNAME || 'api.lyniago.com' }}/healthz
           MIN_SAMPLE: ${{ vars.CANARY_MIN_SAMPLE || '20' }}
           MAX_5XX_PCT: ${{ vars.CANARY_MAX_5XX_PCT || '5' }}
         run: |

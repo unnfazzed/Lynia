@@ -6,7 +6,7 @@
  * content → Privacy policy) and an **account/data deletion** page (Play Console → Data safety →
  * Data deletion, mandatory for any app that lets users create an account). Lynia ships no marketing
  * site, so the already-live, CI-deployed API host is the only durable place to serve them from —
- * `https://lyniago.lyniafinance.com/legal/privacy` and `…/legal/account-deletion`.
+ * `https://api.lyniago.com/legal/privacy` and `…/legal/account-deletion`.
  *
  * THE COPY IS DERIVED, NOT INVENTED. Every collection/retention claim below is traceable to what the
  * code actually does — `apps/api/src/privacy/pii-manifest.ts` (the declarative PII inventory whose

@@ -20,9 +20,9 @@ locals {
 
   resource_group_name = "rg-lynia-${local.env_short}-san"
 
-  api_hostname      = var.api_hostname != "" ? var.api_hostname : (local.is_prod ? "lyniago.lyniafinance.com" : "staging.lyniafinance.com")
-  admin_hostname    = var.admin_hostname != "" ? var.admin_hostname : (local.is_prod ? "lyniagoadmin.lyniafinance.com" : "")
-  merchant_hostname = var.merchant_hostname != "" ? var.merchant_hostname : (local.is_prod ? "lyniagomerchant.lyniafinance.com" : "")
+  api_hostname      = var.api_hostname != "" ? var.api_hostname : (local.is_prod ? "api.lyniago.com" : "staging-api.lyniago.com")
+  admin_hostname    = var.admin_hostname != "" ? var.admin_hostname : (local.is_prod ? "admin.lyniago.com" : "")
+  merchant_hostname = var.merchant_hostname != "" ? var.merchant_hostname : (local.is_prod ? "merchant.lyniago.com" : "")
 
   api_min_replicas   = var.api_min_replicas != null ? var.api_min_replicas : (local.is_prod ? 1 : 0)
   log_daily_quota_gb = var.log_daily_quota_gb != null ? var.log_daily_quota_gb : (local.is_prod ? 0.2 : 0.1)

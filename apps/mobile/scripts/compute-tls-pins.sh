@@ -15,7 +15,7 @@
 #
 # Usage:
 #   ./apps/mobile/scripts/compute-tls-pins.sh [host[:port]]
-#   ./apps/mobile/scripts/compute-tls-pins.sh lyniago.lyniafinance.com:443
+#   ./apps/mobile/scripts/compute-tls-pins.sh api.lyniago.com:443
 #
 # Then arm (see docs/MOBILE-CERT-PINNING.md) with the intermediate + root pins:
 #   LYNIA_TLS_PINS="sha256/<intermediate>=,sha256/<root>="
@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-HOSTPORT="${1:-lyniago.lyniafinance.com:443}"
+HOSTPORT="${1:-api.lyniago.com:443}"
 HOST="${HOSTPORT%%:*}"
 PORT="${HOSTPORT##*:}"
 [ "$PORT" = "$HOST" ] && PORT=443

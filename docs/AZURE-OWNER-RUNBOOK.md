@@ -51,19 +51,27 @@ reach it until the DNS step on cutover day.
 ## 6. Cutover day (~20 min, pick a quiet hour)
 
 0. Confirm the `KYC_MODE=manual` Variable is set (see **Rider re-approval** below).
+   Confirm the app update that points at `api.lyniago.com` has reached testers: the installed builds
+   have `lyniago.lyniafinance.com` built in, so they cannot find the new servers until they update.
 1. Claude deploys production (you approve nothing extra; production deploys are `main`-only).
-2. **Cloudflare**, same pattern as step 4, for each host:
+2. **Cloudflare** (dash.cloudflare.com → **lyniago.com** → DNS → Records). **Grey cloud (DNS only), never orange**: proxying breaks the Azure-managed certificate. For each host:
 
-   | Host | Old record to delete | New |
-   |---|---|---|
-   | `lyniago` (the app's API) | A `8.232.107.208` | CNAME + TXT `asuid.lyniago` from Claude |
-   | `lyniagoadmin` | A `8.232.107.208` | CNAME + TXT when admin is armed |
-   | `lyniagomerchant` | A `8.232.107.208` | CNAME + TXT when merchant is armed |
+   | Host (in the **lyniago.com** zone) | New records |
+   |---|---|
+   | `api` (the app's backend) | CNAME + TXT `asuid.api` from Claude |
+   | `admin` | CNAME + TXT `asuid.admin` when admin is armed |
+   | `merchant` | CNAME + TXT `asuid.merchant` when merchant is armed |
 
 3. Paste the `bind` command(s) Claude gives you. Wait for `DOMAIN_BOUND`.
 4. Open the **installed** app on your phone. Sign in with your number, place a test order, open
    tracking. Tell Claude what you see.
 5. Send **tester message 2** (below).
+6. Point the outside services at the new address (each is a settings field, not code):
+   - **Didit console** → webhook URL `https://api.lyniago.com/kyc/callback`; and the `DIDIT_CALLBACK_URL`
+     Variable if it is set.
+   - **Bird** → webhook URL on the new host, if the Bird webhook is on.
+   - **Play Console** → App content → privacy policy `https://api.lyniago.com/legal/privacy` and
+     account deletion `https://api.lyniago.com/legal/account-deletion`.
 
 ## 7. After cutover
 
@@ -81,7 +89,7 @@ reach it until the DNS step on cutover day.
 > message you the moment it's back. Thanks for your patience 🙏
 
 **Message 2: at cutover**
-> LyniaGo is back! Open the app and sign in again with your phone number. Your old account
+> LyniaGo is back! Update the app from the Play Store first, then open it and sign in again with your phone number. Your old account
 > couldn't be moved, so you'll set up your profile once more. Riders: we'll re-approve you from your
 > earlier ID check, so there's no need to redo it — just sign in and wait for approval. Job
 > notifications return with the next app update; until then keep the app open to see new jobs. We've

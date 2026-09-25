@@ -144,7 +144,7 @@ Staging's cost is almost all Postgres + Redis. When you aren't testing:
 2. Set repo Variable **`AZ_STAGING_ENABLED=false`**, or production releases wait on a staging deploy
    that cannot pass.
 
-Apps, the `staging.lyniafinance.com` domain + certificate, identities and Key Vault app secrets stay,
+Apps, the `staging-api.lyniago.com` domain + certificate, identities and Key Vault app secrets stay,
 so waking needs no DNS change and costs ~$6/month while asleep (registry + logs).
 
 **Wake:** run the same workflow with action **`apply`** (about 20–30 min for Postgres + Redis), set
