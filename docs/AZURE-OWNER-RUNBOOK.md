@@ -56,9 +56,10 @@ reach it until the DNS step on cutover day.
 1. Claude deploys production (you approve nothing extra; production deploys are `main`-only).
 2. **DNS + certificate: one click per host.** GitHub → Actions → **DNS + bind (Cloudflare → Azure)** →
    host `api` (later `admin`, `merchant`). It reads the target from Azure, writes the CNAME (grey cloud,
-   DNS only) and `asuid.` TXT in the lyniago.com zone with the `CLOUDFLARE_API_TOKEN` secret, then binds
-   Azure's managed certificate. It refuses to delete or overwrite an A/AAAA record. Claude can dispatch it.
-3. Wait for the run to show the hostname bound (`SniEnabled`).
+   DNS only) and `asuid.` TXT in the lyniago.com zone with the `CLOUDFLARE_API_TOKEN` secret and registers
+   the hostname on the app. It refuses to delete or overwrite an A/AAAA record. Claude can dispatch it.
+3. Paste the one-line certificate bind from the run summary into Cloud Shell (the CI identity may not
+   create certificates); the host list then shows `SniEnabled`. (`api.lyniago.com`: done 2026-09-25.)
 4. Open the **installed** app on your phone. Sign in with your number, place a test order, open
    tracking. Tell Claude what you see.
 5. Send **tester message 2** (below).
