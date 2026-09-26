@@ -122,11 +122,17 @@ jobs:
           # (2) The runtime version we are about to publish must match a binary someone can install.
           # `eas update` derives it from THIS runner's tree, exactly as computed here, so this is an
           # apples-to-apples comparison against the runtimeVersion EAS recorded for each build.
-          COMPUTED="$(npx --no-install expo-updates fingerprint:generate --platform android \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).hash??"")}catch{process.stdout.write("")}})')"
+          # Run inside the EAS environment the binary was built with (eas.json: channel preview ->
+          # environment preview). `eas build` loads it before hashing the config (GOOGLE_MAPS_API_KEY
+          # lands in android.config.googleMaps, a hashed input), so a bare runner computes a
+          # fingerprint no build has (run 36263676083: e012d494… vs build 44538dd1's a2b0ceb0…).
+          COMPUTED="$(eas env:exec "$BRANCH" "EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL npx --no-install expo-updates fingerprint:generate --platform android" \
+            | grep -oE '"hash" *: *"[0-9a-f]{40}"' | tail -n1 | grep -oE '[0-9a-f]{40}' || true)"
           if [ -z "$COMPUTED" ]; then
-            echo "::warning::Could not compute the fingerprint runtime version; skipping the runtime-match check."
-            exit 0
+            # Fail CLOSED: env:exec adds its own output, and a check that silently skips is how an
+            # update ends up published to zero devices.
+            echo "::error::Could not compute the fingerprint runtime version — refusing to publish unchecked."
+            exit 1
           fi
           echo "Computed runtime version for this update: $COMPUTED"
 
@@ -154,7 +160,12 @@ jobs:
 
       - name: Publish OTA update
         working-directory: apps/mobile
+        env:
+          BRANCH: ${{ inputs.branch }}
+          OTA_MESSAGE: ${{ inputs.message }}
         run: |
           set -euo pipefail
-          eas update --branch "${{ inputs.branch }}" --message "${{ inputs.message }}" --non-interactive
+          # Same EAS environment as the preflight, so the published runtimeVersion is the one it checked.
+          # EXPO_PUBLIC_API_URL is re-asserted inside, so an EAS value can never override the cutover.
+          eas env:exec "$BRANCH" "EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL eas update --branch $BRANCH --message \"\$OTA_MESSAGE\" --non-interactive"
           echo "OTA update published to branch '${{ inputs.branch }}': ${{ inputs.message }}" >> "$GITHUB_STEP_SUMMARY"
