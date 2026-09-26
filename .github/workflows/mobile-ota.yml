@@ -49,6 +49,10 @@ jobs:
       # EXPO_PUBLIC_* vars are inlined into the JS bundle at export time — they must match what
       # the production binary was built with, or the OTA silently changes runtime config.
       EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_PLACES_KEY }}
+      # Azure cutover (2026-09-26): the GCP API host is gone; point already-installed binaries at the
+      # Azure API. src/config.ts reads EXPO_PUBLIC_API_URL before extra.apiUrl, and it is inlined into
+      # the JS bundle, so it changes no fingerprint input and reaches the installed build by OTA.
+      EXPO_PUBLIC_API_URL: https://api.lyniago.com
       # Sentry (LR20) is the sharpest instance of the rule above. The bundle is exported HERE, on the
       # runner — not on EAS servers — so the EAS environment variable that the binary was built with is
       # not in scope. Omit these and every OTA ships a bundle whose initSentry() no-ops
