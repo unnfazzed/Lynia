@@ -1746,6 +1746,22 @@ starts: re-baselining costs one build now and a great deal more once testers are
 14-day clock is running. Until that build ships, step 4 above remains fenced off and every fix
 travels through the store lane.
 
+**First real OTA — 2026-09-26 (Azure cutover).** The GCP API host died with the suspended account, so
+the Closed-testing binary (build `44538dd1`, v0.49.0 / vc 36, runtime `a2b0ceb0…`, commit `208aec56`)
+was repointed by OTA: branch `ota/api-lyniago` = `208aec56` + `EXPO_PUBLIC_API_URL=https://api.lyniago.com`
+in `mobile-ota.yml` only (no app code; the var is inlined into the bundle and is not a fingerprint
+input). Three runs:
+
+| Run | Result | Why |
+|---|---|---|
+| 36263676083 | preflight refused | computed `e012d494…` on a bare runner — `eas build` hashes the config with the EAS `preview` environment loaded (`GOOGLE_MAPS_API_KEY` → `android.config.googleMaps`), the runner did not |
+| 36263972969 | preflight refused | inside `eas env:exec preview` the hash was `a2b0ceb0…` = the build, but the `eas build:list` lookup returned nothing (stderr was discarded) |
+| 36264117873 | **published** | same, `allow_runtime_mismatch=true` after verifying `a2b0ceb0…` against the EAS build record; Android update group `e0ebadd4…` on branch `preview`, runtime `a2b0ceb0fbba32ceb1799a42c2c044135fc23a4d` |
+
+`mobile-ota.yml` on `main` now computes and publishes inside `eas env:exec <channel>`, fails closed when
+no hash is computed, and prints the `build:list` stderr instead of discarding it. Testers pick the
+update up on the second cold start.
+
 ---
 
 ## 9. Pre-submission checklist
