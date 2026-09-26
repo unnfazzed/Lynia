@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getApp: vi.fn(),
   initializeApp: vi.fn(() => ({})),
   applicationDefault: vi.fn(() => ({})),
+  cert: vi.fn(() => ({ kind: "cert" })),
 }));
 
 vi.mock("firebase-admin/app", () => ({
@@ -17,6 +18,7 @@ vi.mock("firebase-admin/app", () => ({
   getApp: mocks.getApp,
   initializeApp: mocks.initializeApp,
   applicationDefault: mocks.applicationDefault,
+  cert: mocks.cert,
 }));
 
 vi.mock("firebase-admin/messaging", () => ({
@@ -158,5 +160,28 @@ describe("FcmPush.sendEach — a mid-loop chunk failure is isolated per chunk (D
       { ok: false, invalidToken: false },
       { ok: false, invalidToken: false },
     ]);
+  });
+});
+
+describe("FcmPush — credential source", () => {
+  const sa = {
+    project_id: "lynia-fcm",
+    client_email: "push@lynia-fcm.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+  };
+
+  it("uses the inline service account (cert), not ADC, when FCM_SERVICE_ACCOUNT_JSON is given", async () => {
+    mocks.getMessaging.mockReturnValue({ send: vi.fn().mockResolvedValue("id"), sendEach: vi.fn() });
+    await expect(new FcmPush("lynia-fcm", JSON.stringify(sa)).send(msg("t"))).resolves.toEqual({ ok: true, invalidToken: false });
+    expect(mocks.cert).toHaveBeenCalledWith({ projectId: "lynia-fcm", clientEmail: sa.client_email, privateKey: sa.private_key });
+    expect(mocks.applicationDefault).not.toHaveBeenCalled();
+    expect(mocks.initializeApp).toHaveBeenCalledWith({ credential: { kind: "cert" }, projectId: "lynia-fcm" });
+  });
+
+  it("falls back to ADC when no inline service account is given", async () => {
+    mocks.getMessaging.mockReturnValue({ send: vi.fn().mockResolvedValue("id"), sendEach: vi.fn() });
+    await new FcmPush("lynia-fcm").send(msg("t"));
+    expect(mocks.applicationDefault).toHaveBeenCalledTimes(1);
+    expect(mocks.cert).not.toHaveBeenCalled();
   });
 });

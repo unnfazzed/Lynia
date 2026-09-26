@@ -13,6 +13,31 @@ const DEAD_TOKEN_CODES = new Set([
   "messaging/mismatched-credential",
 ]);
 
+/** Fix hint shared by both off-GCP push boot-guard messages (plan §5a X4 format). */
+export const FCM_CREDENTIAL_FIX =
+  "Fix: set Key Vault secret FCM-SERVICE-ACCOUNT-JSON and expose it as FCM_SERVICE_ACCOUNT_JSON (or mount it as a file and point GOOGLE_APPLICATION_CREDENTIALS at it).";
+
+/**
+ * Parses the inline service-account JSON, failing boot on a value that cannot authenticate. The
+ * message never echoes the value: it is a private key.
+ */
+export function parseServiceAccount(json: string): { projectId?: string; clientEmail: string; privateKey: string } {
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    throw new Error(`Invalid FCM_SERVICE_ACCOUNT_JSON: not valid JSON. ${FCM_CREDENTIAL_FIX}`);
+  }
+  const clientEmail = raw.client_email;
+  const privateKey = raw.private_key;
+  if (typeof clientEmail !== "string" || typeof privateKey !== "string" || !privateKey.includes("PRIVATE KEY")) {
+    throw new Error(
+      `Invalid FCM_SERVICE_ACCOUNT_JSON: missing client_email or private_key (use the file from Firebase → Service accounts → Generate new private key). ${FCM_CREDENTIAL_FIX}`,
+    );
+  }
+  return { projectId: typeof raw.project_id === "string" ? raw.project_id : undefined, clientEmail, privateKey };
+}
+
 /** FCM `sendEach` accepts at most 500 messages per call; larger fan-outs are chunked to this size. */
 const FCM_BATCH_LIMIT = 500;
 
@@ -71,18 +96,25 @@ export class FcmPush implements PushAdapter {
   private readonly logger = new Logger(FcmPush.name);
   private messagingPromise?: Promise<Messaging>;
 
-  constructor(private readonly projectId?: string) {}
+  /** `serviceAccountJson` (Azure: Key Vault → FCM_SERVICE_ACCOUNT_JSON) takes precedence over ADC. */
+  constructor(
+    private readonly projectId?: string,
+    private readonly serviceAccountJson?: string,
+  ) {}
 
   private async messaging(): Promise<Messaging> {
     if (!this.messagingPromise) {
       const promise = (async () => {
         // firebase-admin v14 is modular — import the sub-paths lazily so nothing loads on the noop path.
-        const { getApps, getApp, initializeApp, applicationDefault } = await import("firebase-admin/app");
+        const { getApps, getApp, initializeApp, applicationDefault, cert } = await import("firebase-admin/app");
         const { getMessaging } = await import("firebase-admin/messaging");
-        // Reuse the default app if something already initialized it, else create from ADC.
-        const app: App = getApps().length
-          ? getApp()
-          : initializeApp({ credential: applicationDefault(), projectId: this.projectId });
+        // Reuse the default app if something already initialized it, else create from the inline
+        // service account (off GCP) or ADC (Cloud Run / GOOGLE_APPLICATION_CREDENTIALS).
+        const sa = this.serviceAccountJson ? parseServiceAccount(this.serviceAccountJson) : undefined;
+        const credential = sa
+          ? cert({ projectId: this.projectId ?? sa.projectId, clientEmail: sa.clientEmail, privateKey: sa.privateKey })
+          : applicationDefault();
+        const app: App = getApps().length ? getApp() : initializeApp({ credential, projectId: this.projectId });
         return getMessaging(app);
       })();
       // A REJECTED init promise is still truthy, so caching it would make one transient ADC/network

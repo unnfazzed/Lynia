@@ -410,6 +410,10 @@ jobs:
           # E5: noop until the new Firebase project + its credential exist (with fcm and no credential
           # the C5 boot-guard refuses to boot). Set the PUSH_PROVIDER Variable to fcm once M2 lands.
           PUSH_PROVIDER: ${{ vars.PUSH_PROVIDER || 'noop' }}
+          # fcm only: the Firebase project (from the service-account JSON's project_id). The key itself
+          # is Key Vault secret FCM-SERVICE-ACCOUNT-JSON, mapped via AZ_VENDOR_SECRETS
+          # (FCM_SERVICE_ACCOUNT_JSON) and read by the API from env (fcm.push.ts), not a mounted file.
+          FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
           MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
           REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
@@ -460,12 +464,15 @@ jobs:
             bird-verify|whatsapp) ;;
             *) echo "::error::OTP_CHANNEL must be bird-verify or whatsapp — login OTPs are WhatsApp-only, no SMS (got '$OTP_CHANNEL')."; exit 1 ;;
           esac
-          # Azure has no Firebase credential wiring yet (no FCM_PROJECT_ID, no mounted service-account
-          # file), so PUSH_PROVIDER=fcm here is a guaranteed boot crash (C5 guard in push.module.ts) —
-          # release #4 burned two 10-minute activation timeouts on exactly that. Refuse before deploying.
+          # PUSH_PROVIDER=fcm without a project + service account is a guaranteed boot crash (C5 guard in
+          # push.module.ts) — release #4 burned two 10-minute activation timeouts on exactly that. Refuse
+          # before deploying; the secret itself is checked by require-secrets below.
           case "$PUSH_PROVIDER" in
             noop) ;;
-            fcm) echo "::error::PUSH_PROVIDER=fcm, but this workflow does not wire FCM_PROJECT_ID / GOOGLE_APPLICATION_CREDENTIALS on Azure, so the API would refuse to boot. Set the PUSH_PROVIDER Variable to noop until Firebase is wired (M2)."; exit 1 ;;
+            fcm)
+              [ -n "$FCM_PROJECT_ID" ] || { echo "::error::PUSH_PROVIDER=fcm needs the FCM_PROJECT_ID Variable (the Firebase project id) — otherwise the API refuses to boot. Set it, or set PUSH_PROVIDER back to noop."; exit 1; }
+              case "$FCM_PROJECT_ID" in *[!a-z0-9-]*) echo "::error::FCM_PROJECT_ID must be a Firebase project id (lowercase letters, digits, hyphens) — got '$FCM_PROJECT_ID'"; exit 1 ;; esac
+              ;;
             *) echo "::error::PUSH_PROVIDER must be noop or fcm (got '$PUSH_PROVIDER')"; exit 1 ;;
           esac
           SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "KYC_MODE=$KYC_MODE" "PUSH_PROVIDER=$PUSH_PROVIDER")
@@ -552,6 +559,8 @@ jobs:
             drop SENTRY_ENVIRONMENT SENTRY_TRACES_SAMPLE_RATE SENTRY_DSN
           fi
           if [ "$DEMO_ACCOUNT_ENABLED" = "true" ]; then secret DEMO_OTP_PHONE; secret DEMO_OTP_CODE; else drop DEMO_OTP_PHONE DEMO_OTP_CODE; fi
+          # Push credential (fcm only); noop removes both so a stale key never lingers on the revision.
+          if [ "$PUSH_PROVIDER" = "fcm" ]; then SET+=("FCM_PROJECT_ID=$FCM_PROJECT_ID"); secret FCM_SERVICE_ACCOUNT_JSON; else drop FCM_PROJECT_ID FCM_SERVICE_ACCOUNT_JSON; fi
 
           # The tier itself, hardcoded and last.
           SET+=("NODE_ENV=production" "APP_ENV=production")
