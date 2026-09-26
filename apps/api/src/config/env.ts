@@ -109,6 +109,11 @@ export const envSchema = z.object({
   // from process.env; it is declared here only so the off-GCP push boot-guard (push.module.ts) can
   // require it. On Cloud Run it stays unset (ADC comes from the attached SA).
   GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+  // The Firebase service-account JSON itself (not a path), for hosts where a secret is easier to
+  // inject as an env var than as a mounted file — Azure Container Apps (Key Vault reference
+  // FCM-SERVICE-ACCOUNT-JSON). Either this or GOOGLE_APPLICATION_CREDENTIALS satisfies the off-GCP
+  // boot-guard; when both are set, this one wins. Never logged.
+  FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window

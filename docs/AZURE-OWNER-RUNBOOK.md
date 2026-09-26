@@ -79,6 +79,28 @@ reach it until the DNS step on cutover day.
 
 ---
 
+## Push notifications (Firebase, ~10 min)
+
+Push stays off (`PUSH_PROVIDER=noop`) until this is done. The existing Firebase project is the one the
+testers' build carries in its `google-services.json`, so reusing it needs **no new app build** — only
+the server key. (A new Firebase project would need a new store build.)
+
+1. Firebase console → Project settings → **Service accounts** → **Generate new private key**. Never paste it.
+2. Cloud Shell → Upload the JSON file, then in bash (change the file name):
+   ```bash
+   F=~/your-firebase-key.json
+   V=$(gh variable get AZ_KEY_VAULT_NAME -R unnfazzed/Lynia)
+   P=$(jq -r .project_id "$F") && echo "Firebase project: $P"
+   az keyvault secret set --vault-name "$V" -n FCM-SERVICE-ACCOUNT-JSON --file "$F" --encoding utf-8 -o none && echo "stored FCM key"
+   gh variable set FCM_PROJECT_ID -R unnfazzed/Lynia -b "$P"
+   shred -u "$F" 2>/dev/null || rm -f "$F"
+   gh variable set AZ_VENDOR_SECRETS -R unnfazzed/Lynia -b "$(gh variable get AZ_VENDOR_SECRETS -R unnfazzed/Lynia | jq -c '. + {"FCM_SERVICE_ACCOUNT_JSON":"FCM-SERVICE-ACCOUNT-JSON"}')"
+   ```
+3. Run **Terraform Apply (Azure)** for production (two approvals) — it attaches the secret to the API.
+4. `gh variable set PUSH_PROVIDER -R unnfazzed/Lynia -b fcm`, then run **Release (Azure)**. The release
+   refuses `fcm` without `FCM_PROJECT_ID`, and the API refuses to boot on a malformed key, so a mistake
+   fails before any traffic moves.
+
 ## Tester messages (copy and paste; send on the channel testers already use)
 
 **Message 1: now**

@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../config/env";
-import { buildFcmMessage, FcmPush } from "./fcm.push";
+import { buildFcmMessage, FCM_CREDENTIAL_FIX, FcmPush } from "./fcm.push";
 import { NoopPush } from "./noop.push";
 import { selectPush } from "./push.module";
 import { maskToken } from "./push.interface";
@@ -39,10 +39,15 @@ describe("push adapter selection (D7 portability)", () => {
     expect(selectPush({ ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "noop" })).toBeInstanceOf(NoopPush);
   });
 
-  describe("off-GCP boot-guard (C5): fcm requires FCM_PROJECT_ID + GOOGLE_APPLICATION_CREDENTIALS", () => {
+  describe("off-GCP boot-guard (C5): fcm requires FCM_PROJECT_ID + a service account (inline JSON or file)", () => {
     const azure = { ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "fcm" } as Env;
-    const fix =
-      "Fix: set Key Vault secret FCM-SERVICE-ACCOUNT-JSON (mounted as a file) and point GOOGLE_APPLICATION_CREDENTIALS at it.";
+    const fix = FCM_CREDENTIAL_FIX;
+    // Shape-only fake (no real key material): parseServiceAccount checks fields, not the key itself.
+    const saJson = JSON.stringify({
+      project_id: "lynia-fcm",
+      client_email: "push@lynia-fcm.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+    });
 
     it("boots with FcmPush when both are set", () => {
       expect(
@@ -56,10 +61,26 @@ describe("push adapter selection (D7 portability)", () => {
       );
     });
 
-    it("fails boot when GOOGLE_APPLICATION_CREDENTIALS is missing, in the one-line X4 format", () => {
+    it("fails boot when no credential is set, in the one-line X4 format", () => {
       expect(() => selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm" })).toThrow(
-        `Missing GOOGLE_APPLICATION_CREDENTIALS: every FCM push send fails (no Firebase credential off GCP). ${fix}`,
+        `Missing FCM_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS: every FCM push send fails (no Firebase credential off GCP). ${fix}`,
       );
+    });
+
+    it("boots with FcmPush on an inline service account (Azure: Key Vault → FCM_SERVICE_ACCOUNT_JSON)", () => {
+      expect(selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", FCM_SERVICE_ACCOUNT_JSON: saJson })).toBeInstanceOf(FcmPush);
+    });
+
+    it("fails boot on inline JSON that is not JSON, without echoing it", () => {
+      const run = () => selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", FCM_SERVICE_ACCOUNT_JSON: "secret-not-json" });
+      expect(run).toThrow(/^Invalid FCM_SERVICE_ACCOUNT_JSON: not valid JSON\./);
+      expect(run).not.toThrow(/secret-not-json/);
+    });
+
+    it("fails boot on inline JSON missing the key fields", () => {
+      expect(() =>
+        selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", FCM_SERVICE_ACCOUNT_JSON: JSON.stringify({ project_id: "x" }) }),
+      ).toThrow(/^Invalid FCM_SERVICE_ACCOUNT_JSON: missing client_email or private_key/);
     });
 
     it("fails boot when both are missing (names FCM_PROJECT_ID first)", () => {

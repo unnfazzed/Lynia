@@ -1,17 +1,13 @@
 import { Global, Logger, Module } from "@nestjs/common";
 import { ENV } from "../../config/config.module";
 import type { Env } from "../../config/env";
-import { FcmPush } from "./fcm.push";
+import { FCM_CREDENTIAL_FIX, FcmPush, parseServiceAccount } from "./fcm.push";
 import { NoopPush } from "./noop.push";
 import { PUSH, type PushAdapter } from "./push.interface";
 
-/** Fix hint shared by both off-GCP push boot-guard messages (plan §5a X4 format). */
-const FCM_CREDENTIAL_FIX =
-  "Fix: set Key Vault secret FCM-SERVICE-ACCOUNT-JSON (mounted as a file) and point GOOGLE_APPLICATION_CREDENTIALS at it.";
-
 /**
- * Off GCP there is no ambient ADC: without an explicit project AND a service-account file every send
- * fails silently. So PUSH_PROVIDER=fcm off GCP is a hard boot failure unless both are set (C5) —
+ * Off GCP there is no ambient ADC: without an explicit project AND a service account (inline JSON or a
+ * file path) every send fails silently. So PUSH_PROVIDER=fcm off GCP is a hard boot failure unless both are set (C5) —
  * run PUSH_PROVIDER=noop until the Firebase credential exists.
  */
 function assertOffGcpPushConfig(env: Env): void {
@@ -20,9 +16,13 @@ function assertOffGcpPushConfig(env: Env): void {
       `Missing FCM_PROJECT_ID: every FCM push send fails (no Firebase project to address). ${FCM_CREDENTIAL_FIX}`,
     );
   }
+  if (env.FCM_SERVICE_ACCOUNT_JSON) {
+    parseServiceAccount(env.FCM_SERVICE_ACCOUNT_JSON);
+    return;
+  }
   if (!env.GOOGLE_APPLICATION_CREDENTIALS) {
     throw new Error(
-      `Missing GOOGLE_APPLICATION_CREDENTIALS: every FCM push send fails (no Firebase credential off GCP). ${FCM_CREDENTIAL_FIX}`,
+      `Missing FCM_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS: every FCM push send fails (no Firebase credential off GCP). ${FCM_CREDENTIAL_FIX}`,
     );
   }
 }
@@ -39,7 +39,7 @@ export function selectPush(env: Env): PushAdapter {
       "PUSH_PROVIDER=fcm but FCM_PROJECT_ID is unset — relying on ADC's ambient project (fine on Cloud Run; pushes fail anywhere without one).",
     );
   }
-  return new FcmPush(env.FCM_PROJECT_ID);
+  return new FcmPush(env.FCM_PROJECT_ID, env.FCM_SERVICE_ACCOUNT_JSON);
 }
 
 @Global()
