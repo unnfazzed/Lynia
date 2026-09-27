@@ -1762,6 +1762,29 @@ input). Three runs:
 no hash is computed, and prints the `build:list` stderr instead of discarding it. Testers pick the
 update up on the second cold start.
 
+**Build 37 to Closed testing — 2026-09-27 (new Play service account).** Build `3c67f3ba` (v0.50.0 /
+vc 37, profile `closed`, pointing at `api.lyniago.com`, Firebase project `lyniago-app`) built green,
+but the submit credential was still `id-play-publisher@lynia-500911`, a key in the suspended GCP
+project. A new submit account `play-upload@lyniago-app.iam.gserviceaccount.com` replaced it. The
+14-day closed-test clock was not reset: same track, same app, only the uploader changed.
+
+| Submission | Result | Failure class |
+|---|---|---|
+| auto-submit of `3c67f3ba` | ERRORED | `Fastlane supply failed`, old `lynia-500911` key (suspended project) |
+| `e7bcb73f` (run 36312577884) | ERRORED | `invalid_grant - Invalid JWT Signature`: the uploaded JSON was key `1d940741`, already deleted in GCP; the live key is `8ec1c154` |
+| `6de40cb2` | ERRORED | `SERVICE_ACCOUNT_IS_MISSING_PERMISSIONS`: key valid, Play Console app permissions not yet granted |
+| `d4a9c33c` | **FINISHED** | track `Closed testing` |
+
+Lessons:
+- **Match the key ID before uploading.** Compare `jq -r .private_key_id` on the file with
+  `gcloud iam service-accounts keys list`; a same-named stale file cost a round.
+- **The expo.dev "Change Google Service Account Key" dialog was broken** for this app ("Entity not
+  found: AndroidAppCredentialsEntity", with the old *key* id as the credentials id). The key was
+  attached through the EAS GraphQL mutation
+  `androidAppCredentials.setGoogleServiceAccountKeyForSubmissions` instead.
+- Play permissions for a service account are per app: invite it in Users and permissions **and**
+  add Lynia under App permissions with "Release to testing tracks".
+
 ---
 
 ## 9. Pre-submission checklist
