@@ -1,125 +1,148 @@
 # App Store (iOS) submission — step-by-step + ledger
 
-> **Status 2026-09-27: not started — LyniaGo has never been built for iOS.** `apps/mobile/app.config.ts`
-> has no `ios` block, `apps/mobile/eas.json` has no iOS build or submit profile, and all three EAS
-> workflows hardcode `--platform android`. This is the iOS twin of
-> [`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md) (**PSS** below): the path to a first App Store
-> release, the finding behind each step (verified against this repo at `bca4a81`, or against a dated
-> primary source listed in §9), and — from the first iOS build on — the ledger of every build and
-> submission attempt (§10).
+> **Status 2026-09-27: engineering started — no signed iOS build yet.**
+>
+> **The chosen path:** a **customer-only iPhone app** (no rider mode, no ID/KYC), published by the
+> organization **FortyoneX Studio (Private) Limited**, which owns the LyniaGo brand. That makes the
+> App Store seller the company, not a person. Merchants keep using the merchant web dashboard.
+>
+> **What already exists:**
+> - The iOS toolchain is **proven**. EAS build `7fdb60a9` compiled this app (Expo SDK 52 / RN 0.76.9)
+>   on **Xcode 26.2**, which App Store uploads require (§3 B1).
+> - The rider-free iPhone app is in code (D-41, §3 B3). It is inert until an iOS binary exists.
+>
+> This is the iOS twin of [`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md) (**PSS** below). It
+> covers:
+> - the path to a first App Store release;
+> - the finding behind each step, verified against this repo or a dated primary source (§9);
+> - the ledger of every iOS build and submission (§10).
 >
 > **Owner tags:** **[F]** founder-only (Apple accounts, consoles, decisions) · **[C]** a Claude session
 > can do it in a PR. **UNVERIFIED** marks anything no source could confirm.
 
 ## 0. The short version
 
-1. **[F] Start Apple enrollment now — it is the long pole** (§2). An *organization* account needs a
-   registered legal entity, a D-U-N-S number, a working website on the company's domain and a work
-   email on that domain. The repo records none of the four.
-2. **[F] Make the calls in §1** — Expo SDK path, rider live location on iOS, push transport,
-   availability, what a reviewer's test order does.
-3. **[C] Prove the toolchain** (§3 B1). Since **2026-04-28** App Store Connect only accepts builds made
-   with **Xcode 26**; this app's Expo SDK 52 defaults to an **Xcode 16.2** EAS image, and SDK 52 on
-   Xcode 26 is untested anywhere. A simulator build proves it without an Apple account.
-4. **[C] Engineering PRs** (§3) — the `ios` config, push via APNs, iOS behaviour fixes, legal/support
-   pages, iOS lanes in the EAS workflows. **Land the `ios` config together with the next Android store
-   build** (B11): it moves the Android OTA fingerprint too.
-5. **[F] One-time signing setup** (§2 A6) — `eas credentials -p ios` from any computer; CI cannot create
+1. **[F] Enroll FortyoneX Studio (Private) Limited as an Organization** (§2): D-U-N-S number, a real
+   site on lyniago.com, an @lyniago.com email, then the USD 99 enrollment.
+2. **[C] Engineering PRs** (§3):
+   - **Done:** the iOS prebuild fix, the Xcode 26 proof, the rider-free iPhone app, the iOS store link.
+   - **Still to do:** APNs push, the remaining iPhone fixes, the support page and legal wording, the
+     iOS workflow lanes.
+   - **Also still to do:** the `ios` config plus the iOS `eas.json` profiles. These ship **together
+     with the next Android store build**, because both move the Android OTA fingerprint (B9).
+3. **[F] One-time signing setup** (§2 A6): `eas credentials -p ios` from any computer. CI cannot create
    an iOS distribution certificate.
-6. **[C+F] First TestFlight build + an iPhone device pass** (§4). The device pass is the exit gate.
-7. **[F, C drafts] Listing** (§5) — Apple-size screenshots, privacy labels, age rating, review notes and
+4. **[C+F] First TestFlight build, then an iPhone device pass** (§4). The device pass is the exit gate.
+5. **[F, C drafts] Listing** (§5): Apple-size screenshots, privacy labels, age rating, review notes and
    the demo login.
-8. **[F] Submit for review → release manually** (§6, §7).
+6. **[F] Submit for review, then release manually** (§6, §7).
 
-## 1. Decisions only the founder can make
+## 1. Decisions
 
-| # | Decision | Recommendation | Why it matters |
+| # | Decision | State | Notes |
 |---|---|---|---|
-| D1 | Enroll as **Organization** or Individual | **Organization** | Guideline 5.1.1(ix): apps in financial services, or that "require sensitive user information" (KYC ID photos, a stored-value wallet), "should be submitted by a legal entity that provides the services, and not by an individual developer". An individual account also shows a personal name as the seller. The Play account looks personal (PSS 1696-1700 — the mandatory closed test applies to personal accounts). |
-| D2 | Expo SDK for iOS | **Upgrade to SDK 54 first** — or ship on SDK 52 if the B1 compile proof passes and speed matters more | SDK 52 needs a pinned Xcode 26.0–26.2 image and is untested there; SDK 54 is the last SDK with the legacy architecture this app runs, defaults to Xcode 26, and targets Android API 36, which Play has required since 2026-08-31 (§8). The iOS 27 SDK becomes mandatory in April 2027, so SDK 52 has ~6 months of iOS runway at best. |
-| D3 | Rider live location while navigating, on iOS | **Ask riders for "Always" location on iOS, only when a job goes active** | On iOS, `expo-location@18.0.10`'s `startLocationUpdatesAsync` requires **"Always"** authorization *and* `UIBackgroundModes: location` (`ios/LocationModule.swift:165-178`, `ios/Requesters/EXBackgroundLocationPermissionRequester.m:126-154`: "granted" is only `kCLAuthorizationStatusAuthorizedAlways`). The app asks for While-In-Use only, so on iOS the task silently no-ops (`src/realtime/background-location-task.ts:13-15`) — yet `src/ui/rider/JobDetailsCard.tsx:122` tells riders "Your live location keeps sharing with the customer while you navigate." Foreground-only on iOS instead means changing that drawn copy (a `DESIGN-DEVIATIONS.md` entry). |
-| D4 | How iOS push is delivered | **Server-side APNs adapter** (no app change) | The app already registers the raw APNs token with `platform: "ios"` (`src/push/push.ts:86,96`); the API sends every token through FCM (`apps/api/src/adapters/push/fcm.push.ts`), which cannot deliver to an APNs token. Expo push tokens need client + server changes; the Firebase iOS SDK is the REL-03 build breaker. |
-| D5 | Where the app is available | **Zimbabwe only** | App Store Connect defaults to every storefront. Distributing in the EU makes an organization a DSA "trader" whose address, phone and email are verified and published; not distributing there → declare non-trader. Zimbabwe is an App Store storefront (TestFlight too). |
-| D6 | iPhone only? | **Yes** (`supportsTablet: false`) | No iPad screenshots needed. Reviewers may still run it on iPad in compatibility mode (2.4.1) — see the `tel:` item in B7. |
+| D1 | Apple account type | **DECIDED 2026-09-27: Organization = FortyoneX Studio (Private) Limited** | The owner rejected an Individual account because it displays the person's legal name as the App Store seller. The organization owns the LyniaGo brand. Guideline 5.2.1 wants the seller to be the entity that offers the service; to satisfy it, the privacy page, support page, copyright line and review notes all say "LyniaGo is operated by FortyoneX Studio (Private) Limited". |
+| D2 | Expo SDK for iOS | **DECIDED: ship on SDK 52 with `ios.image` pinned to `macos-sequoia-15.6-xcode-26.2`** | Proven by build `7fdb60a9`. The default SDK 52 image (Xcode 16.2) cannot upload, and Xcode ≥ 26.4 cannot compile RN 0.76.9's fmt, so the pin is load-bearing. Runway: the iOS 27 SDK becomes mandatory in April 2027, and Play needs API 36 now (§8). SDK 54 (the last SDK with the legacy architecture) is the upgrade both stores need before then. |
+| D3 | Rider mode on iOS | **DECIDED 2026-09-27: none.** Customer-only iPhone app, no national ID, no KYC (DESIGN-DEVIATIONS D-41) | Riders are on low-end Android handsets. This removes the rider "Always"-location permission, KYC, the commission-wallet review question and the rider demo video from the iOS path. |
+| D4 | How iOS push is delivered | **Recommended: server-side APNs adapter** (no app change) | The app registers the raw APNs token with `platform: "ios"` (`src/push/push.ts`). The API sends every token through FCM (`apps/api/src/adapters/push/fcm.push.ts`), which cannot deliver to an APNs token. Customers need push for offers, arrival and delivery updates. |
+| D5 | Where the app is available | **Recommended: Zimbabwe only** | Distributing in the EU makes the organization a DSA "trader", and Apple publishes its address, phone and email. With non-EU availability, declare non-trader. Zimbabwe is an App Store and TestFlight storefront. |
+| D6 | iPhone only? | **Yes** (`supportsTablet: false`) | No iPad screenshots are needed. Reviewers may still run the app on iPad in compatibility mode (2.4.1); see the `tel:` item in B6. |
 | D7 | Bundle ID | **`zw.co.lynia`** (same as the Android package) | Permanent once the App Store Connect record exists. |
-| D8 | What a reviewer's test order does | **Mark demo-account orders as test server-side** (never broadcast to real riders, never sent to a real restaurant), or brief ops to watch and cancel | The demo login is a normal customer (`auth.service.ts:448-452`). A parcel request with pins inside the Harare corridor goes to real online riders; restaurants are listed regardless of location (`merchant.service.ts:399-429`), so a food order reaches a real pilot restaurant. Play review had the same exposure. |
-| D9 | Account deletion: 30-day grace or immediate? | Owner call | The in-app final step (drawn in the mock, `screens-shipped.jsx:361`) promises "permanently deleted after 30 days … Sign back in within 30 days and the deletion is cancelled"; `PrivacyService.eraseAccount` anonymises **immediately** and the public page says "Deletion happens immediately" (`legal.content.ts:520-521`). Apple accepts either (5.1.1(v)), but the app must describe what actually happens. |
-| D10 | Permission-primer button "Allow location" (`app/permissions.tsx:110`) | **"Continue"** — needs a `DESIGN-DEVIATIONS.md` entry, the mock draws "Allow location" | A custom pre-permission button worded "Allow" is a recurring App Review 5.1.1 rejection (a reviewer pattern, not guideline text). |
+| D8 | What a reviewer's test order does | **Recommended: mark demo-account orders as test server-side** | The demo login is a normal customer (`auth.service.ts:448-452`). A parcel request inside the Harare corridor goes to real online riders. Restaurants are listed regardless of location (`merchant.service.ts:399-429`), so a food order reaches a real pilot restaurant. |
+| D9 | Account deletion: 30-day grace or immediate? | **OPEN, owner call** | The in-app final step, drawn in `screens-shipped.jsx:361`, promises a 30-day grace period. The server (`PrivacyService.eraseAccount`) and the public page both delete **immediately**. Apple accepts either (5.1.1(v)), but the app must say what actually happens. |
+| D10 | Permission-primer button "Allow location" (`app/permissions.tsx:110`) | **OPEN, recommended: "Continue"** | A custom pre-permission button worded "Allow" is a recurring App Review 5.1.1 rejection (a reviewer pattern, not guideline text). The mock draws "Allow location", so the change needs a deviation entry. |
 
 ## 2. Phase A — Apple accounts [F]
 
-- **A1. Legal entity + D-U-N-S.** Apple enrolls legal entities only — "We do not accept DBAs, fictitious
-  businesses, trade names, or branches." D-U-N-S is free from Dun & Bradstreet via Apple's lookup tool;
-  allow up to 5 business days, then up to 2 for Apple to receive it. Zimbabwe turnaround: **UNVERIFIED**.
-  The repo has no D-U-N-S, registration number or registered address on record (PSS 1674-1676 still
-  lists "registered company name, registration number and address" as open).
-- **A2. Website + work email on the company domain.** Apple: the website must be "publicly available and
-  functional … Links to social media webpages or websites that contain minimal content … won't be
-  accepted", and the enrolling email should be on the organization's domain. Today neither
-  `lyniago.com` nor `lyniafinance.com` serves a site (PSS 1260), and `lyniafinance.com` has no mail
-  hosting (`GCP-BILLING-DOMAIN-SETUP.md`). [C] can build a small site if wanted.
-- **A3. Enroll** in the Apple Developer Program as an Organization — USD 99/year; an Apple ID with 2FA;
-  the enrolling person must have authority to bind the company. The US Zimbabwe sanctions program ended
-  2024-03-04; whether Apple's enrollment flow supports Zimbabwe is **UNVERIFIED** until tried.
-- **A4. Create the App Store Connect app record** — on the website only (Apple's API cannot create
-  apps). Platform iOS · Name `LyniaGo` (must be unique store-wide; reserve early) · Primary language
-  English (U.K.) (Play is en-GB) · Bundle ID `zw.co.lynia` · SKU e.g. `lyniago-ios`. Record the app's
-  **Apple ID (`ascAppId`)** and the **Team ID** — both go into `eas.json` (B10).
+- **A1. D-U-N-S for FortyoneX Studio (Private) Limited.**
+  - Search Apple's D-U-N-S lookup first; registered companies often already have a number. If not,
+    request one on the same page (free).
+  - Give Dun & Bradstreet (D&B) the name **exactly** as on the certificate of incorporation, plus the
+    registered address, a work email and phone, and **lyniago.com** as the website.
+  - Allow up to 5 business days, plus 2 for Apple to receive it. D&B may phone or email for documents.
+  - Zimbabwe turnaround: **UNVERIFIED**.
+- **A2. Website and work email on the domain.**
+  - The website must be "publicly available and functional". Social-media links or "minimal content"
+    are rejected.
+  - lyniago.com must be a real site that names the operator ("LyniaGo is operated by FortyoneX Studio
+    (Private) Limited"). [C] can build it.
+  - For the email, lyniago.com is a Cloudflare zone, so free Email Routing can forward e.g.
+    you@lyniago.com to an existing inbox. Create the enrolling Apple ID with that address, with 2FA on.
+- **A3. Enroll** in the Apple Developer Program as an Organization.
+  - USD 99/year.
+  - The enrolling person must be able to bind the company (a director).
+  - Apple may phone to verify.
+  - The US Zimbabwe sanctions program ended 2024-03-04. Whether Apple's flow supports Zimbabwe is
+    **UNVERIFIED** until tried.
+- **A4. Create the App Store Connect app record.** This is website-only; Apple's API cannot create apps.
+  - Platform: iOS.
+  - Name: `LyniaGo` (unique store-wide, so reserve it early).
+  - Primary language: English (U.K.), matching Play's en-GB.
+  - Bundle ID: `zw.co.lynia`.
+  - SKU: e.g. `lyniago-ios`.
+  - Record the app's **Apple ID (`ascAppId`)** and the **Team ID**. Both go into `eas.json` (B8).
 - **A5. Keys.**
-  - **App Store Connect API key** (Users and Access → Integrations; Expo's guide uses the Admin role) →
-    stored on EAS for `eas submit`; it also lets non-interactive builds repair provisioning profiles.
-  - **APNs auth key (.p8)** (Certificates, Identifiers & Profiles → Keys → Apple Push Notifications
-    service). Downloadable once → Azure Key Vault for the API, with its Key ID and the Team ID (B5).
-- **A6. One-time signing credentials — CI cannot create them.** `eas build --non-interactive` only reuses
-  an existing distribution certificate ("Credentials are not set up. Run this command again in
-  interactive mode.") and silently skips push-key setup. Run once, from any computer (macOS not
-  required), as Account Holder or Admin: `npx eas-cli@latest credentials -p ios` → distribution
-  certificate + App Store provisioning profile + the submission API key.
-- **A7. Compliance screens.** A free app with no in-app purchase needs no Paid Apps agreement, banking
-  or tax forms. DSA trader status: declare **non-trader** with non-EU availability (D5).
+  - **App Store Connect API key** (Users and Access → Integrations; Expo's guide uses the Admin role).
+    Store it on EAS for `eas submit`; it also lets non-interactive builds repair provisioning profiles.
+  - **APNs auth key (.p8)** (Certificates, Identifiers & Profiles → Keys). It can be downloaded only
+    once. Put it in Azure Key Vault for the API, together with its Key ID and the Team ID (B4).
+- **A6. One-time signing credentials.** CI cannot create them:
+  - `eas build --non-interactive` only reuses an existing distribution certificate ("Credentials are
+    not set up. Run this command again in interactive mode.").
+  - It silently skips push-key setup.
+  - Fix: run `npx eas-cli@latest credentials -p ios` once, from any computer (macOS not required), as
+    Account Holder or Admin.
+- **A7. Compliance screens.**
+  - A free app with no in-app purchase needs no Paid Apps agreement, banking or tax forms.
+  - DSA trader status: declare **non-trader** with non-EU availability (D5).
 
 ## 3. Phase B — engineering [C]
 
-### B1. Toolchain — Xcode 26 and the Expo SDK (D2)
+### B1. Toolchain: DONE (2026-09-27)
 
 - **Rule:** since 2026-04-28, "Apps uploaded to App Store Connect must be built with Xcode 26 or later
   using an SDK for iOS 26". The iOS 27 SDK is required from April 2027 (exact day not announced).
-- **SDK 52 as-is fails upload:** with no `image`, EAS resolves SDK 52 to `macos-sequoia-15.3-xcode-16.2`.
-- **`"image": "latest"` fails to compile:** it is Xcode 26.6, and Xcode ≥ 26.4 rejects the fmt 11.0.2
-  bundled by RN 0.76.9 ("Call to consteval function … is not a constant expression"; the fmt 12.1.0
-  fix landed only on RN 0.83+, and 0.76.9 is the last 0.76 release).
-- **SDK 52 therefore needs `ios.image` pinned to `macos-sequoia-15.6-xcode-26.2`** (or 26.1 / 26.0).
-  Expo makes no statement either way about SDK 52 on those images — **UNVERIFIED**.
-- **Cheapest proof:** an iOS **simulator** build compiles the same native code and needs no Apple
-  account — a profile with `"ios": { "simulator": true, "image": "macos-sequoia-15.6-xcode-26.2" }`,
-  dispatched from a branch so `main`'s fingerprint doesn't move (B11). The Free plan's 15 iOS
-  builds/month are separate from the 15 Android.
-- **SDK 54** is the last SDK with the legacy architecture (SDK 55 removed `newArchEnabled`), defaults to
-  Xcode 26.0 and targets Android API 36. This app must stay on the legacy architecture (MOB-BOOT-04),
-  so an upgrade stops at 54 — and follows the MOB-BOOT-04 protocol: a sideloaded cold-start smoke on a
-  real device before any EAS/Play dispatch.
+- **Proof:** EAS build `7fdb60a9` (profile `ios-simulator`) ran on the VM template
+  `macos-sequoia-15.6-xcode-26.2` (Xcode 26.2, 17C52). It passed install, prebuild, pods, the
+  expo-updates runtime version, the JS bundle and the Xcode build ("› Build Succeeded").
+  - It built from temporary commit `1c9be6d`, which was reverted on its branch (B9).
+  - A simulator build runs the same compiler as a device build; archiving and signing are the only
+    untested parts, and the first TestFlight build (§4 C2) covers them.
+- **Why the image is pinned:**
+  - With no `image`, EAS resolves SDK 52 to `macos-sequoia-15.3-xcode-16.2`, which cannot upload.
+  - `"image": "latest"` (Xcode 26.6) cannot compile RN 0.76.9. Xcode ≥ 26.4 rejects its bundled
+    fmt 11.0.2 ("Call to consteval function … is not a constant expression"); the fmt 12.1.0 fix
+    exists only on RN 0.83+.
+- **iOS prebuild blocker, found and fixed on the way:** the root `package.json` override
+  `"@xmldom/xmldom@<0.8.13": ">=0.8.13"` had no upper bound, so pnpm resolved @expo/plist to xmldom
+  0.9.12. That version requires a `parseFromString` mimeType argument, so every iOS prebuild died in
+  `withIosInfoPlistBaseMod`. Android never parses a plist, so no Android build noticed. It is now
+  `^0.8.13` (0.8.15), which keeps the security floor and leaves the Android fingerprint unchanged.
 - **Liquid Glass:** building with the iOS 26 SDK restyles native UIKit controls (alerts, action sheets,
-  switches, pickers, keyboard). Most of this UI is JS-drawn, but native alerts will change.
+  switches, pickers, keyboard). Most of this UI is drawn in JS, but native alerts will change.
   `UIDesignRequiresCompatibility: true` opts out temporarily and is ignored once built with the iOS 27
-  SDK — a parity decision, not a default.
+  SDK. This is a parity decision, not a default.
 
-### B2. The `ios` block in `app.config.ts`
+### B2. The `ios` block in `app.config.ts` (verified by a local prebuild; ships per B9)
 
 ```ts
 ios: {
   bundleIdentifier: "zw.co.lynia",
   supportsTablet: false,
-  icon: "./assets/icon-ios.png",              // B8: opaque, full-bleed 1024×1024
+  icon: "./assets/icon-ios.png",              // B7: opaque, full-bleed 1024×1024
   config: { usesNonExemptEncryption: false },   // HTTPS + OS crypto only → no per-build export question
   privacyManifests: { NSPrivacyAccessedAPITypes: [/* table below */] },
 },
 ```
 
-`buildNumber` stays EAS-managed (`appVersionSource: "remote"` + `autoIncrement`) — don't add one.
-Encryption: the app bundles no crypto library; TLS pinning (when armed) uses iOS's own
-`NSPinnedDomains`. SDK 52 prebuild writes **no** app-level `PrivacyInfo.xcprivacy` unless
-`privacyManifests` is set, and Apple rejects uploads that don't declare required-reason APIs
-(ITMS-91053):
+`expo prebuild --platform ios` (run locally on Linux) generated the following:
+- `TARGETED_DEVICE_FAMILY = "1"` (iPhone only) and deployment target 15.1.
+- `ITSAppUsesNonExemptEncryption = false`.
+- A `PrivacyInfo.xcprivacy` with all four API categories (table below).
+- The `aps-environment` entitlement at `development`. Confirm that the exported IPA carries
+  `production`.
+
+`buildNumber` stays EAS-managed (`appVersionSource: "remote"` + `autoIncrement`).
 
 | Required-reason API | Reasons | Used by |
 |---|---|---|
@@ -128,210 +151,249 @@ Encryption: the app bundles no crypto library; TLS pinning (when armed) uses iOS
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | RN core |
 | `NSPrivacyAccessedAPICategoryDiskSpace` | `E174.1`, `85F4.1` | expo-file-system |
 
-### B3. Permission strings (App Review reads every one)
+**Permission strings.** Every image-picker user is rider-only (`app/rider/become.tsx`,
+`src/ui/rider/PickupChecklist.tsx`, `src/ui/rider/UndeliveredSheet.tsx`, `src/kyc/verify.ts`), so the
+customer-only iPhone app never asks for the camera or photos. The keys must stay anyway: the linked
+image-picker module needs them, and a missing purpose string is an ITMS-90683 upload error. They are
+iOS-only strings, so fold these into the B9 change:
+- Make the camera and photo strings neutral; today's mention "ID/profile photo for verification".
+- Set `microphonePermission: false`. That also drops an unused `RECORD_AUDIO` from Android.
+- Replace expo-location's generic Always strings. The app never shows them on iOS, but they are
+  written anyway.
 
-| Info.plist key | Today | Needed |
-|---|---|---|
-| `NSLocationWhenInUseUsageDescription` | "LyniaGo uses your location to set the pickup point." (`app.config.ts:260-274`) | Also cover the rider side: nearby jobs, navigation, and the rider's live position shared with the customer during a delivery. |
-| `NSLocationAlwaysAndWhenInUseUsageDescription`, `NSLocationAlwaysUsageDescription` | expo-location's generic default, "Allow $(PRODUCT_NAME) to access your location" (always written) | Specific text if D3 = Always: live position shared with the customer only during an active delivery. |
-| `NSCameraUsageDescription` | ID/profile photo only (`app.config.ts:276-281`) | Also parcel pickup photos and non-delivery proof (`src/ui/rider/PickupChecklist.tsx`, `src/ui/rider/UndeliveredSheet.tsx`). |
-| `NSPhotoLibraryUsageDescription` | ID/profile photo | OK. |
-| `NSMicrophoneUsageDescription` | expo-image-picker's generic default | Remove (`microphonePermission: false`) unless Didit's liveness WebView asks for audio — check on a device first. This also drops an unused `RECORD_AUDIO` from the Android manifest. |
+`expo-task-manager` auto-adds `UIBackgroundModes: fetch`, which this app does not use. It is harmless;
+remove it with a small plugin only if review asks.
 
-### B4. Rider background location (D3)
+### B3. Customer-only iPhone app: DONE (2026-09-27, DESIGN-DEVIATIONS D-41)
 
-If "Always": expo-location plugin `isIosBackgroundLocationEnabled: true` plus the Always strings;
-call `requestBackgroundPermissionsAsync()` on iOS only when a job goes active — never at onboarding
-(5.1.2(i)); keep `showsBackgroundLocationIndicator: true`; fall back to today's foreground-only stream
-if refused. The review notes must justify it (2.5.4 — a Dec 2024 rejection called driver tracking
-"employee tracking"; frame it as the customer's live tracking and ETA). If foreground-only: change the
-`JobDetailsCard.tsx:122` promise on iOS under a deviation entry.
+Every gate reads `riderModeAvailable()` (`apps/mobile/src/rider-mode.ts`), which is false only on iOS.
+On iPhone:
+- There is no role fork: sign-in goes to the customer's permission priming (`src/logic/sign-in-route.ts`).
+- The food-off onboarding deck has no "Earn as a rider" slide.
+- Sign-up has no National ID field, and the PATCH omits `idNumber`, which the contract already makes
+  optional.
+- The Account tab has no rider row, and the online-rider pill, "Open your job" and `/profile`'s rider
+  side are hidden.
+- A saved rider role boots to `/home`, and rider push or notification-row taps open `/home`.
+- `RiderRouteGate` sends any `/rider/*` or `/wallet/*` route home.
 
-### B5. iOS push (D4) — API only
+Android, and the react-native-web parity lane, are unchanged. The jest suite runs as iOS under
+jest-expo, so `jest.setup.js` defaults the switch on and the iOS cases override it.
+
+JS-only, so nothing moves the fingerprint (the Android fingerprint was measured before and after).
+
+### B4. iOS push (D4) — API only
 
 - `ApnsPush` adapter: HTTP/2 to `api.push.apple.com`, token auth with the `.p8`. Env: `APNS_KEY_ID`,
-  `APNS_TEAM_ID`, `APNS_KEY` (Key Vault), `APNS_TOPIC=zw.co.lynia`, a sandbox flag.
-- Route by the stored `DeviceToken.platform` (`schema.prisma:278`): `NotificationsService.send()`
-  (`notifications.service.ts:404-444`) selects only `token`/`profileId` today and hands everything to
-  FCM. `ios` → APNs, everything else (including null) → FCM.
-- Reuse the ttl → `apns-expiration` and collapse → `apns-collapse-id` mapping `buildFcmMessage` already
-  has; prune on APNs `410 Unregistered` / `400 BadDeviceToken`.
-- Latent bug either way: an iOS token sent to FCM fails with a code outside `DEAD_TOKEN_CODES`
-  (`fcm.push.ts:8-14`), so it is never pruned and fails on every send.
-- No app change. The `aps-environment` entitlement comes from expo-notifications (default
-  `development`) — confirm the exported IPA carries `production`.
+  `APNS_TEAM_ID`, `APNS_KEY` (Key Vault), `APNS_TOPIC=zw.co.lynia`, and a sandbox flag.
+- Route by the stored `DeviceToken.platform` (`schema.prisma:278`). Today `NotificationsService.send()`
+  (`notifications.service.ts:404-444`) selects only `token`/`profileId` and hands everything to FCM.
+  Route `ios` to APNs and everything else (including null) to FCM.
+- Reuse the ttl → `apns-expiration` and collapse → `apns-collapse-id` mapping that `buildFcmMessage`
+  already has. Prune on APNs `410 Unregistered` / `400 BadDeviceToken`.
+- There is a latent bug either way: an iOS token sent to FCM fails with a code outside
+  `DEAD_TOKEN_CODES` (`fcm.push.ts:8-14`). It is never pruned and fails on every send.
 
-### B6. Store URL and force-update
+### B5. Store URL and force-update: URL DONE, per-platform minimum still to do
 
-`extra.storeUrl` defaults to the **Play** URL on every platform (`app.config.ts:396`), so
-`app/force-update.tsx` sends iPhone users to Google Play. Choose the URL by `Platform.OS` in
-`src/config.ts` (`https://apps.apple.com/app/id<ascAppId>`) — JS-only; don't edit `extra`, it is a
-fingerprint input. The server's single `MIN_SUPPORTED_APP_VERSION` (`health.controller.ts:38`) covers
-both platforms: make it per-platform before the first iOS release, or an Android-driven bump locks
-iOS users out with no build to update to.
+- **Done:** `STORE_URL` is now per-platform (`src/config.ts` `storeUrlFor`).
+  - iOS reads only `EXPO_PUBLIC_APP_STORE_URL`, and **never** the Play URL that
+    `extra.storeUrl` defaults to.
+  - Until the listing exists, the iOS "Update now" button hides.
+  - Once the listing exists, set it (`https://apps.apple.com/app/id<ascAppId>`) in the EAS environment
+    and ship it by OTA. It is a JS substitution, not a fingerprint input.
+- **Still to do:** the server's single `MIN_SUPPORTED_APP_VERSION` (`health.controller.ts:38`) covers
+  both platforms. Make it per-platform before the first iOS release. Otherwise an Android-driven bump
+  locks iPhone users out with no build to update to.
 
-### B7. iOS behaviour fixes (code sweep; none reproduced on a device yet)
+### B6. iOS behaviour fixes (code sweep; none reproduced on a device yet)
 
-- **Keyboard over inputs:** three bottom sheets with text inputs have no `KeyboardAvoidingView`
-  (iOS doesn't resize the window for the keyboard): `src/ui/food/CartNoteSheet.tsx`,
+- **Keyboard over inputs:** three bottom sheets with text inputs have no `KeyboardAvoidingView`, and
+  iOS doesn't resize the window for the keyboard: `src/ui/food/CartNoteSheet.tsx`,
   `src/ui/food/ItemSheet.tsx`, `src/ui/safety.tsx`.
-- **No way to close the number pad:** phone/number pads have no return key and nothing dismisses the
-  keyboard (`app/phone.view.tsx`, `app/verify.tsx`). Check the Continue button stays reachable on a
-  small iPhone — a stuck sign-in screen is an instant 2.1 rejection.
-- **KYC fallback never completes:** `WebBrowser.openAuthSessionAsync(url)` with no redirect URL
-  (`src/kyc/verify.ts:116`) can never return `success` on iOS, so the rider lands on the "unfinished"
-  wall. Pass the return URL. The primary WebView lane has the iOS media props.
+- **No way to close the number pad:** phone and number pads have no return key, and nothing dismisses
+  the keyboard (`app/phone.view.tsx`, `app/verify.tsx`). Check that Continue stays reachable on a small
+  iPhone; a stuck sign-in screen is an instant 2.1 rejection.
 - **Haptics are long buzzes:** core `Vibration` (`src/ui/haptics.ts:68`) ignores durations on iOS, so
-  each of the 20 `haptic()` calls is a full buzz. Skip on iOS, or adopt `expo-haptics` (a native
-  dependency → rides the next store build).
-- **`tel:` buttons fail silently** where there is no phone app (iPad compatibility-mode review): every
+  every `haptic()` call is a full buzz. Either skip on iOS, or adopt `expo-haptics`, which is native
+  and so ships per B9.
+- **`tel:` buttons fail silently** where there is no phone app (iPad compatibility-mode review). Every
   `Linking.openURL("tel:…")` is fire-and-forget. Add a catch with a copy-the-number fallback.
-- **Unseen layouts:** core `SafeAreaView` only pads on iOS (`app/phone.tsx`, `app/help/index.tsx`,
-  `app/role.tsx`, `app/onboarding.tsx`, `app/notifications/index.tsx`); `src/ui/BottomSheet.tsx` and
-  `src/ui/home/LocationSheet.tsx` have no home-indicator inset.
-- **Keychain survives uninstall on iOS:** device id, session and onboarding flags persist across a
-  reinstall (`src/auth/session.ts:52-55` assumes they don't). Decide whether a reinstall signs out.
-- **Not a bug:** `textContentType="oneTimeCode"` is set, but production OTP is WhatsApp-only
-  (`env.ts:166`, `release-azure.yml:459-466`), which iOS Security Code AutoFill doesn't read.
+- **Unseen layouts:**
+  - Core `SafeAreaView` only pads on iOS (`app/phone.tsx`, `app/help/index.tsx`, `app/onboarding.tsx`,
+    `app/notifications/index.tsx`).
+  - `src/ui/BottomSheet.tsx` and `src/ui/home/LocationSheet.tsx` have no home-indicator inset.
+- **Keychain survives uninstall on iOS:** the device id, session and onboarding flags persist across a
+  reinstall, but `src/auth/session.ts:52-55` assumes they don't. Decide whether a reinstall should sign
+  the user out.
+- **Not a bug:** production OTP is WhatsApp-only, which iOS Security Code AutoFill doesn't read.
 
-### B8. App icon
+### B7. App icon
 
-`apps/mobile/assets/icon.png` is byte-identical to the kit's `lyniago-icon-1024.png`: a rounded tile with
-**transparent corners**. Expo's iOS icon step flattens transparency onto white
-(`@expo/prebuild-config@8.2.0` `withIosIcons`: `removeTransparency`, `#ffffff`), so the icon would show
-white corners inside iOS's own mask, and Apple wants "no rounded corners or other transparent pixels".
-iOS needs an opaque, square, full-bleed 1024 master (the kit SVG is the same tile with `rx="32"`).
-Under the design-freeze rule, request it from the design tool and log it in `DESIGN-DEVIATIONS.md` —
-don't edit `packages/design/**`.
+- **The problem:** `apps/mobile/assets/icon.png` is byte-identical to the kit's `lyniago-icon-1024.png`,
+  a rounded tile with **transparent corners**. The local prebuild confirmed Expo flattens it onto
+  white, so the generated `App-Icon-1024x1024@1x.png` is RGB and its corner pixel is `(255,255,255)`.
+  iOS then shows white corners inside its own mask.
+- **What iOS needs:** an opaque, square, full-bleed 1024 master. The kit SVG is the same tile with
+  `rx="32"`.
+- **What to do:** request that master from the design tool, and log it as an UPSTREAM entry in
+  `DESIGN-DEVIATIONS.md`. Don't edit `packages/design/**`.
 
-### B9. Legal and support pages (API)
+### B8. Legal, support, EAS and CI (all still to do)
 
-- The privacy notice and deletion page describe "the LyniaGo Android app" and "Android package
-  zw.co.lynia" (`legal.content.ts:311, 355, 510`), say maps are "rendered by Google Maps Platform"
-  (`:234-235`; iOS renders Apple Maps, Places search is still Google), and describe the persistent
-  Android notification (`:138`, `:408-412`). Make them platform-neutral, add Apple (APNs) as a push
-  processor with B5, and update the assertions pinned in `legal.content.spec.ts`.
-- **The Support URL is a required field and nothing can fill it today.** Add a public
-  `/legal/support` page (contact, WhatsApp help line, hours) and make sure the address it lists
-  receives mail — `support@lyniafinance.com` likely has no mailbox (`GCP-BILLING-DOMAIN-SETUP.md`).
-- Terms are optional: Apple's standard EULA applies when none is supplied.
+- **Legal pages:**
+  - The privacy notice and deletion page say "the LyniaGo Android app" and "Android package
+    zw.co.lynia" (`legal.content.ts:311, 355, 510`).
+  - They say maps are "rendered by Google Maps Platform" (`:234-235`). iOS renders Apple Maps; Places
+    search is still Google.
+  - They describe the persistent Android notification (`:138`, `:408-412`).
+  - Fix: make them platform-neutral, name **FortyoneX Studio (Private) Limited** as operator and data
+    controller, add Apple (APNs) as a push processor with B4, and update the assertions pinned in
+    `legal.content.spec.ts`.
+- **Support URL (required field):** nothing can fill it today. Add a public `/legal/support` page
+  (contact, WhatsApp help line, hours). Make sure the address it lists receives mail;
+  `support@lyniafinance.com` likely has no mailbox.
+- **`eas.json`:**
+  - iOS options on `preview`/`closed`/`production`, with `ios.image` pinned (D2).
+  - `submit.<profile>.ios.ascAppId` (+ `appleTeamId`).
+  - The `ios-simulator` profile from B1.
+  - **`eas.json` is a fingerprint input** (B9), so ship it with the `ios` block.
+- **Workflows:**
+  - `mobile-release.yml` / `mobile-submit.yml`: add a `platform` input (`android` | `ios`). iOS
+    submits to TestFlight; there is no track.
+  - `eas-build-status.yml`: list iOS builds and read `iosConfig`.
+  - `mobile-ota.yml`: add the iOS fingerprint preflight once an iOS binary exists. Today it checks only
+    `--platform android` while `eas update` publishes both.
 
-### B10. EAS profiles and CI lanes (all Android-only today)
+### B9. Fingerprint sequencing: ship the iOS config with the next Android build
 
-- `eas.json`: iOS options on `preview`/`closed`/`production` (plus the pinned `image` if D2 = SDK 52), a
-  `simulator` profile for the compile proof, and `submit.<profile>.ios.ascAppId` (+ `appleTeamId`).
-- `mobile-release.yml`: add a `platform` input (`android` | `ios`), keep it explicit. iOS auto-submit
-  lands in TestFlight; the App Store release is a separate console step.
-- `mobile-submit.yml`: an iOS path (a TestFlight upload; iOS has no track).
-- `eas-build-status.yml`: list iOS builds and read `iosConfig` for submissions.
-- `mobile-ota.yml`: its fingerprint preflight runs for Android only (`--platform android`), while
-  `eas update` publishes both platforms. Add the iOS preflight once an iOS binary exists.
+`@expo/fingerprint@0.11.11` hashes two sources that the iOS work touches:
+- the whole resolved config, `ios` block included, as one `expoConfig` source for every platform;
+- the whole of `eas.json` (`getEasBuildSourcesAsync`); no source skip exists for it.
 
-### B11. Fingerprint sequencing — ship the `ios` config with the next Android build
+Measured with `expo-updates fingerprint:generate --platform android`, everything else held constant:
 
-Verified in `@expo/fingerprint@0.11.11` (`build/sourcer/Expo.js`, `normalizeExpoConfig`): the whole
-resolved config — `ios` block included — is hashed as one `expoConfig` source for every platform.
-Adding `ios`, or changing a shared plugin option (`microphonePermission`,
-`isIosBackgroundLocationEnabled`), moves the **Android** runtimeVersion too. OTAs published from `main`
-then stop matching the Android binary testers have (0.50.0, versionCode 37) until the next Android store
-build ships. Merge the `ios` config with the next Android store build — the API-36 build (§8) is the
-natural carrier. JS-only and API-only items (B5, B6, B7 JS parts, B9) can land any time.
+| Tree | Android fingerprint |
+|---|---|
+| `main` (+ the xmldom fix, which is not hashed) | `7ae040c9…` |
+| + the `ios` block | `353f1dc3…` |
+| + the iOS `eas.json` profile | `a2e164dc…` |
+
+So OTAs published from `main` stop matching the Android binary testers have until the next Android
+store build ships. **Merge the `ios` block, the iOS `eas.json` profiles and the iOS plugin-option
+changes (B2) in one PR, right before the next Android store build.** The API-36 build (§8) is the
+natural carrier.
+
+JS-only and API-only work can land any time: B3, B4, B5, the JS parts of B6, and the legal/support
+half of B8.
 
 ## 4. Phase C — first build, TestFlight, device pass
 
-- **C1. Compile proof** — simulator build (B1). No Apple account; 1 of the 15 free iOS builds.
-- **C2. First signed build** — after A4–A6 and B2/B10: `mobile-release.yml` with `platform: ios`,
-  profile `closed`, auto-submit → App Store Connect → TestFlight (processing takes minutes).
-- **C3. Internal TestFlight** — up to 100 App Store Connect users, no review: the founder plus an
+- **C1. Compile proof: DONE** (build `7fdb60a9`, §10).
+- **C2. First signed build.** After A4–A6, B2 and B8, run `mobile-release.yml` with `platform: ios`
+  and profile `closed`, with auto-submit. The build goes to App Store Connect, then TestFlight.
+  Processing takes minutes.
+- **C3. Internal TestFlight.** Up to 100 App Store Connect users, with no review: the founder plus an
   iPhone tester in Harare.
-- **C4. iPhone device pass — the exit gate.** A green build is not a working app (PSS 267-269). Run
-  `QA-DEVICE-CHECKLIST.md` on an iPhone and add an iOS section: cold start and splash, WhatsApp OTP
-  sign-in, send a parcel, a food order, rider KYC (WebView camera), a rider job with background
-  location (D3), push arriving (after B5), the B7 items, a Sentry event with a symbolicated stack
-  (dSYM upload).
-- **C5. Optional external TestFlight** — up to 10,000 testers. The first build goes through Beta App
-  Review and needs a beta description, feedback email and the demo account.
+- **C4. iPhone device pass: the exit gate.** A green build is not a working app (PSS 267-269). Run
+  `QA-DEVICE-CHECKLIST.md` on an iPhone, adding an iOS section. Cover:
+  - cold start and the splash;
+  - WhatsApp OTP sign-in, with **no** National ID field and **no** role fork;
+  - sending a parcel, and a food order;
+  - push arriving (after B4);
+  - the B6 items;
+  - a Sentry event with a symbolicated stack (dSYM upload);
+  - a rider account landing in customer mode.
+- **C5. Optional external TestFlight.** Up to 10,000 testers. The first build goes through Beta App
+  Review and needs a beta description, a feedback email and the demo account.
 
 ## 5. Phase D — the App Store Connect listing [F enters, C drafts]
 
-**Metadata**
+**Metadata** (customer app only: no "Ride and earn" section anywhere):
 
 | Field | Value / source |
 |---|---|
 | Name (≤ 30) | `LyniaGo` |
-| Subtitle (≤ 30) | New for iOS — owner to approve. |
-| Description (≤ 4000) | From PSS §2, updated: drop the stale "Go online" (the rider toggle was removed — PSS 528-529), add food ordering (4 of the 6 current screenshots are food), unwrap the hard line breaks. Never reuse `LISTING-COPY.md`'s "Light on data, made for any Android phone" (2.3.10). |
-| Keywords (≤ 100 chars) | New — e.g. delivery, courier, parcel, motorbike, food, Harare, Zimbabwe. |
-| Support URL | The new `/legal/support` page (B9). |
-| Privacy Policy URL | `https://api.lyniago.com/legal/privacy` (after B9). |
-| Category | Primary Food & Drink or Business, secondary Lifestyle — owner call (Play uses Maps & Navigation). |
-| Copyright | `2026 <registered company name>` (A1). |
+| Subtitle (≤ 30) | New for iOS; owner to approve. |
+| Description (≤ 4000) | Customer half of PSS §2 (sending parcels, tracking, safety), plus food ordering, which 4 of the 6 current screenshots show. Drop the "RIDE AND EARN" block. Never reuse `LISTING-COPY.md`'s "made for any Android phone" (2.3.10). |
+| Keywords (≤ 100 chars) | New, e.g. delivery, courier, parcel, motorbike, food, Harare, Zimbabwe. |
+| Support URL | The new `/legal/support` page (B8). |
+| Privacy Policy URL | `https://api.lyniago.com/legal/privacy` (after B8). |
+| Category | Owner call: primary Food & Drink or Business, secondary Lifestyle. Play uses Maps & Navigation. |
+| Copyright | `2026 FortyoneX Studio (Private) Limited` |
 
-**Screenshots.** One iPhone set: **6.9"** (1320×2868, 1290×2796 or 1260×2736) or **6.5"** (1284×2778
-or 1242×2688); 1–10 images, PNG/JPEG, **no alpha channel**. None of the Play assets fit: they are
-1080×1920, every PNG carries an alpha channel, the 10" set has a fake Android-style status bar, and
-`05-send-parcel` shows desktop scrollbar artifacts. Re-render from the design tool's store export lab at
-Apple sizes, or capture from the iOS simulator. Put them in `store-assets/app-store/`, never under
-`packages/design/**`. No Android devices, bars or names (2.3.10). App previews are optional.
+**Screenshots.** One iPhone set, in either size:
+- **6.9"** (1320×2868, 1290×2796 or 1260×2736);
+- **6.5"** (1284×2778 or 1242×2688).
 
-**App Privacy labels** (from the Play Data-safety table, PSS 1349-1380). Nothing is used for tracking,
-so no App Tracking Transparency prompt is needed.
+1–10 images, PNG or JPEG, with **no alpha channel**.
+
+None of the Play assets fit:
+- they are 1080×1920, and every PNG has an alpha channel;
+- the 10" set has a fake status bar;
+- `05-send-parcel` shows desktop scrollbar artifacts.
+
+Re-render customer screens only, from the design tool's store export lab at Apple sizes, or capture
+them from the iOS simulator. Save them to `store-assets/app-store/`, never under `packages/design/**`.
+
+**App Privacy labels** (the customer subset of PSS 1349-1380). Nothing is used for tracking, so no App
+Tracking Transparency prompt.
 
 | Apple data type | Linked to user | Purposes | Notes |
 |---|---|---|---|
 | Contact Info — Name, Phone Number | Yes | App Functionality | Shared only with that delivery's counterparty. |
 | Contact Info — Email Address | Yes | App Functionality | Optional in-app. |
-| Contact Info — Physical Address | Yes | App Functionality | Pickup/drop-off addresses — not declared on Play; decide. |
-| Location — Precise, Coarse | Yes | App Functionality | |
+| Contact Info — Physical Address | Yes | App Functionality | Pickup/drop-off addresses. Not declared on Play; decide. |
+| Location — Precise, Coarse | Yes | App Functionality | While in use only; no background location on iOS. |
 | Identifiers — User ID, Device ID | Yes | App Functionality | The device id is a random Keychain UUID, not IDFA/IDFV. |
-| User Content — Photos or Videos | Yes | App Functionality, fraud prevention | ID document + selfie via Didit (riders), parcel photos. |
-| Sensitive Info — biometric | Yes | Fraud prevention | Didit returns a face-match score (`apps/api/src/kyc/didit.ts:68`) — confirm against Didit's data sheet. |
-| Financial Info — Other Financial Info | Yes | App Functionality | Rider mobile-money number; restaurant payment reference. |
-| Purchases — Purchase History | Yes | App Functionality | Food/shop orders; rider wallet ledger. |
+| Financial Info — Other Financial Info | Yes | App Functionality | The optional mobile-money reference a customer types for a food order. |
+| Purchases — Purchase History | Yes | App Functionality | Food and parcel orders. |
 | User Content — Other User Content | Yes | App Functionality | Notes, ratings, reports. |
-| Usage Data — Product Interaction | No | Analytics | PostHog screen views, autocapture off, no `identify` call. |
-| Diagnostics — Crash Data, Performance Data | No | Analytics | Sentry with `sendDefaultPii: false` and no `setUser`; RUM to the app's own API. |
+| Usage Data — Product Interaction | No | Analytics | PostHog screen views, autocapture off, no `identify`. |
+| Diagnostics — Crash Data, Performance Data | No | Analytics | Sentry with `sendDefaultPii: false` and no `setUser`; RUM goes to the app's own API. |
+
+The iPhone app collects **no** government ID, photos or biometrics (D-41).
 
 **Age rating.** Answer the new questionnaire (4+/9+/13+/16+/18+ tiers; the social-media capability
-questions have been required since September 2026). There is no alcohol, tobacco or drugs today (the
-Pharmacy tile is "soon" only); users interact (ratings, reports, calls) and location is shared. Then
-**override to 18+**, matching the privacy notice's "not intended for anyone under 18" (Play targets 18+
-too).
+questions have been required since September 2026):
+- no alcohol, tobacco or drugs;
+- users interact (ratings, reports, calls);
+- location is shared.
+
+Then **override to 18+**, matching the privacy notice's "not intended for anyone under 18".
 
 **App Review information.**
+- **Sign-in:** the demo phone as username and the fixed code as password.
+  - The mechanism exists: `DEMO_OTP_PHONE` + `DEMO_OTP_CODE`, allowed in production, and it is a
+    **customer** account, which is exactly the iPhone app's scope.
+  - Arm it on Azure: `DEMO_ACCOUNT_ENABLED` plus the Key Vault pair. PSS §7.1's `gcloud` commands are
+    stale.
+  - Use a reserved number, not the ops SOS line. It must not expire.
+- **Notes (draft):**
+  - LyniaGo is a parcel and food delivery marketplace for customers in Harare, Zimbabwe, operated by
+    FortyoneX Studio (Private) Limited.
+  - To send a parcel, set both pins inside Harare.
+  - Deliveries are paid in cash to the rider, outside the app. Food is paid in cash, or by mobile
+    money directly to the restaurant: physical goods and services (3.1.3(e)).
+  - Deliveries are made by independent, separately verified riders.
+  - Add whatever D8 decides about test orders.
 
-- **Sign-in:** the demo phone as username and the fixed code as password. The mechanism exists
-  (`DEMO_OTP_PHONE` + `DEMO_OTP_CODE`, allowed in production, customer-only). It must be armed on
-  Azure (`DEMO_ACCOUNT_ENABLED` + the Key Vault pair — PSS §7.1's `gcloud` commands are stale) with a
-  reserved number that is not the ops SOS line. It must not expire.
-- **Rider flows** can't be exercised by a reviewer: KYC needs a real ID, and going online needs device
-  GPS inside the Harare corridor (`online-gate.ts:86`). Attach a screen recording instead.
-- **Notes (draft):** LyniaGo is a parcel and food delivery marketplace that operates only in Harare,
-  Zimbabwe. To test sending a parcel, set both pins inside Harare. Deliveries are paid in cash to the
-  rider, outside the app; food is paid in cash or by mobile money directly to the restaurant —
-  physical goods and services (3.1.3(e)). Riders prepay platform commission by mobile money for
-  real-world delivery work; this is not digital content. Location in the background is used only
-  during an active delivery, so the customer can follow the rider live. Plus whatever D8 decides about
-  test orders.
-
-**Pricing and availability.** Free; Zimbabwe only (D5). **Version release:** manual.
+**Pricing and availability:** Free, Zimbabwe only (D5). **Version release:** manual.
 
 ## 6. Phase E — submit; review risks to pre-empt
 
-| Guideline | Exposure in this app | Pre-empt |
+| Guideline | Exposure | Pre-empt |
 |---|---|---|
-| 2.1 completeness / demo login | Everything is behind OTP sign-in | The demo login above, armed and non-expiring; rider-flow video. |
-| 2.1 broken flows | The rider top-up always ends `expired` — nothing confirms it server-side (`PAYMENT-RAIL-OUTSTANDING.md:7-9`) | Customer-only demo can't reach it; still fix or hide it before an iOS release. |
-| 3.1.1 vs 3.1.3(e) | Cash and mobile money; rider commission top-up | Physical goods/services must *not* use in-app purchase. Frame the top-up as prepaid commission; there is no Apple precedent either way (inDrive's driver top-up is the nearest analogue). |
+| 2.1 completeness / demo login | Everything is behind OTP sign-in | The demo login above, armed and non-expiring. |
+| 2.1 real-world side effects | A reviewer's test order reaches real riders or restaurants | D8. |
+| 3.1.3(e) | Cash and mobile money for physical goods and services | Must *not* use in-app purchase. Say so in the notes. |
 | 5.1.1(v) account deletion | Exists: Settings → Delete account → `DELETE /auth/me` | Fix the D9 mismatch. |
-| 5.1.1(v) login before non-account features | Restaurant browsing sits behind sign-in | Explain in notes. If rejected, allowing browsing before sign-in is a design change. |
-| 5.1.1 purpose strings, primer wording | Generic defaults; "Allow location" | B3, D10. |
-| 5.1.1(ix) legal entity | KYC ID photos + wallet | Organization account (D1). |
-| 5.1.2(i) don't require permissions | Location and push both have skips ("Enter address manually", "Not now") | Keep the Always request job-scoped (B4). |
-| 2.5.4 background location | Rider tracking | Active delivery only; notes + video. |
-| 2.3.10 other platforms | Play assets and copy | New screenshots; no Android wording. |
-| 4.8 Sign in with Apple | Phone OTP only → not required | Adding Google/Facebook sign-in later would trigger it. |
-| 1.4.3 | Tobacco/vape sales are banned | Merchant menus are free text — keep them out. |
+| 5.1.1(v) login before non-account features | Restaurant browsing sits behind sign-in | Explain in the notes. If rejected, allowing browsing before sign-in is a design change. |
+| 5.1.1 primer wording and purpose strings | "Allow location"; generic plugin defaults | D10, B2. |
+| 5.2.1 seller vs brand | Seller "FortyoneX Studio (Private) Limited", app "LyniaGo" | The operator line everywhere (D1). |
+| 2.3.10 other platforms | Play assets and copy | New screenshots and no Android wording. The app never tells users to use Android to ride (D-41). |
+| 4.8 Sign in with Apple | Phone OTP only, so not required | Adding Google or Facebook sign-in later would trigger it. |
+| 1.4.3 | Tobacco and vape sales are banned | Merchant menus are free text; keep those items out. |
 
 Apple reports 90% of submissions reviewed in under 24 hours. Answer rejections in the Resolution Center;
 a metadata-only rejection is fixed in App Store Connect without a new build.
@@ -339,62 +401,75 @@ a metadata-only rejection is fixed in App Store Connect without a new build.
 ## 7. Phase F — after approval
 
 - Release manually (phased release optional).
-- Set the iOS store URL (B6) and per-platform minimum versions.
+- Set `EXPO_PUBLIC_APP_STORE_URL` (B5) and per-platform minimum versions.
 - From then on, `eas update` reaches both platforms; each has its own fingerprint runtimeVersion.
-- Record every build and submission in §10. "Did it ship?" is answered by App Store Connect / the
+- Record every build and submission in §10. "Did it ship?" is answered by App Store Connect or the
   `eas-build-status.yml` recap, never inferred from `main` (CLAUDE.md, Expo/EAS section).
 
 ## 8. Side findings (not iOS, surfaced by this research)
 
-- **Google Play API 36:** "Starting August 31, 2026: New apps and app updates must target Android 16
-  (API level 36) or higher to be submitted" — an extension to **2026-11-01** can be requested from Play
-  Console's Policy status page. The app targets 35 (`app.config.ts:344`). Build 37 (API 35) was
-  accepted into Closed testing on 2026-09-27; PSS doesn't record why (an extension?). A third-party
-  report says Play rejects API-35 uploads on testing tracks. **Request the extension now**; SDK 54
-  targets 36.
-- **Android push may be off too:** `PUSH_PROVIDER = "noop"` in `infra/azure/containerapps.tf:51`
-  ("until the new Firebase credential exists"). The repo can't show whether the GitHub Variable has been
-  flipped since.
-- **OTP channel:** production is WhatsApp-only (`bird-verify.ts:12-22`); PSS §4.4 still says SMS.
-- **Support mailbox:** `support@lyniafinance.com` is listed everywhere and likely has no mailbox.
-- **Deletion copy vs behaviour:** see D9.
+- **Google Play API 36.** Play's rule: "Starting August 31, 2026: New apps and app updates must target
+  Android 16 (API level 36) or higher to be submitted".
+  - An extension to **2026-11-01** can be requested from Play Console's Policy status page.
+  - The app targets 35 (`app.config.ts:344`).
+  - Build 37 (API 35) was accepted into Closed testing on 2026-09-27, and PSS doesn't record why.
+  - **Request the extension now.** SDK 54 targets 36.
+- **Android push may be off too.** `PUSH_PROVIDER = "noop"` in `infra/azure/containerapps.tf:51`. The
+  repo can't show whether the GitHub Variable has since been flipped.
+- **OTP channel.** Production is WhatsApp-only (`bird-verify.ts:12-22`); PSS §4.4 still says SMS.
+- **Support mailbox.** `support@lyniafinance.com` is listed everywhere and likely has no mailbox.
+- **Deletion copy vs behaviour.** See D9.
 
 ## 9. Sources (primary, fetched 2026-09-27 unless dated)
 
-- Apple upcoming requirements: <https://developer.apple.com/news/upcoming-requirements/>;
-  Xcode 26 rule announced 2026-02-03: <https://developer.apple.com/news/?id=ueeok6yw>; iOS 27 SDK from
-  April 2027, 2026-09-09: <https://developer.apple.com/news/?id=k1mtkt1k>
-- EAS build images: <https://docs.expo.dev/build-reference/infrastructure/>; Expo on Xcode 26 for
-  SDK ≤ 53 (2026-04-27): <https://expo.dev/blog/app-store-connect-minimum-sdk-26>
-- fmt/Xcode 26.4: <https://github.com/facebook/react-native/issues/55601>,
+**Apple requirements:**
+- Upcoming requirements: <https://developer.apple.com/news/upcoming-requirements/>
+- Xcode 26 rule, announced 2026-02-03: <https://developer.apple.com/news/?id=ueeok6yw>
+- iOS 27 SDK from April 2027, announced 2026-09-09: <https://developer.apple.com/news/?id=k1mtkt1k>
+
+**Expo and EAS:**
+- EAS build images: <https://docs.expo.dev/build-reference/infrastructure/>
+- Expo on Xcode 26 for SDK ≤ 53 (2026-04-27): <https://expo.dev/blog/app-store-connect-minimum-sdk-26>
+- fmt and Xcode 26.4: <https://github.com/facebook/react-native/issues/55601>,
   <https://github.com/facebook/react-native/pull/56099>, <https://github.com/expo/expo/issues/44229>
 - Legacy architecture: <https://expo.dev/changelog/sdk-54>, <https://expo.dev/changelog/sdk-55>
 - EAS credentials in CI: <https://docs.expo.dev/build/building-on-ci/>,
-  <https://docs.expo.dev/app-signing/managed-credentials/>, <https://docs.expo.dev/submit/ios/>;
-  eas-cli `SetUpDistributionCertificate.ts` / `IosSubmitCommand.ts`
-- Screenshots: <https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications>
+  <https://docs.expo.dev/app-signing/managed-credentials/>, <https://docs.expo.dev/submit/ios/>
+- EAS pricing: <https://expo.dev/pricing>, <https://docs.expo.dev/billing/plans/>
 - Privacy manifests: <https://docs.expo.dev/guides/apple-privacy/>,
   <https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api>
+
+**App Store Connect:**
+- Screenshots: <https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications>
 - Age ratings: <https://developer.apple.com/news/?id=ks775ehf> (2025-07-24),
   <https://developer.apple.com/news/?id=tlur8uvi> (2026-07-09)
 - Storefronts: <https://support.apple.com/en-us/118205>
-- Enrollment and D-U-N-S: <https://developer.apple.com/programs/enroll/>,
-  <https://developer.apple.com/help/account/membership/D-U-N-S/>
 - DSA trader status: <https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements>
-- App Review Guidelines (updated 2026-06-08): <https://developer.apple.com/app-store/review/guidelines/>;
-  account deletion: <https://developer.apple.com/support/offering-account-deletion-in-your-app/>;
-  background-location rejection (Dec 2024): <https://developer.apple.com/forums/thread/771202>
-- EAS pricing: <https://expo.dev/pricing>, <https://docs.expo.dev/billing/plans/>
-- Play target API: <https://support.google.com/googleplay/android-developer/answer/11926878>
-- Package source read for B3/B4/B8/B11 (the lockfile's exact versions): `expo-location@18.0.10`,
-  `expo-image-picker@16.0.6`, `expo-notifications@0.29.14`, `@expo/prebuild-config@8.2.0`,
-  `@expo/fingerprint@0.11.11`.
+
+**Enrollment:**
+- Enrollment (individuals are listed under their legal name): <https://developer.apple.com/programs/enroll/>
+- D-U-N-S: <https://developer.apple.com/help/account/membership/D-U-N-S/>
+- Individual → organization conversion:
+  <https://developer.apple.com/help/account/membership/updating-your-account-information/>
+
+**App Review:**
+- Guidelines (updated 2026-06-08): <https://developer.apple.com/app-store/review/guidelines/>
+- Account deletion: <https://developer.apple.com/support/offering-account-deletion-in-your-app/>
+- 5.2.1 seller-name rejections: <https://developer.apple.com/forums/thread/106106>
+
+**Google Play:**
+- Target API: <https://support.google.com/googleplay/android-developer/answer/11926878>
+
+**Package source read** (the lockfile's exact versions): `expo-location@18.0.10`,
+`expo-image-picker@16.0.6`, `expo-notifications@0.29.14`, `@expo/prebuild-config@8.2.0`,
+`@expo/fingerprint@0.11.11`.
 
 ## 10. Ledger — iOS build and submission attempts
 
-Every EAS iOS build and every App Store Connect / TestFlight submission, newest last — the same
-discipline as PSS: record the build id, the outcome and the failure class, never assume it happened.
+Every EAS iOS build and every App Store Connect or TestFlight submission, newest last. The same
+discipline as PSS applies: record the build id, the outcome and the failure class, and never assume it
+happened.
 
 | Date | Build / submission | Profile · image | Result | Failure class / notes |
 |---|---|---|---|---|
-| — | — | — | — | No iOS build has been attempted yet. |
+| 2026-09-27 | `7fdb60a9` (from `1c9be6d`, triggered via the Expo MCP `build_run`) | `ios-simulator` · `macos-sequoia-15.6-xcode-26.2` (Xcode 26.2, 17C52) | **FINISHED** in ~10 min | Compile proof, no submission. Expo SDK 52 / RN 0.76.9 builds on Xcode 26.2, so D2 is settled. It needed the xmldom fix from the same branch: before it, the iOS prebuild failed locally in `withIosInfoPlistBaseMod`. Used 1 of the Free plan's 15 monthly iOS builds (separate from Android's 15). |

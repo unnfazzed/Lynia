@@ -7,6 +7,7 @@ import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
+import { signedInDestination } from "../src/logic/sign-in-route";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
 import { Button, Field, Heading, Icon, Screen, Sub, useActionError, Tappable } from "../src/ui";
 
@@ -139,8 +140,9 @@ export default function VerifyScreen({
       // picked a role goes straight home rather than being re-prompted every sign-in.
       const chosen = await loadRolePreference();
       // Route to the saved role's home (mirrors role.tsx's go()): a returning rider lands on the rider
-      // dashboard, a customer on compose, and a brand-new account still sees the role fork (R3).
-      router.replace(chosen === "rider" ? "/rider" : chosen ? "/home" : "/role");
+      // dashboard, a customer on compose, and a brand-new account still sees the role fork (R3) — except
+      // on the customer-only iPhone app, which has no fork (signedInDestination, src/rider-mode.ts).
+      router.replace(signedInDestination(chosen));
     } catch (e) {
       // An expired or locked code isn't a "try again" error — it needs a fresh code. Drop into the
       // recovery state (info card + "Send a fresh code") instead of a raw error the user can't act on.

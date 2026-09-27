@@ -30,6 +30,7 @@ import { PickupPhoto } from "../../src/ui/order/PickupPhoto";
 import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
 import { RatingCard } from "../../src/ui/order/RatingCard";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
+import { riderModeAvailable } from "../../src/rider-mode";
 
 const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
@@ -1168,7 +1169,7 @@ export default function OrderScreen(): React.ReactElement {
             for a rider viewer we HIDE cancel entirely and instead point them to their own job screen
             (which has the proper bail flow); the customer keeps cancel. */}
         {isRiderViewer ? (
-          isActive ? (
+          isActive && riderModeAvailable() ? (
             <Button label="Open your job" variant="ghost" onPress={() => router.push("/rider/job")} />
           ) : null
         ) : CUSTOMER_CANCELLABLE.has(order.status) ? (

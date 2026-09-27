@@ -20,13 +20,19 @@ let mockFlags = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false,
 jest.mock("../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => mockFlags,
 }));
+const mockRedirects: string[] = [];
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  Redirect: ({ href }: { href: string }) => {
+    mockRedirects.push(href);
+    return null;
+  },
 }));
 jest.mock("../../src/auth/session", () => ({
   saveRolePreference: jest.fn(async () => undefined),
 }));
 
+import { riderModeAvailable } from "../../src/rider-mode";
 import RoleScreen from "../role";
 
 function renderRole(): renderer.ReactTestRenderer {
@@ -66,5 +72,18 @@ describe("role screen copy follows restaurantsEnabled", () => {
     // The rider option and the design's CTA wording are flag-independent.
     expect(out).toContain("Earn as a rider");
     expect(out).toContain("Continue as a customer");
+  });
+});
+
+// D-41: the iPhone app ships customer-only, so there is no fork to show there. Sign-in never routes
+// here on iOS (signedInDestination); a stale deep link continues exactly as "customer" would.
+describe("role screen on the customer-only iPhone app (D-41)", () => {
+  it("draws no fork and continues to the customer's permission priming", () => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+    mockRedirects.length = 0;
+    const out = rendered(renderRole());
+    expect(out).not.toContain("Earn as a rider");
+    expect(out).not.toContain("Continue as a customer");
+    expect(mockRedirects).toEqual(["/permissions?next=/home"]);
   });
 });

@@ -9,6 +9,7 @@ import { useAuth } from "../../src/auth/auth-context";
 import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdLine, AccountIdentityCard, AccountRowList, KycPill, bikeDocsSub, type AccountRow } from "../../src/ui/account/AccountRows";
+import { riderModeAvailable } from "../../src/rider-mode";
 
 /**
  * Account details. Same row grammar as the Account tabs (`docs/DESIGN-DEVIATIONS.md` D-15),
@@ -50,7 +51,8 @@ export default function ProfileScreen(): React.ReactElement {
 
   // Side first, role as the fallback. A customer-side view of a rider's account is a real, expected
   // state (they tapped their name on the customer hub), not a mismatch to correct.
-  const asRider = side === "rider" || (side !== "customer" && (me?.role ?? session?.role) === "rider");
+  // The customer-only iPhone app never shows the rider side (src/rider-mode.ts, D-41).
+  const asRider = riderModeAvailable() && (side === "rider" || (side !== "customer" && (me?.role ?? session?.role) === "rider"));
 
   // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
   const unreadCount = useNotificationsUnreadCount();

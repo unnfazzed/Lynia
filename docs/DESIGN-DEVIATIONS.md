@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40.** D-40 reopens D-01
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41.** D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
 decision — the mocks were not re-exported as part of it, so it stands as a ledgered app-side divergence
 until they are. D-39 was authored by
@@ -1854,3 +1854,42 @@ hardcoded claim. Live-tested 2026-09-01 against `+263778831938`: create call `20
 `last_channel: "whatsapp"`, code received on WhatsApp. See `docs/BIRD-SETUP.md` "Bird Verify" for the
 full arming record, including the same-session discovery that the send arrives branded "Bird Verify"
 rather than "Authifly" by default (a Bird dashboard sender-identity setting, not an app or copy issue).
+
+## D-41 · The iPhone app ships customer-only: no rider mode, no national ID — APPROVED (2026-09-27)
+
+**User decision, this session (2026-09-27):** *"launching the ios app without the rider functionality.
+The IOS version wont have ID collection and KYC. Zim riders use android which are low end phones. IOS
+users are mostly customers and merchants."* Merchants are unaffected: they use the merchant web dashboard,
+not this app. The same decision is what lets the App Store submission avoid ID capture, KYC, the
+commission wallet and background location entirely (`docs/APP-STORE-SUBMISSION.md`).
+
+**The divergence.** The gallery draws ONE app for both roles on every platform. On iOS the app does not
+render any rider entry point, and it does not collect the national ID the sign-up mock draws:
+
+- **LJ.role_select / LJ.role_select_flag_off** (the post-sign-in fork) is never shown on iOS: sign-in
+  goes straight to the customer's permission priming (`src/logic/sign-in-route.ts`), and a stale deep
+  link to `/role` continues as the "customer" choice would.
+- **LJ.onboard_flag_off** (the food-off carousel) drops its closing "Earn as a rider" slide on iOS: one
+  slide instead of the mock's two dots. The launched food-on deck has no rider slide and is unchanged.
+- **LJ.register**: the "National ID number" field is not drawn on iOS; Continue needs only the name, and
+  the PATCH carries no `idNumber` (optional in `UpdateProfileRequest`), so no ID number leaves an iPhone.
+- **The customer Account tab** (D-15/D-22) loses its bridge row ("Become a rider" / "Switch to rider").
+- Smaller undrawn-state controls hide with it: the send screen's "Online as a rider" pill, the order
+  screen's "Open your job" for a rider viewer, and the rider side of `/profile`.
+- **Routing:** a saved rider role boots into the customer home, rider push/notification-row destinations
+  open home (`src/push/push.ts`), and `RiderRouteGate` (`src/rider-route-gate.tsx`) sends any `/rider/*`
+  or `/wallet/*` route home. A rider account signing in on an iPhone simply gets the customer app.
+
+**Deliberately NOT done:** the app never tells iPhone users to use another platform to ride. App Review
+guideline 2.3.10 bans naming other mobile platforms inside the app, so the rider entry points are absent
+rather than replaced by a pointer.
+
+**One switch, Android untouched.** Every gate reads `riderModeAvailable()` (`src/rider-mode.ts`, false
+only when `Platform.OS === "ios"`). Android, and the react-native-web parity lane, see exactly the drawn
+screens. The jest suite runs as iOS under jest-expo, so `apps/mobile/jest.setup.js` defaults the switch
+on and the iOS cases override it: `src/__tests__/rider-mode.test.tsx`, plus iOS blocks in the role,
+onboarding, account-tab, profile-setup, push and boot-route suites.
+
+**Retire when:** the design kit draws an iOS customer-only variant (then align to it), or rider mode
+comes to iOS. That would need the App Store organization account's KYC/wallet review and would flip
+the one switch.

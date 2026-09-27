@@ -9,6 +9,7 @@ import { useAuth } from "../../src/auth/auth-context";
 import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
 import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/ui/account/AccountRows";
+import { riderModeAvailable } from "../../src/rider-mode";
 
 /**
  * Account tab — the CUSTOMER's hub, and only the customer's. Structurally harmonised with the rider
@@ -82,7 +83,8 @@ export default function AccountTabScreen(): React.ReactElement {
     // early-returning a full-screen skeleton while loading; this screen's other rows carry no role
     // guess, so only this one row withholds itself until the real role is known, rather than gating
     // the whole list.
-    ...(meQ.isSuccess
+    // Rider mode doesn't exist on the customer-only iPhone app (src/rider-mode.ts, D-41).
+    ...(meQ.isSuccess && riderModeAvailable()
       ? [
           {
             icon: "bike" as const,

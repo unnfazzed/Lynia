@@ -34,10 +34,15 @@
  *     (two copies = "invalid hook call" / an invisible seeded cache), and so `jest.mock()` calls in
  *     the test resolve to the very module the fixture imports.
  * Both are additive: every path already inside rootDir resolves exactly as before.
+ *
+ * `setupFilesAfterEnv` holds ONE default: rider mode on (see jest.setup.js). jest-expo runs the suite
+ * as iOS, and the iPhone app ships customer-only, so without it every rider test would see the
+ * iOS gate closed.
  */
 module.exports = {
   preset: "jest-expo",
   testMatch: ["**/__tests__/**/*.test.{ts,tsx}"],
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
   transformIgnorePatterns: [
     "node_modules/(?!.*(?:react-native|@react-native|expo|@expo|@unimodules|unimodules|native-base|react-navigation|@react-navigation|lucide-react-native|react-native-svg))",
   ],

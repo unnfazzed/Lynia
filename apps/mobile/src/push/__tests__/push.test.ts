@@ -1,3 +1,4 @@
+import { riderModeAvailable } from "../../rider-mode";
 import { notificationRowDestination, pushDestination, pushOnce } from "../push";
 
 // Regression guard: before this, tapping any push except the rider's "You got the job" (assigned)
@@ -217,5 +218,32 @@ describe("notificationRowDestination", () => {
   it("leaves every other rider-voiced status routed to /order/:id (only assigned/cancelled dead-end)", () => {
     expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "completed" })).toBe("/order/o1");
     expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "delivered" })).toBe("/order/o1");
+  });
+});
+
+// D-41: the iPhone app ships customer-only, so a tap whose destination is a rider screen has nowhere
+// to land there. It opens home instead; every customer destination is untouched.
+describe("push routing on the customer-only iPhone app (D-41)", () => {
+  beforeEach(() => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+  });
+
+  it("sends every rider-mode destination home", () => {
+    expect(pushDestination({ kind: "broadcast", orderId: "o1" }, true)).toBe("/home");
+    expect(pushDestination({ kind: "food_offer" }, true)).toBe("/home");
+    expect(pushDestination({ kind: "account" }, true)).toBe("/home");
+    expect(pushDestination({ orderId: "o1", status: "assigned" }, true)).toBe("/home");
+    expect(pushDestination({ orderId: "o1", status: "completed" }, true)).toBe("/home");
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "rider" }, false)).toBe("/home");
+    expect(notificationRowDestination({ orderId: null, to: "rider" })).toBe("/home");
+    expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "assigned" })).toBe("/home");
+  });
+
+  it("leaves customer destinations exactly as they are", () => {
+    expect(pushDestination({ orderId: "o1", status: "delivered" }, false)).toBe("/order/o1");
+    expect(pushDestination({ orderId: "o1", status: "cancelled", orderType: "merchant", to: "customer" }, false)).toBe("/food/order/o1");
+    expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
+    expect(pushDestination("not an object", false)).toBeNull();
+    expect(notificationRowDestination({ orderId: "o1", to: "customer" })).toBe("/order/o1");
   });
 });
