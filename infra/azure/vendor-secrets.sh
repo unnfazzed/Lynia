@@ -75,7 +75,16 @@ for g in "${VENDOR_GROUPS[@]}"; do
   unset GOT
 done
 
-JSON="{}"
+# Start from the current map minus every key this script manages, so an entry added by hand (the
+# runbook's FCM_SERVICE_ACCOUNT_JSON) survives a re-run. Dropping it makes Terraform plan to remove
+# that secret's Key Vault reader role (prod run 36315081587).
+MANAGED="[]"
+for g in "${VENDOR_GROUPS[@]}"; do
+  IFS='|' read -r _ PAIRS _ <<<"$g"
+  for p in $PAIRS; do MANAGED="$(jq -c --arg k "${p%%:*}" '. + [$k]' <<<"$MANAGED")"; done
+done
+JSON="$(gh variable get AZ_VENDOR_SECRETS -R "$REPO" 2>/dev/null || true)"
+JSON="$(jq -c --argjson m "$MANAGED" 'with_entries(select(.key as $k | $m | index($k) | not))' <<<"${JSON:-{\}}" 2>/dev/null || echo '{}')"
 for k in "${!MAP[@]}"; do JSON="$(jq -c --arg k "$k" --arg v "${MAP[$k]}" '. + {($k): $v}' <<<"$JSON")"; done
 gh variable set AZ_VENDOR_SECRETS -R "$REPO" -b "$JSON" >/dev/null
 echo ""
