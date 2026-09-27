@@ -256,7 +256,7 @@ async function doRefresh(refreshToken: string): Promise<Session | null> {
   // the API — a WAF or proxy block page, a captive portal, a load balancer's empty reply — says nothing
   // about the token; signing out on it would wipe a valid session and send the user back through OTP.
   if (res.status === 401 || res.status === 403) {
-    if (isApiErrorBody(await res.text().catch(() => ""))) return null;
+    if (isApiErrorBody(res.status, await res.text().catch(() => ""))) return null;
     throw new ApiError(0, "The network is unstable — check your connection and try again.");
   }
   // Any OTHER non-OK status (a proxy/LB 502/504, a 500, a 429) is transient, NOT a rejection: the
@@ -291,12 +291,14 @@ function isAuthGuard401(text: string): boolean {
   }
 }
 
-/** True when `text` is the API's JSON error envelope — every HttpException the API throws reaches the
- *  client as `{ message, … }` (apps/api/src/common/all-exceptions.filter.ts). */
-function isApiErrorBody(text: string): boolean {
+/** True when `text` is THIS API's error envelope for `status`: every HttpException it throws reaches the
+ *  client as `{ statusCode, message, … }` (apps/api/src/common/all-exceptions.filter.ts; pinned for this
+ *  route by apps/api/src/auth/refresh-contract.e2e.spec.ts). Requiring the matching `statusCode`, not just
+ *  a `message`, keeps a gateway's own `{"message":"Unauthorized"}` from counting as a revocation. */
+function isApiErrorBody(status: number, text: string): boolean {
   try {
-    const parsed = JSON.parse(text) as { message?: unknown } | null;
-    return typeof parsed?.message === "string" || Array.isArray(parsed?.message);
+    const parsed = JSON.parse(text) as { statusCode?: unknown; message?: unknown } | null;
+    return parsed?.statusCode === status && (typeof parsed.message === "string" || Array.isArray(parsed.message));
   } catch {
     return false;
   }

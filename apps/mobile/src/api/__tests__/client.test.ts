@@ -39,6 +39,11 @@ function makeResponse(status: number, body: unknown, headers?: Record<string, st
 /** The exact body the JwtAuthGuard returns for a stale access token — the only 401 apiFetch refreshes on. */
 const AUTH_GUARD_401 = makeResponse(401, { message: "Invalid or expired token" });
 
+/** The exact body the API sends when it rejects a refresh token (Nest's HttpException envelope, pinned by
+ *  apps/api/src/auth/refresh-contract.e2e.spec.ts) — the only body that may sign the user out. */
+const apiRefreshRejection = (status: number) =>
+  makeResponse(status, { statusCode: status, message: "Invalid or expired refresh token", error: "Unauthorized" });
+
 /** Drain all queued microtasks by yielding to a macrotask — lets in-flight apiFetch calls fully settle. */
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -115,7 +120,7 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
     "DOES sign out on a definitive %s from the refresh endpoint (token genuinely revoked/invalid)",
     async (status) => {
       fetchMock.mockImplementation(async (url: string) => {
-        if (url.endsWith("/auth/refresh")) return makeResponse(status, { message: "revoked" });
+        if (url.endsWith("/auth/refresh")) return apiRefreshRejection(status);
         return AUTH_GUARD_401;
       });
 
@@ -135,7 +140,11 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
     [401, "<html><body><h1>401 Authorization Required</h1></body></html>"],
     [403, "<html><head><title>Access denied</title></head></html>"],
     [403, ""],
-  ])("does NOT sign out on a %s whose body isn't the API's (proxy / WAF / captive portal)", async (status, body) => {
+    // A gateway's own JSON — a `message` but no matching `statusCode` — is not the API speaking either.
+    [401, JSON.stringify({ message: "Unauthorized" })],
+    [401, JSON.stringify({ statusCode: 502, message: "Bad gateway" })],
+    [401, JSON.stringify({ statusCode: 401 })],
+  ])("does NOT sign out on a %s whose body isn't the API's (proxy / WAF / captive portal / gateway)", async (status, body) => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.endsWith("/auth/refresh")) return makeResponse(status, body);
       return AUTH_GUARD_401;
@@ -290,7 +299,7 @@ describe("apiFetch conditional GETs — ETag revalidation on the polling loops",
     await apiFetch("/me");
 
     fetchMock.mockImplementation(async (url: string) => {
-      if (url.endsWith("/auth/refresh")) return makeResponse(401, { message: "revoked" });
+      if (url.endsWith("/auth/refresh")) return apiRefreshRejection(401);
       return AUTH_GUARD_401;
     });
     await expect(apiFetch("/me")).rejects.toMatchObject({ status: 401 });

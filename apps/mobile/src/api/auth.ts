@@ -25,7 +25,7 @@ export function requestOtp(phone: string): Promise<OtpRequestResult> {
 /**
  * Revoke the current session server-side on sign-out. The refresh token is `${sessionId}.${secret}`,
  * so the sessionId is the substring before the first `.`. Without this call the Session row lives until
- * REFRESH_TTL (30 days) and any leaked refresh token keeps minting access tokens after the user signed
+ * REFRESH_TTL (a year) and any leaked refresh token keeps minting access tokens after the user signed
  * out. Best-effort at the call site — a failed revoke must never trap sign-out.
  */
 export function logout(refreshToken: string): Promise<{ revoked: boolean }> {

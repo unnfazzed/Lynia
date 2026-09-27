@@ -28,7 +28,7 @@ import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bi
 import { LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY } from "../device-state";
 import { FOOD_CART_SNAPSHOT_KEY } from "../../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../../net/food-order-store";
-import { clearDeviceState, loadSession, saveSession } from "../session";
+import { clearDeviceState, clearSession, loadSession, saveSession } from "../session";
 
 afterEach(() => {
   mockDeleteItemAsync.mockClear();
@@ -225,5 +225,15 @@ describe("saveSession (keychain resilience)", () => {
     mockSetItemAsync.mockRejectedValue(new Error("disk full"));
     await expect(saveSession(session)).rejects.toThrow("disk full");
     expect(mockSetItemAsync).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("clearSession (keychain resilience)", () => {
+  // A delete that fails leaves the signed-out session on disk; on a shared device the next launch would
+  // sign the previous user back in.
+  it("retries a transient delete failure", async () => {
+    mockDeleteItemAsync.mockRejectedValueOnce(new Error("KeyStore unavailable"));
+    await expect(clearSession()).resolves.toBeUndefined();
+    expect(mockDeleteItemAsync.mock.calls.filter((c) => c[0] === "lynia.session")).toHaveLength(2);
   });
 });

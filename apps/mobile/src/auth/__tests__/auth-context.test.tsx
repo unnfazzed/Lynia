@@ -55,7 +55,7 @@ jest.mock("../session", () => ({
   clearDeviceState: jest.fn(async () => undefined),
 }));
 
-import { AuthProvider, useAuth } from "../auth-context";
+import { __resetAuthSession, AuthProvider, useAuth } from "../auth-context";
 
 type Auth = ReturnType<typeof useAuth>;
 let auth: Auth;
@@ -64,14 +64,23 @@ function Probe(): null {
   return null;
 }
 
-async function mount(storedAtBoot: Session | null): Promise<void> {
+async function mount(storedAtBoot: Session | null): Promise<ReturnType<typeof create>> {
   mockStoredAtBoot = storedAtBoot;
+  let tree!: ReturnType<typeof create>;
   await act(async () => {
-    create(
+    tree = create(
       <AuthProvider>
         <Probe />
       </AuthProvider>,
     );
+  });
+  return tree;
+}
+
+/** Let a fire-and-forget write (e.g. the one queued on backgrounding) run to completion. */
+async function flushWrites(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -85,6 +94,7 @@ const newAccount: Session = {
 };
 
 beforeEach(() => {
+  __resetAuthSession(); // each test is a fresh launch — the session is process state
   mockHooks = null;
   mockAppStateListener = null;
   mockSaveSession.mockReset().mockResolvedValue(undefined);
@@ -170,6 +180,71 @@ describe("a failed keychain write never strands the user", () => {
       await expect(mockHooks!.onTokens(rotated)).resolves.toBeUndefined();
     });
     expect(mockHooks!.getSession()).toEqual(rotated);
+  });
+});
+
+describe("a failed write is not dropped", () => {
+  it("the next write persists the latest state", async () => {
+    await mount(newAccount);
+    mockSaveSession.mockRejectedValueOnce(new Error("KeyStore unavailable"));
+    const rotated = { ...newAccount, accessToken: "access-2", refreshToken: "refresh-2" };
+    await act(async () => {
+      await mockHooks!.onTokens(rotated); // this write fails
+    });
+    await act(async () => {
+      await auth.updateSession({ needsProfile: false }); // …and the next one carries it
+    });
+    expect(mockSaveSession).toHaveBeenLastCalledWith({ ...rotated, needsProfile: false });
+  });
+
+  it("a sign-out whose delete failed is deleted again when the app leaves the foreground", async () => {
+    await mount(newAccount);
+    mockClearSession.mockRejectedValueOnce(new Error("KeyStore unavailable"));
+    await act(async () => {
+      await auth.signOut();
+    });
+    expect(mockClearSession).toHaveBeenCalledTimes(1);
+
+    mockAppStateListener?.("background");
+    await flushWrites();
+    expect(mockClearSession).toHaveBeenCalledTimes(2);
+    expect(mockSaveSession).not.toHaveBeenCalled(); // never resurrected
+  });
+});
+
+/**
+ * The root ErrorBoundary's "Reload" remounts the whole tree without restarting the process. The provider
+ * used to re-apply the keychain read made at LAUNCH (prewarm memoizes it) — tokens that may since have
+ * rotated twice, which the server rejects: a crash-recovery tap signed the user out.
+ */
+describe("a remount carries on with the session this process holds", () => {
+  it("keeps the rotated tokens, not the launch read", async () => {
+    const tree = await mount(newAccount);
+    const rotated = { ...newAccount, accessToken: "access-3", refreshToken: "refresh-3" };
+    await act(async () => {
+      await mockHooks!.onTokens(rotated);
+    });
+    await act(async () => {
+      tree.unmount();
+    });
+
+    await mount(newAccount); // prewarm would still hand back the launch-time session
+    expect(auth.loading).toBe(false);
+    expect(auth.session).toEqual(rotated);
+    expect(mockHooks!.getSession()).toEqual(rotated);
+  });
+
+  it("stays signed out after a sign-out, even though the launch read had a session", async () => {
+    const tree = await mount(newAccount);
+    await act(async () => {
+      await auth.signOut();
+    });
+    await act(async () => {
+      tree.unmount();
+    });
+
+    await mount(newAccount);
+    expect(auth.session).toBeNull();
   });
 });
 

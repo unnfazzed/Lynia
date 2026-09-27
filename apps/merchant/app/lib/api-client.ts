@@ -165,12 +165,14 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   }
   if (res.status === 401 || res.status === 403) {
     // Definitive — the refresh token is dead — ONLY when the API itself says so, i.e. the body is its
-    // JSON error envelope ({ message, … }). A 401/403 block page from a proxy, WAF or captive portal in
-    // front of the API says nothing about the token, and must not sign the merchant out mid-shift.
-    const body = await res.json().catch(() => null);
-    const message = (body as { message?: unknown } | null)?.message;
-    if (typeof message === "string" || Array.isArray(message)) return { kind: "dead" };
-    return { kind: "transient", networkError: false };
+    // error envelope ({ statusCode: <this status>, message, … }; pinned by
+    // apps/api/src/auth/refresh-contract.e2e.spec.ts). A block page from a proxy, WAF or captive portal —
+    // or a gateway's own {"message":"Unauthorized"} — says nothing about the token, and must not sign the
+    // merchant out mid-shift (SES-05).
+    const body = (await res.json().catch(() => null)) as { statusCode?: unknown; message?: unknown } | null;
+    const isApiRejection =
+      body?.statusCode === res.status && (typeof body.message === "string" || Array.isArray(body.message));
+    return isApiRejection ? { kind: "dead" } : { kind: "transient", networkError: false };
   }
   if (!res.ok) return { kind: "transient", networkError: false }; // transient server error — a real response is proof of life
   const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };

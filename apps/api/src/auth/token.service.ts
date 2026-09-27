@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -20,8 +20,8 @@ export class TokenService {
    *  signing secret can be rotated WITHOUT invalidating every stored refresh-token hash (mass logout).
    *  Defaults to the JWT secret for backward-compatibility when TOKEN_HASH_SECRET is unset. */
   private readonly hashSecret: string;
-  /** Subkey for {@link successorSecret}, derived from the hash key so the two HMAC uses never share a
-   *  key (and so it rotates with TOKEN_HASH_SECRET — which already invalidates every refresh token). */
+  /** Subkey for {@link successorSecret}: HKDF-derived from the hash key, so it is never equal to any
+   *  `hash()` output, and it rotates with TOKEN_HASH_SECRET (which already invalidates every refresh token). */
   private readonly successorKey: Buffer;
   private readonly accessTtl: number;
 
@@ -29,7 +29,7 @@ export class TokenService {
     this.secret = env.JWT_SIGNING_SECRET;
     this.previousSecret = env.JWT_SIGNING_SECRET_PREVIOUS;
     this.hashSecret = env.TOKEN_HASH_SECRET ?? env.JWT_SIGNING_SECRET;
-    this.successorKey = createHmac("sha256", this.hashSecret).update("lynia:refresh-successor:v1").digest();
+    this.successorKey = Buffer.from(hkdfSync("sha256", this.hashSecret, "", "lynia:refresh-successor:v1", 32));
     this.accessTtl = env.ACCESS_TTL_SECONDS;
   }
 
@@ -74,6 +74,10 @@ export class TokenService {
    * deterministic rather than random, so the server can hand the SAME successor back when a client
    * re-presents the rotated token because the rotate response never reached it (AuthService.refresh).
    * Unpredictable without the server key; same size and encoding as {@link randomToken}.
+   *
+   * Accepted trade-off: this gives up forward secrecy within a chain. Someone holding the hash key AND
+   * database read access AND any earlier secret of a chain can compute that chain's later secrets —
+   * where random successors would leave them only hashes. That attacker already holds server secrets.
    */
   successorSecret(sessionId: string, secret: string): string {
     return createHmac("sha256", this.successorKey).update(`${sessionId}.${secret}`).digest("hex");
