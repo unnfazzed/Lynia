@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { SafeAreaView } from "react-native";
 import { saveOnboardingSeen } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
+import { riderModeAvailable } from "../src/rider-mode";
 import { type IconName } from "../src/ui";
 import { OnboardingView } from "./onboarding.view";
 
@@ -16,7 +17,8 @@ import { OnboardingView } from "./onboarding.view";
 // `OnboardFlagOff`, LJ.onboard_flag_off): a TWO-dot carousel opening on the banknote "Name your
 // price to send" slide — so the flag-off set is two slides, not three, and the index is clamped
 // below in case the flags fetch resolves mid-carousel.
-type Slide = { icon: IconName; title: string; subtitle: string };
+// `riderOnly` marks a slide the customer-only iPhone app leaves out (src/rider-mode.ts, D-41).
+type Slide = { icon: IconName; title: string; subtitle: string; riderOnly?: true };
 const SEND_FOOD_SLIDES: Slide[] = [
   {
     icon: "utensils",
@@ -47,6 +49,7 @@ const PARCEL_SLIDES: Slide[] = [
     icon: "bike",
     title: "Earn as a rider",
     subtitle: "See parcels near you, name your fare, and get paid in cash on delivery. Ride when you want.",
+    riderOnly: true,
   },
 ];
 
@@ -70,7 +73,8 @@ export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenP
   // the length clamp below still guards the residual race of flags resolving in the same frame as
   // the first Next.
   const [lockedSlides, setLockedSlides] = useState<Slide[] | null>(null);
-  const slides = lockedSlides ?? (restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES);
+  const liveSlides = restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES;
+  const slides = lockedSlides ?? (riderModeAvailable() ? liveSlides : liveSlides.filter((s) => !s.riderOnly));
   // The two sets differ in length (3 joint-launch, 2 food-off), so a flags fetch resolving mid-
   // carousel could otherwise strand the index past the end: clamp it into the live set. The `?? [0]!`
   // fallback additionally keeps the lookup honest under noUncheckedIndexedAccess.

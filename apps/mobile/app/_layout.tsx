@@ -25,6 +25,7 @@ import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
 import { BootSplashHold, useBootSplashRelease } from "../src/boot/boot-splash-hold";
+import { RiderRouteGate } from "../src/rider-route-gate";
 import ForceUpdateScreen from "./force-update";
 
 /**
@@ -281,6 +282,9 @@ function RootLayout(): React.ReactElement | null {
                 server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
                 transition, so without this the user is stranded on an authless protected screen. */}
             <SessionGate />
+            {/* The customer-only iPhone app's backstop: a rider route reached any other way (stale deep
+                link, old saved route) goes home. Inert wherever rider mode exists. */}
+            <RiderRouteGate />
             {/* Tap → destination-screen latency (`nav_open`). Renders nothing; needs the router
                 context, and pairs each route change with the press that caused it. */}
             <NavOpenProbe />

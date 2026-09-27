@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 /**
  * API base URL. Set it for device/prod via EXPO_PUBLIC_API_URL (e.g. your LAN IP in dev, the HTTPS
@@ -155,11 +156,26 @@ const minVersionFromExtra = (Constants.expoConfig?.extra as { minAppVersion?: st
 export const MIN_SUPPORTED_VERSION: string = process.env.EXPO_PUBLIC_MIN_APP_VERSION ?? minVersionFromExtra ?? "0.0.0";
 
 /**
- * App/Play Store URL the force-update screen's "Update now" opens. OPTIONAL — when null the button hides
- * rather than opening a dead link. Set via `EXPO_PUBLIC_STORE_URL` or `extra.storeUrl` in app.config.ts.
+ * The store listing the force-update screen's "Update now" opens. OPTIONAL — when null the button hides
+ * rather than opening a dead link.
+ *
+ * Per platform. `EXPO_PUBLIC_STORE_URL` / `extra.storeUrl` are the Google Play listing and must never
+ * reach an iPhone — that would send the user to a store they can't install from. iOS reads
+ * `EXPO_PUBLIC_APP_STORE_URL` (https://apps.apple.com/app/id<ascAppId>) instead: a build-time JS
+ * substitution, so once the App Store listing exists it can be set in the EAS environment and shipped
+ * by OTA, without touching app.config.ts (whose `extra` is a fingerprint input). Until then the iOS
+ * button stays hidden.
  */
 const storeUrlFromExtra = (Constants.expoConfig?.extra as { storeUrl?: string } | undefined)?.storeUrl;
-export const STORE_URL: string | null = process.env.EXPO_PUBLIC_STORE_URL ?? storeUrlFromExtra ?? null;
+export const STORE_URL: string | null = storeUrlFor(Platform.OS, {
+  appStore: process.env.EXPO_PUBLIC_APP_STORE_URL,
+  play: process.env.EXPO_PUBLIC_STORE_URL ?? storeUrlFromExtra,
+});
+
+/** The listing for this platform ({@link STORE_URL}); exported pure for unit testing. */
+export function storeUrlFor(os: string, urls: { appStore?: string; play?: string }): string | null {
+  return (os === "ios" ? urls.appStore : urls.play) ?? null;
+}
 
 /**
  * True when `current` is older than `min` — the shared comparator behind BOTH force-update gates

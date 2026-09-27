@@ -1,9 +1,10 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
+import { riderModeAvailable } from "../src/rider-mode";
 import { RoleSelectView } from "./role.view";
 import { RoleSelectFlagOffView } from "./role-flag-off.view";
 
@@ -28,6 +29,10 @@ export default function RoleScreen(): React.ReactElement {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const [role, setRole] = useState<StartRole>("customer");
+
+  // The customer-only iPhone app (src/rider-mode.ts) has no fork: sign-in never routes here there
+  // (signedInDestination), and a stale deep link continues exactly as the "customer" choice would.
+  if (!riderModeAvailable()) return <Redirect href="/permissions?next=/home" />;
 
   const go = (choice: StartRole): void => {
     setRole(choice);

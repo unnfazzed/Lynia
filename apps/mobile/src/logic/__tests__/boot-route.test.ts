@@ -1,4 +1,6 @@
+import { riderModeAvailable } from "../../rider-mode";
 import { bootDestination, bootRedirectTarget } from "../boot-route";
+import { signedInDestination } from "../sign-in-route";
 
 const s = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer", needsProfile: false };
 
@@ -82,6 +84,45 @@ describe("bootRedirectTarget (LC-D-T3: cold-start deep link vs default boot dest
       onboardingSeen: true,
       rolePref: "customer",
       coldStartData: { unrelated: true },
+    });
+    expect(target).toBe("/home");
+  });
+});
+
+describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profile/setup.tsx)", () => {
+  it("sends a saved role to its home and a brand-new account to the role fork", () => {
+    expect(signedInDestination("rider")).toBe("/rider");
+    expect(signedInDestination("customer")).toBe("/home");
+    expect(signedInDestination(null)).toBe("/role");
+  });
+});
+
+// D-41: the iPhone app ships customer-only — no fork to show, and a saved rider role (an account that
+// rides on Android) lands on the customer home rather than on rider screens that don't exist there.
+describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () => {
+  beforeEach(() => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+  });
+
+  it("skips the role fork: a new account goes through the customer's permission priming", () => {
+    expect(signedInDestination(null)).toBe("/permissions?next=/home");
+    expect(signedInDestination("customer")).toBe("/home");
+    expect(signedInDestination("rider")).toBe("/home");
+  });
+
+  it("boots a saved rider role into the customer home", () => {
+    expect(bootDestination({ session: { needsProfile: false }, onboardingSeen: true, rolePref: "rider" })).toBe("/home");
+    // Everything before the role check is unchanged.
+    expect(bootDestination({ session: { needsProfile: true }, onboardingSeen: true, rolePref: "rider" })).toBe("/profile/setup");
+    expect(bootDestination({ session: null, onboardingSeen: false, rolePref: null })).toBe("/onboarding");
+  });
+
+  it("never deep-links a cold-start rider push into rider mode", () => {
+    const target = bootRedirectTarget({
+      session: { ...s, role: "rider" },
+      onboardingSeen: true,
+      rolePref: "rider",
+      coldStartData: { orderId: "o1", status: "assigned" },
     });
     expect(target).toBe("/home");
   });

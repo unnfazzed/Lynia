@@ -49,6 +49,7 @@ jest.mock("../../../src/api/notifications", () => ({
   getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }),
 }));
 
+import { riderModeAvailable } from "../../../src/rider-mode";
 import CustomerAccountTab from "../account";
 import RiderAccountTab from "../../rider/(tabs)/account";
 
@@ -156,5 +157,19 @@ describe("the two tabs are mirror images", () => {
     expect(customer).not.toContain("Switch to customer");
     expect(rider).toContain("Switch to customer");
     expect(rider).not.toContain("Switch to rider");
+  });
+});
+
+// D-41: the iPhone app ships customer-only, so even a rider's account shows no bridge into rider mode
+// there. The rows it keeps are the customer's own.
+describe("the customer Account tab on the customer-only iPhone app (D-41)", () => {
+  it("draws no rider bridge row, even for a rider's account", async () => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+    const all = await copyOf(CustomerAccountTab);
+    expect(all).not.toContain("Switch to rider");
+    expect(all).not.toContain("Become a rider");
+    for (const row of ["Notifications", "Help & support", "Settings"]) {
+      expect(all).toContain(row);
+    }
   });
 });

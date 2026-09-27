@@ -6,6 +6,7 @@ import { View } from "react-native";
 import { loadPermissionsPrimed, savePermissionsPrimed } from "../src/auth/session";
 import { requestPushRegistration } from "../src/push/push-kick";
 import { Screen } from "../src/ui";
+import { riderModeAvailable } from "../src/rider-mode";
 import { PermLocView } from "./permissions-location.view";
 import { PermNotifView } from "./permissions-notifications.view";
 
@@ -23,7 +24,8 @@ type Step = "location" | "notifications";
 
 function safeNext(raw: string | string[] | undefined): "/home" | "/rider" {
   const v = Array.isArray(raw) ? raw[0] : raw;
-  return v === "/rider" ? "/rider" : "/home";
+  // The customer-only iPhone app has no rider home to prime for (src/rider-mode.ts).
+  return v === "/rider" && riderModeAvailable() ? "/rider" : "/home";
 }
 
 /**

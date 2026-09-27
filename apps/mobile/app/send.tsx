@@ -38,6 +38,7 @@ import { SendLandmarksDetails } from "../src/ui/send/SendLandmarksDetails";
 import { SendPhoneFields } from "../src/ui/send/SendPhoneFields";
 import { SendPriceQuote } from "../src/ui/send/SendPriceQuote";
 import { parseNum, randomUuidV4, uuidV4FromSeed } from "../src/util";
+import { riderModeAvailable } from "../src/rider-mode";
 // Foundation-F.c region-adopted fragments — generated, structure-parity views of the mock `Home`'s
 // map canvas (FauxMap→ComposeMap) and submit sheet-footer. Mounted below in the mock's composition
 // order; all live behaviour flows in through their props seam (see tools/parity/codegen/adopted.mjs).
@@ -641,7 +642,7 @@ export default function HomeScreen(): React.ReactElement {
               are reached from the Account tab (kit draws a single top-right action here). */}
           <MapHomeTopBar onAccount={() => router.push("/account")} onBack={goBack} />
 
-          {meQ.data?.rider?.isOnline ? (
+          {meQ.data?.rider?.isOnline && riderModeAvailable() ? (
             // A rider who switches to the customer view stayed online server-side with no reminder here
             // — they could lose track of their shift or miss a broadcast while browsing as a customer.
             <Tappable

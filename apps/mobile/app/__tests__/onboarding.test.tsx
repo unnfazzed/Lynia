@@ -23,6 +23,7 @@ jest.mock("../../src/auth/session", () => ({
   saveOnboardingSeen: jest.fn(async () => undefined),
 }));
 
+import { riderModeAvailable } from "../../src/rider-mode";
 import OnboardingScreen from "../onboarding";
 
 function renderOnboarding(): renderer.ReactTestRenderer {
@@ -122,5 +123,32 @@ describe("onboarding carousel slides follow restaurantsEnabled", () => {
     const out = rendered(tree);
     expect(out).toContain("Earn as a rider");
     expect(out).toContain("Get started");
+  });
+});
+
+// D-41: the iPhone app ships customer-only. The launched (food-on) deck has no rider slide, so it is
+// untouched; the food-off deck drops its closing "Earn as a rider" slide there.
+describe("onboarding on the customer-only iPhone app (D-41)", () => {
+  beforeEach(() => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+  });
+
+  it("flag off: one slide, no rider pitch, and it goes straight to Get started", () => {
+    mockFlags = { ...mockFlags, restaurantsEnabled: false };
+    const out = rendered(renderOnboarding());
+    expect(out).toContain("Name your price to send");
+    expect(out).toContain("Get started");
+    expect(out).not.toContain("Earn as a rider");
+  });
+
+  it("flag on: the launched three-slide deck is unchanged", () => {
+    mockFlags = { ...mockFlags, restaurantsEnabled: true };
+    const tree = renderOnboarding();
+    expect(rendered(tree)).toContain("Food from kitchens near you");
+    press(tree, "Next");
+    expect(rendered(tree)).toContain("Name your price to send");
+    press(tree, "Next");
+    expect(rendered(tree)).toContain("One app, one code");
+    expect(rendered(tree)).not.toContain("Earn as a rider");
   });
 });

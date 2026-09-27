@@ -1,5 +1,6 @@
 import type { StartRole } from "../auth/session";
 import { pushDestination } from "../push/push";
+import { riderModeAvailable } from "../rider-mode";
 
 /**
  * Pure cold-start routing decision (index.tsx), extracted so it's unit-testable without rendering.
@@ -19,7 +20,9 @@ export function bootDestination(params: {
   if (!session && !onboardingSeen) return "/onboarding";
   if (!session) return "/phone";
   if (session.needsProfile) return "/profile/setup";
-  return rolePref === "rider" ? "/rider" : "/home";
+  // A saved rider role only counts where rider mode exists — the iPhone app is customer-only
+  // (src/rider-mode.ts), so a rider account booting on iOS lands on the customer home.
+  return rolePref === "rider" && riderModeAvailable() ? "/rider" : "/home";
 }
 
 /**

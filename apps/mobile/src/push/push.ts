@@ -2,6 +2,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { registerDeviceToken, unregisterDeviceToken } from "../api/notifications";
+import { isRiderOnlyRoute, riderModeAvailable } from "../rider-mode";
 
 // Show a heads-up banner for a notification that arrives while the app is foregrounded (the OS only
 // shows it automatically in the background). Set once at module load.
@@ -127,6 +128,14 @@ const RIDER_JOB_SCREEN_STATUSES = new Set(["assigned"]);
 const RIDER_BOARD_STATUSES = new Set(["completed"]);
 
 /**
+ * The iPhone app ships customer-only (src/rider-mode.ts), so a rider-mode destination has nowhere to
+ * land there: open home instead of a screen the route gate would only bounce. A no-op on Android.
+ */
+function withoutRiderRoutes<T extends string | null>(dest: T): T | "/home" {
+  return dest !== null && !riderModeAvailable() && isRiderOnlyRoute(dest) ? "/home" : dest;
+}
+
+/**
  * Where tapping a notification should navigate. Every status-driven push (`notifyOrderStatus`)
  * carries `orderId`; most of them (confirmed/en_route_pickup/picked_up/en_route_dropoff/delivered/
  * expired/undelivered) are customer-facing and previously did nothing on tap despite copy like
@@ -150,6 +159,10 @@ const RIDER_BOARD_STATUSES = new Set(["completed"]);
  * the existing `isRider` logic unchanged.
  */
 export function pushDestination(data: unknown, isRider: boolean): string | null {
+  return withoutRiderRoutes(pushRoute(data, isRider));
+}
+
+function pushRoute(data: unknown, isRider: boolean): string | null {
   if (typeof data !== "object" || data === null) return null;
   const { orderId, status, kind, to, orderType } = data as {
     orderId?: unknown;
@@ -223,6 +236,10 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
  * dedicated CancelledHandback screen `/rider/job` shows for the exact same event.
  */
 export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider"; status?: string }): string {
+  return withoutRiderRoutes(notificationRowRoute(row));
+}
+
+function notificationRowRoute(row: { orderId: string | null; to?: "customer" | "rider"; status?: string }): string {
   if (row.orderId) {
     if (row.to === "rider" && typeof row.status === "string" && RIDER_JOB_SCREEN_STATUSES.has(row.status)) return "/rider/job";
     if (row.to === "rider" && row.status === "cancelled") return "/rider/job";

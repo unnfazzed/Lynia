@@ -63,6 +63,7 @@ jest.mock("../../../src/auth/session", () => ({
   loadRolePreference: async () => null,
 }));
 
+import { riderModeAvailable } from "../../../src/rider-mode";
 import ProfileSetupScreen from "../setup";
 
 /** Fields are located by the accessibilityLabel `Field` derives from `label` (see src/ui/index.tsx). */
@@ -332,5 +333,38 @@ describe("profile setup — 'Verified by X' hint reflects the actual delivery ch
     });
     await settle();
     expect(verifiedHint(tree)).toBe("Verified by SMS ✓");
+  });
+});
+
+/**
+ * D-41 (docs/DESIGN-DEVIATIONS.md): the customer-only iPhone app collects no national ID. The field is
+ * not drawn, Continue needs only the name, and the PATCH carries no idNumber (optional in the
+ * contract) — so no ID number ever leaves an iPhone. Sign-up then skips the role fork.
+ */
+describe("profile setup on the customer-only iPhone app (D-41)", () => {
+  beforeEach(() => {
+    jest.mocked(riderModeAvailable).mockReturnValue(false);
+  });
+
+  it("draws no national ID field and finishes sign-up with the name alone", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "National ID number")).toHaveLength(0);
+
+    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
+    await settle();
+    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
+    if (!saveButton) throw new Error("no Continue button found");
+    expect(saveButton.props.disabled).toBe(false);
+    await act(async () => {
+      await saveButton.props.onPress();
+    });
+    await settle();
+
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo" });
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/home");
   });
 });

@@ -7,7 +7,9 @@ import { updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference } from "../../src/auth/session";
+import { signedInDestination } from "../../src/logic/sign-in-route";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
+import { riderModeAvailable } from "../../src/rider-mode";
 import { Button, Field, Heading, Icon, Screen, Sub, useActionError } from "../../src/ui";
 
 /**
@@ -90,14 +92,17 @@ export default function ProfileSetupScreen(): React.ReactElement {
   // can't enable only to bounce off a raw server Zod error. The single name field must split into a
   // given AND a family name for that to hold.
   const { firstName, lastName } = splitName(fullName);
-  const canSubmit = firstName.length > 0 && lastName.length > 0 && idNumber.trim().length >= 4;
+  // The customer-only iPhone app collects no national ID (owner decision 2026-09-27, D-41): the field
+  // is not drawn there and the contract already treats idNumber as optional.
+  const collectsNationalId = riderModeAvailable();
+  const canSubmit = firstName.length > 0 && lastName.length > 0 && (!collectsNationalId || idNumber.trim().length >= 4);
 
   const submit = async (): Promise<void> => {
     if (!canSubmit) return;
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName, lastName, idNumber: normalizeNationalId(idNumber) });
+      await updateProfile({ firstName, lastName, ...(collectsNationalId ? { idNumber: normalizeNationalId(idNumber) } : {}) });
       // The draft has served its purpose — wipe the stored national ID immediately rather than leaving
       // it in the keystore any longer than needed (mirrors become.tsx clearing the KYC draft on submit).
       void clearProfileDraft();
@@ -108,9 +113,10 @@ export default function ProfileSetupScreen(): React.ReactElement {
       // tokens, and writing it back is what bounced brand-new accounts to the OTP screen after sign-up.
       await updateSession({ needsProfile: false });
       // Continue the sign-in fork the same way verify.tsx does for a returning user: a saved role goes
-      // straight to its home, a brand-new account still sees the role picker.
+      // straight to its home, a brand-new account still sees the role picker (none on the
+      // customer-only iPhone app — signedInDestination).
       const chosen = await loadRolePreference();
-      router.replace(chosen === "rider" ? "/rider" : chosen ? "/home" : "/role");
+      router.replace(signedInDestination(chosen));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save your details.");
     } finally {
@@ -179,14 +185,16 @@ export default function ProfileSetupScreen(): React.ReactElement {
       {/* National ID stored on the account record (0·6). Default (text) keyboard:
           Zimbabwean IDs are alphanumeric (e.g. "63123456A42"), so a number pad would block them.
           Placeholder is dash-free — customers enter the ID plain; spaces/dashes are normalised on save. */}
-      <Field
-        label="National ID number"
-        value={idNumber}
-        onChangeText={setIdNumber}
-        placeholder="63123456A42"
-        maxLength={40}
-        hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
-      />
+      {collectsNationalId ? (
+        <Field
+          label="National ID number"
+          value={idNumber}
+          onChangeText={setIdNumber}
+          placeholder="63123456A42"
+          maxLength={40}
+          hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
+        />
+      ) : null}
       <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
       {/* The mock's `Register` ghost (LJ.register), and the only drawn exit from this screen.
           Without it a customer who mistyped their number and then passed the code sent to THAT
