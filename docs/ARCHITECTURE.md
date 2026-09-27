@@ -751,9 +751,10 @@ Security properties baked in:
   (`TokenService.successorSecret`, a keyed HMAC), which makes rotation **idempotent**: a client whose
   rotate response was lost (dropped link, the app killed or the phone switched off before it saved the
   new token) re-presents its old token and gets the SAME successor back — no new session is ever
-  minted by a replay — for as long as that successor is unused and within `SESSION_RETENTION_DAYS` of
-  the rotation (`AuthService.replayRotation`; SES-02). Concurrent refreshes of one token converge on one
-  successor. Reuse after the successor was consumed, a logout- or admin-revoke, or a plain expiry all
+  minted by a replay — for as long as that successor is unused and within 14 days of the rotation
+  (`REFRESH_REPLAY_WINDOW_MS`, clamped down to `SESSION_RETENTION_DAYS`; `AuthService.replayRotation`;
+  SES-02). Replays are logged, as is a rotated token that returns after its successor was used.
+  Concurrent refreshes of one token converge on one successor. Reuse after the successor was consumed, a logout- or admin-revoke, or a plain expiry all
   still hard-reject. Logout revokes the chain's live head even when the presented session id was
   already rotated away (SES-06). A database error during refresh is a 5xx, never a 401 (SES-01).
 - **Rate limiting** on OTP send is three-tiered (phone / IP / global) because each WhatsApp send
@@ -766,7 +767,8 @@ Security properties baked in:
   page does not (SES-05). Session keychain writes are serialized, never fail the sign-in or request
   that caused them, and are retried when the app backgrounds; a throwing keychain read is retried
   before it is believed as "signed out" (SES-04). Screens patch the session with `updateSession`,
-  never by writing back a render-captured copy (SES-03).
+  never by writing back a render-captured copy (SES-03). The session is process state, so a remount
+  (the root ErrorBoundary's "Reload") continues from it instead of the launch read (SES-09).
 
 ---
 

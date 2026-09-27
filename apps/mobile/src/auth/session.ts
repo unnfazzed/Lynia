@@ -104,5 +104,7 @@ export async function saveSession(session: Session): Promise<void> {
 }
 
 export async function clearSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY);
+  // Retried like the read and write: a delete that fails leaves the signed-out session on disk, and on a
+  // shared device the next launch would sign the previous user back in.
+  await withKeychainRetry(() => SecureStore.deleteItemAsync(KEY));
 }

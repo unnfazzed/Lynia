@@ -44,6 +44,13 @@ const MAX_GRACE_ATTEMPTS = 5;
 // such a token still gets the original treatment: a fresh independent session, only within this window
 // of the rotation. Every rotation since is answered by `replayRotation` instead — see there.
 const REFRESH_GRACE_TTL_MS = 60_000;
+// How long after a rotation the rotated token can still be replayed into its (unused) successor — the
+// "rotate response never arrived" window (see replayRotation). Long enough for the cases the owner named:
+// the phone switched off or the app closed for days, the network gone for a week. Deliberately its own
+// constant, NOT the data-retention setting: raising SESSION_RETENTION_DAYS for audit reasons must not
+// silently widen how long a stale token stays redeemable. It is only ever clamped DOWN to that retention
+// window, past which the row is purged and a replay can only fail as an unknown session.
+const REFRESH_REPLAY_WINDOW_MS = 14 * 86_400_000;
 // A refresh token is `${sessionId}.${secret}`, and the session id is the row's UUID primary key. Checked
 // before any query so a malformed id is rejected as the definitive 401 it is — which is what lets the
 // session lookup stop swallowing database errors (see refresh()).
@@ -750,17 +757,17 @@ export class AuthService {
    * sees the winner's committed revoke + link.
    *  - Only a ROTATION revoke qualifies (`rotatedToId` set). Logout, admin suspend/ban and erasure never
    *    set it (or delete the rows), so those tokens are never answered.
-   *  - The successor must be un-consumed: un-revoked and unexpired. Once the client actually used it
-   *    (rotated it in turn → revoked), the chain has moved on and the old token is a replay — rejected,
-   *    which is what keeps reuse detection.
+   *  - The successor must be un-consumed: un-revoked and unexpired, and the same profile's. Once the
+   *    client actually used it (rotated it in turn → revoked), the chain has moved on and the old token
+   *    is rejected. That is reuse REJECTION, not detection — there is no token-family revocation — so it
+   *    is logged as a possible reuse, the one signal this path can give.
    *  - The answer is the SAME successor: its secret is re-derived from the presented token and checked
-   *    against the successor's stored hash. Nothing new is minted, so replaying a token can never multiply
-   *    sessions; the most a rotated token can ever yield is the one successor it was already rotated
-   *    into — no more authority than it carried before rotation. That is why the window is not 60s but
-   *    the session-row retention window: a rotated row is deleted SESSION_RETENTION_DAYS after its
-   *    revocation (PrivacyService.purgeExpiredData), after which a replay can only fail as an unknown
-   *    session. The same clock is enforced here, so the bound is stated rather than an artefact of when
-   *    the daily sweep last ran.
+   *    against the successor's stored hash. Nothing new is minted, so replaying can never multiply
+   *    sessions, and a rotated token yields only the one successor it was rotated into, only until that
+   *    successor is first used, and only within REFRESH_REPLAY_WINDOW_MS. The residual risk that bound
+   *    accepts: a copy of a token stolen AFTER it was rotated (the device overwrites it the moment the
+   *    successor is saved) redeems the victim's successor if the victim hasn't refreshed since.
+   *  - Every replay is logged, so how often responses are lost — and any abuse — is visible.
    *  - A successor rotated before secrets were derived (hash mismatch) can't be handed back. It keeps the
    *    legacy RT-GRACE behaviour: a fresh independent session, only within REFRESH_GRACE_TTL_MS.
    */
@@ -777,18 +784,28 @@ export class AuthService {
     if (!rotated?.revokedAt || !rotated.rotatedToId) return null;
     if (rotated.expiresAt.getTime() <= now) return null;
     const sinceRotation = now - rotated.revokedAt.getTime();
-    // Phrased as "not within the window" so a missing setting (NaN) fails closed — no replay — never open.
-    if (!(sinceRotation <= this.env.SESSION_RETENTION_DAYS * 86_400_000)) return null;
+    // Never past the row's own retention (it is purged then). Phrased as "not within the window" so a
+    // missing retention setting (NaN) fails closed — no replay — never open.
+    const replayWindowMs = Math.min(REFRESH_REPLAY_WINDOW_MS, this.env.SESSION_RETENTION_DAYS * 86_400_000);
+    if (!(sinceRotation <= replayWindowMs)) return null;
 
     const successor = await this.prisma.session.findUnique({
       where: { id: rotated.rotatedToId },
-      select: { id: true, refreshTokenHash: true, revokedAt: true, expiresAt: true },
+      select: { id: true, profileId: true, refreshTokenHash: true, revokedAt: true, rotatedToId: true, expiresAt: true },
     });
-    // Successor gone, already consumed (revoked = the chain advanced → replay), or expired → reject.
-    if (!successor || successor.revokedAt || successor.expiresAt.getTime() <= now) return null;
+    if (!successor || successor.profileId !== s.profileId || successor.expiresAt.getTime() <= now) return null;
+    if (successor.revokedAt) {
+      // Revoked by its OWN rotation means the client moved on and this older token came back afterwards.
+      // (A successor revoked by logout or an admin action has no rotatedToId — that's just a dead chain.)
+      if (successor.rotatedToId) {
+        this.logger.warn(`refresh: session ${s.id} presented after its successor ${successor.id} was already rotated — possible token reuse`);
+      }
+      return null;
+    }
 
     const successorSecret = this.tokens.successorSecret(s.id, secret);
     if (this.tokens.safeEqualHex(this.tokens.hash(successorSecret), successor.refreshTokenHash)) {
+      this.logger.log(`refresh: replayed rotation of session ${s.id} → ${successor.id}, ${Math.round(sinceRotation / 1000)}s after it (lost response or concurrent refresh)`);
       return this.tokensFor(s.profileId, s.profile.role, successor.id, successorSecret);
     }
     if (sinceRotation > REFRESH_GRACE_TTL_MS) return null;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { UnauthorizedException } from "@nestjs/common";
+import { Logger, UnauthorizedException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
@@ -927,7 +927,17 @@ function sessionTable(riderStanding?: string) {
   };
   const prisma = {
     session,
-    $transaction: vi.fn(async (fn: (tx: { session: typeof session }) => Promise<unknown>) => fn({ session })),
+    // Interactive transaction with real rollback: a throw restores every row as it was.
+    $transaction: vi.fn(async (fn: (tx: { session: typeof session }) => Promise<unknown>) => {
+      const snapshot = [...rows.values()].map((r) => ({ ...r }));
+      try {
+        return await fn({ session });
+      } catch (err) {
+        rows.clear();
+        for (const r of snapshot) rows.set(r.id, r);
+        throw err;
+      }
+    }),
   };
   /** Seed a session the client holds `token` for. */
   function seed(over: Partial<SessionRow> = {}) {
@@ -1052,6 +1062,19 @@ describe("AuthService.refresh", () => {
     expect(res.expiresIn).toBe(900);
   });
 
+  it("a failure while minting the successor rolls the whole rotation back — the client's token still works", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    t.prisma.session.create.mockRejectedValueOnce(new Error("insert failed"));
+    const { svc } = make(baseEnv, t.prisma);
+
+    const err = await svc.refresh(old.token).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(UnauthorizedException); // a 5xx the client retries, never a sign-out
+    // The revoke didn't survive the failed transaction, so the token the client holds isn't burned.
+    expect(t.rows.get(old.id)).toMatchObject({ revokedAt: null, rotatedToId: null });
+    await expect(svc.refresh(old.token)).resolves.toMatchObject({ refreshToken: expect.stringContaining(".") });
+  });
+
   it("a CAS lost to a LOGOUT (revoked, no successor) is rejected and mints nothing", async () => {
     const t = sessionTable();
     const old = t.seed();
@@ -1125,14 +1148,67 @@ describe("AuthService.refresh — replaying a rotation whose response was lost",
     await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("does NOT replay beyond SESSION_RETENTION_DAYS of the rotation (the row's own retention clock)", async () => {
+  it("covers a phone that was off for most of two weeks…", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const first = await svc.refresh(old.token);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 13 * 86_400_000);
+
+    await expect(svc.refresh(old.token)).resolves.toMatchObject({ refreshToken: first.refreshToken });
+  });
+
+  it("…but not beyond the 14-day replay window", async () => {
     const t = sessionTable();
     const old = t.seed();
     const { svc } = make(baseEnv, t.prisma);
     await svc.refresh(old.token);
-    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 31 * 86_400_000);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 15 * 86_400_000);
 
     await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  // The window is its own constant — raising retention for audit reasons must not widen it — but it is
+  // clamped DOWN to a shorter retention, past which the rotated row is purged anyway.
+  it("is clamped to a shorter session-retention setting, never widened by a longer one", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc: shortRetention } = make({ ...baseEnv, SESSION_RETENTION_DAYS: 7 } as Env, t.prisma);
+    const first = await shortRetention.refresh(old.token);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 8 * 86_400_000);
+    await expect(shortRetention.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+
+    const { svc: longRetention } = make({ ...baseEnv, SESSION_RETENTION_DAYS: 365 } as Env, t.prisma);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 20 * 86_400_000);
+    await expect(longRetention.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 6 * 86_400_000);
+    await expect(longRetention.refresh(old.token)).resolves.toMatchObject({ refreshToken: first.refreshToken });
+  });
+
+  it("never hands back a successor that belongs to another profile", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const first = await svc.refresh(old.token);
+    t.rows.get(idOf(first.refreshToken))!.profileId = "someone-else";
+
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  it("logs a rotated token that comes back after its successor was used — the only reuse signal there is", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      const t = sessionTable();
+      const old = t.seed();
+      const { svc } = make(baseEnv, t.prisma);
+      const successor = await svc.refresh(old.token);
+      await svc.refresh(successor.refreshToken); // the client moved on
+
+      await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/possible token reuse/));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("fails closed when the retention window is not configured", async () => {

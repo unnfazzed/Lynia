@@ -99,7 +99,10 @@ describe("authedFetch — /auth/refresh transient vs definitive failure (LC-C03)
   it("DOES sign out when /auth/refresh definitively rejects the refresh token (401)", async () => {
     const { authedFetch } = await import("./api-client");
     fetchMock.mockImplementation(async (url: string) => {
-      if (url.endsWith("/auth/refresh")) return makeResponse(401, { message: "invalid refresh token" });
+      // The exact envelope the API sends (pinned by apps/api/src/auth/refresh-contract.e2e.spec.ts).
+      if (url.endsWith("/auth/refresh")) {
+        return makeResponse(401, { statusCode: 401, message: "Invalid or expired refresh token", error: "Unauthorized" });
+      }
       return AUTH_GUARD_401;
     });
 
@@ -128,6 +131,18 @@ describe("authedFetch — /auth/refresh transient vs definitive failure (LC-C03)
     expect(clearMerchantSession).not.toHaveBeenCalled();
     expect(session).not.toBeNull();
   });
+
+  // A gateway's own JSON (a `message`, but no `statusCode` matching the response) isn't the API speaking.
+  it.each([{ message: "Unauthorized" }, { statusCode: 502, message: "Bad gateway" }, { statusCode: 401 }])(
+    "does NOT sign out on a 401 from /auth/refresh with a non-API JSON body (%j)",
+    async (body) => {
+      const { authedFetch } = await import("./api-client");
+      fetchMock.mockImplementation(async (url: string) => (url.endsWith("/auth/refresh") ? makeResponse(401, body) : AUTH_GUARD_401));
+
+      await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+      expect(clearMerchantSession).not.toHaveBeenCalled();
+    },
+  );
 
   it("retries the original request with the refreshed token on success", async () => {
     const { authedFetch } = await import("./api-client");
