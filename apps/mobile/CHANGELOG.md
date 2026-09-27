@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.50.1](https://github.com/unnfazzed/Lynia/compare/v0.50.0...v0.50.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **auth:** harden stay-signed-in after independent review — crash-reload sign-out (SES-09), 14-day replay window, stricter rejection check ([#950](https://github.com/unnfazzed/Lynia/issues/950)) ([62d228a](https://github.com/unnfazzed/Lynia/commit/62d228ac3dbabc090ad50d37059d1c2c8f8c56bb))
+* **auth:** keep signed-in users signed in (SES-01..SES-07) ([05b172d](https://github.com/unnfazzed/Lynia/commit/05b172d6cb17f1135a589543c465b851b70a5e1d))
+
 ## [0.50.0](https://github.com/unnfazzed/Lynia/compare/v0.49.0...v0.50.0) (2026-09-25)
 
 
