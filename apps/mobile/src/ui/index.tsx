@@ -47,6 +47,8 @@ export { FoodThumb, type FoodThumbCategory } from "./FoodThumb";
 
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
+export { DismissKeyboardArea } from "./DismissKeyboardArea";
+export { useDial } from "./useDial";
 export { Avatar } from "./Avatar";
 export { RiderMini } from "./RiderMini";
 export { Celebrate } from "./Celebrate";

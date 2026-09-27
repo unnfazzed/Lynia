@@ -1873,6 +1873,8 @@ render any rider entry point, and it does not collect the national ID the sign-u
   slide instead of the mock's two dots. The launched food-on deck has no rider slide and is unchanged.
 - **LJ.register**: the "National ID number" field is not drawn on iOS; Continue needs only the name, and
   the PATCH carries no `idNumber` (optional in `UpdateProfileRequest`), so no ID number leaves an iPhone.
+  The intro line drops "and ID" to match, reading "You're sending parcels. Just a name for your account
+  record — no documents, no verification." (Android keeps the mock's line verbatim.)
 - **The customer Account tab** (D-15/D-22) loses its bridge row ("Become a rider" / "Switch to rider").
 - Smaller undrawn-state controls hide with it: the send screen's "Online as a rider" pill, the order
   screen's "Open your job" for a rider viewer, and the rider side of `/profile`.

@@ -12,7 +12,7 @@ import { isRiderTrackingStale } from "../../logic/order-labels";
 import { selectRiderTelemetry } from "../../logic/order-tracking";
 import type { RiderIdentity } from "../../logic/rider-identity";
 import { orderKey } from "../../query/client";
-import { Card, Icon, RiderMini, Stepper } from "../index";
+import { Card, Icon, RiderMini, Stepper, useDial } from "../index";
 import { LiveMap, type MapPoint } from "../LiveMap";
 
 /**
@@ -62,6 +62,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
   feeLabel?: string;
 }): React.ReactElement {
   const { orderId, status, isActive, connectionState } = props;
+  const dial = useDial();
   const isRiderViewer = props.viewerRole === "rider";
 
   // Fix 2 (belt-and-suspenders): the WS presence-stale event can itself be missed on a flaky link, and
@@ -194,7 +195,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           food keeps its own phone row lower down (unchanged). */}
       {!isFood && props.counterpartyPhone ? (
         <Tappable
-          onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
+          onPress={() => dial(props.counterpartyPhone)}
           accessibilityRole="button"
           accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
           style={{
@@ -292,7 +293,7 @@ export const LiveTrackingCard = React.memo(function LiveTrackingCard(props: {
           </Text>
           {/* One-tap dialer next to the visible number — a call beats copy/paste mid-delivery. */}
           <Tappable
-            onPress={() => void Linking.openURL(`tel:${props.counterpartyPhone}`)}
+            onPress={() => dial(props.counterpartyPhone)}
             accessibilityRole="button"
             accessibilityLabel={props.viewerRole === "rider" ? "Call sender" : "Call rider"}
             style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}

@@ -9,7 +9,7 @@ import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference } from "../src/auth/session";
 import { signedInDestination } from "../src/logic/sign-in-route";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { Button, Field, Heading, Icon, Screen, Sub, useActionError, Tappable } from "../src/ui";
+import { Button, DismissKeyboardArea, Field, Heading, Icon, Screen, Sub, useActionError, Tappable } from "../src/ui";
 
 /**
  * The three seed props stage the OTP screen's non-idle states, each of which is its own gallery
@@ -159,121 +159,124 @@ export default function VerifyScreen({
   };
 
   return (
-    <Screen>
-      {/* The kit's `Otp` screen (screens.jsx) carries no top bar — just the in-body heading and a
-          bottom ghost "Back". */}
-      <Heading>Check your messages</Heading>
-      {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
-          don't claim one was. Real users see the "we sent a code" copy naming whichever channel the
-          code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — never a hardcoded claim that
-          could be wrong the moment Bird falls back from WhatsApp to SMS on a given send. */}
-      <Sub>
-        {prefilled
-          ? "Test build: code pre-filled — tap Verify."
-          : `We sent a 6-digit code to ${phone ? formatPhoneDisplay(phone) : "your phone"} by ${deliveryChannel === "whatsapp" ? "WhatsApp" : "SMS"}.`}
-      </Sub>
+    // The number pad has no return key on iOS: a tap outside the field is the way to put it away.
+    <DismissKeyboardArea>
+      <Screen>
+        {/* The kit's `Otp` screen (screens.jsx) carries no top bar — just the in-body heading and a
+            bottom ghost "Back". */}
+        <Heading>Check your messages</Heading>
+        {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
+            don't claim one was. Real users see the "we sent a code" copy naming whichever channel the
+            code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — never a hardcoded claim that
+            could be wrong the moment Bird falls back from WhatsApp to SMS on a given send. */}
+        <Sub>
+          {prefilled
+            ? "Test build: code pre-filled — tap Verify."
+            : `We sent a 6-digit code to ${phone ? formatPhoneDisplay(phone) : "your phone"} by ${deliveryChannel === "whatsapp" ? "WhatsApp" : "SMS"}.`}
+        </Sub>
 
-      {/* Calm confirmation after a resend, announced to screen readers. */}
-      {resent && !locked ? (
-        <View
-          accessibilityLiveRegion="polite"
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: tokens.space.sm,
-            paddingVertical: tokens.space.sm,
-            paddingHorizontal: tokens.space.md,
-            borderRadius: tokens.radius.input,
-            backgroundColor: tokens.color.accentWash,
-            marginBottom: tokens.space.sm,
-          }}
-        >
-          <Icon name="check" size={16} color={tokens.color.accentText} />
-          <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-            A fresh code is on its way — check your messages.
-          </Text>
-        </View>
-      ) : null}
-
-      <Field
-        label="6-digit code"
-        value={code}
-        onChangeText={(v) => {
-          setCode(v);
-          if (locked) setLocked(false);
-        }}
-        placeholder="000000"
-        keyboardType="number-pad"
-        maxLength={6}
-        // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving
-        // by SMS; `oneTimeCode` drives iOS Security-Code AutoFill (which also covers SMS/iMessage, not
-        // WhatsApp). Both are harmless no-ops when this send actually went out over WhatsApp — there is
-        // no autofill hook for a WhatsApp message, so the user just types/pastes it — and still help on
-        // the SMS-fallback case, so they stay on regardless of `deliveryChannel`.
-        autoComplete="sms-otp"
-        textContentType="oneTimeCode"
-        // Drawn in the IDLE mock only (screens.jsx `Otp`). The cooldown / resent / locked mocks
-        // (screens-safety.jsx `OtpState`) draw the field with no hint under it — the countdown row,
-        // the banner and the lockout card are the guidance in those states — so it is not rendered
-        // there. Not drawn ⇒ not rendered.
-        hint={
-          cooldown > 0 || locked
-            ? undefined
-            : deliveryChannel === "whatsapp"
-              ? "WhatsApp can take a minute on a busy network."
-              : "SMS can take a minute on a busy network."
-        }
-        error={locked ? "That code has expired." : undefined}
-      />
-
-      {locked ? (
-        // Recovery, not a dead end: one tap issues a new code and resets the attempt counter server-side.
-        <>
+        {/* Calm confirmation after a resend, announced to screen readers. */}
+        {resent && !locked ? (
           <View
+            accessibilityLiveRegion="polite"
             style={{
-              padding: tokens.space.md,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: tokens.space.sm,
+              paddingVertical: tokens.space.sm,
+              paddingHorizontal: tokens.space.md,
               borderRadius: tokens.radius.input,
-              backgroundColor: tokens.color.surface,
+              backgroundColor: tokens.color.accentWash,
               marginBottom: tokens.space.sm,
             }}
           >
-            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-              Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.
+            <Icon name="check" size={16} color={tokens.color.accentText} />
+            <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+              A fresh code is on its way — check your messages.
             </Text>
           </View>
-          <Button label="Send a fresh code" onPress={() => void requestFreshCode()} loading={resending} />
-        </>
-      ) : (
-        <>
-          <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
-          {/* Resend affordance (screens.jsx `Otp` idle · screens-safety.jsx `OtpState`): an inline
-              centred link, not a ghost button. Idle → green "Didn't get it? Resend code"; during the
-              cooldown → a muted "Resend in m:ss" (or "Resend again in m:ss" after a resend). */}
-          <Tappable
-            onPress={resend}
-            disabled={cooldown > 0}
-            accessibilityRole="button"
-            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: tokens.space.xs + 2, minHeight: tokens.touchTargetMin }}
-          >
-            {cooldown > 0 ? (
-              <>
-                <Icon name="clock" size={15} color={tokens.color.muted} />
-                <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>
-                  Resend {resent ? "again " : ""}in <Text style={{ fontVariant: ["tabular-nums"] }}>{formatCountdown(cooldown)}</Text>
-                </Text>
-              </>
-            ) : (
-              <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                Didn&apos;t get it? Resend code
+        ) : null}
+
+        <Field
+          label="6-digit code"
+          value={code}
+          onChangeText={(v) => {
+            setCode(v);
+            if (locked) setLocked(false);
+          }}
+          placeholder="000000"
+          keyboardType="number-pad"
+          maxLength={6}
+          // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving
+          // by SMS; `oneTimeCode` drives iOS Security-Code AutoFill (which also covers SMS/iMessage, not
+          // WhatsApp). Both are harmless no-ops when this send actually went out over WhatsApp — there is
+          // no autofill hook for a WhatsApp message, so the user just types/pastes it — and still help on
+          // the SMS-fallback case, so they stay on regardless of `deliveryChannel`.
+          autoComplete="sms-otp"
+          textContentType="oneTimeCode"
+          // Drawn in the IDLE mock only (screens.jsx `Otp`). The cooldown / resent / locked mocks
+          // (screens-safety.jsx `OtpState`) draw the field with no hint under it — the countdown row,
+          // the banner and the lockout card are the guidance in those states — so it is not rendered
+          // there. Not drawn ⇒ not rendered.
+          hint={
+            cooldown > 0 || locked
+              ? undefined
+              : deliveryChannel === "whatsapp"
+                ? "WhatsApp can take a minute on a busy network."
+                : "SMS can take a minute on a busy network."
+          }
+          error={locked ? "That code has expired." : undefined}
+        />
+
+        {locked ? (
+          // Recovery, not a dead end: one tap issues a new code and resets the attempt counter server-side.
+          <>
+            <View
+              style={{
+                padding: tokens.space.md,
+                borderRadius: tokens.radius.input,
+                backgroundColor: tokens.color.surface,
+                marginBottom: tokens.space.sm,
+              }}
+            >
+              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
+                Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.
               </Text>
-            )}
-          </Tappable>
-        </>
-      )}
+            </View>
+            <Button label="Send a fresh code" onPress={() => void requestFreshCode()} loading={resending} />
+          </>
+        ) : (
+          <>
+            <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
+            {/* Resend affordance (screens.jsx `Otp` idle · screens-safety.jsx `OtpState`): an inline
+                centred link, not a ghost button. Idle → green "Didn't get it? Resend code"; during the
+                cooldown → a muted "Resend in m:ss" (or "Resend again in m:ss" after a resend). */}
+            <Tappable
+              onPress={resend}
+              disabled={cooldown > 0}
+              accessibilityRole="button"
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: tokens.space.xs + 2, minHeight: tokens.touchTargetMin }}
+            >
+              {cooldown > 0 ? (
+                <>
+                  <Icon name="clock" size={15} color={tokens.color.muted} />
+                  <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>
+                    Resend {resent ? "again " : ""}in <Text style={{ fontVariant: ["tabular-nums"] }}>{formatCountdown(cooldown)}</Text>
+                  </Text>
+                </>
+              ) : (
+                <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+                  Didn&apos;t get it? Resend code
+                </Text>
+              )}
+            </Tappable>
+          </>
+        )}
 
-      {/* The kit draws the way back as a bottom ghost button (no top bar). */}
-      <Button label="Back" variant="ghost" onPress={() => router.back()} />
+        {/* The kit draws the way back as a bottom ghost button (no top bar). */}
+        <Button label="Back" variant="ghost" onPress={() => router.back()} />
 
-    </Screen>
+      </Screen>
+    </DismissKeyboardArea>
   );
 }

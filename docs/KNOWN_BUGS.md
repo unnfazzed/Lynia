@@ -6,9 +6,11 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-27 (**`IOS-01`..`IOS-03` FIXED** — interactive session, first iOS build
-work: a dependency override that broke every iOS prebuild, the Play-only force-update link, and iOS push
-tokens sent to FCM. See the "First iOS build 2026-09-27" entry at the end.)
+**Last consolidated:** 2026-09-27 (**`IOS-01`..`IOS-08` FIXED** — interactive session, first iOS build
+work: a dependency override that broke every iOS prebuild, the Play-only force-update link, iOS push
+tokens sent to FCM, and five iPhone-only UX defects from a code sweep (keyboard over modal fields, no way
+to close the sign-in number pad, buzzing haptics, silent Call buttons, an ID promise on sign-up). See the
+"First iOS build 2026-09-27" entry at the end.)
 Prior: 2026-09-27 (**`SES-01`..`SES-07` + `SES-09` FIXED, `SES-08` OPEN** — interactive session,
 owner-reported "after sign up users are brought back to the sign-in OTP screen" / "keep users signed in
 even if the phone switches off or the app is closed". Seven independent ways a signed-in user was sent
@@ -2622,14 +2624,21 @@ update.
 
 ## First iOS build 2026-09-27 (interactive session, owner: "I want to do appstore submission")
 
-The app had never been built for iOS. Getting to a first build surfaced two defects that every Android
-build is blind to. The iOS plan and ledger is `docs/APP-STORE-SUBMISSION.md`.
+The app had never been built for iOS. Getting to a first build surfaced defects that every Android
+build is blind to: IOS-01/02 from the first build, IOS-03 on the push path, and IOS-04..08 from a code
+sweep of iPhone-only behaviour (fixed in code, not yet reproduced or re-checked on a device). The iOS plan
+and ledger is `docs/APP-STORE-SUBMISSION.md`.
 
 | ID | Finding | Location | Severity | Status |
 |----|---------|----------|----------|--------|
 | IOS-01 | **Every iOS prebuild failed: `DOMParser.parseFromString: the provided mimeType "undefined" is not valid` in `withIosInfoPlistBaseMod`.** The security override `"@xmldom/xmldom@<0.8.13": ">=0.8.13"` had no upper bound, so pnpm resolved `@expo/plist`'s `~0.7.7` request to xmldom **0.9.12**, where the mimeType argument became mandatory. `@expo/plist@0.2.2` omits it. Android prebuild never parses a plist, so all Android builds stayed green, and the break only shows on the first iOS prebuild. | root `package.json` `pnpm.overrides`, `pnpm-lock.yaml` | HIGH (blocks any iOS build) | **FIXED**: override pinned to `^0.8.13` (resolves 0.8.15, keeping the security floor; `plist@3.1.1` keeps 0.9.12 through its own range). Verified: local `expo prebuild --platform ios` fails before and succeeds after. EAS build `7fdb60a9` then compiled the iOS app on Xcode 26.2. The Android fingerprint is unchanged (`7ae040c9…` before and after; the lockfile is not a fingerprint input). |
 | IOS-02 | **The force-update "Update now" button would have sent iPhone users to Google Play.** `STORE_URL` fell back to `extra.storeUrl`, which `app.config.ts` defaults to the Play listing on every platform. | `apps/mobile/src/config.ts` | MEDIUM (iOS only; no iOS build existed yet) | **FIXED**: `storeUrlFor(Platform.OS, …)`. iOS reads only `EXPO_PUBLIC_APP_STORE_URL` and hides the button until one is set, and never falls back to the Play URL. It is a JS substitution, so it can be set by OTA once the App Store listing exists. `src/__tests__/store-url.test.ts`. |
 | IOS-03 | **iOS device tokens were sent to FCM, which can never deliver to them, and they were never pruned.** The iOS app registers the raw APNs token (`getDevicePushTokenAsync`, `platform: "ios"`) and embeds no Firebase SDK. `NotificationsService.send()` selected only `token`/`profileId` and handed every token to FCM. FCM rejects an APNs token with a code outside `DEAD_TOKEN_CODES`, so the row was never pruned and failed on every send. | `apps/api/src/notifications/notifications.service.ts`, `apps/api/src/adapters/push/*` | MEDIUM (latent: no iOS install existed yet) | **FIXED** (second PR of the iOS work): `PlatformRoutedPush` sends `ios` tokens to the new `ApnsPush` (HTTP/2, ES256 `.p8` provider token, custom data under `"body"` where expo-notifications reads it) and everything else to FCM. It is armed by `APNS_*` independently of `PUSH_PROVIDER`; until then iOS pushes are logged and skipped. Tests: `apns.push.spec.ts` (including a real local HTTP/2 server), `routed.push.spec.ts`, and `push.spec.ts` (config and boot guard). |
+| IOS-04 | **On iOS the note and report fields typed behind the keyboard.** iOS lays the keyboard over a `<Modal>`, where Android's Modal window resizes (`SOFT_INPUT_ADJUST_RESIZE`). Three modal sheets hold text fields and had no keyboard handling: the item sheet's kitchen note, the cart note sheet, and the get-help/report sheet. | `apps/mobile/src/ui/food/ItemSheet.tsx`, `apps/mobile/src/ui/food/CartNoteSheet.tsx`, `apps/mobile/src/ui/safety.tsx` | MEDIUM (iOS only; no iOS install yet) | **FIXED**: each sheet sits in a `KeyboardAvoidingView` with `behavior="padding"` on iOS (unset on Android, which is unchanged), the pattern `AddressConfirmSheet` already used. `src/ui/__tests__/ios-keyboard.test.tsx`. |
+| IOS-05 | **The sign-in number pad could not be put away on an iPhone.** iOS phone and number pads have no return key, and nothing else closed the keyboard, so on a small iPhone the OTP lockout state's Back button sat under it. | `apps/mobile/app/phone.tsx`, `apps/mobile/app/verify.tsx` | MEDIUM (iOS only; a stuck sign-in screen is an App Review 2.1 rejection) | **FIXED**: both screens sit in the new `DismissKeyboardArea`, a plain View that closes the keyboard on a tap nothing inside took. It is not a `Pressable`, so it draws no press feedback across the screen. `app/__tests__/sign-in-keyboard.test.tsx`, `src/ui/__tests__/ios-keyboard.test.tsx`. |
+| IOS-06 | **Every haptic played on iOS as a full ~400ms buzz or a long rumble.** React Native's iOS `Vibration` ignores durations and reads a pattern's entries as gaps between fixed buzzes. So the Android-tuned light `tap` became a 400ms buzz on every send, and the patterned cues became four to six overlapping buzzes. | `apps/mobile/src/ui/haptics.ts` | LOW (iOS only) | **FIXED**: `iosHapticPattern` maps each cue for iOS: no tap, one buzz for notify/success/warning, and a separated double for SOS. Android patterns are unchanged. `src/ui/__tests__/haptics.test.tsx`. |
+| IOS-07 | **The customer's Call buttons did nothing where the device can't place calls.** `void Linking.openURL("tel:…")` dropped the rejection an iPad or iPod without a paired iPhone returns, and App Review runs iPhone apps on iPad. | `apps/mobile/app/order/[id].tsx`, `apps/mobile/src/ui/order/LiveTrackingCard.tsx` | LOW (iPad compatibility mode) | **FIXED**: the three Call buttons go through the new `useDial`, which shows a toast naming the number when the dialler can't open. `src/ui/__tests__/use-dial.test.tsx`. |
+| IOS-08 | **The iPhone sign-up line promised an ID the iPhone app no longer asks for.** D-41 hid the National ID field on iOS but left the intro reading "Just a name and ID for your account record". | `apps/mobile/app/profile/setup.tsx` | LOW (iOS only) | **FIXED**: the line drops "and ID" where rider mode is unavailable; Android keeps the mock's line verbatim. Recorded under D-41 in `docs/DESIGN-DEVIATIONS.md`. `app/profile/__tests__/setup.test.tsx`. |
 
 The same PR ships the owner's customer-only iPhone app (`docs/DESIGN-DEVIATIONS.md` D-41). That is a product
 decision, not a defect, so it is recorded there rather than here.

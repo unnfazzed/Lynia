@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Linking, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
 import { formatMoney } from "../../src/logic/money";
@@ -21,7 +21,7 @@ import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useToast, Tappable } from "../../src/ui";
+import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useDial, useToast, Tappable } from "../../src/ui";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
 import { AuctionClock } from "../../src/ui/order/AuctionClock";
 import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
@@ -61,6 +61,7 @@ export default function OrderScreen(): React.ReactElement {
   const router = useRouter();
   const reduceMotion = useReduceMotion();
   const toast = useToast();
+  const dial = useDial();
   const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
   // Whether the SecureStore restore below has SETTLED — distinct from "there is no code". Without it
   // `deliveryCode === null` conflates "not read yet" with "none held", and the C7 branch treats the
@@ -1145,7 +1146,7 @@ export default function OrderScreen(): React.ReactElement {
               </View>
               {order.counterpartyPhone ? (
                 <Tappable
-                  onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
+                  onPress={() => dial(order.counterpartyPhone)}
                   accessibilityRole="button"
                   accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
                   style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
