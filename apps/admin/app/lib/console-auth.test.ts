@@ -105,6 +105,16 @@ describe("evaluateConsoleAccess", () => {
     expect(d.message).toMatch(/authenticated operator/i);
   });
 
+  it("under Easy Auth, the 401 says sign-in is not set up and points at the runbook, not at GCP IAP", () => {
+    // Easy Auth never forwards an unauthenticated request, so no identity = Easy Auth is not in front.
+    const d = evaluateConsoleAccess({ ...base, operator: null, requireAllowlist: true, easyAuth: true });
+    expect(d.allow).toBe(false);
+    expect(d.status).toBe(401);
+    expect(d.message).toMatch(/sign-in is not set up/i);
+    expect(d.message).toMatch(/infra\/azure\/README\.md, Step 6/);
+    expect(d.message).not.toMatch(/GCP IAP/);
+  });
+
   it("FAILS CLOSED when the operator resolves to blank", () => {
     const d = evaluateConsoleAccess({ ...base, operator: "   " });
     expect(d.allow).toBe(false);
@@ -203,6 +213,16 @@ describe("evaluateConsoleAccess — operator allowlist", () => {
     expect(d.allow).toBe(false);
     expect(d.operator).toBeNull();
     expect(d.status).toBe(403);
+    expect(d.message).toMatch(/ADMIN_CONSOLE_ALLOWED_OPERATORS/);
+    expect(d.message).toContain("anyone@corp.com");
+  });
+
+  it("names the refused identity exactly, so an owner can list the form the proxy actually sent", () => {
+    const guest = "mallory_example.com#EXT#@corp.onmicrosoft.com";
+    const d = evaluateConsoleAccess({ ...base, operator: guest, allowedOperators: allow, requireAllowlist: true });
+    expect(d.allow).toBe(false);
+    expect(d.status).toBe(403);
+    expect(d.message).toContain(`(${guest})`);
     expect(d.message).toMatch(/ADMIN_CONSOLE_ALLOWED_OPERATORS/);
   });
 

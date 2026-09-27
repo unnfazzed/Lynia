@@ -13,6 +13,15 @@ The console code already **fails closed** without a proxy-asserted operator iden
 (`apps/admin/middleware.ts`) and forwards that identity downstream as `x-lynia-operator`. Put a real
 identity in front of it:
 
+**Production today — Azure Easy Auth + Microsoft Entra (`ca-lynia-admin`):** follow
+`infra/azure/README.md` **Step 6**. `infra/azure/admin-auth.sh` creates the Entra app (Assignment
+required = Yes, only named operators assigned) and its Key Vault client secret. The Terraform apply
+turns Easy Auth on, and `deploy-admin-azure.yml` applies `ADMIN_CONSOLE_ALLOWED_OPERATORS` only once
+Easy Auth is confirmed. **Never set that allowlist on an app without Easy Auth in front:** the
+`x-ms-client-principal-name` header is then forgeable, and an allowlisted email becomes a password
+anyone can type (`docs/KNOWN_BUGS.md` ADM-11). Enforce MFA in Entra (security defaults, or Conditional
+Access).
+
 **Option 1 — GCP Identity-Aware Proxy (recommended if the console is on GCP):**
 1. Front the admin deployment (Cloud Run / GKE / backend service) with an external HTTPS LB.
 2. Enable **IAP** on that backend service.

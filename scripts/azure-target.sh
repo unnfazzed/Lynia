@@ -24,8 +24,10 @@ for name in "$@"; do
   fi
   # No newlines/whitespace/quotes: these values are written to GITHUB_ENV and used as argv.
   # [[ =~ ]] anchors the WHOLE value (grep would accept any one matching line of a multi-line value).
-  if ! [[ "$val" =~ ^[A-Za-z0-9._:/@,-]+$ ]]; then
-    echo "::error::${src} has an unexpected character (allowed: letters, digits . _ : / @ , -)." >&2
+  # `+` and `#` are for operator identities: plus-addressed emails, and guest UPNs such as
+  # name_example.com#EXT#@tenant.onmicrosoft.com (infra/azure/admin-auth.sh).
+  if ! [[ "$val" =~ ^[A-Za-z0-9._:/@,+#-]+$ ]]; then
+    echo "::error::${src} has an unexpected character (allowed: letters, digits . _ : / @ , + # -)." >&2
     exit 1
   fi
   echo "${name}=${val}" >> "${GITHUB_ENV:-/dev/null}"

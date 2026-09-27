@@ -88,6 +88,56 @@ In the apply log (or with `terraform output dns_records`), each host has:
 **Expected:** `az containerapp hostname list … -o table` shows the binding as `SniEnabled` within
 about 15 minutes. **Do not message testers until it does** (E11).
 
+## Step 6 — Admin console sign-in (Microsoft Entra, about 10 min, phone OK)
+
+The admin console (`admin.lyniago.com`) refuses every request until Microsoft sign-in (Easy Auth) is in
+front of it. Its 401 says *"Admin console sign-in is not set up"*. Easy Auth needs an Entra app
+registration and a client secret, and Terraform must not create either (S1, S5). So this part is yours.
+
+**1. Where:** Azure Cloud Shell (Bash), as in Step 1. **Paste:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/unnfazzed/Lynia/main/infra/azure/admin-auth.sh | bash
+```
+
+What it does:
+- Creates the app registration `lynia-admin-console-production` with **Assignment required = Yes**, and
+  assigns it to **you only**. To add more people: `… | ADMIN_OPERATORS="a@x.com,b@y.com" bash`.
+- Writes its client secret straight into Key Vault as `ADMIN-ENTRA-CLIENT-SECRET`. The value is never
+  shown.
+- Sets the repo Variables `AZ_ADMIN_AUTH_CLIENT_ID` and `ADMIN_CONSOLE_ALLOWED_OPERATORS` (with `gh`; if
+  `gh` is not signed in, it prints both for you to add by hand).
+
+It ends with the two remaining steps. Staging: `… | LYNIA_ENV=staging bash`.
+
+**2. Where:** GitHub → Actions → **Terraform apply (Azure)** → `environment: production`,
+`action: apply`. Approve twice. The plan adds `azapi_resource.admin_auth[0]` (Easy Auth), the
+`microsoft-provider-authentication-secret` Key Vault reference on `ca-lynia-admin`, and one Key Vault
+reader role.
+
+**3. Where:** GitHub → Actions → **Deploy Admin Console (Azure)** → `environment: production`. The deploy
+applies the operator allowlist only once Easy Auth is confirmed on the app (ADM-11). It then checks that
+the live app refuses a forged identity header. The run summary says which of the two happened.
+
+**Expected:** `https://admin.lyniago.com` sends you to a Microsoft sign-in page. After it, you land on the
+console with your account shown in the sidebar.
+
+**If you see…**
+
+| You see | Do this |
+|---|---|
+| *Admin console sign-in is not set up* (401) | Easy Auth is not on yet. Finish step 2 (both approvals), then reload |
+| *Admin console operator allowlist is not configured, so X cannot be admitted* (403) | The deploy ran before Easy Auth was on, or the Variable is missing. Re-run step 3; its summary must say *allowlist applied* |
+| *This account (X) is not authorized* (403) | Add X to the `ADMIN_CONSOLE_ALLOWED_OPERATORS` Variable (comma-separated), then re-run step 3 |
+| `AADSTS50105` (user not assigned) | That account is not assigned. Re-run the script with `ADMIN_OPERATORS=<that account>` |
+| `AADSTS50011` (redirect URI mismatch) | The app has a hostname the registration lacks. Re-run the script: it adds every current hostname |
+| Terraform: `… ADMIN-ENTRA-CLIENT-SECRET … not found`, or a Key Vault reference error | Run the script (step 1) first. If the secret exists, re-run the apply: a new reader role can take a few minutes to apply |
+| Deploy fails at *Forged-principal gate (G-ADM)* | The live app took a forged identity header. The job has already removed the allowlist (safe, locked). Stop and report it |
+
+**Secret expiry:** the client secret lasts 2 years. Rotate it before then with
+`… | ROTATE=1 bash`. The old secret stays valid, so sign-in never breaks, and the app picks up the new
+one within about 30 minutes.
+
 ---
 
 ## What is where
@@ -99,7 +149,8 @@ about 15 minutes. **Do not message testers until it does** (E11).
 | `data.tf` | PostgreSQL 16 B1ms (PostGIS, PITR 7 days, private access), Managed Redis B0 non-clustered with TLS and a private endpoint, Blob `lynia-media` (shared key off), ACR Basic |
 | `identity.tf` | Runtime identities `id-lynia-{api,jobs,web}-<env>` and the deploy identity's scoped roles |
 | `entra.tf` | Scheduler audience app registration with the `Scheduler.Invoke` app role |
-| `containerapps.tf` | Environment `cae-lynia-<env>`, `ca-lynia-api` / `-admin` / `-merchant`, Easy Auth (gated) |
+| `containerapps.tf` | Environment `cae-lynia-<env>`, `ca-lynia-api` / `-admin` / `-merchant`, Easy Auth (gated on `admin_auth_client_id`) |
+| `admin-auth.sh` | Owner-run (Step 6): the admin console's Entra app, its operators, its Key Vault client secret, and the Variables that switch Easy Auth on |
 | `jobs.tf` | `caj-lynia-migrate` (manual), `caj-lynia-retention` (01:00Z), `caj-lynia-wallet-integrity` (02:00Z) |
 | `monitoring.tf` | Log Analytics (daily cap), action group, job-failed and missed-run alerts, PG connections > 40, budget |
 | `outputs.tf` | `github_variables`, `api_env_contract`, `scheduler`, `dns_records`, `arming_guide` |

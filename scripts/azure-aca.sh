@@ -112,9 +112,19 @@ cmd_route() {
   if [ "$(revision_mode "$app" "$rg")" = "Single" ]; then
     # Nothing to split: the platform already serves its latest READY revision. Succeed only when that
     # is what the caller asked for, so a rollback request is never reported as done when it is not.
-    local ready
-    ready="$(az containerapp show -n "$app" -g "$rg" --query properties.latestReadyRevisionName -o tsv 2>/dev/null || true)"
-    [ "$pct" -eq 100 ] && [ "$ready" = "$rev" ] && { echo "traffic: $rev serves 100% (Single revision mode)"; return 0; }
+    # latestReadyRevisionName can trail a new revision's own Healthy/Running state by seconds (admin
+    # deploy run 36317769450 read the old name 3 s after its candidate was Running), so a revision the
+    # platform is still switching to — the newest one — gets a minute to show up. An older revision
+    # (a rollback target) never will, so that case still fails at once.
+    local ready="" latest i
+    latest="$(az containerapp show -n "$app" -g "$rg" --query properties.latestRevisionName -o tsv 2>/dev/null || true)"
+    for i in $(seq 1 12); do
+      ready="$(az containerapp show -n "$app" -g "$rg" --query properties.latestReadyRevisionName -o tsv 2>/dev/null || true)"
+      [ "$pct" -eq 100 ] && [ "$ready" = "$rev" ] && { echo "traffic: $rev serves 100% (Single revision mode)"; return 0; }
+      if [ "$pct" -ne 100 ] || [ "$latest" != "$rev" ] || [ "$i" -eq 12 ]; then break; fi
+      echo "traffic: waiting for $app to report $rev as its latest ready revision (now $ready)" >&2
+      sleep 5
+    done
     die "$app is in Single revision mode and serves $ready; it cannot route $pct% to $rev. Redeploy that revision's image instead."
   fi
   local -a weights=("${rev}=${pct}")

@@ -195,9 +195,14 @@ variable "vendor_secrets" {
 }
 
 variable "admin_auth_client_id" {
-  description = "Client id of the Entra app registration Easy Auth uses for the admin console (D9, 'Assignment required = Yes'). Empty = Easy Auth is not configured yet; the console then relies on its own fail-closed checks."
+  description = "Client id of the Entra app registration Easy Auth uses for the admin console (D9, 'Assignment required = Yes'). infra/azure/admin-auth.sh creates the app and its Key Vault client secret, and sets the AZ_ADMIN_AUTH_CLIENT_ID[_STAGING] Variable that terraform-apply-azure.yml passes here. Empty = Easy Auth is not configured; the console then refuses every request (fail-closed)."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.admin_auth_client_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.admin_auth_client_id))
+    error_message = "admin_auth_client_id must be empty or an Entra application (client) id (a GUID)."
+  }
 }
 
 variable "scheduler_role_assignment_via_terraform" {

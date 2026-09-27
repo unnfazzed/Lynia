@@ -21,6 +21,10 @@ name: Terraform apply (Azure)
 # Inputs (X6): `environment` (which state: staging.tfstate | production.tfstate; default staging) and
 # `action` (default apply — the README Step 2 flow; the two approvals are the brake).
 # Optional Variable AZ_ALERT_EMAILS: a JSON list (["owner@example.com"]) → TF_VAR_alert_emails.
+# Optional Variables AZ_ADMIN_AUTH_CLIENT_ID / AZ_ADMIN_AUTH_CLIENT_ID_STAGING: the admin console's Entra
+# app (infra/azure/admin-auth.sh sets them) → TF_VAR_admin_auth_client_id, which puts Easy Auth in front
+# of ca-lynia-admin (ADM-12). Removing the Variable later plans the deletion of that Easy Auth config,
+# which the destroy guard below refuses without action=apply-allow-destroy.
 # DORMANT UNTIL ARMED: no-op until bootstrap.sh has set AZURE_CLIENT_ID_INFRA and
 # AZ_TFSTATE_STORAGE_ACCOUNT. No secrets: OIDC only.
 
@@ -65,6 +69,10 @@ env:
   # JSON map ENV_VAR → Key Vault base name, e.g. {"BIRD_ACCESS_KEY":"BIRD-ACCESS-KEY"} → var.vendor_secrets.
   # Written by infra/azure/vendor-secrets.sh once each secret exists in the vault.
   AZ_VENDOR_SECRETS: ${{ vars.AZ_VENDOR_SECRETS }}
+  # Both tiers' admin Entra client ids, chosen in bash: `cond && vars.P || vars.S` would hand production
+  # the staging value whenever the production Variable is empty (scripts/azure-target.sh).
+  P_ADMIN_AUTH_CLIENT_ID: ${{ vars.AZ_ADMIN_AUTH_CLIENT_ID }}
+  S_ADMIN_AUTH_CLIENT_ID: ${{ vars.AZ_ADMIN_AUTH_CLIENT_ID_STAGING }}
 
 jobs:
   plan:
@@ -96,6 +104,10 @@ jobs:
           if [ -n "$AZ_VENDOR_SECRETS" ] && ! printf '%s' "$AZ_VENDOR_SECRETS" | jq -e 'type == "object" and all(.[]; type == "string" and test("^[A-Z0-9-]+$")) and all(keys[]; test("^[A-Z][A-Z0-9_]*$"))' >/dev/null 2>&1; then
             echo "::error::AZ_VENDOR_SECRETS must be a JSON object of ENV_VAR → KEY-VAULT-NAME, e.g. {\"SENTRY_DSN\":\"SENTRY-DSN\"}."; exit 1
           fi
+          ADMIN_AUTH_CLIENT_ID="$S_ADMIN_AUTH_CLIENT_ID"; [ "$TIER" != production ] || ADMIN_AUTH_CLIENT_ID="$P_ADMIN_AUTH_CLIENT_ID"
+          if [ -n "$ADMIN_AUTH_CLIENT_ID" ] && ! [[ "$ADMIN_AUTH_CLIENT_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::The ${TIER} AZ_ADMIN_AUTH_CLIENT_ID Variable must be the admin Entra app's client id, a GUID (infra/azure/admin-auth.sh sets it)."; exit 1
+          fi
 
       - name: Azure login (OIDC, infra identity)
         uses: azure/login@v2
@@ -116,6 +128,8 @@ jobs:
           set -euo pipefail
           [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
           [ -z "$AZ_VENDOR_SECRETS" ] || export TF_VAR_vendor_secrets="$AZ_VENDOR_SECRETS"
+          ADMIN_AUTH_CLIENT_ID="$S_ADMIN_AUTH_CLIENT_ID"; [ "$TIER" != production ] || ADMIN_AUTH_CLIENT_ID="$P_ADMIN_AUTH_CLIENT_ID"
+          [ -z "$ADMIN_AUTH_CLIENT_ID" ] || export TF_VAR_admin_auth_client_id="$ADMIN_AUTH_CLIENT_ID"
           bash scripts/azure-tf-init.sh "$TIER"
           set +e
           terraform -chdir=infra/azure plan -input=false -no-color -lock=false -detailed-exitcode \
@@ -191,6 +205,8 @@ jobs:
           set -euo pipefail
           [ -z "$AZ_ALERT_EMAILS" ] || export TF_VAR_alert_emails="$AZ_ALERT_EMAILS"
           [ -z "$AZ_VENDOR_SECRETS" ] || export TF_VAR_vendor_secrets="$AZ_VENDOR_SECRETS"
+          ADMIN_AUTH_CLIENT_ID="$S_ADMIN_AUTH_CLIENT_ID"; [ "$TIER" != production ] || ADMIN_AUTH_CLIENT_ID="$P_ADMIN_AUTH_CLIENT_ID"
+          [ -z "$ADMIN_AUTH_CLIENT_ID" ] || export TF_VAR_admin_auth_client_id="$ADMIN_AUTH_CLIENT_ID"
           bash scripts/azure-tf-init.sh "$TIER"
           terraform -chdir=infra/azure plan -input=false -no-color -var "environment=${TIER}" -var "data_tier_enabled=${DATA_TIER}" ${DESTROY_FLAG:+"$DESTROY_FLAG"} -out=tfplan
           terraform -chdir=infra/azure show -json tfplan > plan.json
