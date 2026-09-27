@@ -77,7 +77,7 @@ describe("NotificationsService — order-status notices", () => {
 
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["rider"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     // One batched call carrying both devices (not a per-token fan-out). Data carries the recipient's
     // per-order role (`to`) so the client routes by order relationship, not global session role (Fix 3).
@@ -107,7 +107,7 @@ describe("NotificationsService — order-status notices", () => {
 
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(push.sendEach).toHaveBeenCalledOnce();
   });
@@ -122,11 +122,11 @@ describe("NotificationsService — order-status notices", () => {
     // Sent per-audience so each recipient carries its own `to` — the customer and the rider each get one.
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["rider"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "cancelled", to: "customer", orderType: "parcel" } }),
@@ -146,7 +146,7 @@ describe("NotificationsService — order-status notices", () => {
     // Rider marked it themselves → push goes to the customer only, mirroring the in-app feed row.
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       expect.objectContaining({ token: "c1", data: { orderId: "o1", status: "undelivered", to: "customer", orderType: "parcel" } }),
@@ -177,7 +177,7 @@ describe("NotificationsService — order-status notices", () => {
 
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["cust"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       // P0-2: the food order stamps orderType:"merchant" so the tap opens /food/order/:id, not the parcel tracker.
@@ -458,7 +458,7 @@ describe("NotificationsService — new-broadcast notice (rider primary channel, 
     await service.notifyNewBroadcast("o1", ["riderA", "riderB"], { pickup: "Avondale shops", fare: "4.50" });
     expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
       where: { profileId: { in: ["riderA", "riderB"] } },
-      select: { token: true, profileId: true },
+      select: { token: true, profileId: true, platform: true },
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       expect.objectContaining({ token: "ra", data: { orderId: "o1", kind: "broadcast" } }),

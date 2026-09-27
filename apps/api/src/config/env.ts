@@ -114,6 +114,19 @@ export const envSchema = z.object({
   // FCM-SERVICE-ACCOUNT-JSON). Either this or GOOGLE_APPLICATION_CREDENTIALS satisfies the off-GCP
   // boot-guard; when both are set, this one wins. Never logged.
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  // APNs, for iOS devices (docs/APP-STORE-SUBMISSION.md B4). The iOS app registers RAW APNs tokens,
+  // which FCM cannot deliver to, so iOS pushes go to Apple directly with a token-based (.p8) key. Armed
+  // by its own credentials, independently of PUSH_PROVIDER (which governs FCM/Android): the key id,
+  // team id and key are all-or-nothing (push.module.ts refuses to boot on a partial set). Unset ⇒ iOS
+  // pushes are logged and skipped — never sent to FCM, which would reject them.
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  // The .p8 key's PEM text (Key Vault APNS-PRIVATE-KEY). Never logged.
+  APNS_PRIVATE_KEY: z.string().optional(),
+  // The app's bundle id — the only topic the key pushes to.
+  APNS_TOPIC: z.string().default("zw.co.lynia"),
+  // "true" only for Xcode-signed debug builds; TestFlight and App Store builds use the production gateway.
+  APNS_SANDBOX: z.enum(["true", "false"]).default("false"),
   // --- Auth (lane B) ---
   JWT_SIGNING_SECRET: z.string().min(16).default(INSECURE_JWT_DEFAULT),
   // Optional previous signing secret, accepted on verify only, for a zero-downtime rotation window

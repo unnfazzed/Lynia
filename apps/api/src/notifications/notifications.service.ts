@@ -408,7 +408,8 @@ export class NotificationsService {
     if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
       where: { profileId: { in: profileIds } },
-      select: { token: true, profileId: true },
+      // `platform` routes each device to its transport — iOS tokens are raw APNs tokens (PlatformRoutedPush).
+      select: { token: true, profileId: true, platform: true },
     });
     if (tokens.length === 0) return new Set();
 
@@ -418,6 +419,7 @@ export class NotificationsService {
     const results = await this.push.sendEach(
       tokens.map((t) => ({
         token: t.token,
+        platform: t.platform,
         title: msg.title,
         body: msg.body,
         data: msg.data,
