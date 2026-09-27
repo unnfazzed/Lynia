@@ -26,9 +26,9 @@
    site on lyniago.com, an @lyniago.com email, then the USD 99 enrollment.
 2. **[C] Engineering PRs** (§3):
    - **Done:** the iOS prebuild fix, the Xcode 26 proof, the rider-free iPhone app, the iOS store link,
-     the APNs sender (inert until its key exists), and the iPhone fixes a code sweep could find (B6).
-   - **Still to do:** the support page and legal wording, the iOS workflow lanes, and the per-platform
-     minimum version (B5).
+     the APNs sender (inert until its key exists), the iPhone fixes a code sweep could find (B6), and
+     the per-platform force-update minimum (B5).
+   - **Still to do:** the support page and legal wording, and the iOS workflow lanes.
    - **Also still to do:** the `ios` config plus the iOS `eas.json` profiles. These ship **together
      with the next Android store build**, because both move the Android OTA fingerprint (B9).
 3. **[F] One-time signing setup** (§2 A6): `eas credentials -p ios` from any computer. CI cannot create
@@ -203,7 +203,7 @@ implements:
 - There is a latent bug either way: an iOS token sent to FCM fails with a code outside
   `DEAD_TOKEN_CODES` (`fcm.push.ts:8-14`). It is never pruned and fails on every send.
 
-### B5. Store URL and force-update: URL DONE, per-platform minimum still to do
+### B5. Store URL and force-update: DONE in code
 
 - **Done:** `STORE_URL` is now per-platform (`src/config.ts` `storeUrlFor`).
   - iOS reads only `EXPO_PUBLIC_APP_STORE_URL`, and **never** the Play URL that
@@ -211,9 +211,11 @@ implements:
   - Until the listing exists, the iOS "Update now" button hides.
   - Once the listing exists, set it (`https://apps.apple.com/app/id<ascAppId>`) in the EAS environment
     and ship it by OTA. It is a JS substitution, not a fingerprint input.
-- **Still to do:** the server's single `MIN_SUPPORTED_APP_VERSION` (`health.controller.ts:38`) covers
-  both platforms. Make it per-platform before the first iOS release. Otherwise an Android-driven bump
-  locks iPhone users out with no build to update to.
+- **Done:** the force-update minimum is per-platform. The app asks `GET /app/version-gate?platform=…`;
+  iPhones get `MIN_SUPPORTED_APP_VERSION_IOS`, and Android (plus every build that predates the
+  parameter) keeps `MIN_SUPPORTED_APP_VERSION`. Both default to off. So an Android-driven bump no
+  longer locks iPhone users out while their update waits on App Review. Raise the iPhone minimum only
+  once that version is live on the App Store (`docs/LAUNCH-EXECUTION-RUNBOOK.md` "Force-update gate").
 
 ### B6. iOS behaviour fixes: the code sweep's fixes are DONE (JS only); the rest needs a device
 

@@ -593,9 +593,12 @@ export type ClientMetricsBatch = z.infer<typeof ClientMetricsBatch>;
 
 /** `GET /app/version-gate` — the SERVER-DRIVEN force-update minimum. The build-time gate
  *  (mobile `EXPO_PUBLIC_MIN_APP_VERSION`) can only affect builds that already carry it; this value is
- *  fetched at app start so an already-installed binary can be walked to the Play Store when a breaking
+ *  fetched at app start so an already-installed binary can be walked to its store when a breaking
  *  change strands it. "0.0.0" (the server default when MIN_SUPPORTED_APP_VERSION is unset) = gate off.
- *  Same dotted-version dialect as the mobile comparator (`isVersionBelow` in apps/mobile/src/config.ts). */
+ *  Same dotted-version dialect as the mobile comparator (`isVersionBelow` in apps/mobile/src/config.ts).
+ *  Per platform via the query string: `?platform=ios` answers with MIN_SUPPORTED_APP_VERSION_IOS, and
+ *  anything else (including no parameter) with MIN_SUPPORTED_APP_VERSION. The body never varies in
+ *  shape: it is strict, so an added key would fail every installed client's parse. */
 export const VersionGateResponse = z.object({ minSupportedVersion: z.string().max(24) }).strict();
 export type VersionGateResponse = z.infer<typeof VersionGateResponse>;
 

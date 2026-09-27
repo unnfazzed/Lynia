@@ -21,6 +21,9 @@ import { OrdersService } from "../orders/orders.service";
  *    is a fast miss) and the role picks which one ships, so the handler adds no serial hop.
  *  - `minSupportedVersion` rides along (same env read as /app/version-gate) so a future client can
  *    drop the separate probe; the public unauthenticated endpoint remains the gate's source of truth.
+ *    It is the Android/default minimum only: this request doesn't say which platform asked, and iPhones
+ *    have their own (`?platform=ios`, docs/APP-STORE-SUBMISSION.md B5). No client reads it today; one
+ *    that drops the probe must make this per-platform first.
  *  - Cache semantics: inherits the global `private, no-cache` + weak-ETag contract, so an unchanged
  *    boot revalidates to an empty 304 like every other GET.
  */

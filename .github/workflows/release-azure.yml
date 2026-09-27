@@ -414,7 +414,10 @@ jobs:
           # is Key Vault secret FCM-SERVICE-ACCOUNT-JSON, mapped via AZ_VENDOR_SECRETS
           # (FCM_SERVICE_ACCOUNT_JSON) and read by the API from env (fcm.push.ts), not a mounted file.
           FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          # Force-update minimums (GET /app/version-gate). The first covers Android and every build that
+          # doesn't name its platform; the iPhone app has its own (?platform=ios). Unset = gate off.
           MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
+          MIN_SUPPORTED_APP_VERSION_IOS: ${{ vars.MIN_SUPPORTED_APP_VERSION_IOS }}
           REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
@@ -483,7 +486,14 @@ jobs:
           esac
           SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "KYC_MODE=$KYC_MODE" "PUSH_PROVIDER=$PUSH_PROVIDER")
           opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
+          # The API refuses to boot on a minimum that isn't a dotted version; refuse here, before deploying.
+          for _v in MIN_SUPPORTED_APP_VERSION MIN_SUPPORTED_APP_VERSION_IOS; do
+            if [ -n "$(printf '%s' "${!_v}" | tr -d '[:space:]')" ] && ! [[ "${!_v}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+              echo "::error::${_v} must be a dotted version like 0.2.0 (got '${!_v}')"; exit 1
+            fi
+          done
           opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
+          opt MIN_SUPPORTED_APP_VERSION_IOS "$MIN_SUPPORTED_APP_VERSION_IOS"
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.

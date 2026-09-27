@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Inject, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, Header, Inject, Query, ServiceUnavailableException } from "@nestjs/common";
 import type { MerchantFeatureFlagsResponse, VersionGateResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -29,13 +29,19 @@ export class HealthController {
   // swaps the whole navigator for the force-update screen when the installed version is below this.
   // Cheap static read — no DB/Redis touched, so it can never add load-shed pressure.
   // `public, max-age` (overriding the global `private, no-cache` default): the body is identical for
-  // every caller and changes only on a founder config rollout, so any HTTP cache — the device's, or a
-  // CDN if one is ever put in front — may serve it for 5 minutes without touching the origin. The gate
-  // stays honest: a newly-raised minimum still reaches every cold start within minutes.
+  // every caller on a platform and changes only on a founder config rollout, so any HTTP cache — the
+  // device's, or a CDN if one is ever put in front — may serve it for 5 minutes without touching the
+  // origin. The gate stays honest: a newly-raised minimum still reaches every cold start within minutes.
+  // Per platform (docs/APP-STORE-SUBMISSION.md B5): `?platform=ios` gets the iPhone minimum; anything
+  // else, including every build that predates the parameter, gets MIN_SUPPORTED_APP_VERSION. The body
+  // shape is unchanged (the contract is `.strict()`, so an added key would fail every installed client's
+  // parse and switch its gate off), and the query string keeps each platform's answer a separate cache
+  // entry.
   @Get("app/version-gate")
   @Header("Cache-Control", "public, max-age=300")
-  versionGate(): VersionGateResponse {
-    return { minSupportedVersion: this.env.MIN_SUPPORTED_APP_VERSION };
+  versionGate(@Query("platform") platform?: string): VersionGateResponse {
+    const min = platform === "ios" ? this.env.MIN_SUPPORTED_APP_VERSION_IOS : this.env.MIN_SUPPORTED_APP_VERSION;
+    return { minSupportedVersion: min };
   }
 
   // Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).

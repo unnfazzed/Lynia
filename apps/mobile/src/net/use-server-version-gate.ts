@@ -3,14 +3,15 @@
 // boot-priority timer — not at module evaluation. This module IS on the launch path (imported by
 // app/_layout.tsx for the force-update gate). Same lazy-require seam as PostHog in analytics.tsx.
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
 
 /**
  * Server-driven force-update minimum (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1c). The build-time
  * MIN_SUPPORTED_VERSION can only gate builds that ship with it; this fetches the API's
- * `GET /app/version-gate` at cold start so an already-installed binary can be walked to the Play
- * Store when a breaking change strands it — the escape hatch that turns "old app crashes against
+ * `GET /app/version-gate` at cold start so an already-installed binary can be walked to its store
+ * when a breaking change strands it — the escape hatch that turns "old app crashes against
  * the new API" into a calm update screen.
  *
  * FAIL-OPEN by design: any network error, timeout, non-200, or wire-shape mismatch resolves to
@@ -26,7 +27,10 @@ export async function fetchServerMinVersion(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(`${API_URL}/app/version-gate`, { signal: controller.signal });
+    // Per platform (docs/APP-STORE-SUBMISSION.md B5): an iPhone has its own minimum, so a bump made for
+    // Android never strands an iPhone whose update is still in App Review. Any other value, and a build
+    // that sends none, gets the Android/default minimum.
+    const res = await fetchImpl(`${API_URL}/app/version-gate?platform=${Platform.OS}`, { signal: controller.signal });
     if (!res.ok) return null;
     const { VersionGateResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());
