@@ -734,11 +734,11 @@ sequenceDiagram
 
     Note over U,API: access JWT expires (15 min)
     U->>API: POST /auth/refresh { refreshToken }
-    API->>DB: load session, check hash+expiry (hard gate);<br/>reject if rider is suspended/banned (IR16-01);<br/>if revoked-by-rotation with an un-consumed<br/>successor within 60s, re-issue (RT-GRACE);<br/>otherwise reject
-    API->>DB: revoke old session, create new (rotation)
+    API->>DB: load session, check hash+expiry (hard gate);<br/>reject if rider is suspended/banned (IR16-01);<br/>if revoked-by-rotation with an un-consumed successor,<br/>hand back THAT successor (lost-response replay, SES-02);<br/>otherwise reject
+    API->>DB: one transaction: revoke old (CAS) + create successor + link (rotation)
     API-->>U: fresh { accessToken, refreshToken }
 
-    U->>API: POST /auth/logout → session.revokedAt set
+    U->>API: POST /auth/logout → revoke the chain's live head
 ```
 
 Security properties baked in:
@@ -746,18 +746,27 @@ Security properties baked in:
 - **Access token** = HS256 JWT, 15-min TTL, carries `sub` (profileId) + `role`; role is re-checked
   server-side per request, never trusted blindly.
 - **Refresh token** = `sessionId.secret`; only `hash(secret)` is stored. Every refresh **rotates**
-  (old session revoked, new one minted), so a stolen-and-replayed refresh token is detectable. A
-  refresh that presents a token revoked by its own rotation (not by logout) is given a 60-second
-  lost-response grace: if its successor session is still un-consumed, a fresh session is re-issued
-  instead of a hard 401 (`REFRESH_GRACE_TTL_MS`, `auth.service.ts`; migration
-  `0025_session_rotation_link`). Reuse of an already-consumed successor, a logout-revoke, or a
-  plain expiry all still hard-reject.
+  (old session revoked, successor minted and linked — one transaction), so a stolen-and-replayed
+  refresh token is detectable. The successor's secret is derived from the presented token
+  (`TokenService.successorSecret`, a keyed HMAC), which makes rotation **idempotent**: a client whose
+  rotate response was lost (dropped link, the app killed or the phone switched off before it saved the
+  new token) re-presents its old token and gets the SAME successor back — no new session is ever
+  minted by a replay — for as long as that successor is unused and within `SESSION_RETENTION_DAYS` of
+  the rotation (`AuthService.replayRotation`; SES-02). Concurrent refreshes of one token converge on one
+  successor. Reuse after the successor was consumed, a logout- or admin-revoke, or a plain expiry all
+  still hard-reject. Logout revokes the chain's live head even when the presented session id was
+  already rotated away (SES-06). A database error during refresh is a 5xx, never a 401 (SES-01).
 - **Rate limiting** on OTP send is three-tiered (phone / IP / global) because each WhatsApp send
   costs money — enumeration is a budget-DoS, not just spam (ET5).
 - The **response never reveals whether a phone exists** (always "sent"). A dev/QA escape hatch
   returns the code inline, but only on the `console` channel and only for allowlisted test numbers.
 - On the client, `apiFetch` **single-flights concurrent 401 refreshes** so two pollers don't both
   refresh (the second would use a token the first just rotated away and trigger a false sign-out).
+  Only the API's own JSON 401/403 from `/auth/refresh` signs the user out — a proxy/WAF/captive-portal
+  page does not (SES-05). Session keychain writes are serialized, never fail the sign-in or request
+  that caused them, and are retried when the app backgrounds; a throwing keychain read is retried
+  before it is believed as "signed out" (SES-04). Screens patch the session with `updateSession`,
+  never by writing back a render-captured copy (SES-03).
 
 ---
 

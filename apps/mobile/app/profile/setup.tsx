@@ -39,7 +39,7 @@ function splitName(full: string): { firstName: string; lastName: string } {
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
-  const { session, signIn, signOut } = useAuth();
+  const { updateSession, signOut } = useAuth();
   // The just-verified number (and the channel that verified it — D-40, docs/DESIGN-DEVIATIONS.md),
   // threaded from verify.tsx; shown read-only in the "Verified" phone field.
   const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string }>();
@@ -102,8 +102,11 @@ export default function ProfileSetupScreen(): React.ReactElement {
       // it in the keystore any longer than needed (mirrors become.tsx clearing the KYC draft on submit).
       void clearProfileDraft();
       // BH-15: clear the durable needsProfile flag now that the PATCH actually landed, so index.tsx's
-      // bootstrap redirect stops sending this account back here on future launches.
-      if (session) await signIn({ ...session, needsProfile: false });
+      // bootstrap redirect stops sending this account back here on future launches. updateSession, NOT
+      // signIn({ ...session, … }): when the PATCH had to refresh an expired access token (a new account
+      // that left to find its ID card), the `session` this render captured still holds the rotated-away
+      // tokens, and writing it back is what bounced brand-new accounts to the OTP screen after sign-up.
+      await updateSession({ needsProfile: false });
       // Continue the sign-in fork the same way verify.tsx does for a returning user: a saved role goes
       // straight to its home, a brand-new account still sees the role picker.
       const chosen = await loadRolePreference();

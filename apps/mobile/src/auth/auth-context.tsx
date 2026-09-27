@@ -1,15 +1,24 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { logout } from "../api/auth";
 import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
 import { clearPersistedQueries } from "../query/persist";
 import { prewarmBootReads } from "../boot/prewarm";
+import { captureException } from "../telemetry/sentry";
 import { clearDeviceState, clearSession, saveSession, type Session } from "./session";
 
 interface AuthState {
   session: Session | null;
   loading: boolean;
   signIn: (s: Session) => Promise<void>;
+  /**
+   * Merge `patch` into the session the auth layer holds NOW — including tokens a refresh rotated a moment
+   * ago — and persist it. Use this, never `signIn({ ...session, ...patch })`: a `session` captured by a
+   * render goes stale the moment a request in the same handler refreshes the tokens, and writing it back
+   * restores the rotated-away refresh token (the sign-up → back-to-OTP bug profile/setup.tsx had).
+   */
+  updateSession: (patch: Partial<Session>) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -22,18 +31,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const ref = useRef<Session | null>(null);
   ref.current = session;
 
+  // Keychain writes of the session, serialized. Each one persists whatever `ref.current` holds WHEN IT
+  // RUNS (null ⇒ delete), not the value it was queued with, so a burst (a refresh rotating the tokens,
+  // then a profile patch) lands as the latest state, writes can't land out of order, and a sign-out's
+  // delete can't be undone by a save still in flight. A failed write never fails the sign-in or request
+  // that caused it — the in-memory session is already correct, and for a refresh the server has already
+  // rotated — it stays dirty and is retried by the next write and when the app leaves the foreground,
+  // the moment before the OS may kill the process.
+  const writes = useRef<Promise<void>>(Promise.resolve());
+  const dirty = useRef(false);
+  const persist = useCallback((): Promise<void> => {
+    dirty.current = true;
+    const run = writes.current.then(async () => {
+      if (!dirty.current) return; // an earlier queued write already persisted the latest state
+      dirty.current = false;
+      const latest = ref.current;
+      try {
+        if (latest) await saveSession(latest);
+        else await clearSession();
+      } catch (err) {
+        dirty.current = true;
+        captureException(err, { tags: { area: "session-persist" } });
+      }
+    });
+    writes.current = run;
+    return run;
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active" && dirty.current) void persist();
+    });
+    return () => sub.remove();
+  }, [persist]);
+
   useEffect(() => {
     configureApi({
       getSession: () => ref.current,
       onTokens: async (s) => {
         ref.current = s;
         setSession(s);
-        await saveSession(s); // awaited so the rotated refresh token is durable before any retry
+        await persist(); // awaited so the rotated refresh token is written before the request retries
       },
       onSignOut: () => {
         ref.current = null;
         setSession(null);
-        void clearSession();
+        void persist(); // ref.current is null ⇒ deletes the stored session
         // A token-expiry sign-out must scrub the previous user's device state too (S1).
         void clearDeviceState();
         queryClient.clear();
@@ -57,17 +100,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       // even if the promise rejects unexpectedly — the splash must never be able to stick.
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [persist]);
 
-  const signIn = useCallback(async (s: Session): Promise<void> => {
-    ref.current = s;
-    setSession(s);
-    await saveSession(s);
-  }, []);
+  const signIn = useCallback(
+    async (s: Session): Promise<void> => {
+      ref.current = s;
+      setSession(s);
+      await persist();
+    },
+    [persist],
+  );
+  const updateSession = useCallback(
+    async (patch: Partial<Session>): Promise<void> => {
+      const current = ref.current;
+      if (!current) return; // signed out meanwhile — there is no session to patch
+      const next = { ...current, ...patch };
+      ref.current = next;
+      setSession(next);
+      await persist();
+    },
+    [persist],
+  );
   const signOut = useCallback(async (): Promise<void> => {
     // Revoke the session server-side FIRST, while the token is still live (the endpoint is authed), so a
     // deliberate sign-out actually kills the refresh token instead of leaving it valid for REFRESH_TTL
-    // (30 days). Best-effort: an offline/failed revoke must never trap the local sign-out below.
+    // (a year). Best-effort: an offline/failed revoke must never trap the local sign-out below.
     const current = ref.current;
     if (current?.refreshToken) {
       try {
@@ -78,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     }
     ref.current = null;
     setSession(null);
-    await clearSession();
+    await persist(); // ref.current is null ⇒ deletes the stored session
     // Shared devices are common in the target market: also clear the previous user's cached queries
     // and per-device state (draft addresses, disclaimer flag, role, delivery codes) so the next user
     // doesn't inherit them or skip the liability disclaimer (S1). The conditional-GET (ETag) store
@@ -87,15 +144,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     queryClient.clear();
     clearConditionalCache();
     await clearPersistedQueries();
-  }, []);
+  }, [persist]);
 
-  // Memoised, and the two actions with it. This provider wraps the ENTIRE app, so a fresh object
+  // Memoised, and the actions with it. This provider wraps the ENTIRE app, so a fresh object
   // literal here invalidates the context for every `useAuth()` consumer on each provider render —
-  // and `signIn`/`signOut` re-created inline would defeat the memo anyway. Not a hot path today
+  // and the actions re-created inline would defeat the memo anyway. Not a hot path today
   // (the provider only re-renders when `session` or `loading` changes), which is exactly why it is
   // worth pinning now: it is a latent hazard the moment any other state joins this provider.
   // docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.6.
-  const value = useMemo<AuthState>(() => ({ session, loading, signIn, signOut }), [session, loading, signIn, signOut]);
+  const value = useMemo<AuthState>(
+    () => ({ session, loading, signIn, updateSession, signOut }),
+    [session, loading, signIn, updateSession, signOut],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

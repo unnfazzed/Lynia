@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { UnauthorizedException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
@@ -22,6 +24,8 @@ const baseEnv = {
   JWT_SIGNING_SECRET: "test-secret-0123456789",
   ACCESS_TTL_SECONDS: 900,
   REFRESH_TTL_SECONDS: 2_592_000,
+  // Bounds how long a rotated refresh token can be replayed into its unused successor (see replayRotation).
+  SESSION_RETENTION_DAYS: 30,
   OTP_TTL_SECONDS: 300,
   OTP_CHANNEL: "console",
   // The send caps are env-driven, so they must be present here or every limiter reads `undefined`
@@ -870,256 +874,367 @@ describe("AuthService — bird-verify channel (end-to-end through requestOtp/ver
   });
 });
 
-describe("AuthService.refresh", () => {
-  const future = new Date(Date.now() + 60_000);
-  const past = new Date(Date.now() - 60_000);
+interface SessionRow {
+  id: string;
+  profileId: string;
+  refreshTokenHash: string;
+  revokedAt: Date | null;
+  rotatedToId: string | null;
+  expiresAt: Date;
+}
 
-  function sessionPrisma(row: Record<string, unknown> | null) {
-    return {
-      session: {
-        findUnique: async () => row,
-        // Rotation revokes atomically via updateMany (WHERE revokedAt IS NULL) → { count }.
-        updateMany: async () => ({ count: 1 }),
-        create: async () => ({ id: "rotated" }),
-        // RT-GRACE: rotation links the old session to its successor after minting it.
-        update: async () => ({}),
-      },
-    };
+/**
+ * A tiny in-memory `session` table with the semantics refresh() and logout() rely on: the compare-and-
+ * swap revoke (`updateMany … WHERE revokedAt IS NULL`), create, the rotatedToId link, profile-scoped
+ * lookups and an interactive `$transaction`. Faithful enough to drive rotation → lost response → replay
+ * end to end; true concurrency (row locks) is proven against Postgres in refresh-rotation.int.spec.ts.
+ */
+function sessionTable(riderStanding?: string) {
+  const rows = new Map<string, SessionRow>();
+  const profile: { role: string; rider: { accountStatus: string } | null } = riderStanding
+    ? { role: "rider", rider: { accountStatus: riderStanding } }
+    : { role: "customer", rider: null };
+  let creates = 0;
+  const matches = (row: SessionRow, where: Record<string, unknown>) =>
+    Object.entries(where).every(([k, v]) => (row as unknown as Record<string, unknown>)[k] === v);
+  const session = {
+    findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const row = rows.get(where.id);
+      return row ? { ...row, profile } : null;
+    }),
+    findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      const row = [...rows.values()].find((r) => matches(r, where));
+      return row ? { ...row } : null;
+    }),
+    updateMany: vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Partial<SessionRow> }) => {
+      const row = typeof where.id === "string" ? rows.get(where.id) : undefined;
+      if (!row || !matches(row, where)) return { count: 0 };
+      Object.assign(row, data);
+      return { count: 1 };
+    }),
+    update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<SessionRow> }) => {
+      const row = rows.get(where.id);
+      if (!row) throw new Error(`no session ${where.id}`);
+      Object.assign(row, data);
+      return { ...row };
+    }),
+    create: vi.fn(async ({ data }: { data: Omit<SessionRow, "id" | "revokedAt" | "rotatedToId"> }) => {
+      creates++;
+      const row: SessionRow = { id: randomUUID(), revokedAt: null, rotatedToId: null, ...data };
+      rows.set(row.id, row);
+      return { id: row.id };
+    }),
+  };
+  const prisma = {
+    session,
+    $transaction: vi.fn(async (fn: (tx: { session: typeof session }) => Promise<unknown>) => fn({ session })),
+  };
+  /** Seed a session the client holds `token` for. */
+  function seed(over: Partial<SessionRow> = {}) {
+    const id = randomUUID();
+    const secret = tokens.randomToken();
+    rows.set(id, { id, profileId: "p1", refreshTokenHash: tokens.hash(secret), revokedAt: null, rotatedToId: null, expiresAt: inAYear(), ...over });
+    return { id, secret, token: `${id}.${secret}` };
   }
+  return { rows, prisma, profile, seed, created: () => creates };
+}
 
+const inAYear = () => new Date(Date.now() + 365 * 86_400_000);
+const idOf = (token: string) => token.slice(0, token.indexOf("."));
+
+describe("AuthService.refresh", () => {
   it("rejects a malformed token (no dot)", async () => {
-    const { svc } = make(baseEnv, sessionPrisma(null));
+    const t = sessionTable();
+    const { svc } = make(baseEnv, t.prisma);
     await expect(svc.refresh("no-dot-token")).rejects.toThrow(/malformed/i);
   });
 
-  it("rejects when the session is not found", async () => {
-    const { svc } = make(baseEnv, sessionPrisma(null));
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
+  it("rejects a session id that isn't a UUID as malformed — without a database round trip", async () => {
+    const t = sessionTable();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh("sid.secret")).rejects.toThrow(/malformed/i);
+    expect(t.prisma.session.findUnique).not.toHaveBeenCalled();
   });
 
-  it("rejects a revoked session", async () => {
-    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: new Date(), expiresAt: future, profile: { role: "customer" } };
-    const { svc } = make(baseEnv, sessionPrisma(row));
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
+  it("rejects when the session is not found", async () => {
+    const t = sessionTable();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(`${randomUUID()}.secret`)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  // The sign-out-on-a-DB-blip bug: the lookup used to `.catch(() => null)`, turning a pool timeout or a
+  // failover into "unknown session" → 401, which every client treats as a revocation (session wiped,
+  // back to OTP). It must surface as the unexpected error it is → a 5xx the client treats as transient.
+  it("a database failure during the lookup propagates as an error — NOT a 401 that signs the user out", async () => {
+    const t = sessionTable();
+    const { token } = t.seed();
+    t.prisma.session.findUnique.mockRejectedValueOnce(new Error("Connection terminated unexpectedly"));
+    const { svc } = make(baseEnv, t.prisma);
+    const err = await svc.refresh(token).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(UnauthorizedException);
+    expect((err as Error).message).toMatch(/connection terminated/i);
+  });
+
+  it("a database failure while answering a replay propagates too — never a 401", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await svc.refresh(old.token); // rotated; the client "loses" this response
+    t.prisma.session.findUnique
+      .mockImplementationOnce(async ({ where }) => ({ ...t.rows.get(where.id)!, profile: t.profile }))
+      .mockRejectedValueOnce(new Error("read timeout"));
+    const err = await svc.refresh(old.token).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(UnauthorizedException);
+    expect((err as Error).message).toMatch(/read timeout/);
+  });
+
+  it("rejects a session revoked by logout (no successor link)", async () => {
+    const t = sessionTable();
+    const { token } = t.seed({ revokedAt: new Date(Date.now() - 1_000) });
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).rejects.toThrow(/invalid or expired/i);
   });
 
   it("rejects an expired session", async () => {
-    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: past, profile: { role: "customer" } };
-    const { svc } = make(baseEnv, sessionPrisma(row));
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
+    const t = sessionTable();
+    const { token } = t.seed({ expiresAt: new Date(Date.now() - 60_000) });
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).rejects.toThrow(/invalid or expired/i);
   });
 
   it("rejects a mismatched refresh secret", async () => {
-    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("other"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
-    const { svc } = make(baseEnv, sessionPrisma(row));
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
+    const t = sessionTable();
+    const { id } = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(`${id}.${tokens.randomToken()}`)).rejects.toThrow(/invalid or expired/i);
   });
 
   it("FRAUD P2-3: rejects refresh for a banned rider (standing backstop) — no token renewal", async () => {
-    const row = {
-      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
-      profile: { role: "rider", rider: { accountStatus: "banned" } },
-    };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async () => row,
-        updateMany: async () => ({ count: 1 }),
-        create: async () => { created++; return { id: "rotated" }; },
-        update: async () => ({}),
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/not active/i);
+    const t = sessionTable("banned");
+    const { token } = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).rejects.toThrow(/not active/i);
     // The standing gate fires before rotation — no successor session is minted for a banned rider.
-    expect(created).toBe(0);
+    expect(t.created()).toBe(0);
   });
 
   it("FRAUD P2-3: rejects refresh for a suspended rider too", async () => {
-    const row = {
-      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
-      profile: { role: "rider", rider: { accountStatus: "suspended" } },
-    };
-    const { svc } = make(baseEnv, sessionPrisma(row));
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/not active/i);
+    const t = sessionTable("suspended");
+    const { token } = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).rejects.toThrow(/not active/i);
   });
 
   it("allows refresh for an active rider (standing backstop is not over-broad)", async () => {
-    const row = {
-      id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future,
-      profile: { role: "rider", rider: { accountStatus: "active" } },
-    };
-    const { svc } = make(baseEnv, sessionPrisma(row));
-    const res = await svc.refresh("sid.secret");
-    expect(res.refreshToken).toMatch(/^rotated\./);
+    const t = sessionTable("active");
+    const { token } = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).resolves.toMatchObject({ refreshToken: expect.stringContaining(".") });
   });
 
-  it("rotates a valid session into fresh tokens", async () => {
-    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
-    let revokeWhere: Record<string, unknown> | undefined;
-    let linkData: Record<string, unknown> | undefined;
-    const prisma = {
-      session: {
-        findUnique: async () => row,
-        updateMany: async (a: { where: Record<string, unknown> }) => { revokeWhere = a.where; return { count: 1 }; },
-        create: async () => ({ id: "rotated" }),
-        update: async (a: { data: Record<string, unknown> }) => { linkData = a.data; return {}; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    const res = await svc.refresh("sid.secret");
+  it("rotates a valid session: revoke (CAS) + mint + link in one transaction, successor secret derived", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const res = await svc.refresh(old.token);
+
+    const succId = idOf(res.refreshToken);
+    // The successor's secret is derived from the presented token, so this exact rotation can be answered
+    // again if its response is lost.
+    expect(res.refreshToken).toBe(`${succId}.${tokens.successorSecret(old.id, old.secret)}`);
+    expect(t.rows.get(succId)).toMatchObject({ revokedAt: null, refreshTokenHash: tokens.hash(tokens.successorSecret(old.id, old.secret)) });
+    // Revoked AND linked to the successor — atomically, inside the transaction.
+    expect(t.rows.get(old.id)).toMatchObject({ revokedAt: expect.any(Date), rotatedToId: succId });
+    expect(t.prisma.$transaction).toHaveBeenCalledTimes(1);
     // Revocation is a guarded compare-and-swap on the still-un-revoked row, not a blind update.
-    expect(revokeWhere).toMatchObject({ id: "sid", revokedAt: null });
-    expect(res.refreshToken).toMatch(/^rotated\./);
-    // RT-GRACE: the rotated session is linked to its successor so a lost-response retry can heal.
-    expect(linkData).toEqual({ rotatedToId: "rotated" });
+    expect(t.prisma.session.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: old.id, revokedAt: null } }));
+    expect(res.expiresIn).toBe(900);
   });
 
-  it("rejects a concurrent double-rotate (guarded revoke claims zero rows) instead of minting two sessions", async () => {
-    const row = { id: "sid", profileId: "p1", refreshTokenHash: tokens.hash("secret"), revokedAt: null, expiresAt: future, profile: { role: "customer" } };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async () => row, // read still sees it un-revoked (advisory)
-        updateMany: async () => ({ count: 0 }), // but the other request already rotated it
-        create: async () => { created++; return { id: "rotated" }; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    await expect(svc.refresh("sid.secret")).rejects.toThrow(/invalid or expired/i);
-    expect(created).toBe(0); // no second session minted from the reused token
+  it("a CAS lost to a LOGOUT (revoked, no successor) is rejected and mints nothing", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const snapshot = { ...t.rows.get(old.id)!, profile: t.profile };
+    // The first (advisory) read still sees it live; by the CAS a logout has revoked it with no link.
+    t.prisma.session.findUnique.mockImplementationOnce(async () => {
+      t.rows.get(old.id)!.revokedAt = new Date();
+      return snapshot;
+    });
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+    expect(t.created()).toBe(0);
   });
 });
 
-describe("AuthService.refresh — rotation lost-response grace (RT-GRACE)", () => {
-  const future = new Date(Date.now() + 60_000);
-  const hash = tokens.hash("secret");
-  /** A revoked session that WAS rotated into `succ`, revoked `agoMs` ago (5s = inside the window). */
-  const rotatedOld = (over: Partial<Record<string, unknown>> = {}, agoMs = 5_000) => ({
-    id: "old",
-    profileId: "p1",
-    refreshTokenHash: hash,
-    revokedAt: new Date(Date.now() - agoMs),
-    rotatedToId: "succ",
-    expiresAt: future,
-    profile: { role: "customer" },
-    ...over,
+/**
+ * A rotation whose response never reaches the client — a dropped link, the client's 15s timeout on a slow
+ * network, the app killed or the phone switched off before the new token was saved — leaves the client
+ * holding the rotated token. Before, that was forgiven for 60s (RT-GRACE); any later and the user was
+ * signed out and sent back through OTP. Now the rotated token is answered with the SAME successor for as
+ * long as that successor stays unused.
+ */
+describe("AuthService.refresh — replaying a rotation whose response was lost", () => {
+  it("re-presenting a rotated token hands back the SAME successor — and mints no new session", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const first = await svc.refresh(old.token); // response lost in flight
+    const rows = t.rows.size;
+
+    const retry = await svc.refresh(old.token);
+    const again = await svc.refresh(old.token);
+    expect(retry.refreshToken).toBe(first.refreshToken);
+    expect(again.refreshToken).toBe(first.refreshToken);
+    // A fresh access token each time, but never another session: replay can't multiply sessions.
+    expect(retry.accessToken).toEqual(expect.any(String));
+    expect(t.rows.size).toBe(rows);
+    expect(t.created()).toBe(1);
   });
 
-  it("re-issues on a retry of a just-rotated token whose successor is still un-consumed (the dropped-response heal)", async () => {
-    const rows: Record<string, Record<string, unknown> | null> = {
-      old: rotatedOld(),
-      succ: { id: "succ", revokedAt: null, expiresAt: future },
-    };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
-        updateMany: async () => ({ count: 1 }),
-        update: async () => ({}),
-        create: async () => { created++; return { id: "reissued" }; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    const res = await svc.refresh("old.secret");
-    // Before RT-GRACE this retry was a hard 401 → forced re-OTP; now it mints a fresh session.
-    expect(res.refreshToken).toMatch(/^reissued\./);
-    expect(created).toBe(1);
+  it("still works long after the old 60s window — the phone was off overnight", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const first = await svc.refresh(old.token);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 20 * 3_600_000); // rotated 20h ago
+
+    await expect(svc.refresh(old.token)).resolves.toMatchObject({ refreshToken: first.refreshToken });
   });
 
-  it("does NOT grace a token revoked by logout (rotatedToId null) — still a hard reject", async () => {
-    const rows: Record<string, Record<string, unknown> | null> = { old: rotatedOld({ rotatedToId: null }) };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
-        updateMany: async () => ({ count: 1 }),
-        update: async () => ({}),
-        create: async () => { created++; return { id: "x" }; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
-    expect(created).toBe(0);
+  it("the replayed successor works normally, and the old token dies once the client uses it", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await svc.refresh(old.token);
+    const replayed = await svc.refresh(old.token);
+
+    const next = await svc.refresh(replayed.refreshToken); // the client moves on with the successor
+    expect(next.refreshToken).not.toBe(replayed.refreshToken);
+    // The chain advanced: presenting the original token now is a replay of a dead token — reuse detection.
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("rejects a replay after the chain advanced (successor already consumed) — reuse detection preserved", async () => {
-    const rows: Record<string, Record<string, unknown> | null> = {
-      old: rotatedOld(),
-      // The successor was itself rotated → revoked: the client moved on, so this is a replay of a dead token.
-      succ: { id: "succ", revokedAt: new Date(Date.now() - 1_000), expiresAt: future },
-    };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
-        updateMany: async () => ({ count: 1 }),
-        update: async () => ({}),
-        create: async () => { created++; return { id: "x" }; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
-    expect(created).toBe(0);
+  it("does NOT replay once the successor was revoked (sign-out or an admin revoke of the live head)", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const first = await svc.refresh(old.token);
+    t.rows.get(idOf(first.refreshToken))!.revokedAt = new Date();
+
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("does NOT grace outside the short window (rotated longer ago than the TTL)", async () => {
-    const rows: Record<string, Record<string, unknown> | null> = {
-      old: rotatedOld({}, 61_000),
-      succ: { id: "succ", revokedAt: null, expiresAt: future },
-    };
-    let created = 0;
-    const prisma = {
-      session: {
-        findUnique: async (a: { where: { id: string } }) => rows[a.where.id] ?? null,
-        updateMany: async () => ({ count: 1 }),
-        update: async () => ({}),
-        create: async () => { created++; return { id: "x" }; },
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    await expect(svc.refresh("old.secret")).rejects.toThrow(/invalid or expired/i);
-    expect(created).toBe(0);
+  it("does NOT replay beyond SESSION_RETENTION_DAYS of the rotation (the row's own retention clock)", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await svc.refresh(old.token);
+    t.rows.get(old.id)!.revokedAt = new Date(Date.now() - 31 * 86_400_000);
+
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("heals the loser of a concurrent double-rotate via grace (CAS claimed zero rows, successor live)", async () => {
-    let firstReadOfOld = true;
-    const succ = { id: "succ", revokedAt: null, expiresAt: future };
-    const prisma = {
-      session: {
-        findUnique: async (a: { where: { id: string } }) => {
-          if (a.where.id === "succ") return succ;
-          if (a.where.id === "old") {
-            if (firstReadOfOld) {
-              // First read (advisory) still sees it un-revoked → we proceed to the CAS...
-              firstReadOfOld = false;
-              return { id: "old", profileId: "p1", refreshTokenHash: hash, revokedAt: null, rotatedToId: null, expiresAt: future, profile: { role: "customer" } };
-            }
-            // ...which loses; by the grace re-read the racer has revoked + linked it.
-            return { id: "old", revokedAt: new Date(Date.now() - 1_000), rotatedToId: "succ", expiresAt: future };
-          }
-          return null;
-        },
-        updateMany: async () => ({ count: 0 }), // lost the CAS to the concurrent refresh
-        update: async () => ({}),
-        create: async () => ({ id: "loser-session" }),
-      },
-    };
-    const { svc } = make(baseEnv, prisma);
-    const res = await svc.refresh("old.secret");
-    expect(res.refreshToken).toMatch(/^loser-session\./);
+  it("fails closed when the retention window is not configured", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make({ ...baseEnv, SESSION_RETENTION_DAYS: undefined } as unknown as Env, t.prisma);
+    await svc.refresh(old.token);
+
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  it("never replays for a banned rider — the standing gate comes first", async () => {
+    const t = sessionTable("active");
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await svc.refresh(old.token);
+
+    const banned = sessionTable("banned");
+    for (const [id, row] of t.rows) banned.rows.set(id, row);
+    const { svc: svcAfterBan } = make(baseEnv, banned.prisma);
+    await expect(svcAfterBan.refresh(old.token)).rejects.toThrow(/not active/i);
+  });
+
+  it("the loser of a concurrent double-rotate gets the SAME successor as the winner", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    // The loser read the row before the winner committed (advisory read sees it live)…
+    const staleRead = { ...t.rows.get(old.id)!, profile: t.profile };
+    const winner = await svc.refresh(old.token);
+    t.prisma.session.findUnique.mockImplementationOnce(async () => staleRead);
+
+    // …so it reaches the CAS, claims zero rows, and is answered from the winner's committed link.
+    const loser = await svc.refresh(old.token);
+    expect(loser.refreshToken).toBe(winner.refreshToken);
+    expect(t.created()).toBe(1);
+  });
+
+  describe("a successor rotated before secrets were derived (legacy random secret)", () => {
+    function legacyRotated(agoMs: number) {
+      const t = sessionTable();
+      const succ = t.seed(); // random secret: not derivable from the old token
+      const old = t.seed({ revokedAt: new Date(Date.now() - agoMs), rotatedToId: succ.id });
+      return { t, old, succ };
+    }
+
+    it("keeps the original 60s grace: a fresh independent session inside the window", async () => {
+      const { t, old, succ } = legacyRotated(5_000);
+      const { svc } = make(baseEnv, t.prisma);
+      const res = await svc.refresh(old.token);
+      expect(idOf(res.refreshToken)).not.toBe(succ.id);
+      expect(t.created()).toBe(1);
+    });
+
+    it("rejects outside the 60s window, exactly as before", async () => {
+      const { t, old } = legacyRotated(61_000);
+      const { svc } = make(baseEnv, t.prisma);
+      await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+      expect(t.created()).toBe(0);
+    });
   });
 });
 
 describe("AuthService.logout", () => {
   it("reports revoked=false when no live session matched", async () => {
-    const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 0 }) } });
-    expect(await svc.logout("sid", "pid")).toEqual({ revoked: false });
+    const t = sessionTable();
+    const { svc } = make(baseEnv, t.prisma);
+    expect(await svc.logout(randomUUID(), "p1")).toEqual({ revoked: false });
   });
 
   it("reports revoked=true when a live session was revoked", async () => {
-    const { svc } = make(baseEnv, { session: { updateMany: async () => ({ count: 1 }) } });
-    expect(await svc.logout("sid", "pid")).toEqual({ revoked: true });
+    const t = sessionTable();
+    const s = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    expect(await svc.logout(s.id, "p1")).toEqual({ revoked: true });
+    expect(t.rows.get(s.id)!.revokedAt).toBeInstanceOf(Date);
+  });
+
+  // A sign-out sent with an expired access token refreshes first, so the id the client derived from its
+  // refresh token is already rotated away by the time logout runs. That used to revoke nothing, leaving
+  // the live successor valid (and replayable from the signed-out token) for a year.
+  it("given an already-rotated session id, revokes the chain's LIVE HEAD", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const live = await svc.refresh(old.token);
+
+    expect(await svc.logout(old.id, "p1")).toEqual({ revoked: true });
+    expect(t.rows.get(idOf(live.refreshToken))!.revokedAt).toBeInstanceOf(Date);
+    // Neither the live token nor the signed-out one can renew any more.
+    await expect(svc.refresh(live.refreshToken)).rejects.toThrow(/invalid or expired/i);
+    await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  it("never follows a chain into another profile's sessions", async () => {
+    const t = sessionTable();
+    const old = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    const live = await svc.refresh(old.token);
+
+    expect(await svc.logout(old.id, "someone-else")).toEqual({ revoked: false });
+    expect(t.rows.get(idOf(live.refreshToken))!.revokedAt).toBeNull();
   });
 });
 

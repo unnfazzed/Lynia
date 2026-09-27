@@ -39,12 +39,17 @@ const OTP_GRACE_TTL_SECONDS = 60;
 // more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
 // legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
 const MAX_GRACE_ATTEMPTS = 5;
-// Refresh-token rotation lost-response grace window (RT-GRACE). Mirrors the OTP-verify grace (§6): a
-// rotate whose response is dropped in flight leaves the client holding the just-revoked token, so its
-// retry would otherwise get a hard 401 and force a full re-OTP. Within this window of the rotation we
-// re-issue on that retry instead. Kept tight (60s) — long enough to cover the client timeout + a retry,
-// short enough to bound a replay of a stolen just-revoked token, exactly like the OTP grace TTL.
+// LEGACY rotation grace (RT-GRACE). A session rotated BEFORE successor secrets were derived
+// (TokenService.successorSecret) has a random successor secret that can't be handed back, so a retry of
+// such a token still gets the original treatment: a fresh independent session, only within this window
+// of the rotation. Every rotation since is answered by `replayRotation` instead — see there.
 const REFRESH_GRACE_TTL_MS = 60_000;
+// A refresh token is `${sessionId}.${secret}`, and the session id is the row's UUID primary key. Checked
+// before any query so a malformed id is rejected as the definitive 401 it is — which is what lets the
+// session lookup stop swallowing database errors (see refresh()).
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// logout() walks a rotation chain to its live head. A real chain gets there in one or two hops.
+const LOGOUT_MAX_HOPS = 8;
 // Per-phone / per-IP / global send caps (ET5: each send costs BSP money — enumeration is a budget-DoS).
 // The global daily cap is the SPEND ceiling, not just an abuse ceiling: `POST /auth/otp/request` is
 // unauthenticated by necessity (it IS the signup entry point), and on the live Bird channel each send
@@ -646,26 +651,29 @@ export class AuthService {
     const dot = refreshToken.indexOf(".");
     const sessionId = dot > 0 ? refreshToken.slice(0, dot) : "";
     const secret = dot > 0 ? refreshToken.slice(dot + 1) : "";
-    if (!sessionId || !secret) throw new UnauthorizedException("Malformed refresh token");
+    if (!SESSION_ID_RE.test(sessionId) || !secret) throw new UnauthorizedException("Malformed refresh token");
 
-    const s = await this.prisma.session
-      .findUnique({
-        where: { id: sessionId },
-        select: {
-          id: true,
-          profileId: true,
-          refreshTokenHash: true,
-          revokedAt: true,
-          rotatedToId: true,
-          expiresAt: true,
-          profile: { select: { role: true, rider: { select: { accountStatus: true } } } },
-        },
-      })
-      .catch(() => null);
+    // Deliberately NOT `.catch(() => null)`, which this used to carry. That turned ANY database failure
+    // — a pool timeout, a failover, a maintenance restart — into "unknown session" → 401, and every
+    // client reads a 401 from this endpoint as a definitive revocation: it wipes the session and sends
+    // the user back through OTP. A DB blip must surface as the 5xx it is (AllExceptionsFilter → 500),
+    // which clients treat as transient, keeping the session. (The catch existed to map a malformed
+    // UUID's Prisma error to a 401; the format check above now does that before any query runs.)
+    const s = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        profileId: true,
+        refreshTokenHash: true,
+        revokedAt: true,
+        expiresAt: true,
+        profile: { select: { role: true, rider: { select: { accountStatus: true } } } },
+      },
+    });
 
-    // A wrong secret, or an unknown/expired session, is ALWAYS a hard reject — never eligible for grace.
-    // (Unlike before, a *revoked* session is no longer rejected up front: a token revoked by rotation
-    // may still qualify for the lost-response grace below. Hash + expiry remain hard gates.)
+    // A wrong secret, or an unknown/expired session, is ALWAYS a hard reject — never eligible for replay.
+    // (A *revoked* session is not rejected up front: a token revoked by rotation is answered by
+    // replayRotation below. Hash + expiry remain hard gates.)
     const secretOk =
       !!s && s.expiresAt > new Date() && this.tokens.safeEqualHex(this.tokens.hash(secret), s.refreshTokenHash);
     if (!s || !secretOk) throw new UnauthorizedException("Invalid or expired refresh token");
@@ -681,88 +689,138 @@ export class AuthService {
     }
 
     if (s.revokedAt) {
-      // The presented token was already revoked. If it was revoked by ROTATION and its successor is
-      // still un-consumed within the grace window, this is the "lost the rotate response, retried the
-      // old token" case (RT-GRACE) — re-issue. Any other revoked token (logout, or a successor already
-      // consumed downstream = a replay after the chain moved on) is still rejected.
-      const graced = await this.refreshViaGrace(s, userAgent);
-      if (graced) return graced;
+      // Already revoked. A token revoked by ROTATION is what a client re-presents when the rotate
+      // response never reached it — answered by replayRotation. Anything else (logout, an admin revoke,
+      // or a replay after the chain moved on) is rejected there.
+      const replayed = await this.replayRotation(s, secret, userAgent);
+      if (replayed) return replayed;
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
-    // Rotate atomically: revoke the old session ONLY if it's still un-revoked, so two concurrent
-    // refreshes bearing the same token can't both win and mint two live sessions from one token. The
-    // guarded updateMany is the real gate (the read above is advisory).
-    const revoked = await this.prisma.session.updateMany({
-      where: { id: s.id, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    if (revoked.count === 0) {
-      // We lost the CAS to a concurrent refresh that revoked it first — that racer minted the successor.
-      // Fall to the same grace path so the loser of a legitimate concurrent refresh heals to a session
-      // instead of a spurious hard 401; still gated on rotatedToId + an un-consumed successor + the short
-      // window, so a genuine replay is rejected.
-      const graced = await this.refreshViaGrace(s, userAgent);
-      if (graced) return graced;
-      throw new UnauthorizedException("Invalid or expired refresh token");
-    }
-    // Mint the successor, then link the rotated session to it so the lost-response grace can find it.
-    const successor = await this.issueSession(s.profileId, s.profile.role, userAgent);
-    const successorId = successor.refreshToken.slice(0, successor.refreshToken.indexOf("."));
-    await this.prisma.session
-      .update({ where: { id: s.id }, data: { rotatedToId: successorId } })
-      .catch((err) => {
-        // Best-effort link: a failure here only means this specific token can't be graced on a lost
-        // response (it degrades to today's hard reject), never that the successor is lost. Don't fail
-        // the refresh over it.
-        this.logger.warn(`refresh: failed to link rotated session ${s.id}: ${(err as Error).message}`);
-      });
-    return successor;
+    const rotated = await this.rotate(s, secret, userAgent);
+    if (rotated) return rotated;
+    // Lost the compare-and-swap to a concurrent refresh of this same token. That racer rotated it — and,
+    // rotation being one transaction, has linked its successor — so the loser is answered with that same
+    // successor instead of a spurious 401.
+    const replayed = await this.replayRotation(s, secret, userAgent);
+    if (replayed) return replayed;
+    throw new UnauthorizedException("Invalid or expired refresh token");
   }
 
   /**
-   * RT-GRACE: heal the single legitimate "lost the rotate response" retry. Returns a fresh session when
-   * the presented (revoked) token was revoked BY ROTATION, within the grace window, AND its successor is
-   * still un-consumed; otherwise null (→ the caller emits the normal hard reject). Safety invariants
-   * mirror the OTP-verify grace (§6):
-   *  - Hash + expiry were already proven by the caller, so this grants nothing a live token wouldn't.
-   *  - `rotatedToId` must be set: a logout-revoke (null) is never graced.
-   *  - The successor must still be un-revoked and unexpired. Once the client actually consumed the
-   *    successor (rotated it → it's now revoked), the chain has moved on, so a later presentation of the
-   *    old token is a replay and is rejected — this is what preserves reuse detection.
-   *  - The short window (REFRESH_GRACE_TTL_MS from revokedAt) bounds exposure the way the OTP TTL does.
-   *  - The successor's secret is never stored (only its hash), so we mint a fresh independent session —
-   *    sessions are already multi-device, so this grants no privilege beyond the successor itself.
-   * The revoked/rotatedTo/expiry fields are RE-READ here (not trusted from the caller's earlier read) so
-   * the CAS-lost concurrent path sees the racer's committed revocation + link.
+   * Rotate `s` into its successor: revoke it (compare-and-swap on `revokedAt IS NULL`, so two refreshes
+   * bearing the same token can't both rotate it), mint the successor, and link `s` → successor — in ONE
+   * transaction. The link used to be a separate best-effort write after the revoke, so a concurrent
+   * reader could see the row revoked-but-unlinked, which is indistinguishable from a logout and was
+   * hard-rejected; a failed link also left the token unable to heal at all. Returns null when the CAS
+   * claimed nothing (a concurrent refresh rotated it first).
+   *
+   * The successor's secret is DERIVED from the presented token (TokenService.successorSecret) instead of
+   * drawn fresh, so this exact rotation can be answered again if its response is lost — replayRotation.
    */
-  private async refreshViaGrace(
+  private async rotate(
     s: { id: string; profileId: string; profile: { role: string } },
+    secret: string,
     userAgent?: string,
   ): Promise<SessionTokens | null> {
-    const fresh = await this.prisma.session
-      .findUnique({ where: { id: s.id }, select: { revokedAt: true, rotatedToId: true, expiresAt: true } })
-      .catch(() => null);
-    if (!fresh || !fresh.revokedAt || !fresh.rotatedToId) return null;
-    if (fresh.expiresAt <= new Date()) return null;
-    if (Date.now() - fresh.revokedAt.getTime() > REFRESH_GRACE_TTL_MS) return null;
-    const successor = await this.prisma.session
-      .findUnique({ where: { id: fresh.rotatedToId }, select: { revokedAt: true, expiresAt: true } })
-      .catch(() => null);
-    // Successor gone, already consumed (revoked = chain advanced → replay), or expired → not the
-    // lost-response case; reject rather than mint.
-    if (!successor || successor.revokedAt || successor.expiresAt <= new Date()) return null;
+    const successorSecret = this.tokens.successorSecret(s.id, secret);
+    const successorId = await this.prisma.$transaction(async (tx) => {
+      const revoked = await tx.session.updateMany({
+        where: { id: s.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (revoked.count === 0) return null;
+      const successor = await this.createSessionRow(tx, s.profileId, successorSecret, userAgent);
+      await tx.session.update({ where: { id: s.id }, data: { rotatedToId: successor.id } });
+      return successor.id;
+    });
+    return successorId ? this.tokensFor(s.profileId, s.profile.role, successorId, successorSecret) : null;
+  }
+
+  /**
+   * Answer a refresh that presents an ALREADY-ROTATED token: the signature of a rotation whose response
+   * never reached the client — a dropped link, the 15s client timeout on a slow network, or the app
+   * being killed / the phone switching off between the server rotating and the client saving the new
+   * token. The client still holds the old token because it never saw the successor. This used to be
+   * forgiven only within 60s of the rotation (RT-GRACE); a device that came back any later — the normal
+   * case after "network came back", "reopened the app", "turned the phone back on" — got a hard 401 and
+   * was sent back through OTP. Returns null for anything that isn't that case (→ the caller's 401).
+   *
+   * Rules. Fields are RE-READ here rather than trusted from the caller, so a CAS-lost concurrent refresh
+   * sees the winner's committed revoke + link.
+   *  - Only a ROTATION revoke qualifies (`rotatedToId` set). Logout, admin suspend/ban and erasure never
+   *    set it (or delete the rows), so those tokens are never answered.
+   *  - The successor must be un-consumed: un-revoked and unexpired. Once the client actually used it
+   *    (rotated it in turn → revoked), the chain has moved on and the old token is a replay — rejected,
+   *    which is what keeps reuse detection.
+   *  - The answer is the SAME successor: its secret is re-derived from the presented token and checked
+   *    against the successor's stored hash. Nothing new is minted, so replaying a token can never multiply
+   *    sessions; the most a rotated token can ever yield is the one successor it was already rotated
+   *    into — no more authority than it carried before rotation. That is why the window is not 60s but
+   *    the session-row retention window: a rotated row is deleted SESSION_RETENTION_DAYS after its
+   *    revocation (PrivacyService.purgeExpiredData), after which a replay can only fail as an unknown
+   *    session. The same clock is enforced here, so the bound is stated rather than an artefact of when
+   *    the daily sweep last ran.
+   *  - A successor rotated before secrets were derived (hash mismatch) can't be handed back. It keeps the
+   *    legacy RT-GRACE behaviour: a fresh independent session, only within REFRESH_GRACE_TTL_MS.
+   */
+  private async replayRotation(
+    s: { id: string; profileId: string; profile: { role: string } },
+    secret: string,
+    userAgent?: string,
+  ): Promise<SessionTokens | null> {
+    const now = Date.now();
+    const rotated = await this.prisma.session.findUnique({
+      where: { id: s.id },
+      select: { revokedAt: true, rotatedToId: true, expiresAt: true },
+    });
+    if (!rotated?.revokedAt || !rotated.rotatedToId) return null;
+    if (rotated.expiresAt.getTime() <= now) return null;
+    const sinceRotation = now - rotated.revokedAt.getTime();
+    // Phrased as "not within the window" so a missing setting (NaN) fails closed — no replay — never open.
+    if (!(sinceRotation <= this.env.SESSION_RETENTION_DAYS * 86_400_000)) return null;
+
+    const successor = await this.prisma.session.findUnique({
+      where: { id: rotated.rotatedToId },
+      select: { id: true, refreshTokenHash: true, revokedAt: true, expiresAt: true },
+    });
+    // Successor gone, already consumed (revoked = the chain advanced → replay), or expired → reject.
+    if (!successor || successor.revokedAt || successor.expiresAt.getTime() <= now) return null;
+
+    const successorSecret = this.tokens.successorSecret(s.id, secret);
+    if (this.tokens.safeEqualHex(this.tokens.hash(successorSecret), successor.refreshTokenHash)) {
+      return this.tokensFor(s.profileId, s.profile.role, successor.id, successorSecret);
+    }
+    if (sinceRotation > REFRESH_GRACE_TTL_MS) return null;
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 
   async logout(sessionId: string, profileId: string): Promise<{ revoked: boolean }> {
-    // Scope by the caller's profileId so a user can only revoke their OWN session — otherwise a
-    // leaked session UUID is a targeted forced-logout of any account.
-    const res = await this.prisma.session.updateMany({
-      where: { id: sessionId, profileId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return { revoked: res.count > 0 };
+    // Scope by the caller's profileId so a user can only revoke their OWN sessions — otherwise a leaked
+    // session UUID is a targeted forced-logout of any account.
+    //
+    // Revoke the chain's LIVE HEAD, not merely the presented row. The client derives the id from its
+    // refresh token, and that row is often already rotated away: a sign-out sent with an expired access
+    // token refreshes first (the client's 401 → refresh → retry), so by the time this runs the presented
+    // session is revoked-by-rotation and the live one is its successor. Revoking only the presented row
+    // then revoked nothing and left the successor valid for a year after the user signed out — and
+    // replayable from the signed-out token (replayRotation). So follow `rotatedToId` to the first
+    // un-revoked row and revoke that. With the head revoked, every older token in the chain finds its
+    // successor revoked, so none of them can be replayed either.
+    let id: string | null = sessionId;
+    for (let hop = 0; id && hop < LOGOUT_MAX_HOPS; hop++) {
+      const res = await this.prisma.session.updateMany({
+        where: { id, profileId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (res.count > 0) return { revoked: true };
+      const row: { rotatedToId: string | null } | null = await this.prisma.session.findFirst({
+        where: { id, profileId },
+        select: { rotatedToId: true },
+      });
+      id = row?.rotatedToId ?? null;
+    }
+    return { revoked: false };
   }
 
   /**
@@ -807,9 +865,20 @@ export class AuthService {
   }
 
   private async issueSession(profileId: string, role: string, userAgent?: string, deviceId?: string): Promise<SessionTokens> {
-    const accessToken = this.tokens.signAccess(profileId, role);
     const secret = this.tokens.randomToken();
-    const session = await this.prisma.session.create({
+    const session = await this.createSessionRow(this.prisma, profileId, secret, userAgent, deviceId);
+    return this.tokensFor(profileId, role, session.id, secret);
+  }
+
+  /** Insert a session row holding only the HASH of its refresh secret — the secret itself is never stored. */
+  private createSessionRow(
+    db: PrismaService | Prisma.TransactionClient,
+    profileId: string,
+    secret: string,
+    userAgent?: string,
+    deviceId?: string,
+  ): Promise<{ id: string }> {
+    return db.session.create({
       data: {
         profileId,
         refreshTokenHash: this.tokens.hash(secret),
@@ -820,9 +889,13 @@ export class AuthService {
       },
       select: { id: true },
     });
+  }
+
+  /** The token pair a client receives for session `sessionId`: a fresh access JWT + `${sessionId}.${secret}`. */
+  private tokensFor(profileId: string, role: string, sessionId: string, secret: string): SessionTokens {
     return {
-      accessToken,
-      refreshToken: `${session.id}.${secret}`,
+      accessToken: this.tokens.signAccess(profileId, role),
+      refreshToken: `${sessionId}.${secret}`,
       expiresIn: this.env.ACCESS_TTL_SECONDS,
     };
   }

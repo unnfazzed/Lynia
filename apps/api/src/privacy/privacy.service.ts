@@ -496,9 +496,10 @@ export class PrivacyService {
     // moment it is revoked — every refresh rotates one out, and logout revokes — so it is purged on the
     // same clock measured from `revokedAt` rather than waiting for its original `expiresAt`. Without
     // this a rotated-away row would linger for the whole REFRESH_TTL (a year), which is where the row
-    // count would otherwise come from. Safe: the rotation-replay grace is bounded by
-    // REFRESH_GRACE_TTL_MS (minutes), and a token replayed against a purged row still hard-rejects as
-    // an unknown session (auth.service.ts), so only the bloat is lost, not the rejection.
+    // count would otherwise come from. Safe: a rotated token is replayable into its unused successor
+    // (AuthService.replayRotation) only within this same SESSION_RETENTION_DAYS of its revocation — the
+    // service enforces that clock itself — and a token replayed against a purged row still hard-rejects
+    // as an unknown session, so only the bloat is lost, not the rejection.
     const sessions = await this.prisma.session.deleteMany({
       where: { OR: [{ expiresAt: { lt: sessionCutoff } }, { revokedAt: { lt: sessionCutoff } }] },
     });

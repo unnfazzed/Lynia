@@ -28,7 +28,7 @@ import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bi
 import { LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY } from "../device-state";
 import { FOOD_CART_SNAPSHOT_KEY } from "../../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../../net/food-order-store";
-import { clearDeviceState, loadSession } from "../session";
+import { clearDeviceState, loadSession, saveSession } from "../session";
 
 afterEach(() => {
   mockDeleteItemAsync.mockClear();
@@ -182,5 +182,48 @@ describe("loadSession (keychain resilience)", () => {
   it("returns the parsed session on a healthy read", async () => {
     mockGetItemAsync.mockResolvedValueOnce(JSON.stringify({ accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer" }));
     await expect(loadSession()).resolves.toMatchObject({ profileId: "p1", role: "customer" });
+  });
+
+  // A read that throws is believed as "signed out" — the user lands on the OTP screen for the rest of
+  // the launch — so a momentary Keystore failure (right after boot, under memory pressure) must be
+  // retried before it is believed.
+  it("retries a transient read failure and restores the session instead of signing the user out", async () => {
+    mockGetItemAsync
+      .mockRejectedValueOnce(new Error("KeyStore unavailable"))
+      .mockResolvedValueOnce(JSON.stringify({ accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer" }));
+    await expect(loadSession()).resolves.toMatchObject({ profileId: "p1" });
+    expect(mockGetItemAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after a bounded number of attempts (a broken keystore must not hang the boot)", async () => {
+    mockGetItemAsync.mockRejectedValue(new Error("keystore decrypt failed"));
+    await expect(loadSession()).resolves.toBeNull();
+    expect(mockGetItemAsync).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a read that simply finds no session", async () => {
+    await expect(loadSession()).resolves.toBeNull();
+    expect(mockGetItemAsync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("saveSession (keychain resilience)", () => {
+  const session = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer" };
+
+  const resetSetItem = () => mockSetItemAsync.mockReset().mockResolvedValue(undefined);
+  beforeEach(resetSetItem);
+  afterEach(resetSetItem);
+
+  it("retries a transient write failure — a rotated refresh token must not be left unsaved", async () => {
+    mockSetItemAsync.mockRejectedValueOnce(new Error("KeyStore unavailable"));
+    await expect(saveSession(session)).resolves.toBeUndefined();
+    expect(mockSetItemAsync).toHaveBeenCalledTimes(2);
+    expect(mockSetItemAsync).toHaveBeenLastCalledWith("lynia.session", JSON.stringify(session), expect.any(Object));
+  });
+
+  it("rejects once the attempts are exhausted, so the caller knows the write didn't land", async () => {
+    mockSetItemAsync.mockRejectedValue(new Error("disk full"));
+    await expect(saveSession(session)).rejects.toThrow("disk full");
+    expect(mockSetItemAsync).toHaveBeenCalledTimes(3);
   });
 });

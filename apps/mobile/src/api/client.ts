@@ -252,7 +252,13 @@ async function doRefresh(refreshToken: string): Promise<Session | null> {
   });
   // Definitive rejection: ONLY a 401/403 from the refresh endpoint proves the refresh token is
   // genuinely invalid or revoked. That's the one outcome that returns null → signs the user out.
-  if (res.status === 401 || res.status === 403) return null;
+  // …and only when the body IS the API's own error envelope. A 401/403 page from something in front of
+  // the API — a WAF or proxy block page, a captive portal, a load balancer's empty reply — says nothing
+  // about the token; signing out on it would wipe a valid session and send the user back through OTP.
+  if (res.status === 401 || res.status === 403) {
+    if (isApiErrorBody(await res.text().catch(() => ""))) return null;
+    throw new ApiError(0, "The network is unstable — check your connection and try again.");
+  }
   // Any OTHER non-OK status (a proxy/LB 502/504, a 500, a 429) is transient, NOT a rejection: the
   // token is very likely still valid. Surface it as the same status-0 network error a stalled link
   // produces, so the caller fails the request retryably instead of forcibly signing the user out.
@@ -280,6 +286,17 @@ function isAuthGuard401(text: string): boolean {
   try {
     const parsed = JSON.parse(text) as { message?: unknown };
     return typeof parsed.message === "string" && AUTH_GUARD_401_MESSAGES.has(parsed.message);
+  } catch {
+    return false;
+  }
+}
+
+/** True when `text` is the API's JSON error envelope — every HttpException the API throws reaches the
+ *  client as `{ message, … }` (apps/api/src/common/all-exceptions.filter.ts). */
+function isApiErrorBody(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown } | null;
+    return typeof parsed?.message === "string" || Array.isArray(parsed?.message);
   } catch {
     return false;
   }

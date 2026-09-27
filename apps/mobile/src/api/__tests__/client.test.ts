@@ -128,6 +128,24 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
     },
   );
 
+  // Only the API itself can declare a refresh token dead. A 401/403 whose body isn't the API's JSON error
+  // envelope came from something in front of it — a WAF or proxy block page, a captive portal, a load
+  // balancer — and says nothing about the token.
+  it.each([
+    [401, "<html><body><h1>401 Authorization Required</h1></body></html>"],
+    [403, "<html><head><title>Access denied</title></head></html>"],
+    [403, ""],
+  ])("does NOT sign out on a %s whose body isn't the API's (proxy / WAF / captive portal)", async (status, body) => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/refresh")) return makeResponse(status, body);
+      return AUTH_GUARD_401;
+    });
+
+    await expect(apiFetch("/orders/mine/active")).rejects.toMatchObject({ status: 0 });
+    expect(onSignOut).not.toHaveBeenCalled();
+    expect(session).not.toBeNull();
+  });
+
   it("coalesces concurrent 401s into a single refresh (single-flight guard) and retries both", async () => {
     let refreshCalls = 0;
     let resolveRefresh: (r: Response) => void = () => undefined;
