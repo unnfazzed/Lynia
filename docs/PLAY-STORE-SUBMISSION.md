@@ -1339,7 +1339,7 @@ can pull a live listing.
 |---|---|
 | Does your app collect or share any of the required user data types? | **Yes** |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** (HTTPS/TLS everywhere; `Strict-Transport-Security` set globally) |
-| Do you provide a way for users to request that their data be deleted? | **Yes** — `https://lyniago.lyniafinance.com/legal/account-deletion` |
+| Do you provide a way for users to request that their data be deleted? | **Yes** — `https://api.lyniago.com/legal/account-deletion` (moved 2026-09-27, §4.2) |
 
 ### Per-type declarations
 
@@ -1385,21 +1385,34 @@ against the dependency list (there is no ads SDK in `apps/mobile/package.json`).
 
 Play Console → **App content**. Every item, with the answer and the evidence.
 
-### 4.1 Privacy policy — ✅ ready
+### 4.1 Privacy policy — ⚠️ new URL; owner must update Play Console
 
 ```
-https://lyniago.lyniafinance.com/legal/privacy
+https://api.lyniago.com/legal/privacy
 ```
+
+> **Host moved (2026-09-27).** The old URL, `https://lyniago.lyniafinance.com/legal/privacy`, went down
+> with the GCP project suspension on 2026-09-17. It now returns 503 or fails TLS, so a listing that
+> still carries it shows reviewers a dead privacy link. The URL above serves the same page from the
+> Azure API (HTTP 200, checked 2026-09-27). **Owner step:** Play Console → App content → Privacy
+> policy → paste the URL above → Save (also `docs/AZURE-OWNER-RUNBOOK.md` §6 step 6). Optional
+> safety net for anything that still holds the old URL: in the `lyniafinance.com` Cloudflare zone, set
+> the `lyniago` record to Proxied and add a 301 redirect rule to `https://api.lyniago.com` that keeps
+> the path. The CI token (`CLOUDFLARE_API_TOKEN`) is scoped to `lyniago.com`, so this is a dashboard
+> step.
 
 Served by `apps/api/src/legal/legal.controller.ts` — unauthenticated, uncached-by-session, no
 geofence, no external subresource (a strict `default-src 'none'` CSP is set and the content test
 asserts nothing remote is referenced, so it cannot break for a reviewer on a restricted network).
 
-### 4.2 Account deletion — ✅ ready
+### 4.2 Account deletion — ⚠️ new URL; owner must update Play Console
 
 ```
-https://lyniago.lyniafinance.com/legal/account-deletion
+https://api.lyniago.com/legal/account-deletion
 ```
+
+Same host move as §4.1: the old `lyniago.lyniafinance.com/legal/account-deletion` is down. This URL
+is entered in the Data safety form (§3), so switching it means editing and re-submitting that form.
 
 Play requires **both** a deletion URL and an in-app path for any app offering account creation. The
 in-app path is **Account → Settings → Delete account** (`apps/mobile/app/settings/index.tsx`), a
@@ -1810,7 +1823,9 @@ Lessons:
 - [x] Data safety form (§3) submitted and matching `legal.content.ts` (founder, 2026-08-03)
 - [x] Content rating questionnaire (§4.5) completed (founder, 2026-08-03)
 - [ ] Foreground-service-location declaration (§5.1) submitted with demo video
-- [ ] Privacy policy + deletion URLs resolving in an incognito window from outside Zimbabwe
+- [ ] Privacy policy + deletion URLs resolving in an incognito window from outside Zimbabwe. The new
+      `api.lyniago.com` URLs return 200 from outside Zimbabwe (2026-09-27). This stays open until the
+      Play Console fields (§4.1, §4.2) carry them.
 - [ ] CDPA duties closed (§7.3): POTRAZ controller registration, DPO appointed, cross-border transfer
       notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
 - [ ] Sentry receiving crashes from a release build (LR20 exit test)
