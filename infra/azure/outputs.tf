@@ -93,6 +93,8 @@ output "arming_guide" {
        then run each `bind` command and wait for the certificate to be Succeeded before
        messaging testers (E11).
 
+    5. Admin console sign-in (Easy Auth, README Step 6): ${var.admin_auth_client_id != "" ? "ON (Entra app ${var.admin_auth_client_id}). Deploy Admin Console (Azure) applies the operator allowlist." : "NOT SET UP, so the console refuses every request. Run infra/azure/admin-auth.sh in Cloud Shell, re-run this apply, then Deploy Admin Console (Azure)."}
+
     Key Vault ${data.azurerm_key_vault.main.name}: this environment reads
     ${join(", ", sort(values(local.api_secret_env)))}
     and ${local.kv_admin_token} (admin). DATABASE-URL/REDIS-URL are written by Terraform; the

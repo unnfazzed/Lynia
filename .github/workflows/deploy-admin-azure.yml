@@ -32,7 +32,8 @@ name: Deploy Admin Console (Azure)
 #              (bootstrap.sh); AZ_RESOURCE_GROUP, AZ_ACR_NAME, AZ_ACR_LOGIN_SERVER,
 #              AZ_CONTAINERAPP_ADMIN (+ the _STAGING set) from `terraform output github_variables`.
 #   Optional:  ADMIN_API_BASE_URL / STAGING_ADMIN_API_BASE_URL (override Terraform's API_BASE_URL),
-#              ADMIN_CONSOLE_ALLOWED_OPERATORS / STAGING_ADMIN_CONSOLE_ALLOWED_OPERATORS.
+#              ADMIN_CONSOLE_ALLOWED_OPERATORS / STAGING_ADMIN_CONSOLE_ALLOWED_OPERATORS (written by
+#              infra/azure/admin-auth.sh; infra/azure/README.md Step 6 arms Easy Auth).
 # Never write `${{ }}` inside a run: block in this file.
 
 on:

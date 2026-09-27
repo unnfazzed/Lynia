@@ -48,6 +48,12 @@ export interface ConsoleAccessInput {
    * Auth (`isEasyAuthProxyHeader`); false for GCP IAP, whose own access policy is the allowlist.
    */
   requireAllowlist?: boolean;
+  /**
+   * True when the operator header is Azure Easy Auth's (`isEasyAuthProxyHeader`). Easy Auth never
+   * forwards an unauthenticated request, so a request that arrives with NO identity means Easy Auth is not
+   * in front of this deployment at all. The 401 then says that, instead of pointing at GCP IAP.
+   */
+  easyAuth?: boolean;
 }
 
 export interface ConsoleAccessDecision {
@@ -169,18 +175,22 @@ export function evaluateConsoleAccess(input: ConsoleAccessInput): ConsoleAccessD
           operator: null,
           status: 403,
           message:
-            "Admin console operator allowlist is not configured. Set ADMIN_CONSOLE_ALLOWED_OPERATORS " +
-            "(comma-separated emails/UPNs) for this deployment.",
+            `Admin console operator allowlist is not configured, so ${input.operator.trim()} cannot be admitted. ` +
+            "Set ADMIN_CONSOLE_ALLOWED_OPERATORS (comma-separated emails/UPNs) for this deployment.",
         };
       }
       return { allow: true, operator: input.operator };
     }
     if (!allowed.includes(input.operator.trim().toLowerCase())) {
+      // Name the identity that was refused: the proxy decides its exact form (an email, a UPN, a guest's
+      // `#EXT#` UPN), and an owner can only put the right one on the list if the console says what it saw.
       return {
         allow: false,
         operator: null,
         status: 403,
-        message: "This account is not authorized to use the admin console.",
+        message:
+          `This account (${input.operator.trim()}) is not authorized to use the admin console. ` +
+          "An owner can add it to ADMIN_CONSOLE_ALLOWED_OPERATORS.",
       };
     }
     return { allow: true, operator: input.operator };
@@ -192,8 +202,11 @@ export function evaluateConsoleAccess(input: ConsoleAccessInput): ConsoleAccessD
     allow: false,
     operator: null,
     status: 401,
-    message:
-      "Admin console requires an authenticated operator. Deploy it behind an identity-aware proxy " +
-      "(GCP IAP / OAuth2 proxy) that asserts the operator identity, or set ADMIN_CONSOLE_REQUIRE_AUTH=false for local use.",
+    message: input.easyAuth
+      ? "Admin console sign-in is not set up: Microsoft Entra sign-in (Azure Easy Auth) is not enabled in " +
+        "front of this deployment, so no operator identity reached it. Owner: infra/azure/README.md, Step 6."
+      : "Admin console requires an authenticated operator, and none reached it. Deploy it behind an " +
+        "identity-aware proxy (GCP IAP / OAuth2 proxy) that asserts the operator identity. For local " +
+        "development only, set ADMIN_CONSOLE_REQUIRE_AUTH=false.",
   };
 }

@@ -56,6 +56,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // Set only in proxy-header mode with the Easy Auth header: that mode has no authorization of its own,
   // so an unset ADMIN_CONSOLE_ALLOWED_OPERATORS must fail closed (see console-auth.ts).
   let requireAllowlist = false;
+  // Same mode, for the 401 wording: with Easy Auth in front, no identity means Easy Auth is not enabled.
+  let easyAuth = false;
   if (consoleAuthRequired({ nodeEnv, requireAuthOverride, pathname })) {
     const iapAudience = process.env.ADMIN_CONSOLE_IAP_AUDIENCE;
     if (iapAudience && iapAudience.trim() !== "") {
@@ -76,7 +78,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
         );
       }
       const proxyHeaderName = process.env.ADMIN_CONSOLE_PROXY_HEADER ?? "x-goog-authenticated-user-email";
-      requireAllowlist = isEasyAuthProxyHeader(proxyHeaderName);
+      easyAuth = isEasyAuthProxyHeader(proxyHeaderName);
+      requireAllowlist = easyAuth;
       operator = resolveProxyOperator({ proxyHeaderName, getHeader: (name) => req.headers.get(name) });
     }
   }
@@ -88,12 +91,14 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     operator,
     allowedOperators: parseOperatorAllowlist(process.env.ADMIN_CONSOLE_ALLOWED_OPERATORS),
     requireAllowlist,
+    easyAuth,
   });
 
   if (!decision.allow) {
     return new NextResponse(decision.message ?? "Unauthorized", {
       status: decision.status ?? 401,
-      headers: { "content-type": "text/plain; charset=utf-8" },
+      // The 403s echo the identity header back; nosniff keeps that plain text.
+      headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" },
     });
   }
 
