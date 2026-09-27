@@ -26,9 +26,9 @@
    site on lyniago.com, an @lyniago.com email, then the USD 99 enrollment.
 2. **[C] Engineering PRs** (§3):
    - **Done:** the iOS prebuild fix, the Xcode 26 proof, the rider-free iPhone app, the iOS store link,
-     and the APNs sender (inert until its key exists).
-   - **Still to do:** the remaining iPhone fixes, the support page and legal wording, the iOS workflow
-     lanes.
+     the APNs sender (inert until its key exists), and the iPhone fixes a code sweep could find (B6).
+   - **Still to do:** the support page and legal wording, the iOS workflow lanes, and the per-platform
+     minimum version (B5).
    - **Also still to do:** the `ios` config plus the iOS `eas.json` profiles. These ship **together
      with the next Android store build**, because both move the Android OTA fingerprint (B9).
 3. **[F] One-time signing setup** (§2 A6): `eas credentials -p ios` from any computer. CI cannot create
@@ -45,7 +45,7 @@
 | D1 | Apple account type | **DECIDED 2026-09-27: Organization = FortyoneX Studio (Private) Limited** | The owner rejected an Individual account because it displays the person's legal name as the App Store seller. The organization owns the LyniaGo brand. Guideline 5.2.1 wants the seller to be the entity that offers the service; to satisfy it, the privacy page, support page, copyright line and review notes all say "LyniaGo is operated by FortyoneX Studio (Private) Limited". |
 | D2 | Expo SDK for iOS | **DECIDED: ship on SDK 52 with `ios.image` pinned to `macos-sequoia-15.6-xcode-26.2`** | Proven by build `7fdb60a9`. The default SDK 52 image (Xcode 16.2) cannot upload, and Xcode ≥ 26.4 cannot compile RN 0.76.9's fmt, so the pin is load-bearing. Runway: the iOS 27 SDK becomes mandatory in April 2027, and Play needs API 36 now (§8). SDK 54 (the last SDK with the legacy architecture) is the upgrade both stores need before then. |
 | D3 | Rider mode on iOS | **DECIDED 2026-09-27: none.** Customer-only iPhone app, no national ID, no KYC (DESIGN-DEVIATIONS D-41) | Riders are on low-end Android handsets. This removes the rider "Always"-location permission, KYC, the commission-wallet review question and the rider demo video from the iOS path. |
-| D4 | How iOS push is delivered | **DONE (code): server-side APNs adapter** (no app change); arming needs the A5 key (`docs/AZURE-OWNER-RUNBOOK.md` "iOS push") | The app registers the raw APNs token with `platform: "ios"` (`src/push/push.ts`). The API sends every token through FCM (`apps/api/src/adapters/push/fcm.push.ts`), which cannot deliver to an APNs token. Customers need push for offers, arrival and delivery updates. |
+| D4 | How iOS push is delivered | **DONE (code): server-side APNs adapter** (no app change); arming needs the A5 key (`docs/AZURE-OWNER-RUNBOOK.md` "iOS push") | The app registers the raw APNs token with `platform: "ios"` (`src/push/push.ts`). The API used to send every token through FCM (`apps/api/src/adapters/push/fcm.push.ts`), which cannot deliver to an APNs token. Customers need push for offers, arrival and delivery updates. |
 | D5 | Where the app is available | **Recommended: Zimbabwe only** | Distributing in the EU makes the organization a DSA "trader", and Apple publishes its address, phone and email. With non-EU availability, declare non-trader. Zimbabwe is an App Store and TestFlight storefront. |
 | D6 | iPhone only? | **Yes** (`supportsTablet: false`) | No iPad screenshots are needed. Reviewers may still run the app on iPad in compatibility mode (2.4.1); see the `tel:` item in B6. |
 | D7 | Bundle ID | **`zw.co.lynia`** (same as the Android package) | Permanent once the App Store Connect record exists. |
@@ -215,19 +215,31 @@ implements:
   both platforms. Make it per-platform before the first iOS release. Otherwise an Android-driven bump
   locks iPhone users out with no build to update to.
 
-### B6. iOS behaviour fixes (code sweep; none reproduced on a device yet)
+### B6. iOS behaviour fixes: the code sweep's fixes are DONE (JS only); the rest needs a device
 
-- **Keyboard over inputs:** three bottom sheets with text inputs have no `KeyboardAvoidingView`, and
-  iOS doesn't resize the window for the keyboard: `src/ui/food/CartNoteSheet.tsx`,
-  `src/ui/food/ItemSheet.tsx`, `src/ui/safety.tsx`.
-- **No way to close the number pad:** phone and number pads have no return key, and nothing dismisses
-  the keyboard (`app/phone.view.tsx`, `app/verify.tsx`). Check that Continue stays reachable on a small
-  iPhone; a stuck sign-in screen is an instant 2.1 rejection.
-- **Haptics are long buzzes:** core `Vibration` (`src/ui/haptics.ts:68`) ignores durations on iOS, so
-  every `haptic()` call is a full buzz. Either skip on iOS, or adopt `expo-haptics`, which is native
-  and so ships per B9.
-- **`tel:` buttons fail silently** where there is no phone app (iPad compatibility-mode review). Every
-  `Linking.openURL("tel:…")` is fire-and-forget. Add a catch with a copy-the-number fallback.
+**Done in code** (JS only, so no fingerprint change; still to confirm on an iPhone in C4):
+
+- **Keyboard over inputs:** iOS lays the keyboard over a `<Modal>`, where Android's Modal window
+  resizes. The three modal sheets with text fields now lift by the keyboard's height on iOS
+  (`KeyboardAvoidingView`, `behavior="padding"`): `src/ui/food/CartNoteSheet.tsx`,
+  `src/ui/food/ItemSheet.tsx` and the issue/report sheet in `src/ui/safety.tsx`.
+- **Closing the number pad:** phone and number pads have no return key. The phone and code screens now
+  close the keyboard on a tap outside the field (`src/ui/DismissKeyboardArea.tsx`). Check in C4 that
+  Continue and Back stay reachable on a small iPhone; a stuck sign-in screen is an instant 2.1
+  rejection.
+- **Haptics:** core `Vibration` plays every iOS buzz as the same ~400ms vibration, and reads a
+  pattern's entries as gaps. iOS now has its own mapping (`iosHapticPattern` in
+  `src/ui/haptics.ts`): no cue for a tap, one buzz for notify, success and warning, and a separated
+  double for SOS. `expo-haptics` would give real taptic cues, but it is native, so it would ship per B9.
+- **`tel:` buttons:** the customer's Call buttons (the order screen and the live tracking card) go
+  through `useDial` (`src/ui/useDial.ts`). Where the device can't place calls (an iPad in
+  compatibility-mode review), it shows a toast naming the number instead of doing nothing. Rider
+  screens don't ship on iOS (D3). The SOS sheet's buttons already show their numbers in their labels,
+  and they sit in a Modal that a toast can't draw over.
+- **Sign-up copy:** the intro line no longer promises an "ID" on an iPhone, which asks for none (D-41).
+
+**Still open:**
+
 - **Unseen layouts:**
   - Core `SafeAreaView` only pads on iOS (`app/phone.tsx`, `app/help/index.tsx`, `app/onboarding.tsx`,
     `app/notifications/index.tsx`).

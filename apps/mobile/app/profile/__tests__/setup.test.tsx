@@ -85,6 +85,12 @@ async function settle(): Promise<void> {
   });
 }
 
+/** The intro line under the heading (mock `LJ.register`'s `Sub`). */
+function introLine(tree: renderer.ReactTestRenderer): string | undefined {
+  const node = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.startsWith("You're sending parcels."))[0];
+  return node?.props.children as string | undefined;
+}
+
 beforeEach(() => {
   secureStore = {};
   mockUpdateProfile.mockReset().mockResolvedValue({ ok: true });
@@ -366,5 +372,25 @@ describe("profile setup on the customer-only iPhone app (D-41)", () => {
 
     expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo" });
     expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/home");
+  });
+
+  it("does not promise an ID in the intro line, since it asks for none", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(introLine(tree)).toBe("You're sending parcels. Just a name for your account record — no documents, no verification.");
+  });
+});
+
+describe("profile setup intro line where rider mode exists", () => {
+  it("is the mock's line verbatim, ID included", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+    expect(introLine(tree)).toBe("You're sending parcels. Just a name and ID for your account record — no documents, no verification.");
   });
 });

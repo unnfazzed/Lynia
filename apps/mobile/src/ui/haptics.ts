@@ -7,9 +7,8 @@ import { Platform, Vibration } from "react-native";
  * data-/battery-light too — a buzz is a few tens of milliseconds of the vibrator, nothing else.
  *
  * Android-first by design (Zimbabwe is ~90% Android): the patterns are tuned to read on Android's
- * amplitude-flat vibrator, where a `number[]` is `[wait, buzz, wait, buzz, …]` in ms. iOS ignores the
- * per-step durations (each step is a fixed system buzz), so a two-step "success" still reads as a
- * double-tap there — good enough; iOS is a later platform.
+ * amplitude-flat vibrator, where a `number[]` is `[wait, buzz, wait, buzz, …]` in ms. iOS has its own
+ * mapping ({@link iosHapticPattern}) because it plays those patterns very differently.
  *
  * Everything is BEST-EFFORT: a device with no vibrator, a user who muted system haptics, or web all
  * degrade to a silent no-op. Haptics are never load-bearing — they punctuate an action the UI already
@@ -53,6 +52,28 @@ export function hapticPattern(kind: HapticKind): number | number[] {
 }
 
 /**
+ * The cue as iOS should play it, or `null` for none. React Native's iOS `Vibration` ignores durations:
+ * every buzz is the same ~400ms system vibration, and a pattern's entries become the GAPS between
+ * buzzes. The Android patterns above therefore play on an iPhone as a 400ms buzz for every light
+ * `tap`, and as four to six buzzes blurring into one long rumble for the patterned cues.
+ *
+ * Without a haptics engine (no new native module — see above), the honest mapping is: no cue for a
+ * tap, one buzz for notify, success and warning, and a clearly separated double for `alert`, the one
+ * cue that must feel different. A bare number is one buzz (its length is ignored); `[0, gap]` is two.
+ */
+export function iosHapticPattern(kind: HapticKind): number | number[] | null {
+  switch (kind) {
+    case "tap":
+      return null;
+    case "alert":
+      // The second buzz starts 700ms after the first, leaving a ~300ms pause between them.
+      return [0, 700];
+    default:
+      return 400;
+  }
+}
+
+/**
  * Module-level kill switch so a future "reduce feedback" setting (or a test) can silence every cue with
  * one call, without threading a prop through every screen. On by default.
  */
@@ -61,11 +82,16 @@ export function setHapticsEnabled(on: boolean): void {
   enabled = on;
 }
 
-/** Fire a named haptic cue. Best-effort: silent no-op on web, when disabled, or if the vibrator throws. */
+/**
+ * Fire a named haptic cue. Best-effort: silent no-op on web, when disabled, for a cue iOS leaves out, or
+ * if the vibrator throws.
+ */
 export function haptic(kind: HapticKind): void {
   if (!enabled || Platform.OS === "web") return;
+  const pattern = Platform.OS === "ios" ? iosHapticPattern(kind) : hapticPattern(kind);
+  if (pattern == null) return;
   try {
-    Vibration.vibrate(hapticPattern(kind));
+    Vibration.vibrate(pattern);
   } catch {
     /* no vibrator / muted / permission — haptics are never load-bearing */
   }

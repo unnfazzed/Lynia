@@ -151,7 +151,8 @@ export default function ProfileSetupScreen(): React.ReactElement {
   return (
     <Screen>
       <Heading>Tell us who you are</Heading>
-      <Sub>You&apos;re sending parcels. Just a name and ID for your account record — no documents, no verification.</Sub>
+      {/* D-41: there is no ID field on an iPhone, so the line does not mention one. */}
+      <Sub>{`You're sending parcels. Just a name${collectsNationalId ? " and ID" : ""} for your account record — no documents, no verification.`}</Sub>
       {draftRestored ? (
         <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginBottom: tokens.space.xs }}>
           We saved what you&apos;d filled in — pick up where you left off.

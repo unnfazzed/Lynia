@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { Tappable } from "../Tappable";
 import React, { useState } from "react";
-import { Modal, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { BottomSheet } from "../BottomSheet";
 import { Button, Icon } from "../index";
 import { QtyStepper } from "../home/QtyStepper";
@@ -100,136 +100,140 @@ export function CartNoteSheet({
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(20,24,27,0.45)", justifyContent: "flex-end" }}
       >
-        <Tappable onPress={(e) => e.stopPropagation()}>
-          <BottomSheet
-            // Kit R3·2 (r-customer-a.jsx:597): the sheet's top corners are 20px, a step softer than
-            // the shared 16px card radius — same as the item sheet it sits alongside.
-            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
-            footer={
-              quantity != null ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                  <QtyStepper value={qty} onChange={setQty} max={maxQuantity} />
-                  <View style={{ flex: 1 }}>
-                    <Button label="Save" onPress={() => onSave({ dishNote: note.trim(), orderNote: whole, quantity: qty })} />
+        {/* iOS lays the keyboard over a Modal instead of resizing it (Android's Modal does resize), so
+            the notes would type behind it. Lift the sheet by the keyboard's height there. */}
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <Tappable onPress={(e) => e.stopPropagation()}>
+            <BottomSheet
+              // Kit R3·2 (r-customer-a.jsx:597): the sheet's top corners are 20px, a step softer than
+              // the shared 16px card radius — same as the item sheet it sits alongside.
+              style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
+              footer={
+                quantity != null ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <QtyStepper value={qty} onChange={setQty} max={maxQuantity} />
+                    <View style={{ flex: 1 }}>
+                      <Button label="Save" onPress={() => onSave({ dishNote: note.trim(), orderNote: whole, quantity: qty })} />
+                    </View>
                   </View>
-                </View>
-              ) : (
-                <Button label="Save notes" onPress={() => onSave({ dishNote: note.trim(), orderNote: whole })} />
-              )
-            }
-          >
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {dishName != null ? (
-                <>
-                  <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>Note for the kitchen</Text>
-                  <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 4, lineHeight: 19 }}>
-                    <Text style={{ color: tokens.color.ink, fontWeight: "700" }}>{dishName}</Text> — tell them how you want it. This sits
-                    next to the dish on their ticket.
-                  </Text>
-                  {/* Kit R3·2 (r-customer-a.jsx:603): the dish note's box is the 1.5px ACCENT border — it's
-                      the thing the sheet was opened for, so it carries the emphasis treatment. */}
-                  <TextInput
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="Leg portion please, not breast. No chilli."
-                    placeholderTextColor={tokens.color.muted}
-                    multiline
-                    maxLength={inputMax}
-                    accessibilityLabel={`Note for ${dishName}`}
-                    style={{
-                      marginTop: tokens.space.md,
-                      borderWidth: 1.5,
-                      borderColor: tokens.color.accent,
-                      borderRadius: tokens.radius.input,
-                      paddingHorizontal: tokens.space.md,
-                      paddingVertical: 11,
-                      minHeight: 76,
-                      textAlignVertical: "top",
-                      fontSize: 14.5,
-                      lineHeight: 21,
-                      color: tokens.color.ink,
-                      backgroundColor: tokens.color.bg,
-                    }}
+                ) : (
+                  <Button label="Save notes" onPress={() => onSave({ dishNote: note.trim(), orderNote: whole })} />
+                )
+              }
+            >
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {dishName != null ? (
+                  <>
+                    <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>Note for the kitchen</Text>
+                    <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 4, lineHeight: 19 }}>
+                      <Text style={{ color: tokens.color.ink, fontWeight: "700" }}>{dishName}</Text> — tell them how you want it. This sits
+                      next to the dish on their ticket.
+                    </Text>
+                    {/* Kit R3·2 (r-customer-a.jsx:603): the dish note's box is the 1.5px ACCENT border — it's
+                        the thing the sheet was opened for, so it carries the emphasis treatment. */}
+                    <TextInput
+                      value={note}
+                      onChangeText={setNote}
+                      placeholder="Leg portion please, not breast. No chilli."
+                      placeholderTextColor={tokens.color.muted}
+                      multiline
+                      maxLength={inputMax}
+                      accessibilityLabel={`Note for ${dishName}`}
+                      style={{
+                        marginTop: tokens.space.md,
+                        borderWidth: 1.5,
+                        borderColor: tokens.color.accent,
+                        borderRadius: tokens.radius.input,
+                        paddingHorizontal: tokens.space.md,
+                        paddingVertical: 11,
+                        minHeight: 76,
+                        textAlignVertical: "top",
+                        fontSize: 14.5,
+                        lineHeight: 21,
+                        color: tokens.color.ink,
+                        backgroundColor: tokens.color.bg,
+                      }}
+                    />
+                    {/* Kit R3·2 (r-customer-a.jsx:604): the counter is right-aligned, tabular, and muted until
+                        the note runs past what the ticket will carry. */}
+                    <Text
+                      accessibilityLabel={`${note.length} of ${DISH_NOTE_MAX} characters used`}
+                      style={{
+                        alignSelf: "flex-end",
+                        fontSize: 12,
+                        marginTop: 4,
+                        color: over ? tokens.color.danger : tokens.color.muted,
+                        fontVariant: ["tabular-nums"],
+                      }}
+                    >
+                      {note.length} / {DISH_NOTE_MAX}
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: tokens.space.sm }}>
+                      {QUICK_PHRASES.map((phrase) => {
+                        const on = hasPhrase(note, phrase);
+                        return (
+                          <Tappable
+                            key={phrase}
+                            onPress={() => setNote((cur) => toggleQuickPhrase(cur, phrase))}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: on }}
+                            accessibilityLabel={`${on ? "Remove" : "Add"} ${phrase}`}
+                            style={{
+                              minHeight: tokens.touchTargetMin,
+                              justifyContent: "center",
+                              paddingHorizontal: 13,
+                              borderRadius: tokens.radius.pill,
+                              borderWidth: 1,
+                              borderColor: on ? tokens.color.accent : tokens.color.line,
+                              backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted }}>
+                              {on ? "✓ " : "+ "}
+                              {phrase}
+                            </Text>
+                          </Tappable>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : (
+                  // Opened from the cart's own whole-order-note row (no dish in context) — this section
+                  // is the sheet's entire reason for being, so it carries the sheet's title instead of
+                  // sitting under a dish-specific one.
+                  <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>Note for the whole order</Text>
+                )}
+
+                <View style={{ marginTop: dishName != null ? tokens.space.lg : tokens.space.md }}>
+                  <NoteField
+                    label="NOTE FOR THE WHOLE ORDER"
+                    value={whole}
+                    onChangeText={setWhole}
+                    placeholder="Pack the sadza separately from the stew"
+                    maxLength={ORDER_NOTE_MAX}
                   />
-                  {/* Kit R3·2 (r-customer-a.jsx:604): the counter is right-aligned, tabular, and muted until
-                      the note runs past what the ticket will carry. */}
-                  <Text
-                    accessibilityLabel={`${note.length} of ${DISH_NOTE_MAX} characters used`}
-                    style={{
-                      alignSelf: "flex-end",
-                      fontSize: 12,
-                      marginTop: 4,
-                      color: over ? tokens.color.danger : tokens.color.muted,
-                      fontVariant: ["tabular-nums"],
-                    }}
-                  >
-                    {note.length} / {DISH_NOTE_MAX}
+                </View>
+
+                {/* Kit R3·2 (r-customer-a.jsx:614): the price caveat is the sheet's last word before the
+                    CTA — a note is an instruction, never a re-price. */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 9,
+                    padding: tokens.space.md,
+                    backgroundColor: tokens.color.surface,
+                    borderRadius: tokens.radius.input,
+                  }}
+                >
+                  <Icon name="circle-alert" size={15} color={tokens.color.muted} style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, fontSize: 12, color: tokens.color.muted, lineHeight: 17 }}>
+                    A note can&apos;t change the price. If what you want costs more, the kitchen will call you before cooking.
                   </Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: tokens.space.sm }}>
-                    {QUICK_PHRASES.map((phrase) => {
-                      const on = hasPhrase(note, phrase);
-                      return (
-                        <Tappable
-                          key={phrase}
-                          onPress={() => setNote((cur) => toggleQuickPhrase(cur, phrase))}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: on }}
-                          accessibilityLabel={`${on ? "Remove" : "Add"} ${phrase}`}
-                          style={{
-                            minHeight: tokens.touchTargetMin,
-                            justifyContent: "center",
-                            paddingHorizontal: 13,
-                            borderRadius: tokens.radius.pill,
-                            borderWidth: 1,
-                            borderColor: on ? tokens.color.accent : tokens.color.line,
-                            backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
-                          }}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted }}>
-                            {on ? "✓ " : "+ "}
-                            {phrase}
-                          </Text>
-                        </Tappable>
-                      );
-                    })}
-                  </View>
-                </>
-              ) : (
-                // Opened from the cart's own whole-order-note row (no dish in context) — this section
-                // is the sheet's entire reason for being, so it carries the sheet's title instead of
-                // sitting under a dish-specific one.
-                <Text style={{ fontSize: 16.5, fontWeight: "700", color: tokens.color.ink }}>Note for the whole order</Text>
-              )}
-
-              <View style={{ marginTop: dishName != null ? tokens.space.lg : tokens.space.md }}>
-                <NoteField
-                  label="NOTE FOR THE WHOLE ORDER"
-                  value={whole}
-                  onChangeText={setWhole}
-                  placeholder="Pack the sadza separately from the stew"
-                  maxLength={ORDER_NOTE_MAX}
-                />
-              </View>
-
-              {/* Kit R3·2 (r-customer-a.jsx:614): the price caveat is the sheet's last word before the
-                  CTA — a note is an instruction, never a re-price. */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 9,
-                  padding: tokens.space.md,
-                  backgroundColor: tokens.color.surface,
-                  borderRadius: tokens.radius.input,
-                }}
-              >
-                <Icon name="circle-alert" size={15} color={tokens.color.muted} style={{ marginTop: 1 }} />
-                <Text style={{ flex: 1, fontSize: 12, color: tokens.color.muted, lineHeight: 17 }}>
-                  A note can&apos;t change the price. If what you want costs more, the kitchen will call you before cooking.
-                </Text>
-              </View>
-            </ScrollView>
-          </BottomSheet>
-        </Tappable>
+                </View>
+              </ScrollView>
+            </BottomSheet>
+          </Tappable>
+        </KeyboardAvoidingView>
       </Tappable>
     </Modal>
   );

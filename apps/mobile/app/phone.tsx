@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { SafeAreaView } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
+import { DismissKeyboardArea } from "../src/ui";
 import { LoginView } from "./phone.view";
 
 /**
@@ -45,14 +46,17 @@ export default function PhoneScreen(): React.ReactElement {
     // The phone frame / safe area — the mock's AppScreen shell; the mock's own screen padding lives
     // inside LoginView (from its `Pad` wrapper).
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      <LoginView
-        phone={phone}
-        onChangePhone={setPhone}
-        onSubmit={submit}
-        loading={busy}
-        submitDisabled={phone.trim().length < 6}
-        error={error ?? undefined}
-      />
+      {/* The phone pad has no return key on iOS: a tap outside the field is the way to put it away. */}
+      <DismissKeyboardArea>
+        <LoginView
+          phone={phone}
+          onChangePhone={setPhone}
+          onSubmit={submit}
+          loading={busy}
+          submitDisabled={phone.trim().length < 6}
+          error={error ?? undefined}
+        />
+      </DismissKeyboardArea>
     </SafeAreaView>
   );
 }
