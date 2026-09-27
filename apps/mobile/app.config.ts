@@ -361,6 +361,38 @@ const config: ExpoConfig = {
     // managed cert's rotation). Single gate = the env var.
     ...(process.env.LYNIA_TLS_PINS?.trim() ? ["./plugins/with-certificate-pinning"] : []),
   ],
+  // iOS — customer-only, iPhone-only (owner decisions 2026-09-27, docs/APP-STORE-SUBMISSION.md).
+  // FINGERPRINT: the whole resolved config is hashed for EVERY platform, so this block moves the
+  // Android runtimeVersion too — it ships together with an Android store build (§3 B11 there).
+  ios: {
+    bundleIdentifier: "zw.co.lynia",
+    supportsTablet: false,
+    // HTTPS + OS-provided crypto only (TLS pinning uses iOS's own NSPinnedDomains) → exempt; writes
+    // ITSAppUsesNonExemptEncryption=false so App Store Connect skips the per-build export question.
+    config: { usesNonExemptEncryption: false },
+    // Required-reason API declarations (ITMS-91053). SDK 52 prebuild writes no app-level
+    // PrivacyInfo.xcprivacy unless this is set; reasons cover RN core + the Expo modules in use.
+    privacyManifests: {
+      NSPrivacyAccessedAPITypes: [
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+          NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+          NSPrivacyAccessedAPITypeReasons: ["C617.1", "0A2A.1", "3B52.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+          NSPrivacyAccessedAPITypeReasons: ["E174.1", "85F4.1"],
+        },
+      ],
+    },
+  },
   android: {
     package: "zw.co.lynia",
     adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#FFFFFF" },
