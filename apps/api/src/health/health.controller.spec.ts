@@ -64,6 +64,34 @@ describe("HealthController — app/version-gate (server-driven force-update)", (
       /Invalid environment configuration/,
     );
   });
+
+  // docs/APP-STORE-SUBMISSION.md B5: iPhones have their own minimum, so an Android-driven bump can't
+  // lock them out while their update still waits on App Review.
+  it("serves the iPhone minimum to ?platform=ios, and MIN_SUPPORTED_APP_VERSION to everyone else", () => {
+    const controller = controllerWith(okReport, {
+      ...baseSource,
+      MIN_SUPPORTED_APP_VERSION: "0.52.0",
+      MIN_SUPPORTED_APP_VERSION_IOS: "1.0.1",
+    });
+    expect(controller.versionGate("ios")).toEqual({ minSupportedVersion: "1.0.1" });
+    expect(controller.versionGate("android")).toEqual({ minSupportedVersion: "0.52.0" });
+    // Every build installed before the parameter existed sends none (and a stray value is not iOS).
+    expect(controller.versionGate()).toEqual({ minSupportedVersion: "0.52.0" });
+    expect(controller.versionGate("IOS")).toEqual({ minSupportedVersion: "0.52.0" });
+  });
+
+  it("leaves iPhones ungated when only the Android minimum is raised", () => {
+    const controller = controllerWith(okReport, { ...baseSource, MIN_SUPPORTED_APP_VERSION: "0.52.0" });
+    expect(controller.versionGate("ios")).toEqual({ minSupportedVersion: "0.0.0" });
+  });
+
+  it("treats a deploy-injected empty iPhone value as gate-off, and rejects a malformed one at boot", () => {
+    const controller = controllerWith(okReport, { ...baseSource, MIN_SUPPORTED_APP_VERSION_IOS: "" });
+    expect(controller.versionGate("ios")).toEqual({ minSupportedVersion: "0.0.0" });
+    expect(() => loadEnv({ ...baseSource, MIN_SUPPORTED_APP_VERSION_IOS: "1.0-beta" })).toThrow(
+      /Invalid environment configuration/,
+    );
+  });
 });
 
 describe("HealthController — app/feature-flags (merchant kill switches, plan §0b.3)", () => {

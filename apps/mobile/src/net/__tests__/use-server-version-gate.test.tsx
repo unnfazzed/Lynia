@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { act, create } from "react-test-renderer";
 import { isVersionBelow } from "../../config";
 import { fetchServerMinVersion, useServerMinVersion } from "../use-server-version-gate";
@@ -57,6 +58,27 @@ describe("fetchServerMinVersion (fail-open by design)", () => {
     await expect(
       fetchServerMinVersion(fetchReturning(200, { minSupportedVersion: "0.2.0", extra: 1 })),
     ).resolves.toBeNull();
+  });
+
+  it("names its platform, so an iPhone gets its own minimum (docs/APP-STORE-SUBMISSION.md B5)", async () => {
+    const urls: string[] = [];
+    const recording = (async (url: string) => {
+      urls.push(url);
+      return { ok: true, status: 200, json: async () => ({ minSupportedVersion: "0.2.0" }) };
+    }) as unknown as typeof fetch;
+    const original = Platform.OS;
+    try {
+      for (const os of ["ios", "android"] as const) {
+        Object.defineProperty(Platform, "OS", { value: os, configurable: true });
+        await fetchServerMinVersion(recording);
+      }
+    } finally {
+      Object.defineProperty(Platform, "OS", { value: original, configurable: true });
+    }
+    expect(urls.map((u) => u.slice(u.indexOf("/app/")))).toEqual([
+      "/app/version-gate?platform=ios",
+      "/app/version-gate?platform=android",
+    ]);
   });
 
   it("fails open when the network throws (offline cold start still boots)", async () => {

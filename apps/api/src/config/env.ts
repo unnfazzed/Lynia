@@ -298,7 +298,16 @@ export const envSchema = z.object({
   // off (default). Set the MIN_SUPPORTED_APP_VERSION repo Variable only when a breaking change must
   // walk stranded installs to the Play Store — prefer keeping contracts backward-compatible instead.
   // Empty string (deploy injects "" when the Variable is unset) coerces to the off default.
+  // Covers Android and every client that doesn't name its platform (all builds that predate
+  // `?platform=`); iPhones read MIN_SUPPORTED_APP_VERSION_IOS below.
   MIN_SUPPORTED_APP_VERSION: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").default("0.0.0"),
+  ),
+  // The iPhone app's own minimum (docs/APP-STORE-SUBMISSION.md B5), served to `?platform=ios`. Separate
+  // on purpose: a bump made for Android must not lock iPhones out while their update still waits on App
+  // Review. Same dialect and off default as above.
+  MIN_SUPPORTED_APP_VERSION_IOS: z.preprocess(
     (v) => (v === "" ? undefined : v),
     z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").default("0.0.0"),
   ),

@@ -364,15 +364,19 @@ One-time: `gh secret set RELEASE_PLEASE_TOKEN` with a fine-grained PAT (contents
 tag it pushes can trigger mobile-release.yml — with the default token, start the Play release
 manually from Actions after merging the release PR.
 
-**Force-update gate (server-driven):** when a breaking change must walk old installs to the Play
-Store, set the minimum and redeploy — installed apps below it get the blocking update screen at
-next cold start (fail-open: an unreachable API never blocks anyone):
+**Force-update gate (server-driven):** when a breaking change must walk old installs to their store,
+set the minimum and redeploy — installed apps below it get the blocking update screen at next cold
+start (fail-open: an unreachable API never blocks anyone). Each platform has its own minimum, so an
+Android bump never locks out iPhones whose update is still waiting on App Review
+(`docs/APP-STORE-SUBMISSION.md` B5):
 ```bash
-gh variable set MIN_SUPPORTED_APP_VERSION --body "0.2.0"   # dotted version, matches app.config.ts
-gh workflow run release.yml --ref main
-# verify: curl https://lyniago.lyniafinance.com/app/version-gate → {"minSupportedVersion":"0.2.0"}
+gh variable set MIN_SUPPORTED_APP_VERSION --body "0.2.0"       # Android, and any build that doesn't name its platform
+gh variable set MIN_SUPPORTED_APP_VERSION_IOS --body "1.0.1"   # iPhone: only once that version is live on the App Store
+gh workflow run release-azure.yml --ref main
+# verify: curl 'https://api.lyniago.com/app/version-gate?platform=ios' → {"minSupportedVersion":"1.0.1"}
 ```
-Prefer keeping API contracts backward-compatible; this gate is the escape hatch, not the routine.
+Dotted versions only; the release refuses anything else before deploying. Prefer keeping API
+contracts backward-compatible; this gate is the escape hatch, not the routine.
 
 ## 9. Adopt the hand-made GCP resources into Terraform (one script run)
 
