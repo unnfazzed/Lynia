@@ -20,12 +20,16 @@ export class TokenService {
    *  signing secret can be rotated WITHOUT invalidating every stored refresh-token hash (mass logout).
    *  Defaults to the JWT secret for backward-compatibility when TOKEN_HASH_SECRET is unset. */
   private readonly hashSecret: string;
+  /** Subkey for {@link successorSecret}, derived from the hash key so the two HMAC uses never share a
+   *  key (and so it rotates with TOKEN_HASH_SECRET — which already invalidates every refresh token). */
+  private readonly successorKey: Buffer;
   private readonly accessTtl: number;
 
   constructor(@Inject(ENV) env: Env) {
     this.secret = env.JWT_SIGNING_SECRET;
     this.previousSecret = env.JWT_SIGNING_SECRET_PREVIOUS;
     this.hashSecret = env.TOKEN_HASH_SECRET ?? env.JWT_SIGNING_SECRET;
+    this.successorKey = createHmac("sha256", this.hashSecret).update("lynia:refresh-successor:v1").digest();
     this.accessTtl = env.ACCESS_TTL_SECONDS;
   }
 
@@ -63,6 +67,16 @@ export class TokenService {
 
   randomToken(bytes = 32): string {
     return randomBytes(bytes).toString("hex");
+  }
+
+  /**
+   * The secret of the session a refresh token `${sessionId}.${secret}` rotates into. Keyed and
+   * deterministic rather than random, so the server can hand the SAME successor back when a client
+   * re-presents the rotated token because the rotate response never reached it (AuthService.refresh).
+   * Unpredictable without the server key; same size and encoding as {@link randomToken}.
+   */
+  successorSecret(sessionId: string, secret: string): string {
+    return createHmac("sha256", this.successorKey).update(`${sessionId}.${secret}`).digest("hex");
   }
 
   /** Cryptographically-random 6-digit OTP. */

@@ -111,6 +111,24 @@ describe("authedFetch — /auth/refresh transient vs definitive failure (LC-C03)
     expect(session).toBeNull();
   });
 
+  // Only the API can declare a refresh token dead. A 401/403 whose body isn't its JSON error envelope
+  // came from something in front of it — a proxy or WAF block page, a captive portal (SES-05).
+  it.each([401, 403])("does NOT sign out on a %s from /auth/refresh whose body isn't the API's", async (status) => {
+    const { authedFetch } = await import("./api-client");
+    const blockPage = {
+      ok: false,
+      status,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response;
+    fetchMock.mockImplementation(async (url: string) => (url.endsWith("/auth/refresh") ? blockPage : AUTH_GUARD_401));
+
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 0 });
+    expect(clearMerchantSession).not.toHaveBeenCalled();
+    expect(session).not.toBeNull();
+  });
+
   it("retries the original request with the refreshed token on success", async () => {
     const { authedFetch } = await import("./api-client");
     let calls = 0;

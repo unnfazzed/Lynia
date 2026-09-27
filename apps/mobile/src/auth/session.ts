@@ -23,6 +23,32 @@ export interface Session {
 
 const KEY = "lynia.session";
 
+// Keychain calls can fail TRANSIENTLY — the Android Keystore is briefly unavailable right after boot or
+// under memory pressure on low-end handsets. A session read that fails is believed as "signed out" and
+// routes the user to the OTP screen for the rest of the launch; a write that fails leaves a rotated
+// refresh token unsaved. So a THROW is retried briefly before it is believed. (A read that finds nothing
+// is an answer, not a failure, and is never retried.)
+const KEYCHAIN_ATTEMPTS = 3;
+const KEYCHAIN_RETRY_MS = 150;
+
+// iOS: keep the session readable while the device is locked (after the first unlock since boot), so a
+// launch the OS starts in the background — a push, a relaunch while locked — doesn't read "no session"
+// and hold that for the life of the process. expo-secure-store applies it when it CREATES the item (an
+// existing item only gets its value updated), so it takes effect from the next sign-in; reads ignore it,
+// which keeps every existing session readable. Android ignores the option.
+const SESSION_KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
+
+async function withKeychainRetry<T>(op: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await op();
+    } catch (err) {
+      if (attempt >= KEYCHAIN_ATTEMPTS) throw err;
+      await new Promise((resolve) => setTimeout(resolve, KEYCHAIN_RETRY_MS * attempt));
+    }
+  }
+}
+
 // KB-IDENTITY-BINDING L1: a stable per-install device id, sent as `x-device-id` on every API call so the
 // server can throttle new-account creation per device and surface the L0 recycle signal. Generated once
 // and persisted in the keychain; a reinstall mints a new one (a soft signal, not a hardware guarantee —
@@ -61,10 +87,11 @@ export async function loadSession(): Promise<Session | null> {
   // native error when the keystore entry can't be decrypted (a documented failure mode on low-end
   // Android after OS updates / keystore corruption / resource pressure). If that rejection escapes,
   // the boot load in auth-context never resolves and the app hangs on the splash forever with no way
-  // to sign in. Treat any read/parse failure as "no session" — the user re-authenticates, which is
-  // recoverable, unlike a permanently-stuck launch. Matches loadRolePreference/loadOnboardingSeen.
+  // to sign in. Treat a read that STILL fails after the retries (and a corrupt blob) as "no session" —
+  // the user re-authenticates, which is recoverable, unlike a permanently-stuck launch. Matches
+  // loadRolePreference/loadOnboardingSeen.
   try {
-    const raw = await SecureStore.getItemAsync(KEY);
+    const raw = await withKeychainRetry(() => SecureStore.getItemAsync(KEY, SESSION_KEYCHAIN_OPTIONS));
     if (!raw) return null;
     return JSON.parse(raw) as Session;
   } catch {
@@ -73,7 +100,7 @@ export async function loadSession(): Promise<Session | null> {
 }
 
 export async function saveSession(session: Session): Promise<void> {
-  await SecureStore.setItemAsync(KEY, JSON.stringify(session));
+  await withKeychainRetry(() => SecureStore.setItemAsync(KEY, JSON.stringify(session), SESSION_KEYCHAIN_OPTIONS));
 }
 
 export async function clearSession(): Promise<void> {

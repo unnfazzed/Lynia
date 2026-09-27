@@ -17,6 +17,7 @@ import renderer, { act } from "react-test-renderer";
 
 const mockUpdateProfile = jest.fn();
 const mockSignIn = jest.fn(async () => undefined);
+const mockUpdateSession = jest.fn(async () => undefined);
 // Mirrors what the REAL signOut does to this key: clearDeviceState deletes PROFILE_DRAFT_KEY
 // because the draft holds a national ID (LC-C10). A no-op mock here would let the screen claim a
 // draft-survival behaviour the shipped app does not have — which is exactly what it did before.
@@ -51,7 +52,12 @@ jest.mock("../../../src/api/auth", () => ({
   updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
 }));
 jest.mock("../../../src/auth/auth-context", () => ({
-  useAuth: () => ({ session: { profileId: "p1", role: "customer", needsProfile: true }, signIn: mockSignIn, signOut: mockSignOut }),
+  useAuth: () => ({
+    session: { profileId: "p1", role: "customer", needsProfile: true },
+    signIn: mockSignIn,
+    updateSession: mockUpdateSession,
+    signOut: mockSignOut,
+  }),
 }));
 jest.mock("../../../src/auth/session", () => ({
   loadRolePreference: async () => null,
@@ -82,6 +88,7 @@ beforeEach(() => {
   secureStore = {};
   mockUpdateProfile.mockReset().mockResolvedValue({ ok: true });
   mockSignIn.mockClear();
+  mockUpdateSession.mockClear();
   mockSignOut.mockClear();
   mockReplace.mockClear();
   mockSetItemAsync.mockClear();
@@ -257,6 +264,40 @@ describe("profile setup — draft persistence (LC-C10)", () => {
     // record and the server's duplicate-ID hash agree however the customer punctuated it.
     expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42" });
     expect(secureStore["lynia.profileDraft.v1"]).toBeUndefined();
+  });
+});
+
+/**
+ * The sign-up → back-to-the-OTP-screen report. Saving the name used to finish with
+ * `signIn({ ...session, needsProfile: false })`, where `session` is the one THIS RENDER captured. A new
+ * account that left to find its ID card came back with an expired access token, so the PATCH refreshed
+ * — rotating the refresh token — and that write-back then restored the rotated-away token to memory and
+ * the keychain. The next refresh presented a dead token and signed the brand-new user out. The flag must
+ * be cleared by patching whatever session the auth layer holds now (proven in auth-context.test.tsx).
+ */
+describe("profile setup — finishing sign-up never writes back a stale session", () => {
+  it("clears needsProfile via updateSession, never signIn with the render's session", async () => {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<ProfileSetupScreen />);
+    });
+    await settle();
+
+    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
+    setFieldByAccessibilityLabel(tree, "National ID number", "63123456A42");
+    await settle();
+    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
+    if (!saveButton) throw new Error("no Continue button found");
+    await act(async () => {
+      await saveButton.props.onPress();
+    });
+    await settle();
+
+    expect(mockUpdateSession).toHaveBeenCalledTimes(1);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ needsProfile: false });
+    expect(mockSignIn).not.toHaveBeenCalled();
+    // …and sign-up carries on to the role fork (no saved role yet) rather than stalling on an error.
+    expect(mockReplace).toHaveBeenCalledWith("/role");
   });
 });
 
