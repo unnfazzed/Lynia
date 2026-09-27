@@ -443,6 +443,12 @@ jobs:
           SENTRY_ENABLED: ${{ vars.SENTRY_ENABLED }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
           DEMO_ACCOUNT_ENABLED: ${{ vars.DEMO_ACCOUNT_ENABLED }}
+          # iOS push (APNs, push.module.ts; docs/AZURE-OWNER-RUNBOOK.md "iOS push"). Its own credential,
+          # independent of PUSH_PROVIDER: the .p8 key is Key Vault secret APNS-PRIVATE-KEY, mapped via
+          # AZ_VENDOR_SECRETS (APNS_PRIVATE_KEY); the two ids are not secret.
+          APNS_ENABLED: ${{ vars.APNS_ENABLED }}
+          APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}
+          APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
         run: |
           set -euo pipefail
           SET=()
@@ -561,6 +567,19 @@ jobs:
           if [ "$DEMO_ACCOUNT_ENABLED" = "true" ]; then secret DEMO_OTP_PHONE; secret DEMO_OTP_CODE; else drop DEMO_OTP_PHONE DEMO_OTP_CODE; fi
           # Push credential (fcm only); noop removes both so a stale key never lingers on the revision.
           if [ "$PUSH_PROVIDER" = "fcm" ]; then SET+=("FCM_PROJECT_ID=$FCM_PROJECT_ID"); secret FCM_SERVICE_ACCOUNT_JSON; else drop FCM_PROJECT_ID FCM_SERVICE_ACCOUNT_JSON; fi
+          # iOS push credential. The API refuses to boot on a partial or malformed APNs set, so check the
+          # two ids here (Apple's 10-character upper-case form); require-secrets below checks the key.
+          if [ "${APNS_ENABLED:-false}" = "true" ]; then
+            for _id in "$APNS_KEY_ID" "$APNS_TEAM_ID"; do
+              case "$_id" in
+                [A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]) ;;
+                *) echo "::error::APNS_ENABLED=true needs the APNS_KEY_ID and APNS_TEAM_ID Variables (each Apple's 10-character id) — got '$_id'"; exit 1 ;;
+              esac
+            done
+            SET+=("APNS_KEY_ID=$APNS_KEY_ID" "APNS_TEAM_ID=$APNS_TEAM_ID"); secret APNS_PRIVATE_KEY
+          else
+            drop APNS_KEY_ID APNS_TEAM_ID APNS_PRIVATE_KEY
+          fi
 
           # The tier itself, hardcoded and last.
           SET+=("NODE_ENV=production" "APP_ENV=production")

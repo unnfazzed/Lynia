@@ -6,9 +6,9 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-27 (**`IOS-01`, `IOS-02` FIXED** — interactive session, first iOS build
-work: a dependency override that broke every iOS prebuild, and the Play-only force-update link. See the
-"First iOS build 2026-09-27" entry at the end.)
+**Last consolidated:** 2026-09-27 (**`IOS-01`..`IOS-03` FIXED** — interactive session, first iOS build
+work: a dependency override that broke every iOS prebuild, the Play-only force-update link, and iOS push
+tokens sent to FCM. See the "First iOS build 2026-09-27" entry at the end.)
 Prior: 2026-09-27 (**`SES-01`..`SES-07` + `SES-09` FIXED, `SES-08` OPEN** — interactive session,
 owner-reported "after sign up users are brought back to the sign-in OTP screen" / "keep users signed in
 even if the phone switches off or the app is closed". Seven independent ways a signed-in user was sent
@@ -2629,6 +2629,7 @@ build is blind to. The iOS plan and ledger is `docs/APP-STORE-SUBMISSION.md`.
 |----|---------|----------|----------|--------|
 | IOS-01 | **Every iOS prebuild failed: `DOMParser.parseFromString: the provided mimeType "undefined" is not valid` in `withIosInfoPlistBaseMod`.** The security override `"@xmldom/xmldom@<0.8.13": ">=0.8.13"` had no upper bound, so pnpm resolved `@expo/plist`'s `~0.7.7` request to xmldom **0.9.12**, where the mimeType argument became mandatory. `@expo/plist@0.2.2` omits it. Android prebuild never parses a plist, so all Android builds stayed green, and the break only shows on the first iOS prebuild. | root `package.json` `pnpm.overrides`, `pnpm-lock.yaml` | HIGH (blocks any iOS build) | **FIXED**: override pinned to `^0.8.13` (resolves 0.8.15, keeping the security floor; `plist@3.1.1` keeps 0.9.12 through its own range). Verified: local `expo prebuild --platform ios` fails before and succeeds after. EAS build `7fdb60a9` then compiled the iOS app on Xcode 26.2. The Android fingerprint is unchanged (`7ae040c9…` before and after; the lockfile is not a fingerprint input). |
 | IOS-02 | **The force-update "Update now" button would have sent iPhone users to Google Play.** `STORE_URL` fell back to `extra.storeUrl`, which `app.config.ts` defaults to the Play listing on every platform. | `apps/mobile/src/config.ts` | MEDIUM (iOS only; no iOS build existed yet) | **FIXED**: `storeUrlFor(Platform.OS, …)`. iOS reads only `EXPO_PUBLIC_APP_STORE_URL` and hides the button until one is set, and never falls back to the Play URL. It is a JS substitution, so it can be set by OTA once the App Store listing exists. `src/__tests__/store-url.test.ts`. |
+| IOS-03 | **iOS device tokens were sent to FCM, which can never deliver to them, and they were never pruned.** The iOS app registers the raw APNs token (`getDevicePushTokenAsync`, `platform: "ios"`) and embeds no Firebase SDK. `NotificationsService.send()` selected only `token`/`profileId` and handed every token to FCM. FCM rejects an APNs token with a code outside `DEAD_TOKEN_CODES`, so the row was never pruned and failed on every send. | `apps/api/src/notifications/notifications.service.ts`, `apps/api/src/adapters/push/*` | MEDIUM (latent: no iOS install existed yet) | **FIXED** (second PR of the iOS work): `PlatformRoutedPush` sends `ios` tokens to the new `ApnsPush` (HTTP/2, ES256 `.p8` provider token, custom data under `"body"` where expo-notifications reads it) and everything else to FCM. It is armed by `APNS_*` independently of `PUSH_PROVIDER`; until then iOS pushes are logged and skipped. Tests: `apns.push.spec.ts` (including a real local HTTP/2 server), `routed.push.spec.ts`, and `push.spec.ts` (config and boot guard). |
 
 The same PR ships the owner's customer-only iPhone app (`docs/DESIGN-DEVIATIONS.md` D-41). That is a product
 decision, not a defect, so it is recorded there rather than here.

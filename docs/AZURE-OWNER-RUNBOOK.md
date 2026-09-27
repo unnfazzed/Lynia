@@ -101,6 +101,31 @@ the server key. (A new Firebase project would need a new store build.)
    refuses `fcm` without `FCM_PROJECT_ID`, and the API refuses to boot on a malformed key, so a mistake
    fails before any traffic moves.
 
+## iOS push (Apple APNs, ~10 min, once the Apple Developer account exists)
+
+iPhones register raw Apple push tokens, which Firebase cannot deliver to, so the API sends to Apple
+directly (`apps/api/src/adapters/push/apns.push.ts`). This is armed independently of `PUSH_PROVIDER`,
+and the API refuses to boot on a partial or malformed set. See docs/APP-STORE-SUBMISSION.md A5/B4.
+
+1. Apple Developer → Certificates, Identifiers & Profiles → **Keys** → **+**, tick **Apple Push
+   Notifications service (APNs)**, then download `AuthKey_<KEYID>.p8`. It downloads **once**, so never
+   paste it anywhere. Note the **Key ID** (10 characters) and your **Team ID** (Membership details,
+   10 characters).
+2. Cloud Shell → Upload the `.p8` file, then in bash (change the three values):
+   ```bash
+   F=~/AuthKey_ABC123DEFG.p8; KEY_ID=ABC123DEFG; TEAM_ID=TEAM123456
+   V=$(gh variable get AZ_KEY_VAULT_NAME -R unnfazzed/Lynia)
+   az keyvault secret set --vault-name "$V" -n APNS-PRIVATE-KEY --file "$F" --encoding utf-8 -o none && echo "stored APNs key"
+   gh variable set APNS_KEY_ID -R unnfazzed/Lynia -b "$KEY_ID"
+   gh variable set APNS_TEAM_ID -R unnfazzed/Lynia -b "$TEAM_ID"
+   shred -u "$F" 2>/dev/null || rm -f "$F"
+   gh variable set AZ_VENDOR_SECRETS -R unnfazzed/Lynia -b "$(gh variable get AZ_VENDOR_SECRETS -R unnfazzed/Lynia | jq -c '. + {"APNS_PRIVATE_KEY":"APNS-PRIVATE-KEY"}')"
+   ```
+3. Run **Terraform Apply (Azure)** for production (two approvals). It attaches the secret to the API.
+4. `gh variable set APNS_ENABLED -R unnfazzed/Lynia -b true`, then run **Release (Azure)**. The release
+   refuses ids that aren't Apple's 10-character form, and the API refuses a key that isn't a `.p8`, so
+   a mistake fails before any traffic moves.
+
 ## Tester messages (copy and paste; send on the channel testers already use)
 
 **Message 1: now**

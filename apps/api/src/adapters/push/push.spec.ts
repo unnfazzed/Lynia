@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../../config/env";
 import { buildFcmMessage, FCM_CREDENTIAL_FIX, FcmPush } from "./fcm.push";
 import { NoopPush } from "./noop.push";
-import { selectPush } from "./push.module";
+import { generateKeyPairSync } from "node:crypto";
+import { ApnsPush } from "./apns.push";
+import { APNS_CREDENTIAL_FIX, apnsConfigFrom, normalizeP8, selectPush } from "./push.module";
+import { PlatformRoutedPush } from "./routed.push";
 import { maskToken } from "./push.interface";
 
 const base = {
@@ -16,19 +19,22 @@ const base = {
   PUSH_PROVIDER: "noop",
 } as Env;
 
+/** selectPush always returns the platform router; the Android/FCM side is what these cases select. */
+const fcmOf = (adapter: unknown) => (adapter as PlatformRoutedPush).fcm;
+
 describe("push adapter selection (D7 portability)", () => {
   it("selects the log-only noop by default (dev/test/unprovisioned)", () => {
-    expect(selectPush({ ...base, PUSH_PROVIDER: "noop" })).toBeInstanceOf(NoopPush);
+    expect(fcmOf(selectPush({ ...base, PUSH_PROVIDER: "noop" }))).toBeInstanceOf(NoopPush);
   });
 
   it("selects FCM when PUSH_PROVIDER=fcm — a config-only switch", () => {
-    expect(selectPush({ ...base, PUSH_PROVIDER: "fcm" })).toBeInstanceOf(FcmPush);
+    expect(fcmOf(selectPush({ ...base, PUSH_PROVIDER: "fcm" }))).toBeInstanceOf(FcmPush);
   });
 
   it("on GCP, fcm without FCM_PROJECT_ID still boots (ADC supplies the project) — warning only", () => {
     const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
     try {
-      expect(selectPush({ ...base, PUSH_PROVIDER: "fcm" })).toBeInstanceOf(FcmPush);
+      expect(fcmOf(selectPush({ ...base, PUSH_PROVIDER: "fcm" }))).toBeInstanceOf(FcmPush);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("FCM_PROJECT_ID is unset"));
     } finally {
       warn.mockRestore();
@@ -36,7 +42,7 @@ describe("push adapter selection (D7 portability)", () => {
   });
 
   it("noop never trips the off-GCP boot-guard, even with no Firebase config (the cutover setting)", () => {
-    expect(selectPush({ ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "noop" })).toBeInstanceOf(NoopPush);
+    expect(fcmOf(selectPush({ ...base, CLOUD_PROVIDER: "azure", PUSH_PROVIDER: "noop" }))).toBeInstanceOf(NoopPush);
   });
 
   describe("off-GCP boot-guard (C5): fcm requires FCM_PROJECT_ID + a service account (inline JSON or file)", () => {
@@ -51,7 +57,7 @@ describe("push adapter selection (D7 portability)", () => {
 
     it("boots with FcmPush when both are set", () => {
       expect(
-        selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", GOOGLE_APPLICATION_CREDENTIALS: "/mnt/secrets/fcm.json" }),
+        fcmOf(selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", GOOGLE_APPLICATION_CREDENTIALS: "/mnt/secrets/fcm.json" })),
       ).toBeInstanceOf(FcmPush);
     });
 
@@ -68,7 +74,7 @@ describe("push adapter selection (D7 portability)", () => {
     });
 
     it("boots with FcmPush on an inline service account (Azure: Key Vault → FCM_SERVICE_ACCOUNT_JSON)", () => {
-      expect(selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", FCM_SERVICE_ACCOUNT_JSON: saJson })).toBeInstanceOf(FcmPush);
+      expect(fcmOf(selectPush({ ...azure, FCM_PROJECT_ID: "lynia-fcm", FCM_SERVICE_ACCOUNT_JSON: saJson }))).toBeInstanceOf(FcmPush);
     });
 
     it("fails boot on inline JSON that is not JSON, without echoing it", () => {
@@ -184,5 +190,55 @@ describe("buildFcmMessage — payload contract", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("APNs config (iOS push, armed independently of PUSH_PROVIDER)", () => {
+  const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const apns = { APNS_KEY_ID: "ABC123DEFG", APNS_TEAM_ID: "TEAM123456", APNS_PRIVATE_KEY: pem, APNS_TOPIC: "zw.co.lynia", APNS_SANDBOX: "false" } as const;
+  const apnsOf = (adapter: unknown) => (adapter as PlatformRoutedPush).apns;
+
+  it("is off when none of the three is set — iOS pushes are logged, never sent to FCM", () => {
+    expect(apnsConfigFrom(base)).toBeUndefined();
+    expect(apnsOf(selectPush({ ...base, PUSH_PROVIDER: "fcm" }))).toBeInstanceOf(NoopPush);
+  });
+
+  it("arms APNs from its own key, even while FCM stays noop", () => {
+    const push = selectPush({ ...base, ...apns, PUSH_PROVIDER: "noop" });
+    expect(apnsOf(push)).toBeInstanceOf(ApnsPush);
+    expect(fcmOf(push)).toBeInstanceOf(NoopPush);
+    expect(apnsConfigFrom({ ...base, ...apns })).toEqual({ keyId: "ABC123DEFG", teamId: "TEAM123456", privateKey: pem.trim(), topic: "zw.co.lynia", sandbox: false });
+    expect(apnsConfigFrom({ ...base, ...apns, APNS_SANDBOX: "true" })?.sandbox).toBe(true);
+  });
+
+  it("refuses to boot on a partial set, naming the fix and never echoing the key", () => {
+    const run = () => apnsConfigFrom({ ...base, APNS_KEY_ID: "ABC123DEFG", APNS_PRIVATE_KEY: pem });
+    expect(run).toThrow(/^Incomplete APNs config: /);
+    expect(run).toThrow(APNS_CREDENTIAL_FIX);
+    expect(run).not.toThrow(/PRIVATE KEY-----\n/);
+  });
+
+  it("refuses ids that aren't Apple's 10-character form, and a key that isn't a .p8 PEM", () => {
+    expect(() => apnsConfigFrom({ ...base, ...apns, APNS_KEY_ID: "abc" })).toThrow(/^Invalid APNS_KEY_ID or APNS_TEAM_ID/);
+    expect(() => apnsConfigFrom({ ...base, ...apns, APNS_PRIVATE_KEY: "not-a-key" })).toThrow(/^Invalid APNS_PRIVATE_KEY/);
+  });
+});
+
+describe("normalizeP8 — the .p8 key in whichever form reached the env", () => {
+  const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const body = pem.split("\n").filter((l) => l && !l.startsWith("-----")).join("");
+
+  it("keeps a PEM as it is", () => {
+    expect(normalizeP8(pem)).toBe(pem.trim());
+  });
+
+  it("restores a one-line value with literal \\n escapes", () => {
+    expect(normalizeP8(pem.trim().replace(/\n/g, "\\n"))).toBe(pem.trim());
+  });
+
+  it("wraps a bare base64 body back into a PEM the key parser accepts", () => {
+    const rebuilt = normalizeP8(body);
+    expect(rebuilt).toMatch(/^-----BEGIN PRIVATE KEY-----\n/);
+    expect(apnsConfigFrom({ ...base, APNS_KEY_ID: "ABC123DEFG", APNS_TEAM_ID: "TEAM123456", APNS_PRIVATE_KEY: body, APNS_TOPIC: "zw.co.lynia", APNS_SANDBOX: "false" })?.privateKey).toBe(rebuilt);
   });
 });

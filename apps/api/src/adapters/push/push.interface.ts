@@ -4,6 +4,11 @@
  */
 export interface PushMessage {
   token: string;
+  /**
+   * The device's platform as it registered (`DeviceToken.platform`). `ios` tokens are raw APNs tokens
+   * and go to APNs; anything else (including absent, for legacy rows) goes to FCM — PlatformRoutedPush.
+   */
+  platform?: string | null;
   title: string;
   body: string;
   data?: Record<string, string>;
