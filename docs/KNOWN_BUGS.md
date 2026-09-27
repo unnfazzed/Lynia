@@ -6,7 +6,11 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-08-24 (**`FLAG-01` FIXED** — interactive session, owner-directed. The
+**Last consolidated:** 2026-09-27 (**`ADM-11` FIXED, `ADM-12` OPEN** — interactive session, owner-reported
+"admin.lyniago.com is not working". The Azure admin console had no Easy Auth in front of it, and the
+deploy still shipped the operator allowlist, so a forged `x-ms-client-principal-name` header was
+trusted. See the "Admin console on Azure 2026-09-27" entry below.)
+Prior: 2026-08-24 (**`FLAG-01` FIXED** — interactive session, owner-directed. The
 disconnected wallet-visibility kill switch (`WALLET_REVEAL` / `CommissionConfig.enabled`, open since
 2026-08-16) was resolved with the delete option: no mock in `packages/design/explorations/journey/
 gallery-map.js` draws a "wallet hidden" state (`RJM.money` is the only Money-tab entry, no 2-tab
@@ -2546,5 +2550,21 @@ cleanly configured server needs a fresh look, not a dismissal on this note alone
 
 Full repros, journey list, and the environment-setup gaps this run hit are in
 `docs/CRASH-FUZZ-REPORT-2026-08-23.md`.
+
+---
+
+## Admin console on Azure 2026-09-27 (interactive session, owner-reported "admin.lyniago.com is not working")
+
+> The owner saw the console's fail-closed 401 at `https://admin.lyniago.com`. Diagnosis: the host is
+> `ca-lynia-admin` on Azure Container Apps (CNAME → `…southafricanorth.azurecontainerapps.io`), and
+> `/.auth/me` was answered by the Next middleware itself, so **no Easy Auth sits in front of the app**. A
+> made-up identity sent as `x-ms-client-principal-name` then got `403 This account is not authorized…`:
+> the console read the forged header as an operator and checked it against a configured allowlist. No
+> real or allowlisted identity was tried.
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| ADM-11 | **The production admin console trusted a forged operator header.** On Azure the console runs in proxy-header mode on `x-ms-client-principal-name`. That is safe only while Easy Auth sits in front and overwrites the header, and Easy Auth was never enabled on `ca-lynia-admin` (see ADM-12). `deploy-admin-azure.yml` still passed `ADMIN_CONSOLE_ALLOWED_OPERATORS` through from its repo Variable, so the live revision carried an allowlist. A browser got the fail-closed 401, but any client that sent `x-ms-client-principal-name: <an allowlisted email>` would have been admitted as that operator: KYC approvals, bans, cash records. | `.github/workflows/deploy-admin-azure.yml`, `apps/admin/middleware.ts` (proxy-header mode), `infra/azure/containerapps.tf` | CRITICAL | **FIXED (deploy guard)**. The deploy applies the allowlist only when `scripts/azure-aca.sh easy-auth` confirms Easy Auth is enabled on the app. Otherwise it removes the list, and the console answers 403 to any principal header and 401 without one. The boot smoke now asserts that fail-closed 403. Every deploy that applies the list must pass the live forged-principal gate (`azure-aca.sh auth-gate`, the plan's G-ADM), or the list is removed again and the run fails. Owner mitigation given in-session: remove the env var from the app and delete the repo Variable. |
+| ADM-12 | **There is no path to arm Easy Auth for the admin console.** `azapi_resource.admin_auth` and the Key Vault client-secret reference are created only when `var.admin_auth_client_id` is set. Nothing creates the Entra app registration or its `ADMIN-ENTRA-CLIENT-SECRET`, and `terraform-apply-azure.yml` (Terraform runs only in CI) never passes the variable. Neither `infra/azure/README.md` nor the `arming_guide` output mentions it. So `admin.lyniago.com` can only ever answer 401, and the 401 text still names GCP IAP. | `infra/azure/containerapps.tf`, `infra/azure/variables.tf`, `.github/workflows/terraform-apply-azure.yml`, `infra/azure/README.md` | HIGH (admin console unusable on Azure) | **OPEN**. The arming path lands in the follow-up PR. |
 
 ---
