@@ -19,6 +19,9 @@
 #   env-names     <app> <rg>                     env var NAMES of the first container (never values)
 #   healthz       <url>                          print status/db/redis/queues; exit 0 iff status=="ok"
 #   wait-job      <job> <rg> <execution> [timeout_s]  wait for a job execution to succeed
+#   easy-auth     <app> <rg>                     exit 0 iff Easy Auth (authConfigs) is enabled on the app
+#   auth-gate     <app> <rg>                     G-ADM: exit 0 iff a forged X-MS-CLIENT-PRINCIPAL-NAME
+#                                                sent to the live app is NOT taken as an identity
 #
 # S8 (plan, /cso): nothing here reads a secret VALUE. `secret list` is called without
 # --show-values (names only), env is read by name only, and /healthz output is reduced to four fields.
@@ -202,6 +205,52 @@ cmd_wait_job() {
   done
 }
 
+# Easy Auth state of an app (authConfigs "current"). While platform.enabled is true the platform strips
+# any client-sent X-MS-CLIENT-PRINCIPAL-* header and sets its own, which is the ONLY thing that makes
+# the admin console's proxy-header mode safe (plan S3). A missing config, an API error or an unreadable
+# answer all count as disabled: callers decide from this whether that header can be trusted, so
+# anything short of a confirmed `true` must read as off.
+cmd_easy_auth() {
+  local app="$1" rg="$2" id enabled=""
+  id="$(az containerapp show -n "$app" -g "$rg" --query id -o tsv 2>/dev/null || true)"
+  if [ -n "$id" ]; then
+    enabled="$(az rest --method get --url "${id}/authConfigs/current?api-version=2024-03-01" \
+      --query properties.platform.enabled -o json 2>/dev/null || true)"
+  fi
+  if [ "$enabled" = "true" ]; then
+    echo "Easy Auth: enabled on $app"
+    return 0
+  fi
+  echo "Easy Auth: NOT enabled on $app (platform.enabled=${enabled:-absent})"
+  return 1
+}
+
+# G-ADM (plan §8) against the LIVE app: an unauthenticated request carrying a made-up
+# X-MS-CLIENT-PRINCIPAL-NAME must never reach the console as an operator identity.
+#   3xx / 401  Easy Auth redirected it to sign-in, or stripped the header so the console saw no
+#              operator → pass.
+#   2xx / 403  the console read the forged header as an operator (403 = it then checked it against the
+#              allowlist) → FAIL.
+#   other      cold start, 5xx, timeout: retried, then FAIL — safety is not proven.
+cmd_auth_gate() {
+  local app="$1" rg="$2" fqdn url code="" i
+  fqdn="$(az containerapp show -n "$app" -g "$rg" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)"
+  [ -n "$fqdn" ] || die "$app has no ingress FQDN — cannot run the forged-principal probe."
+  url="https://${fqdn}/"
+  for i in 1 2 3 4 5 6; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
+      -H 'x-ms-client-principal-name: forged-principal-probe@example.invalid' "$url" || true)"
+    case "$code" in
+      3??|401) echo "auth-gate $url: HTTP $code — a forged principal header is not trusted."; return 0 ;;
+      2??|403) echo "::error::auth-gate $url: HTTP $code — the console took a forged X-MS-CLIENT-PRINCIPAL-NAME as an operator identity." >&2; return 1 ;;
+    esac
+    echo "auth-gate $url: HTTP ${code:-000} (attempt $i/6); retrying" >&2
+    sleep 10
+  done
+  echo "::error::auth-gate $url: no conclusive answer after 6 attempts (last HTTP ${code:-000})." >&2
+  return 1
+}
+
 command="${1:-}"; shift || true
 case "$command" in
   serving) cmd_serving "$@" ;;
@@ -214,5 +263,7 @@ case "$command" in
   env-names) cmd_env_names "$@" ;;
   healthz) cmd_healthz "$@" ;;
   wait-job) cmd_wait_job "$@" ;;
-  *) die "usage: azure-aca.sh {serving|pin|wait-ready|label-url|route|prune|require-secrets|env-names|healthz|wait-job} ..." ;;
+  easy-auth) cmd_easy_auth "$@" ;;
+  auth-gate) cmd_auth_gate "$@" ;;
+  *) die "usage: azure-aca.sh {serving|pin|wait-ready|label-url|route|prune|require-secrets|env-names|healthz|wait-job|easy-auth|auth-gate} ..." ;;
 esac

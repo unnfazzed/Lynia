@@ -13,8 +13,16 @@ name: Deploy Admin Console (Azure)
 # seeds that env (API_BASE_URL, ADMIN_CONSOLE_REQUIRE_AUTH, ADMIN_CONSOLE_PROXY_HEADER, HOSTNAME, the
 # admin-api-token secret ref) and ignores template changes afterwards, so this workflow re-asserts the
 # security-relevant values on every revision and removes ADMIN_CONSOLE_IAP_AUDIENCE, which would switch
-# the console into IAP-JWT mode and fail every request. ADMIN_CONSOLE_ALLOWED_OPERATORS (C4's
-# fail-closed allowlist) and an API_BASE_URL override are passed through when their Variables are set.
+# the console into IAP-JWT mode and fail every request. An API_BASE_URL override is passed through
+# when its Variable is set.
+#
+# THE ALLOWLIST SHIPS ONLY BEHIND EASY AUTH (ADM-11). ADMIN_CONSOLE_ALLOWED_OPERATORS (C4) is the
+# console's only check on the X-MS-CLIENT-PRINCIPAL-NAME header, and that header is trustworthy only
+# while Easy Auth sits in front and overwrites it. Without Easy Auth anyone can send
+# `X-MS-CLIENT-PRINCIPAL-NAME: <an allowlisted email>` and be admitted — production was deployed that
+# way on 2026-09-26 (found 2026-09-27). So the list is applied only when Easy Auth is confirmed on the app
+# (otherwise it is removed and the console stays fail-closed), and after every deploy that applies it
+# the live app must refuse a forged principal (G-ADM) or the list is pulled back and the run fails.
 #
 # TRIGGERS: a push to main deploys PRODUCTION (as deploy-admin.yml did). workflow_dispatch takes one
 # input, `environment` (default staging) (X6).
@@ -137,11 +145,15 @@ jobs:
           done
           code_public=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/favicon.ico")
           code_gated=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/")
-          echo "public /favicon.ico -> $code_public ; gated / -> $code_gated"
+          # No allowlist configured: even a principal header must be refused (C4 fail-closed), which is
+          # the state the deploy step falls back to whenever Easy Auth is not confirmed.
+          code_forged=$(curl -s -o /dev/null -w '%{http_code}' -H 'x-ms-client-principal-name: forged-principal-probe@example.invalid' "http://127.0.0.1:8080/")
+          echo "public /favicon.ico -> $code_public ; gated / -> $code_gated ; forged principal, no allowlist -> $code_forged"
           docker logs admin-smoke || true
           docker rm -f admin-smoke || true
           if [ "$code_public" != "200" ]; then echo "::error::public asset did not 200 ($code_public) — standalone static/public copy layout is likely wrong"; exit 1; fi
           if [ "$code_gated" != "401" ]; then echo "::error::gated route did not fail closed ($code_gated) — the access middleware is not enforcing"; exit 1; fi
+          if [ "$code_forged" != "403" ]; then echo "::error::a principal header with no allowlist configured was not refused ($code_forged) — the Easy Auth allowlist no longer fails closed"; exit 1; fi
 
       - name: Push admin image
         run: |
@@ -162,11 +174,20 @@ jobs:
           )
           UNSET=(ADMIN_CONSOLE_IAP_AUDIENCE)
           [ -z "${API_BASE_URL:-}" ] || SET+=("API_BASE_URL=$API_BASE_URL")
-          if [ -n "${ALLOWED_OPERATORS:-}" ]; then
+          # ADM-11 (header): the allowlist is applied only behind a confirmed Easy Auth. Otherwise it is
+          # removed, and the console answers 403 to any principal header and 401 without one.
+          ALLOWLIST=none
+          if [ -n "${ALLOWED_OPERATORS:-}" ] && bash scripts/azure-aca.sh easy-auth "$APP" "$RG"; then
             SET+=("ADMIN_CONSOLE_ALLOWED_OPERATORS=$ALLOWED_OPERATORS")
+            ALLOWLIST=applied
           else
             UNSET+=(ADMIN_CONSOLE_ALLOWED_OPERATORS)
+            if [ -n "${ALLOWED_OPERATORS:-}" ]; then
+              ALLOWLIST=withheld
+              echo "::warning title=Admin allowlist withheld::Easy Auth is not enabled on ${APP}, so ADMIN_CONSOLE_ALLOWED_OPERATORS was not applied (without Easy Auth the operator header is forgeable). The console stays locked until Easy Auth is armed (infra/azure/README.md) and this workflow is re-run."
+            fi
           fi
+          echo "allowlist=$ALLOWLIST" >> "$GITHUB_OUTPUT"
           bash scripts/azure-aca.sh require-secrets "$APP" "$RG" admin-api-token
           existing=" $(bash scripts/azure-aca.sh env-names "$APP" "$RG" | tr '\n' ' ') "
           REMOVE=()
@@ -183,9 +204,32 @@ jobs:
           # Multiple-mode safety net: if the app is ever switched to Multiple, route explicitly.
           bash scripts/azure-aca.sh route "$APP" "$RG" "$CANDIDATE" 100
 
+      # G-ADM on the live app whenever the allowlist shipped: a made-up X-MS-CLIENT-PRINCIPAL-NAME must
+      # never reach the console as an identity. If it does, the allowlist is pulled back at once (the
+      # console returns to fail-closed) and the run fails.
+      - name: Forged-principal gate (G-ADM)
+        if: ${{ steps.deploy.outputs.allowlist == 'applied' }}
+        run: |
+          set -euo pipefail
+          if bash scripts/azure-aca.sh auth-gate "$APP" "$RG"; then exit 0; fi
+          LOCK="${APP}--lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "::error::The live console trusts a forged operator header. Removing ADMIN_CONSOLE_ALLOWED_OPERATORS from ${APP} (revision ${LOCK})."
+          az containerapp update -n "$APP" -g "$RG" --remove-env-vars ADMIN_CONSOLE_ALLOWED_OPERATORS \
+            --revision-suffix "lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" -o none
+          bash scripts/azure-aca.sh wait-ready "$APP" "$RG" "$LOCK" 600 || true
+          exit 1
+
       - name: Summary
         if: ${{ success() }}
         env:
           CANDIDATE: ${{ steps.deploy.outputs.candidate }}
+          ALLOWLIST: ${{ steps.deploy.outputs.allowlist }}
         run: |
-          echo "Admin console ${REGISTRY}/lynia-admin:${GITHUB_SHA} → ${APP} (${TIER}, ${RG}) as ${CANDIDATE}." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "Admin console ${REGISTRY}/lynia-admin:${GITHUB_SHA} → ${APP} (${TIER}, ${RG}) as ${CANDIDATE}."
+            case "$ALLOWLIST" in
+              applied) echo "Operator allowlist applied behind Easy Auth; the forged-principal gate (G-ADM) passed." ;;
+              withheld) echo "**Operator allowlist withheld: Easy Auth is not enabled on ${APP}.** The console refuses everyone until Easy Auth is armed (infra/azure/README.md); then re-run this workflow." ;;
+              *) echo "No operator allowlist Variable is set, so the console refuses every operator (fail-closed)." ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
