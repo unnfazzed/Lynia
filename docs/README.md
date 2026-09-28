@@ -71,6 +71,8 @@ older parts of the status board.
 | [`APP-STORE-SUBMISSION.md`](./APP-STORE-SUBMISSION.md) | 🟢 Living (plan + ledger) | The iOS twin of the Play package: step-by-step path to a first App Store release (Apple accounts, Xcode 26 / Expo SDK path, iOS config, APNs push, listing, review risks) and the ledger of every iOS build/submission. |
 | [`QA-DEVICE-CHECKLIST.md`](./QA-DEVICE-CHECKLIST.md) | 🟢 Living (checklist) | The hardware-gated device pass (LR16/LR17/LR20): on-device `/qa`, low-end Android, Sentry, background GPS. |
 | [`ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md`](./ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md) | 🟢 Living (checklist) | One-sitting manual go/no-go over every admin operator journey, incl. the wallet-credit idempotency check. |
+| [`WEBSITE.md`](./WEBSITE.md) | 🟢 Living (runbook) | lyniago.com, the marketing site: the design handoff shipped as-is on Cloudflare Workers, the CI guard, one-time setup, deploy/verify/rollback. |
+| [`seo/`](./seo/README.md) | 🟢 Living (plan) | Search and AI-visibility plan for lyniago.com in Harare. Phases 0–3 as checklists, the monthly AI-visibility loop, keyword map and targets, ready-to-use drafts, and the open owner decisions. |
 
 ## Routine ledgers & reports
 

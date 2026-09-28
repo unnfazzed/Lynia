@@ -48,6 +48,16 @@ byte-identical to the handoff, except for:
 | 5 | Analytics | None. | No trackers, no cookies. |
 | — | Menu buttons stop short on phones (found in review) | Fix it: `width`/`height` on the lazy scooter illustration plus `.biz-ill{height:auto}` (`LAUNCH_EDITS` `biz-ill-*`). | Done. Report upstream so the next export carries it. |
 
+## Search and AI visibility
+
+The plan for ranking lyniago.com in Harare, and for getting it cited by AI assistants, is in
+[`seo/`](./seo/README.md). It works within the rule above. Every change it proposes takes one of four
+forms:
+- a dashboard setting;
+- an edit to an allowlisted hosting file (`robots.txt`, `sitemap.xml`, `_headers`);
+- an owner-approved, pixel-identical launch edit, such as head tags;
+- a new handoff export, for anything visible.
+
 ## Hosting
 
 - **Assets-only Worker.** There is no Worker script for the site, so every request is a free,
