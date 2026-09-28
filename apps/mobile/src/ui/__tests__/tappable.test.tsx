@@ -1,6 +1,7 @@
 import React from "react";
 import { Platform, Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
+import { renderedType } from "../../testing/render-sync";
 
 const mockEnqueueTapAck = jest.fn();
 jest.mock("../../telemetry/rum", () => ({ enqueueTapAck: () => mockEnqueueTapAck() }));
@@ -48,7 +49,7 @@ describe("Tappable on Android", () => {
   it("hands the press state to the platform ripple and sets NO pressed-style callback", () => {
     withPlatform("android", () => {
       const tree = renderTappable();
-      const pressable = tree.root.findByType(Pressable);
+      const pressable = tree.root.findByType(renderedType(Pressable));
       expect(pressable.props.android_ripple).toEqual(RIPPLE.row);
       // The load-bearing assertion: a function style would mean a JS re-render per press, which is
       // exactly the latency the ripple exists to remove. A plain object (or undefined) means the
@@ -59,8 +60,8 @@ describe("Tappable on Android", () => {
 
   it("uses a borderless ripple for icon-sized controls and a light one on dark fills", () => {
     withPlatform("android", () => {
-      expect(renderTappable({ tone: "icon" }).root.findByType(Pressable).props.android_ripple).toEqual(RIPPLE.icon);
-      expect(renderTappable({ tone: "onDark" }).root.findByType(Pressable).props.android_ripple).toEqual(RIPPLE.onDark);
+      expect(renderTappable({ tone: "icon" }).root.findByType(renderedType(Pressable)).props.android_ripple).toEqual(RIPPLE.icon);
+      expect(renderTappable({ tone: "onDark" }).root.findByType(renderedType(Pressable)).props.android_ripple).toEqual(RIPPLE.onDark);
     });
     expect(RIPPLE.icon.borderless).toBe(true);
     // A ripple painted behind an opaque child is invisible; rows and dark fills both draw over.
@@ -73,7 +74,7 @@ describe("Tappable off Android", () => {
   it("falls back to a pressed opacity, preserving the caller's own style", () => {
     withPlatform("ios", () => {
       const tree = renderTappable({ style: { padding: 8 } });
-      const style = tree.root.findByType(Pressable).props.style as (s: { pressed: boolean }) => unknown;
+      const style = tree.root.findByType(renderedType(Pressable)).props.style as (s: { pressed: boolean }) => unknown;
       expect(typeof style).toBe("function");
       expect(style({ pressed: false })).toEqual({ padding: 8 });
       expect(style({ pressed: true })).toEqual([{ padding: 8 }, { opacity: PRESSED_OPACITY.row }]);
@@ -83,7 +84,7 @@ describe("Tappable off Android", () => {
   it("still resolves a caller style that is itself a function", () => {
     withPlatform("ios", () => {
       const tree = renderTappable({ style: ({ pressed }) => ({ padding: pressed ? 4 : 8 }) });
-      const style = tree.root.findByType(Pressable).props.style as (s: { pressed: boolean }) => unknown;
+      const style = tree.root.findByType(renderedType(Pressable)).props.style as (s: { pressed: boolean }) => unknown;
       expect(style({ pressed: false })).toEqual({ padding: 8 });
       expect(style({ pressed: true })).toEqual([{ padding: 4 }, { opacity: PRESSED_OPACITY.row }]);
     });
@@ -94,7 +95,7 @@ describe("Tappable instrumentation", () => {
   it("records the touch and arms the tap-ack sample on press-in", () => {
     const tree = renderTappable();
     act(() => {
-      tree.root.findByType(Pressable).props.onPressIn?.({} as never);
+      tree.root.findByType(renderedType(Pressable)).props.onPressIn?.({} as never);
     });
     expect(consumeTouch()).toEqual(expect.any(Number));
     expect(mockEnqueueTapAck).toHaveBeenCalledTimes(1);
@@ -104,7 +105,7 @@ describe("Tappable instrumentation", () => {
     const onPressIn = jest.fn();
     const tree = renderTappable({ onPressIn });
     act(() => {
-      tree.root.findByType(Pressable).props.onPressIn?.({} as never);
+      tree.root.findByType(renderedType(Pressable)).props.onPressIn?.({} as never);
     });
     expect(onPressIn).toHaveBeenCalledTimes(1);
   });

@@ -1,11 +1,13 @@
 import { tokens } from "@lynia/shared/tokens";
-// Lucide ships its entire icon set from the "lucide-react-native" barrel. Metro does NOT tree-shake
-// and Expo SDK 52 keeps package `exports` resolution OFF (see metro.config.js), so a barrel import
-// (`import { X } from "lucide-react-native"`) drags every glyph's bytecode into the Hermes bundle —
-// the file's old "stays lean" claim was simply wrong and cost ~1MB. Import each glyph from its own
-// module file instead: the CJS per-icon path resolves via Metro's `.js` sourceExt with zero reliance
-// on the `exports` map, so only these 25 files (plus the shared createLucideIcon helper they all
-// require) land in the bundle. The kebab-case file names match the ICONS keys below one-for-one.
+// Lucide ships its entire icon set from the "lucide-react-native" barrel. Metro does NOT tree-shake,
+// so a barrel import (`import { X } from "lucide-react-native"`) drags every glyph's bytecode into
+// the Hermes bundle — the file's old "stays lean" claim was simply wrong and cost ~1MB. Import each
+// glyph from its own module file instead: the CJS per-icon path resolves via Metro's `.js`
+// sourceExt, so only these 25 files (plus the shared createLucideIcon helper they all require) land
+// in the bundle. The paths sit outside the package's `exports` map, so since Expo SDK 53 turned
+// Metro's `exports` resolution on, an export prints one "not listed in the exports" warning per
+// glyph and falls back to file resolution: expected noise, same files. The kebab-case file names
+// match the ICONS keys below one-for-one.
 // `LucideIcon` stays a type-only barrel import — types are erased at build and cost nothing; the
 // element types for the deep paths come from ./lucide-icons.d.ts (the icon files sit outside the
 // package's `exports` map, so `moduleResolution: "bundler"` can't type them on its own).

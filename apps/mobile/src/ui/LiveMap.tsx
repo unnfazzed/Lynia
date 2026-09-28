@@ -78,7 +78,7 @@ export function LiveMap(props: {
   }, []);
 
   const fitRef = useCallback(
-    (ref: React.RefObject<MapView>): void => {
+    (ref: React.RefObject<MapView | null>): void => {
       const coords: LatLng[] = [
         toLatLng(props.pickup),
         toLatLng(props.dropoff),

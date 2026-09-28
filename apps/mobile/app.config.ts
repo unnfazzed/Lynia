@@ -204,7 +204,7 @@ const config: ExpoConfig = {
     // experimental_android.enableAndroidGradlePlugin applies io.sentry:sentry-android-gradle-plugin,
     // which is what uploads the R8 `mapping.txt` and the native debug symbols. It is OPT-IN, and off by
     // default @sentry/react-native handles ONLY the JS bundle's source maps. That is not enough here:
-    // enableProguardInReleaseBuilds (below) obfuscates every Java/Kotlin class in the release AAB, so
+    // enableMinifyInReleaseBuilds (below) obfuscates every Java/Kotlin class in the release AAB, so
     // without the mapping upload a native crash arrives as `a.b.c(SourceFile:1)` — unreadable in
     // exactly the Java/Kotlin layer this SDK was added to see (client RUM and PostHog never do).
     [
@@ -291,15 +291,17 @@ const config: ExpoConfig = {
     // task that runs posthog-cli unconditionally on every release bundle — without `@posthog/cli`
     // installed and POSTHOG_CLI_API_KEY set it FAILS the build. Add the plugin + `@posthog/cli`
     // dep together if error tracking is ever provisioned.
-    // Pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler (1.5.15) requires it, and the SDK-52
-    // default (1.9.24) fails :expo-modules-core:compileReleaseKotlin. prebuild regenerates android/,
-    // so this must live in config, not a hand-edit of build.gradle.
+    // No Kotlin pin since SDK 54. SDK 52 needed 1.9.25 (its expo-modules-core Compose Compiler 1.5.15
+    // required it); SDK 54's React Native 0.81 defaults to Kotlin 2.1.20, which expo-modules-core 3
+    // needs, so the old pin would now FAIL the build. Let the SDK default apply.
     //
     // Android release-build size shrink (every option name verified against the installed
-    // expo-build-properties@0.13.3 build/pluginConfig.d.ts — same "verify against plugin source"
+    // expo-build-properties@1.0.10 build/pluginConfig.d.ts — same "verify against plugin source"
     // convention as the expo-location note above):
-    //   • enableProguardInReleaseBuilds turns on R8 code shrinking + obfuscation, dropping unreachable
-    //     Java/Kotlin from the release AAB. Release-only — debug/dev client builds are untouched.
+    //   • enableMinifyInReleaseBuilds turns on R8 code shrinking + obfuscation, dropping unreachable
+    //     Java/Kotlin from the release AAB. Release-only — debug/dev client builds are untouched. It
+    //     was `enableProguardInReleaseBuilds` before expo-build-properties 1.0 (SDK 54) renamed it;
+    //     the old key is IGNORED without an error, which would silently ship an unshrunk build.
     //   • enableShrinkResourcesInReleaseBuilds (resource shrinking) is deliberately OFF — see below.
     //
     // RESOURCE SHRINKING IS OFF ON PURPOSE (regression: 0.17.12 installed from the internal track but
@@ -333,17 +335,23 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         android: {
-          // Play Console REQUIRES new apps to target Android 15 (API 35) — the first internal-track
-          // upload (build ea538ebe, targetSdk 34 = SDK 52's default) was hard-rejected 2026-08-04
-          // with "must target at least API level 35". compileSdk was already 35 (SDK 52 default);
-          // both pinned explicitly so the requirement is visible here, not buried in a template
-          // default. CAVEAT to watch in device QA: targeting 35 makes Android 15 handsets enforce
-          // edge-to-edge, so verify no content hides behind the status/navigation bars on an
-          // Android 15 device (older Android versions are unaffected).
-          compileSdkVersion: 35,
-          targetSdkVersion: 35,
-          kotlinVersion: "1.9.25",
-          enableProguardInReleaseBuilds: true,
+          // Play requires app updates to target Android 16 (API 36) from 2026-08-31
+          // (docs/APP-STORE-SUBMISSION.md §8). 36 is SDK 54's own default; both are pinned explicitly
+          // so the requirement is visible here, not buried in a template default. History: Play
+          // hard-rejected the first internal-track upload (build ea538ebe, targetSdk 34) on
+          // 2026-08-04 for not targeting 35.
+          // Two Android 16 behaviours that targeting 36 turns on, both handled by SDK 54:
+          //   • Predictive back no longer calls Activity.onBackPressed(). React Native 0.81's
+          //     ReactActivity registers an OnBackPressedCallback, and SDK 54 writes
+          //     android:enableOnBackInvokedCallback="false" (android.predictiveBackGestureEnabled is
+          //     unset), so the hardware back button keeps today's in-app behaviour.
+          //   • Edge-to-edge can no longer be opted out of. SDK 54 draws edge-to-edge on EVERY
+          //     Android version, not just 15+, so every screen must pad for the status and navigation
+          //     bars through react-native-safe-area-context (React Native's own SafeAreaView pads
+          //     on iOS only).
+          compileSdkVersion: 36,
+          targetSdkVersion: 36,
+          enableMinifyInReleaseBuilds: true,
           enableShrinkResourcesInReleaseBuilds: false,
           extraProguardRules: [
             // Keep react-native-maps' bridge package (it ships no consumer rules) + hush the matching

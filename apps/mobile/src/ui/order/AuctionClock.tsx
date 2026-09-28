@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Text, View } from "react-native";
 import { auctionHeaderText, formatClock, spokenRemaining } from "../../logic/order-labels";
+import { interFamily } from "../fonts";
 
 /** Last-20s window: the clock crossfades muted → amber-urgency and the parent surfaces its
  *  pre-dead-end recovery affordance (via onUrgentChange). */
@@ -117,7 +118,9 @@ export function AuctionClock(props: {
           style={{
             fontSize: 14,
             fontVariant: ["tabular-nums"],
-            fontWeight: urgent ? "700" : "400",
+            // Animated.Text wraps the Text module directly, past the Inter patch (src/ui/fonts.ts), so the
+            // family is named here; a fontWeight beside it would double-bold on Android.
+            fontFamily: interFamily(urgent ? "700" : "400"),
             color: urgencyAnim.interpolate({
               inputRange: [0, 1],
               outputRange: [tokens.color.muted, tokens.color.danger],

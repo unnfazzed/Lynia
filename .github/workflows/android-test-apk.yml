@@ -8,7 +8,7 @@ name: Android Test APK
 #
 # Manual by design (workflow_dispatch) — a QA APK is on-demand, never on every push.
 #
-# WHY a release-type APK, not assembleDebug: a React Native 0.76 *debug* variant loads its JS from a
+# WHY a release-type APK, not assembleDebug: a React Native *debug* variant loads its JS from a
 # Metro dev server, so a sideloaded debug APK just shows "Unable to load script" with no Metro on the
 # tester's phone. The *release* variant embeds the JS bundle, so it runs offline. We sign it with a
 # THROWAWAY keystore generated in-run (no stored signing secret); reinstalls may need an uninstall
@@ -72,7 +72,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Expo SDK 52 / RN 0.76 build on JDK 17.
+      # Expo SDK 54 / RN 0.81 build on JDK 17 (ReactAndroid compiles to Java 17).
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

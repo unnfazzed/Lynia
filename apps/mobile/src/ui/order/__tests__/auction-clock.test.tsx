@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
-import { Animated, Text } from "react-native";
+import { Animated, StyleSheet } from "react-native";
 import renderer, { act } from "react-test-renderer";
+import { fontFamilies } from "../../fonts";
 import { AuctionClock, URGENT_MS } from "../AuctionClock";
 
 /**
@@ -40,9 +41,17 @@ const tick = (ms: number): void => {
   });
 };
 
-/** All Text content of the tree, flattened — the clock string lives somewhere in here. */
+/** A host `Text` node: what every Text renders down to, the Inter-patched export and Animated.Text alike. */
+const isHostText = (n: renderer.ReactTestInstance): boolean => (n.type as unknown) === "Text";
+
+/** All Text content of the tree, flattened — the clock string lives somewhere in here. Read off the
+ *  host nodes: the clock is an `Animated.Text`, which wraps the Text module rather than the
+ *  Inter-patched `Text` export (src/ui/fonts.ts), so `findAllByType(Text)` cannot see it. */
 function textOf(tree: renderer.ReactTestRenderer): string {
-  return tree.root.findAllByType(Text).flatMap((t) => React.Children.toArray(t.props.children as React.ReactNode)).join("");
+  return tree.root
+    .findAll(isHostText)
+    .flatMap((t) => React.Children.toArray(t.props.children as React.ReactNode))
+    .join("");
 }
 
 describe("AuctionClock (PERF20-02)", () => {
@@ -172,6 +181,29 @@ describe("AuctionClock (PERF20-02)", () => {
       "Offer window: 30 seconds left",
       "Offer window closing",
     ]);
+  });
+
+  it("sets the countdown in Inter, bold once urgent (Animated.Text is past the Inter patch)", () => {
+    const tree = render(
+      <AuctionClock
+        expiresAt={new Date(Date.now() + 25_000).toISOString()}
+        frozen={false}
+        reduceMotion
+        reconnecting={false}
+        bidCount={2}
+        noRiders={false}
+        onUrgentChange={noop}
+        onZero={noop}
+      />,
+    );
+    const clockStyle = (): Record<string, unknown> => {
+      const clock = tree.root.find((n) => isHostText(n) && n.props.accessibilityLabel != null);
+      return (StyleSheet.flatten(clock.props.style) ?? {}) as Record<string, unknown>;
+    };
+    expect(clockStyle().fontFamily).toBe(fontFamilies.regular);
+    tick(6_000); // 19s left — inside URGENT_MS
+    expect(clockStyle().fontFamily).toBe(fontFamilies.bold);
+    expect(clockStyle().fontWeight).toBeUndefined(); // a weight on top of the bold face double-bolds on Android
   });
 
   it("frozen holds the last value (reconnecting — wall-clock drift can't be trusted)", () => {

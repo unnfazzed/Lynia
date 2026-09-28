@@ -14,6 +14,7 @@
 import React from "react";
 import { Text } from "react-native";
 import renderer from "react-test-renderer";
+import { renderSync } from "../../../../src/testing/render-sync";
 import { Card } from "../../../../src/ui";
 import { RiderBoardEmptyView } from "../board-empty.view";
 
@@ -23,7 +24,7 @@ function textOf(tree: renderer.ReactTestRenderer): string {
 
 describe("RiderBoardEmptyView (RJM.board_empty empty region)", () => {
   it("wraps the empty state in a Card and renders the container-owned message", () => {
-    const tree = renderer.create(
+    const tree = renderSync(
       <RiderBoardEmptyView message="You'll see parcels here the moment they're posted near you." />,
     );
     // The Card wrapper is the mock's structure — kept even though the region is no longer codegen-adopted.
@@ -35,7 +36,7 @@ describe("RiderBoardEmptyView (RJM.board_empty empty region)", () => {
   });
 
   it("draws no Refresh button — and no pressable action at all (D-30: no manual refreshing)", () => {
-    const tree = renderer.create(<RiderBoardEmptyView message="Nothing yet." />);
+    const tree = renderSync(<RiderBoardEmptyView message="Nothing yet." />);
 
     expect(textOf(tree)).not.toContain("Refresh");
     expect(tree.root.findAll((n) => n.props.label === "Refresh")).toHaveLength(0);

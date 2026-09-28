@@ -12,7 +12,7 @@ import type React from "react";
  * unchanged props — it can't distinguish "ran" from "bailed".
  *
  * Instead this patches the memo wrapper's `.type` field (the underlying render function — a plain,
- * unfrozen property on the object `React.memo()` returns in this React version) with a
+ * unfrozen property on the object `React.memo()` returns, in React 18.3.1 and still in 19.1) with a
  * call-counting passthrough. Test-only.
  */
 export function countMemoRenders<P extends object>(

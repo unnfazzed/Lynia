@@ -78,7 +78,7 @@ carry it, and so a phone that hasn't updated yet never breaks against the live A
 
 ### 1a. Channel A — OTA updates (`expo-updates`) for JS-only changes
 
-The app is Expo (SDK 52 / RN 0.76). The JS bundle is **over-the-air updatable** without a Play review:
+The app is Expo (SDK 54 / RN 0.81). The JS bundle is **over-the-air updatable** without a Play review:
 `expo-updates` lets a new JS+asset bundle download in the background and apply on next cold start. This is
 the "no disruption" workhorse — most client fixes (copy, layout, a client-side bug, a tweak to the offer
 UI) are JS-only and never need a store release.

@@ -1,6 +1,7 @@
 import React from "react";
 import { Text } from "react-native";
 import renderer from "react-test-renderer";
+import { renderSync } from "../../testing/render-sync";
 import { foodCustomerStepIndex, Stepper } from "../index";
 
 function textOf(tree: renderer.ReactTestRenderer): string[] {
@@ -14,7 +15,7 @@ const EVENTS = [
 
 describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => {
   it("defaults to the parcel rider labels when jobType is omitted", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" />);
+    const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" />);
     const text = textOf(tree);
     expect(text).toContain("Job accepted");
     expect(text).toContain("Items & note confirmed");
@@ -22,12 +23,12 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
   });
 
   it("renders the parcel rider labels explicitly", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="parcel" />);
+    const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="parcel" />);
     expect(textOf(tree)).toContain("Parcel collected");
   });
 
   it("renders distinct food rider labels — dark today (unwired), ready for Lane D5", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="food" />);
+    const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="food" />);
     const text = textOf(tree);
     expect(text).toContain("Job accepted");
     expect(text).toContain("At the restaurant");
@@ -36,12 +37,12 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
   });
 
   it("defaults to the parcel customer labels when jobType is omitted", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" />);
+    const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" />);
     expect(textOf(tree)).toContain("Items & note confirmed");
   });
 
   it("renders distinct food customer labels (D3 — the tracker grammar re-labelled, D-03)", () => {
-    const tree = renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="food" />);
+    const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="food" />);
     const text = textOf(tree);
     expect(text).toContain("Rider secured");
     expect(text).toContain("Rider at the restaurant");
@@ -59,7 +60,7 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
  */
 describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
   it("carries the kit's two pre-dispatch steps, which the parcel model has no status for", () => {
-    const tree = renderer.create(<Stepper events={[]} currentStatus="requested" view="customer" jobType="food" merchantPhase="preparing" />);
+    const tree = renderSync(<Stepper events={[]} currentStatus="requested" view="customer" jobType="food" merchantPhase="preparing" />);
     const text = textOf(tree);
     expect(text).toContain("Order placed");
     expect(text).toContain("Restaurant accepted");
@@ -87,7 +88,7 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
   });
 
   it("marks a step live rather than leaving the whole timeline inert during the kitchen phase", () => {
-    const tree = renderer.create(<Stepper events={[]} currentStatus="requested" view="customer" jobType="food" merchantPhase="preparing" />);
+    const tree = renderSync(<Stepper events={[]} currentStatus="requested" view="customer" jobType="food" merchantPhase="preparing" />);
     // "now" renders the step index as its node glyph; a done step renders the check. Pin the FULL
     // ordered sequence (TP-08) — a build that marks the wrong step live/done still contains "some ✓"
     // and would slip past a bare `.toContain("✓")`.
@@ -110,10 +111,10 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
   });
 
   it("leaves the parcel and rider timelines on the dispatch model untouched", () => {
-    const parcel = textOf(renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="parcel" />));
+    const parcel = textOf(renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="parcel" />));
     expect(parcel).toContain("Items & note confirmed");
     expect(parcel).not.toContain("Order placed");
-    const rider = textOf(renderer.create(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="food" />));
+    const rider = textOf(renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="food" />));
     expect(rider).toContain("At the restaurant");
     expect(rider).not.toContain("Order placed");
   });

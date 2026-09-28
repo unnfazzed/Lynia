@@ -51,12 +51,22 @@ module.exports = {
   },
   modulePaths: ["<rootDir>/node_modules"],
   moduleNameMapper: {
+    // ONE React for every module in the run, the app's own copy. The parity fixtures (outside
+    // rootDir, see `modulePaths` above) import `react` too, and since SDK 54 their lookup lands on
+    // pnpm's hoisted fallback (node_modules/.pnpm/node_modules/react), which is the web apps'
+    // React 18. Two Reacts fail as "A React Element from an older version of React was rendered".
+    // Pinning the specifiers makes the single-instance guarantee explicit rather than lookup-order luck.
+    "^react$": "<rootDir>/node_modules/react/index.js",
+    "^react/jsx-runtime$": "<rootDir>/node_modules/react/jsx-runtime.js",
+    "^react/jsx-dev-runtime$": "<rootDir>/node_modules/react/jsx-dev-runtime.js",
     // @sentry/react-native pulls in native modules jest-expo can't load; route it to a light mock
     // (init/captureException spies, identity wrap) so any test importing the app root stays green.
     "^@sentry/react-native$": "<rootDir>/__mocks__/@sentry/react-native.js",
     // react-native-webview registers a native view manager — same import-time hostility class as
     // Sentry's. The mock renders nothing; the KYC sheet tests drive its props directly.
     "^react-native-webview$": "<rootDir>/__mocks__/react-native-webview.js",
+    // expo-task-manager (SDK 54) loads its native module at import time; see the mock's header.
+    "^expo-task-manager$": "<rootDir>/__mocks__/expo-task-manager.js",
     "^lucide-react-native$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js",
     // Deep per-icon imports (see Icon.tsx) — map <name> straight to its CJS file, past exports gating.
     "^lucide-react-native/dist/cjs/icons/(.*)$":

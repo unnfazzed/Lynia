@@ -8,7 +8,10 @@ import { isRiderOnlyRoute, riderModeAvailable } from "../rider-mode";
 // shows it automatically in the background). Set once at module load.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // expo-notifications 0.32 (SDK 54) split the deprecated `shouldShowAlert` into these two: the
+    // heads-up banner, and the entry in the notification list / Notification Centre.
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),

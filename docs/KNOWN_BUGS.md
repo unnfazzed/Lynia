@@ -6,7 +6,13 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-27 (**`IOS-01`..`IOS-09` FIXED** — interactive session, first iOS build
+**Last consolidated:** 2026-09-28 (**`SDK54-01`..`SDK54-06` FIXED before merge** — interactive session,
+the Expo SDK 52 → 54 upgrade for Play's API-36 requirement. Defects the upgrade itself introduced, caught
+on its branch: Inter lost on every screen under React Native 0.81, PostHog on a second React, R8 switched
+off by a renamed option, the offline cache on a moved API, five screens under the Android status bar,
+and the notification handler's new required fields. See the "Expo SDK 54 upgrade 2026-09-28" entry at
+the end.)
+Prior: 2026-09-27 (**`IOS-01`..`IOS-09` FIXED** — interactive session, first iOS build
 work: a dependency override that broke every iOS prebuild, the Play-only force-update link, iOS push
 tokens sent to FCM, five iPhone-only UX defects from a code sweep (keyboard over modal fields, no way
 to close the sign-in number pad, buzzing haptics, silent Call buttons, an ID promise on sign-up), and one
@@ -2644,5 +2650,29 @@ and ledger is `docs/APP-STORE-SUBMISSION.md`.
 
 The same PR ships the owner's customer-only iPhone app (`docs/DESIGN-DEVIATIONS.md` D-41). That is a product
 decision, not a defect, so it is recorded there rather than here.
+
+---
+
+## Expo SDK 54 upgrade 2026-09-28 (interactive session, owner: "start the SDK54 upgrade")
+
+The app moves from Expo SDK 52 (React Native 0.76.9, React 18.3.1) to SDK 54 (React Native 0.81.5, React
+19.1.0) because Play requires app updates to target API 36, and on React Native 0.76 an API-36 target
+stops the back button reaching the app: Android 16 no longer calls `Activity.onBackPressed()`. The New
+Architecture stays off (`MOB-BOOT-04`).
+
+These are the defects the upgrade itself introduced. All were fixed on the upgrade branch before merge,
+and none reached `main`. What tests cannot show (a cold start, fonts, back and edge-to-edge on a real
+phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. That pass gates the merge, because the
+upgrade moves the Android fingerprint from `7ae040c9…` to `de5472b4…` (`docs/APP-STORE-SUBMISSION.md`
+B9).
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| SDK54-01 | **Every screen would have lost Inter.** React Native 0.81 made `Text` and `TextInput` plain function components, so the in-place `render` patch became a no-op, with only a dev-mode warning. Every Text would have drawn in the system font. The first fix swapped the component modules' `default` export. It passed Jest but would have thrown on import in a Metro build, which compiles `export default` to a getter-only, non-configurable property. Separately, `Animated.Text` wraps the Text module directly, so the auction countdown sits past any patch of react-native's exports. | `apps/mobile/src/ui/fonts.ts`, `apps/mobile/src/ui/order/AuctionClock.tsx` | HIGH (the type on every screen; the first fix would have crashed at start) | **FIXED**: the patch redefines the configurable `Text`/`TextInput` accessors on react-native's index exports, which every `import { Text } from "react-native"` reads at render. Confirmed in the exported Android bundle. The countdown names its Inter family itself. `src/ui/__tests__/fonts.test.tsx` checks the real index and component shapes, and fails if another `Animated.Text` or a deep Text import appears. `src/ui/order/__tests__/auction-clock.test.tsx` renders the countdown in Inter. |
+| SDK54-02 | **PostHog would have run on a second copy of React.** `posthog-react-native` imports `react` without declaring it, so pnpm resolved it to the hoisted React 18.3.1 while the app ran 19.1.0. With two Reacts in one bundle, hooks from the wrong copy throw "Invalid hook call". | root `package.json` `pnpm.packageExtensions` | HIGH (a crash wherever PostHog's hooks run) | **FIXED**: `packageExtensions` declares `react` and `react-native` (and an optional `@types/react`) as its peers, so it resolves the app's copies. The exported bundle holds one React (19.1.0) and one React Native (0.81.5). |
+| SDK54-03 | **R8 would have been switched off without a word.** expo-build-properties 1.0 renamed `enableProguardInReleaseBuilds` to `enableMinifyInReleaseBuilds` and ignores the old key. | `apps/mobile/app.config.ts` | MEDIUM (a larger, unobfuscated release build) | **FIXED**: renamed, with a comment naming the trap. |
+| SDK54-04 | **The offline cache would have stopped saving and restoring.** expo-file-system 19 moved the classic API to `expo-file-system/legacy`. The root import's `readAsStringAsync`/`writeAsStringAsync` now throw, and the cache's `.catch` would have hidden it. | `apps/mobile/src/query/persist.ts` | MEDIUM (every cold start without the persisted query cache) | **FIXED**: imports `expo-file-system/legacy`. `src/query/__tests__/persist.test.ts`. |
+| SDK54-05 | **Five screens would have drawn under the Android status bar.** SDK 54 draws edge-to-edge on every Android version, and React Native's own `SafeAreaView` pads on iOS only. | `apps/mobile/app/notifications/index.tsx`, `onboarding.tsx`, `role.tsx`, `help/index.tsx`, `phone.tsx` | MEDIUM (Android layout) | **FIXED** in code: they use `SafeAreaView` from `react-native-safe-area-context`. The rest of the app is checked in the device pass. |
+| SDK54-06 | **The foreground notification handler no longer type-checked.** expo-notifications 0.32 deprecated `shouldShowAlert` and made `shouldShowBanner` and `shouldShowList` required. | `apps/mobile/src/push/push.ts` | LOW | **FIXED**: sets both. |
 
 ---

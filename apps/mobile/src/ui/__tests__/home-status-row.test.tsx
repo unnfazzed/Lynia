@@ -1,6 +1,7 @@
 import React from "react";
 import { Text } from "react-native";
 import renderer from "react-test-renderer";
+import { renderSync } from "../../testing/render-sync";
 import { HomeStatusRow } from "../index";
 import { tokens } from "@lynia/shared/tokens";
 
@@ -35,23 +36,23 @@ function dotColor(tree: renderer.ReactTestRenderer): unknown {
 
 describe("HomeStatusRow — rider shift status", () => {
   it("renders the label", () => {
-    const tree = renderer.create(<HomeStatusRow label="Online" connected />);
+    const tree = renderSync(<HomeStatusRow label="Online" connected />);
     expect(textOf(tree)).toContain("Online");
   });
 
   it("paints the dot accent while the socket is live", () => {
-    const tree = renderer.create(<HomeStatusRow label="Online" connected />);
+    const tree = renderSync(<HomeStatusRow label="Online" connected />);
     expect(dotColor(tree)).toBe(tokens.color.accent);
   });
 
   it("paints the dot muted while reconnecting — never a confident green on a dead socket", () => {
-    const tree = renderer.create(<HomeStatusRow label="Reconnecting" connected={false} />);
+    const tree = renderSync(<HomeStatusRow label="Reconnecting" connected={false} />);
     expect(dotColor(tree)).toBe(tokens.color.muted);
     expect(textOf(tree)).toContain("Reconnecting");
   });
 
   it("renders NO shift control when no action is passed (always-online, D-29)", () => {
-    const tree = renderer.create(<HomeStatusRow label="Online" connected />);
+    const tree = renderSync(<HomeStatusRow label="Online" connected />);
     // Nothing tappable, and specifically none of the shift-control labels the pre-D-29 toggle used.
     expect(tree.root.findAll((n) => n.props?.accessibilityRole === "button").length).toBe(0);
     const labels = textOf(tree);
@@ -60,7 +61,7 @@ describe("HomeStatusRow — rider shift status", () => {
   });
 
   it("joins label and detail with the kit separator when a detail is given", () => {
-    const tree = renderer.create(<HomeStatusRow label="Online" detail="one queue" connected />);
+    const tree = renderSync(<HomeStatusRow label="Online" detail="one queue" connected />);
     expect(textOf(tree)).toContain("Online · one queue");
   });
 });

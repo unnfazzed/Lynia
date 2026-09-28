@@ -2,7 +2,9 @@ import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persi
 import { defaultShouldDehydrateQuery, type Query } from "@tanstack/react-query";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
-import * as FileSystem from "expo-file-system";
+// SDK 54 (expo-file-system 19) moved this path-and-promise API to the `/legacy` entry; the package
+// root is now the object API (File / Directory). Same functions, same on-disk file.
+import * as FileSystem from "expo-file-system/legacy";
 
 /**
  * Disk persistence for the React Query cache — the "warm boot" layer. On a cold start over a slow or

@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { SafeAreaView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { saveOnboardingSeen } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
 import { riderModeAvailable } from "../src/rider-mode";

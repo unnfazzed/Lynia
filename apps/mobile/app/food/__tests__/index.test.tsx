@@ -7,6 +7,7 @@
  * "just add a row here" edit can't quietly revert to an unbounded ScrollView.
  */
 import renderer, { act } from "react-test-renderer";
+import { renderSync } from "../../../src/testing/render-sync";
 import { ActivityIndicator, FlatList, Text } from "react-native";
 import { Banner, EmptyState, Skeleton } from "../../../src/ui";
 import { LocationSheet } from "../../../src/ui/home/LocationSheet";
@@ -248,7 +249,7 @@ describe("RestaurantListScreen (B-O10: GET /restaurants is now cursor-paginated)
       tree = renderer.create(<RestaurantListScreen />);
     });
     const footer = tree.root.findByType(FlatList).props.ListFooterComponent;
-    expect(renderer.create(footer).root.findByType(ActivityIndicator)).toBeTruthy();
+    expect(renderSync(footer).root.findByType(ActivityIndicator)).toBeTruthy();
   });
 
   it('auto-drains remaining pages once "Open now" is toggled on, so the filter never under-reports', () => {

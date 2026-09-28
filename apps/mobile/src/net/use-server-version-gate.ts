@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
+import { fetchSignal } from "./fetch-signal";
 
 /**
  * Server-driven force-update minimum (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1c). The build-time
@@ -30,7 +31,7 @@ export async function fetchServerMinVersion(
     // Per platform (docs/APP-STORE-SUBMISSION.md B5): an iPhone has its own minimum, so a bump made for
     // Android never strands an iPhone whose update is still in App Review. Any other value, and a build
     // that sends none, gets the Android/default minimum.
-    const res = await fetchImpl(`${API_URL}/app/version-gate?platform=${Platform.OS}`, { signal: controller.signal });
+    const res = await fetchImpl(`${API_URL}/app/version-gate?platform=${Platform.OS}`, { signal: fetchSignal(controller) });
     if (!res.ok) return null;
     const { VersionGateResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());

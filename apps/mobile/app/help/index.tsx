@@ -1,7 +1,8 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Linking, SafeAreaView } from "react-native";
+import { Linking } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supportWhatsAppUrl } from "../../src/config";
 import { type IconName } from "../../src/ui";
 import { HelpView, type HelpTopicRow } from "./help.view";

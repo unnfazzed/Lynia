@@ -1242,6 +1242,16 @@
 > submission failure logged above (`fea2f32d`, "Fastlane supply failed", twice) is still
 > unexplained; and a FINISHED submission still does not prove the binary *runs* — that remains
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
+>
+> **Status (2026-09-28 — API 36: the upgrade that meets it is in review; nothing built from it yet.)**
+>
+> Since 2026-08-31 Play requires app updates to target API 36, and every binary so far targets 35.
+> React Native 0.76 can't simply retarget: under 36, Android 16 stops calling `onBackPressed()`, and
+> the back button stops reaching the app. The fix is the Expo SDK 52 → 54 upgrade (React Native 0.81;
+> the New Architecture stays off, `MOB-BOOT-04`), whose PR sets compile and target to 36. No EAS build
+> has been made from it. It moves the fingerprint (`7ae040c9…` → `de5472b4…`), so it can only ship as
+> a store build, after the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. Until then, Play Console's
+> extension (to 2026-11-01, the founder's request) is what keeps updates submittable.
 
 ---
 

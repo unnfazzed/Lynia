@@ -10,6 +10,7 @@
 import React from "react";
 import { Text } from "react-native";
 import renderer, { act } from "react-test-renderer";
+import { renderSync } from "../../../../src/testing/render-sync";
 import { RiderBoardListView, type RiderBoardJob } from "../board-list.view";
 
 function textOf(tree: renderer.ReactTestRenderer): string {
@@ -34,7 +35,7 @@ function job(id: string, overrides: Partial<RiderBoardJob> = {}): RiderBoardJob 
 describe("RiderBoardListView (RJM.board list region)", () => {
   it("renders exactly one JobCard per job, with each job's route / fare / note", () => {
     const jobs = [job("a"), job("b"), job("c")];
-    const tree = renderer.create(<RiderBoardListView jobs={jobs} />);
+    const tree = renderSync(<RiderBoardListView jobs={jobs} />);
 
     // One action button per row — the JobCard's primary action.
     const actions = tree.root.findAll((n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function");
@@ -49,7 +50,7 @@ describe("RiderBoardListView (RJM.board list region)", () => {
   });
 
   it("renders an empty list with no cards (nothing in range)", () => {
-    const tree = renderer.create(<RiderBoardListView jobs={[]} />);
+    const tree = renderSync(<RiderBoardListView jobs={[]} />);
     expect(tree.root.findAll((n) => n.props.label === "Make an offer")).toHaveLength(0);
   });
 
@@ -57,7 +58,7 @@ describe("RiderBoardListView (RJM.board list region)", () => {
     const onA = jest.fn();
     const onB = jest.fn();
     const jobs = [job("a", { onAction: onA }), job("b", { onAction: onB })];
-    const tree = renderer.create(<RiderBoardListView jobs={jobs} />);
+    const tree = renderSync(<RiderBoardListView jobs={jobs} />);
 
     const actions = tree.root.findAll((n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function");
     act(() => {
@@ -70,7 +71,7 @@ describe("RiderBoardListView (RJM.board list region)", () => {
 
   it("carries a FOOD row's accept action verbatim (same anatomy, only tag/action differ)", () => {
     const jobs = [job("f", { jobType: "food", actionLabel: "Accept this job", note: "Collect $15.50 for the kitchen" })];
-    const tree = renderer.create(<RiderBoardListView jobs={jobs} />);
+    const tree = renderSync(<RiderBoardListView jobs={jobs} />);
     const text = textOf(tree);
     expect(text).toContain("FOOD");
     expect(text).toContain("Accept this job");

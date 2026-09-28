@@ -9,14 +9,14 @@ import type { Query } from "@tanstack/react-query";
  *     corrupt/missing file is a cold boot, a failed write is a no-op, and sign-out purges it (S1).
  */
 
-jest.mock("expo-file-system", () => ({
+jest.mock("expo-file-system/legacy", () => ({
   readAsStringAsync: jest.fn(),
   writeAsStringAsync: jest.fn(),
   deleteAsync: jest.fn(),
   documentDirectory: "file:///docs/",
 }));
 
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
 import { clearPersistedQueries, fileStorage, PERSISTED_KEY_ROOTS, redactBeforePersist, shouldPersistQuery } from "../persist";
 

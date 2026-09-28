@@ -1,5 +1,6 @@
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { apiFetch } from "./client";
+import { fetchSignal } from "../net/fetch-signal";
 
 export type ImageContentType = "image/jpeg" | "image/png";
 
@@ -49,7 +50,7 @@ export async function uploadImage(
   const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: controller.signal });
+    res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: fetchSignal(controller) });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("The upload timed out — check your connection and try again.", { cause: err });

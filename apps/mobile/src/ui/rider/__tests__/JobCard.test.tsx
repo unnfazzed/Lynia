@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Text } from "react-native";
 import renderer, { act } from "react-test-renderer";
+import { renderSync } from "../../../testing/render-sync";
 import { JobCard, type JobCardProps } from "../JobCard";
 import { countMemoRenders } from "../../../testing/render-count";
 
@@ -11,7 +12,7 @@ function textOf(tree: renderer.ReactTestRenderer): string {
 
 describe("JobCard (plan §5 B2 — one board, tagged cards)", () => {
   it("renders a PARCEL tag, the route, the note and the formatted fare", () => {
-    const tree = renderer.create(
+    const tree = renderSync(
       <JobCard
         jobType="parcel"
         from="Eastgate Mall, CBD"
@@ -35,7 +36,7 @@ describe("JobCard (plan §5 B2 — one board, tagged cards)", () => {
   });
 
   it("renders a FOOD tag with the same anatomy — only the tag/action differ (identical card anatomy)", () => {
-    const tree = renderer.create(
+    const tree = renderSync(
       <JobCard
         jobType="food"
         from="Sadza Republic · Belgravia"
@@ -56,7 +57,7 @@ describe("JobCard (plan §5 B2 — one board, tagged cards)", () => {
 
   it("fires onAction exactly once per tap, no countdown state of its own (plan decision 2: no countdowns)", () => {
     const onAction = jest.fn();
-    const tree = renderer.create(
+    const tree = renderSync(
       <JobCard
         jobType="parcel"
         from="A"
