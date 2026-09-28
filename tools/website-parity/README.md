@@ -92,8 +92,8 @@ With the reference showing the site's own raster files, every width is pixel-ide
 For a regression gate, run `--normalize-raster --threshold 0.001`. A 1px layout change moves thousands
 of pixels, and this threshold still tolerates a lone anti-aliasing pixel. Attach the raw run's sheets
 and band crops as the visual evidence. Noise floor: reference against itself and site against site both
-come out at 0 px. Once in about 35 renders, a single anti-aliased corner pixel of the nav pill
-(under `backdrop-filter`) flickered.
+come out at 0 px. Across 37 comparisons, a single anti-aliased corner pixel of the nav pill (under
+`backdrop-filter`) flickered once.
 
 ## Limits
 
