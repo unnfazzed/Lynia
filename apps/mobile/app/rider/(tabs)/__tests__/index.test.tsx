@@ -211,6 +211,36 @@ afterEach(() => {
   mockLocFixFails = false;
 });
 
+/**
+ * Cold start is paid here, not by the first test. React Native's index resolves each component
+ * lazily (`get FlatList() {…}`), so the first render in a fresh Jest worker also compiles and
+ * evaluates every module the board touches. With an empty transform cache, which is how CI starts,
+ * that measured 4.4 s on an idle machine (0.5 s warm) against the 5 s per-test timeout. On `main`
+ * after the Expo SDK 54 merge (CI run 36466348789) the first test timed out, and the act() scope it
+ * left open failed the file's other 51 tests. One throwaway render of the same board, under its own
+ * budget, keeps each test's 5 s about the board rather than the compiler.
+ */
+beforeAll(async () => {
+  const held = controlInteractions();
+  mockUseRiderBoard.mockReturnValue({
+    connected: true,
+    expiredOrderIds: new Set<string>(),
+    takenOrderIds: new Set<string>(),
+    boardTakenNudge: 0,
+  });
+  mockGetMe.mockResolvedValue(meFixture());
+  mockGetActiveOrder.mockResolvedValue(null);
+  mockGetOpenOrders.mockResolvedValue([openOrderFixture("warm-up")]);
+  const tree = renderScreen();
+  await settle();
+  await settle();
+  act(() => tree.unmount());
+  held.restore();
+  // Back to the bare jest.fn()s they were declared as, so no test inherits the warm-up's answers.
+  for (const mock of [mockGetMe, mockGetActiveOrder, mockGetOpenOrders, mockUseRiderBoard]) mock.mockReset();
+  jest.clearAllMocks();
+}, 60_000);
+
 describe("rider board (B-O1b: open-orders list must be virtualized, and only when it's actually shown)", () => {
   it("online + verified + no gate: renders the open-orders list via a single FlatList carrying the full dataset", async () => {
     mockGetMe.mockResolvedValue(meFixture());
