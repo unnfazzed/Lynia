@@ -1933,6 +1933,8 @@ rule. A change comes back as a new export.
 | #3 About us | **Launch without it.** `/about` serves `404.html`: the page's own header and footer (derived by the check script), a "Page not found" heading and a "Back home" button, as README "Deploy" §6 allows. | A new page. The home page is unchanged. |
 | #4 Terms / Privacy | **Privacy → `https://api.lyniago.com/legal/privacy`** (the live notice). Terms stays `#`. | One `href` in the footer changes (`LAUNCH_EDITS` → `privacy-link`). It looks identical. |
 
+| (not a README TODO) Menu buttons stop short on phones | **Fix it** (owner, 2026-09-28, after the gstack QA and design reviews both found it). The lazy `biz-scooter-rider.svg` had no reserved size, so on a first visit at ≤960px the page grew about 350px while scrolling. The first tap on "Download the app" or "Send a parcel" then stopped 320–540px short of `#app`. The fix uses the README's own screenshot pattern: `width="460" height="460"` (the SVG's size) on that `<img>`, plus `height:auto` in `.biz-ill`. | Nothing looks different: the parity harness shows 0 px at all 7 widths. On a cold load the buttons now land where the reference lands (0px at 360, 390 and 768). **Report upstream** so the next export carries it; this row then retires. `LAUNCH_EDITS` → `biz-ill-size` and `biz-ill-height-auto`. |
+
 Hosting-only files, none of which render: `_headers` (the README's caching rules plus security
 headers), `robots.txt` and `sitemap.xml`.
 

@@ -54,6 +54,25 @@ export const LAUNCH_EDITS = [
     from: '<a href="#">Privacy</a>',
     to: '<a href="https://api.lyniago.com/legal/privacy">Privacy</a>',
   },
+  // The two edits below are one fix. The lazy scooter illustration had no reserved size, so the page
+  // grew by ~350px as it loaded and the first tap on "Download the app" / "Send a parcel" stopped
+  // 320-540px short of #app on phones and tablets. It uses the handoff README's own pattern for the
+  // screenshots (width/height attributes plus height:auto), with the SVG's 460x460. Pixel-identical
+  // once loaded (parity harness: 0 px at every width).
+  {
+    id: "biz-ill-size",
+    todo: "not a README TODO: functional fix found by the gstack QA and design reviews",
+    decision: "owner 2026-09-28: approved (D-42); report upstream so the next export carries it",
+    from: 'class="biz-ill" src="assets/illustrations/biz-scooter-rider.svg" alt=',
+    to: 'class="biz-ill" src="assets/illustrations/biz-scooter-rider.svg" width="460" height="460" alt=',
+  },
+  {
+    id: "biz-ill-height-auto",
+    todo: "not a README TODO: functional fix found by the gstack QA and design reviews",
+    decision: "owner 2026-09-28: approved (D-42); report upstream so the next export carries it",
+    from: ".biz-ill{width:100%;max-width:540px;",
+    to: ".biz-ill{width:100%;height:auto;max-width:540px;",
+  },
 ];
 
 /**
@@ -346,7 +365,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exit(1);
   }
   console.log(
-    `check-website: OK — ${SITE_REL} matches the handoff (${LAUNCH_EDITS.length} launch edit), 404.html and CSP ` +
+    `check-website: OK — ${SITE_REL} matches the handoff (${LAUNCH_EDITS.length} launch edits), 404.html and CSP ` +
       "hashes are current, all references resolve.",
   );
 }

@@ -46,6 +46,7 @@ byte-identical to the handoff, except for:
 | 3 | About us | Launch without it: `/about` serves the 404 page (header, footer, "Back home"). | Open: needs the owner's copy. Then add `site/about/index.html` with the same header and footer, remove `/about` from `INTENTIONAL_404`, and add the file to `EXTRA_FILES`. |
 | 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy` (the live notice); Terms stays `#`. | Terms open until a terms page exists. |
 | 5 | Analytics | None. | No trackers, no cookies. |
+| — | Menu buttons stop short on phones (found in review) | Fix it: `width`/`height` on the lazy scooter illustration plus `.biz-ill{height:auto}` (`LAUNCH_EDITS` `biz-ill-*`). | Done. Report upstream so the next export carries it. |
 
 ## Hosting
 
