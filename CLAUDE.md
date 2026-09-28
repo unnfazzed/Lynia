@@ -163,6 +163,17 @@ are never aligned to; the design package is never edited to match the app.
 Progress is tracked per screen in `docs/PIXEL-PARITY-TRACKER.md` — a screen is ✅ when it is adopted
 (wired to an app target) and the guardrail suite stays green, not when it is eyeballed.
 
+## Marketing website (lyniago.com): ship the handoff as-is
+
+Owner instruction (2026-09-28): *"use the handoff assets dont change the design to match some rules in
+github. for the website apply as is."* `apps/website/site/` is the design handoff
+(`packages/design/handoff/lyniago-website/`) deployed verbatim to Cloudflare Workers. **The pixel-parity
+machinery above (gallery, tokens, tap-target floors, a11y overrides) does not apply to the website.**
+Never edit its CSS, copy or assets to satisfy a repo rule, a review finding or a linter. A change
+arrives as a new handoff export. The only differences from the handoff are the owner-approved launch
+edits (`LAUNCH_EDITS` in `scripts/check-website.mjs`, ledger D-42). CI job `website` fails anything
+else. Spec, one-time setup, deploys and rollback: `docs/WEBSITE.md`.
+
 ## Scheduled Claude routines — universal auto-merge + ledger protocol
 
 `docs/ROUTINES.md` is the canonical spec for the eight recurring routines (bug hunting, UX

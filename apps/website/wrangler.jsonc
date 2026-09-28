@@ -1,0 +1,22 @@
+// lyniago.com — the marketing site (docs/WEBSITE.md). An ASSETS-ONLY Worker: no script, so every
+// request is a free, unmetered static-asset request served from Cloudflare's edge. `site/` is the
+// approved design handoff (packages/design/handoff/lyniago-website/site) plus the launch edits that
+// scripts/check-website.mjs allows; it is deployed as-is, there is no build step.
+//
+// Deployed by .github/workflows/deploy-website.yml. www.lyniago.com is a separate Worker
+// (www-redirect/) because a static-asset Worker cannot redirect by hostname.
+{
+  "name": "lyniago-website",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./site",
+    // Unknown paths (including /about until its copy exists) get site/404.html with a real 404 status.
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Custom Domain: Cloudflare creates the DNS record and the edge certificate itself.
+  "routes": [{ "pattern": "lyniago.com", "custom_domain": true }],
+  // One public host only. The canonical tag says https://lyniago.com/, so no *.workers.dev copy.
+  "workers_dev": false,
+  "preview_urls": false
+}

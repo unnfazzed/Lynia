@@ -1,0 +1,11 @@
+// www.lyniago.com → https://lyniago.com (the handoff's single canonical host). Deployed by
+// .github/workflows/deploy-website.yml right after the site Worker. Only www traffic runs this
+// script, so it barely touches the Workers free-plan request allowance.
+{
+  "name": "lyniago-www-redirect",
+  "main": "./index.js",
+  "compatibility_date": "2026-09-01",
+  "routes": [{ "pattern": "www.lyniago.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

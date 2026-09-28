@@ -14,7 +14,7 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
 be reported back to Design).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41.** D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42.** D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
 decision — the mocks were not re-exported as part of it, so it stands as a ledgered app-side divergence
 until they are. D-39 was authored by
@@ -1895,3 +1895,46 @@ onboarding, account-tab, profile-setup, push and boot-route suites.
 **Retire when:** the design kit draws an iOS customer-only variant (then align to it), or rider mode
 comes to iOS. That would need the App Store organization account's KYC/wallet review and would flip
 the one switch.
+
+---
+
+## D-42 · lyniago.com marketing website: the handoff shipped as-is, plus four launch decisions — APPROVED (2026-09-28)
+
+**Owner instructions, this session (2026-09-28):**
+
+- *"i have completed the landing page design, lets code this website … dont make design changes"*
+- *"use the handoff assets dont change the design to match some rules in github. for the website
+  apply as is"*
+
+**This entry exists because the work necessarily touches `packages/design/**`**, which the
+reverse-drift freeze gates. The design package here only *absorbs a new export*. Nothing in it is
+edited to match code.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/lyniago-website/` | The website export, **verbatim**. This is the second export of 2026-09-28 (the "mobile optimisation" revision), which supersedes the first. Its only design change is one line in the `≤600px` block: `.form input{flex:none}` (the stacked callback field no longer collapses), footer links with a 44px minimum height and a `0 24px` gap, and 10px vertical padding on the phone-number links. The reference file carries the same change. |
+
+### 2 · How the website differs from the rest of the kit (a scope rule, not a deviation)
+
+The website is **not** a gallery screen and is outside the app's parity machinery: no gallery tile,
+no token conformance, no tap-target or a11y overrides, no `tools/parity` registry entry. Its whole
+spec is the handoff, deployed byte-for-byte from `apps/website/site/`. `scripts/check-website.mjs`
+(CI job `website`) fails any drift. Never "fix" the website's CSS, copy or assets to match a repo
+rule. A change comes back as a new export.
+
+### 3 · The launch decisions (the handoff README's own "Items to finish before launch")
+
+| README TODO | Decision | Effect on the shipped page |
+|---|---|---|
+| #1 Play Store link | **Keep `href="#app"`** while the listing is closed-testing only; the public URL 404s today (`CLAUDE.md` § Expo/EAS). | None. Exactly as delivered. |
+| #2 OG image | Built to the README's spec: green `#00B14F`, the on-green Paper Dove (as `lyniago-icon.svg` and the app splash) with the Fredoka wordmark, and "Stay home. We'll bring it." in the hero's type. Source: `apps/website/og-image/`. | A new file, `assets/og-image.png`, that the page's existing `og:image` tag already names. |
+| #3 About us | **Launch without it.** `/about` serves `404.html`: the page's own header and footer (derived by the check script), a "Page not found" heading and a "Back home" button, as README "Deploy" §6 allows. | A new page. The home page is unchanged. |
+| #4 Terms / Privacy | **Privacy → `https://api.lyniago.com/legal/privacy`** (the live notice). Terms stays `#`. | One `href` in the footer changes (`LAUNCH_EDITS` → `privacy-link`). It looks identical. |
+
+Hosting-only files, none of which render: `_headers` (the README's caching rules plus security
+headers), `robots.txt` and `sitemap.xml`.
+
+**Retire when:** the Play listing is public (then add the link edits), the About copy arrives (then
+add `/about`), or a terms page exists. Each of these updates this entry and `LAUNCH_EDITS` together.

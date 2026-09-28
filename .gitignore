@@ -44,3 +44,6 @@ apps/api/prisma/*.db
 # Next 16 auto-generates these on `next dev` (agentRules) — build noise, not source
 apps/*/AGENTS.md
 apps/*/CLAUDE.md
+
+# Cloudflare wrangler local state (apps/website)
+.wrangler/

@@ -1,0 +1,27 @@
+# Response headers for lyniago.com (Cloudflare Workers static assets; this file is parsed, never served).
+# The handoff README ("Deploy" §4-5) sets the caching rules. Content types come from the file
+# extension (wrangler): .webp image/webp, .woff2 font/woff2, .svg image/svg+xml. Cloudflare's edge
+# compresses HTML and SVG with brotli or gzip.
+#
+# script-src lists the sha256 of every inline <script> on the site's pages. scripts/check-website.mjs
+# fails CI when a hash is stale, and `node scripts/check-website.mjs --write` rewrites them.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-rCNFGvnkRpdgI8HxXchQbgzNUJEQJRyOqEW9Z4rqMnI=' 'sha256-uvuHL9sVYr04KvtQCqjh8JGaBEbGxXXnoLS/4If6HfY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+
+# Pages: always revalidate, so a deploy is visible on the next visit.
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+# Assets: cached for a year and never revalidated. A changed asset MUST get a new file name;
+# check-website.mjs fails any PR that edits a file under site/assets/ in place.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
