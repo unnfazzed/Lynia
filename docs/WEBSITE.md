@@ -70,26 +70,34 @@ byte-identical to the handoff, except for:
 
 Done once; after that every merge that touches `apps/website/` deploys by itself.
 
-1. **Create the deploy token.** Cloudflare dashboard → **Manage Account → Account API Tokens →
-   Create Token** → the **Edit Cloudflare Workers** template.
-   - Account Resources: your account.
-   - Zone Resources: **Specific zone → lyniago.com**.
-   - **Continue → Create Token**, then copy it. It is shown only once.
-2. **Copy your account ID.** Cloudflare dashboard → **lyniago.com → Overview** → *API* panel on the
-   right → **Account ID**.
-3. **Store both in GitHub.** In Cloud Shell:
+1. **Create the deploy token.** Go to <https://dash.cloudflare.com/profile/api-tokens> → **Create Token**
+   → **Edit Cloudflare Workers** → **Use template**.
+   - Account Resources: Include → your account.
+   - Zone Resources: Include → **Specific zone → lyniago.com**.
+   - **Continue to summary → Create Token**, then **Copy**. The token is shown only once.
+
+   An account-owned token (**Manage Account → Account API Tokens**, visible to Super Administrators)
+   works the same way.
+2. **Copy your account ID.** Cloudflare → **lyniago.com → Overview** → the *API* section at the bottom →
+   **Account ID → Copy**. (It is also under **Workers & Pages → Account details**.)
+3. **Store both in GitHub**, from a phone browser (the GitHub app has no secrets screen):
+   - Token: <https://github.com/unnfazzed/Lynia/settings/secrets/actions/new>. Name
+     `CLOUDFLARE_WORKERS_API_TOKEN`; paste the token as the secret; **Add secret**.
+   - Account ID: <https://github.com/unnfazzed/Lynia/settings/variables/actions/new>. Name
+     `CLOUDFLARE_ACCOUNT_ID`; paste the ID as the value; **Add variable**.
+
+   Or in Cloud Shell, where `gh secret set` prompts for the token so it stays out of shell history:
    ```bash
-   bash -c 'gh auth status >/dev/null 2>&1 || gh auth login; gh secret set CLOUDFLARE_WORKERS_API_TOKEN --env production -R unnfazzed/Lynia && gh variable set CLOUDFLARE_ACCOUNT_ID -R unnfazzed/Lynia -b "PASTE_ACCOUNT_ID"'
+   bash -c 'gh auth status >/dev/null 2>&1 || gh auth login; gh secret set CLOUDFLARE_WORKERS_API_TOKEN -R unnfazzed/Lynia && gh variable set CLOUDFLARE_ACCOUNT_ID -R unnfazzed/Lynia -b "PASTE_ACCOUNT_ID"'
    ```
-   `gh secret set` prompts for the token; paste it there, not on the command line. Or use the web:
-   repo **Settings → Environments → production → Add environment secret**
-   (`CLOUDFLARE_WORKERS_API_TOKEN`), then **Settings → Secrets and variables → Actions → Variables →
-   New repository variable** (`CLOUDFLARE_ACCOUNT_ID`).
+   The deploy job runs in the `production` environment, so it can read a repository secret or a
+   `production` environment secret.
 4. **Turn on HTTPS redirects.** Cloudflare → **lyniago.com → SSL/TLS → Edge Certificates → Always Use
-   HTTPS: On**. This only affects proxied hostnames, so the DNS-only app hosts are untouched.
-5. **First deploy.** GitHub → Actions → **Deploy website (Cloudflare)** → **Run workflow** (a Claude
-   session can dispatch it). The first run waits up to ten minutes for Cloudflare to issue the
-   certificates.
+   HTTPS: On**. If that switch is missing, SSL/TLS → Overview is set to *Off*; choose **Full** first.
+   Both settings only affect proxied hostnames, so the DNS-only app hosts are untouched.
+5. **First deploy.** The deploy runs by itself when the website PR merges. Otherwise use GitHub → Actions
+   → **Deploy website (Cloudflare)** → **Run workflow** (a Claude session can dispatch it). The first run
+   waits up to ten minutes for Cloudflare to issue the certificates.
 
 Do not reuse or widen `CLOUDFLARE_API_TOKEN`. That is the DNS-only token for `dns-bind-azure.yml`.
 
