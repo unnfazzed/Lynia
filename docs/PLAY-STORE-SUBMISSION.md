@@ -1243,20 +1243,20 @@
 > unexplained; and a FINISHED submission still does not prove the binary *runs* — that remains
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 >
-> **Status (2026-09-28 — API 36: the upgrade that meets it is merged; no store build from it yet.)**
+> **Status (2026-09-28 — API 36: v0.50.1 / vc 39 is on the `Closed testing` track.)**
 >
-> Since 2026-08-31 Play requires app updates to target API 36, and every binary so far targets 35.
-> React Native 0.76 can't simply retarget: under 36, Android 16 stops calling `onBackPressed()`, and
-> the back button stops reaching the app. The fix is the Expo SDK 52 → 54 upgrade (React Native 0.81;
-> the New Architecture stays off, `MOB-BOOT-04`), merged as #959 on 2026-09-28, which sets compile and
-> target to 36. No EAS build has been made from it. It moves the fingerprint (`7ae040c9…` →
-> `a3571198…`), so it can only ship as a store build, after the SDK 54 pass in
-> `docs/QA-DEVICE-CHECKLIST.md`. Until then, Play Console's extension (to 2026-11-01, the founder's
-> request) is what keeps updates submittable.
+> Since 2026-08-31 Play requires app updates to target API 36. React Native 0.76 can't simply
+> retarget: under 36, Android 16 stops calling `onBackPressed()`, and the back button stops reaching
+> the app. The fix is the Expo SDK 52 → 54 upgrade (React Native 0.81; the New Architecture stays
+> off, `MOB-BOOT-04`), merged as #959, which sets compile and target to 36. It shipped the same day
+> as EAS build `15e221af` (v0.50.1 / vc 39), and submission `32465ccc` FINISHED on `Closed testing`
+> (the "Build 39" entry in §8). Every build from vc 39 on targets 36.
 >
-> ⚠️ **Until that store build ships, an OTA from `main` reaches nobody.** `main`'s runtime version is
-> now `a3571198…`, and no installed binary has it. `mobile-ota.yml`'s preflight (`REL-02`) aborts
-> instead of publishing, so a JS fix reaches testers only inside that store build.
+> **OTA works again, but only for testers who have installed vc 39.** vc 39's runtime is
+> `5d04edb3…` (hashed with the EAS `preview` environment loaded). An OTA from `main` lands on it only
+> while no native input has changed since `285caa85`. `mobile-ota.yml`'s preflight (`REL-02`) still
+> checks that before publishing. The next native change, the iOS config included
+> (`docs/APP-STORE-SUBMISSION.md` B9), needs another store build.
 >
 > The first sideload build from it (`Android Test APK` run 36414633349) found a Gradle Metaspace OOM
 > that hung the build instead of failing it (`SDK54-07`). It was fixed in the same PR, before any EAS
@@ -1819,7 +1819,7 @@ Lessons:
 - Play permissions for a service account are per app: invite it in Users and permissions **and**
   add Lynia under App permissions with "Release to testing tracks".
 
-**Build 38, the first SDK 54 / API 36 store build — 2026-09-28.**
+**Build 39, the first SDK 54 / API 36 store build — 2026-09-28 (vc 38 failed first).**
 - **Before the build.** The owner asked for the device pass to be done without them ("just test SDK
   54 yourself then ship"). The new `Android Emulator Smoke` lane ran the test APK on Android 10, 13
   and 16 and walked the signed-out app. It found `SDK54-09`: onboarding's button ran off the bottom of
@@ -1833,8 +1833,17 @@ Lessons:
 - **Cause and fix.** `SDK54-10`: SDK 54's fingerprinter hashes the `GOOGLE_SERVICES_JSON` file
   secret, which only the EAS builder has. `fingerprint.config.js` now ignores
   `**/eas-environment-secrets/**`.
-- **Numbering.** The remote versionCode already moved to 38, so the retry builds as vc 39. Play never
-  received 38.
+- **Numbering.** The remote versionCode had already moved to 38, so the retry built as vc 39. Play
+  never received 38.
+- **Attempt 2.** `mobile-release.yml` run 36481321216 (`main` at `285caa85`, with the fix) queued
+  EAS build `15e221af` (v0.50.1 / vc 39). EAS computed runtime `5d04edb3…`, the same as the runner,
+  and the build FINISHED in 9 minutes (20:45 to 20:54 UTC). Auto-submission `32465ccc` **FINISHED on
+  track `Closed testing`** (`eas-build-status.yml` run 36483501874).
+- **What it carries.** SDK 54 / React Native 0.81 targeting API 36, the SDK54-09 onboarding fix, and
+  hello@lyniago.com as the support contact (#970).
+- **Still owed.** The hardware half of the SDK 54 pass now happens on the testers' phones: sign-in,
+  the map, the camera, push, background GPS and low-end speed. The app is not public on Google Play
+  (the store page still 404s by design).
 
 ---
 
