@@ -47,6 +47,18 @@ describe("fingerprint.config.js (REL-01 — OTA runtime-version stability)", () 
       expect(typeof skip).toBe("string");
     }
   });
+
+  // SDK54-10: EAS build c6300564 failed "Configure expo-updates" because the builder hashed the
+  // GOOGLE_SERVICES_JSON file secret and the GitHub runner, which lacks the file, did not. Measured
+  // out-of-band with `expo-updates fingerprint:generate --platform android`: with this ignore the
+  // hash is `a3571198…` whether the secret file is present, absent or unset; without it, present gave
+  // `e0cb318b…`. Flipping `targetSdkVersion` 36 → 35 still moves it (`c55c036c…`).
+  it("ignores the EAS file-secret directory, so the builder and the runner hash the same sources", () => {
+    const config = require("../fingerprint.config.js");
+    // The secret sits outside the project (`../../../eas-environment-secrets/<hash>`), and
+    // @expo/fingerprint strips those leading `../` only for a pattern that starts with `**/`.
+    expect(config.ignorePaths).toContain("**/eas-environment-secrets/**");
+  });
 });
 
 /**
