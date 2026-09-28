@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { Redirect, useRouter } from "expo-router";
 import React, { useState } from "react";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { saveRolePreference, type StartRole } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
@@ -57,7 +58,11 @@ export default function RoleScreen(): React.ReactElement {
     // The phone frame / safe area — the mock's AppScreen shell; the mock's own screen padding lives
     // inside the view (from its `Pad` wrapper), mirroring phone.tsx.
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      {restaurantsEnabled ? <RoleSelectView {...viewProps} /> : <RoleSelectFlagOffView {...viewProps} />}
+      {/* Both views are `minHeight: "100%"`, so they need an unpadded parent inside the insets; see
+          onboarding.tsx (SDK54-09). */}
+      <View style={{ flex: 1 }}>
+        {restaurantsEnabled ? <RoleSelectView {...viewProps} /> : <RoleSelectFlagOffView {...viewProps} />}
+      </View>
     </SafeAreaView>
   );
 }
