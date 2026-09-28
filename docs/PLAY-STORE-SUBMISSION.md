@@ -1275,7 +1275,7 @@
 | Free or paid | Free | Commission is charged to riders in-app, not at install |
 | Category | Maps & Navigation | Closest fit for a courier marketplace; Business is the alternative |
 | Tags | Delivery, Courier, Navigation | |
-| Contact email | `support@lyniafinance.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` |
+| Contact email | `hello@lyniago.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` and `LEGAL_CONTACT_EMAIL` in `apps/api/src/legal/legal.content.ts` (owner decision 2026-09-28; was `support@lyniafinance.com`, so re-enter it in Play Console's store-listing contact details) |
 | Website | *(none — see §7.3)* | |
 | Version name at first submission | Whatever `main` holds at build time (`0.17.6` as of 2026-08-03 evening) | `app.config.ts` → `version` (release-please-managed; was `0.11.0` when this doc was first written) |
 | Version code | EAS-managed, auto-incrementing | `eas.json` → `appVersionSource: "remote"` + `autoIncrement` |
@@ -1333,7 +1333,7 @@ Lynia is a marketplace that connects senders and riders. Riders are independent 
 not employees, and they transport items — they don't buy them for you or handle payment
 for them.
 
-Questions? support@lyniafinance.com
+Questions? hello@lyniago.com
 ```
 
 ### App icon
@@ -1677,8 +1677,10 @@ representation that they are (or will be) met:
    pending — confirm status with counsel and file.
 2. **Appoint a Data Protection Officer.** Required by the same regulations, and registrable with
    POTRAZ once appointed. When one exists, replace `LEGAL_CONTACT_EMAIL` in `legal.content.ts` with
-   their contact — the notice currently points at the support inbox, which is honest (it is
-   monitored) but is not a designated DPO.
+   their contact — the notice currently points at `hello@lyniago.com` (owner decision 2026-09-28), which
+   is not a designated DPO. It must also be a live inbox: `lyniago.com` had **no MX records** on
+   2026-09-28, so mail to it bounces until a mailbox or forwarding (e.g. Cloudflare Email Routing,
+   since the zone is on Cloudflare) is set up.
 3. **Notify POTRAZ of the cross-border transfer.** The primary region is `africa-south1`
    (Johannesburg), so **every row, image and backup lives in South Africa, not Zimbabwe**
    (`infra/terraform/variables.tf`). Under the Act that is a continuous cross-border transfer needing

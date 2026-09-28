@@ -124,7 +124,7 @@ export function analyticsEnabled(): boolean {
  */
 const supportFromExtra = (Constants.expoConfig?.extra as { supportUrl?: string } | undefined)?.supportUrl;
 export const SUPPORT_URL: string =
-  process.env.EXPO_PUBLIC_SUPPORT_URL ?? supportFromExtra ?? "mailto:support@lyniafinance.com";
+  process.env.EXPO_PUBLIC_SUPPORT_URL ?? supportFromExtra ?? "mailto:hello@lyniago.com";
 
 /** True only when a non-empty Places key is configured — the single gate for showing the search UI. */
 export function placesEnabled(): boolean {

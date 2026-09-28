@@ -277,8 +277,8 @@ implements:
     controller, add Apple (APNs) as a push processor with B4, and update the assertions pinned in
     `legal.content.spec.ts`.
 - **Support URL (required field):** nothing can fill it today. Add a public `/legal/support` page
-  (contact, WhatsApp help line, hours). Make sure the address it lists receives mail;
-  `support@lyniafinance.com` likely has no mailbox.
+  (contact, WhatsApp help line, hours). Make sure the address it lists receives mail: the public
+  contact is `hello@lyniago.com` (since 2026-09-28), and `lyniago.com` had no MX records that day.
 - **`eas.json`:**
   - iOS options on `preview`/`closed`/`production`, with `ios.image` pinned (D2).
   - `submit.<profile>.ios.ascAppId` (+ `appleTeamId`).
@@ -456,7 +456,9 @@ a metadata-only rejection is fixed in App Store Connect without a new build.
 - **Android push may be off too.** `PUSH_PROVIDER = "noop"` in `infra/azure/containerapps.tf:51`. The
   repo can't show whether the GitHub Variable has since been flipped.
 - **OTP channel.** Production is WhatsApp-only (`bird-verify.ts:12-22`); PSS §4.4 still says SMS.
-- **Support mailbox.** `support@lyniafinance.com` is listed everywhere and likely has no mailbox.
+- **Support mailbox.** `hello@lyniago.com` is listed everywhere (since 2026-09-28; it replaced
+  `support@lyniafinance.com`), and `lyniago.com` had no MX records that day, so mail to it bounces until
+  a mailbox or forwarding is set up.
 - **Deletion copy vs behaviour.** See D9.
 
 ## 9. Sources (primary, fetched 2026-09-27 unless dated)

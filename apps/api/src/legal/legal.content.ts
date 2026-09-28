@@ -43,15 +43,18 @@
  */
 
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
-export const LEGAL_LAST_UPDATED = "24 September 2026";
+export const LEGAL_LAST_UPDATED = "28 September 2026";
 
 /**
  * Contact for privacy requests. Deliberately the SAME inbox the app already routes support to
  * (`SUPPORT_URL` in apps/mobile/src/config.ts) rather than a freshly-invented `privacy@` alias — an
  * unmonitored contact address on a published policy is worse than none, and Play/CDPA both require a
  * channel that actually answers. Replace with the registered DPO contact once one is designated.
+ *
+ * On the lyniago.com brand domain by owner decision (2026-09-28): every public contact address is
+ * hello@lyniago.com, replacing support@lyniafinance.com.
  */
-export const LEGAL_CONTACT_EMAIL = "support@lyniafinance.com";
+export const LEGAL_CONTACT_EMAIL = "hello@lyniago.com";
 
 /** Android application id — the identifier Play, and therefore the deletion page, refers to. */
 export const ANDROID_PACKAGE = "zw.co.lynia";
