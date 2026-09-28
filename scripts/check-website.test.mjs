@@ -7,7 +7,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import { REPO_ROOT, checkWebsite } from "./check-website.mjs";
+import { REPO_ROOT, applyLaunchEdits, checkWebsite } from "./check-website.mjs";
 
 const HANDOFF = "packages/design/handoff/lyniago-website/site";
 const SITE = "apps/website/site";
@@ -74,6 +74,44 @@ test("the CSP check sees scripts in any case, with attributes, and refuses exter
   assert.ok(checkWebsite({ root }).some((e) => e.includes("script-src hashes")));
   edit(root, `${SITE}/404.html`, (s) => s.replace("</body>", '<script src="https://cdn.example/x.js"></script>\n</body>'));
   assert.ok(checkWebsite({ root }).some((e) => e.includes("external scripts are not expected")));
+});
+
+test("CSP hashes match what browsers hash: script text after CRLF -> LF", () => {
+  const root = tempRepo();
+  edit(root, `${SITE}/404.html`, (s) => s.replace(/\n/g, "\r\n"));
+  const errors = checkWebsite({ root });
+  assert.ok(!errors.some((e) => e.includes("script-src hashes")), errors.join("\n"));
+});
+
+test("markup the CSP would block fails; off-site <a> links do not", () => {
+  const root = tempRepo();
+  const inject = (markup) => edit(root, `${SITE}/404.html`, (s) => s.replace("</main>", `${markup}</main>`));
+  inject('<button onclick="go()">x</button>');
+  inject('<img src="https://cdn.example/x.png" alt="">');
+  inject('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">');
+  inject('<span style="background:url(https://cdn.example/bg.png)"></span>');
+  inject('<iframe src="/embed"></iframe>');
+  inject('<a href="javascript:void(0)">x</a>');
+  inject('<a href="https://example.com/ok">fine</a>');
+  const errors = checkWebsite({ root }).join("\n");
+  for (const want of [
+    "onclick=…> is an inline event handler",
+    '<img src="https://cdn.example/x.png"> loads from another origin',
+    '<link href="https://fonts.googleapis.com/css2?family=Inter"> loads from another origin',
+    "CSS url(https://cdn.example/bg.png) loads from another origin",
+    "<iframe> is not allowed",
+    'href="javascript:…"> is blocked',
+  ]) {
+    assert.ok(errors.includes(want), `missing "${want}" in:\n${errors}`);
+  }
+  assert.ok(!errors.includes("example.com/ok"), errors);
+});
+
+test("launch edits are literal text and must match exactly once", () => {
+  const edit = { id: "t", from: "X", to: "$&$'" };
+  assert.equal(applyLaunchEdits("a X b", [edit]).html, "a $&$' b");
+  assert.match(applyLaunchEdits("X X", [edit]).problems[0], /exactly once \(matched 2\)/);
+  assert.match(applyLaunchEdits("none", [edit]).problems[0], /exactly once \(matched 0\)/);
 });
 
 test("a reference to a missing file fails", () => {

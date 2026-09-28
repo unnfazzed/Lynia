@@ -16,7 +16,10 @@
  *      footer markup (links made absolute so they work at any path), a "Back home" button, and a
  *      trimmed icon script. It must be up to date.
  *   3. CSP. The script-src of site/_headers lists the sha256 of every inline <script> on every page,
- *      and nothing else.
+ *      and nothing else, hashed the way browsers do (after CRLF -> LF). Nothing on a page may need
+ *      something the policy blocks: inline on*= handlers, javascript: URLs, <base>, <iframe>, or any
+ *      remote script, image, stylesheet, font or form target. Only <a> and rel=canonical/alternate
+ *      may point off-site.
  *   4. REFERENCES. Every src/href/url() on every page resolves to a file in site/, an id on the home
  *      page, an external URL, or an INTENTIONAL_404 path.
  *   5. IMMUTABLE ASSETS (only when BASE_REF is set, i.e. on a PR). site/assets/* is served with a
@@ -52,6 +55,20 @@ export const LAUNCH_EDITS = [
     to: '<a href="https://api.lyniago.com/legal/privacy">Privacy</a>',
   },
 ];
+
+/**
+ * Apply launch edits as literal text. Each `from` must occur exactly once, and split/join is used
+ * because String.replace would expand $&, $' and $` in `to`.
+ */
+export function applyLaunchEdits(html, edits = LAUNCH_EDITS) {
+  const problems = [];
+  for (const edit of edits) {
+    const n = html.split(edit.from).length - 1;
+    if (n !== 1) problems.push(`launch edit "${edit.id}" must match the handoff's index.html exactly once (matched ${n}).`);
+    else html = html.split(edit.from).join(edit.to);
+  }
+  return { html, problems };
+}
 
 /** Files the handoff does not contain but the deployed site may. Anything else is drift. */
 const EXTRA_FILES = new Set([
@@ -101,6 +118,7 @@ function absolutize(markup) {
 }
 
 const NOT_FOUND_CSS = `/* 404: derived from index.html by scripts/check-website.mjs --write */
+body{min-height:100vh;display:flex;flex-direction:column}.nf{flex:1 0 auto}
 .nf{padding:104px 0 120px}.nf h1{font-size:clamp(36px,4.6vw,60px);margin-bottom:32px}
 @media (min-width:961px){.nf{padding:72px 0 80px}.nf h1{font-size:clamp(30px,3.6vw,46px);margin-bottom:28px}}
 `;
@@ -157,15 +175,8 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
 
   // ------------------------------------------------------------ 1. parity with the handoff
   function expectedIndex() {
-    let html = read(join(HANDOFF_SITE, "index.html"));
-    for (const edit of LAUNCH_EDITS) {
-      const n = html.split(edit.from).length - 1;
-      if (n !== 1) {
-        fail(`launch edit "${edit.id}" must match the handoff's index.html exactly once (matched ${n}).`);
-        continue;
-      }
-      html = html.replace(edit.from, edit.to);
-    }
+    const { html, problems } = applyLaunchEdits(read(join(HANDOFF_SITE, "index.html")));
+    problems.forEach(fail);
     return html;
   }
 
@@ -205,15 +216,43 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
     }
   }
 
-  // ------------------------------------------------------------ 3. CSP hashes
+  // ------------------------------------------------------------ 3. CSP hashes + compatibility
+  /** Fail on markup the site's CSP would silently block in production (default-src 'self'). */
+  function checkCspCompatible(page, html) {
+    const markup = html.replace(SCRIPT_TAG, "<script></script>"); // script text is not markup
+    const offSite = (v) => /^\s*(https?:)?\/\//i.test(v);
+    for (const [, tag, attrs] of markup.matchAll(/<([a-z][a-z0-9:-]*)\b([^>]*)>/gi)) {
+      const name = tag.toLowerCase();
+      const attr = {};
+      for (const [, k, , dq, sq, bare] of attrs.matchAll(/([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
+        attr[k.toLowerCase()] = dq ?? sq ?? bare ?? "";
+      }
+      for (const k of Object.keys(attr)) {
+        if (/^on[a-z]+$/.test(k)) fail(`${page}: <${name} ${k}=…> is an inline event handler; the CSP blocks it.`);
+      }
+      if (/^\s*javascript:/i.test(attr.href ?? "")) fail(`${page}: <${name} href="javascript:…"> is blocked by the CSP.`);
+      if (name === "base" || name === "iframe") fail(`${page}: <${name}> is not allowed (the CSP blocks it).`);
+      const linkOk = name === "link" && /\b(canonical|alternate)\b/i.test(attr.rel ?? "");
+      for (const k of ["src", "srcset", "poster", "data", "href", "xlink:href", "action"]) {
+        if (attr[k] === undefined || !offSite(attr[k]) || name === "a" || linkOk) continue;
+        fail(`${page}: <${name} ${k}="${attr[k]}"> loads from another origin; the CSP only allows 'self'.`);
+      }
+    }
+    for (const [m] of markup.matchAll(/url\(\s*["']?\s*(?:https?:)?\/\/[^)]*\)|@import\s+["']\s*(?:https?:)?\/\/[^"']*["']/gi)) {
+      fail(`${page}: CSS ${m} loads from another origin; the CSP only allows 'self'.`);
+    }
+  }
+
   function checkCsp() {
     const want = new Set();
     for (const page of pages()) {
       const html = read(join(SITE, page));
       for (const [, attrs, text] of html.matchAll(SCRIPT_TAG)) {
         if (/\bsrc\s*=/i.test(attrs)) fail(`${page}: external scripts are not expected.`);
-        else want.add(`'sha256-${sha256(Buffer.from(text, "utf8")).toString("base64")}'`);
+        // Browsers hash the script text after the HTML parser turns CRLF / CR into LF.
+        else want.add(`'sha256-${sha256(Buffer.from(text.replace(/\r\n?/g, "\n"), "utf8")).toString("base64")}'`);
       }
+      checkCspCompatible(page, html);
     }
     const wanted = [...want].sort();
     const path = join(SITE, "_headers");

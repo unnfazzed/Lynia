@@ -41,17 +41,19 @@ jobs:
           chmod +x osv-scanner
           # osv-scanner exits non-zero when it finds ANY vulnerability, so `|| true` lets us inspect
           # severities instead of aborting on a low-severity hit we intend to ignore.
-          ./osv-scanner scan source --lockfile=pnpm-lock.yaml --format=json --output=osv-results.json || true
+          # Also the website's deploy tooling (wrangler), which lives outside the pnpm workspace.
+          LOCKS=(--lockfile=pnpm-lock.yaml --lockfile=apps/website/deploy/package-lock.json)
+          ./osv-scanner scan source "${LOCKS[@]}" --format=json --output=osv-results.json || true
           # A well-formed report always carries a `.results` array; its absence means the scan itself
           # failed — fail closed rather than treat a broken run as "no vulnerabilities".
           jq -e 'has("results")' osv-results.json >/dev/null || { echo "::error::osv-scanner produced no valid JSON report"; cat osv-results.json || true; exit 1; }
           HIGH=$(jq '[.results[]?.packages[]?.groups[]?.max_severity | select(. != null and . != "") | tonumber | select(. >= 7)] | length' osv-results.json)
           if [ "${HIGH:-0}" -gt 0 ]; then
-            echo "::error::osv-scanner found ${HIGH} High/Critical (CVSS>=7) advisory group(s) in pnpm-lock.yaml"
-            ./osv-scanner scan source --lockfile=pnpm-lock.yaml || true
+            echo "::error::osv-scanner found ${HIGH} High/Critical (CVSS>=7) advisory group(s) in the scanned lockfiles"
+            ./osv-scanner scan source "${LOCKS[@]}" || true
             exit 1
           fi
-          echo "osv-scanner: no High/Critical (CVSS>=7) vulnerabilities in pnpm-lock.yaml."
+          echo "osv-scanner: no High/Critical (CVSS>=7) vulnerabilities in pnpm-lock.yaml or the website deploy lockfile."
       # Secret scanning: catch a credential committed to source or history. Uses the free gitleaks
       # binary directly (no Action-license requirement on private repos).
       - name: Secret scan (gitleaks)
@@ -160,13 +162,15 @@ jobs:
           node scripts/check-website.mjs
       - name: Guard tests
         run: node --test scripts/check-website.test.mjs
-      - name: Cloudflare Worker configs build (dry run)
+      - name: Cloudflare Worker configs build (dry run, the deploy's pinned wrangler)
         env:
           WRANGLER_SEND_METRICS: "false"
         run: |
           set -euo pipefail
-          npx --yes wrangler@4.143.0 deploy --dry-run --config apps/website/wrangler.jsonc
-          npx --yes wrangler@4.143.0 deploy --dry-run --config apps/website/www-redirect/wrangler.jsonc --outdir "$RUNNER_TEMP/www-redirect"
+          npm ci --ignore-scripts --no-audit --no-fund --prefix apps/website/deploy
+          W=apps/website/deploy/node_modules/.bin/wrangler
+          "$W" deploy --dry-run --config apps/website/wrangler.jsonc
+          "$W" deploy --dry-run --config apps/website/www-redirect/wrangler.jsonc --outdir "$RUNNER_TEMP/www-redirect"
 
   # Parity-render EVIDENCE — pixel-parity guardrail, non-blocking. Renders every WIRED mobile screen
   # (app-targets.mjs kind:"mobile") to a PNG via react-native-web and uploads them as an artifact, so

@@ -8,11 +8,16 @@ name: Deploy website (Cloudflare)
 #
 # TRIGGERS: a push to main that touches the site, and workflow_dispatch (re-deploy / first deploy).
 #
-# DORMANT UNTIL ARMED: skipped until the Variable CLOUDFLARE_ACCOUNT_ID is set. The token is the
-# secret CLOUDFLARE_WORKERS_API_TOKEN (Cloudflare "Edit Cloudflare Workers" template, scoped to the
-# account and the lyniago.com zone). It is deliberately NOT CLOUDFLARE_API_TOKEN, the DNS-only token
-# dns-bind-azure.yml uses. Runs in the `production` environment, whose branch policy is main-only.
-# The repo's Actions logs are public: nothing here prints the token (wrangler never does).
+# DORMANT UNTIL ARMED: skipped until the Variable CLOUDFLARE_ACCOUNT_ID is set. The token is
+# CLOUDFLARE_WORKERS_API_TOKEN, an ACCOUNT-OWNED Cloudflare token with only Workers Admin plus
+# Zone Workers Routes Edit on lyniago.com. It is stored as a `production` ENVIRONMENT secret, never
+# a repository secret: a repository secret can be read by a workflow on any branch, and this repo's
+# Actions logs are public. The environment's branch policy is main-only. The token is deliberately
+# NOT CLOUDFLARE_API_TOKEN, the DNS-only token dns-bind-azure.yml uses.
+#
+# SUPPLY CHAIN: wrangler comes from apps/website/deploy/package-lock.json (exact versions plus
+# integrity hashes, scanned by osv-scanner in CI). It is installed with --ignore-scripts, in a step
+# that has no token. Only the two deploy steps see the token.
 # Never write `${{ }}` inside a run: block in this file.
 
 on:
@@ -39,11 +44,13 @@ jobs:
     environment: production
     timeout-minutes: 25
     env:
-      WRANGLER: wrangler@4.143.0
+      WRANGLER: apps/website/deploy/node_modules/.bin/wrangler
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: "false"
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -56,20 +63,23 @@ jobs:
         run: |
           set -euo pipefail
           [ "$REF" = "refs/heads/main" ] || { echo "::error::The website deploys from main only (got ${REF})."; exit 1; }
-          [ -n "$CF_TOKEN" ] || { echo "::error::Secret CLOUDFLARE_WORKERS_API_TOKEN is not set (docs/WEBSITE.md § One-time setup)."; exit 1; }
+          [ -n "$CF_TOKEN" ] || { echo "::error::CLOUDFLARE_WORKERS_API_TOKEN is not set. It must be a production ENVIRONMENT secret (docs/WEBSITE.md § One-time setup)."; exit 1; }
 
       - name: Site matches the design handoff
         run: node scripts/check-website.mjs
 
+      - name: Install pinned wrangler (lockfile, no install scripts, no token)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix apps/website/deploy
+
       - name: Deploy lyniago.com (static assets)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
-        run: npx --yes "$WRANGLER" deploy --config apps/website/wrangler.jsonc
+        run: '"$WRANGLER" deploy --config apps/website/wrangler.jsonc'
 
       - name: Deploy www.lyniago.com → lyniago.com redirect
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
-        run: npx --yes "$WRANGLER" deploy --config apps/website/www-redirect/wrangler.jsonc
+        run: '"$WRANGLER" deploy --config apps/website/www-redirect/wrangler.jsonc'
 
       - name: Smoke — what a visitor gets
         run: bash apps/website/smoke.sh https://lyniago.com

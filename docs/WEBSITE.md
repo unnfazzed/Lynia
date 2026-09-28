@@ -63,6 +63,16 @@ byte-identical to the handoff, except for:
   `script-src` lists the hashes of the page's inline scripts (kept current by `check-website.mjs`).
 - **One canonical host:** `https://lyniago.com`. `www` redirects there with a 301. Plain `http`
   redirects too, through the zone's *Always Use HTTPS* setting.
+- **Deploy tooling** is wrangler, pinned by `apps/website/deploy/package-lock.json`. That lockfile is
+  scanned by osv-scanner in CI and kept current by Dependabot. It is installed with
+  `npm ci --ignore-scripts` in a step that never sees the token.
+- **Known limitations.**
+  - `_headers` matches by path, not status, so a 404 for a missing file under `/assets/` also gets the
+    one-year immutable header. Deploys are atomic and changed assets get new names, so this only bites
+    a URL that never existed. An optional zone Transform Rule (response code 404 → `Cache-Control:
+    no-store`) closes it.
+  - In CI, wrangler takes over any conflicting DNS record or Custom Domain at `lyniago.com` and
+    `www.lyniago.com`, and only there. Keep those two names for this site.
 - The app hostnames (`api.`, `admin.`, `merchant.lyniago.com`) are unaffected. They remain DNS-only
   records pointing at Azure (`docs/CLOUDFLARE.md`).
 
@@ -70,32 +80,45 @@ byte-identical to the handoff, except for:
 
 Done once; after that every merge that touches `apps/website/` deploys by itself.
 
-1. **Create the deploy token.** Go to <https://dash.cloudflare.com/profile/api-tokens> → **Create Token**
-   → **Edit Cloudflare Workers** → **Use template**.
-   - Account Resources: Include → your account.
-   - Zone Resources: Include → **Specific zone → lyniago.com**.
-   - **Continue to summary → Create Token**, then **Copy**. The token is shown only once.
+1. **Create the deploy token: account-owned, with two permissions only.** Cloudflare → **Manage Account
+   → Account API Tokens → Create Token → Create Custom Token**, named `lyniago-website-deploy`:
+   - **Workers → Admin**, for all Workers. Admin is needed because the first deploy *creates* the two
+     Workers. In the older permission UI this is **Account → Workers Scripts → Edit**.
+   - **Zone → Workers Routes → Edit**, on **Specific zone → lyniago.com**. This attaches the Custom
+     Domains.
+   - Nothing else. **Continue to summary → Create Token → Copy.** The token is shown only once.
 
-   An account-owned token (**Manage Account → Account API Tokens**, visible to Super Administrators)
-   works the same way.
+   Why not the "Edit Cloudflare Workers" template or a personal token? The template adds
+   account-wide KV, R2 and account-settings access the deploy never uses. With a personal token,
+   wrangler prints the owner's email and account list on any authentication error, into public
+   Actions logs. After the first deploy the token can drop to **Editor** on just the two Workers.
 2. **Copy your account ID.** Cloudflare → **lyniago.com → Overview** → the *API* section at the bottom →
    **Account ID → Copy**. (It is also under **Workers & Pages → Account details**.)
-3. **Store both in GitHub**, from a phone browser (the GitHub app has no secrets screen):
-   - Token: <https://github.com/unnfazzed/Lynia/settings/secrets/actions/new>. Name
-     `CLOUDFLARE_WORKERS_API_TOKEN`; paste the token as the secret; **Add secret**.
-   - Account ID: <https://github.com/unnfazzed/Lynia/settings/variables/actions/new>. Name
-     `CLOUDFLARE_ACCOUNT_ID`; paste the ID as the value; **Add variable**.
+3. **Store the token as a `production` ENVIRONMENT secret**, never a repository secret. A repository
+   secret can be read by a workflow on *any* branch, and this repo's Actions logs are public. The
+   `production` environment only runs from `main`. From a phone browser (the GitHub app has no
+   secrets screen):
+   - <https://github.com/unnfazzed/Lynia/settings/environments> → **production** → **Environment
+     secrets → Add environment secret**. Name `CLOUDFLARE_WORKERS_API_TOKEN`; paste the token; **Add
+     secret**.
+   - The account ID is not secret: <https://github.com/unnfazzed/Lynia/settings/variables/actions/new>.
+     Name `CLOUDFLARE_ACCOUNT_ID`; paste the ID as the value; **Add variable**.
 
    Or in Cloud Shell, where `gh secret set` prompts for the token so it stays out of shell history:
    ```bash
-   bash -c 'gh auth status >/dev/null 2>&1 || gh auth login; gh secret set CLOUDFLARE_WORKERS_API_TOKEN -R unnfazzed/Lynia && gh variable set CLOUDFLARE_ACCOUNT_ID -R unnfazzed/Lynia -b "PASTE_ACCOUNT_ID"'
+   bash -c 'gh auth status >/dev/null 2>&1 || gh auth login; gh secret set CLOUDFLARE_WORKERS_API_TOKEN --env production -R unnfazzed/Lynia && gh variable set CLOUDFLARE_ACCOUNT_ID -R unnfazzed/Lynia -b "PASTE_ACCOUNT_ID"'
    ```
-   The deploy job runs in the `production` environment, so it can read a repository secret or a
-   `production` environment secret.
 4. **Turn on HTTPS redirects.** Cloudflare → **lyniago.com → SSL/TLS → Edge Certificates → Always Use
    HTTPS: On**. If that switch is missing, SSL/TLS → Overview is set to *Off*; choose **Full** first.
    Both settings only affect proxied hostnames, so the DNS-only app hosts are untouched.
-5. **First deploy.** The deploy runs by itself when the website PR merges. Otherwise use GitHub → Actions
+5. **Keep script-injecting zone features off** for lyniago.com. Each one rewrites the HTML, so the page
+   is no longer the handoff, and the CSP blocks what they inject, so every visitor gets console errors.
+   The smoke's byte-identity check catches the rewrite on the next deploy.
+   - **Security → Bots → Bot Fight Mode: Off.** Its JavaScript Detections cannot be switched off
+     separately.
+   - Keep Rocket Loader, Zaraz and Web Analytics' automatic (JS snippet) setup off.
+   - Do not "fix" an injection with `Cache-Control: no-transform`: that also turns off brotli/gzip.
+6. **First deploy.** The deploy runs by itself when the website PR merges. Otherwise use GitHub → Actions
    → **Deploy website (Cloudflare)** → **Run workflow** (a Claude session can dispatch it). The first run
    waits up to ten minutes for Cloudflare to issue the certificates.
 

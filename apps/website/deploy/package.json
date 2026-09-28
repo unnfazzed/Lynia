@@ -1,0 +1,8 @@
+{
+  "name": "lyniago-website-deploy",
+  "private": true,
+  "description": "Pinned deploy tooling for lyniago.com (docs/WEBSITE.md). Installed by CI with `npm ci --ignore-scripts` from package-lock.json, in a step that never sees the Cloudflare token. Not a pnpm workspace package (apps/* matches apps/website, not this directory).",
+  "dependencies": {
+    "wrangler": "4.143.0"
+  }
+}

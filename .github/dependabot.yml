@@ -1,6 +1,15 @@
 # Automated dependency-update PRs so security patches land promptly (docs/SECURITY.md P1-1).
 version: 2
 updates:
+  # lyniago.com deploy tooling (wrangler), pinned by its own lockfile outside the pnpm workspace
+  # (docs/WEBSITE.md). A bump here changes only the tool that uploads the static site.
+  - package-ecosystem: npm
+    directory: "/apps/website/deploy"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+
   # npm / pnpm workspace — grouped to keep PR volume manageable; security updates always come through.
   - package-ecosystem: npm
     directory: "/"

@@ -16,6 +16,14 @@ WAIT="${SMOKE_WAIT:-600}"
 fails=0
 err() { echo "::error::smoke: $*"; fails=$((fails + 1)); }
 ok() { echo "ok  $*"; }
+# Every probe retries transient network errors; the two slow-to-settle checks below also poll.
+curl() { command curl --retry 3 --retry-all-errors --retry-delay 2 --max-time 20 "$@"; }
+# poll SECONDS CMD... : re-run CMD every 15s until it succeeds or SECONDS pass (first deploy: the www
+# certificate can land a minute or two after the apex's).
+poll() {
+  local until=$((SECONDS + $1)); shift
+  until "$@"; do [ "$SECONDS" -lt "$until" ] || return 1; sleep 15; done
+}
 header() { printf '%s' "$1" | tr -d '\r' | grep -i "^$2:" | head -1 | cut -d' ' -f2- || true; }
 
 # 1. First deploy: Cloudflare creates the DNS record and edge certificate; give it time.
@@ -73,17 +81,20 @@ status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
   || err "/about: HTTP $status (want 404 with the site's 404 page)"
 
 if [ "$ORIGIN" = "https://lyniago.com" ]; then
-  loc=$(header "$(curl -sS -D - -o /dev/null 'https://www.lyniago.com/about?from=smoke')" location)
-  [ "$loc" = "https://lyniago.com/about?from=smoke" ] && ok "www redirects to https://lyniago.com" \
-    || err "www.lyniago.com redirect: location '$loc'"
-  h=$(curl -sS -D - -o /dev/null "http://lyniago.com/")
-  code=$(printf '%s' "$h" | head -1 | awk '{print $2}')
-  loc=$(header "$h" location)
-  if [[ "$code" =~ ^30[178]$ ]] && [ "$loc" = "https://lyniago.com/" ]; then
-    ok "http redirects to https"
-  else
-    err "http://lyniago.com/ is served over plain HTTP (HTTP $code). Turn on Cloudflare → lyniago.com → SSL/TLS → Edge Certificates → Always Use HTTPS (docs/WEBSITE.md)."
-  fi
+  www_ok() {
+    loc=$(header "$(curl -sS -D - -o /dev/null 'https://www.lyniago.com/about?from=smoke' 2>/dev/null)" location)
+    [ "$loc" = "https://lyniago.com/about?from=smoke" ]
+  }
+  poll "$((WAIT < 300 ? 300 : WAIT))" www_ok && ok "www redirects to https://lyniago.com" \
+    || err "www.lyniago.com does not redirect to https://lyniago.com (location '${loc:-none}')."
+  http_ok() {
+    h=$(curl -sS -D - -o /dev/null "http://lyniago.com/" 2>/dev/null)
+    code=$(printf '%s' "$h" | head -1 | awk '{print $2}')
+    loc=$(header "$h" location)
+    [[ "$code" =~ ^30[178]$ ]] && [ "$loc" = "https://lyniago.com/" ]
+  }
+  poll 120 http_ok && ok "http redirects to https" \
+    || err "http://lyniago.com/ is served over plain HTTP (HTTP ${code:-none}). Turn on Cloudflare → lyniago.com → SSL/TLS → Edge Certificates → Always Use HTTPS (docs/WEBSITE.md)."
 fi
 
 [ "$fails" -eq 0 ] || { echo "smoke: $fails problem(s)"; exit 1; }
