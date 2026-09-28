@@ -21,10 +21,9 @@ This matches what's already in the repo:
 - `infra/terraform/admin.tf:86-88` notes the admin console's IAP had to use a hand-created **custom**
   OAuth client instead of Google's managed one, specifically because *"this project's org has no
   Cloud Identity directory."* `lyniafinance.com` has never been verified with Google.
-- Nothing in the repo provisions a real inbox for the domain — `support@lyniafinance.com` is
-  referenced as the contact address (`docs/PLAY-STORE-SUBMISSION.md`, `apps/api/src/legal/legal.content.ts`,
-  `apps/mobile/src/config.ts`'s `SUPPORT_URL`) but there's no mail-hosting config anywhere, so it's
-  likely not a live mailbox today.
+- Nothing in the repo provisions a real inbox for the domain. `support@lyniafinance.com` was the
+  published contact address until 2026-09-28, when the owner moved every public contact to
+  `hello@lyniago.com` (`apps/api/src/legal/legal.content.ts`, `apps/mobile/src/config.ts`'s `SUPPORT_URL`).
 
 ## Fix: stand up Google Workspace for lyniafinance.com
 
@@ -45,8 +44,7 @@ Google identity **and** an actual inbox for `shepherd@`/`support@lyniafinance.co
    non-interactive session.) Click Verify once the record is live — usually resolves within minutes.
 6. `shepherd@lyniafinance.com` is now an active Google Workspace account.
 7. Point an MX record at Google (the setup wizard supplies the exact records) so `@lyniafinance.com`
-   mail actually delivers — this is also what turns `support@lyniafinance.com` from a string in the
-   config into a real, receivable inbox.
+   mail actually delivers.
 
 Cheaper alternative — **Cloud Identity Free** (workspace.google.com/gcpidentity/): same
 domain-verification flow, gives you the Google identity for IAM/console purposes at no cost, but no

@@ -164,3 +164,18 @@ describe("both pages are self-contained", () => {
     expect(html.trimEnd().endsWith("</html>")).toBe(true);
   });
 });
+
+describe("contact address on both pages", () => {
+  /**
+   * The public contact is on the lyniago.com brand domain (owner decision 2026-09-28). Pinned
+   * literally, like the hosting region, so it can't drift back to support@lyniafinance.com unnoticed.
+   */
+  it.each([
+    ["privacy", privacyPolicyHtml()],
+    ["account-deletion", accountDeletionHtml()],
+  ])("%s lists hello@lyniago.com as the contact, and no lyniafinance.com address", (_name, html) => {
+    expect(LEGAL_CONTACT_EMAIL).toBe("hello@lyniago.com");
+    expect(html).toContain('href="mailto:hello@lyniago.com"');
+    expect(html).not.toMatch(/lyniafinance/i);
+  });
+});
