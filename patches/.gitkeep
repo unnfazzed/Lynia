@@ -1,0 +1,5 @@
+# Keeps patches/ in git while no pnpm patch is declared. The api, admin and merchant Dockerfiles
+# COPY this directory before `pnpm install` (pnpm applies patchedDependencies during install), so
+# removing the last patch must not remove the directory: after the SDK 54 upgrade did exactly that,
+# every API release failed at `COPY patches/ patches/`. apps/api/src/dockerfile-sources.spec.ts
+# fails CI if a Dockerfile COPY source goes missing again.
