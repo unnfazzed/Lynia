@@ -6,12 +6,12 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-28 (**`SDK54-01`..`SDK54-06` FIXED before merge** — interactive session,
+**Last consolidated:** 2026-09-28 (**`SDK54-01`..`SDK54-07` FIXED before merge** — interactive session,
 the Expo SDK 52 → 54 upgrade for Play's API-36 requirement. Defects the upgrade itself introduced, caught
 on its branch: Inter lost on every screen under React Native 0.81, PostHog on a second React, R8 switched
 off by a renamed option, the offline cache on a moved API, five screens under the Android status bar,
-and the notification handler's new required fields. See the "Expo SDK 54 upgrade 2026-09-28" entry at
-the end.)
+the notification handler's new required fields, and a Gradle Metaspace OOM that hung every release
+build. See the "Expo SDK 54 upgrade 2026-09-28" entry at the end.)
 Prior: 2026-09-27 (**`IOS-01`..`IOS-09` FIXED** — interactive session, first iOS build
 work: a dependency override that broke every iOS prebuild, the Play-only force-update link, iOS push
 tokens sent to FCM, five iPhone-only UX defects from a code sweep (keyboard over modal fields, no way
@@ -2663,7 +2663,7 @@ Architecture stays off (`MOB-BOOT-04`).
 These are the defects the upgrade itself introduced. All were fixed on the upgrade branch before merge,
 and none reached `main`. What tests cannot show (a cold start, fonts, back and edge-to-edge on a real
 phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. That pass gates the merge, because the
-upgrade moves the Android fingerprint from `7ae040c9…` to `de5472b4…` (`docs/APP-STORE-SUBMISSION.md`
+upgrade moves the Android fingerprint from `7ae040c9…` to `a3571198…` (`docs/APP-STORE-SUBMISSION.md`
 B9).
 
 | ID | Finding | Location | Severity | Status |
@@ -2674,5 +2674,6 @@ B9).
 | SDK54-04 | **The offline cache would have stopped saving and restoring.** expo-file-system 19 moved the classic API to `expo-file-system/legacy`. The root import's `readAsStringAsync`/`writeAsStringAsync` now throw, and the cache's `.catch` would have hidden it. | `apps/mobile/src/query/persist.ts` | MEDIUM (every cold start without the persisted query cache) | **FIXED**: imports `expo-file-system/legacy`. `src/query/__tests__/persist.test.ts`. |
 | SDK54-05 | **Five screens would have drawn under the Android status bar.** SDK 54 draws edge-to-edge on every Android version, and React Native's own `SafeAreaView` pads on iOS only. | `apps/mobile/app/notifications/index.tsx`, `onboarding.tsx`, `role.tsx`, `help/index.tsx`, `phone.tsx` | MEDIUM (Android layout) | **FIXED** in code: they use `SafeAreaView` from `react-native-safe-area-context`. The rest of the app is checked in the device pass. |
 | SDK54-06 | **The foreground notification handler no longer type-checked.** expo-notifications 0.32 deprecated `shouldShowAlert` and made `shouldShowBanner` and `shouldShowList` required. | `apps/mobile/src/push/push.ts` | LOW | **FIXED**: sets both. |
+| SDK54-07 | **Every Android release build ran out of memory and hung.** Under the template's `org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m`, `:expo-updates:kspReleaseKotlin` failed with `java.lang.OutOfMemoryError: Metaspace` about 8 minutes into the Gradle step. The failed daemon never exited. The `Android Test APK` job (run 36414633349) sat silent for 58 minutes, where SDK 52 runs took 11–13 end to end, until it was cancelled so its log could be read. EAS runs the same prebuild and reads the same `gradle.properties`, so a store build would have burned quota on the same hang. | `apps/mobile/plugins/with-gradle-memory.js`, `.github/workflows/android-test-apk.yml` | HIGH (no release build could finish) | **FIXED**: a config plugin sets `-Xmx4096m -XX:MaxMetaspaceSize=1024m` in the generated `gradle.properties` for every build. The QA-APK job now has a 45-minute timeout, so a wedged daemon fails fast with a readable log. `__tests__/gradle-memory-plugin.test.ts`; a local prebuild writes the new value. |
 
 ---

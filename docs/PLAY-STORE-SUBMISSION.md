@@ -1249,9 +1249,13 @@
 > React Native 0.76 can't simply retarget: under 36, Android 16 stops calling `onBackPressed()`, and
 > the back button stops reaching the app. The fix is the Expo SDK 52 → 54 upgrade (React Native 0.81;
 > the New Architecture stays off, `MOB-BOOT-04`), whose PR sets compile and target to 36. No EAS build
-> has been made from it. It moves the fingerprint (`7ae040c9…` → `de5472b4…`), so it can only ship as
+> has been made from it. It moves the fingerprint (`7ae040c9…` → `a3571198…`), so it can only ship as
 > a store build, after the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. Until then, Play Console's
 > extension (to 2026-11-01, the founder's request) is what keeps updates submittable.
+>
+> The first sideload build from it (`Android Test APK` run 36414633349) found a Gradle Metaspace OOM
+> that hung the build instead of failing it (`SDK54-07`). It was fixed in the same PR, before any EAS
+> build could spend quota on it.
 
 ---
 

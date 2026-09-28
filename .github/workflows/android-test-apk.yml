@@ -32,6 +32,11 @@ jobs:
   build:
     name: build sideloadable test apk
     runs-on: ubuntu-latest
+    # A whole run took 11-13 min on SDK 52. Without a limit, a wedged Gradle daemon sits silent until
+    # the 6-hour default: run 36414633349 hit a Metaspace OOM 8 min in and then idled 58 min until it
+    # was cancelled (docs/KNOWN_BUGS.md SDK54-07). A timeout also makes the log readable sooner, since
+    # GitHub only serves a job's log once the job ends.
+    timeout-minutes: 45
     env:
       # Renders the build-gated "TEST BUILD — live API" banner (app.config.ts extra.testBuild → src/ui
       # Screen). Only this workflow sets it, so a real EAS release build never shows the banner.

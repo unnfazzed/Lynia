@@ -310,11 +310,11 @@ changes (B2) in one PR, right before the next Android store build.** The API-36 
 natural carrier.
 
 The SDK 54 upgrade that brings API 36 moves the fingerprint by itself: `7ae040c9…` on `main` →
-`de5472b4…` on the upgrade branch (measured 2026-09-28, same command). So the order is: merge the SDK
+`a3571198…` on the upgrade branch (measured 2026-09-28, same command). So the order is: merge the SDK
 54 upgrade after its device pass, then the iOS config PR, then cut that one Android store build.
 
 The rule holds on SDK 54's `@expo/fingerprint@0.15.5`, re-measured on the upgrade branch: an `ios`
-block moves `de5472b4…` to `ae8fa4ad…`, and an iOS `eas.json` profile moves it to `f116badd…`. A
+block moves `a3571198…` to `bdf7c3fe…`, and an iOS `eas.json` profile moves it to `b3cd3e7f…`. A
 version bump still moves nothing (`REL-01`).
 
 JS-only and API-only work can land any time: B3, B4, B5, the JS parts of B6, and the legal/support

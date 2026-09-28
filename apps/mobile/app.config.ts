@@ -285,6 +285,10 @@ const config: ExpoConfig = {
     // advertising ID?" = No), and Play enforces that against the merged manifest — this keeps the "No"
     // truthful no matter what an SDK's library manifest declares. See plugins/with-remove-ad-id.js.
     "./plugins/with-remove-ad-id",
+    // Raise the Gradle daemon's heap and Metaspace for release builds: the template's 512 MB Metaspace
+    // ran out in expo-updates' KSP task on SDK 54, and the failed daemon hung the build instead of
+    // exiting (docs/KNOWN_BUGS.md SDK54-07). See plugins/with-gradle-memory.js.
+    "./plugins/with-gradle-memory",
     // PostHog analytics needs NO config plugin — the SDK autolinks and src/telemetry/analytics.tsx
     // key-gates it. Deliberately NOT adding "posthog-react-native/expo" (the plugin the connect
     // command suggests): it exists only for error-tracking source-map upload and injects a gradle
@@ -327,10 +331,10 @@ const config: ExpoConfig = {
     // extraProguardRules is kept intentionally SMALL. React Native core, expo-modules-core, Google Play
     // Services and OkHttp/Okio all ship their own consumer ProGuard rules, so blanket `-keep`s would
     // just neuter the shrink we are turning on. The only belt-and-braces rule is for a library that
-    // ships NONE: react-native-maps@1.18.x (verified — no consumer-rules.pro and no consumerProguardFiles
-    // in its android/build.gradle), whose Fabric view-manager / command classes R8 full-mode can strip
-    // because JS reaches them by string name. posthog-react-native has no native Android module (pure
-    // JS) and socket.io-client is pure JS too, so neither needs a rule.
+    // ships NONE: react-native-maps (verified on 1.18.x and again on 1.20.1 — no consumer-rules.pro and
+    // no consumerProguardFiles in its android/build.gradle), whose view-manager / command classes R8
+    // can strip because JS reaches them by string name. posthog-react-native has no native Android
+    // module (pure JS) and socket.io-client is pure JS too, so neither needs a rule.
     [
       "expo-build-properties",
       {
