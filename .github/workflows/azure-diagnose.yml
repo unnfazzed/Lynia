@@ -86,7 +86,7 @@ jobs:
             RETENTION_JOB WALLET_JOB MIGRATE_JOB HEALTH_URL LAW_ID
 
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}

@@ -63,7 +63,7 @@ jobs:
           [ -n "$CF_TOKEN" ] || { echo "::error::Repository secret CLOUDFLARE_API_TOKEN is not set (Cloudflare → API Tokens → Edit zone DNS, zone lyniago.com)."; exit 1; }
 
       - name: Azure login (OIDC, production deploy identity)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
