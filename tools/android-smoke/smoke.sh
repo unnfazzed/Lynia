@@ -121,6 +121,8 @@ for route in help send home food history notifications settings profile wallet r
     continue
   fi
   back
+  # Back can land on a screen that asks for location again (the rider board does on each focus).
+  system_dialog "back from lynia://$route" "06-link-$route-back-dialog"
   if ! alive; then
     fail "back from lynia://$route killed the app"
     relaunch_to_phone
