@@ -2,6 +2,7 @@ import { GOOGLE_PLACES_KEY, placesEnabled } from "../config";
 import { mapPlaceDetails, mapPredictions, placesFault, type PlaceSuggestion, type ResolvedPlace } from "../logic/places";
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
 import { captureException } from "../telemetry/sentry";
+import { fetchSignal } from "../net/fetch-signal";
 
 /**
  * Google Places REST client for search-first addressing (customer-journey §1·2/§1·3). These call Google
@@ -43,7 +44,7 @@ async function getJson(url: string): Promise<unknown | null> {
   // fallback fast, not hang behind a spinner on a constrained link.
   const timer = setTimeout(() => controller.abort(), FAST_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: fetchSignal(controller) });
     if (!res.ok) return null;
     return (await res.json()) as unknown;
   } catch {

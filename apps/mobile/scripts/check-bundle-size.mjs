@@ -16,7 +16,7 @@
 // What it measures:
 //   - androidExportTotalBytes  — total bytes of every file in the export dir (the whole JS payload:
 //                                the bundle + all bundled assets/fonts/images).
-//   - androidHermesBundleBytes — the Hermes bytecode bundle(s). Expo SDK 52 / RN 0.76 ship Hermes, so
+//   - androidHermesBundleBytes — the Hermes bytecode bundle(s). Expo SDK 54 / RN 0.81 ship Hermes, so
 //                                a release export emits `.hbc` under `_expo/static/js/android/`. The
 //                                exact filename is a content hash, so we GLOB rather than hardcode a
 //                                brittle path, and fall back to the largest `.js`/`.hbc` file anywhere

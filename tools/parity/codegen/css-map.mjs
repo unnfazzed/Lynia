@@ -19,7 +19,7 @@ export const RULES = {
   maxWidth:"clean", maxHeight:"clean", top:"clean", left:"clean", right:"clean", bottom:"clean",
   position:"clean", zIndex:"clean", opacity:"clean", textAlign:"clean",
   letterSpacing:"clean", textTransform:"clean", aspectRatio:"clean", overflow:"clean",
-  gap:"clean", // RN 0.71+ supports gap; app is RN 0.76
+  gap:"clean", // RN 0.71+ supports gap; app is RN 0.81
   fontFamily:"clean",
   // transform: value/shorthand rewrite
   background:"transform",       // → backgroundColor (rename) unless gradient/image (→manual, caught at value time)

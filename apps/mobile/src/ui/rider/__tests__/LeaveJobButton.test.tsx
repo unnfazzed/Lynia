@@ -7,6 +7,7 @@
  */
 import { Alert } from "react-native";
 import renderer, { act } from "react-test-renderer";
+import { renderSync } from "../../../testing/render-sync";
 import { LeaveJobButton } from "../LeaveJobButton";
 
 function pressBack(tree: renderer.ReactTestRenderer): void {
@@ -20,7 +21,7 @@ describe("LeaveJobButton", () => {
   it("navigates straight through with no confirm when the job isn't active", () => {
     const onLeave = jest.fn();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const tree = renderer.create(<LeaveJobButton isActive={false} onLeave={onLeave} />);
+    const tree = renderSync(<LeaveJobButton isActive={false} onLeave={onLeave} />);
     pressBack(tree);
     expect(alertSpy).not.toHaveBeenCalled();
     expect(onLeave).toHaveBeenCalledTimes(1);
@@ -30,7 +31,7 @@ describe("LeaveJobButton", () => {
   it("shows a confirm instead of navigating immediately when the job is active", () => {
     const onLeave = jest.fn();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const tree = renderer.create(<LeaveJobButton isActive={true} onLeave={onLeave} />);
+    const tree = renderSync(<LeaveJobButton isActive={true} onLeave={onLeave} />);
     pressBack(tree);
     expect(alertSpy).toHaveBeenCalledTimes(1);
     expect(onLeave).not.toHaveBeenCalled();
@@ -43,7 +44,7 @@ describe("LeaveJobButton", () => {
   it("navigates only once the rider confirms \"Leave anyway\"", () => {
     const onLeave = jest.fn();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const tree = renderer.create(<LeaveJobButton isActive={true} onLeave={onLeave} />);
+    const tree = renderSync(<LeaveJobButton isActive={true} onLeave={onLeave} />);
     pressBack(tree);
     const buttons = alertSpy.mock.calls[0]![2]!;
     const leave = buttons.find((b) => b.text === "Leave anyway")!;
@@ -55,7 +56,7 @@ describe("LeaveJobButton", () => {
   it("does NOT navigate when the rider taps \"Stay\"", () => {
     const onLeave = jest.fn();
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const tree = renderer.create(<LeaveJobButton isActive={true} onLeave={onLeave} />);
+    const tree = renderSync(<LeaveJobButton isActive={true} onLeave={onLeave} />);
     pressBack(tree);
     const buttons = alertSpy.mock.calls[0]![2]!;
     const stay = buttons.find((b) => b.text === "Stay")!;

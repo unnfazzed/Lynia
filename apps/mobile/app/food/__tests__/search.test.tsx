@@ -44,6 +44,20 @@ jest.mock("../../../src/query/use-restaurants", () => ({
 
 import RestaurantSearchScreen from "../search";
 
+// Every test's tree is unmounted after it. The trees all read the one mutable feed stub above, and
+// React 19's act() also flushes work on a tree an earlier test left mounted: the B-T3 case's
+// searched-for "sadza" screen would otherwise fire loadMore() inside the next case, once that case
+// flips `hasMore`.
+const mountedTrees: renderer.ReactTestRenderer[] = [];
+function mount(): renderer.ReactTestRenderer {
+  const tree = renderer.create(<RestaurantSearchScreen />);
+  mountedTrees.push(tree);
+  return tree;
+}
+afterEach(() => {
+  for (const tree of mountedTrees.splice(0)) act(() => tree.unmount());
+});
+
 describe("RestaurantSearchScreen (B-T3: unbounded match set must be virtualized, not ScrollView+map)", () => {
   beforeEach(() => {
     mockFeedStub.hasMore = false;
@@ -54,7 +68,7 @@ describe("RestaurantSearchScreen (B-T3: unbounded match set must be virtualized,
   it("renders matching results via FlatList, not an unvirtualized ScrollView", () => {
     let tree!: renderer.ReactTestRenderer;
     act(() => {
-      tree = renderer.create(<RestaurantSearchScreen />);
+      tree = mount();
     });
     act(() => {
       tree.root.findByProps({ placeholder: "Search restaurants or cuisine" }).props.onChangeText("sadza");
@@ -76,7 +90,7 @@ describe("RestaurantSearchScreen (B-O10: search must drain every page, not just 
   it("does not fetch more pages while the search box is empty", () => {
     mockFeedStub.hasMore = true;
     act(() => {
-      renderer.create(<RestaurantSearchScreen />);
+      mount();
     });
     expect(mockFeedStub.loadMore).not.toHaveBeenCalled();
   });
@@ -85,7 +99,7 @@ describe("RestaurantSearchScreen (B-O10: search must drain every page, not just 
     mockFeedStub.hasMore = true;
     let tree!: renderer.ReactTestRenderer;
     act(() => {
-      tree = renderer.create(<RestaurantSearchScreen />);
+      tree = mount();
     });
     act(() => {
       tree.root.findByProps({ placeholder: "Search restaurants or cuisine" }).props.onChangeText("sadza");
@@ -97,7 +111,7 @@ describe("RestaurantSearchScreen (B-O10: search must drain every page, not just 
     mockFeedStub.hasMore = false;
     let tree!: renderer.ReactTestRenderer;
     act(() => {
-      tree = renderer.create(<RestaurantSearchScreen />);
+      tree = mount();
     });
     act(() => {
       tree.root.findByProps({ placeholder: "Search restaurants or cuisine" }).props.onChangeText("sadza");

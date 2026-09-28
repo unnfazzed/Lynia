@@ -31,6 +31,9 @@ const EMPTY_MODULES = [
   "expo-linking", "expo-image-picker",
   "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
   "expo-splash-screen", "expo-updates", "expo-asset", "expo-file-system",
+  // Exact subpath (src/query/persist.ts, since Expo SDK 54): the package alias above would otherwise
+  // be extended to ".../empty.js/legacy", which is not a directory.
+  "expo-file-system/legacy",
   "expo-haptics", "posthog-react-native",
   "react-native-screens", "react-native-gesture-handler",
   "@react-native-async-storage/async-storage",

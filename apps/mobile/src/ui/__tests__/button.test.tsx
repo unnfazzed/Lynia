@@ -1,6 +1,7 @@
 import React from "react";
 import { ActivityIndicator, Pressable, Text } from "react-native";
 import renderer from "react-test-renderer";
+import { renderedType, renderSync } from "../../testing/render-sync";
 import { Button } from "../index";
 
 /**
@@ -17,19 +18,19 @@ function textOf(tree: renderer.ReactTestRenderer): string[] {
 
 describe("Button loading tri-state (ALR-09)", () => {
   it("renders the plain label when idle", () => {
-    const tree = renderer.create(<Button label="Confirm" onPress={() => {}} />);
+    const tree = renderSync(<Button label="Confirm" onPress={() => {}} />);
     expect(textOf(tree)).toContain("Confirm");
     expect(tree.root.findAllByType(ActivityIndicator).length).toBe(0);
   });
 
   it("renders a spinner, not the label, while genuinely pending (loading: true)", () => {
-    const tree = renderer.create(<Button label="Confirm" onPress={() => {}} loading />);
+    const tree = renderSync(<Button label="Confirm" onPress={() => {}} loading />);
     expect(tree.root.findAllByType(ActivityIndicator).length).toBe(1);
     expect(textOf(tree)).not.toContain("Confirm");
   });
 
   it("renders an honest queued cue — no spinner, no lie that it's in flight — when loading: \"queued\"", () => {
-    const tree = renderer.create(<Button label="Confirm" onPress={() => {}} loading="queued" />);
+    const tree = renderSync(<Button label="Confirm" onPress={() => {}} loading="queued" />);
     expect(tree.root.findAllByType(ActivityIndicator).length).toBe(0);
     expect(textOf(tree)).not.toContain("Confirm");
     expect(textOf(tree).some((t) => t.includes("Waiting to reconnect"))).toBe(true);
@@ -37,8 +38,8 @@ describe("Button loading tri-state (ALR-09)", () => {
 
   it("disables the press target while queued, same as while genuinely pending", () => {
     const onPress = jest.fn();
-    const tree = renderer.create(<Button label="Confirm" onPress={onPress} loading="queued" />);
-    const pressable = tree.root.findByType(Pressable);
+    const tree = renderSync(<Button label="Confirm" onPress={onPress} loading="queued" />);
+    const pressable = tree.root.findByType(renderedType(Pressable));
     expect(pressable.props.disabled).toBe(true);
   });
 });

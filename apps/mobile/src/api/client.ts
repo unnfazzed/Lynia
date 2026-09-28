@@ -3,6 +3,7 @@ import { API_CONFIG_ERROR, API_URL } from "../config";
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { reportReachable, reportUnreachable } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
+import { fetchSignal } from "../net/fetch-signal";
 
 /** Hooks the AuthProvider registers so the client can read/rotate tokens without a circular import. */
 interface ApiHooks {
@@ -69,7 +70,7 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
   try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
+    const res = await fetch(input, { ...init, signal: fetchSignal(controller) });
     // We got an HTTP response — even a 4xx/5xx proves the link is alive. Clears the offline state and
     // cancels the recovery probe, so a passing request is all it takes to come back online.
     reportReachable();

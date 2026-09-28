@@ -6,6 +6,7 @@ import type { MerchantFeatureFlagsResponse } from "@lynia/shared";
 import { useEffect, useState } from "react";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
+import { fetchSignal } from "./fetch-signal";
 
 /**
  * Remote config for the merchant-vertical kill switches (`docs/plans/2026-07-28-restaurants-send-
@@ -40,7 +41,7 @@ export async function fetchFeatureFlags(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(`${API_URL}/app/feature-flags`, { signal: controller.signal });
+    const res = await fetchImpl(`${API_URL}/app/feature-flags`, { signal: fetchSignal(controller) });
     if (!res.ok) return DEFAULT_FEATURE_FLAGS;
     const { MerchantFeatureFlagsResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());

@@ -1,16 +1,15 @@
 /**
- * Metro on Expo SDK 52 resolves without package `exports` support
- * (unstable_enablePackageExports is off by default), but posthog-react-native
- * imports `@posthog/core/surveys`, a subpath that only exists via the exports
- * map. Map @posthog/core subpaths to their dist targets explicitly — scoped to
- * that one package rather than enabling exports resolution globally, which
- * changes resolution for the whole dependency tree.
+ * posthog-react-native imports `@posthog/core/surveys`, a subpath that only exists via the exports
+ * map. Metro on Expo SDK 52 resolved without package `exports` support, so @posthog/core subpaths
+ * are mapped to their dist targets explicitly. Since SDK 53, Metro's `exports` resolution is ON by
+ * default (unstable_enablePackageExports), and this app now uses it, so the subpath would resolve
+ * on its own; the mapping stays so PostHog keeps loading the same dist files it always has.
  *
  * Separately, zod v4's classic entry point (`zod/v4/classic/external.{js,cjs}` AND
  * `zod/v4/core/index.{js,cjs}` — both reached via `packages/shared/src/contracts.ts`'s
  * `import { z } from "zod"`) each do `export * as locales from "../locales/index.js"`
- * unconditionally — ~872 KB raw source of 50-language error-message tables that Metro's
- * non-package-exports resolution can't tree-shake, and that the app has zero production
+ * unconditionally — ~872 KB raw source of 50-language error-message tables that Metro
+ * can't tree-shake, and that the app has zero production
  * consumers for (`z.locales` is never read anywhere; the default English messages come from a
  * separate direct `en.js` import, left untouched). Redirect just that one deep relative import to
  * an empty stub, scoped to zod's own `classic/external.{js,cjs}`/`core/index.{js,cjs}` as the

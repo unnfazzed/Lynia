@@ -16,6 +16,38 @@
 > fail fast at build time without the DSN (`app.config.ts`), ship crash telemetry, and MUST pass the
 > LR20 forced-crash gate below — the "no Sentry" caveat does not excuse them.
 
+## 🔴 First pass on the SDK 54 / API-36 build — this gates the upgrade's merge
+
+The Expo SDK 52 → 54 upgrade (React Native 0.76 → 0.81, React 18 → 19, `targetSdkVersion` 35 → 36;
+`docs/KNOWN_BUGS.md` "Expo SDK 54 upgrade 2026-09-28") moves the Android fingerprint. OTA cannot undo
+it, so check it on a phone before it merges. Use the `Android Test APK` workflow's APK built from the
+upgrade branch (no EAS build quota). At least one handset must run **Android 16**, where targeting 36
+changes back handling.
+
+- [ ] **Cold start on a low-end phone** — the app gets past the splash to the first screen, on a fresh
+      install and on a relaunch after force-stop. The New Architecture stays off (`MOB-BOOT-04`); a
+      white screen or an instant close is a stop.
+- [ ] **Inter everywhere** — titles in bold Inter, labels in semibold, body in regular, not the
+      system font (`SDK54-01`). Include a text field's typed text and the order screen's countdown
+      clock during an auction.
+- [ ] **Back** — the hardware back button and the back gesture behave as on the current
+      closed-testing build: back one screen, or close the open sheet or modal. They must never leave
+      the app from deep inside it.
+- [ ] **Edge-to-edge on every Android version** — SDK 54 draws under the system bars even below
+      Android 15. On every top-level screen, nothing hides behind the status bar or the navigation
+      bar, and the keyboard doesn't cover a focused field. Start with notifications, onboarding, role,
+      help and phone sign-in, which moved to the safe-area `SafeAreaView` (`SDK54-05`).
+- [ ] **Offline cache** — open a few screens, force-stop, turn on airplane mode, relaunch: the last
+      data shows instead of empty screens (`SDK54-04`).
+- [ ] **Push** — a notification arrives with the app closed, and shows as a banner with the app
+      open.
+- [ ] **Rider online mode** — background location keeps reporting with the screen off
+      (expo-task-manager 14, expo-location 19).
+- [ ] **Map, camera, photo picker** — the map draws with its pins, and a photo can be taken and
+      picked (react-native-maps 1.20, expo-image-picker 17).
+- [ ] **Crash reporting** — the LR20 forced-crash gate below reaches Sentry
+      (`@sentry/react-native` 6 → 7).
+
 ## 🔴 First pass on the API-35 build — do this before promoting anything
 
 `targetSdkVersion` moved 34 → 35 on 2026-08-04 (Play's hard floor for new apps). On **Android 15**
