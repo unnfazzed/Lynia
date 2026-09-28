@@ -2668,9 +2668,10 @@ before merge. SDK54-08 surfaced as a red `main` on the first CI run after it, wi
 SDK54-09 came from the first `Android Emulator Smoke` run, before any store build. SDK54-10 failed
 the first SDK 54 store build (`c6300564`) before it compiled anything. What
 tests cannot show (a cold start, fonts, back and edge-to-edge on a real
-phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. The upgrade merged as #959 on 2026-09-28,
-so that pass now gates the store build: the upgrade moves the Android fingerprint from `7ae040c9…` to
-`a3571198…` (`docs/APP-STORE-SUBMISSION.md` B9), and OTA can't rescue a binary that fails on a phone.
+phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. The upgrade merged as #959 on 2026-09-28
+and reached `Closed testing` the same day as v0.50.1 / vc 39 (EAS `15e221af`). The owner had the pass
+done on emulators (`Android Emulator Smoke`), so its hardware items are left to the testers' phones.
+OTA can't rescue a binary that fails on a phone.
 
 | ID | Finding | Location | Severity | Status |
 |----|---------|----------|----------|--------|

@@ -29,8 +29,8 @@
    - **Done:** the iOS prebuild fix, the Xcode 26 proof, the rider-free iPhone app, the iOS store link,
      the APNs sender (inert until its key exists), the iPhone fixes a code sweep could find (B6), and
      the per-platform force-update minimum (B5).
-   - **Merged 2026-09-28 (#959):** the Expo SDK 54 upgrade (Play's API 36). It reaches Android testers
-     only with the next store build, and the iOS compile must be re-proven on it (D2).
+   - **Merged 2026-09-28 (#959):** the Expo SDK 54 upgrade (Play's API 36). It reached Android testers
+     the same day as v0.50.1 / vc 39. The iOS compile must still be re-proven on it (D2).
    - **Still to do:** the support page and legal wording, and the iOS workflow lanes.
    - **Also still to do:** the `ios` config plus the iOS `eas.json` profiles. These ship **together
      with the next Android store build**, because both move the Android OTA fingerprint (B9).
@@ -312,10 +312,8 @@ natural carrier.
 
 The SDK 54 upgrade that brings API 36 moves the fingerprint by itself: `7ae040c9…` on `main` →
 `a3571198…` on the upgrade branch (measured 2026-09-28, same command). It merged as #959 on
-2026-09-28, so `main` is already on the new fingerprint. If the iOS config PR is ready in time, land it
-before the SDK 54 device pass so that one Android store build carries both. Don't hold the API-36
-build for it past the Play extension (2026-11-01); the iOS config then moves the fingerprint once more,
-and ships with the following Android build.
+2026-09-28. The API-36 store build (vc 39) shipped the same day without the iOS config, so the iOS
+config moves the fingerprint once more and ships with the following Android store build.
 
 The rule holds on SDK 54's `@expo/fingerprint@0.15.5`, re-measured on the upgrade branch: an `ios`
 block moves `a3571198…` to `bdf7c3fe…`, and an iOS `eas.json` profile moves it to `b3cd3e7f…`. A
@@ -448,11 +446,10 @@ a metadata-only rejection is fixed in App Store Connect without a new build.
 - **Google Play API 36.** Play's rule: "Starting August 31, 2026: New apps and app updates must target
   Android 16 (API level 36) or higher to be submitted".
   - An extension to **2026-11-01** can be requested from Play Console's Policy status page.
-  - `main` targets 36 since the Expo SDK 54 upgrade merged (#959, 2026-09-28). Testers' binaries
-    still target 35 until the next store build, which needs the SDK 54 device pass first
-    (`docs/QA-DEVICE-CHECKLIST.md`).
+  - v0.50.1 / vc 39 (EAS `15e221af`), the first build targeting 36, reached Closed testing on
+    2026-09-28 (PSS "Build 39").
   - Build 37 (API 35) was accepted into Closed testing on 2026-09-27, and PSS doesn't record why.
-  - **Request the extension now**, to cover the time until that build ships.
+  - The extension isn't needed for new builds: every build from vc 39 on targets 36.
 - **Android push may be off too.** `PUSH_PROVIDER = "noop"` in `infra/azure/containerapps.tf:51`. The
   repo can't show whether the GitHub Variable has since been flipped.
 - **OTP channel.** Production is WhatsApp-only (`bird-verify.ts:12-22`); PSS §4.4 still says SMS.

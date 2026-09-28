@@ -16,7 +16,7 @@
 > fail fast at build time without the DSN (`app.config.ts`), ship crash telemetry, and MUST pass the
 > LR20 forced-crash gate below — the "no Sentry" caveat does not excuse them.
 
-## 🔴 First pass on the SDK 54 / API-36 build — do this before the store build
+## 🔴 First pass on the SDK 54 / API-36 build — shipped; the hardware items are open
 
 The Expo SDK 52 → 54 upgrade (React Native 0.76 → 0.81, React 18 → 19, `targetSdkVersion` 35 → 36;
 `docs/KNOWN_BUGS.md` "Expo SDK 54 upgrade 2026-09-28") merged as #959 on 2026-09-28. It moves the
@@ -24,6 +24,10 @@ Android fingerprint, so OTA cannot undo a bad binary: check it on a phone before
 build. Use the `Android Test APK` workflow's APK (no EAS build quota). Run 36422118525's APK was built
 from the same tree as `main` at `209ba356`. At least one handset must run **Android 16**, where
 targeting 36 changes back handling.
+
+**Status 2026-09-28:** the store build shipped to `Closed testing` as v0.50.1 / vc 39 after the
+emulator lane below, not a handset pass (the owner's call: "just test SDK 54 yourself then ship").
+The items still open below are checked on the testers' phones.
 
 The `Android Emulator Smoke` workflow (`.github/workflows/android-emulator-smoke.yml`) runs that APK on
 Android 10, 13 and 16 emulators and walks everything a signed-out user can reach: cold start,
