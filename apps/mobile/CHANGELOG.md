@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.51.0](https://github.com/unnfazzed/Lynia/compare/v0.50.1...v0.51.0) (2026-09-28)
+
+
+### Features
+
+* **api,mobile:** per-platform force-update minimum so an Android bump can't lock out iPhones (IOS-09) ([#958](https://github.com/unnfazzed/Lynia/issues/958)) ([1c9c3f0](https://github.com/unnfazzed/Lynia/commit/1c9c3f02808132491538cf56783ea66d2bc5eed6))
+* **mobile:** customer-only iPhone app + iOS prebuild fix (Xcode 26 proven) ([#954](https://github.com/unnfazzed/Lynia/issues/954)) ([41dd7cd](https://github.com/unnfazzed/Lynia/commit/41dd7cd1e1e7ffb955b89ede23d4700d218140ac))
+* **mobile:** upgrade to Expo SDK 54 (React Native 0.81, React 19.1) and target API 36 ([ed35588](https://github.com/unnfazzed/Lynia/commit/ed35588811012aa807eb20c7c90d857c41e1f9b1))
+
+
+### Bug Fixes
+
+* **api,mobile:** publish hello@lyniago.com as the public contact ([#970](https://github.com/unnfazzed/Lynia/issues/970)) ([72b188a](https://github.com/unnfazzed/Lynia/commit/72b188acafedcbce7955fe34ca79c6bc5ebd7d2c))
+* **mobile:** iPhone-only UX fixes — keyboard, number pad, haptics, Call buttons (IOS-04..08) ([#957](https://github.com/unnfazzed/Lynia/issues/957)) ([3c7f69f](https://github.com/unnfazzed/Lynia/commit/3c7f69f6c3623cec151eef0af92652a013307dfd))
+* **mobile:** leave the EAS file secret out of the fingerprint so builds stop failing on a mismatch (SDK54-10) ([#971](https://github.com/unnfazzed/Lynia/issues/971)) ([285caa8](https://github.com/unnfazzed/Lynia/commit/285caa85a47658b770879ae9f4ba094aa7328541))
+* **mobile:** raise Gradle Metaspace so SDK 54 release builds can finish (SDK54-07) ([33066d3](https://github.com/unnfazzed/Lynia/commit/33066d3e2b368bdd7684bce37dd5f6fa2aaf2d75))
+
 ## [0.50.1](https://github.com/unnfazzed/Lynia/compare/v0.50.0...v0.50.1) (2026-09-27)
 
 
