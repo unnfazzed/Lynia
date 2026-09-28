@@ -168,7 +168,9 @@ if ui wait "Skip" 60; then
   shot 09-small-phone-onboarding
   ui tap "Skip" 15 > /dev/null 2>&1
 fi
-relaunch_to_phone
+# Skip saves the onboarding flag in the background; a force-stop straight after it can beat the write
+# and reopen onboarding, so follow Skip to sign-in rather than relaunching.
+ui wait "Welcome to Lynia" 30 > /dev/null 2>&1 || relaunch_to_phone
 shot 09-small-phone
 on_screen "Send code" "phone sign-in at 320x640dp"
 if ui tap --class android.widget.EditText 15; then
