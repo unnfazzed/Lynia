@@ -1,0 +1,93 @@
+name: Android Emulator Smoke
+
+# Installs the sideloadable test APK (android-test-apk.yml's `lynia-test-apk` artifact) on Android
+# emulators and walks everything a signed-out user can reach: cold start, onboarding, phone sign-in
+# with the keyboard up, deep links with back, relaunch after force-stop, an offline cold start and the
+# 320x640dp entry phone. Each Android version uploads its screenshots, screen text and logcat as
+# `emulator-smoke-api<N>` (tools/android-smoke/smoke.sh).
+#
+# What it can't tell you (docs/QA-DEVICE-CHECKLIST.md): anything behind sign-in (production OTP goes
+# over WhatsApp, and this job never presses "Send code"), push, background GPS, the camera, real
+# networks, or how a low-end phone's CPU copes. It narrows the hardware pass; it doesn't replace it.
+#
+# Manual by design, like the APK lane it reads from, plus pull requests that change this lane.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_run_id:
+        description: "Android Test APK run to take the APK from (blank = the latest successful run)"
+        required: false
+        default: ""
+  pull_request:
+    paths:
+      - ".github/workflows/android-emulator-smoke.yml"
+      - "tools/android-smoke/**"
+
+permissions:
+  contents: read
+  actions: read # gh run download, for the APK artifact of another workflow's run
+
+concurrency:
+  group: android-emulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: emulator smoke · api ${{ matrix.api }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Android 10, the floor of the low-end phones riders carry; 13, the commonest; 16, the only
+        # version where targeting API 36 changes back handling.
+        api: [29, 33, 36]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch the test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_RUN_ID: ${{ inputs.apk_run_id }}
+        run: |
+          set -euo pipefail
+          run_id="${APK_RUN_ID:-}"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow android-test-apk.yml \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          echo "APK from Android Test APK run $run_id"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name lynia-test-apk --dir apk
+          apk="$(ls -1 apk/*.apk | head -n1)"
+          echo "APK_PATH=$apk" >> "$GITHUB_ENV"
+          echo "Testing \`$apk\` from [Android Test APK run $run_id](https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id)" >> "$GITHUB_STEP_SUMMARY"
+
+      # The emulator needs hardware acceleration; ubuntu-latest has KVM but not the permission to use it.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Walk the signed-out app on API ${{ matrix.api }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          ram-size: 2048M
+          disk-size: 4096M
+          # A 720x1440 panel at density 320: the 360x720dp phone viewport the design mocks use.
+          # ANDROID_AVD_HOME is where the action created the AVD, under its default name `test`.
+          pre-emulator-launch-script: sed -i -e '/^hw\.lcd\.\(width\|height\|density\)=/d' "$ANDROID_AVD_HOME/test.avd/config.ini" && printf 'hw.lcd.width=720\nhw.lcd.height=1440\nhw.lcd.density=320\n' >> "$ANDROID_AVD_HOME/test.avd/config.ini"
+          script: bash tools/android-smoke/smoke.sh "$APK_PATH" "smoke-out/api${{ matrix.api }}"
+
+      - name: Upload screenshots and logcat
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-smoke-api${{ matrix.api }}
+          path: smoke-out/
+          if-no-files-found: warn
+          retention-days: 14
