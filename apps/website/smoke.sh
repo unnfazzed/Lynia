@@ -5,7 +5,8 @@
 #   SMOKE_WAIT=0 bash apps/website/smoke.sh <origin> # skip the first-deploy wait
 #
 #  1. waits (up to ~10 min) for the Custom Domain's DNS + certificate on a first deploy
-#  2. the home page is byte-identical to apps/website/site/index.html (nothing on the edge rewrote it)
+#  2. the home page, fetched as a browser would, is byte-identical to apps/website/site/index.html
+#     (nothing on the edge rewrote it)
 #  3. every asset the home page references loads, with the right type and the immutable cache header
 #  4. /about serves the 404 page with a 404 status; www and plain http redirect to https://lyniago.com
 set -euo pipefail
@@ -17,7 +18,9 @@ fails=0
 err() { echo "::error::smoke: $*"; fails=$((fails + 1)); }
 ok() { echo "ok  $*"; }
 # Every probe retries transient network errors; the two slow-to-settle checks below also poll.
-curl() { command curl --retry 3 --retry-all-errors --retry-delay 2 --max-time 20 "$@"; }
+# --suppress-connect-headers: behind an HTTPS proxy (a Claude session, an office network) `-D` would
+# start with the proxy's "200 Connection Established", and the status checks below read that line.
+curl() { command curl --retry 3 --retry-all-errors --retry-delay 2 --max-time 20 --suppress-connect-headers "$@"; }
 # poll SECONDS CMD... : re-run CMD every 15s until it succeeds or SECONDS pass (first deploy: the www
 # certificate can land a minute or two after the apex's).
 poll() {
@@ -25,6 +28,11 @@ poll() {
   until "$@"; do [ "$SECONDS" -lt "$until" ] || return 1; sleep 15; done
 }
 header() { printf '%s' "$1" | tr -d '\r' | grep -i "^$2:" | head -1 | cut -d' ' -f2- || true; }
+# Ask for pages the way a phone browser does. Cloudflare decides per request whether to rewrite HTML:
+# Web Analytics' automatic setup injects its beacon only when the request accepts text/html, never for
+# curl's default `Accept: */*`. So every probe that hashes or inspects a page sends these headers.
+BROWSER=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+  -A 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36')
 
 # 1. First deploy: Cloudflare creates the DNS record and edge certificate; give it time.
 deadline=$((SECONDS + WAIT))
@@ -38,15 +46,23 @@ until code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$ORIGIN/") &&
 done
 
 # 2. The page itself: served as-is, never cached stale, with the security headers.
-h=$(curl -sS -D - -o /dev/null "$ORIGIN/")
+h=$(curl -sS -D - -o /dev/null "${BROWSER[@]}" "$ORIGIN/")
 case "$(header "$h" content-type)" in text/html*) ok "/ is text/html" ;; *) err "/ content-type: $(header "$h" content-type)" ;; esac
 [[ "$(header "$h" cache-control)" == *no-cache* ]] && ok "/ is no-cache" || err "/ cache-control: $(header "$h" cache-control)"
 [ -n "$(header "$h" content-security-policy)" ] && ok "/ has a CSP" || err "/ has no Content-Security-Policy"
-live=$(curl -sS --compressed "$ORIGIN/" | sha256sum | cut -d' ' -f1)
+page=$(mktemp)
+curl -sS --compressed "${BROWSER[@]}" -o "$page" "$ORIGIN/"
+live=$(sha256sum "$page" | cut -d' ' -f1)
 repo=$(sha256sum "$SITE_DIR/index.html" | cut -d' ' -f1)
-[ "$live" = "$repo" ] && ok "/ is byte-identical to apps/website/site/index.html" \
-  || err "/ differs from apps/website/site/index.html — something on the edge (a zone feature that rewrites HTML?) changed the page."
-enc=$(header "$(curl -sS -D - -o /dev/null -H 'Accept-Encoding: br, gzip' "$ORIGIN/")" content-encoding)
+if [ "$live" = "$repo" ]; then
+  ok "/ is byte-identical to apps/website/site/index.html"
+else
+  err "/ differs from apps/website/site/index.html — something on the edge (a zone feature that rewrites HTML?) changed the page."
+  if grep -q 'static\.cloudflareinsights\.com' "$page"; then
+    echo "    It carries Cloudflare's Web Analytics beacon. Turn it off: Cloudflare → Analytics & Logs → Web Analytics → lyniago.com → Manage site → Disable (docs/WEBSITE.md, one-time setup step 5)."
+  fi
+fi
+enc=$(header "$(curl -sS -D - -o /dev/null "${BROWSER[@]}" -H 'Accept-Encoding: br, gzip' "$ORIGIN/")" content-encoding)
 [ -n "$enc" ] && ok "/ is compressed ($enc)" || err "/ is served uncompressed"
 
 # 3. Every asset the page references (the launch checklist's "no 404s").
@@ -75,7 +91,7 @@ ok "$count referenced assets checked"
 
 # 4. Routing.
 page404=$(mktemp)
-h=$(curl -sS -D - -o "$page404" "$ORIGIN/about")
+h=$(curl -sS -D - -o "$page404" "${BROWSER[@]}" "$ORIGIN/about")
 status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
 [ "$status" = 404 ] && grep -q "Back home" "$page404" && ok "/about serves the 404 page" \
   || err "/about: HTTP $status (want 404 with the site's 404 page)"

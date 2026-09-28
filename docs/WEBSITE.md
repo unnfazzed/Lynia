@@ -32,7 +32,7 @@ byte-identical to the handoff, except for:
 | `apps/website/www-redirect/` | The `lyniago-www-redirect` Worker: `www.lyniago.com/*` → 301 → `https://lyniago.com/*`. |
 | `apps/website/site/_headers` | Cache and security headers (below). |
 | `apps/website/og-image/` | Source and renderer for `assets/og-image.png`, built to the handoff README's TODO #2 spec. |
-| `apps/website/smoke.sh` | Post-deploy checks: the page is byte-identical to the repo, every asset loads with the right type and cache header, `/about` is a 404, and `www` and `http` redirect. |
+| `apps/website/smoke.sh` | Post-deploy checks: the page, fetched as a browser would, is byte-identical to the repo, every asset loads with the right type and cache header, `/about` is a 404, and `www` and `http` redirect. |
 | `scripts/check-website.mjs` (+ `.test.mjs`) | The CI guard. `--write` regenerates `404.html` and the CSP hashes. |
 | `tools/website-parity/` | Pixel harness: renders the reference and the site (local or live) at the QA widths and diffs them. |
 | `.github/workflows/deploy-website.yml` | The deploy: check → `wrangler deploy` (both Workers) → smoke. |
@@ -47,6 +47,16 @@ byte-identical to the handoff, except for:
 | 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy` (the live notice); Terms stays `#`. | Terms open until a terms page exists. |
 | 5 | Analytics | None. | No trackers, no cookies. |
 | — | Menu buttons stop short on phones (found in review) | Fix it: `width`/`height` on the lazy scooter illustration plus `.biz-ill{height:auto}` (`LAUNCH_EDITS` `biz-ill-*`). | Done. Report upstream so the next export carries it. |
+
+## Search and AI visibility
+
+The plan for ranking lyniago.com in Harare, and for getting it cited by AI assistants, is in
+[`seo/`](./seo/README.md). It works within the rule above. Every change it proposes takes one of four
+forms:
+- a dashboard setting;
+- an edit to an allowlisted hosting file (`robots.txt`, `sitemap.xml`, `_headers`);
+- an owner-approved, pixel-identical launch edit, such as head tags;
+- a new handoff export, for anything visible.
 
 ## Hosting
 
@@ -114,10 +124,15 @@ Done once; after that every merge that touches `apps/website/` deploys by itself
    Both settings only affect proxied hostnames, so the DNS-only app hosts are untouched.
 5. **Keep script-injecting zone features off** for lyniago.com. Each one rewrites the HTML, so the page
    is no longer the handoff, and the CSP blocks what they inject, so every visitor gets console errors.
-   The smoke's byte-identity check catches the rewrite on the next deploy.
+   The smoke's byte-identity check catches the rewrite on the next deploy. It requests the page with a
+   browser's `Accept` header, because Cloudflare only injects into requests that accept HTML.
    - **Security → Bots → Bot Fight Mode: Off.** Its JavaScript Detections cannot be switched off
      separately.
-   - Keep Rocket Loader, Zaraz and Web Analytics' automatic (JS snippet) setup off.
+   - **Web Analytics: Disabled.** Account Home → **Analytics & Logs → Web Analytics** →
+     lyniago.com → **Manage site → Disable**. It was found on at launch (2026-09-28), injecting its
+     beacon into every page a browser loaded. Speed → Observatory's real-user monitoring switches on
+     the same beacon, so leave that off too.
+   - Keep Rocket Loader and Zaraz off.
    - Do not "fix" an injection with `Cache-Control: no-transform`: that also turns off brotli/gzip.
 6. **First deploy.** The deploy runs by itself when the website PR merges. Otherwise use GitHub → Actions
    → **Deploy website (Cloudflare)** → **Run workflow** (a Claude session can dispatch it). The first run
