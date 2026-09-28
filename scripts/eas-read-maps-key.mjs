@@ -37,10 +37,33 @@ const QUERY = `
 /** Thrown with an operator-readable reason; the caller prints it and exits. Never carries the value. */
 export class EasKeyError extends Error {}
 
+/** What a missing variable costs, per key — the reader's error names it so the log is actionable. */
+const MISSING_IMPACT = {
+  GOOGLE_MAPS_API_KEY:
+    "That alone would block a release build: app.config.ts throws rather than ship a mapless binary.",
+  EXPO_PUBLIC_GOOGLE_PLACES_KEY:
+    "Builds still succeed without it (app.config.ts only warns), but address search then runs on the " +
+    "phone's own geocoder: one point per search, no suggestions.",
+};
+
+/** Why an unreadable (SECRET) value is a problem beyond this reader, per key. */
+const UNREADABLE_IMPACT = {
+  GOOGLE_MAPS_API_KEY:
+    "which is itself a problem for a config-consumed variable (docs/PLAY-STORE-SUBMISSION.md, " +
+    "2026-08-04: a Secret desynchronises the fingerprint because the CLI cannot see it).",
+  EXPO_PUBLIC_GOOGLE_PLACES_KEY:
+    "and the Places key is meant to be Sensitive (docs/plans/2026-09-24-gcp-to-azure-migration.md §7, " +
+    "M2 step 3). Re-create it with --visibility sensitive.",
+};
+
 /**
- * @returns {Promise<string>} the raw key value, for immediate use. Never logged, never persisted.
+ * Read one key variable from an EAS environment. `name` defaults to the Maps key, which is what this
+ * module was written for; the doctor also reads `EXPO_PUBLIC_GOOGLE_PLACES_KEY` through it.
+ *
+ * @returns {Promise<{ value: string, visibility: string, environment: string }>} the raw key value, for
+ *   immediate use. Never logged, never persisted.
  */
-export async function readMapsKeyFromEas({ appId, environment = "preview", token } = {}) {
+export async function readKeyFromEas({ appId, environment = "preview", token, name = "GOOGLE_MAPS_API_KEY" } = {}) {
   if (!token) {
     throw new EasKeyError("EXPO_TOKEN is not set — cannot read the EAS environment. Re-run with key_source: github.");
   }
@@ -61,22 +84,23 @@ export async function readMapsKeyFromEas({ appId, environment = "preview", token
   }
 
   const vars = json?.data?.app?.byId?.environmentVariablesIncludingSensitive ?? [];
-  const found = vars.find((v) => v.name === "GOOGLE_MAPS_API_KEY");
+  const found = vars.find((v) => v.name === name);
 
   if (!found) {
-    throw new EasKeyError(
-      `GOOGLE_MAPS_API_KEY is not defined in the EAS "${env}" environment. That alone would block a ` +
-        "release build: app.config.ts throws rather than ship a mapless binary.",
-    );
+    throw new EasKeyError(`${name} is not defined in the EAS "${env}" environment. ${MISSING_IMPACT[name] ?? ""}`.trim());
   }
   if (!found.value) {
     throw new EasKeyError(
-      `GOOGLE_MAPS_API_KEY exists in "${env}" but its value is not readable (visibility: ` +
+      `${name} exists in "${env}" but its value is not readable (visibility: ` +
         `${found.visibility}). Only SENSITIVE and PUBLIC values can be read back; a SECRET cannot — ` +
-        "which is itself a problem for a config-consumed variable (docs/PLAY-STORE-SUBMISSION.md, " +
-        "2026-08-04: a Secret desynchronises the fingerprint because the CLI cannot see it).",
+        (UNREADABLE_IMPACT[name] ?? "so this reader cannot check it."),
     );
   }
 
   return { value: found.value, visibility: found.visibility, environment: env };
+}
+
+/** The Maps key — the original, and still the default, use of this module. */
+export function readMapsKeyFromEas(options = {}) {
+  return readKeyFromEas({ ...options, name: "GOOGLE_MAPS_API_KEY" });
 }

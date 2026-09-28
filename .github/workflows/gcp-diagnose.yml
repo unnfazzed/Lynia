@@ -120,9 +120,9 @@ jobs:
           echo "Reading this (docs/SECURITY-OPS.md §B):"
           echo "  Maps SDK key   -> application: zw.co.lynia against BOTH SHA-1s (Play app-signing + EAS upload)"
           echo "                    api targets: must include maps-android-backend.googleapis.com, or tiles stay blank"
-          echo "  Places key     -> application: None is CORRECT (an Android restriction returns REQUEST_DENIED"
-          echo "                    for every web-service call, which the app flattens into an empty result list)"
-          echo "                    api targets: places-backend.googleapis.com only"
+          echo "  Places key     -> application: None is CORRECT (an app restriction refuses every call, which"
+          echo "                    the app flattens into an empty result list)"
+          echo "                    api targets: places.googleapis.com (Places API (New)) only"
 
       - name: Secret version freshness (needs secretmanager viewer — may be denied)
         run: |

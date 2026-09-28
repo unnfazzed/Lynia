@@ -1,5 +1,9 @@
 # Google Maps Platform client API keys — the two keys the mobile app ships.
 #
+# ⚠️ 2026-09-28: this module targets lynia-500911, suspended since 2026-09-17 — Google refuses
+# every key in it. The live keys are re-created in lyniago-app and are console-managed until this
+# module is re-pointed there (docs/SECURITY-OPS.md §B, MOB-MAP-03 in docs/KNOWN_BUGS.md).
+#
 # WHY THIS EXISTS
 # These are the last GCP resources the product depends on that were created by
 # clicking in the console, and on 2026-08-16 that cost a working send-parcel flow:
@@ -15,16 +19,15 @@
 #           A native SDK call, so it takes an ANDROID application restriction:
 #           package name + signing-certificate SHA-1.
 #
-#   places  EXPO_PUBLIC_GOOGLE_PLACES_KEY, Places *web service* over plain fetch
-#           (apps/mobile/src/api/places.ts hits
-#           maps.googleapis.com/maps/api/place/{autocomplete,details}/json).
-#           Those endpoints honour IP and None restrictions ONLY. An Android
-#           restriction here does not tighten anything — it returns REQUEST_DENIED
-#           for every call, which apps/mobile/src/logic/places.ts flattens into the
-#           same empty list a genuine no-match produces. The symptom is a search box
-#           that silently never returns anything. So this key deliberately carries
-#           NO application restriction, and is contained by api_targets + a quota cap
-#           instead (see QUOTA below).
+#   places  EXPO_PUBLIC_GOOGLE_PLACES_KEY, Places API (New) over plain fetch
+#           (apps/mobile/src/api/places.ts hits places.googleapis.com/v1/places…).
+#           The call comes from JS shared by the Android and iPhone apps and sends
+#           no app identity headers, so an app restriction here does not tighten
+#           anything — it refuses every call, which apps/mobile/src/logic/places.ts
+#           flattens into the same empty list a genuine no-match produces. The
+#           symptom is a search box that silently never returns anything. So this
+#           key deliberately carries NO application restriction, and is contained by
+#           api_targets + a quota cap instead (see QUOTA below).
 #
 # Getting that backwards is not hypothetical — it is the documented failure mode in
 # §B and the reason `AddressSearch` now carries a device-geocoder escape hatch.
@@ -104,7 +107,7 @@
 # construction (it ships inside the app), so the cap is what bounds the bill on a
 # leaked key, and it matters most for `places`, which has no application restriction at
 # all. It belongs in google_service_usage_consumer_quota_override, but the metric and
-# limit identifiers for the legacy Places web service are not verifiable from this repo,
+# limit identifiers for Places API (New) are not verifiable from this repo,
 # and a wrong one fails the apply for the whole module. Set it by hand — GCP console →
 # APIs & Services → the API → Quotas — and replace this block with the real resource
 # once the identifiers are confirmed against the live project.
@@ -113,8 +116,11 @@ locals {
   # api_targets pins each key to the ONE service it is allowed to call, so a leaked key
   # cannot be spent against any other Maps Platform product. These are the service names
   # the API Keys API expects, which are NOT the endpoint hostnames the client calls.
+  # places_service is Places API (New). NOT places-backend.googleapis.com — that is the legacy
+  # Places API, which the app stopped calling on 2026-09-28 and which projects created after
+  # 2025-03-01 cannot enable.
   maps_android_service = "maps-android-backend.googleapis.com"
-  places_service       = "places-backend.googleapis.com"
+  places_service       = "places.googleapis.com"
 }
 
 # The API Keys API itself, plus the two services the keys target. Kept inside the gate

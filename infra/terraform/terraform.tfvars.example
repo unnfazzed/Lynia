@@ -73,9 +73,9 @@
 # Off by default — a plain apply is a no-op and the hand-created keys are left
 # alone. Arming brings both client keys under Terraform with the docs/SECURITY-OPS.md
 # §B restrictions: the Maps SDK key restricted to the Android package + signing
-# certs, the Places key deliberately UNrestricted by application (it calls
-# web-service endpoints, which return REQUEST_DENIED to an Android-restricted key —
-# the symptom is a search box that silently returns nothing).
+# certs, the Places key deliberately UNrestricted by application (the app calls
+# Places API (New) from JS with no app identity headers, so an app restriction
+# refuses every call — the symptom is a search box that silently returns nothing).
 #
 # ⚠️  IMPORT BEFORE YOU APPLY, AND SET THE KEY IDS FIRST. Both keys already exist.
 #     Terraform's `name` is the key's IMMUTABLE id (the final component of

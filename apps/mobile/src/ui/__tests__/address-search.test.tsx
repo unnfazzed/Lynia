@@ -26,7 +26,7 @@ let mockKeyed = true;
 
 jest.mock("../../api/places", () => ({
   autocompletePlaces: (...args: unknown[]) => mockAutocomplete(...(args as [])),
-  placeDetails: jest.fn(async () => null),
+  placeDetails: (...args: unknown[]) => mockPlaceDetails(...(args as [])),
   placesEnabled: jest.fn(() => mockKeyed),
 }));
 
@@ -34,6 +34,7 @@ const mockGeocodeAddress = jest.fn();
 jest.mock("../../logic/geocode", () => ({ geocodeAddress: (q: string) => mockGeocodeAddress(q) }));
 
 const mockAutocomplete = jest.fn(async () => [] as unknown[]);
+const mockPlaceDetails = jest.fn(async () => null as unknown);
 
 jest.mock("../../logic/saved-places", () => ({
   addRecent: jest.fn(async () => []),
@@ -53,6 +54,7 @@ function textOf(tree: renderer.ReactTestRenderer): string {
 beforeEach(() => {
   mockGeocodeAddress.mockReset();
   mockAutocomplete.mockReset().mockResolvedValue([]);
+  mockPlaceDetails.mockReset().mockResolvedValue(null);
 });
 
 describe("AddressSearch key gate", () => {
@@ -135,12 +137,11 @@ describe("AddressSearch key gate", () => {
 /**
  * The third dead-end path, and the one a PROVISIONED key does not rule out.
  *
- * `src/api/places.ts` calls the Places WEB-SERVICE endpoints, which honour IP/None application
- * restrictions only — an Android-package-restricted key answers `REQUEST_DENIED` to every call
- * (docs/SECURITY-OPS.md §B). `mapPredictions` flattens that to the same `[]` a genuine no-match gives,
- * so the customer types into a live search box that will never offer anything, and if the map's tiles
- * are also dead, `coordsOk` is once again unreachable. The escape row below is what keeps a keyed
- * build off that path.
+ * A key Google refuses — a mis-restricted key (docs/SECURITY-OPS.md §B), or one in a suspended project,
+ * as every key was from 2026-09-17 — fails every call. `mapPredictions` flattens that to the same `[]`
+ * a genuine no-match gives, so the customer types into a live search box that will never offer
+ * anything, and if the map's tiles are also dead, `coordsOk` is once again unreachable. The escape row
+ * below is what keeps a keyed build off that path.
  */
 describe("AddressSearch — a keyed search that returns nothing", () => {
   const ESCAPE = "No results — look it up on this phone";
@@ -211,6 +212,33 @@ describe("AddressSearch — a keyed search that returns nothing", () => {
 
     expect(textOf(tree)).toContain("Eastgate Mall");
     expect(textOf(tree)).not.toContain(ESCAPE);
+    act(() => tree.unmount());
+  });
+
+  // Details is asked for the address and point only (the Pro-tier `displayName` is not requested), so
+  // the name the customer tapped is what leads the landmark the rider is handed.
+  it("resolves a tapped suggestion, handing Details the suggestion's own name", async () => {
+    mockAutocomplete.mockResolvedValue([{ placeId: "west", primary: "Westgate Shopping Centre", secondary: "Harare" }]);
+    const place = { lat: -17.79, lng: 30.99, landmark: "Westgate Shopping Centre, Lomagundi Rd, Harare", placeId: "west" };
+    mockPlaceDetails.mockResolvedValue(place);
+    const onResolved = jest.fn();
+
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={onResolved} />);
+    });
+    await searchFor(tree, "westgate");
+
+    const row = tree.root.findByProps({ accessibilityLabel: "Westgate Shopping Centre, Harare" });
+    await act(async () => {
+      (row.props as { onPress: () => void }).onPress();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockPlaceDetails).toHaveBeenCalledWith("west", expect.any(String), "Westgate Shopping Centre");
+    expect(onResolved).toHaveBeenCalledWith(place);
     act(() => tree.unmount());
   });
 });
