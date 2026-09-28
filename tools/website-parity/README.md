@@ -13,16 +13,18 @@ read and written by the dependency-free `png.mjs`.
 ## Run
 
 ```bash
-node tools/website-parity/compare.mjs                      # local site vs reference, 7 QA widths
-node tools/website-parity/compare.mjs --normalize-raster   # same, reference shows the site's raster files
+node tools/website-parity/compare.mjs                      # the gate: local site vs reference, 7 QA widths
+node tools/website-parity/compare.mjs --raw --threshold 0.5 # picture evidence: reference keeps its own PNGs
 node tools/website-parity/compare.mjs --site https://lyniago.com   # live deploy (needs outbound HTTPS)
-node tools/website-parity/compare.mjs --widths 390,1440 --out /tmp/wp    # subset, custom output dir
+node tools/website-parity/compare.mjs --widths 390,1440 --out out/wp     # subset, custom output dir
 node tools/website-parity/compare.mjs --help
 ```
 
 Viewports are fixed per width, and each side gets the same one: 360×720, 390×844, 768×1024, 1024×768,
 1280×800, 1440×900 and 1920×1080 (`WxH` sets any other size). Height matters because the desktop tier
-caps illustrations with `calc(100vh - 200px)`. Output defaults to `$TMPDIR/lyniago-website-parity/`.
+caps illustrations with `calc(100vh - 200px)`. Output defaults to `tools/website-parity/out/`, which is
+gitignored. It never goes to a fixed path in the shared OS temp dir, which CodeQL flags as an insecure
+temporary file.
 
 ## How a render is made deterministic
 
@@ -52,7 +54,7 @@ caps illustrations with `calc(100vh - 200px)`. Output defaults to `$TMPDIR/lynia
 | `report.json` | Everything below, plus section geometry for both pages and per-section and per-band attribution |
 
 A width fails when any of these happens:
-- its mismatch is above `--threshold` (default 0.1%);
+- its mismatch is above `--threshold` (default 0.001%);
 - the two page heights differ;
 - an image is broken or never loads.
 
@@ -69,7 +71,7 @@ Exit codes: 0 means pass, 1 means a parity or network failure, 2 means the harne
 
 ## Baseline (2026-09-28, handoff "mobile optimisation" revision)
 
-| Width | Height (ref = site) | Raw mismatch | `--normalize-raster` |
+| Width | Height (ref = site) | `--raw` mismatch | Default (normalized) |
 |---|---|---|---|
 | 360 | 8822 | 0.4182% | 0 px |
 | 390 | 8783 | 0.4440% | 0 px |
@@ -89,9 +91,9 @@ re-sized to 2×, a change its README sanctions. Two things cause the differences
 With the reference showing the site's own raster files, every width is pixel-identical: 0 mismatched,
 0 within-tolerance and max Δ 0. That covers markup, CSS, fonts, SVGs and the JS-built map.
 
-For a regression gate, run `--normalize-raster --threshold 0.001`. A 1px layout change moves thousands
-of pixels, and this threshold still tolerates a lone anti-aliasing pixel. Attach the raw run's sheets
-and band crops as the visual evidence. Noise floor: reference against itself and site against site both
+That is why the default run renders the reference with the site's raster files and gates at 0.001%. A
+1px layout change moves thousands of pixels, and this threshold still tolerates a lone anti-aliasing
+pixel. For the visual evidence, attach the sheets and band crops from a `--raw` run. Noise floor: reference against itself and site against site both
 come out at 0 px. Across 37 comparisons, a single anti-aliased corner pixel of the nav pill (under
 `backdrop-filter`) flickered once.
 

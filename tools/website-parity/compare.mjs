@@ -13,8 +13,8 @@
  *
  * Usage (from anywhere; defaults resolve against the repo root) — see README.md / --help:
  *   node tools/website-parity/compare.mjs [--site <url|dir|file>] [--ref <file|url>]
- *        [--widths 360,390,768,1024,1280,1440,1920] [--out <dir>] [--threshold 0.1] [--tolerance 8]
- *        [--crops 3] [--normalize-raster] [--no-sheet] [--timeout 60000]
+ *        [--widths 360,390,768,1024,1280,1440,1920] [--out <dir>] [--threshold 0.001] [--tolerance 8]
+ *        [--crops 3] [--raw] [--no-sheet] [--timeout 60000]
  *
  * Exit: 0 = every width within threshold with equal page heights, and no failed/>=400 site request;
  *       1 = a parity or network failure; 2 = the harness itself could not run.
@@ -24,7 +24,6 @@
 import http from "node:http";
 import { createReadStream } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "../parity/lib/args.mjs";
@@ -36,7 +35,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 const DEFAULT_SITE = join(REPO, "apps/website/site");
 const DEFAULT_REF = join(REPO, "packages/design/handoff/lyniago-website/reference/LandingPage-reference-offline.html");
-const DEFAULT_OUT = join(tmpdir(), "lyniago-website-parity");
+// Repo-local and gitignored (./.gitignore): never a predictable path in the shared OS temp dir.
+const DEFAULT_OUT = join(HERE, "out");
 
 // The handoff README's QA widths, each paired with ONE height used for both sides. Height matters:
 // the desktop tier (min-width:961px) caps illustrations with calc(100vh - 200px).
@@ -90,12 +90,15 @@ const USAGE = `Usage: node tools/website-parity/compare.mjs [options]
   --widths <list>        comma list of W or WxH. Default: ${DEFAULT_WIDTHS}
                          (heights: ${CANONICAL_LIST}; any other W -> Wx${FALLBACK_HEIGHT})
   --out <dir>            output dir for PNGs + report.json. Default: ${DEFAULT_OUT}
-  --threshold <pct>      max mismatched-pixel percentage per width. Default: 0.1
+  --threshold <pct>      max mismatched-pixel percentage per width. Default: 0.001
   --tolerance <0-255>    per-channel delta a pixel may differ by and still match. Default: 8
   --crops <n>            write the n largest mismatch bands per width as zoomed crops. Default: 3
-  --normalize-raster     render the reference with the SITE's raster <img> files (matched by document
-                         order + alt). Isolates markup/CSS/font/SVG parity from the handoff's sanctioned
-                         PNG->WebP re-encode of the app screenshots; expect 0 mismatched pixels.
+  --raw                  render the reference with its OWN inlined raster images. By default the
+                         reference shows the SITE's raster <img> files (matched by document order + alt),
+                         which isolates markup/CSS/font/SVG parity from the handoff's sanctioned PNG->WebP
+                         re-encode of the app screenshots (expect 0 mismatched pixels). A raw run always
+                         differs inside those screenshots, so use it for picture evidence, with a higher
+                         --threshold (about 0.5), not as the gate.
   --no-sheet             skip the side-by-side sheet (faster)
   --timeout <ms>         per-page render timeout. Default: 60000`;
 
@@ -184,17 +187,17 @@ async function prepareInPage({ freezeCss, imageTimeoutMs, swap }) {
   document.head.appendChild(style);
 
   const imgs = Array.from(document.images);
-  // --normalize-raster: point this page's raster <img>s at the site's files. Only valid when the two
+  // Raster normalization (default; --raw disables): point this page's raster <img>s at the site's files. Only valid when the two
   // documents carry the same images in the same order — checked, never assumed.
   let swapped = 0;
   if (swap) {
     if (swap.length !== imgs.length) {
-      throw new Error(`--normalize-raster: ${imgs.length} <img> in the reference vs ${swap.length} on the site`);
+      throw new Error(`raster normalization: ${imgs.length} <img> in the reference vs ${swap.length} on the site`);
     }
     swap.forEach((s, k) => {
       if (!s.raster) return;
       if (imgs[k].alt !== s.alt)
-        throw new Error(`--normalize-raster: <img> #${k} alt "${imgs[k].alt}" vs site "${s.alt}"`);
+        throw new Error(`raster normalization: <img> #${k} alt "${imgs[k].alt}" vs site "${s.alt}"`);
       imgs[k].removeAttribute("srcset");
       imgs[k].src = s.src;
       swapped++;
@@ -548,11 +551,11 @@ async function main() {
   }
   const viewports = parseViewports(args.widths === true ? DEFAULT_WIDTHS : args.widths || DEFAULT_WIDTHS);
   if (!viewports.length) throw new Error("--widths selected no viewport");
-  const threshold = numberArg(args, "threshold", 0.1);
+  const threshold = numberArg(args, "threshold", 0.001);
   const tolerance = numberArg(args, "tolerance", 8);
   const crops = numberArg(args, "crops", 3);
   const timeout = numberArg(args, "timeout", 60000);
-  const normalize = args["normalize-raster"] !== undefined;
+  const normalize = args.raw === undefined;
   const outDir = resolve(typeof args.out === "string" ? args.out : DEFAULT_OUT);
   await mkdir(outDir, { recursive: true });
 
@@ -569,7 +572,7 @@ async function main() {
     ref = await resolveTarget(typeof args.ref === "string" ? args.ref : DEFAULT_REF, servers);
     console.log(
       `website-parity · chromium ${browser.version()} · tolerance ±${tolerance}/channel · threshold ${threshold}%` +
-        (normalize ? " · --normalize-raster (reference shows the site's raster files)" : ""),
+        (normalize ? " · reference shows the site's raster files (--raw to disable)" : ""),
     );
     console.log(
       `  ref : ${ref.label}\n  site: ${site.label}${site.local ? ` (${site.url})` : ""}\n  out : ${outDir}\n`,
@@ -585,7 +588,7 @@ async function main() {
           ? s.imageList.map((i) => ({ ...i, raster: RASTER.test(new URL(i.src).pathname) }))
           : null;
         const r = await renderSide(browser, vp, ref, { diag: refDiag, timeout, swap });
-        if (normalize && !r.swapped) throw new Error("--normalize-raster: the site has no raster <img> to swap in");
+        if (normalize && !r.swapped) throw new Error("raster normalization: the site has no raster <img> to swap in");
         const files = {
           ref: join(outDir, `ref-${vp.name}.png`),
           site: join(outDir, `site-${vp.name}.png`),
