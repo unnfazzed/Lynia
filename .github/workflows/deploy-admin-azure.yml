@@ -107,7 +107,7 @@ jobs:
           bash scripts/azure-target.sh "$TIER" CLIENT_ID RG ACR REGISTRY APP API_BASE_URL ALLOWED_OPERATORS
 
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}

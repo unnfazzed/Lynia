@@ -110,7 +110,7 @@ jobs:
           fi
 
       - name: Azure login (OIDC, infra identity)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID_INFRA }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -188,7 +188,7 @@ jobs:
           [ "$REF" = "refs/heads/main" ] || { echo "::error::apply may only run from main (got ${REF})."; exit 1; }
 
       - name: Azure login (OIDC, infra identity)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID_INFRA }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
