@@ -1243,15 +1243,20 @@
 > unexplained; and a FINISHED submission still does not prove the binary *runs* — that remains
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 >
-> **Status (2026-09-28 — API 36: the upgrade that meets it is in review; nothing built from it yet.)**
+> **Status (2026-09-28 — API 36: the upgrade that meets it is merged; no store build from it yet.)**
 >
 > Since 2026-08-31 Play requires app updates to target API 36, and every binary so far targets 35.
 > React Native 0.76 can't simply retarget: under 36, Android 16 stops calling `onBackPressed()`, and
 > the back button stops reaching the app. The fix is the Expo SDK 52 → 54 upgrade (React Native 0.81;
-> the New Architecture stays off, `MOB-BOOT-04`), whose PR sets compile and target to 36. No EAS build
-> has been made from it. It moves the fingerprint (`7ae040c9…` → `a3571198…`), so it can only ship as
-> a store build, after the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. Until then, Play Console's
-> extension (to 2026-11-01, the founder's request) is what keeps updates submittable.
+> the New Architecture stays off, `MOB-BOOT-04`), merged as #959 on 2026-09-28, which sets compile and
+> target to 36. No EAS build has been made from it. It moves the fingerprint (`7ae040c9…` →
+> `a3571198…`), so it can only ship as a store build, after the SDK 54 pass in
+> `docs/QA-DEVICE-CHECKLIST.md`. Until then, Play Console's extension (to 2026-11-01, the founder's
+> request) is what keeps updates submittable.
+>
+> ⚠️ **Until that store build ships, an OTA from `main` reaches nobody.** `main`'s runtime version is
+> now `a3571198…`, and no installed binary has it. `mobile-ota.yml`'s preflight (`REL-02`) aborts
+> instead of publishing, so a JS fix reaches testers only inside that store build.
 >
 > The first sideload build from it (`Android Test APK` run 36414633349) found a Gradle Metaspace OOM
 > that hung the build instead of failing it (`SDK54-07`). It was fixed in the same PR, before any EAS
