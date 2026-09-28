@@ -6,12 +6,13 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-28 (**`SDK54-01`..`SDK54-07` FIXED before merge** — interactive session,
-the Expo SDK 52 → 54 upgrade for Play's API-36 requirement. Defects the upgrade itself introduced, caught
-on its branch: Inter lost on every screen under React Native 0.81, PostHog on a second React, R8 switched
-off by a renamed option, the offline cache on a moved API, five screens under the Android status bar,
-the notification handler's new required fields, and a Gradle Metaspace OOM that hung every release
-build. See the "Expo SDK 54 upgrade 2026-09-28" entry at the end.)
+**Last consolidated:** 2026-09-28 (**`SDK54-01`..`SDK54-08` FIXED** — interactive session, the Expo SDK
+52 → 54 upgrade for Play's API-36 requirement. Defects the upgrade itself introduced. Seven were caught on
+its branch: Inter lost on every screen under React Native 0.81, PostHog on a second React, R8 switched off
+by a renamed option, the offline cache on a moved API, five screens under the Android status bar, the
+notification handler's new required fields, and a Gradle Metaspace OOM that hung every release build.
+The eighth turned `main` red after the merge: a test suite that timed out on CI's cold Jest cache. See
+the "Expo SDK 54 upgrade 2026-09-28" entry at the end.)
 Prior: 2026-09-27 (**`IOS-01`..`IOS-09` FIXED** — interactive session, first iOS build
 work: a dependency override that broke every iOS prebuild, the Play-only force-update link, iOS push
 tokens sent to FCM, five iPhone-only UX defects from a code sweep (keyboard over modal fields, no way
@@ -2660,8 +2661,9 @@ The app moves from Expo SDK 52 (React Native 0.76.9, React 18.3.1) to SDK 54 (Re
 stops the back button reaching the app: Android 16 no longer calls `Activity.onBackPressed()`. The New
 Architecture stays off (`MOB-BOOT-04`).
 
-These are the defects the upgrade itself introduced. All were fixed on the upgrade branch before merge,
-and none reached `main`. What tests cannot show (a cold start, fonts, back and edge-to-edge on a real
+These are the defects the upgrade itself introduced. SDK54-01..07 were fixed on the upgrade branch
+before merge. SDK54-08 surfaced as a red `main` on the first CI run after it, with no user impact. What
+tests cannot show (a cold start, fonts, back and edge-to-edge on a real
 phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. The upgrade merged as #959 on 2026-09-28,
 so that pass now gates the store build: the upgrade moves the Android fingerprint from `7ae040c9…` to
 `a3571198…` (`docs/APP-STORE-SUBMISSION.md` B9), and OTA can't rescue a binary that fails on a phone.
@@ -2675,5 +2677,6 @@ so that pass now gates the store build: the upgrade moves the Android fingerprin
 | SDK54-05 | **Five screens would have drawn under the Android status bar.** SDK 54 draws edge-to-edge on every Android version, and React Native's own `SafeAreaView` pads on iOS only. | `apps/mobile/app/notifications/index.tsx`, `onboarding.tsx`, `role.tsx`, `help/index.tsx`, `phone.tsx` | MEDIUM (Android layout) | **FIXED** in code: they use `SafeAreaView` from `react-native-safe-area-context`. The rest of the app is checked in the device pass. |
 | SDK54-06 | **The foreground notification handler no longer type-checked.** expo-notifications 0.32 deprecated `shouldShowAlert` and made `shouldShowBanner` and `shouldShowList` required. | `apps/mobile/src/push/push.ts` | LOW | **FIXED**: sets both. |
 | SDK54-07 | **Every Android release build ran out of memory and hung.** Under the template's `org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m`, `:expo-updates:kspReleaseKotlin` failed with `java.lang.OutOfMemoryError: Metaspace` about 8 minutes into the Gradle step. The failed daemon never exited. The `Android Test APK` job (run 36414633349) sat silent for 58 minutes, where SDK 52 runs took 11–13 end to end, until it was cancelled so its log could be read. EAS runs the same prebuild and reads the same `gradle.properties`, so a store build would have burned quota on the same hang. | `apps/mobile/plugins/with-gradle-memory.js`, `.github/workflows/android-test-apk.yml` | HIGH (no release build could finish) | **FIXED**: a config plugin sets `-Xmx4096m -XX:MaxMetaspaceSize=1024m` in the generated `gradle.properties` for every build. The QA-APK job now has a 45-minute timeout, so a wedged daemon fails fast with a readable log. `__tests__/gradle-memory-plugin.test.ts`; a local prebuild writes the new value. |
+| SDK54-08 | **`main` went red on the merge: the rider board suite timed out on a cold Jest cache.** React Native's index resolves components lazily, so the first render in a fresh worker also compiles every module the board touches. RN 0.81's sources are slower to compile, and CI starts with an empty transform cache. On `main`'s CI run 36466348789, the suite's first test crossed the 5 s timeout. The act() scope it left open then failed the file's other 51 tests. The same code had passed three earlier runs. Reproduced locally with `jest --no-cache`: 5,057 ms and the same 52 failures. | `apps/mobile/app/rider/(tabs)/__tests__/index.test.tsx` | MEDIUM (red `main`; CI only, no user impact) | **FIXED**: a `beforeAll` renders the same board once, under its own 60 s budget, so each test's 5 s covers the board rather than the compiler. With the fix, a cold full run passes 202/202 suites, and that first test takes 148 ms. |
 
 ---
