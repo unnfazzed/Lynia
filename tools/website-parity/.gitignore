@@ -1,0 +1,3 @@
+# Rendered screenshots, diffs, sheets and report.json never get committed (default --out is the OS tmpdir).
+out/
+*.png
