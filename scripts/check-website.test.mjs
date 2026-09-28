@@ -68,6 +68,14 @@ test("a stale CSP hash fails, and --write repairs it", () => {
   assert.deepEqual(checkWebsite({ root, write: true }), []);
 });
 
+test("the CSP check sees scripts in any case, with attributes, and refuses external ones", () => {
+  const root = tempRepo();
+  edit(root, `${SITE}/404.html`, (s) => s.replace("</body>", '<SCRIPT type="module">go()</SCRIPT >\n</body>'));
+  assert.ok(checkWebsite({ root }).some((e) => e.includes("script-src hashes")));
+  edit(root, `${SITE}/404.html`, (s) => s.replace("</body>", '<script src="https://cdn.example/x.js"></script>\n</body>'));
+  assert.ok(checkWebsite({ root }).some((e) => e.includes("external scripts are not expected")));
+});
+
 test("a reference to a missing file fails", () => {
   const root = tempRepo();
   unlinkSync(join(root, HANDOFF, "assets/illustrations/price.svg"));

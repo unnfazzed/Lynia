@@ -65,6 +65,13 @@ const EXTRA_FILES = new Set([
 /** Paths linked on purpose that have no page yet, so they serve 404.html (D-42). */
 const INTENTIONAL_404 = new Set(["/about"]);
 
+/**
+ * Every <script> element: group 1 = attributes, group 2 = text. Case-insensitive, and lenient about
+ * attributes and the end tag (browsers end a script at `</script foo>` too), so a script written any
+ * way a browser runs it is seen by the CSP check.
+ */
+const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi;
+
 const read = (p) => readFileSync(p, "utf8");
 const sha256 = (buf) => createHash("sha256").update(buf).digest();
 
@@ -103,14 +110,15 @@ export function build404(indexHtml) {
   const style = extract(indexHtml, /<style>[\s\S]*?<\/style>/, "<style>");
   const header = extract(indexHtml, /<header class="nav">[\s\S]*?<\/header>/, "<header>");
   const footer = extract(indexHtml, /<footer>[\s\S]*?<\/footer>/, "<footer>");
-  const script = extract(indexHtml, /<script>[\s\S]*?<\/script>/, "<script>");
 
   const main = '<main class="nf"><div class="wrap">\n<h1>Page not found</h1>\n<a class="btn b-g" href="/">Back home</a>\n</div></main>';
   const body = [absolutize(header), main, absolutize(footer)].join("\n\n");
 
   // Keep only the icon paths this page uses, plus the line that renders them (both verbatim).
   const used = new Set([...body.matchAll(/data-i="([a-z]+)"/g)].map((m) => m[1]));
-  const lines = script.replace(/^<script>\n?/, "").replace(/<\/script>$/, "").split("\n");
+  const script = [...indexHtml.matchAll(SCRIPT_TAG)][0];
+  if (!script) throw new Error("could not find <script> in index.html");
+  const lines = script[2].replace(/^\n/, "").split("\n");
   const entries = lines.filter((l) => /^[a-z]+:'/.test(l) && used.has(l.slice(0, l.indexOf(":"))));
   const render = lines.find((l) => l.startsWith("document.querySelectorAll('i[data-i]')"));
   if (!render || entries.length !== used.size) throw new Error("could not derive the 404 icon script from index.html");
@@ -202,9 +210,9 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
     const want = new Set();
     for (const page of pages()) {
       const html = read(join(SITE, page));
-      if (/<script\s[^>]*src=/.test(html)) fail(`${page}: external scripts are not expected.`);
-      for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
-        want.add(`'sha256-${sha256(Buffer.from(m[1], "utf8")).toString("base64")}'`);
+      for (const [, attrs, text] of html.matchAll(SCRIPT_TAG)) {
+        if (/\bsrc\s*=/i.test(attrs)) fail(`${page}: external scripts are not expected.`);
+        else want.add(`'sha256-${sha256(Buffer.from(text, "utf8")).toString("base64")}'`);
       }
     }
     const wanted = [...want].sort();
