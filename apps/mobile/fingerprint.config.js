@@ -38,7 +38,17 @@
  * file does not change any already-installed app — it changes what the NEXT store build computes.
  * Binaries built before a change here can never receive updates published after it, and vice versa.
  * Re-baselining therefore costs one store build; do it while the install base is small.
+ *
+ * `ignorePaths` (SDK54-10). SDK 54's @expo/fingerprint (0.15) also hashes the CONTENTS of files the
+ * app config points at, and `android.googleServicesFile` points at the EAS file secret
+ * `GOOGLE_SERVICES_JSON`. That file exists only on the EAS builder, not on the GitHub runner where
+ * `eas build` computes the same hash first, so the two disagreed and EAS failed build c6300564 in
+ * "Configure expo-updates" (runner `5d04edb3…`, EAS `655c9da3…`). The file is Firebase project
+ * config, which no JS bundle depends on, so leaving it out keeps the fingerprint's promise intact.
+ * The `**` prefix matters: the secret sits outside the project (`../../../eas-environment-secrets/…`),
+ * and only a pattern starting `**` has those leading `../` stripped before it is matched.
  */
 module.exports = {
   sourceSkips: ["ExpoConfigVersions"],
+  ignorePaths: ["**/eas-environment-secrets/**"],
 };

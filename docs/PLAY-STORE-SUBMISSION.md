@@ -1817,6 +1817,23 @@ Lessons:
 - Play permissions for a service account are per app: invite it in Users and permissions **and**
   add Lynia under App permissions with "Release to testing tracks".
 
+**Build 38, the first SDK 54 / API 36 store build — 2026-09-28.**
+- **Before the build.** The owner asked for the device pass to be done without them ("just test SDK
+  54 yourself then ship"). The new `Android Emulator Smoke` lane ran the test APK on Android 10, 13
+  and 16 and walked the signed-out app. It found `SDK54-09`: onboarding's button ran off the bottom of
+  the screen on all three versions. That was fixed in #967 before any store build, and the re-run was
+  clean (run 36475731565, attempt 2). What an emulator can't cover (sign-in, map, camera, push,
+  background GPS) is left to the testers.
+- **Attempt 1.** `mobile-release.yml` run 36476948918 (`profile: closed`, `main` at `cf8b4ca3`)
+  queued EAS build `c6300564` (v0.50.1 / vc 38). It ERRORED about a minute in, in "Configure
+  expo-updates", with a runtime version mismatch (runner `5d04edb3…`, EAS `655c9da3…`). No Gradle
+  time was spent, and auto-submission `b54f81a6` never ran, because there was no artifact.
+- **Cause and fix.** `SDK54-10`: SDK 54's fingerprinter hashes the `GOOGLE_SERVICES_JSON` file
+  secret, which only the EAS builder has. `fingerprint.config.js` now ignores
+  `**/eas-environment-secrets/**`.
+- **Numbering.** The remote versionCode already moved to 38, so the retry builds as vc 39. Play never
+  received 38.
+
 ---
 
 ## 9. Pre-submission checklist
