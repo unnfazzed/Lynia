@@ -2662,9 +2662,9 @@ Architecture stays off (`MOB-BOOT-04`).
 
 These are the defects the upgrade itself introduced. All were fixed on the upgrade branch before merge,
 and none reached `main`. What tests cannot show (a cold start, fonts, back and edge-to-edge on a real
-phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. That pass gates the merge, because the
-upgrade moves the Android fingerprint from `7ae040c9…` to `a3571198…` (`docs/APP-STORE-SUBMISSION.md`
-B9).
+phone) is the SDK 54 pass in `docs/QA-DEVICE-CHECKLIST.md`. The upgrade merged as #959 on 2026-09-28,
+so that pass now gates the store build: the upgrade moves the Android fingerprint from `7ae040c9…` to
+`a3571198…` (`docs/APP-STORE-SUBMISSION.md` B9), and OTA can't rescue a binary that fails on a phone.
 
 | ID | Finding | Location | Severity | Status |
 |----|---------|----------|----------|--------|

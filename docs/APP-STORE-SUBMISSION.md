@@ -8,8 +8,8 @@
 >
 > **What already exists:**
 > - The iOS toolchain is **proven**. EAS build `7fdb60a9` compiled this app (Expo SDK 52 / RN 0.76.9)
->   on **Xcode 26.2**, which App Store uploads require (§3 B1). The app is moving to SDK 54 for
->   Android's API 36 (D2), so that proof has to be repeated on SDK 54.
+>   on **Xcode 26.2**, which App Store uploads require (§3 B1). The app moved to SDK 54 for Android's
+>   API 36 on 2026-09-28 (D2), so that proof has to be repeated on SDK 54.
 > - The rider-free iPhone app is in code (D-41, §3 B3). It is inert until an iOS binary exists.
 >
 > This is the iOS twin of [`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md) (**PSS** below). It
@@ -29,7 +29,8 @@
    - **Done:** the iOS prebuild fix, the Xcode 26 proof, the rider-free iPhone app, the iOS store link,
      the APNs sender (inert until its key exists), the iPhone fixes a code sweep could find (B6), and
      the per-platform force-update minimum (B5).
-   - **In review:** the Expo SDK 54 upgrade (Play's API 36; the iOS compile must be re-proven on it, D2).
+   - **Merged 2026-09-28 (#959):** the Expo SDK 54 upgrade (Play's API 36). It reaches Android testers
+     only with the next store build, and the iOS compile must be re-proven on it (D2).
    - **Still to do:** the support page and legal wording, and the iOS workflow lanes.
    - **Also still to do:** the `ios` config plus the iOS `eas.json` profiles. These ship **together
      with the next Android store build**, because both move the Android OTA fingerprint (B9).
@@ -45,7 +46,7 @@
 | # | Decision | State | Notes |
 |---|---|---|---|
 | D1 | Apple account type | **DECIDED 2026-09-27: Organization = FortyoneX Studio (Private) Limited** | The owner rejected an Individual account because it displays the person's legal name as the App Store seller. The organization owns the LyniaGo brand. Guideline 5.2.1 wants the seller to be the entity that offers the service; to satisfy it, the privacy page, support page, copyright line and review notes all say "LyniaGo is operated by FortyoneX Studio (Private) Limited". |
-| D2 | Expo SDK for iOS | **2026-09-28: moving to SDK 54**, in the same PR as Android's API-36 target (§8). It replaces the SDK 52 decision (ship with `ios.image` pinned to `macos-sequoia-15.6-xcode-26.2`, proven by build `7fdb60a9`) once it merges. | SDK 52 needed that pin: its default image (Xcode 16.2) cannot upload, and Xcode ≥ 26.4 cannot compile RN 0.76.9's fmt. SDK 54 (React Native 0.81, the last SDK with the legacy architecture) defaults to an Xcode 26 image, but nothing has proven it compiles this app. **Re-prove the iOS build on SDK 54 before the first TestFlight build**, and keep the 26.2 pin until a build shows it can go. Runway: the iOS 27 SDK becomes mandatory in April 2027. |
+| D2 | Expo SDK for iOS | **2026-09-28: SDK 54**, merged as #959 together with Android's API-36 target (§8). It replaces the SDK 52 decision (ship with `ios.image` pinned to `macos-sequoia-15.6-xcode-26.2`, proven by build `7fdb60a9`). | SDK 52 needed that pin: its default image (Xcode 16.2) cannot upload, and Xcode ≥ 26.4 cannot compile RN 0.76.9's fmt. SDK 54 (React Native 0.81, the last SDK with the legacy architecture) defaults to an Xcode 26 image, but nothing has proven it compiles this app. **Re-prove the iOS build on SDK 54 before the first TestFlight build**, and keep the 26.2 pin until a build shows it can go. Runway: the iOS 27 SDK becomes mandatory in April 2027. |
 | D3 | Rider mode on iOS | **DECIDED 2026-09-27: none.** Customer-only iPhone app, no national ID, no KYC (DESIGN-DEVIATIONS D-41) | Riders are on low-end Android handsets. This removes the rider "Always"-location permission, KYC, the commission-wallet review question and the rider demo video from the iOS path. |
 | D4 | How iOS push is delivered | **DONE (code): server-side APNs adapter** (no app change); arming needs the A5 key (`docs/AZURE-OWNER-RUNBOOK.md` "iOS push") | The app registers the raw APNs token with `platform: "ios"` (`src/push/push.ts`). The API used to send every token through FCM (`apps/api/src/adapters/push/fcm.push.ts`), which cannot deliver to an APNs token. Customers need push for offers, arrival and delivery updates. |
 | D5 | Where the app is available | **Recommended: Zimbabwe only** | Distributing in the EU makes the organization a DSA "trader", and Apple publishes its address, phone and email. With non-EU availability, declare non-trader. Zimbabwe is an App Store and TestFlight storefront. |
@@ -310,8 +311,11 @@ changes (B2) in one PR, right before the next Android store build.** The API-36 
 natural carrier.
 
 The SDK 54 upgrade that brings API 36 moves the fingerprint by itself: `7ae040c9…` on `main` →
-`a3571198…` on the upgrade branch (measured 2026-09-28, same command). So the order is: merge the SDK
-54 upgrade after its device pass, then the iOS config PR, then cut that one Android store build.
+`a3571198…` on the upgrade branch (measured 2026-09-28, same command). It merged as #959 on
+2026-09-28, so `main` is already on the new fingerprint. If the iOS config PR is ready in time, land it
+before the SDK 54 device pass so that one Android store build carries both. Don't hold the API-36
+build for it past the Play extension (2026-11-01); the iOS config then moves the fingerprint once more,
+and ships with the following Android build.
 
 The rule holds on SDK 54's `@expo/fingerprint@0.15.5`, re-measured on the upgrade branch: an `ios`
 block moves `a3571198…` to `bdf7c3fe…`, and an iOS `eas.json` profile moves it to `b3cd3e7f…`. A
@@ -444,8 +448,9 @@ a metadata-only rejection is fixed in App Store Connect without a new build.
 - **Google Play API 36.** Play's rule: "Starting August 31, 2026: New apps and app updates must target
   Android 16 (API level 36) or higher to be submitted".
   - An extension to **2026-11-01** can be requested from Play Console's Policy status page.
-  - `main` targets 35. The Expo SDK 54 upgrade targets 36, and needs a device pass
-    (`docs/QA-DEVICE-CHECKLIST.md`) and a store build before it reaches anyone.
+  - `main` targets 36 since the Expo SDK 54 upgrade merged (#959, 2026-09-28). Testers' binaries
+    still target 35 until the next store build, which needs the SDK 54 device pass first
+    (`docs/QA-DEVICE-CHECKLIST.md`).
   - Build 37 (API 35) was accepted into Closed testing on 2026-09-27, and PSS doesn't record why.
   - **Request the extension now**, to cover the time until that build ships.
 - **Android push may be off too.** `PUSH_PROVIDER = "noop"` in `infra/azure/containerapps.tf:51`. The
