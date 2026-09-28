@@ -6,6 +6,8 @@
   ui.py wait LABEL [SECONDS]         poll until LABEL shows (default 30 s)
   ui.py tap LABEL [SECONDS]          wait for LABEL, then tap its centre
   ui.py tap --class CLASS [SECONDS]  the same for the first element of a widget class
+  ui.py inside LABEL [SECONDS]       exit 0 if the control holding LABEL sits wholly inside the
+                                     screen; a button cut off by the bottom edge touches it
 """
 import re
 import subprocess
@@ -43,19 +45,47 @@ def dump():
     return None
 
 
-def find(root, label, cls):
+def bounds(node):
+    m = BOUNDS.match(node.get("bounds", ""))
+    return tuple(map(int, m.groups())) if m else None
+
+
+def find_node(root, label, cls):
     for node in root.iter("node"):
         if cls is not None:
             if node.get("class") != cls:
                 continue
         elif label not in (node.get("text"), node.get("content-desc")):
             continue
-        m = BOUNDS.match(node.get("bounds", ""))
-        if m:
-            x1, y1, x2, y2 = map(int, m.groups())
-            if x2 > x1 and y2 > y1:
-                return (x1 + x2) // 2, (y1 + y2) // 2
+        box = bounds(node)
+        if box and box[2] > box[0] and box[3] > box[1]:
+            return node
     return None
+
+
+def find(root, label, cls):
+    node = find_node(root, label, cls)
+    if node is None:
+        return None
+    x1, y1, x2, y2 = bounds(node)
+    return (x1 + x2) // 2, (y1 + y2) // 2
+
+
+def inside(root, label):
+    """The label's clickable control (its text alone can sit on screen while the button runs off it)."""
+    node = find_node(root, label, None)
+    if node is None:
+        return False
+    parents = {child: parent for parent in root.iter() for child in parent}
+    control = node
+    while control.get("clickable") != "true" and control in parents:
+        control = parents[control]
+    if control.get("clickable") != "true":
+        control = node
+    screen = bounds(next(root.iter("node")))
+    box = bounds(control)
+    print(f"{label}: control {box} on screen {screen}")
+    return screen[1] < box[1] and box[3] < screen[3]
 
 
 def wait(label, cls, seconds):
@@ -89,6 +119,9 @@ def main(argv):
         root = dump()
         return 0 if root is not None and find(root, label, cls) is not None else 1
     hit = wait(label, cls, float(rest[0]) if rest else 30.0)
+    if cmd == "inside":
+        root = dump() if hit is not None else None
+        return 0 if root is not None and inside(root, label) else 1
     if hit is None:
         print(f"not on screen: {label or cls}", file=sys.stderr)
         return 1

@@ -33,6 +33,7 @@ jest.mock("../../src/auth/session", () => ({
 }));
 
 import { riderModeAvailable } from "../../src/rider-mode";
+import { stylesDirectlyInSafeArea } from "../../src/testing/safe-area-fill";
 import RoleScreen from "../role";
 
 function renderRole(): renderer.ReactTestRenderer {
@@ -72,6 +73,15 @@ describe("role screen copy follows restaurantsEnabled", () => {
     // The rider option and the design's CTA wording are flag-independent.
     expect(out).toContain("Earn as a rider");
     expect(out).toContain("Continue as a customer");
+  });
+});
+
+// SDK54-09: both views are minHeight:100%, which overflows the phone by the insets when placed
+// straight inside the SafeAreaView (see onboarding.tsx).
+describe("the role picker fits between the safe-area insets", () => {
+  it.each([true, false])("restaurantsEnabled=%s: an unpadded flex:1 View sits between them", (restaurantsEnabled) => {
+    mockFlags = { ...mockFlags, restaurantsEnabled };
+    expect(stylesDirectlyInSafeArea(renderRole())).toEqual([{ flex: 1 }]);
   });
 });
 

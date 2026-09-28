@@ -24,6 +24,7 @@ jest.mock("../../src/auth/session", () => ({
 }));
 
 import { riderModeAvailable } from "../../src/rider-mode";
+import { stylesDirectlyInSafeArea } from "../../src/testing/safe-area-fill";
 import OnboardingScreen from "../onboarding";
 
 function renderOnboarding(): renderer.ReactTestRenderer {
@@ -123,6 +124,15 @@ describe("onboarding carousel slides follow restaurantsEnabled", () => {
     const out = rendered(tree);
     expect(out).toContain("Earn as a rider");
     expect(out).toContain("Get started");
+  });
+});
+
+// SDK54-09: the emulator smoke (2026-09-28) caught Next / Get started running off the bottom of the
+// screen on Android 10, 13 and 16, because the minHeight:100% view sat straight inside the insets.
+describe("the carousel fits between the safe-area insets", () => {
+  it("puts an unpadded flex:1 View between the SafeAreaView and the view", () => {
+    mockFlags = { ...mockFlags, restaurantsEnabled: true };
+    expect(stylesDirectlyInSafeArea(renderOnboarding())).toEqual([{ flex: 1 }]);
   });
 });
 

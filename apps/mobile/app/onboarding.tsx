@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { saveOnboardingSeen } from "../src/auth/session";
 import { useFeatureFlags } from "../src/net/use-feature-flags";
@@ -99,16 +100,22 @@ export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenP
     // layout live inside OnboardingView (from its `Pad` wrapper). The container owns the slide SET
     // (flag-gated), the active index and the Skip/Next handlers, feeding the view one slide at a time.
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      <OnboardingView
-        icon={slide.icon}
-        title={slide.title}
-        body={slide.subtitle}
-        slide={active}
-        dots={slides.map((_, n) => n)}
-        primaryLabel={last ? "Get started" : "Next"}
-        onSkip={finish}
-        onNext={next}
-      />
+      {/* SDK54-09: Yoga resolves the view's `minHeight: "100%"` against its parent's whole box, and
+          the safe-area insets are that parent's padding. Placed straight inside, the view was as tall
+          as the phone and began below the status bar, so Next / Get started ran off the bottom. This
+          unpadded View makes 100% the space between the insets. */}
+      <View style={{ flex: 1 }}>
+        <OnboardingView
+          icon={slide.icon}
+          title={slide.title}
+          body={slide.subtitle}
+          slide={active}
+          dots={slides.map((_, n) => n)}
+          primaryLabel={last ? "Get started" : "Next"}
+          onSkip={finish}
+          onNext={next}
+        />
+      </View>
     </SafeAreaView>
   );
 }

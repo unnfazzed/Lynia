@@ -29,8 +29,10 @@ The `Android Emulator Smoke` workflow (`.github/workflows/android-emulator-smoke
 Android 10, 13 and 16 emulators and walks everything a signed-out user can reach: cold start,
 onboarding, phone sign-in with the keyboard up, links into each route with back, relaunch after
 force-stop, an offline cold start and the 320x640dp phone. It uploads screenshots and a logcat crash
-scan. It covers the signed-out half of the cold-start, Inter, back and edge-to-edge items below. The
-rest needs a phone: anything behind sign-in, push, background GPS, the camera, and low-end CPU speed.
+scan, and fails when a primary button touches the screen edge. Its first run caught onboarding's button
+running off the bottom on Android 10, 13 and 16 (`SDK54-09`, `docs/KNOWN_BUGS.md`). It covers the
+signed-out half of the cold-start, Inter, back and edge-to-edge items below. The rest needs a phone:
+anything behind sign-in, push, background GPS, the camera, and low-end CPU speed.
 
 - [ ] **Cold start on a low-end phone** — the app gets past the splash to the first screen, on a fresh
       install and on a relaunch after force-stop. The New Architecture stays off (`MOB-BOOT-04`); a

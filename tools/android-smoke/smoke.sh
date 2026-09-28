@@ -37,6 +37,20 @@ in_app() {
 }
 deeplink() { adb shell am start -W -a android.intent.action.VIEW -d "$1" "$PKG" > /dev/null 2>&1; }
 back() { adb shell input keyevent KEYCODE_BACK; sleep 2; }
+# A control cut off by the screen edge, or sitting under the system bars at it (SDK54-09).
+on_screen() { ui inside "$1" 15 >> "$OUT/report.txt" 2>&1 || fail "$2: \"$1\" runs off the screen"; }
+# A system dialog the app asked for (Google's location-accuracy prompt, a permission sheet) is another
+# package's window. Note it, keep a picture, and dismiss it so the next back reaches the app.
+system_dialog() {
+  local window
+  window="$(focus)"
+  case "$window" in
+    *"$PKG"* | *"=null"* | "") return 0 ;;
+  esac
+  note "$1 opened a system dialog: ${window##* }"
+  shot "$2"
+  back
+}
 
 adb wait-for-device
 adb root > /dev/null 2>&1 || true # google_apis images allow it; the API 29 offline step needs it
@@ -70,11 +84,14 @@ if ui wait "Skip" 120; then shot 01-onboarding-1; else fail "a fresh install nev
 # 2. Next until the last slide, then Get started, which lands on phone sign-in.
 for slide in 2 3 4; do
   ui has "Get started" && break
+  on_screen "Next" "onboarding slide $((slide - 1))"
   ui tap "Next" 15 || { fail "no Next on onboarding slide $((slide - 1))"; break; }
   shot "02-onboarding-$slide"
 done
+on_screen "Get started" "the last onboarding slide"
 ui tap "Get started" 15 || fail "no Get started on the last onboarding slide"
 if ui wait "Welcome to Lynia" 30; then shot 03-phone; else fail "Get started did not reach phone sign-in"; shot 03-stuck; fi
+on_screen "Send code" "phone sign-in"
 
 # 3. The keyboard over the phone field. A partial number keeps "Send code" disabled.
 if ui tap --class android.widget.EditText 15; then
@@ -95,7 +112,9 @@ fi
 for route in help send home food history notifications settings profile wallet rider permissions role; do
   deeplink "lynia://$route"
   sleep 5
+  system_dialog "lynia://$route" "06-link-$route-dialog"
   shot "06-link-$route"
+  [ "$route" = role ] && on_screen "Continue as a customer" "lynia://role"
   if ! alive; then
     fail "lynia://$route killed the app"
     relaunch_to_phone
@@ -139,10 +158,19 @@ else
 fi
 sleep 3
 
-# 8. The 320x640dp entry phone (CLAUDE.md): the same 720x1440 panel at density 360.
+# 8. The 320x640dp entry phone (CLAUDE.md): the same 720x1440 panel at density 360. Clearing the
+#    app's data brings onboarding back, the screen with a button pinned to the bottom.
 adb shell wm density 360
+adb shell pm clear "$PKG" > /dev/null
+launch > /dev/null
+if ui wait "Skip" 60; then
+  on_screen "Next" "onboarding at 320x640dp"
+  shot 09-small-phone-onboarding
+  ui tap "Skip" 15 > /dev/null 2>&1
+fi
 relaunch_to_phone
 shot 09-small-phone
+on_screen "Send code" "phone sign-in at 320x640dp"
 if ui tap --class android.widget.EditText 15; then
   sleep 1
   adb shell input text "0771"
