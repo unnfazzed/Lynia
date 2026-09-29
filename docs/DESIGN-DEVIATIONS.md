@@ -16,7 +16,9 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42.** D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47.** D-43 to D-47 are the
+merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
+restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
 decision — the mocks were not re-exported as part of it, so it stands as a ledgered app-side divergence
 until they are. D-39 was authored by
@@ -1943,14 +1945,15 @@ headers), `robots.txt` and `sitemap.xml`.
 **Retire when:** the Play listing is public (then add the link edits), the About copy arrives (then
 add `/about`), or a terms page exists. Each of these updates this entry and `LAUNCH_EDITS` together.
 
-## D-43 · Merchant web: self-serve sign-up, "Sign in", and the type-aware `/setup` — PROPOSED (2026-09-29)
+## D-43 · Merchant web: self-serve sign-up, "Sign in", and the type-aware `/setup` — APPROVED (2026-09-29)
 
 **Owner instruction (2026-09-29):** *"upgrade the merchant web side. It needs to enable both restaurants
 and shops … simple for informal businesses in Zimbabwe … log in is by mobile number and whatsapp otp."*
 The product spec is `docs/designs/merchant-web-upgrade.md` (L1, "Front door"); the plan is
 `docs/plans/2026-09-29-merchant-web-upgrade-plan.md` (§10 lists this entry). **No RM mock draws sign-up,
-business type or shops**, so these screens are built from RM primitives and ledgered here. The entry is
-PROPOSED until the owner approves the L1 web PR and its screenshot sheet (OV-11). Nothing in
+business type or shops**, so these screens are built from RM primitives and ledgered here. The entry was
+PROPOSED until the owner approved the web PR and its screenshot sheet (OV-11); **the owner approved it on
+2026-09-29 with PR #986**. Nothing in
 `packages/design/**` changes. **Upstream ask:** real mocks for sign-up and the shop checklist.
 
 ### 1 · Undrawn screens
@@ -1991,13 +1994,13 @@ checklist is unchanged.
 **Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
 the app changes).
 
-## D-44 · Merchant web: Book a rider, the shop's own shell, and shop words — PROPOSED (2026-09-29)
+## D-44 · Merchant web: Book a rider, the shop's own shell, and shop words — APPROVED (2026-09-29)
 
 **Owner instruction (2026-09-29):** the merchant web serves restaurants and shops, simply, for informal
 businesses (D-43 quotes it). L2 of `docs/designs/merchant-web-upgrade.md` ("Book a rider (shops and
 restaurants), plus the shop shell") and plan §10 list this entry. **No RM mock draws booking a rider, a
-shop's navigation or a shop's words**, so these are built from RM primitives and ledgered here. PROPOSED
-until the owner approves the web PR and its screenshot sheet (`docs/parity/MERCHANT-L2-D44-2026-09-29.png`,
+shop's navigation or a shop's words**, so these are built from RM primitives and ledgered here. **The owner
+approved it on 2026-09-29 with PR #986** and its screenshot sheet (`docs/parity/MERCHANT-L2-D44-2026-09-29.png`,
 OV-11). Nothing in `packages/design/**` changes. **Upstream ask:** real mocks for Deliveries, the booking
 form, the pick screen and the shop nav.
 
@@ -2054,15 +2057,15 @@ state pill carries its words.
 **Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
 the app changes).
 
-## D-45 · Merchant web: Your riders — PROPOSED (2026-09-29)
+## D-45 · Merchant web: Your riders — APPROVED (2026-09-29)
 
 **Owner instruction (2026-09-29, the design review revision):** *"merchants have their preferred bikers ..
 they have to put them on the platform by their phone numbers used to sign in to the platform. Can do a
 section where they can manage these riders .. the ranking mechanism will tag them preferred and depending on
 various factors rank them higher."* Spec: `docs/designs/merchant-web-upgrade.md` L3; plan §10 lists this
 entry. **No RM mock draws a riders list, a rider's status or a "Your rider" tag**, so these are built from RM
-primitives and ledgered here. PROPOSED until the owner approves the web PR and its screenshot sheet
-(`docs/parity/MERCHANT-L3-D45-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+primitives and ledgered here. **The owner approved it on 2026-09-29 with PR #986** and its
+screenshot sheet (`docs/parity/MERCHANT-L3-D45-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
 ask:** a real mock for the riders list.
 
 ### 1 · Undrawn screens
@@ -2091,14 +2094,14 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
 **Retire when:** a design export draws the riders list (then align to it), or the owner rejects a row (then
 the app changes).
 
-## D-46 · Merchant web: Team, Join, who is signed in, and the Staff views — PROPOSED (2026-09-29)
+## D-46 · Merchant web: Team, Join, who is signed in, and the Staff views — APPROVED (2026-09-29)
 
 **Owner instruction (2026-09-29):** *"They can add multiple users to log into same shop."* Spec:
 `docs/designs/merchant-web-upgrade.md` L4 ("Team"), with its one permission table; plan §10 lists this entry.
 **No RM mock draws a team, an invite, a Join screen, who is signed in, or a Staff view**, so these are built
 from RM primitives and the in-repo wireframe (`docs/designs/merchant-web-upgrade-wireframe.png`, screen 3), and
-ledgered here. PROPOSED until the owner approves the web PR and its screenshot sheet
-(`docs/parity/MERCHANT-L4-D46-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+ledgered here. **The owner approved it on 2026-09-29 with PR #986** and its
+screenshot sheet (`docs/parity/MERCHANT-L4-D46-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
 ask:** real mocks for Team, Join and the top bar's signed-in person.
 
 ### 1 · Undrawn screens
@@ -2137,13 +2140,13 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
 **Retire when:** a design export draws Team, Join or the signed-in person (then align to it), or the owner
 rejects a row (then the app changes).
 
-## D-47 · Merchant web: finishing the drawn restaurant screens (L5) — PROPOSED (2026-09-29)
+## D-47 · Merchant web: finishing the drawn restaurant screens (L5) — APPROVED (2026-09-29)
 
 **Owner instruction (2026-09-29):** *"improving restaurant side also to simplify."* Spec:
 `docs/designs/merchant-web-upgrade.md` L5 ("Shop words + finishing the drawn restaurant screens"). Most of L5
 **removes** divergences, aligning the app to what the RM mocks already draw. The entry lists those alignments so
 the sheet (`docs/parity/MERCHANT-L5-D47-2026-09-29.png`) can be read against them, and ledgers the few places the
-app still differs. PROPOSED until the owner approves the web PR and its sheet (OV-11). Nothing in
+app still differs. **The owner approved it on 2026-09-29 with PR #986** and its sheet (OV-11). Nothing in
 `packages/design/**` changes.
 
 ### 1 · Aligned to the mock (no longer a deviation)
