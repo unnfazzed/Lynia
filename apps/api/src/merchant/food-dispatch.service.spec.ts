@@ -7,6 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { DispatchStrategy } from "./dispatch-strategy";
 import { FoodDispatchService } from "./food-dispatch.service";
+import { withMembershipShim } from "./testing/membership-shim";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "food-dispatch-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
 
@@ -37,7 +38,7 @@ function fakeGateway() {
  *  mirroring food-order.service.spec.ts's `build()`. */
 function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway()) {
   notified.length = 0;
-  const prisma = { ...methods } as Record<string, unknown>;
+  const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy);
   return { svc, prisma, gateway };

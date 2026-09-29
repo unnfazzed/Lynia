@@ -1,8 +1,23 @@
 import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { RESTAURANTS_DEBT } from "@lynia/shared";
+import { RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
+import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, routeOf } from "./admin.shared";
+
+/** The directory/detail's shared column set (L1 added type, kind and the location for landmark + phone). */
+const MERCHANT_DIRECTORY_SELECT = {
+  id: true,
+  name: true,
+  cashRule: true,
+  pilotEnabled: true,
+  busyMode: true,
+  cuisineTags: true,
+  createdAt: true,
+  businessType: true,
+  shopKind: true,
+  location: true,
+} as const;
 
 /**
  * X1 — admin alignment for the merchant vertical (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md
@@ -38,12 +53,23 @@ export class AdminMerchantsService {
   ) {}
 
   /** Merchant directory: order volume + open-debt total per merchant, batched (mirrors
-   *  admin-customers.service.ts's listCustomers aggregation shape). */
-  async listMerchants() {
+   *  admin-customers.service.ts's listCustomers aggregation shape). Newest first.
+   *
+   *  Merchant web upgrade L1 (plan 2026-09-29 D5): `filter=awaiting_go_live` is the ops queue —
+   *  restaurants that signed up and aren't switched on yet; `filter=shops` lists signed-up shops, which
+   *  have no go-live until LyniaGo Shops ships but which ops calls about Book a rider. */
+  async listMerchants(filter?: string) {
+    const where =
+      filter === "awaiting_go_live"
+        ? { businessType: "restaurant" as const, pilotEnabled: false }
+        : filter === "shops"
+          ? { businessType: "shop" as const }
+          : {};
     const merchants = await this.prisma.merchant.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { id: true, name: true, cashRule: true, pilotEnabled: true, busyMode: true, cuisineTags: true, createdAt: true },
+      select: MERCHANT_DIRECTORY_SELECT,
     });
     const ids = merchants.map((m) => m.id);
     const [orderCounts, openDebt] = await Promise.all([
@@ -72,17 +98,7 @@ export class AdminMerchantsService {
   async getMerchantDetail(id: string, debtCursor?: string) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        cashRule: true,
-        pilotEnabled: true,
-        busyMode: true,
-        cuisineTags: true,
-        priceLevel: true,
-        createdAt: true,
-      },
+      select: { ...MERCHANT_DIRECTORY_SELECT, description: true, priceLevel: true },
     });
     if (!merchant) return null;
 
@@ -109,10 +125,16 @@ export class AdminMerchantsService {
     const ledger = debtLedgerHasMore ? ledgerRows.slice(0, DEBT_LEDGER_PAGE_SIZE) : ledgerRows;
 
     const base = this.toMerchant(merchant, orderCount, { amount: openDebt._sum.debtAmount, count: openDebt._count._all });
+    const location = (merchant.location as Waypoint | null) ?? null;
     return {
       ...base,
       description: merchant.description,
       priceLevel: merchant.priceLevel,
+      // The detail page is where ops calls a business before switching it on (go-live runbook): the
+      // business contact phone is the number riders are given at pickup, so it's shown in full here
+      // (the directory list keeps it masked).
+      contactPhone: location?.contactPhone ?? null,
+      pin: location?.point ?? null,
       trail: recentOrders.map((o) => ({
         id: o.id,
         route: routeOf(o.pickup, o.dropoff),
@@ -255,6 +277,45 @@ export class AdminMerchantsService {
     return { id: result.id, resolved: result.resolved, auditId: result.auditId };
   }
 
+  /**
+   * The go-live switch (merchant web upgrade L1; RCA-MERCHANT-NOT-SET-UP-2026-08-18 fix #1) — the ONLY
+   * writer of `pilotEnabled`, the flag the customer restaurant list filters on. The flip and its audit
+   * row are one transaction. Idempotent: setting the current value writes nothing.
+   *
+   * Refused (409) when switching ON:
+   *  - a SHOP — going live changes nothing a shop can see until LyniaGo Shops ships, and a shop switched
+   *    on now would surface there unreviewed (design doc R2-7);
+   *  - a restaurant with no pickup pin (placeOrder would 409 every order) or no live, photo'd dish (the
+   *    menu would be empty). The rest of the go-live checks are the ops runbook's human call
+   *    (docs/runbooks/MERCHANT-GO-LIVE.md).
+   * Switching OFF is always allowed.
+   */
+  async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const merchant = await tx.merchant.findUnique({ where: { id }, select: { id: true, businessType: true, pilotEnabled: true, location: true } });
+      if (!merchant) throw new NotFoundException("Merchant not found");
+      if (merchant.pilotEnabled === input.enabled) return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
+      if (input.enabled) {
+        if (merchant.businessType !== "restaurant") {
+          throw new ConflictException({ reason: "shops_not_open", message: "Shops open with LyniaGo Shops — a shop can't go live yet." });
+        }
+        if (!merchant.location) {
+          throw new ConflictException({ reason: "no_location", message: "This restaurant has no pickup pin yet." });
+        }
+        const liveDishes = await tx.merchantDish.count({ where: { merchantId: id, isDraft: false } });
+        if (liveDishes === 0) {
+          throw new ConflictException({ reason: "no_live_dishes", message: "This restaurant has no dish with a photo yet — its menu would be empty." });
+        }
+      }
+      await tx.merchant.update({ where: { id }, data: { pilotEnabled: input.enabled } });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, input.enabled ? "merchant.go_live" : "merchant.go_dormant", id, null, input.note ?? null),
+        select: { id: true },
+      });
+      return { id, pilotEnabled: input.enabled, auditId: audit.id };
+    });
+  }
+
   /** Shared Merchant projection for the directory + detail. */
   private toMerchant(
     m: {
@@ -265,10 +326,14 @@ export class AdminMerchantsService {
       busyMode: boolean;
       cuisineTags: string[];
       createdAt: Date;
+      businessType: string;
+      shopKind: string | null;
+      location: unknown;
     },
     orders: number,
     openDebt?: { amount: { toString: () => string } | null; count: number },
   ) {
+    const location = (m.location as Waypoint | null) ?? null;
     return {
       id: m.id,
       name: m.name,
@@ -276,6 +341,10 @@ export class AdminMerchantsService {
       pilotEnabled: m.pilotEnabled,
       busyMode: m.busyMode,
       cuisineTags: m.cuisineTags,
+      businessType: m.businessType,
+      shopKind: m.shopKind,
+      landmark: location?.landmark ?? null,
+      contactPhoneMasked: location?.contactPhone ? maskPhone(location.contactPhone) : null,
       orders,
       openDebtAmount: openDebt?.amount ? openDebt.amount.toString() : "0.00",
       openDebtCount: openDebt?.count ?? 0,

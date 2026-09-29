@@ -320,3 +320,100 @@ describe("AdminMerchantsService.resolveHandshake (X1/R-05 — the only lever out
     expect(notified.find((n) => n.profileIds[0] === "c1")!.msg).toMatchObject({ title: "Your delivery code is ready" });
   });
 });
+
+describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + ops queue)", () => {
+  const PIN = { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Next to the rank", contactPhone: "+263771234567" };
+
+  /** A fake Prisma for setPilot: `$transaction(cb)` runs against the same fake; writes are recorded. */
+  function pilotHarness(merchant: Record<string, unknown> | null, liveDishes = 1) {
+    const writes: { update?: unknown; audit?: Record<string, unknown> } = {};
+    const prisma: Record<string, unknown> = {
+      merchant: {
+        findUnique: async () => merchant,
+        update: async (args: unknown) => (writes.update = args),
+      },
+      merchantDish: { count: async () => liveDishes },
+      auditLog: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          writes.audit = data;
+          return { id: "audit-1" };
+        },
+      },
+    };
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), writes };
+  }
+
+  it("switches a ready restaurant on, with the flip and its audit row in one transaction", async () => {
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN });
+    const res = await svc.setPilot("ops@lyniago", "m1", { enabled: true, note: "Called; pin checked on street view" });
+    expect(res).toEqual({ id: "m1", pilotEnabled: true, auditId: "audit-1" });
+    expect(writes.update).toEqual({ where: { id: "m1" }, data: { pilotEnabled: true } });
+    expect(writes.audit).toMatchObject({ actor: "ops@lyniago", action: "merchant.go_live", target: "m1", note: "Called; pin checked on street view" });
+  });
+
+  it("refuses to switch a SHOP on — shops open with LyniaGo Shops (R-7)", async () => {
+    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: PIN });
+    await expect(svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "shops_not_open" } });
+    expect(writes.update).toBeUndefined();
+    expect(writes.audit).toBeUndefined();
+  });
+
+  it("refuses a restaurant with no pickup pin, or with no live (photo'd) dish", async () => {
+    const noPin = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: null });
+    await expect(noPin.svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_location" } });
+    const noDishes = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN }, 0);
+    await expect(noDishes.svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
+    expect(noDishes.writes.update).toBeUndefined();
+  });
+
+  it("switching off is always allowed and audited as go_dormant", async () => {
+    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: true, location: null }, 0);
+    await expect(svc.setPilot("ops", "m2", { enabled: false })).resolves.toMatchObject({ pilotEnabled: false });
+    expect(writes.audit).toMatchObject({ action: "merchant.go_dormant" });
+  });
+
+  it("is idempotent: setting the current value writes nothing", async () => {
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: true, location: PIN });
+    await expect(svc.setPilot("ops", "m1", { enabled: true })).resolves.toEqual({ id: "m1", pilotEnabled: true, auditId: null });
+    expect(writes.update).toBeUndefined();
+    expect(writes.audit).toBeUndefined();
+  });
+
+  it("404s an unknown merchant", async () => {
+    const { svc } = pilotHarness(null);
+    await expect(svc.setPilot("ops", "nope", { enabled: true })).rejects.toThrow(/not found/i);
+  });
+
+  it("listMerchants: awaiting_go_live is restaurants not yet on; shops is every shop; landmark shown, phone masked", async () => {
+    const wheres: unknown[] = [];
+    const prisma = {
+      merchant: {
+        findMany: async ({ where }: { where: unknown }) => {
+          wheres.push(where);
+          return [
+            {
+              id: "m1",
+              name: "Sadza Republic",
+              cashRule: "collect_and_return",
+              pilotEnabled: false,
+              busyMode: false,
+              cuisineTags: [],
+              createdAt: new Date("2026-09-29T08:00:00Z"),
+              businessType: "restaurant",
+              shopKind: null,
+              location: PIN,
+            },
+          ];
+        },
+      },
+      order: { groupBy: async () => [] },
+    };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    const [row] = await svc.listMerchants("awaiting_go_live");
+    await svc.listMerchants("shops");
+    await svc.listMerchants();
+    expect(wheres).toEqual([{ businessType: "restaurant", pilotEnabled: false }, { businessType: "shop" }, {}]);
+    expect(row).toMatchObject({ businessType: "restaurant", shopKind: null, landmark: "Next to the rank", contactPhoneMasked: "+263•••••4567" });
+  });
+});

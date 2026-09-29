@@ -247,19 +247,25 @@ export class TrackingService implements OnModuleDestroy {
   }
 
   /**
-   * C5 kitchen socket queue: the `Merchant.id` owned by this profile, or null if the profile isn't a
-   * merchant owner. Used ONLY to resolve which room a `merchant:queue-subscribe` socket should join —
-   * deliberately self-driven from the JWT (mirrors `isBoardEligible`'s role/standing gate), so the
-   * subscribe message carries no client-supplied merchantId to validate against. A duplicate of
-   * `food-order.service.ts`'s private `ownMerchantId` helper: kept separate on purpose, since the
-   * tracking module must stay usable without importing anything from `merchant/` (the boundary this
-   * mirrors is documentation, not a depcruise rule — `tracking` isn't on the `express-no-merchant-
-   * coupling` from-list — but a plain field lookup here is simpler than exporting a merchant-owned
-   * service into a module every Express path also imports).
+   * C5 kitchen socket queue: the business this profile works at (owner OR staff — a `merchant_members`
+   * row), or null. Used ONLY to resolve which room a `merchant:queue-subscribe` socket should join —
+   * deliberately self-driven from the JWT subject, so the subscribe message carries no client-supplied
+   * merchantId to validate against. A read-only twin of `merchant/merchant-access.ts`'s resolver, kept
+   * here on purpose: the tracking module must stay usable without importing anything from `merchant/`
+   * (the boundary this mirrors is documentation, not a depcruise rule — `tracking` isn't on the
+   * `express-no-merchant-coupling` from-list — but a plain field lookup here is simpler than exporting
+   * a merchant-owned service into a module every Express path also imports). Membership, not the JWT
+   * role claim, decides (plan 2026-09-29 D2). The legacy `owner_profile_id` fallback applies only while
+   * the business has no owner member yet; the merchant HTTP guard is what backfills that row.
    */
   async ownMerchantId(profileId: string): Promise<string | null> {
-    const merchant = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    return merchant?.id ?? null;
+    const member = await this.prisma.merchantMember.findUnique({ where: { profileId }, select: { merchantId: true } });
+    if (member) return member.merchantId;
+    const legacy = await this.prisma.merchant.findFirst({
+      where: { ownerProfileId: profileId, members: { none: { role: "owner" } } },
+      select: { id: true },
+    });
+    return legacy?.id ?? null;
   }
 
   /**

@@ -37,7 +37,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
-import { isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -177,8 +177,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (existing) return this.toResponse(existing);
     }
 
+    // Shops never take food orders (plan 2026-09-29 D8) — same visibility rule as the restaurant list.
     const merchant = await this.prisma.merchant.findFirst({
-      where: { id: merchantId, pilotEnabled: true },
+      where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
       select: { id: true, location: true, cashRule: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");

@@ -3,6 +3,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { FoodDebtService } from "./food-debt.service";
+import { withMembershipShim } from "./testing/membership-shim";
 
 const notified: Array<{ profileIds: string[]; title: string; body: string }> = [];
 const notifications = {
@@ -15,7 +16,7 @@ const notifications = {
  *  mirroring food-order.service.spec.ts's `build()`. */
 function build(methods: Record<string, unknown>, lifecycle: Partial<OrderLifecycleService> = {}) {
   notified.length = 0;
-  const prisma = { ...methods } as Record<string, unknown>;
+  const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodDebtService(prisma as unknown as PrismaService, notifications, lifecycle as OrderLifecycleService);
   return { svc, prisma };

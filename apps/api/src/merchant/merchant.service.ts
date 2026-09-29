@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
   BecomeMerchantRequest,
@@ -8,6 +8,7 @@ import type {
   MerchantDishResponse,
   MerchantEndOfDaySummaryResponse,
   MerchantHours,
+  MerchantMemberRole,
   MerchantPaymentMethod,
   MerchantProfileResponse,
   MerchantStatementLineItem,
@@ -27,7 +28,7 @@ import type {
   UpdateMerchantProfileRequest,
   Waypoint,
 } from "@lynia/shared";
-import { RESTAURANTS_COMMISSION, roundToCents } from "@lynia/shared";
+import { haversineKm, RESTAURANTS_COMMISSION, roundToCents, SERVICE_CORRIDOR } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
@@ -38,12 +39,22 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { resolveMerchantAccess } from "./merchant-access";
+import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
+/** The caller's own business, plus the caller's role on it (L1: `MerchantProfileResponse.myRole`). */
+type OwnMerchant = MerchantWithOwner & { myRole: MerchantMemberRole };
+
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
 type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>;
+
+/** Splits sign-up's single "Your name" into the profile's first/last name (first word, then the rest). */
+function splitPersonName(full: string): { firstName: string; lastName: string } {
+  const [first = "", ...rest] = full.trim().split(/\s+/);
+  return { firstName: first, lastName: rest.join(" ") };
+}
 
 // E4/D-32: `coverPhotoUrl`/`logoUrl`/dish `photoUrl` persist the raw GCS object KEY (the bucket has
 // no public objects — infra/terraform/storage.tf enforces `public_access_prevention = "enforced"`,
@@ -137,34 +148,76 @@ export class MerchantService {
     return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
   }
 
-  /** Upgrade a customer profile to a merchant owner + create the Merchant row — mirrors
-   *  RiderService.becomeRider exactly (same conflict shape, same atomic role+row transaction). */
+  /**
+   * L1 self-serve sign-up (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D5). Creates the business
+   * and the caller's OWNER membership in one transaction, dormant (`pilotEnabled` stays an ops switch).
+   *
+   * It never writes `profiles.role` (RCA 2026-08-18 C-4): access is the membership row, which
+   * MerchantGuard reads on the very next request, and a customer who opens a business keeps a working
+   * customer app. `owner_profile_id` is still set — `ownerPhoneMasked` and the legacy resolver read it
+   * (plan §11 OV-4).
+   *
+   * Standing (OV-5): the same people Send won't let book can't open a business either — a held account,
+   * or a banned/suspended rider account.
+   */
   async becomeMerchant(profileId: string, body: BecomeMerchantRequest): Promise<MerchantProfileResponse> {
-    const existing = await this.prisma.merchant.findUnique({ where: { ownerProfileId: profileId }, select: { id: true } });
-    if (existing) {
-      throw new ConflictException({ reason: "already_merchant", message: "Already registered as a merchant" });
+    const profile = await this.prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { firstName: true, lastName: true, onHold: true, rider: { select: { accountStatus: true } } },
+    });
+    if (!profile) throw new NotFoundException("Profile not found");
+    if (profile.onHold) {
+      throw new ForbiddenException({ reason: "on_hold", message: "This account is on hold. Message LyniaGo on WhatsApp to sort it out." });
     }
+    if (profile.rider && profile.rider.accountStatus !== "active") {
+      throw new ForbiddenException({ reason: "account_restricted", message: "This number can't set up a business. Message LyniaGo on WhatsApp." });
+    }
+    if (haversineKm(body.location.point, { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng }) > SERVICE_CORRIDOR.radiusKm) {
+      throw new BadRequestException({ reason: "outside_service_area", message: "That pin is outside the area LyniaGo covers for now." });
+    }
+    if (await resolveMerchantAccess(this.prisma, profileId)) throw alreadyMember();
 
+    const ownerName = body.ownerName.trim();
+    const nameIsEmpty = profile.firstName.trim() === "" && profile.lastName.trim() === "";
     try {
-      await this.prisma.$transaction([
-        this.prisma.profile.update({ where: { id: profileId }, data: { role: "merchant" } }),
-        this.prisma.merchant.create({
-          data: { name: body.name, ownerProfileId: profileId, cashRule: body.cashRule ?? "collect_and_return" },
-        }),
-      ]);
-      return await this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
+      await this.prisma.$transaction(async (tx) => {
+        const merchant = await tx.merchant.create({
+          data: {
+            name: body.name,
+            ownerProfileId: profileId,
+            cashRule: body.cashRule ?? "collect_and_return",
+            businessType: body.businessType,
+            shopKind: body.businessType === "shop" ? (body.shopKind ?? null) : null,
+            location: body.location as Prisma.InputJsonValue,
+          },
+          select: { id: true },
+        });
+        await tx.merchantMember.create({
+          data: {
+            merchantId: merchant.id,
+            profileId,
+            role: "owner",
+            displayName: ownerName,
+            termsAcceptedAt: new Date(),
+            addedByProfileId: profileId,
+          },
+        });
+        // "Your name" fills an empty LyniaGo profile (a never-seen number signs up with no name) and
+        // never overwrites a name the person already chose in the app.
+        if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: splitPersonName(ownerName) });
+      });
     } catch (err) {
-      // The unique index on ownerProfileId is the real guard against a concurrent duplicate become
-      // (the pre-check above races it) — map its P2002 to the same conflict shape.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException({ reason: "already_merchant", message: "Already registered as a merchant" });
-      }
+      // The unique indexes are the real guard against a concurrent double submit (the pre-check above
+      // races it): unique owner_profile_id, unique member profile_id, one owner per business.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") throw alreadyMember();
       throw err;
     }
+    return await this.getMyMerchant(profileId);
   }
 
   async getMyMerchant(profileId: string): Promise<MerchantProfileResponse> {
-    return await this.toProfileResponse(await this.findOwnMerchantOrThrow(profileId));
+    const merchant = await this.findOwnMerchantOrThrow(profileId);
+    return await this.toProfileResponse(merchant, merchant.myRole);
   }
 
   async updateProfile(profileId: string, body: UpdateMerchantProfileRequest): Promise<MerchantProfileResponse> {
@@ -187,7 +240,7 @@ export class MerchantService {
       data,
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated, merchant.myRole);
   }
 
   async updateHours(profileId: string, body: UpdateMerchantHoursRequest): Promise<MerchantProfileResponse> {
@@ -197,7 +250,7 @@ export class MerchantService {
       data: { hours: body.hours as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated, merchant.myRole);
   }
 
   async updateCashRule(profileId: string, body: UpdateMerchantCashRuleRequest): Promise<MerchantProfileResponse> {
@@ -207,7 +260,7 @@ export class MerchantService {
       data: { cashRule: body.cashRule },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated, merchant.myRole);
   }
 
   /** C2: the shop's own pickup point — required before placeOrder can price a trip (N-01 needs a
@@ -219,7 +272,7 @@ export class MerchantService {
       data: { location: body.location as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated, merchant.myRole);
   }
 
   /** For FoodOrderService.placeOrder — the merchant's pickup point, or null if not set yet. */
@@ -235,7 +288,7 @@ export class MerchantService {
       data: { busyMode: body.active },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated);
+    return await this.toProfileResponse(updated, merchant.myRole);
   }
 
   // --- Categories (D-29) ---
@@ -398,7 +451,7 @@ export class MerchantService {
    *  take-one-extra-to-detect-`hasMore` shape. */
   async listRestaurants(cursor?: string): Promise<RestaurantListResponse> {
     const merchants = await this.prisma.merchant.findMany({
-      where: { pilotEnabled: true },
+      where: CUSTOMER_VISIBLE_RESTAURANT,
       orderBy: [{ name: "asc" }, { id: "asc" }],
       take: RESTAURANTS_PAGE_SIZE + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -422,7 +475,7 @@ export class MerchantService {
     // PLACES — pilot restaurants whose name matches. (Cuisine-tag substring stays a client nicety;
     // the server index is restaurant name + the dish index below.)
     const restaurantRows = await this.prisma.merchant.findMany({
-      where: { pilotEnabled: true, name: { contains: q, mode: "insensitive" } },
+      where: { ...CUSTOMER_VISIBLE_RESTAURANT, name: { contains: q, mode: "insensitive" } },
       orderBy: [{ name: "asc" }, { id: "asc" }],
       take: RESTAURANTS_SEARCH_LIMIT,
     });
@@ -431,7 +484,7 @@ export class MerchantService {
     // DISHES — non-draft dishes across pilot restaurants matching name or description. Bounded to the
     // pilot set UP FRONT (merchantId in pilotIds) so a non-pilot merchant's dish can never leak into a
     // customer result, and joined to the pilot name map for the "· Restaurant ·" line.
-    const pilots = await this.prisma.merchant.findMany({ where: { pilotEnabled: true }, select: { id: true, name: true } });
+    const pilots = await this.prisma.merchant.findMany({ where: CUSTOMER_VISIBLE_RESTAURANT, select: { id: true, name: true } });
     const pilotName = new Map(pilots.map((p) => [p.id, p.name] as const));
     const dishRows = pilots.length
       ? await this.prisma.merchantDish.findMany({
@@ -458,7 +511,7 @@ export class MerchantService {
   }
 
   async getRestaurantMenu(merchantId: string): Promise<RestaurantMenuResponse> {
-    const merchant = await this.prisma.merchant.findFirst({ where: { id: merchantId, pilotEnabled: true } });
+    const merchant = await this.prisma.merchant.findFirst({ where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT } });
     if (!merchant) throw new NotFoundException("Restaurant not found");
     const categories = await this.prisma.merchantCategory.findMany({
       where: { merchantId: merchant.id, hidden: false },
@@ -587,13 +640,16 @@ export class MerchantService {
     };
   }
 
-  private async findOwnMerchantOrThrow(profileId: string): Promise<MerchantWithOwner> {
+  /** The business the caller works at (owner or staff), via the membership resolver (plan D2). */
+  private async findOwnMerchantOrThrow(profileId: string): Promise<OwnMerchant> {
+    const access = await resolveMerchantAccess(this.prisma, profileId);
+    if (!access) throw new NotFoundException("Merchant not found");
     const merchant = await this.prisma.merchant.findUnique({
-      where: { ownerProfileId: profileId },
+      where: { id: access.merchantId },
       include: { ownerProfile: { select: { phone: true } } },
     });
     if (!merchant) throw new NotFoundException("Merchant not found");
-    return merchant;
+    return { ...merchant, myRole: access.role };
   }
 
   private async findOwnMerchantIdOrThrow(profileId: string): Promise<string> {
@@ -626,7 +682,7 @@ export class MerchantService {
     return (this.microCacheBypassed(ttlMs) ? mint() : this.photoUrlCache.getOrLoad(key, ttlMs, mint)).catch(() => null);
   }
 
-  private async toProfileResponse(merchant: MerchantWithOwner): Promise<MerchantProfileResponse> {
+  private async toProfileResponse(merchant: MerchantWithOwner, myRole: MerchantMemberRole): Promise<MerchantProfileResponse> {
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
       id: merchant.id,
@@ -641,6 +697,9 @@ export class MerchantService {
       cashRule: merchant.cashRule,
       busy: merchant.busyMode,
       pilotEnabled: merchant.pilotEnabled,
+      businessType: merchant.businessType,
+      shopKind: merchant.shopKind,
+      myRole,
     };
   }
 
@@ -709,4 +768,10 @@ export class MerchantService {
       outOfStock: isOutOfStock(dish),
     };
   }
+}
+
+/** A second sign-up by someone already on a business — including a lost-response retry of their own
+ *  first sign-up, which the web treats as success. */
+function alreadyMember(): ConflictException {
+  return new ConflictException({ reason: "already_member", message: "This number is already on a business on LyniaGo" });
 }

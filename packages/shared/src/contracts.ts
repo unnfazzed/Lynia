@@ -762,15 +762,46 @@ export type MerchantHoursWindow = z.infer<typeof MerchantHoursWindow>;
 export const MerchantHours = z.record(z.enum(DAY_KEYS), MerchantHoursWindow);
 export type MerchantHours = z.infer<typeof MerchantHours>;
 
-/** `POST /merchant/become` — upgrades the caller's existing profile to role="merchant" and creates
- *  the Merchant row (mirrors POST /riders/become). Idempotent guard: a second call 409s
- *  `{reason:"already_merchant"}`, the same lost-response-retry shape as becomeRider. */
+/** Merchant web upgrade L1 (docs/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,
+ *  chosen once at sign-up. There is no endpoint that changes it — a wrong pick is a support fix. */
+export const MerchantBusinessType = z.enum(["restaurant", "shop"]);
+export type MerchantBusinessType = z.infer<typeof MerchantBusinessType>;
+
+/** A shop's kind: the website's "We deliver for" list plus the owner's examples. */
+export const MerchantShopKind = z.enum(["pharmacy", "grocery", "butchery", "fashion", "auto_parts", "hardware", "electronics", "other"]);
+export type MerchantShopKind = z.infer<typeof MerchantShopKind>;
+
+/** Two roles, not a permissions matrix (design doc L4's permission table). */
+export const MerchantMemberRole = z.enum(["owner", "staff"]);
+export type MerchantMemberRole = z.infer<typeof MerchantMemberRole>;
+
+/** `POST /merchant/become` — self-serve sign-up (L1). Creates the Merchant and the caller's OWNER
+ *  membership in one transaction; it never touches `profiles.role` (RCA 2026-08-18 C-4). The business
+ *  starts dormant — go-live (`pilotEnabled`) is an ops switch, restaurants only. A second call 409s
+ *  `{reason:"already_member"}`, which the web treats as success (a lost-response retry). */
 export const BecomeMerchantRequest = z
   .object({
+    /** The person's own name ("Your name"). Saved to their profile only when it is still empty. */
+    ownerName: z.string().trim().min(1).max(60),
     name: z.string().trim().min(1).max(120),
+    businessType: MerchantBusinessType,
+    /** Required for a shop, refused for a restaurant. */
+    shopKind: MerchantShopKind.optional(),
+    /** The confirmed map pin + a landmark riders look for + the business's contact phone. */
+    location: Waypoint,
+    /** The one-tap "I accept the merchant terms and privacy notice" line. */
+    termsAccepted: z.literal(true),
     cashRule: MerchantCashRule.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.businessType === "shop" && v.shopKind === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shopKind"], message: "Pick what kind of shop it is." });
+    }
+    if (v.businessType === "restaurant" && v.shopKind !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shopKind"], message: "Only a shop has a kind." });
+    }
+  });
 export type BecomeMerchantRequest = z.infer<typeof BecomeMerchantRequest>;
 
 /** D-30 shop-front fields, editable by the merchant against a live customer-view miniature. */
@@ -812,6 +843,11 @@ export const MerchantProfileResponse = z
     cashRule: MerchantCashRule,
     busy: z.boolean(),
     pilotEnabled: z.boolean(),
+    /** L1: what the business sells; drives the web's vocabulary, nav and `/setup` checklist. */
+    businessType: MerchantBusinessType,
+    shopKind: MerchantShopKind.nullable(),
+    /** L1: the CALLER's role on this business (the web hides owner-only sections for staff). */
+    myRole: MerchantMemberRole,
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;

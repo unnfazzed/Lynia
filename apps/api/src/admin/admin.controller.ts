@@ -38,6 +38,13 @@ const ReasonRequired = z.object({
   reason: z.string().min(1).max(160),
   note: z.string().max(2000).nullish(),
 });
+/** L1 go-live switch body: on/off plus an optional ops note for the audit row. */
+const SetMerchantPilot = z
+  .object({
+    enabled: z.boolean(),
+    note: z.string().max(2000).nullish(),
+  })
+  .strict();
 const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
@@ -306,10 +313,12 @@ export class AdminController {
 
   /* ── X1: merchant directory + support dispute queue ──────────────────────────────────────── */
 
-  /** Merchant directory (X1): order volume + open collect-and-return debt per merchant. */
+  /** Merchant directory (X1): order volume + open collect-and-return debt per merchant.
+   *  `filter=awaiting_go_live` (restaurants not switched on yet — the ops queue) or `filter=shops`
+   *  (merchant web upgrade L1). */
   @Get("merchants")
-  merchants() {
-    return this.merchantsService.listMerchants();
+  merchants(@Query("filter") filter?: string) {
+    return this.merchantsService.listMerchants(filter);
   }
 
   /** Merchant detail (X1): profile + recent orders + a page of the merchant's own debt-ledger trail.
@@ -320,6 +329,17 @@ export class AdminController {
     const merchant = await this.merchantsService.getMerchantDetail(id, debtCursor);
     if (!merchant) throw new NotFoundException("Merchant not found");
     return merchant;
+  }
+
+  /** The go-live switch (merchant web upgrade L1): the only writer of `pilotEnabled`, audit-logged.
+   *  Refuses shops (they open with LyniaGo Shops) and a restaurant with no pin or no live dish. */
+  @Post("merchants/:id/pilot")
+  setMerchantPilot(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(SetMerchantPilot)) body: z.infer<typeof SetMerchantPilot>,
+    @AdminActor() actor: string,
+  ) {
+    return this.merchantsService.setPilot(actor, id, body);
   }
 
   /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, plus
