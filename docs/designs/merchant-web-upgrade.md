@@ -387,3 +387,279 @@ Before the build lands:
 - On shop photos, I recommended **"Agree; shops can skip photos"**. You chose **"Agree; photos stay
   required."**
 - When the second opinion said to park the catalogue, you answered **"Both now."**
+
+<!-- gstack:office-hours:concerns:start -->
+## Reviewer Concerns
+
+Disposition: CONCERNS_RECORDED
+
+Stop: CONVERGENCE
+
+### R2-1 — feasibility
+
+**Problem**
+
+> 'Riders may refuse a job' has no penalty-free path in Send. Before offering, a rider sees only the typed 'what's going'. A rider who finds prohibited goods at pickup can only cancel, and Send counts every rider cancel as a no-show strike (a reliability penalty, with a 2-hour cooldown at the third). It also automatically re-broadcasts the same job to other riders at the same price (cancel → cloneForRebroadcast). So the rule punishes the refusing rider and re-offers the goods.
+
+**Remedy**
+
+> Specify a refusal path for prohibited goods on bookings (e.g., a refusal reason that carries no strike, doesn't re-broadcast, and files the report to ops), and say how the rider reports it.
+
+### R2-2 — feasibility
+
+**Problem**
+
+> 'The rider cancels: Send's re-broadcast' breaks the business-wide list. Send re-broadcasts by cloning the cancelled order into a new order from an explicit field list (cloneForRebroadcast). The new orders.booked_by_merchant_id isn't on that list, so the re-broadcast booking loses its business tag, drops out of the Deliveries list, and becomes a plain personal Send order of the booker.
+
+**Remedy**
+
+> State that re-broadcast clones inherit booked_by_merchant_id, and include that clone change in L2's work.
+
+### R2-3 — completeness
+
+**Problem**
+
+> The Deliveries states still lack the merchant-facing state and action for three round-1 paths. (1) After a rider cancel, the booking shows Cancelled and Send opens a new one that needs a fresh pick within 90 s. That is signalled only to a screen already watching the booking and by a push to the booker's customer app, so a business that has left the page never hears of it. (2) A rider who never arrives leaves 'Rider coming to you' with only Call rider, though the text lets the business cancel before pickup. (3) Send also lets the customer of record cancel after pickup (the rider's hand-back path), and the doc neither allows nor rules out that cancel.
+
+**Remedy**
+
+> Add a 'Your rider cancelled, pick another' state and say how a business off the page learns of it (or state that it simply expires to Try again). Add Cancel to 'Rider coming to you'. State whether a booking can be cancelled after pickup and, if so, how the goods come back.
+
+### R2-4 — consistency
+
+**Problem**
+
+> Decision 2 says bookings 'belong to the business', but L2 keeps the booker as Send's customer of record, and Send authorizes by customer of record. Outside the merchant endpoints the booker keeps full customer powers over the business's bookings: in the customer app they can cancel at any live status, after pickup included, and they receive the booking's pushes and see it as a live order card. This lasts after they're removed from the team, while the doc says only that the bookings stay in their history.
+
+**Remedy**
+
+> Decide whose booking it is for authorization (e.g., block customer-app actions on merchant-tagged bookings, and hand a removed member's in-flight bookings to the owner), then make Decision 2 and L2 agree.
+
+### R2-5 — completeness
+
+**Problem**
+
+> Prohibited-goods enforcement ('a report leads ops to put the account on hold') uses a per-person lever. Send checks Profile.onHold only for the person creating the order. Holding the reported booker leaves the business free to keep booking through any other member or a newly invited number, and holding the owner also cuts off their personal LyniaGo use.
+
+**Remedy**
+
+> State whether a hold after a report applies to the business (e.g., a merchant-level hold the booking endpoint checks for every member) or to the person, and which account ops holds.
+
+### R2-6 — consistency
+
+**Problem**
+
+> The wedge promises 'one quoted fare', and the form says 'You pay the rider this fare in cash at pickup'. But Send riders may accept the proposed fare or counter with their own (MakeOfferRequest 'counter'), and the agreed fare is the picked offer's. The wireframe caption already shows a fare on each offer. So the business may owe more than the form states, and 'price haggled per trip' moves into the app rather than going away.
+
+**Remedy**
+
+> Say that offers can carry a different fare, show each offer's fare at pick time, and word the form around the fare of the rider picked. Or limit merchant bookings to accept-only offers and say so.
+
+### R2-7 — consistency
+
+**Problem**
+
+> For a shop, go-live unlocks nothing until the Shops section ships, yet every shop joins the 'Awaiting go-live' queue with a 1-business-day call target. The shop is promised 'LyniaGo will call you within a day to switch you on', and its checklist ends with 'Wait for LyniaGo's call to go live', though switching on changes nothing it can see. Shops switched on now would also appear to customers the day Shops launches, with no re-check of their items.
+
+**Remedy**
+
+> Decide whether shops enter the go-live queue now or when Shops opens. If now, say what the call achieves for a shop and whether shops are re-checked before Shops launches, and word the shop checklist to match.
+
+### R2-8 — clarity
+
+**Problem**
+
+> The layering doesn't say what a shop sees before L4 or when the pilot can start. L2 makes Deliveries a shop's home and first nav item, but the shop nav, the vocabulary and the shop /setup checklist are all L4. A shop that signs up after L1 or L2 ships therefore lands in a kitchen-worded restaurant dashboard. 'The wedge comes second because it is what the week-1 target measures' implies the pilot starts before L4, while the Assignment runs 'before the build lands'.
+
+**Remedy**
+
+> Move the minimal shop shell (Deliveries home, shop nav, shop words on the screens a shop uses) into L2, or keep shop sign-up and the pilot closed until L4. State which, and when a pilot business's week 1 can start.
+
+### R2-9 — consistency
+
+**Problem**
+
+> The CI criterion cites plan §7 for migration 0053's contents, but plan §7 defines only business_type, shop_kind and merchant_members. It has no merchant_invites table and no orders.booked_by_merchant_id. It stores invites as phone-keyed member rows (phone UNIQUE) that the guard claims automatically at sign-in, which contradicts L3's Join / Not me consent and 'several businesses can invite the same phone'. The plan also still builds Team before Book a rider.
+
+**Remedy**
+
+> Correct or drop the citation, and record that the companion plan (§5–§8) must be revised to this doc's model before the eng review.
+
+### R2-10 — consistency
+
+**Problem**
+
+> The ledger rule covers 'every undrawn screen and every copy change on a drawn screen', but several committed changes add undrawn elements or structure to drawn RM screens. They are the Book a rider button on Orders, the signed-in person and 'Switch person' in the drawn top bar, a Team entry inside Shop (RM.shop), and a Staff nav that drops drawn items. Under 'Not drawn ⇒ not rendered' each needs a ledger entry that the rule as written doesn't require.
+
+**Remedy**
+
+> Extend the rule to undrawn elements and structural changes on drawn screens, and list these in the D-43+ entries.
+
+### R2-11 — consistency
+
+**Problem**
+
+> Three lists of what Staff can't reach disagree. L3 hides the statement, end-of-day totals, cash rule, team, item editing, hours, profile and location. L4's nav note says only 'Staff don't see Statement'. The criterion's 403 list omits location and the cash rule, though a Staff location change would move the pickup pin riders are sent to. So the Staff nav for each type is undefined (Hours? Shop, whose contents are all owner-only?), and so is where Staff reach busy mode and the out-of-stock toggles.
+
+**Remedy**
+
+> Give one Staff permission table and the resulting Staff nav for each business type, and make the 403 criterion test the same list, including location.
+
+### R2-12 — clarity
+
+**Problem**
+
+> Restaurants book from a button on Orders and 'get no new nav item', but the doc never says where a restaurant's bookings appear afterwards: the 90-second pick screen, the states list, Expired → Try again, Not delivered.
+
+**Remedy**
+
+> State where restaurant bookings live (e.g., cards in Orders with a rider tag, or a Deliveries view opened from Orders), and ledger it.
+
+### R2-13 — completeness
+
+**Problem**
+
+> OTC-only and the prohibited-goods list are enforced only for bookings. For catalogue items, pharmacies see an OTC notice at sign-up, but nothing says who checks items against it, either at go-live or when items are added or edited later. Other shop kinds get no prohibited-goods rule for items.
+
+**Remedy**
+
+> State who enforces OTC-only and prohibited goods for catalogue items (e.g., an item review in the go-live check and on later pharmacy edits), or make it an explicit launch requirement of the Shops section.
+
+### R2-14 — completeness
+
+**Problem**
+
+> Premise 1 and L1.5 have LyniaGo 'check the business' on a call before switching it live, but nothing says what the call verifies (that the business is at its pin, its type and kind, a pharmacy's registration, a restaurant's menu, photos and hours). So the gate that controls customer visibility has no criteria.
+
+**Remedy**
+
+> List the go-live checks per business type, or name an ops go-live checklist as a dependency with the pharmacy check spelled out.
+
+### R2-15 — completeness
+
+**Problem**
+
+> The value field is capped at $150 (Send's pilot cap), but the persona sells parts that can be worth more. The doc doesn't say what the form does then: block the booking, or let the business declare less than the goods are worth, which would misstate the liability cap shown to the rider.
+
+**Remedy**
+
+> State the behavior and copy for goods worth more than $150.
+
+### R2-16 — completeness
+
+**Problem**
+
+> Sign-up collects the business name but never the owner's own name, and verifyOtp creates new profiles with an empty name. Yet the top bar 'shows who is signed in' and the Team page lists people by name (the wireframe shows 'Farai · Owner'). A staff member's name comes only from what the owner typed on the invite.
+
+**Remedy**
+
+> Collect the person's own name at sign-up, let an invitee confirm or correct the invite's name on Join, and say whether it's saved to their LyniaGo profile.
+
+### R2-17 — completeness
+
+**Problem**
+
+> Terms and privacy acceptance was added only to 'Set up your business'. Staff joining by invite also create a LyniaGo account on first sign-in and handle buyers' phones and locations, but Join has no acceptance step.
+
+**Remedy**
+
+> Add the one-tap acceptance of the merchant terms and privacy notice to Join, or to any first sign-in on the merchant web.
+
+### R2-18 — consistency
+
+**Problem**
+
+> The in-repo wireframe contradicts the text. It draws Team as its own nav tab and shows it to Staff on the Book a rider screen, while the text puts Team inside Shop, owner only, with a shop nav of Deliveries · Items · Shop · Help. Its booking form has no value field, no no-cash-on-delivery note and no liability disclaimer, all of which L2 requires. Its 'On the way' tag isn't a state in the Deliveries table.
+
+**Remedy**
+
+> Redraw the wireframe to match the text, or change the text, since the doc presents the wireframe as its visual reference.
+
+### R2-19 — clarity
+
+**Problem**
+
+> Two decisions still appear only in the wireframe. One is the 'Work at a shop that's already on LyniaGo? Ask the owner to add you in Team' hint on 'What do you sell?'. The other is the sign-in notice 'Signing in turns the order alarm on for this phone'. The text also never says whether shops, which take no customer orders, get an alarm at all.
+
+**Remedy**
+
+> State both in the text, including whether the alarm applies to shops or sounds for booking events, or remove them from the wireframe.
+
+### R2-20 — clarity
+
+**Problem**
+
+> 'Decisions for the CEO review to confirm' says it lists the new defaults the owner hasn't approved, but it omits several the body commits to. Missing are Book a rider ahead of Team (the companion plan records an owner-approved order with Team first), no cash-on-delivery, and no Web Push with a stay-on-this-page rule. Also missing are exactly one owner with transfer and recovery only through support, business type fixed after sign-up, and a required map pin at sign-up.
+
+**Remedy**
+
+> Add these to the list, or state that everything outside it is already approved.
+
+### R2-21 — completeness
+
+**Problem**
+
+> Adding a number that's on another team shows 'This number already works at another business on LyniaGo.' Anyone can create an owner account self-serve, so any stranger can test whether a phone number works at a business on LyniaGo. Invites don't reserve numbers ('the first one accepted wins'), so the add-time block isn't needed for correctness.
+
+**Remedy**
+
+> Create the invite without revealing membership and resolve the conflict when the invitee taps Join, or rate-limit and log the check. Say which.
+
+### R2-22 — feasibility
+
+**Problem**
+
+> Owner transfer and lost-number recovery go through support, and 'an admin tool for this is Phase 2'. So in v1, support must change ownership by editing production data by hand, without the audit log the go-live switch gets. That is the one path an impersonator would target.
+
+**Remedy**
+
+> State the v1 mechanism, e.g., a minimal audit-logged admin endpoint shipped with L3, or a reviewed runbook that records each change.
+
+### R2-23 — completeness
+
+**Problem**
+
+> The rider-supply check runs 'before each business's week 1', but week 1 starts at that business's first booking, which isn't scheduled. Nothing says what happens if fewer than 3 riders are online.
+
+**Remedy**
+
+> Take the count before onboarding each business, and state the action below the threshold (e.g., enrol riders near Siyaso/Mbare first, or delay that business's onboarding).
+
+### R2-24 — clarity
+
+**Problem**
+
+> The unprompted-rebook definition can't be applied as intended. 'A second booking on day 2 or 3' excludes a business whose second booking falls on day 1 (likely for a shop with several WhatsApp orders a day), and it ignores days 4–7. 'No founder outreach logged' relies on a contact log that no assignment or dependency sets up. With no log, every rebook reads as unprompted.
+
+**Remedy**
+
+> Define it as a booking on any later day of week 1 with no founder contact since the previous booking (or say why only days 2–3 count), and add a dated contact log per pilot business to the Assignment.
+
+### R2-25 — clarity
+
+**Problem**
+
+> 'What I noticed about how you think' lists four quoted choices, but only one draws an observation ('instead of dressing it up'). The other three are bare choices. The section doesn't name the pattern they show (e.g., overriding the recommendation each time, twice toward more scope: required photos, the catalogue now) or what it means for this build, so the founder gets nothing to act on.
+
+**Remedy**
+
+> For each quote, state what it shows about how the founder decides and what that implies for the build, or drop the quotes that show nothing.
+
+### Prior finding evidence
+
+**R1-7 → R2-13 (persisting)**
+
+> L2 now applies a prohibited list and OTC wording to bookings. For catalogue items the doc still states only a sign-up notice ('Over-the-counter products only for now') and names no enforcer at or after go-live.
+
+**R1-8 → R2-3 (persisting)**
+
+> L2's states table and 'Unhappy paths' now cover no offers, undelivered and an unconfirmed code. A rider cancel ('Send's re-broadcast'), a rider who doesn't arrive, and a cancel after pickup still have no merchant-facing state and action.
+
+**R1-17 → R2-17 (persisting)**
+
+> L1.4 adds a one-tap terms and privacy acceptance to 'Set up your business' and lists the text as a dependency, but staff first sign-in (Join in L3) still has no acceptance.
+
+**R1-32 → R2-19 (persisting)**
+
+> The wireframe is now in the repo (docs/designs/merchant-web-upgrade-wireframe.png and .html) and includes Book a rider, and the text now states that business type is fixed. The staff hint and the order-alarm notice still appear only in the wireframe.
+<!-- gstack:office-hours:concerns:end -->
