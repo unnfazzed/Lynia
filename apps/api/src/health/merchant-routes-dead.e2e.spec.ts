@@ -143,6 +143,8 @@ const merchantServiceStub = {
     myRole: "owner",
   }),
   listRestaurants: async () => ({ restaurants: [] }),
+  // L5: echoes the duration it was given, so the leg below can see what reached the service.
+  setDishOutOfStock: async (_profileId: string, id: string, forHowLong?: string) => ({ id, forHowLong: forHowLong ?? null }),
 };
 
 /** C2: never reached by the flags-off/no-auth/wrong-role legs, same shape as merchantServiceStub —
@@ -410,6 +412,18 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(ownerInvite.status).toBe(201);
       const staffLeave = await request(app.getHttpServer()).post("/merchant/team/leave").set("Authorization", bearer("staff-1", "customer"));
       expect(staffLeave.status).toBe(200);
+    });
+
+    it("L5: Staff mark a dish out of stock for how long they choose; no body still means the rest of today", async () => {
+      const path = "/merchant/dishes/11111111-1111-4111-8111-111111111111/out-of-stock";
+      const noBody = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer"));
+      expect(noBody.status).toBe(201);
+      expect(noBody.body.forHowLong).toBeNull();
+      const hour = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer")).send({ for: "one_hour" });
+      expect(hour.status).toBe(201);
+      expect(hour.body.forHowLong).toBe("one_hour");
+      const bad = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer")).send({ for: "forever" });
+      expect(bad.status).toBe(400);
     });
 
     it("L4: /merchant/invites is for a number on no business yet — any signed-in caller, no MerchantGuard", async () => {

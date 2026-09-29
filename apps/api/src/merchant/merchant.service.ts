@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { Prisma } from "@prisma/client";
 import type {
   BecomeMerchantRequest,
+  DishOutOfStockFor,
   MerchantCategoryRequest,
   MerchantCategoryResponse,
   MerchantDishRequest,
@@ -97,6 +98,17 @@ function endOfToday(): Date {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d;
+}
+
+/** `RM.oos_sheet`'s "Until I turn it back on" (merchant web upgrade L5): a date no kitchen reaches, so
+ *  every existing read (`isDishOutOfStock`, the customer menu) keeps treating it as out of stock until
+ *  "Back in stock" clears it. No new column, no reset job. */
+export const OUT_OF_STOCK_UNTIL_BACK = new Date(Date.UTC(9999, 11, 31, 23, 59, 59));
+
+function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date {
+  if (forHowLong === "until_back") return OUT_OF_STOCK_UNTIL_BACK;
+  if (forHowLong === "one_hour") return new Date(Date.now() + 60 * 60 * 1000);
+  return endOfToday();
 }
 
 @Injectable()
@@ -428,8 +440,8 @@ export class MerchantService {
     return { ok: true };
   }
 
-  async setDishOutOfStock(profileId: string, dishId: string): Promise<MerchantDishResponse> {
-    return this.writeDishOutOfStock(profileId, dishId, endOfToday());
+  async setDishOutOfStock(profileId: string, dishId: string, forHowLong?: DishOutOfStockFor): Promise<MerchantDishResponse> {
+    return this.writeDishOutOfStock(profileId, dishId, outOfStockUntil(forHowLong));
   }
 
   async clearDishOutOfStock(profileId: string, dishId: string): Promise<MerchantDishResponse> {

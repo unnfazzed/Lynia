@@ -933,6 +933,15 @@ export const UpdateMerchantDishRequest = z
   .strict();
 export type UpdateMerchantDishRequest = z.infer<typeof UpdateMerchantDishRequest>;
 
+/** How long a dish stays out of stock (`RM.oos_sheet`, merchant web upgrade L5): until the kitchen turns it
+ *  back on, the rest of today (the default, N-14's always-safe choice) or one hour. */
+export const DishOutOfStockFor = z.enum(["until_back", "rest_of_today", "one_hour"]);
+export type DishOutOfStockFor = z.infer<typeof DishOutOfStockFor>;
+
+/** `POST /merchant/dishes/:id/out-of-stock`. The body is optional: none means the rest of today. */
+export const SetDishOutOfStockRequest = z.object({ for: DishOutOfStockFor.optional() }).strict();
+export type SetDishOutOfStockRequest = z.infer<typeof SetDishOutOfStockRequest>;
+
 export const MerchantDishResponse = z
   .object({
     id: z.string().uuid(),

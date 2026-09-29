@@ -3,7 +3,7 @@ import { RESTAURANTS_COMMISSION } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
-import { MerchantService } from "./merchant.service";
+import { MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 /** Mirrors the shared mock shape used across the repo's other *.service.spec.ts files (e.g.
@@ -490,6 +490,35 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
     expect(receivedUntil).toBeInstanceOf(Date);
     expect(receivedUntil!.getTime()).toBeGreaterThan(Date.now());
     expect(res.outOfStock).toBe(true);
+  });
+
+  it("L5: out of stock for 1 hour, or until turned back on (RM.oos_sheet); none given is the rest of today", async () => {
+    const untils: Array<Date | null> = [];
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantDish: {
+        findFirst: async () => ({ id: "d1", merchantId: "m1" }),
+        update: async ({ data }: { data: { outOfStockUntil: Date | null } }) => {
+          untils.push(data.outOfStockUntil);
+          return { id: "d1", categoryId: "c1", name: "Sadza", description: null, priceUsd: 5, photoUrl: null, isDraft: false, outOfStockUntil: data.outOfStockUntil, sortOrder: 0 };
+        },
+      },
+    });
+    const before = Date.now();
+    await s.setDishOutOfStock("p1", "d1", "one_hour");
+    await s.setDishOutOfStock("p1", "d1", "until_back");
+    await s.setDishOutOfStock("p1", "d1", "rest_of_today");
+    await s.setDishOutOfStock("p1", "d1");
+
+    const hour = untils[0]!.getTime() - before;
+    expect(hour).toBeGreaterThanOrEqual(60 * 60 * 1000 - 50);
+    expect(hour).toBeLessThanOrEqual(60 * 60 * 1000 + 5000);
+    expect(untils[1]).toEqual(OUT_OF_STOCK_UNTIL_BACK);
+    // The rest of today, and the same when an older client sends no duration.
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    expect(untils[2]!.getTime()).toBe(endOfToday.getTime());
+    expect(untils[3]!.getTime()).toBe(endOfToday.getTime());
   });
 
   it("clearDishOutOfStock nulls the field and reports back in stock", async () => {
