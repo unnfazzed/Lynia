@@ -58,12 +58,12 @@
       <div style="height:26px"></div>
       <div class="sub" style="margin-bottom:8px">Enter the code we sent to your WhatsApp · 077 ••• 4567</div>
       <div class="boxes"><span>4</span><span>9</span><span>1</span><span>0</span><span></span><span></span></div>
-      <!-- Alarm unlock stays (D-05): the sign-in tap is the browser gesture that arms the order alarm. -->
-      <div class="note">🔊 Signing in turns the order alarm on for this phone. Keep the volume up.</div>
-      <div class="btn">Sign in</div>
+      <!-- Drawn in RM.login and kept: the sign-in tap arms the restaurant order alarm (harmless for shops). -->
+      <div class="note">🔊 Signing in turns the order alarm on for this tablet. Keep this tab open and the volume up.</div>
+      <div class="btn">Sign in &amp; start the alarm</div>
       <div class="muted" style="margin-top:12px">Didn't get it? <u>Send again</u> (in 0:45)</div>
     </div>
-    <div class="cap">1 · Phone + code. Before sending, the copy is channel-neutral; after, it names the channel the API actually used (WhatsApp in prod). Works for a number LyniaGo has never seen (the device-id fix).</div>
+    <div class="cap">1 · Phone + code (RM.login structure kept; "Kitchen sign-in" → "Sign in"). Before sending, the copy is channel-neutral; after, it names the channel the API actually used (WhatsApp in prod). Works for a number LyniaGo has never seen (the device-id fix).</div>
   </div>
 
   <!-- SCREEN 2: first sign-in for a number with no business. Picture cards first (Bolt/Chowdeck),
@@ -89,9 +89,9 @@
         <div class="chip"><span class="dot"></span>Something else</div>
       </div>
       <div class="btn">Next</div>
-      <div class="note">Work at a shop that's already on LyniaGo? Ask the owner to add <b>077 ••• 4567</b> in <b>Team</b>, then sign in again.</div>
+      <div class="note">Work at a business that's already on LyniaGo? Ask the owner to add you in <b>Team</b>.</div>
     </div>
-    <div class="cap">2 · One choice, fixed after sign-up. Step 2 (not drawn) = business name + "Use my location" + a landmark riders look for.</div>
+    <div class="cap">2 · One choice, fixed after sign-up. Step 2 (not drawn) = your name + business name + a required map pin ("Use my location" or drag) + a landmark riders look for + the one-tap terms line.</div>
   </div>
 
   <!-- SCREEN 3: Team, owner only. Add by phone, like adding someone to a WhatsApp group. Sharing the
@@ -99,22 +99,24 @@
   <div>
     <div class="phone">
       <div class="bar"><span>Siyaso Spares</span><span>Farai · Owner</span></div>
+      <div class="muted" style="margin-bottom:2px">Shop ›</div>
       <div class="title">Team</div>
-      <div class="sub">Everyone signs in with their own phone. Staff take orders and mark stock. Only you change prices, see money or add people.</div>
+      <div class="sub">Everyone signs in with their own phone. Staff take orders, book riders and mark stock. Only you change prices, see money or add people.</div>
       <div class="member"><span class="av"></span><span class="grow"><b>Farai M.</b><br><span class="muted">077 ••• 4567 · you</span></span><span class="tag">Owner</span></div>
       <div class="member"><span class="av"></span><span class="grow"><b>Tendai</b><br><span class="muted">071 ••• 2210 · signed in</span></span><span class="tag">Staff</span></div>
-      <div class="member"><span class="av"></span><span class="grow"><b>Rudo</b><br><span class="muted">078 ••• 9034 · not signed in yet</span></span><span class="tag">Staff</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Rudo</b><br><span class="muted">078 ••• 9034 · invited, hasn't joined yet</span></span><span class="tag">Invited</span></div>
       <div class="btn">+ Add someone</div>
       <div class="card" style="margin-top:14px">
         <div style="font-weight:600;margin-bottom:6px">Add someone</div>
         <div class="input">Name · e.g. Tendai</div>
         <div class="input">Phone · 07…</div>
-        <div class="btn">Add to team</div>
+        <div class="btn">Invite</div>
+        <div class="muted" style="margin:8px 0 4px">Invite ready. Send them the link on WhatsApp.</div>
         <div class="btn ghost">Send them the link on WhatsApp</div>
       </div>
       <div class="nav"><span>Deliveries</span><span>Riders</span><span>Items</span><span><b>Shop</b></span><span>Help</span></div>
     </div>
-    <div class="cap">3 · Owner's Team page. Staff never see this tab, Money or price editing.</div>
+    <div class="cap">3 · Team lives inside Shop, owner only. Adding a number never says whether it works elsewhere; the invitee resolves that at Join.</div>
   </div>
 
   <!-- SCREEN 4: Book a rider = a shop's home. The Send rails (POST /orders → 90 s offer window → pick →
@@ -124,7 +126,7 @@
     <div class="phone">
       <div class="bar"><span>Siyaso Spares</span><span>Tendai · Staff</span></div>
       <div class="title">Book a rider</div>
-      <div class="member"><span class="grow"><b>Brake pads · Hiace</b><br><span class="muted">To Mbare Musika · Rider Blessing, 4 min away</span></span><span class="tag">On the way</span></div>
+      <div class="member"><span class="grow"><b>Brake pads · Hiace</b><br><span class="muted">To Mbare Musika · Rider Blessing (your rider)</span></span><span class="tag">Picked up</span></div>
       <div class="member"><span class="grow"><b>Alternator</b><br><span class="muted">To Southerton · code confirmed 10:42</span></span><span class="tag">Delivered</span></div>
       <div class="card" style="margin-top:12px">
         <div style="font-weight:600;margin-bottom:6px">New delivery</div>
@@ -136,13 +138,14 @@
         </div>
         <div class="input">Landmark · e.g. Next to Mbare Musika rank</div>
         <div class="input">What's going · e.g. Brake pads, Hiace 2008</div>
-        <div class="muted" style="margin:6px 0 2px">Suggested fare <b>$3.50</b> · 4.2 km · you pay the rider in cash</div>
-        <div class="muted">No prescription medicine, weapons, drugs or cash.</div>
+        <div class="input">What it's worth · up to $150</div>
+        <div class="muted" style="margin:6px 0 2px">Suggested fare <b>$3.50</b> · 4.2 km. Riders may offer a different fare; you pay the rider you pick, in cash at pickup.</div>
+        <div class="muted">The rider collects nothing from the buyer. No prescription medicine, weapons, drugs or cash. LyniaGo's delivery terms apply.</div>
         <div class="btn">Find a rider</div>
       </div>
-      <div class="nav"><span><b>Deliveries</b></span><span>Riders</span><span>Items</span><span>Shop</span><span>Help</span></div>
+      <div class="nav"><span><b>Deliveries</b></span><span>Riders</span><span>Items</span><span>Help</span></div>
     </div>
-    <div class="cap">4 · A shop's home. After "Find a rider": riders' offers (name, rating, ETA, fare) for 90 s → Pick → "Send the code to the buyer on WhatsApp" (wa.me) or Copy code.</div>
+    <div class="cap">4 · A shop's home, here as Staff (so no Shop tab). After "Find a rider": riders' offers (name, rating, ETA, fare) for 90 s → Pick → "Send the code to the buyer on WhatsApp" (wa.me) or Copy code.</div>
   </div>
 
   <!-- SCREEN 5: Your riders (owner's addition at the design review). The business adds the bikers it
@@ -155,7 +158,7 @@
       <div class="bar"><span>Siyaso Spares</span><span>Farai · Owner</span></div>
       <div class="title">Your riders</div>
       <div class="sub">Riders you already trust. They get your deliveries first when they're online.</div>
-      <div class="member"><span class="av"></span><span class="grow"><b>Blessing</b> <span class="muted">· online</span><br><span class="muted">077 ••• 0123 · 14 jobs for you · ★4.8</span></span><span class="tag">On LyniaGo</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Blessing</b><br><span class="muted">077 ••• 0123 · 14 jobs for you · ★4.8</span></span><span class="tag">On LyniaGo</span></div>
       <div class="member"><span class="av"></span><span class="grow"><b>Tafadzwa</b><br><span class="muted">071 ••• 5566 · 0 jobs yet</span></span><span class="tag">On LyniaGo</span></div>
       <div class="member"><span class="av"></span><span class="grow"><b>Kuda</b><br><span class="muted">078 ••• 9001</span></span><span class="tag">Not on LyniaGo yet</span></div>
       <div class="btn ghost">Send Kuda the rider sign-up link on WhatsApp</div>
