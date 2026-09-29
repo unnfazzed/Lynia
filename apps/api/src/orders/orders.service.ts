@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -795,7 +795,13 @@ export class OrdersService {
     // Only a party on the order, only during the reveal window, sees the other side's phone.
     let counterpartyPhone: string | null = null;
     if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
-    else if ((revealed || handbackReveal) && isRider) counterpartyPhone = order.customer.phone;
+    else if ((revealed || handbackReveal) && isRider) {
+      // Merchant web upgrade L2 (D9): a business's booking is sent by its booking account, whose phone is
+      // the non-dialable `business:<id>`. The rider calls the business on its pickup contact phone.
+      counterpartyPhone = isBusinessBookingAccountPhone(order.customer.phone)
+        ? riderWaypoint(order.pickup).contactPhone
+        : order.customer.phone;
+    }
 
     // The snapshot's side-reads are independent of one another, and this is the hottest read path in
     // the API (polled every 15s per live order + refetched on every WS event) — so they run in

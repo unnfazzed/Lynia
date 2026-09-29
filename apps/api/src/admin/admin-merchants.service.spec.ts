@@ -58,6 +58,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
   it("detail includes the recent-orders trail and the full debt-ledger trail", async () => {
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
@@ -88,6 +90,29 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
       { id: "l2", orderId: "o2", riderId: "r1", type: "written_off", amount: "-8.00", note: "non-return", actor: "m1", at: "2026-07-30T00:00:00.000Z" },
     ]);
     expect(d.debtLedgerNextCursor).toBeNull();
+    expect(d.bookingAccount).toBeNull();
+  });
+
+  it("L2 (R2-5): the detail links the business's booking account, where ops holds a whole business's bookings", async () => {
+    let asked: unknown;
+    const prisma = {
+      merchant: { findUnique: async () => merchant },
+      profile: {
+        findUnique: async (args: { where: { phone: string } }) => {
+          asked = args.where.phone;
+          return { id: "acct-1", onHold: true };
+        },
+      },
+      order: {
+        count: async () => 0,
+        aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
+        findMany: async () => [],
+      },
+      merchantDebtLedger: { findMany: async () => [] },
+    };
+    const d = (await new AdminMerchantsService(prisma as unknown as PrismaService).getMerchantDetail("m1"))!;
+    expect(asked).toBe("business:m1");
+    expect(d.bookingAccount).toEqual({ id: "acct-1", onHold: true });
   });
 
   /** One debt-ledger row builder, newest-first ids (l1 = newest). */
@@ -113,6 +138,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
     );
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
@@ -132,6 +159,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
   it("LC-D-T1: debtCursor pages past the first 30 entries instead of always returning the newest page", async () => {
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),

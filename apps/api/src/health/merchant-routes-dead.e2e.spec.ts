@@ -41,6 +41,8 @@ import { FoodDebtService } from "../merchant/food-debt.service";
 import { FoodDispatchService } from "../merchant/food-dispatch.service";
 import { FoodOrderController } from "../merchant/food-order.controller";
 import { FoodOrderService } from "../merchant/food-order.service";
+import { MerchantBookingController } from "../merchant/merchant-booking.controller";
+import { MerchantBookingService } from "../merchant/merchant-booking.service";
 import { MerchantController } from "../merchant/merchant.controller";
 import { MerchantGuard } from "../merchant/merchant.guard";
 import { MerchantOrderController } from "../merchant/merchant-order.controller";
@@ -101,6 +103,8 @@ const prismaStub = {
 // an unexercised param, since a 3-arg constructor with a 1-entry paramtypes array is fragile.
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDebtService], FoodOrderController);
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDispatchService, FoodDebtService], MerchantOrderController);
+// Merchant web upgrade L2: Book a rider, same patch shape.
+Reflect.defineMetadata("design:paramtypes", [MerchantBookingService], MerchantBookingController);
 
 const healthService = { check: async () => ({ status: "ok", db: true, redis: true, provider: "test" }) };
 
@@ -140,6 +144,8 @@ const foodOrderServiceStub = {
 // pulling in TrackingGateway/NotificationsService/etc, except getOfferForRider (C5 rider offer
 // alarm channel poll fallback), which one golden-matrix leg below DOES call through.
 const foodDispatchServiceStub = { getOfferForRider: async () => null };
+/** L2: only the member leg below calls through. */
+const merchantBookingServiceStub = { list: async () => [] };
 const foodDebtServiceStub = {};
 
 /** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
@@ -148,7 +154,7 @@ const foodDebtServiceStub = {};
 async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplication> {
   const env = { ...TEST_ENV, ...envOverrides } as Env;
   @Module({
-    controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
+    controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController, MerchantBookingController],
     providers: [
       { provide: ENV, useValue: env },
       { provide: PrismaService, useValue: prismaStub },
@@ -160,6 +166,7 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       { provide: FoodOrderService, useValue: foodOrderServiceStub },
       { provide: FoodDispatchService, useValue: foodDispatchServiceStub },
       { provide: FoodDebtService, useValue: foodDebtServiceStub },
+      { provide: MerchantBookingService, useValue: merchantBookingServiceStub },
     ],
   })
   class MerchantTestModule {}
@@ -214,6 +221,7 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
     // assertion below is what actually matters.
     expect(merchantDomainControllers.map((c) => c.name).sort()).toEqual([
       "FoodOrderController",
+      "MerchantBookingController",
       "MerchantController",
       "MerchantOrderController",
       "RestaurantsController",
@@ -237,6 +245,8 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "/merchant/orders",
       "/restaurants/orders/11111111-1111-1111-1111-111111111111",
       "/merchant/orders/dispatch/offer",
+      // Merchant web upgrade L2: the kill switch stops shop bookings too (plan §11 F1.4, CEO-4).
+      "/merchant/bookings",
     ]) {
       const res = await request(app.getHttpServer()).get(path); // no Authorization header at all
       expect(res.status, `${path} must be dead (503) while RESTAURANTS_ENABLED is unset`).toBe(503);
@@ -299,6 +309,17 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
         .set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body.id).toBe("o1");
+    });
+
+    it("L2: /merchant/bookings needs membership — no auth 401, not a member 403, member 200", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/bookings");
+      expect(noAuth.status).toBe(401);
+      const notMember = await request(app.getHttpServer()).get("/merchant/bookings").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      expect(notMember.body.reason).toBe("not_a_member");
+      const asMember = await request(app.getHttpServer()).get("/merchant/bookings").set("Authorization", bearer("member-1", "customer"));
+      expect(asMember.status).toBe(200);
+      expect(asMember.body).toEqual([]);
     });
 
     it("C5: /merchant/orders/dispatch/offer is a rider action — no MerchantGuard, any authenticated caller gets 200", async () => {

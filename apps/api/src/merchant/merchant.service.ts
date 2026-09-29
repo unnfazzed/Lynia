@@ -700,6 +700,8 @@ export class MerchantService {
       businessType: merchant.businessType,
       shopKind: merchant.shopKind,
       myRole,
+      // L2: every booking's pickup, and the booking form's map centre and fare quote.
+      location: (merchant.location as Waypoint | null) ?? null,
     };
   }
 

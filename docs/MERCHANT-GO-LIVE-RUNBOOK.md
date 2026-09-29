@@ -72,7 +72,32 @@ riders are given at pickup, plus the pin.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
   covers (the 25 km Send corridor).
 
-## 6. Pilot numbers (CEO-10)
+## 6. Bookings (Book a rider, L2)
+
+A business books a LyniaGo rider from its own pin for its own customer. Each booking is an ordinary Send
+order whose customer is the business's **booking account**: a customer profile named after the business,
+with the phone `business:<merchant id>`. Nobody can sign in to it. In the console, its orders show the
+customer as "Business: {name}" and its phone as the business's contact phone, and it doesn't appear in the
+Customers list.
+
+- **Pause one business's bookings:** open the business in Merchants, follow "Booking account", and put
+  that account on hold (the ordinary customer hold). Every new booking from any team member then gets
+  "Bookings are paused for this business." Lift the hold to resume. A single team member's own hold, or a
+  banned or suspended rider account, stops only that person from booking.
+- **Prohibited goods** (prescription medicine, weapons, drugs, cash). A rider who finds them at pickup
+  does not cancel: in Send every rider cancel is a strike and re-broadcasts the job. They use "Report a
+  problem" on the job (type Other: "prohibited goods") and message support. Then:
+  1. Cancel the booking from the order's admin page with the reason **"Safety concern"**. An admin cancel
+     carries no rider strike and no re-broadcast; the business sees "Cancelled by the LyniaGo team".
+  2. Hold the business's booking account (above) while you talk to the owner.
+- **A business can cancel only before pickup.** After pickup the goods are with the rider: the business
+  calls the rider, and ops can still cancel from the console.
+- **Money:** the business pays the rider the picked fare in cash at pickup (Send's model). There is no
+  cash-on-delivery: the rider collects nothing from the buyer. The declared value is capped at $150.
+- **A business's own team can't take its deliveries.** The pick refuses an offer from a team member (the
+  business holds the delivery code, so they could deliver to themselves).
+
+## 7. Pilot numbers (CEO-10)
 
 Run against a read replica or with care. The booking queries arrive with L2 (`merchant_bookings`).
 

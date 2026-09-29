@@ -768,8 +768,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    *  - **Rider** may cancel ONLY pre-pickup (assigned…en_route_pickup); `picked_up`+ is rejected. A
    *    rider cancel IS a no-show strike (every CANCEL_STRIKE_LIMIT forces offline on a cooldown) and
    *    auto re-broadcasts the job as a NEW open order (F-01) — the old row stays terminal `cancelled`.
+   *
+   * `opts.allowedStatuses` lets a caller NARROW the statuses it cancels at, never widen them (merchant web
+   * upgrade L2, OV-8: a business cancels its booking before pickup only). It is checked here, inside the
+   * transaction, so a pickup that lands mid-request can't be cancelled; `opts.refusal` is the 409 body then.
    */
-  async cancel(orderId: string, callerId: string, reason?: string): Promise<CancelResult> {
+  async cancel(
+    orderId: string,
+    callerId: string,
+    reason?: string,
+    opts?: { allowedStatuses?: readonly string[]; refusal?: { reason: string; message: string } },
+  ): Promise<CancelResult> {
     // Side effects resolved inside the tx but fired AFTER commit (best-effort pushes must never sit
     // inside the transaction). rebroadcastId: the new open order to announce; jobCancelledCollected:
     // non-null ⇒ tell the assigned rider the customer cancelled, carrying the collected flag.
@@ -813,7 +822,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const allowed = isCustomer ? CUSTOMER_CANCELLABLE : RIDER_CANCELLABLE;
       // Plain language, no raw status enum (e.g. "en_route_dropoff") leaking to the app — the client
       // just renders exception messages verbatim (apps/mobile/src/ui/index.tsx ErrorText).
-      if (!allowed.has(order.status)) throw new ConflictException("This order can't be cancelled anymore — it's already past that point.");
+      if (!allowed.has(order.status) || (opts?.allowedStatuses && !opts.allowedStatuses.includes(order.status))) {
+        throw new ConflictException(opts?.refusal ?? "This order can't be cancelled anymore — it's already past that point.");
+      }
 
       const claimed = await tx.order.updateMany({
         where: { id: orderId, status: order.status },

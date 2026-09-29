@@ -290,8 +290,8 @@ with an item review of every shop before its first switch-on. Prescription items
 sign-off (plan 2026-07-26 §6 P6).
 
 **Explicitly not in scope:** variants/sizes, stock counts, barcodes, bulk CSV import, multi-branch
-owners, Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg, server-side short-link
-resolution.
+owners, Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg. (Server-side short-link
+resolution was out of scope in the draft; the outside voice brought it into L2, OV-6.)
 
 ---
 
@@ -659,7 +659,7 @@ None is pending.
 ### Section 1 · Architecture
 
 **Current scope:** HOLD SCOPE (auto). Accepted: L1–L5 as in §5, with CEO-1…CEO-10 and the R2
-dispositions. Deferred: TODO-1…TODO-5. Rejected: server short-link resolution, COD, a paid return leg,
+dispositions. Deferred: TODO-1…TODO-5. Rejected: COD, a paid return leg,
 variants/stock/barcodes.
 
 The system diagram and access, sign-up and booking flows are in §6.

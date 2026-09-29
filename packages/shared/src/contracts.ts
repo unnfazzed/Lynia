@@ -861,6 +861,10 @@ export const MerchantProfileResponse = z
     shopKind: MerchantShopKind.nullable(),
     /** L1: the CALLER's role on this business (the web hides owner-only sections for staff). */
     myRole: MerchantMemberRole,
+    /** L2: the business's pin, landmark and contact phone — every booking's pickup, and the booking
+     *  form's map centre and fare quote. Null until the business has a pin; absent from an API older
+     *  than L2 (optional, so the change stays additive). */
+    location: Waypoint.nullable().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
@@ -1388,3 +1392,143 @@ export const MerchantEndOfDaySummaryResponse = z
   })
   .strict();
 export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySummaryResponse>;
+
+/* ── Merchant web upgrade L2: Book a rider (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
+ * A business books a Send delivery from its own pin. The order's customer of record is the business's
+ * booking account (phone `business:<merchantId>`), so every booking is business-wide and the customer
+ * app never sees one. These are the merchant-scoped shapes; Send's own contracts are unchanged. */
+
+/** `POST /merchant/bookings`. The pickup is always the business's own pin, landmark and contact phone. */
+export const CreateMerchantBookingRequest = z
+  .object({
+    /** The buyer: where to go, what riders look for there, and the phone the rider calls. */
+    dropoff: Waypoint,
+    /** What's going (Send's line items). */
+    items: z.array(OrderItem).min(1).max(10),
+    /** What it's worth — Send's declared value, the liability record. Send's pilot cap applies. */
+    declaredValue: z.number().nonnegative().max(150),
+    /** The fare the business offers, prefilled from `quoteFare` and editable (Send's model). */
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+    note: z.string().trim().max(280).optional(),
+    /** The Send liability disclaimer version the booker accepted on the form. */
+    disclaimerVersion: z.string().min(1).max(40),
+    /** One per form attempt, so a double tap or a timed-out retry books once. */
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
+export type CreateMerchantBookingRequest = z.infer<typeof CreateMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/:id/try-again` — re-broadcast an expired booking's details, optionally for more. */
+export const RetryMerchantBookingRequest = z
+  .object({
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01).optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
+export type RetryMerchantBookingRequest = z.infer<typeof RetryMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/:id/cancel` — before pickup only. */
+export const CancelMerchantBookingRequest = z.object({ reason: z.string().trim().max(160).optional() }).strict();
+export type CancelMerchantBookingRequest = z.infer<typeof CancelMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/resolve-link` — a Google Maps short link the browser can't follow itself. */
+export const ResolveMapLinkRequest = z.object({ url: z.string().trim().min(1).max(500) }).strict();
+export type ResolveMapLinkRequest = z.infer<typeof ResolveMapLinkRequest>;
+export const ResolveMapLinkResponse = z.object({ point: LatLng }).strict();
+export type ResolveMapLinkResponse = z.infer<typeof ResolveMapLinkResponse>;
+
+/**
+ * The merchant's view of Send's states (design doc L2 "States in the Deliveries list"):
+ * finding / finding_again (a rider cancelled; Send re-broadcast it) → coming → picked_up → delivered,
+ * or not_delivered, expired ("No rider picked in time") or cancelled.
+ */
+export const MerchantBookingState = z.enum([
+  "finding",
+  "finding_again",
+  "coming",
+  "picked_up",
+  "delivered",
+  "not_delivered",
+  "expired",
+  "cancelled",
+]);
+export type MerchantBookingState = z.infer<typeof MerchantBookingState>;
+
+/** One rider's offer on an open booking. */
+export const MerchantBookingOffer = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(["accept", "counter"]),
+    offeredFare: z.string(),
+    etaMinutes: z.number().int(),
+    rider: z
+      .object({
+        name: z.string(),
+        photoUrl: z.string().nullable(),
+        ratingAvg: z.number().nullable(),
+        ratingCount: z.number().int(),
+        tripsCount: z.number().int(),
+      })
+      .strict(),
+    /** L3: one of the business's own riders. */
+    preferred: z.boolean(),
+    /** Someone on the business's team, who can't take its deliveries (409 `own_member` on pick). */
+    ownMember: z.boolean(),
+  })
+  .strict();
+export type MerchantBookingOffer = z.infer<typeof MerchantBookingOffer>;
+
+export const MerchantBookingResponse = z
+  .object({
+    id: z.string().uuid(),
+    state: MerchantBookingState,
+    /** Send's own status, for support. */
+    status: z.string(),
+    createdAt: z.string(),
+    /** Present only while finding a rider: when the 90-second window closes. */
+    expiresAt: z.string().nullable(),
+    /** The buyer's end: point, landmark and phone (the business's own buyer). */
+    dropoff: Waypoint,
+    itemsSummary: z.string(),
+    declaredValue: z.string(),
+    proposedFare: z.string(),
+    agreedFare: z.string().nullable(),
+    /** "Booked by Tendai"; null when the booker has left the team and has no name. */
+    bookedBy: z.string().nullable(),
+    rider: z
+      .object({
+        name: z.string(),
+        /** Only while Send's reveal window is open (assigned … delivered / undelivered). */
+        phone: z.string().nullable(),
+        bikeReg: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    offerCount: z.number().int(),
+    undeliveredReason: z.string().nullable(),
+    cancelledBy: z.enum(["business", "rider", "ops"]).nullable(),
+    cancelReason: z.string().nullable(),
+    /** A rider cancelled and Send re-broadcast this booking as a new one (follow it). */
+    rebroadcastedToId: z.string().uuid().nullable(),
+    /** This booking is Send's re-broadcast of an earlier one whose rider cancelled. */
+    rebroadcastOfId: z.string().uuid().nullable(),
+    /** When the delivery code was last issued (a teammate's "Send a new code" replaces it). */
+    codeIssuedAt: z.string().nullable(),
+    /** Detail only (empty in the list): pending offers while finding a rider. */
+    offers: z.array(MerchantBookingOffer),
+  })
+  .strict();
+export type MerchantBookingResponse = z.infer<typeof MerchantBookingResponse>;
+
+/** `POST /merchant/bookings/:id/offers/:offerId/pick` — the delivery code, shown ONCE (only its hash is kept). */
+export const PickMerchantBookingOfferResponse = z
+  .object({
+    booking: MerchantBookingResponse,
+    deliveryCode: z.string(),
+  })
+  .strict();
+export type PickMerchantBookingOfferResponse = z.infer<typeof PickMerchantBookingOfferResponse>;
+
+/** `POST /merchant/bookings/:id/code` — Send's code rotation: a new code replaces the old one. */
+export const RotateMerchantBookingCodeResponse = z.object({ deliveryCode: z.string() }).strict();
+export type RotateMerchantBookingCodeResponse = z.infer<typeof RotateMerchantBookingCodeResponse>;

@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
+import { businessBookingAccountPhone, RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -103,7 +103,7 @@ export class AdminMerchantsService {
     if (!merchant) return null;
 
     const DEBT_LEDGER_PAGE_SIZE = 30;
-    const [orderCount, openDebt, recentOrders, ledgerRows] = await Promise.all([
+    const [orderCount, openDebt, recentOrders, ledgerRows, bookingAccount] = await Promise.all([
       this.prisma.order.count({ where: { merchantId: id } }),
       this.prisma.order.aggregate({ where: { merchantId: id, debtStatus: "open" }, _sum: { debtAmount: true }, _count: { _all: true } }),
       this.prisma.order.findMany({
@@ -119,6 +119,9 @@ export class AdminMerchantsService {
         ...(debtCursor ? { cursor: { id: debtCursor }, skip: 1 } : {}),
         select: { id: true, orderId: true, riderId: true, type: true, amount: true, note: true, actor: true, createdAt: true },
       }),
+      // Merchant web upgrade L2 (R2-5): the business's booking account. Holding it (the existing
+      // customer hold, on its own page) pauses every booking the business makes. Null before its first.
+      this.prisma.profile.findUnique({ where: { phone: businessBookingAccountPhone(id) }, select: { id: true, onHold: true } }),
     ]);
 
     const debtLedgerHasMore = ledgerRows.length > DEBT_LEDGER_PAGE_SIZE;
@@ -135,6 +138,7 @@ export class AdminMerchantsService {
       // (the directory list keeps it masked).
       contactPhone: location?.contactPhone ?? null,
       pin: location?.point ?? null,
+      bookingAccount: bookingAccount ? { id: bookingAccount.id, onHold: bookingAccount.onHold } : null,
       trail: recentOrders.map((o) => ({
         id: o.id,
         route: routeOf(o.pickup, o.dropoff),

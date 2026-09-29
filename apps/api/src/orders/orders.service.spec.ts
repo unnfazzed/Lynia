@@ -614,6 +614,15 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263771111111");
   });
 
+  it("merchant web upgrade L2: a business's booking gives the rider the business's pickup contact phone, not the booking account's", async () => {
+    const booking = row({
+      customer: { phone: "business:m1" },
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mbare Musika, stall 14", contactPhone: "+263773333333" },
+    });
+    const snap = await svc(booking).getSnapshot("ord-1", "rider-1");
+    expect(snap.counterpartyPhone).toBe("+263773333333");
+  });
+
   it("reveals the waypoint contactPhones to the ASSIGNED rider inside the reveal window (E1)", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
     expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" });

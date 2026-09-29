@@ -726,6 +726,8 @@ model Order {
   rating           Rating[]
   // Commission debits reference the ride they came from (at most one ride_commission row per order).
   commissionLedger CommissionLedger[]
+  // Merchant web upgrade L2: set only on a business's booking (who booked, picked and cancelled it).
+  merchantBooking  MerchantBooking?
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -998,6 +1000,7 @@ model Merchant {
   debtLedger      MerchantDebtLedger[]
   reopenReminders RestaurantReopenReminder[]
   members         MerchantMember[]
+  bookings        MerchantBooking[]
 
   @@map("merchants")
 }
@@ -1046,6 +1049,28 @@ model MerchantMember {
 
   @@index([merchantId])
   @@map("merchant_members")
+}
+
+/**
+ * Merchant web upgrade L2 (plan 2026-09-29 D9): the person behind each business delivery. A booking is a
+ * Send order whose customer of record is the business's booking account (a Profile with phone
+ * `business:<merchantId>`); this row records which team member booked it, picked the rider and cancelled
+ * it. Send's re-broadcast clones get no row of their own at creation — they show the original's booker
+ * through `Order.rebroadcastOfId` — and one is added when a teammate acts on the clone.
+ */
+model MerchantBooking {
+  orderId              String   @id @map("order_id") @db.Uuid
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId           String   @map("merchant_id") @db.Uuid
+  merchant             Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  // Plain ids (no relation): a team change or an erased profile never removes the business's history.
+  bookedByProfileId    String   @map("booked_by_profile_id") @db.Uuid
+  pickedByProfileId    String?  @map("picked_by_profile_id") @db.Uuid
+  cancelledByProfileId String?  @map("cancelled_by_profile_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([merchantId, createdAt])
+  @@map("merchant_bookings")
 }
 
 /**

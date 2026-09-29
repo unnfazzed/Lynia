@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BUSINESS_BOOKING_ACCOUNT_PREFIX } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -25,7 +26,10 @@ export class AdminCustomersService {
    */
   async listCustomers(filter?: "active" | "flagged" | "banned" | "on_hold") {
     const profiles = await this.prisma.profile.findMany({
-      where: { role: "customer" },
+      // Merchant web upgrade L2 (OV-9): a business's booking account is a customer profile only on the
+      // Send rails; it isn't a person, so it stays out of the directory. Its own page still opens from
+      // the business's admin page (that's where ops holds a whole business's bookings).
+      where: { role: "customer", NOT: { phone: { startsWith: BUSINESS_BOOKING_ACCOUNT_PREFIX } } },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
