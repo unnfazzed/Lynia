@@ -50,7 +50,9 @@ function fakeGateway(overrides: Record<string, unknown> = {}) {
 function build(methods: Record<string, unknown>, gateway: TrackingGateway = fakeGateway(), rail: PaymentRail = fakeRail()) {
   notified.length = 0;
   queueChanges.length = 0;
-  const prisma = { ...methods } as Record<string, unknown>;
+  // placeOrder's account-standing read (FOOD-STANDING-01): a customer in good standing unless a test
+  // overrides `profile`.
+  const prisma = { profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, ...methods } as Record<string, unknown>;
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway, rail);
   return { svc, prisma };
@@ -147,6 +149,71 @@ describe("FoodOrderService.placeOrder", () => {
     } as never);
     expect(res.id).toBe("o1");
     expect(createCalls).toBe(0);
+  });
+});
+
+describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", () => {
+  const cashOrder = { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" }, paymentMethod: "cash" as const };
+  const walletOrder = { ...cashOrder, paymentMethod: "wallet" as const };
+
+  /** A placeable restaurant + dish, with the account row under test and a spy on the order write. */
+  function standingHarness(account: Record<string, unknown> | null) {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }));
+    const merchantFind = vi.fn(async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" }, cashRule: "collect_and_return" }));
+    const { svc } = build({
+      profile: { findUnique: async () => account },
+      order: { findFirst: async () => null, create },
+      merchant: { findFirst: merchantFind },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    return { svc, create, merchantFind };
+  }
+
+  it("a held customer is refused with Send's { reason: on_hold } shape, before anything else is read or written", async () => {
+    const { svc, create, merchantFind } = standingHarness({ onHold: true, cashBanned: false, rider: null });
+    await expect(svc.placeOrder("c1", "m1", cashOrder)).rejects.toMatchObject({ response: { reason: "on_hold" }, status: 403 });
+    expect(merchantFind).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a held customer is refused for a wallet order too — a hold blocks ordering outright", async () => {
+    const { svc, create } = standingHarness({ onHold: true, cashBanned: false, rider: null });
+    await expect(svc.placeOrder("c1", "m1", walletOrder)).rejects.toMatchObject({ response: { reason: "on_hold" } });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a banned or suspended rider can't order food either (F-01, same as Send)", async () => {
+    for (const [status, reason] of [["banned", "account_banned"], ["suspended", "account_suspended"]] as const) {
+      const { svc, create } = standingHarness({ onHold: false, cashBanned: false, rider: { accountStatus: status } });
+      await expect(svc.placeOrder("c1", "m1", walletOrder)).rejects.toMatchObject({ response: { reason }, status: 403 });
+      expect(create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a cash-banned customer choosing cash is refused with the wallet copy the app shows", async () => {
+    const { svc, create } = standingHarness({ onHold: false, cashBanned: true, rider: null });
+    await expect(svc.placeOrder("c1", "m1", cashOrder)).rejects.toMatchObject({
+      response: { reason: "cash_banned", message: "Pay with your wallet for food orders." },
+      status: 403,
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a cash-banned customer paying by wallet still orders — a cash ban narrows the method, it never blocks ordering", async () => {
+    const { svc, create } = standingHarness({ onHold: false, cashBanned: true, rider: null });
+    const res = await svc.placeOrder("c1", "m1", walletOrder);
+    expect(res.id).toBe("o1");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![0].data.merchantPaymentMethod).toBe("wallet");
+  });
+
+  it("a customer in good standing (and an active rider ordering food) is unchanged", async () => {
+    for (const account of [{ onHold: false, cashBanned: false, rider: null }, { onHold: false, cashBanned: false, rider: { accountStatus: "active" } }]) {
+      const { svc, create } = standingHarness(account);
+      const res = await svc.placeOrder("c1", "m1", cashOrder);
+      expect(res.id).toBe("o1");
+      expect(create).toHaveBeenCalledTimes(1);
+    }
   });
 });
 

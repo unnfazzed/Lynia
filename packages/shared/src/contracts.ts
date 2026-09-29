@@ -113,10 +113,15 @@ export const ConfirmDeliveryRequest = z.object({
 export type ConfirmDeliveryRequest = z.infer<typeof ConfirmDeliveryRequest>;
 
 /** Rider marks a hand-off as failed → terminal `undelivered` (INTERFACE-AUDIT C6 / F-02). The reason
- *  enum + attempt count are persisted and shown verbatim to the customer. Allowed only post-pickup. */
+ *  enum + attempt count are persisted and shown verbatim to the customer. Allowed only post-pickup.
+ *
+ *  UNDELIVERED-NOTE-01: there is deliberately no free-text `note`. The contract used to accept one
+ *  that no client ever sent and the API never stored (the controller passed only `reason`). It's
+ *  removed rather than stored, since collecting it would be a new rider-app screen, not a fix. The
+ *  object stays non-strict so a stale client that still sends `note` is stripped, never 400'd out of
+ *  a terminal hand-off. Evidence for disputes is the proof-of-drop photo + GPS (KB-POD-DISPUTE). */
 export const MarkUndeliveredRequest = z.object({
   reason: z.enum(["unreachable", "refused", "wrong_address", "breakdown"]),
-  note: z.string().max(280).optional(),
 });
 export type MarkUndeliveredRequest = z.infer<typeof MarkUndeliveredRequest>;
 
