@@ -1,17 +1,22 @@
 /**
- * Pure response mappers for the Google Places REST API (search-first addressing, customer-journey
+ * Pure response mappers for Google Places API (New) (search-first addressing, customer-journey
  * §1·2/§1·3). Kept separate from the network client (`src/api/places.ts`) so the shape-mapping — the
  * part with real product semantics — is unit-testable without a key or a fetch. Every mapper is TOTAL:
  * a malformed/empty body maps to `[]` / `null`, never a throw, so the caller always falls back to the
  * pin-on-map path cleanly.
+ *
+ * Why "(New)": the legacy Places web service (`maps.googleapis.com/maps/api/place/…`) is a Legacy
+ * product that Google does not offer to Cloud projects created after 2025-03-01. The keys moved to such
+ * a project when `lynia-500911` was suspended (docs/plans/2026-09-24-gcp-to-azure-migration.md), so the
+ * legacy endpoints would refuse the new key on every call — the same silent empty list as a dead key.
  */
 
 /** One autocomplete suggestion row, flattened from a Places prediction. */
 export interface PlaceSuggestion {
   placeId: string;
-  /** Bold line — the place name / street (structured_formatting.main_text). */
+  /** Bold line — the place name / street (structuredFormat.mainText). */
   primary: string;
-  /** Muted line — the area / city (structured_formatting.secondary_text). May be empty. */
+  /** Muted line — the area / city (structuredFormat.secondaryText). May be empty. */
   secondary: string;
 }
 
@@ -23,59 +28,80 @@ export interface ResolvedPlace {
   placeId: string;
 }
 
+/** Places (New) wraps every display string as `{ text, … }`. */
+interface RawText {
+  text?: unknown;
+}
+
+function textOf(t: RawText | undefined): string {
+  return typeof t?.text === "string" ? t.text : "";
+}
+
 // --- Autocomplete (input → predictions) ---
 
-interface RawPrediction {
-  place_id?: unknown;
-  description?: unknown;
-  structured_formatting?: { main_text?: unknown; secondary_text?: unknown };
+interface RawSuggestion {
+  placePrediction?: {
+    placeId?: unknown;
+    text?: RawText;
+    structuredFormat?: { mainText?: RawText; secondaryText?: RawText };
+  };
 }
 
 /**
- * The Places `status` field, when the body carries one that is NOT a successful lookup.
+ * The fault a Places (New) error body names, or null when the body is not an error.
  *
- * This matters because `REQUEST_DENIED` and `ZERO_RESULTS` are indistinguishable downstream: both
- * yield `[]` from `mapPredictions`, so a key with the WRONG RESTRICTION (an Android-restricted key on
- * these web-service endpoints returns `REQUEST_DENIED` for every call — docs/SECURITY-OPS.md §B) looks
- * exactly like an address nobody could find. A provisioned-but-denied key is therefore silently
- * identical to no key at all, which is how it could sit unnoticed. `OK` and `ZERO_RESULTS` are the two
- * honest answers and map to `null`; anything else is a configuration fault worth reporting.
+ * This matters because a refused call and an honest miss are indistinguishable downstream: both yield
+ * `[]` from `mapPredictions`, so a dead key (a suspended project, an API that is not enabled, a key whose
+ * restriction excludes Places) looks exactly like an address nobody could find. Places (New) reports a
+ * refusal as an HTTP error whose body is the standard Google error envelope:
+ *
+ *   { "error": { "code": 403, "status": "PERMISSION_DENIED", "message": "…",
+ *                "details": [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "SERVICE_DISABLED" }] } }
+ *
+ * The `reason` is the precise cause (`SERVICE_DISABLED`, `API_KEY_SERVICE_BLOCKED`, `API_KEY_INVALID`,
+ * `BILLING_DISABLED`, `CONSUMER_SUSPENDED`, …), so it is appended when present: `PERMISSION_DENIED:SERVICE_DISABLED`.
+ * A success — including an empty one, which comes back as `{}` — has no `error` and maps to null.
  */
 export function placesFault(body: unknown): string | null {
-  const status = (body as { status?: unknown } | null)?.status;
-  if (typeof status !== "string" || status === "OK" || status === "ZERO_RESULTS") return null;
-  return status;
+  const error = (body as { error?: unknown } | null)?.error;
+  if (!error || typeof error !== "object") return null;
+  const { status, code, details } = error as { status?: unknown; code?: unknown; details?: unknown };
+  const head = typeof status === "string" && status ? status : typeof code === "number" ? `HTTP_${code}` : "UNKNOWN";
+  const info = Array.isArray(details)
+    ? (details as { reason?: unknown }[]).find((d) => typeof d?.reason === "string" && d.reason)
+    : undefined;
+  return info ? `${head}:${info.reason as string}` : head;
 }
 
-/** Map a Places Autocomplete body → suggestion rows. Drops any prediction missing a place_id. */
+/**
+ * Map an Autocomplete (New) body → suggestion rows. Drops anything that is not a place prediction with
+ * a placeId: a `queryPrediction` (only sent under `includeQueryPredictions`, which is never set) and an
+ * id-less prediction are both unselectable. An empty result arrives as `{}` (proto3 omits an empty
+ * `suggestions`), which maps to `[]` like any other body without rows.
+ */
 export function mapPredictions(body: unknown): PlaceSuggestion[] {
-  const preds = (body as { predictions?: unknown } | null)?.predictions;
-  if (!Array.isArray(preds)) return [];
+  const suggestions = (body as { suggestions?: unknown } | null)?.suggestions;
+  if (!Array.isArray(suggestions)) return [];
   const out: PlaceSuggestion[] = [];
-  for (const raw of preds as RawPrediction[]) {
-    const placeId = typeof raw?.place_id === "string" ? raw.place_id : null;
+  for (const raw of suggestions as RawSuggestion[]) {
+    const p = raw?.placePrediction;
+    const placeId = typeof p?.placeId === "string" ? p.placeId : null;
     if (!placeId) continue;
-    const sf = raw.structured_formatting ?? {};
-    // Prefer the structured main/secondary; fall back to the flat description for the primary line.
-    const primary =
-      (typeof sf.main_text === "string" && sf.main_text) ||
-      (typeof raw.description === "string" ? raw.description : "") ||
-      "";
-    const secondary = typeof sf.secondary_text === "string" ? sf.secondary_text : "";
+    // Prefer the structured main/secondary; fall back to the flat text for the primary line.
+    const primary = textOf(p?.structuredFormat?.mainText) || textOf(p?.text);
+    const secondary = textOf(p?.structuredFormat?.secondaryText);
     out.push({ placeId, primary, secondary });
   }
   return out;
 }
 
-// --- Details (place_id → coordinates + landmark) ---
+// --- Details (place id → coordinates + landmark) ---
 
-interface RawDetails {
-  result?: {
-    geometry?: { location?: { lat?: unknown; lng?: unknown } };
-    name?: unknown;
-    formatted_address?: unknown;
-    place_id?: unknown;
-  };
+interface RawPlace {
+  id?: unknown;
+  formattedAddress?: unknown;
+  location?: { latitude?: unknown; longitude?: unknown };
+  displayName?: RawText;
 }
 
 /** Build a human landmark from a Details result — name + address, deduped, capped to the Waypoint max. */
@@ -88,17 +114,22 @@ function landmarkFrom(name: string, formatted: string): string {
 }
 
 /**
- * Map a Places Details body → a resolved place, or null when it lacks usable coordinates. `placeId` is
- * threaded through from the request when the body omits it (Details doesn't always echo it back).
+ * Map a Place Details (New) body → a resolved place, or null when it lacks usable coordinates.
+ *
+ * `name` is the tapped suggestion's main text. `src/api/places.ts` asks Details for `id`,
+ * `formattedAddress` and `location` only, which are all Essentials-tier fields: adding `displayName`
+ * would bill every lookup at the Pro tier, for a name the suggestion row already carries. A
+ * `displayName` in the body still wins, so widening the field mask later needs no change here.
+ * `placeId` is threaded through from the request when the body omits `id`.
  */
-export function mapPlaceDetails(body: unknown, placeId: string): ResolvedPlace | null {
-  const result = (body as RawDetails | null)?.result;
-  const loc = result?.geometry?.location;
-  const lat = typeof loc?.lat === "number" ? loc.lat : null;
-  const lng = typeof loc?.lng === "number" ? loc.lng : null;
+export function mapPlaceDetails(body: unknown, placeId: string, name = ""): ResolvedPlace | null {
+  const place = body as RawPlace | null;
+  const loc = place?.location;
+  const lat = typeof loc?.latitude === "number" ? loc.latitude : null;
+  const lng = typeof loc?.longitude === "number" ? loc.longitude : null;
   if (lat === null || lng === null) return null;
-  const name = typeof result?.name === "string" ? result.name : "";
-  const formatted = typeof result?.formatted_address === "string" ? result.formatted_address : "";
-  const resolvedId = typeof result?.place_id === "string" ? result.place_id : placeId;
-  return { lat, lng, landmark: landmarkFrom(name, formatted), placeId: resolvedId };
+  const label = textOf(place?.displayName) || name;
+  const formatted = typeof place?.formattedAddress === "string" ? place.formattedAddress : "";
+  const resolvedId = typeof place?.id === "string" && place.id ? place.id : placeId;
+  return { lat, lng, landmark: landmarkFrom(label, formatted), placeId: resolvedId };
 }

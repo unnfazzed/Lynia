@@ -368,12 +368,12 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
         .then((rows) => {
           if (seq !== reqSeq.current) return; // a newer keystroke already superseded this call
           setSuggestions(rows);
-          // A completed search that returned nothing. Not necessarily "no such address": these are
-          // web-service endpoints, and a key restricted to an Android package answers REQUEST_DENIED
-          // to every call, which `mapPredictions` flattens to the same empty list. Either way the
+          // A completed search that returned nothing. Not necessarily "no such address": a refused
+          // key (a suspended project, Places not enabled, a key restricted to the wrong API) fails
+          // every call, which `mapPredictions` flattens to the same empty list. Either way the
           // customer is now looking at a live search box that will never offer them anything — so the
           // device-geocoder escape below is offered rather than leaving them with a dead field over a
-          // dead map. `src/api/places.ts` reports the denied case to Sentry so we can tell them apart.
+          // dead map. `src/api/places.ts` reports the refused case to Sentry so we can tell them apart.
           setNoMatch(rows.length === 0);
         })
         .finally(() => {
@@ -433,7 +433,8 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
     (s: PlaceSuggestion): void => {
       setResolving(true);
       setFailed(false);
-      void placeDetails(s.placeId, sessionToken.current)
+      // The suggestion's own name leads the landmark — Details is asked for the address and point only.
+      void placeDetails(s.placeId, sessionToken.current, s.primary)
         .then((place) => {
           if (!place) {
             // Details failed — leave the customer on the pin path with a calm hint.
@@ -591,12 +592,12 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
       {suggestions.length > 0 ? <PoweredByGoogle /> : null}
 
       {/* Escape from a search that returned nothing. A keyed build can still be an addressing dead end:
-          these are Places WEB-SERVICE endpoints, so a key restricted to an Android package answers
-          REQUEST_DENIED to every call (docs/SECURITY-OPS.md §B) and the mapper flattens that to the
-          same empty list a genuine no-match gives. Either way the customer is typing into a box that
-          will never offer them anything — and if the map's tiles are also dead, nothing left on the
-          screen can produce a coordinate. This row hands them the device geocoder, the one resolver
-          that needs neither our key nor a rendered map. */}
+          a refused key fails every call (the 2026-09-17 project suspension did exactly that, see
+          docs/SECURITY-OPS.md §B) and the mapper flattens it to the same empty list a genuine no-match
+          gives. Either way the customer is typing into a box that will never offer them anything — and
+          if the map's tiles are also dead, nothing left on the screen can produce a coordinate. This
+          row hands them the device geocoder, the one resolver that needs neither our key nor a
+          rendered map. */}
       {noMatch && !loading ? (
         <View style={{ marginTop: tokens.space.xs }}>
           <Pressable

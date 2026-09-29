@@ -21,8 +21,13 @@ name: Maps Key Doctor
 # Deliberately NOT environment-gated (same reasoning as eas-build-status.yml): a read-only check must
 # not cost an approval click per look. It mutates nothing — no GCP write, no EAS write, no build.
 #
-# Neither key ever leaves the runner: the EAS value is `::add-mask::`ed before it is written anywhere,
-# and the probe script never prints a key or any value derived from one.
+# It also probes the Places key (EXPO_PUBLIC_GOOGLE_PLACES_KEY — address search) with the app's own
+# Places API (New) request for "westgate", so a new key can be proven from a phone before an OTA or a
+# build carries it. Same two stores, same `key_source` switch: `eas` is what builds inline, `github` is
+# the secret mobile-ota.yml exports OTA bundles with.
+#
+# No key ever leaves the runner: EAS values are held only in the probe process's memory (see the
+# Diagnose step), and the probe script never prints a key or any value derived from one.
 
 on:
   workflow_dispatch:
@@ -35,7 +40,7 @@ on:
         type: string
         default: ""
       key_source:
-        description: "Which GOOGLE_MAPS_API_KEY to probe: 'eas' (what the Play build uses — the default) or 'github' (the QA-APK lane's secret)"
+        description: "Which key store to probe: 'eas' (what builds inline — the default) or 'github' (the Actions secrets: the QA-APK lane's Maps key, the OTA lane's Places key)"
         type: choice
         options:
           - eas
@@ -85,6 +90,8 @@ jobs:
           EAS_ENVIRONMENT: ${{ inputs.eas_environment }}
           # Read only when key_source is 'github' — android-test-apk.yml's key, not the build's.
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Read only when key_source is 'github' — mobile-ota.yml's copy of the Places key.
+          EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_PLACES_KEY }}
           ANDROID_CERT_SHA1: ${{ inputs.sha1 }}
           ANDROID_PACKAGE: ${{ inputs.package }}
         run: node scripts/maps-key-doctor.mjs

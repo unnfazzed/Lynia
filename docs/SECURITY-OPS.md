@@ -53,13 +53,28 @@ are **two distinct keys**, and they take **different restrictions**:
 | Key | Used by | Application restriction |
 |---|---|---|
 | `GOOGLE_MAPS_API_KEY` | Maps **SDK** for Android (`react-native-maps`) | ✅ Android package name + SHA-1 |
-| `EXPO_PUBLIC_GOOGLE_PLACES_KEY` | Places **web service** REST (`src/api/places.ts`) | ❌ **Android restrictions do not work** — use *None* or IP, and lean on API restriction + quota |
+| `EXPO_PUBLIC_GOOGLE_PLACES_KEY` | Places **API (New)** REST (`src/api/places.ts`) | ❌ **App restrictions do not work** — use *None*, and lean on API restriction + quota |
 
-The Places key calls `maps.googleapis.com/maps/api/place/{autocomplete,details}/json` directly over
-`fetch`. Those are **web-service** endpoints: they honour *IP* and *None* application restrictions only.
-An Android-app-restricted key returns `REQUEST_DENIED` for every call — and the client swallows the
-error into an empty result list, so the symptom is a search box that silently never returns anything.
-(If you want app restrictions on this key, that's a migration to the Places **SDK**, not a config change.)
+The Places key calls Places API (New) — `places.googleapis.com/v1/places:autocomplete` and
+`/v1/places/{id}` — directly over `fetch`, with the key in the `X-Goog-Api-Key` header. The call comes
+from JS shared by the Android and iPhone apps and carries no app identity headers, so an Android- or
+iOS-app restriction refuses **every** call with `PERMISSION_DENIED`. The client turns a refusal into an
+empty result list (plus one `places-status-<STATUS>:<REASON>` Sentry event per run), so the symptom is
+a search box that never returns anything. (An app restriction could be satisfied by having the app send
+`X-Android-Package` / `X-Android-Cert` and the iOS bundle header — but anyone holding the APK can send
+the same values, so it adds little over the API restriction and quota cap.)
+
+> **Not the legacy Places API.** Until 2026-09-28 the client called the legacy web service
+> (`maps.googleapis.com/maps/api/place/…`, service `places-backend.googleapis.com`). Google does not
+> offer that product to Cloud projects created after 2025-03-01, so a key made in a new project is
+> refused by it outright. Restrict the key to **Places API (New)** (`places.googleapis.com`); the
+> console lists the two as different APIs.
+
+> **Where the keys live (2026-09-28).** `lynia-500911` has been suspended since 2026-09-17 and
+> Google refuses every key in it (MOB-MAP-03 in `docs/KNOWN_BUGS.md`). Both client keys are
+> re-created in the live project **`lyniago-app`**, the one that already holds Firebase and the Play
+> service account. `infra/terraform/apikeys.tf` still describes the suspended project, so the new
+> keys are console-managed until that module is re-pointed; the steps below apply to them as written.
 
 **These restrictions are Terraform-managed** (`infra/terraform/apikeys.tf`), gated off by
 `maps_api_keys_enabled` until the keys are imported — steps 1 and 2 below are what that config
@@ -105,12 +120,15 @@ Contain them in the GCP console:
    > Ordered fix: `docs/MOB-MAP-02-RUNBOOK.md`. See also MOB-MAP-02 in `docs/KNOWN_BUGS.md` and
    > `docs/MAPS-LOADING-REVIEW-2026-08-16.md`.
 2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
-   Compensate with a tight **API restriction** (Places API *only*) and a hard **quota cap**.
+   Compensate with a tight **API restriction** (**Places API (New)** *only*, `places.googleapis.com`)
+   and a hard **quota cap**.
 3. Set a **quota cap** on both so a leaked key can't run up an unbounded bill.
 4. Keep a separate, server-restricted key for any server-side Google calls.
 
 *Verify:* the Maps key is rejected from an unlisted package; the Places key returns real predictions
-from the shipped build (not `REQUEST_DENIED`) and is refused for any non-Places API.
+(not `PERMISSION_DENIED`) and is refused for any non-Places API. **Maps Key Doctor** checks both from a
+phone: its Places section sends the app's own request for "westgate" and prints `OK` with Google's top
+suggestion, or names the cause (suspended project / API not enabled / API or app restriction / billing).
 
 ---
 
