@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Merchant web upgrade: wireframe</title>
+<!--
+  Rough wireframe (office-hours Visual Sketch). Intentionally unstyled: system font, thin grey borders,
+  no brand colour. The real build uses the RM kit's tokens (cards r16, pill buttons, --accent green).
+  Four phones side by side, 360px wide = the D-32 phone tier, because informal merchants run this on
+  a phone far more often than on a counter tablet.
+-->
+<style>
+  body { font-family: system-ui, sans-serif; background: #fafafa; margin: 0; padding: 24px; color: #222; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 16px; }
+  .row { display: flex; gap: 28px; align-items: flex-start; }
+  .phone { width: 360px; border: 1.5px solid #999; border-radius: 22px; background: #fff; padding: 18px 16px 64px; box-sizing: border-box; min-height: 640px; position: relative; }
+  .cap { font-size: 12px; color: #777; margin: 8px 4px 0; width: 360px; }
+  .bar { display: flex; justify-content: space-between; font-size: 12px; color: #777; border-bottom: 1px dashed #bbb; padding-bottom: 8px; margin-bottom: 14px; }
+  .title { font-size: 21px; font-weight: 700; margin: 4px 0 4px; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 14px; line-height: 1.4; }
+  .input { border: 1px solid #999; border-radius: 10px; height: 46px; display: flex; align-items: center; padding: 0 12px; font-size: 15px; color: #444; margin-bottom: 10px; }
+  .btn { border: 1.5px solid #333; border-radius: 999px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; margin-top: 10px; }
+  .btn.ghost { border-style: dashed; font-weight: 500; }
+  .card { border: 1.5px solid #999; border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+  .card.sel { border: 2.5px solid #222; }
+  .big { display: flex; gap: 10px; }
+  .big .card { flex: 1; text-align: center; padding: 18px 8px; }
+  .ico { width: 44px; height: 44px; border: 1px solid #aaa; border-radius: 12px; margin: 0 auto 8px; display: grid; place-items: center; font-size: 11px; color: #888; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .chip { border: 1px solid #999; border-radius: 12px; padding: 10px; font-size: 13.5px; display: flex; gap: 8px; align-items: center; }
+  .chip.sel { border: 2.5px solid #222; font-weight: 600; }
+  .dot { width: 22px; height: 22px; border: 1px solid #aaa; border-radius: 6px; flex-shrink: 0; }
+  .note { border: 1px dashed #aaa; border-radius: 10px; padding: 10px; font-size: 12.5px; color: #555; margin: 10px 0; line-height: 1.4; }
+  .member { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #ddd; font-size: 14px; }
+  .av { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #aaa; flex-shrink: 0; }
+  .grow { flex: 1; }
+  .tag { font-size: 11.5px; border: 1px solid #999; border-radius: 999px; padding: 2px 8px; }
+  .muted { color: #777; font-size: 12.5px; }
+  .nav { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px dashed #bbb; display: flex; justify-content: space-around; padding: 10px 0 12px; font-size: 11px; color: #555; }
+  .nav b { color: #111; }
+  .boxes { display: flex; gap: 6px; margin-bottom: 10px; }
+  .boxes span { flex: 1; height: 52px; border: 1px solid #999; border-radius: 10px; display: grid; place-items: center; font-size: 22px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Merchant web upgrade: sign-in → "What do you sell?" → Book a rider → Team (phone width, 360px)</h1>
+<div class="row">
+
+  <!-- SCREEN 1: sign-in. One field. WhatsApp named up front, because that is where the code lands and
+       the merchant must know to open WhatsApp, not SMS. No password anywhere (research: GoBiz). -->
+  <div>
+    <div class="phone">
+      <div class="bar"><span>LyniaGo</span><span>Business</span></div>
+      <div class="title">Sign in</div>
+      <div class="sub">We'll send you a 6-digit code.</div>
+      <div class="input">077 123 4567</div>
+      <div class="btn">Send code</div>
+      <div style="height:26px"></div>
+      <div class="sub" style="margin-bottom:8px">Enter the code we sent to your WhatsApp · 077 ••• 4567</div>
+      <div class="boxes"><span>4</span><span>9</span><span>1</span><span>0</span><span></span><span></span></div>
+      <!-- Alarm unlock stays (D-05): the sign-in tap is the browser gesture that arms the order alarm. -->
+      <div class="note">🔊 Signing in turns the order alarm on for this phone. Keep the volume up.</div>
+      <div class="btn">Sign in</div>
+      <div class="muted" style="margin-top:12px">Didn't get it? <u>Send again</u> (in 0:45)</div>
+    </div>
+    <div class="cap">1 · Phone + code. Before sending, the copy is channel-neutral; after, it names the channel the API actually used (WhatsApp in prod). Works for a number LyniaGo has never seen (the device-id fix).</div>
+  </div>
+
+  <!-- SCREEN 2: first sign-in for a number with no business. Picture cards first (Bolt/Chowdeck),
+       then shop kind chips. The staff hint sits right here, so a cashier never creates a second shop. -->
+  <div>
+    <div class="phone">
+      <div class="bar"><span>Step 1 of 2</span><span>Set up your business</span></div>
+      <div class="title">What do you sell?</div>
+      <div class="sub">Pick one. You can't switch later without calling us.</div>
+      <div class="big">
+        <div class="card"><div class="ico">pot</div><b>Restaurant</b><div class="muted">Cooked food, takeaways</div></div>
+        <div class="card sel"><div class="ico">bag</div><b>Shop</b><div class="muted">Things people buy</div></div>
+      </div>
+      <div class="sub" style="margin:8px 0 8px"><b>What kind of shop?</b></div>
+      <div class="grid">
+        <div class="chip"><span class="dot"></span>Pharmacy</div>
+        <div class="chip"><span class="dot"></span>Grocery</div>
+        <div class="chip"><span class="dot"></span>Butchery</div>
+        <div class="chip"><span class="dot"></span>Clothes &amp; shoes</div>
+        <div class="chip sel"><span class="dot"></span>Car parts</div>
+        <div class="chip"><span class="dot"></span>Hardware</div>
+        <div class="chip"><span class="dot"></span>Phones &amp; electronics</div>
+        <div class="chip"><span class="dot"></span>Something else</div>
+      </div>
+      <div class="btn">Next</div>
+      <div class="note">Work at a shop that's already on LyniaGo? Ask the owner to add <b>077 ••• 4567</b> in <b>Team</b>, then sign in again.</div>
+    </div>
+    <div class="cap">2 · One choice, fixed after sign-up. Step 2 (not drawn) = business name + "Use my location" + a landmark riders look for.</div>
+  </div>
+
+  <!-- SCREEN 3: Team, owner only. Add by phone, like adding someone to a WhatsApp group. Sharing the
+       sign-in link goes through WhatsApp (wa.me, no cost to us). Two roles only (office-hours P3). -->
+  <div>
+    <div class="phone">
+      <div class="bar"><span>Siyaso Spares</span><span>Farai · Owner</span></div>
+      <div class="title">Team</div>
+      <div class="sub">Everyone signs in with their own phone. Staff take orders and mark stock. Only you change prices, see money or add people.</div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Farai M.</b><br><span class="muted">077 ••• 4567 · you</span></span><span class="tag">Owner</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Tendai</b><br><span class="muted">071 ••• 2210 · signed in</span></span><span class="tag">Staff</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Rudo</b><br><span class="muted">078 ••• 9034 · not signed in yet</span></span><span class="tag">Staff</span></div>
+      <div class="btn">+ Add someone</div>
+      <div class="card" style="margin-top:14px">
+        <div style="font-weight:600;margin-bottom:6px">Add someone</div>
+        <div class="input">Name · e.g. Tendai</div>
+        <div class="input">Phone · 07…</div>
+        <div class="btn">Add to team</div>
+        <div class="btn ghost">Send them the link on WhatsApp</div>
+      </div>
+      <div class="nav"><span>Deliveries</span><span>Items</span><span>Shop</span><span><b>Team</b></span><span>Help</span></div>
+    </div>
+    <div class="cap">3 · Owner's Team page. Staff never see this tab, Money or price editing.</div>
+  </div>
+
+  <!-- SCREEN 4: Book a rider = a shop's home. The Send rails (POST /orders → 90 s offer window → pick →
+       6-digit delivery code). Everything is collected BEFORE "Find a rider" because the 90-second offer
+       window starts at broadcast, and a merchant who leaves for WhatsApp mid-window loses it. -->
+  <div>
+    <div class="phone">
+      <div class="bar"><span>Siyaso Spares</span><span>Tendai · Staff</span></div>
+      <div class="title">Book a rider</div>
+      <div class="member"><span class="grow"><b>Brake pads · Hiace</b><br><span class="muted">To Mbare Musika · Rider Blessing, 4 min away</span></span><span class="tag">On the way</span></div>
+      <div class="member"><span class="grow"><b>Alternator</b><br><span class="muted">To Southerton · code confirmed 10:42</span></span><span class="tag">Delivered</span></div>
+      <div class="card" style="margin-top:12px">
+        <div style="font-weight:600;margin-bottom:6px">New delivery</div>
+        <div class="input">Buyer's phone · 07…</div>
+        <div class="input" style="height:auto;padding:10px 12px;flex-direction:column;align-items:flex-start;gap:6px">
+          <span>Where's it going?</span>
+          <span class="muted">Paste the location they sent on WhatsApp, or drop a pin:</span>
+          <span style="width:100%;height:70px;border:1px dashed #999;border-radius:8px;display:grid;place-items:center;color:#888;font-size:12px">map · pin</span>
+        </div>
+        <div class="input">Landmark · e.g. Next to Mbare Musika rank</div>
+        <div class="input">What's going · e.g. Brake pads, Hiace 2008</div>
+        <div class="muted" style="margin:6px 0 2px">Suggested fare <b>$3.50</b> · 4.2 km · you pay the rider in cash</div>
+        <div class="muted">No prescription medicine, weapons, drugs or cash.</div>
+        <div class="btn">Find a rider</div>
+      </div>
+      <div class="nav"><span><b>Deliveries</b></span><span>Items</span><span>Shop</span><span>Team</span><span>Help</span></div>
+    </div>
+    <div class="cap">4 · A shop's home. After "Find a rider": riders' offers (name, rating, ETA, fare) for 90 s → Pick → "Send the code to the buyer on WhatsApp" (wa.me) or Copy code.</div>
+  </div>
+
+</div>
+</body>
+</html>

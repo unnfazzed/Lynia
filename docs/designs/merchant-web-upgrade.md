@@ -16,212 +16,374 @@ mibile number and whatsapp otp."*
 
 What the code says today (`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` §1):
 
-- **Nobody can join.** `POST /merchant/become` has zero callers, so every merchant so far was created by a
-  developer with curl. It also flips the caller's `Profile.role` for good, which breaks their customer app.
-  `Merchant.pilotEnabled` (go-live) has no writer. (`docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`)
+- **Nobody can join.** `POST /merchant/become` has zero callers. Every merchant so far was made by a
+  developer with curl, and each call flipped that person's `Profile.role` for good. The go-live flag
+  `Merchant.pilotEnabled` has no writer. (`docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`)
 - **A number LyniaGo has never seen can't sign in on the web.** `verifyOtp` refuses to create a profile
-  without `x-device-id`. The web sends none, and API CORS would block it anyway.
+  without an `x-device-id` header. The web sends none, and the API's CORS settings would block it anyway.
 - **One phone is one shop.** `merchants.owner_profile_id` is unique, so there's no second login for the
   cashier.
 - **Every word says kitchen.** The dashboard is a restaurant tablet.
 
 ## Demand Evidence
 
-Honest answer from the founder (Q1): **"My hypothesis so far."** No named shop has asked yet. The indirect
-signals:
+The only demand evidence is the founder's answer to Q1: **"My hypothesis so far."** No named business has
+asked yet.
 
-- The company's own website already sells to "Restaurants, Pharmacies, Retailers, Boutiques, Auto shops,
-  Butcheries, Grocers, Online stores" through an "Onboard on WhatsApp" button.
+Context (not demand):
+- The company's own website already lists "Restaurants, Pharmacies, Retailers, Boutiques, Auto shops,
+  Butcheries, Grocers, Online stores" under an "Onboard on WhatsApp" button.
 - The July launch gate "≥5 named, committed CBD pilot merchants onboarded" is still unchecked, two weeks
   past its Sept 15 tripwire (`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §7–8).
+- The one checkable signal is how many businesses have messaged "Onboard on WhatsApp". It isn't counted
+  yet, so the Assignment counts it.
 
-Until the Assignment below produces evidence, **this build is a bet on supply, not a response to it.**
+This build is a bet on supply, not a response to demand.
 
 ## Status Quo
 
-Founder (Q2): **"WhatsApp + informal couriers."**
-
+The founder's answer to Q2: **"WhatsApp + informal couriers."**
 - Orders arrive on WhatsApp or Facebook.
-- Delivery goes by motorbike couriers found through contacts, with the price haggled per trip and no
-  tracking or proof.
-- The competitor isn't another app. It's WhatsApp plus a courier the shop already knows.
-- The bar for every screen is "no harder than posting a WhatsApp status or adding someone to a group".
+- Motorbike couriers are found through contacts, and the price is haggled per trip.
+- There's no tracking and no proof of delivery.
+
+The competitor is WhatsApp plus a courier the shop already knows. Every screen has to be no harder than
+posting a WhatsApp status.
 
 ## Target User & Narrowest Wedge
 
-**Persona** (Q3, not yet a named person): a **parts dealer in Mbare/Siyaso**.
-- Owner plus 1–2 counter staff, selling spares to mechanics and kombi owners.
-- Stock changes daily. Orders arrive by WhatsApp and phone.
-- A stalled kombi loses money every hour, so orders are urgent and repeat.
+**Persona (Q3, not yet a named person):** a parts dealer in Mbare/Siyaso.
+- An owner plus 1–2 counter staff.
+- Sells spares to mechanics and kombi owners.
+- Stock changes daily.
+- Orders come in by WhatsApp and phone.
 
-**Narrowest wedge: "Book a rider for your WhatsApp orders."**
-- It works the day a shop signs up.
-- It needs no customer app, and the Play listing isn't live.
-- It rides the Send rails that already exist: broadcast to riders, a suggested fare, live status, and a
-  6-digit delivery code as proof.
+**The wedge is "Book a rider for your WhatsApp orders."** It works the day a business signs up, it needs no
+customer app, and it rides the Send rails:
+- one quoted fare, broadcast to riders;
+- live status;
+- a 6-digit delivery code as proof.
 
 The item catalogue is the second layer. It earns nothing until the customer app's Shops section ships.
 
 ## Constraints
 
-- **The web is the only surface that reaches merchants today.** Play production access isn't granted, and
-  the merchant web is a website.
-- **Login is WhatsApp only.** Bird Verify sends the codes, and the Azure release refuses any non-WhatsApp
+- **Web is the only merchant surface today.** Play production access isn't granted, and the merchant web is
+  a website. **Riders are not web users, though.** They take jobs in the rider app, which is on Play Closed
+  testing, so rider supply is a dependency (see Dependencies).
+- **Login is by WhatsApp code only.** Bird Verify sends it, and the Azure release refuses any non-WhatsApp
   `OTP_CHANNEL`.
-- **Pixel parity.** The 48 RM mocks are the authority. None draws sign-up, business type, shops, team or
-  Book a rider, so every new screen is built in the RM visual language and ledgered in
-  `docs/DESIGN-DEVIATIONS.md` (from D-43). `packages/design/**` is never edited.
+- **Pixel parity.**
+  - The 48 RM mocks are the authority.
+  - Every undrawn screen and every copy change on a drawn screen gets a `docs/DESIGN-DEVIATIONS.md` entry,
+    starting at D-43.
+  - `packages/design/**` is never edited.
 - **Phone-first.** D-32's phone tier applies, with the 320px entry-phone check.
-- **Informal merchants.** No paperwork, email or passwords to start.
+- **Informal merchants.** No paperwork, no email and no password to start.
 - **Pharmacies sell OTC only.** No prescription items without MCAZ/PCZ sign-off.
-- **Money.** LyniaGo never holds goods money. Migrations are expand-only and pass the online-safety guard.
-  Claude PRs merge on green.
+- **LyniaGo moves no money for Send.** Fares are settled rider-direct in cash outside the app (CONCEPT §6).
+- **Migrations are expand-only** and pass the online-safety guard. Claude PRs merge on green.
 
 ## Premises
 
-1. **Self-serve sign-up plus an ops go-live switch.** Sign-up takes a phone, a business name, the type and
-   a landmark, with no paperwork. LyniaGo checks the shop and flips it live from the admin console.
-   *(Agreed: "ops switches live.")*
+1. **Self-serve sign-up plus an ops go-live switch.** Sign-up takes phone, business name, type and
+   location, with no paperwork. LyniaGo checks the business and flips it live from the admin console.
+   *(Answer: "Agree, ops switches live.")*
 2. **Shops get Book a rider AND the item catalogue now.** The catalogue stays invisible to customers until
-   the customer Shops section ships. **Photos stay required** for every item, shops included. There are no
-   barcodes, sizes or stock counts in v1.
-   *(Revised after the second opinion: "Both now". Photos: "Agree; photos stay required".)*
-3. **Everyone signs in as themselves** with their own phone and WhatsApp code. There are two roles:
-   - **Owner:** everything.
-   - **Staff:** orders, stock on/off, Book a rider. No prices, money or team.
-   *(Agreed: "Owner + Staff".)*
+   the customer Shops section ships. No barcodes, sizes or stock counts in v1.
+   - *Answer on the catalogue, after the second opinion challenged it: "Both now."*
+   - *On photos I recommended "Agree; shops can skip photos"; the founder chose "Agree; photos stay
+     required". Every item needs a photo to go live, shops included.*
+3. **Everyone signs in as themselves** with their own phone and WhatsApp code. Two roles, Owner and Staff.
+   *(Answer: "Owner + Staff".)*
 4. **Merchant side now; the customer Shops section is the very next project.**
-   *(Agreed.)*
+   *(Answer: "Merchant side now, Shops next".)*
 
 ## Cross-Model Perspective
 
 An independent Claude subagent gave a cold read. Codex CLI isn't installed, so it's the same model family
 with fresh context.
 
-- **Steelman:** LyniaGo as the delivery rail for Harare's informal economy. Any business that sells over
-  WhatsApp gets a tracked rider with code-confirmed proof instead of a courier found through contacts.
-- **Key insight:** every pain in Q2 is a courier pain, not an ordering pain, and the Send rails already fix
-  it. The catalogue "rebuilds the half that isn't broken", and LyniaGo's revenue is the same either way.
-- **Challenged premise #2:** parts are bought by "do you have X for car Y?", not by browsing, and
-  photo-required plus daily stock churn keeps a parts catalogue stale.
-  - Proposed chat test: 7 days of one dealer's WhatsApp orders. If 70% or more open as a question, the
-    catalogue is the wrong machine.
-  - Proposed offer test: listing vs. bookable rider, across 10 shops.
-- **48-hour prototype:** "Book a rider" in the merchant web on the existing parcel API
-  (`POST /orders` → offers → select → delivery code → share on WhatsApp). No new table or endpoint.
-- **Also flagged:** self-serve sign-up without the admin go-live switch contradicts Premise 1, so the
-  switch belongs in the first layer.
-- **Founder's response:** kept the catalogue **and** added Book a rider ("Both now").
+- **Steelman.** LyniaGo as the delivery rail for Harare's informal economy.
+- **Key insight.** Every pain in Q2 is a courier pain, and the Send rails already fix it. The catalogue
+  "rebuilds the half that isn't broken", and revenue is the same either way.
+- **Challenged premise #2.** Parts are bought by "do you have X for car Y?", not by browsing.
+- **48-hour prototype.** Book a rider on the existing parcel API.
+- **Go-live gap.** Self-serve sign-up needs the go-live switch in the same layer.
+
+The founder kept the catalogue **and** added Book a rider.
 
 ## Approaches Considered
 
-- **A — Front door + Book a rider.** Rejected: it drops team logins, which were an explicit ask.
-- **B — Everything, layered.** **Chosen.** See below.
-- **C — Two doors (book a rider with no sign-up; open a shop later).** Rejected: two onboarding paths to
-  maintain, and business type stops being the first question.
+- **A — Front door + Book a rider.** Rejected: it drops team logins, which the owner asked for explicitly.
+- **B — Everything, layered. Chosen.**
+- **C — Two doors: book with no sign-up, open a shop later.** Rejected: it means two onboarding paths, and
+  business type would stop being the first question.
 
 ## Recommended Approach — B: Everything, layered
 
-Built in this order. Each layer is usable without the next.
+Four layers, in build order. The wedge comes second because it is what the week-1 target measures.
 
-**L1 — Front door.**
-- The web mints a stable per-browser device id and sends it as `x-device-id` on verify, and the API adds
-  it to the CORS allow-list. New numbers can then sign in; the L1 3-per-device-per-day signup cap still
-  applies.
-- The sign-in copy names WhatsApp, driven by the API's `deliveryChannel`.
-- A number with no business sees **"Set up your business"**:
-  1. What do you sell? Restaurant | Shop, then the shop kind: Pharmacy · Grocery · Butchery ·
-     Clothes & shoes · Car parts · Hardware · Phones & electronics · Something else.
-  2. Name, then "Use my location" plus a landmark riders look for.
-- It lands on the `/setup` checklist.
-- Nobody's `Profile.role` changes.
-- An **admin go-live switch** (`PATCH /admin/merchants/:id/pilot`, audit-logged, plus a console button)
-  closes the RCA's fix #1.
-- The customer restaurant API and `placeOrder` exclude shops.
+### L1 — Front door
 
-**L2 — Team.**
-- New `merchant_members` table, keyed by phone so the owner can add someone who's never used LyniaGo. The
-  row is claimed on that person's first sign-in.
-- The guard, the kitchen socket and the shop lookup all read it: one source of truth for "which shop is
-  this person on".
-- Owner-only routes: prices and catalogue edits, profile, hours, location, cash rule, statement, team.
-- The Team page adds and removes people and has a "Send them the link on WhatsApp" button (`wa.me`, free).
-- A removed person is cut off on their next tap, and their socket is dropped.
+1. **Sign-in works for new numbers.**
+   - The web keeps a random per-browser device id (localStorage, cookie fallback) and sends it as
+     `x-device-id` on verify. The API adds that header to its CORS allow-list.
+   - The auth per-device sign-up cap (3 new accounts per device per day, `KB-IDENTITY-BINDING`) still
+     applies.
+2. **Sign-in copy.**
+   - Before the code is sent, the copy is channel-neutral: "We'll send you a 6-digit code."
+   - After the send, it names the channel the API reports in `deliveryChannel`: "Enter the code we sent
+     to your WhatsApp …".
+   - This extends D-40 to the merchant web as a new ledger entry.
+3. **Access comes from a team table from day one.** Membership access has to exist in L1, or a new owner
+   is refused everywhere.
+   - `merchant_members` ships in L1, holding each business's owner row.
+   - `MerchantGuard`, the kitchen socket and the shop lookup all read it.
+   - The migration backfills an owner row for every existing merchant, with business type `restaurant`,
+     before any guard reads it. `owner_profile_id` remains a fallback during rollout.
+   - **Nobody's `Profile.role` changes any more.** Repairing the roles already flipped is a follow-up data
+     fix, done once no code reads `role = merchant`.
+4. **"Set up your business"** is what a signed-in number with no business sees.
+   1. *What do you sell?* Restaurant | Shop. A shop then picks its kind: Pharmacy · Grocery · Butchery ·
+      Clothes & shoes · Car parts · Hardware · Phones & electronics · Something else.
+   2. *Name, then where you are.* A confirmed, draggable **map pin** is required.
+      - "Use my location" centres the pin.
+      - If location is denied or imprecise, the pin starts at Harare CBD and the merchant drags it.
+      - A landmark riders look for is also required.
+      - Contact phone defaults to the owner's number.
+   - A one-tap line accepts the **merchant terms and privacy notice**. Their text is a dependency.
+   - Business type is **fixed after sign-up**; changing it is a support job, and the screen says so.
+   - Pharmacies see "Over-the-counter products only for now".
+5. **What go-live unlocks: being found by customers.** For restaurants that's the restaurant list today; for
+   shops it's the Shops section when it ships.
+   - Book a rider **does not need go-live**. It is Send, which any signed-in LyniaGo user can already
+     book, under Send's rules: declared value up to $150, Send's liability disclaimer, and the on-hold
+     lever.
+   - **Ops queue.** The admin console gets an "Awaiting go-live" list (newest first, with type, kind,
+     phone and landmark) and a go-live switch (`PATCH /admin/merchants/:id/pilot`, audit-logged).
+   - Target: ops calls within **1 business day**.
+   - Meanwhile the owner's checklist says "LyniaGo will call you within a day to switch you on", with a
+     "Message LyniaGo on WhatsApp" button.
+6. **Keeping shops out of restaurant results.** The customer restaurant API and `placeOrder` exclude shops.
 
-**L3 — Book a rider** (shops and restaurants).
-- A form: buyer's phone, the buyer's **WhatsApp location link**, a landmark, what's going, and its value.
-  The shop's saved location is the pickup.
-- The fare is prefilled by `quoteFare()`.
-- Riders' offers arrive with name, rating and ETA, and one tap picks one.
-- "Send the code to the buyer on WhatsApp" hands over the delivery code.
-- A Today list shows every booking; delivered means the code was confirmed.
+### L2 — Book a rider (shops and restaurants)
 
-**L4 — Shop words + kit fixes.**
-- One `vocabulary(businessType)` module: Menu ↔ Items, dish ↔ item, kitchen ↔ shop, and starter
-  categories per shop kind.
-- Finish what the RM mocks already draw:
-  - the shop's name in the top bar;
-  - **Help** in the nav, opening WhatsApp support;
-  - the **three-option out-of-stock sheet** (Until I turn it back on / Rest of today / 1 hour).
+- **Where it lives.**
+  - For a shop it is the home screen: **Deliveries** is the first nav item.
+  - For a restaurant it is a "Book a rider" button on Orders, for phone orders. Restaurants get no new nav
+    item.
+- **Who owns a booking.**
+  - A booking is a Send order whose customer of record is the person who booked it, tagged with the
+    business in a new nullable `orders.booked_by_merchant_id` (parcel orders only).
+  - The Deliveries list is **business-wide**. Any team member can act on any booking through
+    merchant-scoped endpoints, which check the team row and then call the existing Send services.
+  - A removed member loses the business list. Bookings they created stay in their own LyniaGo order
+    history, as with any Send order they made.
+- **Pickup.** The business's pin, landmark and contact phone.
+- **Drop-off, v1.**
+  - Paste the location link the buyer sent. Coordinates are read if the link contains them: Google Maps
+    long links, `geo:`, plain "lat, lng".
+  - Otherwise, and always as an option, drop a pin on a map. The map is Leaflet with OpenStreetMap tiles
+    and attribution, centred on the business.
+  - Resolving short links like `maps.app.goo.gl` on the server is an eng-review option, not v1. It is
+    SSRF-sensitive.
+- **Required fields.** Buyer's phone, landmark, what's going, and its value (up to $150).
+- **Fare.** Prefilled from `quoteFare()`, distance-based, and editable. The screen says "You pay the rider
+  this fare in cash at pickup". That is the existing Send model; LyniaGo takes nothing at launch.
+- **Value.** This is Send's declared value, the liability cap shown to the rider.
+  - **No cash-on-delivery in v1.** The rider collects nothing from the buyer; the buyer pays the business
+    as they do today. The form says so.
+- **Prohibited goods.**
+  - The form shows Send's liability disclaimer plus "No prescription medicine, weapons, drugs or cash".
+    Pharmacies see "Over-the-counter items only".
+  - Riders may refuse a job. A report leads ops to put the account on hold (the existing lever).
+- **The 90-second window.**
+  - Send's offer window is 90 s from broadcast, so everything is collected *before* "Find a rider".
+  - The screen then stays live (socket plus polling) and says "Stay here for 90 seconds to pick a rider".
+  - Leaving and coming back refetches the booking.
+  - An expired booking shows **"No rider picked in time"** with a one-tap **Try again**, which re-broadcasts
+    the same details and offers to raise the fare.
+  - No Web Push in v1; that's Phase 2.
+- **States in the Deliveries list.**
 
-**Wireframe of the core flow:** `/tmp/claude-0/-home-user-Lynia/0493afe6-0a33-5012-bb23-e1871e1ec8d3/scratchpad/sketch/sketch.png`
-(sign-in → What do you sell? → Team).
+  | State | Action |
+  |---|---|
+  | Finding a rider (countdown) | wait, or cancel |
+  | Rider coming to you | Call rider |
+  | Picked up | Call rider |
+  | Delivered | (the code was confirmed) |
+  | Not delivered | shows the reason; Call rider |
+  | Expired | Try again |
+  | Cancelled | — |
+
+- **Unhappy paths reuse Send's rules.**
+  - **No offers:** the booking expires.
+  - **The business cancels before pickup:** Send's cancel rules apply.
+  - **The rider cancels:** Send's re-broadcast.
+  - **The buyer is unreachable or refuses:** Send's `undelivered` ending, with the reason shown. The
+    business arranges the goods' return with the rider by phone; a paid return leg is Phase 2.
+  - **The code is never confirmed:** the booking stays "Picked up" until the rider marks it undelivered.
+    Help opens WhatsApp support.
+- **Getting the code to the buyer.**
+  - After a rider is picked, "Send the code to the buyer on WhatsApp" opens `wa.me/<buyer>` with a
+    prefilled message: the rider's name and plate, plus the 6-digit code. It goes from the booker's own
+    WhatsApp.
+  - Fallbacks: **Copy code**, and the code shown large enough to read out or SMS. These cover devices
+    without WhatsApp and buyers not on WhatsApp.
+
+### L3 — Team
+
+- **Two tables.**
+  - `merchant_invites` holds pending invites. Each is per business and phone and **expires after 14
+    days**.
+  - `merchant_members` holds accepted people. A phone belongs to at most one business.
+- **Invites need consent.**
+  - The owner adds a name and phone, then taps "Send them the link on WhatsApp".
+  - On sign-in, the invitee sees "{Owner} added you to {Business} as Staff", with **Join** and **Not me**.
+    Not me deletes the invite.
+  - An invite doesn't reserve the number. Several businesses can invite the same phone, the first one
+    accepted wins, and the person can still choose "Set up my own business" instead.
+  - Staff can **Leave this business** from their menu.
+- **One business per phone.**
+  - Adding someone who is already on a team shows: "This number already works at another business on
+    LyniaGo." The other business isn't named.
+  - A cashier who works at two shops has to leave one first.
+- **Owner rules.**
+  - Exactly one owner per business, and the owner can't be removed or leave.
+  - Transfer and lost-number recovery go through LyniaGo support, with an identity check by call or visit
+    plus ID. An admin tool for this is Phase 2.
+- **What Staff can't see:**
+  - the weekly statement and end-of-day totals;
+  - the cash rule;
+  - team, item editing, hours, profile and location.
+- **What Staff can see:** order totals and payment confirmation (needed at hand-over), and booking fares.
+  They can use busy mode and out-of-stock toggles.
+- **Shared devices.**
+  - Everyone signs in with their own code.
+  - A counter tablet should be signed in by a Staff account; the owner uses their own phone.
+  - The top bar shows who is signed in. "Switch person" signs out and back in.
+  - Removing someone signs them out on their next tap and stops their device's order alarm. The Team page
+    warns: "If {name} is signed in on the counter tablet, sign it in again with someone else."
+- **The sign-up cap.**
+  - The invite link goes to the person's own WhatsApp, so their first sign-in is normally on their own
+    phone.
+  - If a shared device hits the per-device cap, the error says: "This device has added 3 new people today.
+    Sign in on your own phone, or try tomorrow."
+
+### L4 — Shop words + finishing the drawn restaurant screens
+
+- **Vocabulary.** A `vocabulary(businessType)` module swaps Menu ↔ Items, dish ↔ item, kitchen ↔ shop,
+  "What you cook" ↔ "What you sell", and sets starter categories per kind.
+  - On drawn RM screens this is a **copy deviation**, ledgered with every swapped string listed.
+- **Navigation.**
+  - Restaurants keep the mock's six items: Orders · Menu · Shop · Hours · Statement · **Help**. Help, which
+    opens WhatsApp support, is drawn in the mock and is new in the app.
+  - Shops get Deliveries · Items · Shop · Help. That set is undrawn and ledgered.
+  - **Team lives inside Shop for both types**, owner only.
+  - Staff don't see Statement.
+- **Top bar.** Shows the business's name and who is signed in. The "Open for orders" pill appears for
+  restaurants only, since shops take no customer orders yet.
+- **Out of stock.** The three-option sheet: Until I turn it back on · Rest of today · 1 hour (`RM.oos_sheet`).
+- **What "simplify the restaurant side" means here:**
+  - WhatsApp sign-in that works for new numbers;
+  - team logins;
+  - finishing what the RM mocks already draw.
+  - Anything that changes drawn restaurant screens beyond the mocks needs a new design export (pixel
+    parity).
+- **Pause 30 min / Close for today** (`RM.hours`) is a restaurant parity gap, independent of shops. It is
+  deferred to Phase 2 and tracked in the parity tracker. Staff may pause once it's built; busy mode is
+  Staff-allowed now.
+- **A shop's `/setup` checklist:**
+  1. Pin + landmark (done at sign-up).
+  2. Book your first rider.
+  3. Add your items. "Customers will see them when LyniaGo Shops opens."
+  4. Add your team (optional).
+  5. Wait for LyniaGo's call to go live.
+
+**Wireframe** (in the repo): `docs/designs/merchant-web-upgrade-wireframe.png` (source `…-wireframe.html`).
+It shows sign-in → What do you sell? → Team → Book a rider.
+
+## Decisions for the CEO review to confirm
+
+These are new defaults in this doc that the owner hasn't approved yet:
+
+1. Book a rider needs no go-live; it runs at Send's trust level.
+2. Bookings belong to the business, tagged `booked_by_merchant_id`, with merchant-scoped endpoints.
+3. Drop-off v1 is link coordinates or a map pin (Leaflet + OSM). Short-link resolution is deferred.
+4. Invites need acceptance and expire after 14 days. One business per phone.
+5. Team lives inside Shop. The restaurant nav stays the mock's six items.
+6. No role repair in this build.
+7. Pause/close is deferred to Phase 2.
+8. The definition of "simplify the restaurant side" above.
 
 ## Open Questions
 
-1. **WhatsApp short links.** A location forwarded from a phone is usually a `maps.app.goo.gl` short link
-   with no coordinates in it. Resolve it server-side against a strict host allowlist, or fall back to a
-   map pin? This is an SSRF-sensitive choice for the CEO/eng review.
-2. **Who pays the Book a rider fare, and how?** Proposed: the Send model unchanged. The shop pays the rider
-   the agreed fare in cash at pickup, and charges the buyer however it already does.
-3. **What does ops check before flipping a shop live?** Proposed: a call or visit, a landmark that matches,
-   and OTC-only for pharmacies.
-4. **Hours "Pause 30 min / Close for today."** The kit draws it, but it needs `placeOrder` and the customer
-   app to honour it. Build it now, or with the customer Shops section?
+1. **Short-link resolution.** Should the server resolve `maps.app.goo.gl` short links against a strict host
+   allowlist? This is an eng-review choice.
+2. **Merchant terms.** Who writes the merchant terms and privacy notice, and by when? The website's Terms
+   link is still `#` (D-42).
+3. **Web Push.** Does Phase 2 add Web Push for offers and orders on a backgrounded phone?
 
 ## Success Criteria
 
-- An owner with a never-seen number signs up on their own phone in **under 5 minutes**, from code to
-  checklist.
-- A cashier added by phone signs in with their own WhatsApp code and sees Orders but not money, team or
-  price edits.
-- A shop books a rider from the web, and the buyer receives the delivery code on WhatsApp. "Delivered"
-  means the code was confirmed.
-- **5 named Siyaso/Mbare businesses** signed up, with **≥10 paid deliveries in week 1** across them and **≥1
-  rebook by day 3** that nobody prompted.
-- CI is green: typecheck, tests and guardrails. `0053` passes the migration-safety spec.
+Definitions:
+- **Week 1** is the 7 days after each business's first booking.
+- **Delivered** means a booking reached `delivered` with its code confirmed. LyniaGo observes the code, not
+  the cash.
+- **Unprompted rebook** means a second booking on day 2 or 3 with no founder outreach logged in between.
+- **The 5 businesses** only need to be signed up; Book a rider doesn't need go-live.
+
+Criteria:
+- **Sign-up time:** median under 5 minutes, measured from code verify to business created (server
+  timestamps), across the first 5 businesses.
+- **Staff limits:** a Staff session gets 403 on statement, summary, team, profile, hours and item editing,
+  and its nav hides them. It still sees order totals and booking fares.
+- **Book a rider:** a business books a rider, and the buyer gets the code on WhatsApp or by copy.
+- **Pilot:** 5 named Siyaso/Mbare businesses signed up, with **≥10 delivered bookings** in week 1 across
+  them and **≥1 unprompted rebook**.
+- **CI:** green, including migration `0053` (business type, shop kind, `merchant_members`,
+  `merchant_invites`, `orders.booked_by_merchant_id`; plan §7), which must pass the migration-safety spec.
 
 ## Distribution Plan
 
-This is a web service on the existing pipelines (`apps/merchant` and API release workflows). It has no
-app-store dependency, which is the point: it reaches merchants before Play grants production access.
+- **Merchant side:** web, on the existing `apps/merchant` and API release pipelines. No store dependency.
+- **Rider side:** riders need the rider app on Play Closed testing (see Dependencies).
+- **Acquisition:**
+  - The founder sends the sign-up link in "Onboard on WhatsApp" chats and hands out a printed QR card on
+    Siyaso/Mbare visits.
+  - The website's button stays as-is, under the handoff rule. A "Sign up your business" link is requested
+    from design separately.
 
 ## Dependencies
 
-- The customer Shops section in the mobile app, the next project. Until then the shop catalogue is invisible
-  to customers.
-- Ops capacity for go-live checks.
-- Bird Verify (live) for WhatsApp codes.
+- **Rider supply.** At least 3 enrolled riders online within about 3 km of Siyaso/Mbare during 08:00–17:00.
+  Check with an admin/SQL count before each business's week 1.
+- **Merchant terms and privacy notice** (Open Question 2).
+- **An ops owner for the go-live queue**, with a 1-business-day turnaround.
+- **The customer Shops section**, which is the next project.
+- **Bird Verify**, which is live.
 
 ## The Assignment
 
-**Before the build lands, do two things.**
-1. **Name 5 Siyaso/Mbare businesses that sell on WhatsApp** (parts dealers first) and agree to try LyniaGo
-   Business. For each, get the name, phone, what they sell, WhatsApp orders per week, and who else works the
-   counter.
-2. **Run the chat test with one parts dealer.** Over 7 days of WhatsApp orders, what share open as "do you
-   have X for car Y?" versus a pick from a list?
+Before the build lands:
 
-The first turns "my hypothesis so far" into a supply list. The second tells us whether the parts catalogue
-or Book a rider is the product that matters.
+1. **Name 5 Siyaso/Mbare businesses that sell on WhatsApp** and agree to try LyniaGo Business. Start with
+   parts dealers. For each, record name, phone, what they sell, WhatsApp orders per week, and who else
+   works the counter.
+2. **Run the tally test with one parts dealer.** For 7 days, the dealer tallies every order on a paper
+   sheet. No chats leave their phone.
+   - An order is any conversation that ends in a sale or a firm request.
+   - Mark each one **question-first** ("Do you have X for car Y?", or a photo of the old part) or
+     **pick-from-list** (asks for a specific item they saw listed or priced).
+   - **Decision rule:** if 70% or more are question-first, the customer Shops section leads with "Ask
+     shops for a part" (request/quote), not browsing. The shop catalogue ships regardless ("Both now").
+3. **Count the inbound "Onboard on WhatsApp" chats** from the last 30 days, by business type.
 
 ## What I noticed about how you think
 
-- I recommended skipping office hours; you answered **"Run /office-hours now."** You wanted the hard
-  questions before any code.
-- Asked for demand evidence, you said **"My hypothesis so far"** instead of dressing it up. That honesty is
-  what made the Assignment possible.
-- On shop photos you chose **"Agree; photos stay required"** over my recommendation to let shops skip them.
-  You held a quality bar against speed.
-- When the second opinion said to park the catalogue, you answered **"Both now"**: the wedge *and* the
-  platform, not one or the other.
+- I recommended skipping office hours. You answered **"Run /office-hours now."**
+- Asked for demand evidence, you said **"My hypothesis so far"** instead of dressing it up.
+- On shop photos, I recommended **"Agree; shops can skip photos"**. You chose **"Agree; photos stay
+  required."**
+- When the second opinion said to park the catalogue, you answered **"Both now."**
