@@ -10,6 +10,7 @@ import {
 } from "@lynia/shared";
 import { insideServiceArea } from "./geo";
 import { parseAmountInput } from "./money-input";
+import { randomUuid } from "./random-id";
 
 /**
  * Book a rider's pure rules (merchant web upgrade L2, docs/designs/merchant-web-upgrade.md "L2 — Book a
@@ -195,9 +196,5 @@ export function toCreateRequest(form: BookingForm, idempotencyKey: string): Crea
 
 /** A fresh idempotency key per form attempt (a double tap or a retried request books once). */
 export function newIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
+  return randomUuid();
 }

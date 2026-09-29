@@ -12,6 +12,8 @@
  * tab reuses it and the cap counts this browser once. The `web-` prefix tells ops which surface a
  * session came from.
  */
+import { randomUuid } from "./random-id";
+
 const STORAGE_KEY = "lynia_merchant_device_id";
 const COOKIE_NAME = "lynia_merchant_device_id";
 const COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
@@ -50,14 +52,7 @@ function persist(value: string): void {
 }
 
 function mint(): string {
-  const uuid =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-        });
-  return `web-${uuid}`;
+  return `web-${randomUuid()}`;
 }
 
 let memo: string | null = null;

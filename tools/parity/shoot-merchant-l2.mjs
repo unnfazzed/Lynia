@@ -220,7 +220,8 @@ async function shoot(browser, { name, path, viewport, scenario = SCENARIOS.shop,
   }
   await ctx.route("**/__api/**", (route) => apiRoute(route, scenario));
   await ctx.route("**/socket.io/**", (route) => route.abort());
-  await ctx.route(/tile\.openstreetmap\.org/, async (route) => {
+  // Match on the parsed host, not a regex over the whole URL (CodeQL js/regex/missing-regexp-anchor).
+  await ctx.route((url) => url.hostname === "tile.openstreetmap.org" || url.hostname.endsWith(".tile.openstreetmap.org"), async (route) => {
     try {
       const res = await route.fetch({ timeout: 8000 });
       if (res.ok()) return route.fulfill({ response: res });
