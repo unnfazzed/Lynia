@@ -486,8 +486,8 @@ async function mapsSection() {
   if (!sha1) {
     console.log(
       "No SHA-1 supplied, so the allowlist — the actual MOB-MAP-02 question — was not tested. Re-run with\n" +
-        "the Play *app signing* certificate SHA-1: Play Console -> Test and release -> Setup -> App\n" +
-        "integrity -> 'App signing key certificate'. That is the certificate installed builds run under;\n" +
+        "the Play *app signing* certificate SHA-1: Play Console -> Protected with Play -> App signing ->\n" +
+        "'Classical key' -> SHA-1 certificate fingerprint. That is the certificate installed builds run under;\n" +
         "the EAS upload keystore is a different one and allowlisting only it is the documented trap.",
     );
   }

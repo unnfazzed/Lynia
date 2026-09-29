@@ -62,6 +62,10 @@ you are looking for a *recent edit*, not an *omission*, and GCP shows you the ke
    > some accounts App integrity now sits directly under *Test and release* with no "Setup" level.
    > **Use the search box at the top of Play Console and type "app signing"** — it jumps straight there
    > regardless of the menu layout. Then: *App signing* tab → **App signing key certificate** → SHA-1.
+   > **Moved again (seen 2026-09-29):** App integrity now only says "App Integrity settings have
+   > moved". The certificates are under **Protected with Play → App signing**, where the SHA-1 devices
+   > run is the *Classical key* → SHA-1 certificate fingerprint. For `zw.co.lynia` that is
+   > `35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08`.
 
    **Or skip Play Console entirely for a first pass.** `expo.dev → project → Credentials → Android`
    shows the EAS-managed **upload** keystore's SHA-1 in a browser. That is not the app-signing cert, but
