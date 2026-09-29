@@ -6,6 +6,7 @@ import type { MerchantCategoryResponse } from "@lynia/shared";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
 import { Icon } from "../../../components/icons";
+import { OwnerOnlyNotice } from "../../../components/OwnerOnlyNotice";
 import { CategoryEditorSheet, type CategorySave } from "../../../components/menu/CategoryEditorSheet";
 import { RetryableError } from "../../../components/RetryableError";
 import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../../components/queue/styles";
@@ -24,7 +25,11 @@ import { countOf, useVocabulary } from "../../../lib/vocabulary";
  * `sortOrder` and `hidden`, and `listCategories` orders by `sortOrder` server-side. A reorder writes
  * the whole 0..n-1 sequence rather than just the swapped pair — see `planCategoryMove` for why.
  */
-type LoadState = { status: "loading" } | { status: "ready"; categories: MerchantCategoryResponse[] } | { status: "error"; message: string };
+type LoadState =
+  | { status: "loading" }
+  // `staff` (L4): categories are the owner's (the permission table).
+  | { status: "ready"; categories: MerchantCategoryResponse[]; staff: boolean }
+  | { status: "error"; message: string };
 
 type Sheet = { kind: "none" } | { kind: "category"; category: MerchantCategoryResponse | null };
 
@@ -53,8 +58,8 @@ export default function CategoryManagePage() {
   const refresh = useCallback(async () => {
     try {
       // The business rides along (cached, never rejects) so the list first renders in the right words.
-      const [categories] = await Promise.all([listCategories(), loadBusiness()]);
-      setState({ status: "ready", categories });
+      const [categories, business] = await Promise.all([listCategories(), loadBusiness()]);
+      setState({ status: "ready", categories, staff: business?.myRole === "staff" });
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
       setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your categories." });
@@ -146,7 +151,16 @@ export default function CategoryManagePage() {
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={() => void refresh()} />}
 
-        {state.status === "ready" && (
+        {state.status === "ready" && state.staff && (
+          <>
+            <Link href="/menu" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block", alignSelf: "flex-start" }}>
+              {v.backToCatalog}
+            </Link>
+            <OwnerOnlyNotice>Only the owner changes the categories.</OwnerOnlyNotice>
+          </>
+        )}
+
+        {state.status === "ready" && !state.staff && (
           <>
             <div className="kitchen-head">
               <div className="kitchen-head-title">

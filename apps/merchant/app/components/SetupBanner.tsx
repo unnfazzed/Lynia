@@ -28,7 +28,8 @@ export function SetupBanner() {
     let cancelled = false;
     Promise.all([getMerchantProfile(), listDishes()])
       .then(([profile, dishes]) => {
-        if (cancelled) return;
+        // Setting up is the owner's (L4), so Staff get no nudge towards it.
+        if (cancelled || profile.myRole === "staff") return;
         const setup = buildSetupState({ profile, dishes, alarmTested: readAlarmTested(profile.id) });
         if (setup.remaining > 0) setPending({ remaining: setup.remaining, live: setup.live });
       })

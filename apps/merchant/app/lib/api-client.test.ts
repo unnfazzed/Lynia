@@ -271,3 +271,25 @@ describe("authedFetch feeds the shared ReachabilityStore (LC-D04)", () => {
     expect(reportUnreachable).toHaveBeenCalled();
   });
 });
+
+describe("authedFetch — a removed person's next request (merchant web upgrade L4)", () => {
+  it("tells the shell when the API says the person isn't on the business any more", async () => {
+    const { authedFetch, onMembershipLost } = await import("./api-client");
+    const lost = vi.fn();
+    const stop = onMembershipLost(lost);
+    fetchMock.mockResolvedValue(makeResponse(403, { statusCode: 403, reason: "not_a_member", message: "This number isn't on a business on LyniaGo yet." }));
+
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 403, reason: "not_a_member" });
+    expect(lost).toHaveBeenCalledTimes(1);
+
+    // Other refusals are the screen's to show, not a removal.
+    fetchMock.mockResolvedValue(makeResponse(403, { statusCode: 403, reason: "owner_only", message: "Only the owner can change this." }));
+    await expect(authedFetch("/merchant/profile", { method: "PATCH", body: {} })).rejects.toMatchObject({ reason: "owner_only" });
+    expect(lost).toHaveBeenCalledTimes(1);
+
+    stop();
+    fetchMock.mockResolvedValue(makeResponse(403, { statusCode: 403, reason: "not_a_member", message: "x" }));
+    await expect(authedFetch("/merchant/orders")).rejects.toMatchObject({ status: 403 });
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+});

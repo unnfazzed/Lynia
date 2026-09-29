@@ -2090,3 +2090,48 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
 
 **Retire when:** a design export draws the riders list (then align to it), or the owner rejects a row (then
 the app changes).
+
+## D-46 · Merchant web: Team, Join, who is signed in, and the Staff views — PROPOSED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"They can add multiple users to log into same shop."* Spec:
+`docs/designs/merchant-web-upgrade.md` L4 ("Team"), with its one permission table; plan §10 lists this entry.
+**No RM mock draws a team, an invite, a Join screen, who is signed in, or a Staff view**, so these are built
+from RM primitives and the in-repo wireframe (`docs/designs/merchant-web-upgrade-wireframe.png`, screen 3), and
+ledgered here. PROPOSED until the owner approves the web PR and its screenshot sheet
+(`docs/parity/MERCHANT-L4-D46-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+ask:** real mocks for Team, Join and the top bar's signed-in person.
+
+### 1 · Undrawn screens
+
+Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, targets ≥ `--target-min`.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Team** (owner only, inside Shop): "‹ Shop", "Team", what Staff do in the business's words; each person's name, masked number ("· you" on the owner's own row) and an Owner / Staff tag; each pending invite's "invited, hasn't joined yet", an **Invited** tag, "Send the link on WhatsApp" and "Cancel invite"; "Add someone" → their name, their phone number, Invite → "Invite ready. Send them the link on WhatsApp."; Remove with an inline confirm that warns "If {name} is signed in on the counter tablet, sign it in again with someone else."; "Only the owner can see and change the team." for Staff; "Team is on its way." on an API before L4 | `/team` | the wireframe's screen 3, D-45's list rows, cards and inputs |
+| **Join:** "{Owner} added you to {Business} as Staff." per invite; "Your name" (the invite's, to confirm or correct) and the sign-up's own one-tap privacy line; "Join {Business}" / "Not me"; "Set up my own business instead"; "Wrong number? Sign out" | `/join` | D-43's sign-up card and its privacy line |
+
+### 2 · On drawn and earlier-ledgered screens
+
+| Where | Mock / earlier | App | Why |
+|---|---|---|---|
+| `KitchenBar` (RM, all screens) | brand · "Merchant" · Connected · (D-32 dropped the alarm pill) | + who is signed in at the end, "Tendai · Staff", which opens "Switch person" and, for Staff, "Leave this business". At phone width the first name only, and the secondary "Merchant" label gives way to it; below 360px (and offline) the icon alone, the name in its menu, so the wordmark is never cut | Design doc L4 "Shared devices": everyone signs in with their own code, and a shared tablet says whose it is |
+| `KitchenNav`, restaurant Staff | Orders · Menu · Shop · Hours · Statement | Orders · Menu · Hours · Help | The permission table: Shop and Statement are the owner's; Help opens support's WhatsApp (hidden when unset) |
+| `KitchenNav`, shop Staff (D-44/D-45) | Deliveries · Riders · Items · Shop · Help | Deliveries · Riders · Items · Help | The permission table |
+| `RM.catalog` (M4·1) and Items (D-44), Staff | the owner's list with Edit, add and category controls | the list with "Mark out of stock" / "Back in stock" only, and "Mark items out of stock and back. Only the owner changes the items." under the title; an empty list says "The owner adds the dishes here." | The permission table: stock toggles only |
+| `RM.hours` (M5), Staff | the week's toggles and times, Save hours | the week as text, no Save; "Only the owner changes the opening hours. You can turn busy mode on and off."; busy mode unchanged | The permission table: busy mode only |
+| `RM.shop` (M5), owner, both types | ends with How riders pay you (restaurants) / the profile (shops) | + a "Your team" card with "Manage team" | Design doc L5: Team lives inside Shop for both types, owner only |
+| `RM.shop`, `RM.statement`, `RM.setup`, `category_manage`, Staff by an old link | the owner's screens | one line each ("Only the owner changes the shop's details, its riders and its team." · "Only the owner sees the statement and the day's totals." · "Only the owner sets up {Business}." · "Only the owner changes the categories.") | The permission table; the API refuses the controls anyway |
+| `RM.setup` nudge on Orders (SetupBanner) | shown while the checklist is open | not shown to Staff | Setting up is the owner's |
+| "Set up your business" (D-43) | the type cards | + "Work at a business that's already on LyniaGo? Ask the owner to add you in **Team**." under them; a number with a pending invite sees Join instead | Design doc L1.4 and L4 |
+
+### 3 · Behaviour worth knowing
+
+- Someone the owner removed signs out on their next tap, and their device's order alarm stops, so a shared
+  tablet goes back to "Sign in". Their devices also leave the live queue at once (server side).
+- Adding a number never tells the owner whether it works somewhere else; only the invited person hears it,
+  at Join, without the other business being named.
+- Support hands a business to a new owner from the admin console ("Hand over…", runbook §8); there is no
+  owner-side transfer.
+
+**Retire when:** a design export draws Team, Join or the signed-in person (then align to it), or the owner
+rejects a row (then the app changes).

@@ -87,3 +87,13 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
     expect(screen.getByText("Finish this list and LyniaGo will call you within a day to switch you on. It isn't automatic.")).toBeTruthy();
   });
 });
+
+describe("Setting up is the owner's (merchant web upgrade L4)", () => {
+  it("Staff who reach /setup get one line, and no checklist", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ myRole: "staff" }));
+    vi.mocked(listDishes).mockResolvedValue([]);
+    render(<SetupPage />);
+    expect(await screen.findByText("Only the owner sets up Test Kitchen.")).toBeTruthy();
+    expect(screen.queryByText(/Set up Test Kitchen/)).toBeNull();
+  });
+});

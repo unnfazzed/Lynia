@@ -10,6 +10,7 @@ import { RetryableError } from "../components/RetryableError";
 import { disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../components/queue/styles";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
+import { noBusinessPath } from "../lib/team-api";
 import { API_BASE_URL } from "../lib/config";
 import { HARARE_CBD, insideServiceArea } from "../lib/geo";
 import { clearMerchantSession } from "../lib/session";
@@ -83,25 +84,40 @@ export default function OnboardingPage() {
       .catch((err: unknown) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 403) {
-          setGate({ status: "form" });
-          // Prefill from the person's own LyniaGo account. Best effort: the form works without it.
-          getMyAccount()
-            .then((me) => {
+          // L4: a team's invite for this number shows Join instead, unless the person chose "Set up my
+          // own business" there (`?own=1`).
+          const own = new URLSearchParams(window.location.search).get("own") === "1";
+          if (!own) {
+            void noBusinessPath().then((path) => {
               if (cancelled) return;
-              const fullName = `${me.firstName} ${me.lastName}`.trim();
-              setForm((f) => ({
-                ...f,
-                ownerName: f.ownerName || fullName,
-                contactPhone: f.contactPhone || formatPhoneLocal(me.phone),
-              }));
-            })
-            .catch(() => {});
+              if (path === "/join") router.replace("/join");
+              else showForm();
+            });
+            return;
+          }
+          showForm();
         } else if (err instanceof ApiError && err.status === 401) {
           signOut();
         } else {
           setGate({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your account." });
         }
       });
+
+    function showForm() {
+      setGate({ status: "form" });
+      // Prefill from the person's own LyniaGo account. Best effort: the form works without it.
+      getMyAccount()
+        .then((me) => {
+          if (cancelled) return;
+          const fullName = `${me.firstName} ${me.lastName}`.trim();
+          setForm((f) => ({
+            ...f,
+            ownerName: f.ownerName || fullName,
+            contactPhone: f.contactPhone || formatPhoneLocal(me.phone),
+          }));
+        })
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };
@@ -238,6 +254,10 @@ export default function OnboardingPage() {
 
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 16, lineHeight: 1.45 }}>
               You can't switch between restaurant and shop later. LyniaGo support can change it for you.
+            </div>
+            {/* L4 (design doc L1.4): staff don't set up a business, their owner adds them. */}
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 10, lineHeight: 1.45 }}>
+              Work at a business that&apos;s already on LyniaGo? Ask the owner to add you in <b>Team</b>.
             </div>
 
             <button

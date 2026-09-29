@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OnboardingPage from "./page";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { merchantProfile } from "../testing/fixtures";
+import { noBusinessPath } from "../lib/team-api";
 
 // One stable router, as Next's own is: the page's account check depends on it.
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -16,6 +17,9 @@ vi.mock("../lib/api-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/api-client")>("../lib/api-client");
   return { ...actual, getMyMerchant: vi.fn(), getMyAccount: vi.fn(), becomeMerchant: vi.fn() };
 });
+
+// L4: whether a team invited the number (Join) or not; the sign-up unless a test says otherwise.
+vi.mock("../lib/team-api", () => ({ noBusinessPath: vi.fn(async () => "/onboarding") }));
 
 const notAMember = () => new ApiError(403, "This number isn't on a business on LyniaGo yet.", "not_a_member");
 
@@ -148,5 +152,29 @@ describe("Set up your business (merchant web upgrade L1)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(await screen.findByRole("button", { name: "Next" }));
     expect(screen.getByLabelText<HTMLInputElement>("Business name").value).toBe("Mai Tino's Kitchen");
+  });
+});
+
+describe("Set up your business, beside Team (merchant web upgrade L4)", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("shows Join instead when a team has invited this number", async () => {
+    vi.mocked(noBusinessPath).mockResolvedValueOnce("/join");
+    render(<OnboardingPage />);
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/join"));
+    expect(screen.queryByText("What do you sell?")).toBeNull();
+  });
+
+  it("stays on the sign-up when the person chose to set up their own business at Join", async () => {
+    window.history.replaceState(null, "", "/onboarding?own=1");
+    render(<OnboardingPage />);
+    expect(await screen.findByText("What do you sell?")).toBeTruthy();
+    expect(noBusinessPath).not.toHaveBeenCalled();
+  });
+
+  it("tells staff to ask their owner rather than set up a business", async () => {
+    render(<OnboardingPage />);
+    await screen.findByText("What do you sell?");
+    expect(screen.getByText((_, el) => el?.tagName === "DIV" && el.textContent === "Work at a business that's already on LyniaGo? Ask the owner to add you in Team.")).toBeTruthy();
   });
 });

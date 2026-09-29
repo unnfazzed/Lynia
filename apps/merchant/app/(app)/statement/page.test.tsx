@@ -5,11 +5,15 @@ import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse }
 import StatementPage from "./page";
 import { ApiError } from "../../lib/api-client";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
+import { loadBusiness } from "../../lib/business";
+import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/orders-api", () => ({
   getTodaySummary: vi.fn(),
   getWeeklyStatement: vi.fn(),
 }));
+// The owner's, unless a test says otherwise (L4: Staff don't see the statement).
+vi.mock("../../lib/business", () => ({ loadBusiness: vi.fn(async () => null) }));
 
 const signOut = vi.fn();
 vi.mock("../../components/KitchenConnectionProvider", () => ({
@@ -60,5 +64,15 @@ describe("StatementPage initial-load failure has a way out (LC-D##)", () => {
 
     await screen.findByText("Today's summary");
     expect(getTodaySummary).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("The statement is the owner's (merchant web upgrade L4)", () => {
+  it("Staff who reach it get one line, and the API isn't asked", async () => {
+    vi.mocked(loadBusiness).mockResolvedValueOnce(merchantProfile({ myRole: "staff" }));
+    render(<StatementPage />);
+    expect(await screen.findByText("Only the owner sees the statement and the day's totals.")).toBeTruthy();
+    expect(getTodaySummary).not.toHaveBeenCalled();
+    expect(getWeeklyStatement).not.toHaveBeenCalled();
   });
 });

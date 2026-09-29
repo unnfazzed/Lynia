@@ -25,24 +25,52 @@ const RESTAURANT_ITEMS: NavItem[] = [
   { id: "money", label: "Statement", href: "/statement", icon: "receipt" },
 ];
 
+/** Help opens LyniaGo support on WhatsApp, and hides rather than open a dead link when no number is set. */
+function helpItems(): NavItem[] {
+  const help = supportWhatsAppUrl();
+  return help ? [{ id: "help", label: "Help", href: help, icon: "circle-alert", external: true }] : [];
+}
+
 /** A shop's own set (merchant web upgrade L2, design doc L5 "Navigation"): Deliveries first — booking a
  *  rider is what a shop does here — then its own Riders (L3), Items and Shop, and Help when support's
  *  WhatsApp is set. Undrawn, ledgered as D-44 and D-45. */
 function shopItems(): NavItem[] {
-  const help = supportWhatsAppUrl();
   return [
     { id: "deliveries", label: "Deliveries", href: "/deliveries", icon: "navigation" },
     { id: "riders", label: "Riders", href: "/riders", icon: "bike" },
     { id: "catalog", label: "Items", href: "/menu", icon: "package" },
     { id: "shop", label: "Shop", href: "/shop", icon: "store" },
-    ...(help ? [{ id: "help", label: "Help", href: help, icon: "circle-alert" as const, external: true }] : []),
+    ...helpItems(),
+  ];
+}
+
+/** Staff's sets (L4, the design doc's permission table): no Shop and no Statement, which are the
+ *  owner's, and on Menu/Items and Hours only what Staff may do there (stock toggles, busy mode). The
+ *  restaurant set drops two drawn items, ledgered as D-46. */
+function restaurantStaffItems(): NavItem[] {
+  return [
+    { id: "queue", label: "Orders", href: "/queue", icon: "inbox" },
+    { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },
+    { id: "hours", label: "Hours", href: "/hours", icon: "clock" },
+    ...helpItems(),
+  ];
+}
+
+function shopStaffItems(): NavItem[] {
+  return [
+    { id: "deliveries", label: "Deliveries", href: "/deliveries", icon: "navigation" },
+    { id: "riders", label: "Riders", href: "/riders", icon: "bike" },
+    { id: "catalog", label: "Items", href: "/menu", icon: "package" },
+    ...helpItems(),
   ];
 }
 
 export function KitchenNav({ active }: { active: string }) {
   const business = useBusiness();
   // Restaurants are the default until the business is known, so a kitchen never sees its drawn nav flicker.
-  const items = business?.businessType === "shop" ? shopItems() : RESTAURANT_ITEMS;
+  const staff = business?.myRole === "staff";
+  const items =
+    business?.businessType === "shop" ? (staff ? shopStaffItems() : shopItems()) : staff ? restaurantStaffItems() : RESTAURANT_ITEMS;
   return (
     <nav className="kitchen-nav" aria-label={business?.businessType === "shop" ? "Shop sections" : "Kitchen sections"}>
       {items.map((item) =>

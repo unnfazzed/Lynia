@@ -128,4 +128,24 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
     await screen.findByText("WHAT YOU SELL · up to 3");
     expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
   });
+
+  it("the owner reaches the team from Shop, for both types (L4)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts", myRole: "owner" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
+
+    cleanup();
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "owner" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
+  });
+
+  it("Staff who reach Shop get one line, not the owner's editor (L4)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "staff" }));
+    render(<ShopPage />);
+    expect(await screen.findByText("Only the owner changes the shop's details, its riders and its team.")).toBeTruthy();
+    expect(screen.queryByText("Shop profile")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+  });
 });

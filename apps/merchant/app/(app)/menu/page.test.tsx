@@ -228,3 +228,35 @@ describe("A shop's Items screen speaks its own words (merchant web upgrade L2, D
     expect(screen.getByText("+ Add a dish")).toBeTruthy();
   });
 });
+
+describe("Staff only mark items out of stock and back (merchant web upgrade L4)", () => {
+  afterEach(() => clearBusinessCache());
+
+  it("shows the list with stock toggles and none of the owner's editing", async () => {
+    primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts", myRole: "staff" }));
+    vi.mocked(listCategories).mockResolvedValue([category({ name: "Brakes" })]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ name: "Brake pads", outOfStock: false })]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("Mark items out of stock and back. Only the owner changes the items.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark out of stock" })).toBeTruthy();
+    for (const owners of ["Edit", "Edit category", "+ New category", "+ Add an item", "+ Add item here"]) {
+      expect(screen.queryByRole("button", { name: owners })).toBeNull();
+    }
+    expect(screen.queryByRole("link", { name: "Manage categories" })).toBeNull();
+    expect(screen.queryByText(/change the order/)).toBeNull();
+  });
+
+  it("an empty list offers Staff no starting categories", async () => {
+    primeBusiness(merchantProfile({ myRole: "staff" }));
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("No dishes yet")).toBeTruthy();
+    expect(screen.getByText("The owner adds the dishes here. You'll mark them out of stock and back.")).toBeTruthy();
+    expect(screen.queryByText("+ Mains")).toBeNull();
+  });
+});

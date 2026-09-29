@@ -197,6 +197,47 @@ input:focus-visible,
   flex-shrink: 0;
 }
 
+/* Merchant web upgrade L4: who is signed in, at the end of the bar (PersonMenu). A 44px target on a
+ * 56/52px bar; on a phone it keeps the first name and sheds the role, which the menu repeats. */
+.kitchen-bar-person-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.kitchen-bar-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target-min);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.kitchen-bar-person-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kitchen-bar-person-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  box-shadow: var(--shadow-card);
+}
+
 /* ---- Left rail / bottom bar ---------------------------------------------------------------- */
 .kitchen-nav {
   width: 92px;
@@ -349,6 +390,26 @@ input:focus-visible,
   .kitchen-bar[data-offline="true"] .kitchen-bar-role {
     display: none;
   }
+  /* L4: on a phone the person keeps their first name and the role is in the menu it opens; the
+   * secondary "Merchant" label gives way to them, so the wordmark stays whole. Offline, the wider pill
+   * takes the name's room too, leaving the icon (a 44px target either way). */
+  .kitchen-bar[data-person="true"] .kitchen-bar-role {
+    display: none;
+  }
+  .kitchen-bar-person-role {
+    display: none;
+  }
+  .kitchen-bar-person {
+    padding: 0 10px;
+    min-width: var(--target-min);
+    justify-content: center;
+  }
+  .kitchen-bar-person-text {
+    max-width: 72px;
+  }
+  .kitchen-bar[data-offline="true"] .kitchen-bar-person-text {
+    display: none;
+  }
 
   .kitchen-page {
     padding: 14px 12px 20px;
@@ -435,6 +496,14 @@ input:focus-visible,
   select,
   textarea {
     font-size: 16px !important;
+  }
+}
+
+/* L4: below the 360px phone, a first name no longer fits beside the wordmark and the connection pill.
+ * The icon stays (the name is in its label and in the menu), so the wordmark is never cut. */
+@media (max-width: 359px) {
+  .kitchen-bar-person-text {
+    display: none;
   }
 }
 

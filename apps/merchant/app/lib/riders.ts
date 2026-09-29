@@ -1,4 +1,5 @@
 import { type MerchantPreferredRiderResponse, type MerchantRiderStatus, normalizePhone } from "@lynia/shared";
+import { whatsAppLink } from "./whatsapp";
 
 /**
  * Your riders' pure rules (merchant web upgrade L3, docs/designs/merchant-web-upgrade.md "L3"): the words
@@ -20,9 +21,9 @@ export function riderInviteMessage(label: string, businessName: string): string 
   return `Hi ${label}, it's ${businessName}. We'd like you to deliver for us on LyniaGo. Sign up as a rider with this number: ${RIDER_SIGNUP_URL}`;
 }
 
-/** `wa.me` wants international digits only; the API sends the number that way for exactly this. */
+/** The WhatsApp chat with the rider, the message ready to send. */
 export function riderInviteLink(invitePhone: string, text: string): string {
-  return `https://wa.me/${invitePhone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+  return whatsAppLink(invitePhone, text);
 }
 
 /** "12 deliveries for you · ★ 4.9", once they've worked for the business. */

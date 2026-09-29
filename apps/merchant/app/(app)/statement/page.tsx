@@ -4,16 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
+import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
 import { PayTag } from "../../components/queue/PayTag";
 import { cardStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { loadBusiness } from "../../lib/business";
 import { formatMoney } from "../../lib/money-input";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
 
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; today: MerchantEndOfDaySummaryResponse; statement: MerchantWeeklyStatementResponse }
+  // L4: a Staff member who reached the owner's statement by an old link.
+  | { status: "staff" }
   | { status: "error"; message: string };
 
 /** M4·9/M4·10 both hang a dated sub-line off the screen title ("Mon 21 – Sun 27 July", "Sunday 27
@@ -55,9 +59,15 @@ export default function StatementPage() {
   const refresh = useCallback(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    Promise.all([getTodaySummary(), getWeeklyStatement()])
-      .then(([today, statement]) => {
-        if (!cancelled) setState({ status: "ready", today, statement });
+    const load = async (): Promise<LoadState> => {
+      // L4: the statement and end-of-day totals are the owner's (the permission table).
+      if ((await loadBusiness())?.myRole === "staff") return { status: "staff" };
+      const [today, statement] = await Promise.all([getTodaySummary(), getWeeklyStatement()]);
+      return { status: "ready", today, statement };
+    };
+    load()
+      .then((next) => {
+        if (!cancelled) setState(next);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -77,6 +87,8 @@ export default function StatementPage() {
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your statement…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
+
+        {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the statement and the day&apos;s totals.</OwnerOnlyNotice>}
 
         {state.status === "ready" && (
           <>

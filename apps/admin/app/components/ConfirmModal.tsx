@@ -51,10 +51,18 @@ export interface ConfirmModalProps {
    */
   amount?: { label: string; prefix?: string; placeholder?: string; required?: boolean };
 
+  /**
+   * Optional single text input (e.g. the new owner's phone, merchant web upgrade L4) rendered above the
+   * note. Like `amount`, its value is NOT written to the audit row; it is surfaced to `onConfirm` as
+   * `text` for the caller's domain mutation.
+   */
+  textField?: { label: string; placeholder?: string; required?: boolean; inputMode?: "text" | "tel" };
+
   onConfirm?: (result: {
     reasonCode: string | null;
     note: string;
     amount: string;
+    text: string;
     /** Form-open idempotency key — stable across retries of ONE confirmed submit, fresh per modal-open.
      *  A money-moving caller (wallet credit) forwards this so a lost-response retry can't double-apply. */
     idempotencyKey: string;
@@ -80,6 +88,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
     danger = false,
     auditActor = "the signed-in admin",
     amount,
+    textField,
     onConfirm,
   } = props;
 
@@ -87,6 +96,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [amountVal, setAmountVal] = useState("");
+  const [textVal, setTextVal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   // Tracks the actual async lifetime of a confirm submit (set synchronously before the request starts,
@@ -106,6 +116,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   // A11y: stable ids so the dialog is labelled by its title, and the controls by their field labels.
   const titleId = useId();
   const amountId = useId();
+  const textId = useId();
   const noteId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   // Where focus was before the dialog opened — restored on close (WCAG 2.4.3).
@@ -166,6 +177,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
     setReason(null);
     setNote("");
     setAmountVal("");
+    setTextVal("");
     setError(null);
   }
 
@@ -174,7 +186,8 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const reasonOk = reasons.length === 0 || reason !== null;
   const noteOk = !noteRequired || note.trim().length > 0;
   const amountOk = !amount?.required || amountVal.trim().length > 0;
-  const canConfirm = reasonOk && noteOk && amountOk && !submitting;
+  const textOk = !textField?.required || textVal.trim().length > 0;
+  const canConfirm = reasonOk && noteOk && amountOk && textOk && !submitting;
 
   function confirm() {
     if (!canConfirm) return;
@@ -204,7 +217,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
         if (!auditInEndpoint) await submitAdminAction(fd);
         // Await the caller's domain mutation so a thrown server-action rejection surfaces here instead
         // of escaping unhandled — a failed KYC / settlement / refund write must NOT report success.
-        await onConfirm?.({ reasonCode: reason, note, amount: amountVal, idempotencyKey: formKey });
+        await onConfirm?.({ reasonCode: reason, note, amount: amountVal, text: textVal, idempotencyKey: formKey });
         setOpen(false);
         reset();
       } catch (e) {
@@ -299,6 +312,31 @@ export function ConfirmModal(props: ConfirmModalProps) {
                     }}
                   />
                 </div>
+              </>
+            ) : null}
+
+            {textField ? (
+              <>
+                <label className="field-label" htmlFor={textId}>
+                  {textField.label} {textField.required ? "— required" : "(optional)"}
+                </label>
+                <input
+                  id={textId}
+                  type={textField.inputMode === "tel" ? "tel" : "text"}
+                  inputMode={textField.inputMode ?? "text"}
+                  autoComplete="off"
+                  value={textVal}
+                  placeholder={textField.placeholder}
+                  onChange={(e) => setTextVal(e.target.value)}
+                  style={{
+                    width: "100%",
+                    border: "1px solid var(--line)",
+                    borderRadius: 12,
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    padding: "10px 12px",
+                  }}
+                />
               </>
             ) : null}
 

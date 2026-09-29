@@ -33,6 +33,20 @@ function reasonOf(body: unknown): string | undefined {
   return typeof reason === "string" ? reason : undefined;
 }
 
+/**
+ * Merchant web upgrade L4 (Team): a 403 `not_a_member` means the signed-in person isn't on the business
+ * any more (the owner removed them, or they left on another device). The shell listens, so a removed
+ * person's device signs out on their next tap and its order alarm stops (design doc "Shared devices").
+ */
+const membershipLostListeners = new Set<() => void>();
+
+export function onMembershipLost(listener: () => void): () => void {
+  membershipLostListeners.add(listener);
+  return () => {
+    membershipLostListeners.delete(listener);
+  };
+}
+
 /** Any 401 from an authenticated call — a definitively-dead session or a domain-level rejection —
  *  should send the merchant back to /login, mirroring the pattern every page's initial-load effect
  *  already applies (LC-D##: mutation catches on Hours/Shop/Menu were missing this, unlike their own
@@ -298,7 +312,9 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
     const message =
       (typeof (body as { message?: unknown } | null)?.message === "string" && (body as { message: string }).message) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message, reasonOf(body));
+    const reason = reasonOf(body);
+    if (res.status === 403 && reason === "not_a_member") for (const listener of membershipLostListeners) listener();
+    throw new ApiError(res.status, message, reason);
   }
   return (await res.json()) as T;
 }

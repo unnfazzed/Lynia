@@ -37,6 +37,12 @@ export function primeBusiness(business: MerchantProfileResponse): void {
   pending = Promise.resolve(business);
 }
 
+/** Whether this tab has known the person as a member of a business (L4: a later `not_a_member` then
+ *  means they were removed, not that they never had one). */
+export function hasKnownBusiness(): boolean {
+  return known !== null;
+}
+
 /** Forget it (sign-out, or tests). */
 export function clearBusinessCache(): void {
   known = null;

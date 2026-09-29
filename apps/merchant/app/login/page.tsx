@@ -7,6 +7,7 @@ import { Icon } from "../components/icons";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
+import { noBusinessPath } from "../lib/team-api";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
@@ -222,7 +223,8 @@ export default function LoginPage() {
 
 /**
  * Where a fresh sign-in lands (merchant web upgrade L1). Membership is read, never the token's role: a
- * number that isn't on a business yet goes to "Set up your business", and a shop — which takes no
+ * number that isn't on a business yet goes to Join when a team invited it (L4), otherwise to "Set up your
+ * business", and a shop — which takes no
  * customer orders, so has no Orders board — goes to its setup checklist. Everyone else goes back to
  * what they were opening (`next`), or to Orders. If the check itself fails, fall through to the normal
  * landing, whose own load shows the error with a Retry.
@@ -236,7 +238,7 @@ async function landingPath(next: string | null): Promise<string> {
     // A shop's home is Deliveries (L2), or its setup checklist on an API that can't book riders yet.
     return merchant.businessType === "shop" ? homePath(merchant) : fallback;
   } catch (err) {
-    return err instanceof ApiError && err.status === 403 ? "/onboarding" : fallback;
+    return err instanceof ApiError && err.status === 403 ? await noBusinessPath() : fallback;
   }
 }
 

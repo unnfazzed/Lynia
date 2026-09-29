@@ -35,7 +35,9 @@ export type IconName =
   | "locate"
   | "map-pin"
   | "package"
-  | "bike";
+  | "bike"
+  | "users"
+  | "user";
 
 const PATHS: Record<IconName, string[]> = {
   inbox: [
@@ -91,6 +93,14 @@ const PATHS: Record<IconName, string[]> = {
     "M16 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0",
     "M12 17.5V14l-3-3 4-3 2 3h2",
   ],
+  // Lucide `users` and `user` (Team, L4), their circles as arcs.
+  users: [
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2",
+    "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+    "M22 21v-2a4 4 0 0 0-3-3.87",
+    "M16 3.13a4 4 0 0 1 0 7.75",
+  ],
+  user: ["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"],
   "chevron-left": ["m15 18-6-6 6-6"],
   locate: ["M2 12h3", "M19 12h3", "M12 2v3", "M12 19v3", "M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0"],
   "map-pin": [

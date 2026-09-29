@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { MerchantCashRule, MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
+import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
 import { RetryableError } from "../../components/RetryableError";
@@ -129,7 +130,12 @@ export default function ShopPage() {
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
-        {state.status === "ready" && (
+        {/* L4: the whole profile is the owner's (the permission table). */}
+        {state.status === "ready" && state.profile.myRole === "staff" && (
+          <OwnerOnlyNotice>Only the owner changes the shop&apos;s details, its riders and its team.</OwnerOnlyNotice>
+        )}
+
+        {state.status === "ready" && state.profile.myRole !== "staff" && (
           <>
             <div>
               <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Shop profile</div>
@@ -383,6 +389,20 @@ export default function ShopPage() {
                 </Link>
               </div>
             )}
+
+            {/* L4: Team lives inside Shop for both types, owner only (D-46). */}
+            <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <Icon name="users" size={22} color="var(--accent-text)" />
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 17, fontWeight: 800 }}>Your team</div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.45 }}>
+                  Everyone who works with you signs in with their own phone.
+                </div>
+              </div>
+              <Link href="/team" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+                Manage team
+              </Link>
+            </div>
           </>
         )}
       </div>

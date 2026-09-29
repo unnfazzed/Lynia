@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveHandshake, setMerchantPilot } from "./actions";
+import { resolveHandshake, setMerchantPilot, transferMerchantOwner } from "./actions";
 
 /**
  * X1/R-05: the admin action that releases a frozen doorstep handshake — a rider's job lock and a
@@ -93,6 +93,31 @@ describe("setMerchantPilot (merchant web upgrade L1: the go-live switch)", () =>
     });
     const out = await setMerchantPilot("m-1", true, null, "");
     expect(out).toEqual({ ok: false, message: "This restaurant has no dish with a photo yet — its menu would be empty." });
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("transferMerchantOwner (merchant web upgrade L4: support hands a business over)", () => {
+  it("posts the new owner's phone and the required note, the reason leading it, then revalidates the profile", async () => {
+    const out = await transferMerchantOwner("m-1", " 0773 000 003 ", "Sold or handed over — both people confirmed", " saw Chipo's ID at the shop ");
+
+    const c = lastCall();
+    expect(c.url).toBe("https://api.test/admin/merchants/m-1/owner");
+    expect(c.method).toBe("POST");
+    expect(c.body).toEqual({ phone: "0773 000 003", note: "Sold or handed over — both people confirmed — saw Chipo's ID at the shop" });
+    expect(c.headers["X-Operator"]).toBe("alice@corp.com");
+    expect(out).toEqual({ ok: true });
+    expect(revalidateMock).toHaveBeenCalledWith("/merchants/m-1");
+  });
+
+  it("returns the API's refusal in its own words and revalidates nothing", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ reason: "member_elsewhere", message: "That number works at another business. They must leave it first." }),
+    });
+    const out = await transferMerchantOwner("m-1", "0773000003", null, "checked ID");
+    expect(out).toEqual({ ok: false, message: "That number works at another business. They must leave it first." });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });

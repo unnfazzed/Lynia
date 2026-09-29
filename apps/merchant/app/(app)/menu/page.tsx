@@ -30,7 +30,8 @@ import { countOf, useVocabulary } from "../../lib/vocabulary";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; categories: MerchantCategoryResponse[]; dishes: MerchantDishResponse[] }
+  // `staff` (L4): Staff mark items out of stock and back, and nothing else here (the permission table).
+  | { status: "ready"; categories: MerchantCategoryResponse[]; dishes: MerchantDishResponse[]; staff: boolean }
   | { status: "error"; message: string | null };
 
 type Sheet =
@@ -56,7 +57,7 @@ export default function MenuPage() {
   const refresh = useCallback(() => {
     // The business rides along (cached, never rejects) so the list first renders in the right words.
     Promise.all([listCategories(), listDishes(), loadBusiness()])
-      .then(([categories, dishes]) => setState({ status: "ready", categories, dishes }))
+      .then(([categories, dishes, business]) => setState({ status: "ready", categories, dishes, staff: business?.myRole === "staff" }))
       .catch((err: unknown) => {
         if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : null });
@@ -164,7 +165,14 @@ export default function MenuPage() {
           </div>
         )}
 
-        {state.status === "ready" && state.categories.length === 0 && (
+        {state.status === "ready" && state.staff && state.categories.length === 0 && (
+          <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: "clamp(20px, 6vw, 32px)" }}>
+            <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>No {v.items} yet</div>
+            <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5 }}>The owner adds the {v.items} here. You&apos;ll mark them out of stock and back.</div>
+          </div>
+        )}
+
+        {state.status === "ready" && !state.staff && state.categories.length === 0 && (
           <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: "clamp(20px, 6vw, 32px)" }}>
             <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>Start with a category</div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 }}>
@@ -193,31 +201,38 @@ export default function MenuPage() {
             <div className="kitchen-head" style={{ alignItems: "baseline", gap: 14 }}>
               <div className="kitchen-head-title">
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{v.catalog}</div>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{menuSummary(state.categories, state.dishes, v)}</div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
+                  {state.staff ? `Mark ${v.items} out of stock and back. Only the owner changes the ${v.catalogLower}.` : menuSummary(state.categories, state.dishes, v)}
+                </div>
               </div>
               {/* M4·2's own screen (r-merchant.jsx:998) — reorder, show/hide, delete-when-empty and
-               *  the customer-tab preview all live there rather than crowding this list. */}
-              <Link href="/menu/categories" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                Manage categories
-              </Link>
-              <button
-                type="button"
-                className="kitchen-head-action"
-                disabled={actionsDisabled}
-                onClick={() => setSheet({ kind: "category", category: null })}
-                style={{ ...ghostButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
-              >
-                + New category
-              </button>
-              <button
-                type="button"
-                className="kitchen-head-action"
-                disabled={actionsDisabled}
-                onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: state.categories[0]?.id })}
-                style={{ ...primaryButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
-              >
-                + Add {v.anItem}
-              </button>
+               *  the customer-tab preview all live there rather than crowding this list. Staff change
+               *  none of it (L4), so they see none of these. */}
+              {!state.staff && (
+                <>
+                  <Link href="/menu/categories" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+                    Manage categories
+                  </Link>
+                  <button
+                    type="button"
+                    className="kitchen-head-action"
+                    disabled={actionsDisabled}
+                    onClick={() => setSheet({ kind: "category", category: null })}
+                    style={{ ...ghostButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
+                  >
+                    + New category
+                  </button>
+                  <button
+                    type="button"
+                    className="kitchen-head-action"
+                    disabled={actionsDisabled}
+                    onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: state.categories[0]?.id })}
+                    style={{ ...primaryButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
+                  >
+                    + Add {v.anItem}
+                  </button>
+                </>
+              )}
             </div>
 
             {groupDishesByCategory(state.categories, state.dishes).map(({ category, dishes }) => (
@@ -232,14 +247,16 @@ export default function MenuPage() {
                       {countOf(dishes.length, v)} ·{" "}
                       {category.availableFrom && category.availableTo ? `${category.availableFrom} – ${category.availableTo}` : "All day"}
                     </span>
-                    <button
-                      type="button"
-                      disabled={actionsDisabled}
-                      onClick={() => setSheet({ kind: "category", category })}
-                      style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1, whiteSpace: "nowrap" }}
-                    >
-                      Edit category
-                    </button>
+                    {!state.staff && (
+                      <button
+                        type="button"
+                        disabled={actionsDisabled}
+                        onClick={() => setSheet({ kind: "category", category })}
+                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1, whiteSpace: "nowrap" }}
+                      >
+                        Edit category
+                      </button>
+                    )}
                   </span>
                 </div>
 
@@ -318,39 +335,45 @@ export default function MenuPage() {
                       >
                         {dish.outOfStock ? "Back in stock" : "Mark out of stock"}
                       </button>
-                      <button
-                        type="button"
-                        disabled={actionsDisabled}
-                        onClick={() => setSheet({ kind: "dish", dish })}
-                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
-                      >
-                        Edit
-                      </button>
+                      {!state.staff && (
+                        <button
+                          type="button"
+                          disabled={actionsDisabled}
+                          onClick={() => setSheet({ kind: "dish", dish })}
+                          style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
+                        >
+                          Edit
+                        </button>
+                      )}
                     </span>
                   </div>
                 ))}
 
-                <button
-                  type="button"
-                  disabled={actionsDisabled}
-                  onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: category.id })}
-                  style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "none", border: "none", cursor: "pointer", padding: "10px 0 0", opacity: actionsDisabled ? 0.5 : 1 }}
-                >
-                  + Add {v.item} here
-                </button>
+                {!state.staff && (
+                  <button
+                    type="button"
+                    disabled={actionsDisabled}
+                    onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: category.id })}
+                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "none", border: "none", cursor: "pointer", padding: "10px 0 0", opacity: actionsDisabled ? 0.5 : 1 }}
+                  >
+                    + Add {v.item} here
+                  </button>
+                )}
               </div>
             ))}
 
             {/* M4·1's closing line (r-merchant.jsx:990). Still no drag-to-move for DISHES between
              *  categories (a dish's category changes in its own editor); category order itself is now
              *  real and lives on M4·2. */}
-            <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "0 4px" }}>
-              Customers see these groups, in this order, as the tabs {v.onStorefront} —{" "}
-              <Link href="/menu/categories" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
-                change the order
-              </Link>
-              .
-            </div>
+            {!state.staff && (
+              <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "0 4px" }}>
+                Customers see these groups, in this order, as the tabs {v.onStorefront} —{" "}
+                <Link href="/menu/categories" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
+                  change the order
+                </Link>
+                .
+              </div>
+            )}
           </>
         )}
       </div>

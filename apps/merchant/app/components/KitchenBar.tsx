@@ -1,6 +1,8 @@
 "use client";
 
 import { useKitchenConnection } from "./KitchenConnectionProvider";
+import { PersonMenu } from "./PersonMenu";
+import { useBusiness } from "../lib/business";
 
 /**
  * Top bar shown on every authenticated screen (mirrors the gallery's `KitchenBar`,
@@ -18,13 +20,21 @@ import { useKitchenConnection } from "./KitchenConnectionProvider";
  * phone breakpoint and inline styles cannot carry a media query. The brand block is the only
  * flexible child, so a long status ("Offline (attempt 12)") shortens the wordmark instead of pushing
  * itself off-screen.
+ *
+ * Merchant web upgrade L4: the bar ends with who is signed in ("Tendai · Staff"), which opens "Switch
+ * person" and, for Staff, "Leave this business" (PersonMenu, D-46).
  */
 export function KitchenBar() {
-  const { reachability, alarm, wakeLock } = useKitchenConnection();
+  const { reachability, alarm, wakeLock, signOut } = useKitchenConnection();
+  const business = useBusiness();
   const showFlashFallback = alarm.armed && wakeLock.supported && !wakeLock.active;
 
   return (
-    <div className={`kitchen-bar${showFlashFallback ? " kitchen-bar-flashing" : ""}`} data-offline={!reachability.reachable}>
+    <div
+      className={`kitchen-bar${showFlashFallback ? " kitchen-bar-flashing" : ""}`}
+      data-offline={!reachability.reachable}
+      data-person={business ? true : undefined}
+    >
       {/* Dove + wordmark lockup, then the muted second line — the gallery's own KitchenBar
        *  (r-parts.jsx:596). eslint-disable: a static brand SVG from /public, not a content image. */}
       <span className="kitchen-bar-brand">
@@ -41,6 +51,7 @@ export function KitchenBar() {
       ) : (
         <span className="kitchen-bar-status kitchen-bar-status-offline">Offline (attempt {reachability.attempt})</span>
       )}
+      {business && <PersonMenu business={business} onSwitchPerson={signOut} />}
     </div>
   );
 }

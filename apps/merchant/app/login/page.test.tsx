@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "./page";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
 import { merchantProfile } from "../testing/fixtures";
+import { noBusinessPath } from "../lib/team-api";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), next: null as string | null }));
 vi.mock("next/navigation", () => ({
@@ -29,6 +30,9 @@ vi.mock("../lib/api-client", () => ({
   verifyOtp: vi.fn(),
   getMyMerchant: vi.fn(),
 }));
+
+// L4: whether a team has invited the number (Join) or not (the sign-up).
+vi.mock("../lib/team-api", () => ({ noBusinessPath: vi.fn(async () => "/onboarding") }));
 
 afterEach(() => {
   cleanup();
@@ -171,5 +175,13 @@ describe("Merchant kitchen sign-in — CF-01 double-submit guard", () => {
     });
 
     expect(verifyOtp).toHaveBeenCalledTimes(1);
+  });
+
+  it("a number a team invited lands on Join instead of the sign-up (L4)", async () => {
+    vi.mocked(verifyOtp).mockResolvedValue(SESSION);
+    vi.mocked(getMyMerchant).mockRejectedValue(new ApiError(403, "Not a member.", "not_a_member"));
+    vi.mocked(noBusinessPath).mockResolvedValueOnce("/join");
+    await signIn("whatsapp");
+    await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/join"));
   });
 });

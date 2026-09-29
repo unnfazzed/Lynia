@@ -6,6 +6,7 @@ import type { MerchantDishResponse, MerchantProfileResponse } from "@lynia/share
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Icon, type IconName } from "../../components/icons";
+import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
@@ -88,6 +89,17 @@ export default function SetupPage() {
     alarm.testRing();
     markAlarmTested(merchantId);
     setAlarmTested(true);
+  }
+
+  // L4: setting the business up is the owner's; Staff who land here get one line, in their own shell.
+  if (state.status === "ready" && state.profile.myRole === "staff") {
+    return (
+      <Kitchen active={state.profile.businessType === "shop" ? "deliveries" : "queue"}>
+        <div className="kitchen-page" style={{ overflow: "auto", height: "100%" }}>
+          <OwnerOnlyNotice>Only the owner sets up {state.profile.name}.</OwnerOnlyNotice>
+        </div>
+      </Kitchen>
+    );
   }
 
   if (state.status === "ready" && state.profile.businessType === "shop") {

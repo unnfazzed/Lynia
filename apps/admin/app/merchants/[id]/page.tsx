@@ -8,6 +8,7 @@ import { StatusPill, Pill } from "../../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconStore } from "../../components/icons";
 import { GoLiveButton } from "../GoLiveButton";
+import { OwnerTransferButton } from "../OwnerTransferButton";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
   opened: "Debt opened",
@@ -18,9 +19,9 @@ const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
 
 /** Merchant profile (X1): cash rule, pilot status, recent orders, and the full append-only
  *  collect-and-return debt-ledger trail (R-01/R-06/R-07) — the same evidence support needs to answer
- *  "why does this merchant show open debt". The one mutation is the go-live switch (merchant web upgrade
- *  L1, restaurants only), with the contact phone and pin ops checks before using it
- *  (docs/MERCHANT-GO-LIVE-RUNBOOK.md). There is no other merchant-standing mutation (no `accountStatus`
+ *  "why does this merchant show open debt". The mutations are the go-live switch (merchant web upgrade
+ *  L1, restaurants only), with the contact phone and pin ops checks before using it, and the handover to a
+ *  new owner (L4, after an identity check) — both in docs/MERCHANT-GO-LIVE-RUNBOOK.md. There is no other merchant-standing mutation (no `accountStatus`
  *  on Merchant) — cash-ban/suspension actions live on the customer (below) and rider (via the existing
  *  Riders console) records this debt ledger already produced. */
 export default async function MerchantProfilePage({
@@ -119,6 +120,7 @@ export default async function MerchantProfilePage({
           {m.pilotEnabled ? <Pill kind="good">pilot</Pill> : null}
         </span>
         <Conn connected={connected} />
+        <OwnerTransferButton merchantId={m.id} name={m.name} connected={connected} />
         {isShop ? null : <GoLiveButton merchantId={m.id} name={m.name} live={m.pilotEnabled} connected={connected} />}
       </header>
 

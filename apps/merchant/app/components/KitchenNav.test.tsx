@@ -52,4 +52,21 @@ describe("KitchenNav is type-aware (merchant web upgrade L2)", () => {
     render(<KitchenNav active="deliveries" />);
     expect(labels()).toEqual(["Deliveries", "Riders", "Items", "Shop"]);
   });
+
+  it("Staff get the permission table's nav: a restaurant's Orders, Menu, Hours and Help; a shop's without Shop (L4)", () => {
+    vi.mocked(supportWhatsAppUrl).mockReturnValue("https://wa.me/263770000000");
+    vi.mocked(useBusiness).mockReturnValue(merchantProfile({ myRole: "staff" }));
+    render(<KitchenNav active="queue" />);
+    expect(labels()).toEqual(["Orders", "Menu", "Hours", "Help"]);
+
+    cleanup();
+    vi.mocked(useBusiness).mockReturnValue(merchantProfile({ businessType: "shop", myRole: "staff" }));
+    render(<KitchenNav active="deliveries" />);
+    expect(labels()).toEqual(["Deliveries", "Riders", "Items", "Help"]);
+
+    cleanup();
+    vi.mocked(supportWhatsAppUrl).mockReturnValue(null);
+    render(<KitchenNav active="deliveries" />);
+    expect(labels()).toEqual(["Deliveries", "Riders", "Items"]);
+  });
 });
