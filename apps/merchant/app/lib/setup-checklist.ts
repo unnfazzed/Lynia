@@ -150,11 +150,14 @@ export function buildSetupState({
 
 /**
  * A shop's checklist (docs/designs/merchant-web-upgrade.md, "A shop's /setup checklist"). Each step goes
- * live with its layer: the pin and landmark are done at sign-up (L1); booking a rider is L2, and the
- * Items screen arrives with the shop's own nav in L2, so both are "Coming soon" here. There is no
- * go-live for a shop yet — customers find shops when LyniaGo Shops opens (L1.5) — so `live` is false.
+ * live with its layer: the pin and landmark are done at sign-up (L1); booking a rider (L2) is live once
+ * the API can book riders, and ticks with the first booking; the Items screen (L2's shop nav) ticks with
+ * the first item. There is no go-live for a shop yet — customers find shops when LyniaGo Shops opens
+ * (L1.5) — so `live` is false.
  */
-export function buildShopSetupState(): SetupState {
+export function buildShopSetupState(input: { bookingsOn: boolean; bookings: number; items: number } = { bookingsOn: false, bookings: 0, items: 0 }): SetupState {
+  const booked = input.bookings > 0;
+  const hasItems = input.items > 0;
   const items: SetupItem[] = [
     {
       key: "pin",
@@ -162,19 +165,29 @@ export function buildShopSetupState(): SetupState {
       detail: "Done when you signed up. Riders use them to find you.",
       done: true,
     },
-    {
-      key: "first_booking",
-      title: "Book your first rider",
-      detail: "Book a LyniaGo rider to take an order to your customer, right from here.",
-      done: false,
-      soon: true,
-    },
+    input.bookingsOn
+      ? {
+          key: "first_booking",
+          title: "Book your first rider",
+          detail: booked ? "Done. Your bookings are on Deliveries." : "Book a LyniaGo rider to take an order to your customer.",
+          done: booked,
+          action: booked ? { label: "See deliveries", href: "/deliveries" } : { label: "Book a rider", href: "/deliveries/new" },
+        }
+      : {
+          key: "first_booking",
+          title: "Book your first rider",
+          detail: "Book a LyniaGo rider to take an order to your customer, right from here.",
+          done: false,
+          soon: true,
+        },
     {
       key: "items",
       title: "Add your items",
-      detail: "Customers will see them when LyniaGo Shops opens.",
-      done: false,
-      soon: true,
+      detail: hasItems
+        ? `${input.items} item${input.items === 1 ? "" : "s"} added. Customers will see them when LyniaGo Shops opens.`
+        : "Customers will see them when LyniaGo Shops opens.",
+      done: hasItems,
+      action: { label: hasItems ? "Edit your items" : "Add items", href: "/menu" },
     },
   ];
   return { items, remaining: items.filter((i) => !i.done && i.action).length, live: false };

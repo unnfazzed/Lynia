@@ -59,6 +59,12 @@ describe("Set up your business (merchant web upgrade L1)", () => {
     vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "grocery" }));
     render(<OnboardingPage />);
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/setup"));
+
+    // From L2 a shop's home is Deliveries, once the API can book riders.
+    cleanup();
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "grocery", location: null }));
+    render(<OnboardingPage />);
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
   });
 
   it("step 1: Next waits for the type, and a shop also needs its kind", async () => {

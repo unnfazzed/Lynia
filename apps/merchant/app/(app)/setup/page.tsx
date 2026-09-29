@@ -9,6 +9,8 @@ import { Icon, type IconName } from "../../components/icons";
 import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { bookingsAvailable } from "../../lib/booking";
+import { listBookings } from "../../lib/bookings-api";
 import { getMerchantProfile, listDishes } from "../../lib/menu-api";
 import {
   buildSetupState,
@@ -34,7 +36,8 @@ import { shopKindLabel } from "../../lib/sign-up";
  */
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; profile: MerchantProfileResponse; dishes: MerchantDishResponse[] }
+  // `bookings`: how many the business has made; null where the API can't book riders yet (L2).
+  | { status: "ready"; profile: MerchantProfileResponse; dishes: MerchantDishResponse[]; bookings: number | null }
   | { status: "error"; message: string };
 
 const ICONS: Record<SetupItemKey, IconName> = {
@@ -55,8 +58,12 @@ export default function SetupPage() {
   const refresh = useCallback(() => {
     setState({ status: "loading" });
     Promise.all([getMerchantProfile(), listDishes()])
-      .then(([profile, dishes]) => {
-        setState({ status: "ready", profile, dishes });
+      .then(async ([profile, dishes]) => {
+        // A shop's "Book your first rider" ticks with its first booking (L2). Best effort: a failed
+        // read just leaves the step untick'd.
+        const bookings =
+          profile.businessType === "shop" && bookingsAvailable(profile) ? await listBookings().then((b) => b.length, () => 0) : null;
+        setState({ status: "ready", profile, dishes, bookings });
         setAlarmTested(readAlarmTested(profile.id));
       })
       .catch((err: unknown) => {
@@ -76,7 +83,7 @@ export default function SetupPage() {
   }
 
   if (state.status === "ready" && state.profile.businessType === "shop") {
-    return <ShopSetup profile={state.profile} onSignOut={signOut} />;
+    return <ShopSetup profile={state.profile} items={state.dishes.length} bookings={state.bookings} onSignOut={signOut} />;
   }
 
   const setup = state.status === "ready" ? buildSetupState({ profile: state.profile, dishes: state.dishes, alarmTested }) : null;
@@ -152,22 +159,27 @@ export default function SetupPage() {
   );
 }
 
-/** A shop's `/setup` (merchant web upgrade L1): the login card's frame, not the kitchen shell. */
-function ShopSetup({ profile, onSignOut }: { profile: MerchantProfileResponse; onSignOut: () => void }) {
-  const setup = buildShopSetupState();
+/** A shop's `/setup` (merchant web upgrade L1, inside the shop's own shell from L2). */
+function ShopSetup({
+  profile,
+  items,
+  bookings,
+  onSignOut,
+}: {
+  profile: MerchantProfileResponse;
+  items: number;
+  bookings: number | null;
+  onSignOut: () => void;
+}) {
+  const setup = buildShopSetupState({ bookingsOn: bookings !== null, bookings: bookings ?? 0, items });
   return (
-    <div className="onboarding-screen">
-      <div className="onboarding-card">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a static brand SVG from /public */}
-          <img src="/brand/lyniago-mark.svg" alt="" width={32} height={32} />
-          <span style={{ fontFamily: "var(--font-wordmark)", fontSize: 22, fontWeight: 600 }}>
-            Lynia<span style={{ color: "var(--accent-700)" }}>Go</span>
-          </span>
-        </div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Set up {profile.name}</h1>
-        <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 4, marginBottom: 16 }}>
-          {profile.shopKind ? `${shopKindLabel(profile.shopKind)} · Shop` : "Shop"}
+    <Kitchen active="setup">
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 12, overflow: "auto", height: "100%", maxWidth: 720 }}>
+        <div>
+          <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Set up {profile.name}</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
+            {profile.shopKind ? `${shopKindLabel(profile.shopKind)} · Shop` : "Shop"}
+          </div>
         </div>
 
         <div style={{ display: "grid", gap: 12 }}>
@@ -179,7 +191,6 @@ function ShopSetup({ profile, onSignOut }: { profile: MerchantProfileResponse; o
         <div
           style={{
             ...cardStyle,
-            marginTop: 12,
             display: "flex",
             gap: 12,
             alignItems: "flex-start",
@@ -193,13 +204,13 @@ function ShopSetup({ profile, onSignOut }: { profile: MerchantProfileResponse; o
           </div>
         </div>
 
-        <div style={{ marginTop: 16, textAlign: "center" }}>
+        <div>
           <button type="button" onClick={onSignOut} style={ghostButtonStyle}>
             Sign out
           </button>
         </div>
       </div>
-    </div>
+    </Kitchen>
   );
 }
 

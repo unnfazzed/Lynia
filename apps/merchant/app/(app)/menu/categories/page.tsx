@@ -10,8 +10,10 @@ import { CategoryEditorSheet, type CategorySave } from "../../../components/menu
 import { RetryableError } from "../../../components/RetryableError";
 import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
+import { loadBusiness } from "../../../lib/business";
 import { planCategoryMove, sortedCategories } from "../../../lib/menu-groups";
 import { createCategory, deleteCategory, listCategories, updateCategory } from "../../../lib/menu-api";
+import { countOf, useVocabulary } from "../../../lib/vocabulary";
 
 /**
  * M4·2 `category_manage` (r-merchant.jsx:998-1040) — "This is exactly what customers see as the tabs
@@ -28,6 +30,8 @@ type Sheet = { kind: "none" } | { kind: "category"; category: MerchantCategoryRe
 
 export default function CategoryManagePage() {
   const { actionsDisabled, signOut } = useKitchenConnection();
+  // A shop's words (merchant web upgrade L2, D-44).
+  const v = useVocabulary();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [sheet, setSheet] = useState<Sheet>({ kind: "none" });
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -48,7 +52,8 @@ export default function CategoryManagePage() {
 
   const refresh = useCallback(async () => {
     try {
-      const categories = await listCategories();
+      // The business rides along (cached, never rejects) so the list first renders in the right words.
+      const [categories] = await Promise.all([listCategories(), loadBusiness()]);
       setState({ status: "ready", categories });
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
@@ -147,11 +152,11 @@ export default function CategoryManagePage() {
               <div className="kitchen-head-title">
                 <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Categories</div>
                 <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
-                  This is exactly what customers see as the tabs on your menu — same names, same order.
+                  This is exactly what customers see as the tabs {v.onStorefront} — same names, same order.
                 </div>
               </div>
               <Link href="/menu" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                Back to the menu
+                {v.backToCatalog}
               </Link>
               <button
                 type="button"
@@ -176,7 +181,7 @@ export default function CategoryManagePage() {
               <div style={{ ...cardStyle, flex: 1, minWidth: "min(420px, 100%)", padding: "4px 18px" }}>
                 {ordered.length === 0 && (
                   <div style={{ fontSize: 13.5, color: "var(--muted)", padding: "18px 0" }}>
-                    No categories yet. Create one and your dishes get somewhere to live.
+                    No categories yet. Create one and your {v.items} get somewhere to live.
                   </div>
                 )}
                 {ordered.map((c, idx) => {
@@ -217,7 +222,7 @@ export default function CategoryManagePage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 16, fontWeight: 700, color: c.hidden ? "var(--muted)" : "var(--ink)" }}>{c.name}</div>
                         <div style={{ fontSize: 12.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                          {c.dishCount} dish{c.dishCount === 1 ? "" : "es"} ·{" "}
+                          {countOf(c.dishCount, v)} ·{" "}
                           {c.availableFrom && c.availableTo ? `${c.availableFrom}–${c.availableTo}` : "All day"}
                         </div>
                       </div>
@@ -265,8 +270,8 @@ export default function CategoryManagePage() {
                          *  before the tap, not instead of it. */}
                         <button
                           type="button"
-                          aria-label={c.dishCount > 0 ? `Delete ${c.name} — move or delete its ${c.dishCount} dishes first` : `Delete ${c.name}`}
-                          title={c.dishCount > 0 ? "Move or delete its dishes first" : "Delete this empty category"}
+                          aria-label={c.dishCount > 0 ? `Delete ${c.name} — move or delete its ${countOf(c.dishCount, v)} first` : `Delete ${c.name}`}
+                          title={c.dishCount > 0 ? `Move or delete its ${v.items} first` : "Delete this empty category"}
                           disabled={rowDisabled || c.dishCount > 0}
                           onClick={() => void onDelete(c)}
                           style={iconButtonStyle(rowDisabled || c.dishCount > 0)}
@@ -282,7 +287,7 @@ export default function CategoryManagePage() {
               <div className="kitchen-aside" style={{ ...cardStyle, padding: 20 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>How customers see it</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                  {visible.length === 0 && <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Nothing is showing — your menu has no tabs right now.</span>}
+                  {visible.length === 0 && <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Nothing is showing — {v.storefront} has no tabs right now.</span>}
                   {visible.map((c, i) => (
                     <span
                       key={c.id}
@@ -301,7 +306,7 @@ export default function CategoryManagePage() {
                   ))}
                 </div>
                 <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                  A hidden category and its dishes disappear from the app immediately — orders already placed are untouched. Deleting is
+                  A hidden category and its {v.items} disappear from the app immediately — orders already placed are untouched. Deleting is
                   only possible once a category is empty.
                 </div>
               </div>

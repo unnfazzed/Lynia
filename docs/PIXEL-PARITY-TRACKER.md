@@ -434,17 +434,17 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | 👁 | M1·1 | `RM login` | Phone + OTP login  (RV M0·1) | merchant login align (`docs/parity/PHASE6-merchant.md`, `tools/parity/out/phase6_merchant.png`); D-43 (PROPOSED, merchant web upgrade L1): title "Sign in" and the channel-aware code line — structure unchanged | |
-| ⬜ | M1·2 | `RM setup` | First login · setup  (RV M0·2) | D-43 (PROPOSED, merchant web upgrade L1): the not-live line names the call within a day; a shop gets its own undrawn checklist | |
+| ⬜ | M1·2 | `RM setup` | First login · setup  (RV M0·2) | D-43 (PROPOSED, merchant web upgrade L1): the not-live line names the call within a day; a shop gets its own undrawn checklist. D-44 (PROPOSED, merchant web upgrade L2): the shop checklist sits in the shop's own shell, and its steps go live | |
 | ⬜ | M1·3 | `RM reboot` | Tablet rebooted mid-shift  (RV M0·b1) | | |
 
 ### M2 · The queue
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): the Book a rider strip under the heading | |
 | ⬜ | M2·2 | `RM queue_loading` | Loading  (RV M1·2) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M2·3 | `RM queue_new` | NEW ORDER · alarm  (RV M1·3) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
-| ⬜ | M2·4 | `RM queue_board` | Kitchen board · 3 live  (RV M1·4) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M2·4 | `RM queue_board` | Kitchen board · 3 live  (RV M1·4) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): the Book a rider strip ("N bookings live · View") under the heading | |
 | ⬜ | M2·5 | `RM two_orders` | Two orders at once  (RV M1·b1) | | |
 | ⬜ | M2·6 | `RM offline` | Connection lost  (RV M1·b2) | | |
 | ⬜ | M2·7 | `RM offline_order` | Order arrived offline  (RV M1·b3) | | |
@@ -484,12 +484,12 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M5·1 | `RM catalog` | Menu · grouped by category  (RV M4·1) | gated `/menu` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M5·1 | `RM catalog` | Menu · grouped by category  (RV M4·1) | gated `/menu` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): a shop sees it as Items, in its own words; a restaurant's is unchanged | |
 | ⬜ | M5·2 | `RM category_manage` | Categories · reorder & hide  (RV M4·2) | | |
 | ⬜ | M5·3 | `RM category_edit` | New category  (RV M4·3) | | |
 | ⬜ | M5·4 | `RM category_rename` | Edit / delete category  (RV M4·4) | | |
-| ⬜ | M5·5 | `RM catalog_empty` | No categories yet  (RV M4·b1) | | |
-| ⬜ | M5·6 | `RM item_edit` | Edit dish · photo required  (RV M4·5) | | |
+| ⬜ | M5·5 | `RM catalog_empty` | No categories yet  (RV M4·b1) | D-44 (PROPOSED, merchant web upgrade L2): a shop gets its kind's starting categories | |
+| ⬜ | M5·6 | `RM item_edit` | Edit dish · photo required  (RV M4·5) | D-44 (PROPOSED, merchant web upgrade L2): "Edit item" for a shop | |
 | ⬜ | M5·7 | `RM dish_photo` | Dish photo · crop  (RV M4·6) | | |
 | ⬜ | M5·8 | `RM dish_draft` | Draft · needs a photo  (RV M4·b2) | | |
 | ⬜ | M5·9 | `RM oos_sheet` | Out of stock today  (RV M4·7) | | |
@@ -501,7 +501,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M6·1 | `RM shop` | Shop profile  (RV M5·1) | gated `/shop` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
+| ⬜ | M6·1 | `RM shop` | Shop profile  (RV M5·1) | gated `/shop` route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): a shop's reads "What you sell" and has no cash-rule card | |
 | ⬜ | M6·2 | `RM cash_rule` | Your cash rule  (RV M5·4) | | |
 | ⬜ | M6·3 | `RM shop_crop` | Position the banner  (RV M5·2) | | |
 | ⬜ | M6·4 | `RM shop_upload` | Uploading · compressing  (RV M5·3) | | |

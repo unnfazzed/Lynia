@@ -344,6 +344,10 @@ export interface MerchantDetail extends Merchant {
   /** LC-D-T1: last entry id of this debt-ledger page, for `?debtCursor=` — present only when older
    *  entries exist. */
   debtLedgerNextCursor: string | null;
+  /** Merchant web upgrade L2: the customer account every booking is made as (created at the first
+   *  booking, so null before it). Holding it holds the whole business's bookings. Absent on an API that
+   *  can't book riders yet. */
+  bookingAccount?: { id: string; onHold: boolean } | null;
 }
 
 /* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */

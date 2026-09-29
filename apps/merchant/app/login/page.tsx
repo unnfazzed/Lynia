@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
 import { Icon } from "../components/icons";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
+import { homePath } from "../lib/booking";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
@@ -232,7 +233,8 @@ async function landingPath(next: string | null): Promise<string> {
   const fallback = isSafeMerchantRedirectPath(next) ? next : "/queue";
   try {
     const merchant = await getMyMerchant();
-    return merchant.businessType === "shop" ? "/setup" : fallback;
+    // A shop's home is Deliveries (L2), or its setup checklist on an API that can't book riders yet.
+    return merchant.businessType === "shop" ? homePath(merchant) : fallback;
   } catch (err) {
     return err instanceof ApiError && err.status === 403 ? "/onboarding" : fallback;
   }

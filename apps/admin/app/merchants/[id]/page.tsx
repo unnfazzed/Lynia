@@ -198,6 +198,22 @@ export default async function MerchantProfilePage({
                 },
                 { label: "Cash rule", value: m.cashRule === "collect_and_return" ? "Collect & return" : "Pay upfront" },
                 { label: "Busy mode", value: m.busyMode ? "On (+10 min prep)" : "Off" },
+                // Merchant web upgrade L2 (R2-5): the whole business's bookings are held by holding the
+                // one customer account they're all made as, with the customer hold that already exists.
+                ...(m.bookingAccount !== undefined
+                  ? [
+                      {
+                        label: "Book a rider",
+                        value: m.bookingAccount ? (
+                          <a href={`/customers/${m.bookingAccount.id}`} style={{ color: tokens.color.accentText }}>
+                            {m.bookingAccount.onHold ? "On hold — lift it on the booking account →" : "Active — hold it on the booking account →"}
+                          </a>
+                        ) : (
+                          "No bookings yet"
+                        ),
+                      },
+                    ]
+                  : []),
                 { label: "Joined", value: m.joined },
                 ...(m.description ? [{ label: "Description", value: m.description }] : []),
               ]}
@@ -207,7 +223,8 @@ export default async function MerchantProfilePage({
             No standing action lives on the merchant itself — a rider who doesn&apos;t return owed cash is suspended
             from the <a href="/riders" style={{ color: tokens.color.accentText }}>Riders</a> console (the ledger
             row below names them); a customer who refuses to pay is cash-banned from their own{" "}
-            <a href="/customers" style={{ color: tokens.color.accentText }}>Customers</a> profile.
+            <a href="/customers" style={{ color: tokens.color.accentText }}>Customers</a> profile. The business&apos;s
+            bookings are held on its booking account (Book a rider, above).
           </div>
         </div>
       </div>

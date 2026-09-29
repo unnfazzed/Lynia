@@ -2,10 +2,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SetupPage from "./page";
+import { listBookings } from "../../lib/bookings-api";
 import { getMerchantProfile, listDishes } from "../../lib/menu-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn() }));
+vi.mock("../../lib/bookings-api", () => ({ listBookings: vi.fn() }));
 
 // One stable value, as the real provider memoizes it: the page's load depends on `signOut`, so a fresh
 // function per render would re-run the load on every render.
@@ -14,7 +16,8 @@ vi.mock("../../components/KitchenConnectionProvider", () => {
   return { useKitchenConnection: () => value };
 });
 
-// The kitchen shell is the restaurant's chrome; a stand-in makes "is it there?" a one-line check.
+// The shell (the restaurant's kitchen, and from L2 the shop's own nav); a stand-in makes "is it there?" a
+// one-line check.
 vi.mock("../../components/Kitchen", () => ({
   Kitchen: ({ children }: { children: React.ReactNode }) => <div data-testid="kitchen-shell">{children}</div>,
 }));
@@ -25,7 +28,7 @@ afterEach(() => {
 });
 
 describe("/setup is type-aware (merchant web upgrade L1)", () => {
-  it("a shop gets its own checklist, outside the kitchen shell, with no go-live promise", async () => {
+  it("a shop gets its own checklist in its own shell, with no go-live promise (API that can't book riders yet)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ name: "Mbare Auto Spares", businessType: "shop", shopKind: "auto_parts" }));
     vi.mocked(listDishes).mockResolvedValue([]);
 
@@ -35,10 +38,32 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
     expect(screen.getByText("Car parts · Shop")).toBeTruthy();
     expect(screen.getByText("Your pin and landmark")).toBeTruthy();
     expect(screen.getByText("Book your first rider")).toBeTruthy();
-    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    // Only booking waits on the API; items are live work from L2.
+    expect(screen.getAllByText("Coming soon")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Add items" }).getAttribute("href")).toBe("/menu");
     expect(screen.getByText("Customers will find you when LyniaGo Shops opens. We'll check your items first.")).toBeTruthy();
-    expect(screen.queryByTestId("kitchen-shell")).toBeNull();
+    expect(screen.getByTestId("kitchen-shell")).toBeTruthy();
     expect(screen.queryByText("Test the order alarm")).toBeNull();
+    expect(listBookings).not.toHaveBeenCalled();
+  });
+
+  it("a shop on an API that books riders gets Book a rider as live work, ticked by its first booking", async () => {
+    const shop = merchantProfile({ name: "Mbare Auto Spares", businessType: "shop", shopKind: "auto_parts", location: null });
+    vi.mocked(getMerchantProfile).mockResolvedValue(shop);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(listBookings).mockResolvedValue([]);
+
+    render(<SetupPage />);
+
+    expect((await screen.findByRole("link", { name: "Book a rider" })).getAttribute("href")).toBe("/deliveries/new");
+    expect(screen.queryByText("Coming soon")).toBeNull();
+
+    cleanup();
+    vi.mocked(listBookings).mockResolvedValue([{ id: "b1" } as never]);
+    render(<SetupPage />);
+
+    expect((await screen.findByRole("link", { name: "See deliveries" })).getAttribute("href")).toBe("/deliveries");
+    expect(screen.getByText("Done. Your bookings are on Deliveries.")).toBeTruthy();
   });
 
   it("a restaurant keeps the drawn checklist, and learns when LyniaGo will call to switch it on", async () => {

@@ -41,6 +41,13 @@ vi.mock("../../components/queue/QueueBoard", () => ({
   QueueBoard: () => <div>queue board</div>,
 }));
 
+// L2's strip on Orders is self-contained; a stand-in makes "is it there?" a one-line check.
+vi.mock("../../components/bookings/BookingsStrip", () => ({
+  BookingsStrip: () => <div>bookings strip</div>,
+}));
+
+const PIN = { point: { lat: -17.83, lng: 31.05 }, landmark: "Opposite Mbare market", contactPhone: "+263771234567" };
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -96,7 +103,7 @@ describe("QueuePage routes by membership (merchant web upgrade L1)", () => {
     expect(screen.queryByText("This number isn't on a business on LyniaGo yet.")).toBeNull();
   });
 
-  it("a shop goes to its setup checklist instead of an Orders board", async () => {
+  it("a shop goes to its setup checklist instead of an Orders board (API that can't book riders yet)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
 
     render(<QueuePage />);
@@ -105,12 +112,30 @@ describe("QueuePage routes by membership (merchant web upgrade L1)", () => {
     expect(screen.queryByText("Orders")).toBeNull();
   });
 
-  it("a restaurant stays on its Orders board", async () => {
+  it("a shop's home is Deliveries once the API can book riders (L2)", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "auto_parts", location: PIN }));
+
+    render(<QueuePage />);
+
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
+  });
+
+  it("a restaurant stays on its Orders board, with no bookings strip on an API that can't book riders", async () => {
     vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile());
 
     render(<QueuePage />);
 
     await screen.findByText("Test Kitchen");
     expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("bookings strip")).toBeNull();
+  });
+
+  it("a restaurant gets Book a rider on Orders once the API can book riders (L2)", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ location: PIN }));
+
+    render(<QueuePage />);
+
+    expect(await screen.findByText("bookings strip")).toBeTruthy();
+    expect(screen.getByText("queue board")).toBeTruthy();
   });
 });

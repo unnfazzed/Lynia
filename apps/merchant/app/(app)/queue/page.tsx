@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BookingsStrip } from "../../components/bookings/BookingsStrip";
 import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
 import { SetupBanner } from "../../components/SetupBanner";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
+import { bookingsAvailable, homePath } from "../../lib/booking";
+import { primeBusiness } from "../../lib/business";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 import { ghostButtonStyle } from "../../components/queue/styles";
 
@@ -32,10 +35,11 @@ export default function QueuePage() {
     getMyMerchant()
       .then((merchant) => {
         if (cancelled) return;
-        // A shop takes no customer orders yet, so it has no Orders board: its home in L1 is the
-        // type-aware setup checklist (merchant web upgrade; L2 moves a shop's home to Deliveries).
+        primeBusiness(merchant);
+        // A shop takes no customer orders yet, so it has no Orders board: its home is Deliveries (merchant
+        // web upgrade L2), or the setup checklist on an API that can't book riders yet.
         if (merchant.businessType === "shop") {
-          router.replace("/setup");
+          router.replace(homePath(merchant));
           return;
         }
         setState({ status: "ready", merchant });
@@ -131,6 +135,8 @@ export default function QueuePage() {
             </div>
             {/* M0·2's way in — renders nothing once the checklist is done (SetupBanner). */}
             <SetupBanner />
+            {/* L2: Book a rider for phone orders, and the live bookings (D-44). */}
+            {bookingsAvailable(state.merchant) && <BookingsStrip />}
             <div className="queue-board-slot">
               <QueueBoard orders={orders} disabled={actionsDisabled} refetch={refetch} />
             </div>

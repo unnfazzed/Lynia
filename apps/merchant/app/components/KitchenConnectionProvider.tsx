@@ -8,6 +8,7 @@ import { useWakeLock } from "./use-wake-lock";
 import { API_BASE_URL } from "../lib/config";
 import { createMerchantQueueSocket } from "../lib/queue-socket";
 import { getReachabilityStore, type ReachabilityState } from "../lib/reachability";
+import { clearBusinessCache } from "../lib/business";
 import { clearMerchantSession, loadMerchantSession, type MerchantSession } from "../lib/session";
 
 export interface KitchenConnectionValue {
@@ -140,6 +141,7 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   const signOut = useCallback(() => {
     clearMerchantSession();
+    clearBusinessCache();
     setSession(null);
     router.replace("/login");
   }, [router]);

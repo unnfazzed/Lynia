@@ -61,9 +61,14 @@ export function planCategoryMove(
  *  can't let them add a dish into nothing, so these are one-tap category creates. */
 export const STARTER_CATEGORY_NAMES = ["Mains", "Sides", "Drinks", "Breakfast"] as const;
 
-export function menuSummary(categories: MerchantCategoryResponse[], dishes: MerchantDishResponse[]): string {
+/** `nouns` is the business's word for what it sells (lib/vocabulary): a shop's summary counts items. */
+export function menuSummary(
+  categories: MerchantCategoryResponse[],
+  dishes: MerchantDishResponse[],
+  nouns: { item: string; items: string } = { item: "dish", items: "dishes" },
+): string {
   const catWord = categories.length === 1 ? "category" : "categories";
-  const dishWord = dishes.length === 1 ? "dish" : "dishes";
+  const dishWord = dishes.length === 1 ? nouns.item : nouns.items;
   const oosCount = dishes.filter((d) => d.outOfStock).length;
   const draftCount = dishes.filter((d) => d.isDraft).length;
   const parts = [`${categories.length} ${catWord}`, `${dishes.length} ${dishWord}`];

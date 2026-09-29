@@ -248,3 +248,8 @@ starts from reasoning, not archaeology.
 - **Context:** Ledger D-43 §3.
 - **Effort:** human S (pick the number) / CC S. **Priority:** P2.
 - **Trigger / blocked by:** the owner choosing the support number. Build it with L5's Help item.
+- **Status (L2, 2026-09-29):** the plumbing is built: the build arg, `SUPPORT_WHATSAPP` in
+  `apps/merchant/app/lib/config.ts`, a shop's Help nav item and the "message LyniaGo" link on a picked-up
+  booking. All of it stays hidden until the owner sets the `MERCHANT_SUPPORT_WHATSAPP` repository
+  variable (international digits, e.g. `263771234567`) and the merchant web redeploys. The restaurant
+  go-live card's button and restaurant Help land with L5.

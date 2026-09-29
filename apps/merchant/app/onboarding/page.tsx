@@ -9,6 +9,7 @@ import { LocationPin } from "../components/LocationPin";
 import { RetryableError } from "../components/RetryableError";
 import { disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../components/queue/styles";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
+import { homePath } from "../lib/booking";
 import { API_BASE_URL } from "../lib/config";
 import { HARARE_CBD, insideServiceArea } from "../lib/geo";
 import { clearMerchantSession } from "../lib/session";
@@ -77,7 +78,7 @@ export default function OnboardingPage() {
     getMyMerchant()
       .then((merchant) => {
         // Already on a business (a bookmark, or the back button after signing up): go to its home.
-        if (!cancelled) router.replace(merchant.businessType === "shop" ? "/setup" : "/queue");
+        if (!cancelled) router.replace(homePath(merchant));
       })
       .catch((err: unknown) => {
         if (cancelled) return;

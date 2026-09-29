@@ -91,6 +91,19 @@ describe("Sign-in for restaurants and shops (merchant web upgrade L1, D-43)", ()
     await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/menu"));
   });
 
+  it("a shop lands on Deliveries once the API can book riders (L2)", async () => {
+    vi.mocked(verifyOtp).mockResolvedValue(SESSION);
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(
+      merchantProfile({
+        businessType: "shop",
+        shopKind: "hardware",
+        location: { point: { lat: -17.83, lng: 31.05 }, landmark: "Opposite Mbare market", contactPhone: "+263771234567" },
+      }),
+    );
+    await signIn();
+    await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries"));
+  });
+
   it("says what to do when a shared device has hit the new-account cap", async () => {
     vi.mocked(verifyOtp).mockRejectedValue(new ApiError(429, "Too many requests — try again later", "device_signup_cap"));
     await signIn("whatsapp");

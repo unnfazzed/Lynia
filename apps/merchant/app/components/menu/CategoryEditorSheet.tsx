@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { MerchantCategoryResponse } from "@lynia/shared";
 import { isValidWindow } from "../../lib/hours";
+import { countOf, useVocabulary } from "../../lib/vocabulary";
 import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
 
 export interface CategorySave {
@@ -36,6 +37,7 @@ export function CategoryEditorSheet({
   onDelete?: () => void;
   onCancel: () => void;
 }) {
+  const words = useVocabulary();
   const [name, setName] = useState(category?.name ?? "");
   const [timeLimited, setTimeLimited] = useState(!!category?.availableFrom);
   const [from, setFrom] = useState(category?.availableFrom ?? "07:00");
@@ -57,13 +59,13 @@ export function CategoryEditorSheet({
             <>
               Renaming changes the tab customers see straight away.
               {category.dishCount === 1
-                ? " The 1 dish inside it stays where it is."
+                ? ` The 1 ${words.item} inside it stays where it is.`
                 : category.dishCount > 1
-                  ? ` The ${category.dishCount} dishes inside it stay where they are.`
+                  ? ` The ${countOf(category.dishCount, words)} inside it stay where they are.`
                   : ""}
             </>
           ) : (
-            <>Customers see this name as a tab on your menu. Keep it short — &ldquo;Breakfast&rdquo;, &ldquo;Combos&rdquo;, &ldquo;Kids&rdquo;.</>
+            <>{words.categoryNameHint}</>
           )}
         </div>
 
@@ -137,7 +139,7 @@ export function CategoryEditorSheet({
             <span style={{ width: 40, height: 24, borderRadius: 999, background: hidden ? "var(--danger)" : "var(--line)", position: "relative", flexShrink: 0 }}>
               <span style={{ position: "absolute", top: 2, left: hidden ? 18 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
             </span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Hidden — customers don&apos;t see it or its dishes</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Hidden — customers don&apos;t see it or its {words.items}</span>
           </button>
         )}
 
@@ -170,7 +172,7 @@ export function CategoryEditorSheet({
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ flex: 1, fontSize: 12.5, color: "var(--muted)", lineHeight: 1.4 }}>
                 {category.dishCount > 0
-                  ? `Delete this category — available once it's empty. Move or delete its ${category.dishCount} dish${category.dishCount === 1 ? "" : "es"} first.`
+                  ? `Delete this category — available once it's empty. Move or delete its ${countOf(category.dishCount, words)} first.`
                   : "Delete this category — it's empty."}
               </div>
               <button

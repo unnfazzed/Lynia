@@ -9,6 +9,7 @@ import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
+import { vocabulary } from "../../lib/vocabulary";
 
 // D-32's own budget for the shop's cover banner/logo (mirrors MAX_BANNER_PHOTO_BYTES in
 // apps/api/src/uploads/uploads.controller.ts).
@@ -115,6 +116,9 @@ export default function ShopPage() {
   }
 
   const disabled = actionsDisabled || saving;
+  // A shop's own words (merchant web upgrade L2, D-44); a restaurant's are the drawn M5 copy.
+  const v = state.status === "ready" ? vocabulary(state.profile.businessType, state.profile.shopKind) : vocabulary(null);
+  const isShop = state.status === "ready" && state.profile.businessType === "shop";
 
   return (
     <Kitchen active="shop">
@@ -127,7 +131,7 @@ export default function ShopPage() {
           <>
             <div>
               <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Shop profile</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>This is your shop front. Changes go live straight away.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{v.profileSub}</div>
             </div>
 
             <div className="kitchen-split">
@@ -174,7 +178,7 @@ export default function ShopPage() {
 
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 7 }}>WHAT YOU COOK · up to 3</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 7 }}>{v.whatYouOffer.toUpperCase()} · up to 3</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       {tags.map((t) => (
                         <span
@@ -283,82 +287,83 @@ export default function ShopPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
-                  A real photo of your food beats a logo on the banner. Shoot in daylight, no flash — and keep the left
-                  edge clear, your logo sits there.
-                </div>
+                <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>{v.bannerPhotoTip}</div>
               </div>
             </div>
 
-            <div style={cardStyle}>
-              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>How riders pay you</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, marginBottom: 14 }}>
-                Applies to every cash order · mobile-money orders are unaffected
-              </div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {CASH_RULES.map((rule) => {
-                  const on = state.profile.cashRule === rule.value;
-                  return (
-                    <button
-                      key={rule.value}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => onChooseCashRule(rule.value)}
-                      aria-pressed={on}
-                      style={{
-                        flex: 1,
-                        // Two abreast as drawn; one per line once the pair can no longer fit.
-                        minWidth: 240,
-                        textAlign: "left",
-                        padding: "16px 18px",
-                        borderRadius: 14,
-                        border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                        background: on ? "var(--accent-wash)" : "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <span
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
-                            border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                            background: on ? "var(--accent)" : "#fff",
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span style={{ fontSize: 17, fontWeight: 800 }}>{rule.title}</span>
-                        {rule.recommended && (
+            {/* How riders pay you is the rule for customers' cash orders. Shops take none yet (L1.5), so a
+             *  shop doesn't see a choice that changes nothing (D-44). */}
+            {!isShop && (
+              <div style={cardStyle}>
+                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>How riders pay you</div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, marginBottom: 14 }}>
+                  Applies to every cash order · mobile-money orders are unaffected
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {CASH_RULES.map((rule) => {
+                    const on = state.profile.cashRule === rule.value;
+                    return (
+                      <button
+                        key={rule.value}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onChooseCashRule(rule.value)}
+                        aria-pressed={on}
+                        style={{
+                          flex: 1,
+                          // Two abreast as drawn; one per line once the pair can no longer fit.
+                          minWidth: 240,
+                          textAlign: "left",
+                          padding: "16px 18px",
+                          borderRadius: 14,
+                          border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                          background: on ? "var(--accent-wash)" : "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                           <span
                             style={{
-                              fontSize: 11.5,
-                              fontWeight: 800,
-                              letterSpacing: ".04em",
-                              color: "var(--accent-text)",
-                              // Kit sits this pill on the selected card's accent wash; invert it when
-                              // the card itself is white so the pill never disappears into it.
-                              background: on ? "var(--bg)" : "var(--accent-wash)",
-                              borderRadius: 999,
-                              padding: "3px 10px",
+                              width: 22,
+                              height: 22,
+                              borderRadius: "50%",
+                              border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                              background: on ? "var(--accent)" : "#fff",
+                              flexShrink: 0,
                             }}
-                          >
-                            RECOMMENDED
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 13.5, color: "var(--ink)", marginTop: 8, lineHeight: 1.55 }}>{rule.body}</div>
-                      <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{rule.note}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 12, padding: "12px 14px", background: "var(--surface)", borderRadius: 12 }}>
-                <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                  Changes apply from your next order. Riders see your rule on the offer before they accept.
+                          />
+                          <span style={{ fontSize: 17, fontWeight: 800 }}>{rule.title}</span>
+                          {rule.recommended && (
+                            <span
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                letterSpacing: ".04em",
+                                color: "var(--accent-text)",
+                                // Kit sits this pill on the selected card's accent wash; invert it when
+                                // the card itself is white so the pill never disappears into it.
+                                background: on ? "var(--bg)" : "var(--accent-wash)",
+                                borderRadius: 999,
+                                padding: "3px 10px",
+                              }}
+                            >
+                              RECOMMENDED
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13.5, color: "var(--ink)", marginTop: 8, lineHeight: 1.55 }}>{rule.body}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{rule.note}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 12, padding: "12px 14px", background: "var(--surface)", borderRadius: 12 }}>
+                  <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                    Changes apply from your next order. Riders see your rule on the offer before they accept.
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>

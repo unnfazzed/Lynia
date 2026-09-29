@@ -1,13 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useBusiness } from "../lib/business";
+import { supportWhatsAppUrl } from "../lib/config";
 import { Icon, type IconName } from "./icons";
+
+interface NavItem {
+  id: string;
+  label: string;
+  href: string;
+  icon: IconName;
+  external?: boolean;
+}
 
 /** Left rail (bottom bar on phone — see .kitchen-nav's media query in globals.css). Every item is now
  *  a real route (E4 built Menu/Shop/Hours, closing out the placeholders E1/E2/E3 left inert). Icon +
  *  label per item, matching the gallery's `KitchenNav`
  *  (packages/design/explorations/restaurants/r-parts.jsx:616 — inbox/utensils/store/clock/receipt). */
-const NAV_ITEMS: { id: string; label: string; href: string; icon: IconName }[] = [
+const RESTAURANT_ITEMS: NavItem[] = [
   { id: "queue", label: "Orders", href: "/queue", icon: "inbox" },
   { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },
   { id: "shop", label: "Shop", href: "/shop", icon: "store" },
@@ -15,15 +25,38 @@ const NAV_ITEMS: { id: string; label: string; href: string; icon: IconName }[] =
   { id: "money", label: "Statement", href: "/statement", icon: "receipt" },
 ];
 
+/** A shop's own set (merchant web upgrade L2, design doc L5 "Navigation"): Deliveries first — booking a
+ *  rider is what a shop does here — then Items and Shop, and Help when support's WhatsApp is set.
+ *  Undrawn, ledgered as D-44. Riders joins in L3. */
+function shopItems(): NavItem[] {
+  const help = supportWhatsAppUrl();
+  return [
+    { id: "deliveries", label: "Deliveries", href: "/deliveries", icon: "navigation" },
+    { id: "catalog", label: "Items", href: "/menu", icon: "package" },
+    { id: "shop", label: "Shop", href: "/shop", icon: "store" },
+    ...(help ? [{ id: "help", label: "Help", href: help, icon: "circle-alert" as const, external: true }] : []),
+  ];
+}
+
 export function KitchenNav({ active }: { active: string }) {
+  const business = useBusiness();
+  // Restaurants are the default until the business is known, so a kitchen never sees its drawn nav flicker.
+  const items = business?.businessType === "shop" ? shopItems() : RESTAURANT_ITEMS;
   return (
-    <nav className="kitchen-nav" aria-label="Kitchen sections">
-      {NAV_ITEMS.map((item) => (
-        <Link key={item.id} href={item.href} className="kitchen-nav-item" data-active={item.id === active}>
-          <Icon name={item.icon} size={19} />
-          {item.label}
-        </Link>
-      ))}
+    <nav className="kitchen-nav" aria-label={business?.businessType === "shop" ? "Shop sections" : "Kitchen sections"}>
+      {items.map((item) =>
+        item.external ? (
+          <a key={item.id} href={item.href} target="_blank" rel="noreferrer" className="kitchen-nav-item" data-active={false}>
+            <Icon name={item.icon} size={19} />
+            {item.label}
+          </a>
+        ) : (
+          <Link key={item.id} href={item.href} className="kitchen-nav-item" data-active={item.id === active}>
+            <Icon name={item.icon} size={19} />
+            {item.label}
+          </Link>
+        ),
+      )}
     </nav>
   );
 }
