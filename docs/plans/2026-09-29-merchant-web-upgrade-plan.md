@@ -15,6 +15,16 @@
 
 > Where this doc and the code disagree, **the code wins**. Reconcile and flag it.
 
+**Office-hours outcome (2026-09-29, owner-approved)**, design doc `docs/designs/merchant-web-upgrade.md`:
+
+- **Premise 1:** self-serve sign-up **plus an ops go-live switch**, so the switch moves into the first layer.
+- **Premise 2:** shops get **Book a rider AND the item catalogue** ("Both now"), with photos required for
+  every item, shops included.
+- **Premise 3:** two roles, Owner + Staff.
+- **Premise 4:** merchant side now; the customer Shops section is the next project.
+- **Approach:** B, "Everything, layered". §5 is re-layered to L1 front door → L2 team → L3 Book a rider →
+  L4 shop words + kit fixes.
+
 ---
 
 ## 1. Ground truth: what exists today
@@ -128,13 +138,14 @@ Consequences, all intended:
 
 Existing owners are backfilled as `owner` rows in the migration. No existing login changes.
 
-**D3 · Two roles, not a permissions matrix.**
+**D3 · Two roles, not a permissions matrix.** *(Office hours P3: approved.)*
 
 | | Owner | Staff |
 |---|---|---|
 | Take orders: accept, reject, payment confirm, ready, pickup | ✅ | ✅ |
 | Mark an item out of / back in stock | ✅ | ✅ |
 | Busy mode | ✅ | ✅ |
+| Book a rider (D9) | ✅ | ✅ |
 | Add / edit / delete items, prices, categories | ✅ | ❌ |
 | Hours, shop profile, location, cash rule | ✅ | ❌ |
 | Statement / money | ✅ | ❌ |
@@ -163,7 +174,10 @@ It lands on the existing `/setup` checklist (M1·2 "First login · setup"). The 
 member therefore cannot mistake it for their old shop.
 
 Go-live stays a LyniaGo decision (`pilotEnabled`). Self-serve sign-up makes a *dormant* shop. Ops
-verifies it and switches it on. The setup checklist already says so.
+verifies it and switches it on. The setup checklist already says so. *(Office hours P1.)* **The switch
+ships in the same layer as sign-up:** `PATCH /admin/merchants/:id/pilot`, admin-guarded and
+audit-logged, plus a console button. That is the RCA's fix #1. Without it, a self-serve shop could only
+go live through a database write.
 
 **D6 · One vocabulary switch.** A single `vocabulary(businessType)` module owns every noun that
 differs: Menu ↔ Products, dish ↔ item, kitchen ↔ shop, "What you cook" ↔ "What you sell", prep ↔
@@ -182,30 +196,69 @@ app in four places the app never built. Those are parity work, not deviations:
 
 **D8 · Shops never appear as restaurants.** The customer restaurant API gets a `businessType =
 restaurant` filter now, and `placeOrder` refuses a shop. Shop discovery in the customer app is a
-separate, later surface (§5 Phase 3). Until it ships, shops sign up, build their catalog and wait
-dormant, exactly like a pre-pilot restaurant today.
+separate, later surface (§5 Phase 3). Until it ships, a shop's **catalogue** waits dormant, but the
+shop itself isn't idle: see D9.
+
+**D9 · Book a rider: the shop's day-one product.** *(Office hours P2 "Both now", from the second
+opinion.)* Every pain in the owner's status quo ("WhatsApp + informal couriers … price haggled, no
+tracking or proof") is a courier pain, and the **Send rails already fix it**.
+- `POST /orders` needs only a signed-in profile that isn't held; no customer-role gate (verified in
+  `orders.service.ts`).
+- Riders are broadcast, `quoteFare()` gives one price, status is live, and the 6-digit delivery code is
+  the proof.
+
+The merchant web gets a **Book a rider** screen for shops and restaurants alike:
+1. **Pickup** is the business's saved location.
+2. **Drop-off** comes from the buyer's WhatsApp location link, plus a landmark and the buyer's phone.
+3. **Fare** is prefilled from `quoteFare()`.
+4. The merchant picks a rider from the offers (name, rating, ETA).
+5. **"Send the code to the buyer on WhatsApp"** passes on the delivery code.
+
+It works the day a shop signs up, needs no customer app, and the Play listing isn't live. The booking is a
+parcel order owned by the person who booked it.
 
 ---
 
 ## 5. Scope and phasing
 
-**Phase 1: this PR (dormant-safe, merge-on-green).**
-- Migration `0053`: `merchants.business_type` (NOT NULL DEFAULT `restaurant`, metadata-only on PG16),
-  `merchants.shop_kind` (nullable), `merchant_members` (new table + owner backfill).
-- `MerchantAccessService` + DB-backed `MerchantGuard` + `@OwnerOnly()`; the lookup util, tracking
-  socket and `become` moved to membership.
-- Team API: `GET/POST /merchant/team`, `DELETE /merchant/team/:id` (owner-only, max 15 people,
-  throttled, one shop per phone).
-- `become` takes `{ name, businessType, shopKind?, location? }`, creates the owner row, no role flip.
-- Customer restaurant reads + `placeOrder` scoped to `businessType = restaurant`.
-- OOS durations: `today | hour | indefinite`.
-- `x-device-id` on the CORS allow-list; merchant web sends a stable per-browser device id on verify.
-- Merchant web: WhatsApp copy, sign-up flow, Team page, vocabulary, role-aware nav, top-bar name + live
-  count, Help, the three-option OOS sheet, location step.
+**Phase 1 (approach B, "Everything, layered").** Each layer is usable without the next. All of it is
+behind the existing `RESTAURANTS_ENABLED` kill switch.
 
-**Phase 2: next.** Pause 30 min / Close for today (server `pausedUntil` + customer list + `placeOrder`
-+ mobile OTA) · admin go-live toggle (`PATCH /admin/merchants/:id/pilot`, the RCA's fix #1) · staff
-activity trail (who accepted which order).
+*L1 — Front door*
+- `x-device-id` goes on the CORS allow-list, and the merchant web sends a stable per-browser device id
+  on verify. The sign-in copy names WhatsApp, driven by `deliveryChannel`.
+- Migration `0053`:
+  - `merchants.business_type` (NOT NULL DEFAULT `restaurant`, metadata-only on PG16);
+  - `merchants.shop_kind` (nullable);
+  - `merchant_members` (new table plus an owner backfill).
+- `become` takes `{ name, businessType, shopKind?, location }`, creates the owner row, and **flips no
+  role**.
+- Sign-up flow in the web: What do you sell? → kind → name + location → `/setup`.
+- **Admin go-live switch:** `PATCH /admin/merchants/:id/pilot`, audit-logged, plus a console button.
+  The admin list shows the business type.
+- Customer restaurant reads and `placeOrder` are scoped to `businessType = restaurant`.
+
+*L2 — Team*
+- `MerchantAccessService`, a DB-backed `MerchantGuard` and `@OwnerOnly()`. The lookup util, the
+  tracking socket and `become` move to membership.
+- Team API: `GET/POST /merchant/team` and `DELETE /merchant/team/:id`. Owner-only, at most 15 people,
+  throttled, one business per phone.
+- Team page (add by phone, remove, share the sign-in link on WhatsApp) and role-aware nav.
+
+*L3 — Book a rider* (D9)
+- A booking screen on the existing parcel API (`POST /orders`, offers, select), with drop-off from a
+  WhatsApp location link.
+- The delivery code is shared to the buyer on WhatsApp.
+- A Today list of bookings.
+
+*L4 — Shop words + kit fixes*
+- A `vocabulary(businessType)` module, with starter categories per shop kind.
+- OOS durations `today | hour | indefinite` and the three-option sheet.
+- The top bar shows the shop's name. **Help** in the nav opens WhatsApp support.
+
+**Phase 2: next.**
+- Pause 30 min / Close for today (server `pausedUntil`, the customer list, `placeOrder`, a mobile OTA).
+- A staff activity trail (who accepted which order).
 
 **Phase 3: the shop customer surface.** Customer app Shops tab / tiles fed by `GET /shops?kind=`,
 shop menus, shop search. Pharmacy prescription items stay out until MCAZ/PCZ sign-off (plan
