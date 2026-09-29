@@ -1243,7 +1243,7 @@
 > unexplained; and a FINISHED submission still does not prove the binary *runs* — that remains
 > `docs/QA-DEVICE-CHECKLIST.md`, on a handset, by a human.
 >
-> **Status (2026-09-28 — API 36: v0.50.1 / vc 39 is on the `Closed testing` track.)**
+> **Status (2026-09-29 — v0.51.0 / vc 40 is on the `Closed testing` track, and the Android map works again.)**
 >
 > Since 2026-08-31 Play requires app updates to target API 36. React Native 0.76 can't simply
 > retarget: under 36, Android 16 stops calling `onBackPressed()`, and the back button stops reaching
@@ -1252,11 +1252,12 @@
 > as EAS build `15e221af` (v0.50.1 / vc 39), and submission `32465ccc` FINISHED on `Closed testing`
 > (the "Build 39" entry in §8). Every build from vc 39 on targets 36.
 >
-> **OTA works again, but only for testers who have installed vc 39.** vc 39's runtime is
-> `5d04edb3…` (hashed with the EAS `preview` environment loaded). An OTA from `main` lands on it only
-> while no native input has changed since `285caa85`. `mobile-ota.yml`'s preflight (`REL-02`) still
-> checks that before publishing. The next native change, the iOS config included
-> (`docs/APP-STORE-SUBMISSION.md` B9), needs another store build.
+> **OTA reaches vc 40 only.** vc 40's runtime is `db601ead…`, hashed with the EAS `preview`
+> environment loaded, which now holds the `lyniago-app` Maps key. An OTA from `main` lands on it only
+> while no native input has changed since `d41227f`. Testers still on vc 39 (`5d04edb3…`) no longer
+> match `main`: they need the Play update. `mobile-ota.yml`'s preflight (`REL-02`) checks this before
+> publishing, and since `REL-04` it can read the builds' runtimes again. The next native change, the
+> iOS config included (`docs/APP-STORE-SUBMISSION.md` B9), needs another store build.
 >
 > The first sideload build from it (`Android Test APK` run 36414633349) found a Gradle Metaspace OOM
 > that hung the build instead of failing it (`SDK54-07`). It was fixed in the same PR, before any EAS
@@ -1891,11 +1892,11 @@ key cannot travel by OTA (`REL-01`), so this is a store build.
   36555101503).
 - **What it carries.** The new Maps key, the Places API (New) client (#974, already on vc 39 by OTA),
   the stale-search race fix (#977) and the Zimbabwe box for the phone-geocoder fallback (#976).
-- **Still owed.** Play's review first: the `closed` submit profile sets only the track, so EAS
-  creates a completed release, and testers see it only after Play approves it. Ten minutes after
-  submission the owner still saw the track as not updated. Then a tester seeing map tiles on vc 40. A
-  blank map there points at the key's console settings (the SHA-1 or the Maps SDK service), and neither
-  needs a new build to change.
+- **Play's review.** The `closed` submit profile sets only the track, so EAS creates a completed
+  release, and testers see it only after Play approves it. Publishing overview showed the release as
+  "Changes in review" ("Closed testing - Closed testing, 0.51.0, Start full rollout"). Managed
+  publishing is off, so it went out when approved, the same day.
+- **Confirmed.** The owner saw map tiles on vc 40, which closes MOB-MAP-03 and MOB-MAP-02.
 
 ---
 
