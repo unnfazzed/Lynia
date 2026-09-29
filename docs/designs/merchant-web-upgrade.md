@@ -177,6 +177,8 @@ business's own riders come third because they make the wedge work with the couri
      acceptance time is stored on the owner's team row.
    - Business type is **fixed after sign-up**; changing it is a support job, and the screen says so.
    - Pharmacies see "Over-the-counter products only for now".
+   - A number whose rider account is banned or suspended, or whose account is on hold, can't set up a
+     business (OV-5).
    - After sign-up the business lands on **`/setup`**, whose checklist depends on its type from L1 on.
      A restaurant sees today's restaurant checklist. A shop sees the shop checklist (L5 below), with
      "Book your first rider" live from L2.
@@ -233,15 +235,20 @@ business's own riders come third because they make the wedge work with the couri
     the booking as "Booked by Tendai". The Phase 2 staff activity trail builds on it.
   - **Holds** (R2-5). Ops can hold a whole business's bookings by holding its booking account, using the
     customer hold that already exists. The admin merchant page links to it. The booking endpoint also
-    refuses a team member whose own account is on hold.
+    applies Send's per-person checks to the team member booking: their own hold, and a banned or
+    suspended rider account (OV-5).
 - **Pickup.** The business's pin, landmark and contact phone.
 - **Drop-off, v1.**
   - Paste the location link the buyer sent. Coordinates are read if the link contains them: Google Maps
     long links, `geo:`, plain "lat, lng".
   - Otherwise, and always as an option, drop a pin on a map. The map is Leaflet with OpenStreetMap tiles
     and attribution, centred on the business.
-  - Resolving short links like `maps.app.goo.gl` on the server is an eng-review option, not v1. It is
-    SSRF-sensitive.
+  - **Short links are resolved on the server in v1** (OV-6). A buyer's phone shares Google Maps as a
+    `maps.app.goo.gl` link, and a WhatsApp location opens into exactly that, so it's the format that will
+    arrive most. The API follows the redirect for an allow-listed host only (`maps.app.goo.gl`,
+    `goo.gl/maps`), over https, at most two hops, reading only the `Location` header with a 3-second
+    timeout, and parses the coordinates from the Google Maps URL it lands on. Anything else is refused,
+    so there is no open fetch to abuse.
   - Send's service area applies: pickup and drop-off must both be inside the 25 km corridor.
 - **Required fields.** Buyer's phone, landmark, what's going, and what it's worth.
 - **Fare.** Prefilled from `quoteFare()` (straight-line distance, $1.50 + $0.60/km) and editable, as in
@@ -319,6 +326,8 @@ business's own riders come third because they make the wedge work with the couri
     six-item nav stays as it is.
   - The owner adds a rider with a **name** (the business's own label, e.g. "Blessing") and the **phone
     number the rider signs in to LyniaGo with**.
+  - A number on the business's own team can't be added as its rider. An offer from a team member on the
+    business's own booking is refused at pick, because they could deliver to themselves (OV-5).
   - A business can keep up to 20. Adds are rate-limited and audit-logged.
   - Staff can see the list; only the owner adds or removes.
 - **What the business sees about a number.** Deliberately little, so the list can't be used to look people
@@ -332,13 +341,16 @@ business's own riders come third because they make the wedge work with the couri
 - **How "preferred" ranks.** Preferred never overrides eligibility: KYC, suspension or ban, holds, one
   active ride, and the cash-debt locks all still apply. Within that, preferred riders rank higher, balanced
   against distance, rating and reliability.
-  - **Book a rider (the Send broadcast).**
-    - The business's preferred riders who are online get the booking even beyond the normal nearby radius,
-      up to 10 km.
-    - Their offers carry a **"Your rider"** tag.
+  - **Book a rider (the Send broadcast).** Send's broadcast is unchanged: riders see a booking on their
+    board when they are within its widening radius (5 km, then 8 km at 30 s, 12 km at 60 s).
+    - A preferred rider's offer carries a **"Your rider"** tag.
     - `rankOffers` gains a preferred bonus, so a preferred offer is listed first unless another offer is
       clearly better on fare and ETA together.
     - The business still sees every offer and picks.
+    - *Dropped at the CEO review:* an extra push to preferred riders up to 10 km away. A rider opening that
+      push lands on a 5 km board that doesn't show the job yet, and the push would stop Send's own later
+      push reaching them (OV-2). Reach for a business's own riders beyond Send's radius is a later,
+      Send-side change (TODO-6).
   - **Restaurant auto-dispatch** (one rider offered at a time). The `DispatchStrategy` seam gets the
     merchant's preferred riders.
     - Within the current search radius, an eligible preferred rider is offered first **unless they are more
@@ -415,7 +427,8 @@ business's own riders come third because they make the wedge work with the couri
 
 **The shop shell ships in L2, not here** (R2-8). A shop that signs up after L1 lands on its type-aware
 `/setup`. From L2 it has its own nav and words on every screen it uses: Deliveries, Items and Shop. The
-founder sends the sign-up link to shops only once L2 is live, and pilot week 1 starts after L3.
+founder sends the sign-up link to shops only once L2 is live. Pilot week 1 can start then; L3 should land
+before a business's first week ends, so the riders criterion can be measured (OV-12).
 
 - **Vocabulary.** A `vocabulary(businessType)` module swaps Menu ↔ Items, dish ↔ item, kitchen ↔ shop,
   "What you cook" ↔ "What you sell", and sets starter categories per kind. It lands in L2 with the shop
@@ -470,13 +483,13 @@ the premises is a new default.
 |---|---|---|
 | 1 | Book a rider needs no go-live; it runs at Send's trust level (value cap, disclaimer, holds). | auto |
 | 2 | Bookings belong to the business through its **booking account** (customer of record); team members act through merchant-scoped endpoints; who booked is recorded. Replaces the draft's `booked_by_merchant_id`. | auto |
-| 3 | Drop-off v1 is link coordinates or a map pin (Leaflet + OSM). Short-link resolution is deferred. | auto |
+| 3 | Drop-off v1 is a pasted link (long links parsed in the browser; `maps.app.goo.gl` short links resolved by the API against a strict allow-list) or a map pin (Leaflet + OSM). | auto (reopened by OV-6) |
 | 4 | Invites need acceptance and expire after 14 days. One business per phone, resolved at Join, never revealed at invite. | auto |
 | 5 | Team lives inside Shop. The restaurant nav stays the mock's six items. | auto |
 | 6 | No repair of already-flipped `Profile.role` values in this build. | auto |
 | 7 | Pause / close for today is deferred to Phase 2. | auto |
 | 8 | "Simplify the restaurant side" means the list in L5. | auto |
-| 9 | Your riders: coarse statuses only and no name before a job; no rider consent in v1 (opt-out is Phase 2); 10 km reach for Book a rider; 2 km cold-food guardrail for restaurants; Riders is a shop nav item and lives inside Shop for restaurants. | auto |
+| 9 | Your riders: coarse statuses only and no name before a job; no rider consent in v1 (opt-out is Phase 2); the "Your rider" tag and ranking bonus on Book a rider, no extra push or reach (OV-2); 2 km cold-food guardrail for restaurants; team members can't be a business's riders; Riders is a shop nav item and lives inside Shop for restaurants. | auto |
 | 10 | Build order puts Book a rider (L2) ahead of Team (L4), because it is what pilot week 1 measures. | auto |
 | 11 | No cash-on-delivery in v1. | auto |
 | 12 | No Web Push in v1; the booking screen asks the merchant to stay for the 90-second window and polls. | auto |
@@ -485,11 +498,13 @@ the premises is a new default.
 | 15 | Shops don't enter the go-live queue until the Shops section ships; the switch refuses them. | auto |
 | 16 | Prohibited goods: a rider reports and doesn't cancel; ops cancels (no strike, no re-broadcast) and holds the business. A rider-app refusal button is Phase 2. | auto |
 | 17 | One migration per layer (L1 `0053` … L4 `0056`). | auto |
+| 18 | Each layer ships as an **API PR first, then a web PR** merged only after the API release is at 100% in production. The merchant web deploys on its own on every push to main (OV-1). | auto |
+| 19 | A web PR that adds a new deviation (D-43 onward) opens with the entry marked PROPOSED and a screenshot sheet, and merges once the owner approves it. API PRs merge on green (OV-11; CLAUDE.md: deviations are "each approved by the user"). | auto |
 
 ## Open Questions
 
-1. **Short-link resolution.** Should the server resolve `maps.app.goo.gl` short links against a strict host
-   allowlist? This is an eng-review choice.
+1. ~~**Short-link resolution.**~~ Settled at the CEO review: yes, in v1, against a strict allow-list (L2,
+   Decision 3).
 2. **Merchant terms.** Who writes the merchant terms and privacy notice, and by when? The website's Terms
    link is still `#` (D-42).
 3. **Web Push.** Does Phase 2 add Web Push for offers and orders on a backgrounded phone?

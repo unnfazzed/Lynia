@@ -184,20 +184,36 @@ existing Send services **as that account**. What this buys, structurally rather 
 - Send's re-broadcast copies `customerId`, so a rider's cancel keeps the booking the business's (R2-2);
 - holding the booking account (the existing customer hold) stops the whole business (R2-5);
 - riders see the business's name as the sender.
-Two small Send-side touches, neither importing merchant code (the `express-no-merchant-coupling`
-depcruise rule): the snapshot's sender phone for a `business:` customer is the pickup contact phone, and
-the shared `isBusinessBookingAccountPhone()` helper names the convention. **Who booked** is recorded in
-`merchant_bookings`. The UI polls (3 s while finding a rider, 15 s after); a merchant socket feed is
-later. (auto)
+Because the booking account is the customer of record, Send's per-person checks would look at it, not
+at the person booking (OV-5). So the booking endpoint applies them to the team member too: their own
+hold, and a banned or suspended rider account (as `OrdersService.create` does, `orders.service.ts:173-193`).
+At pick it refuses an offer from one of the business's own members (who could otherwise deliver to
+themselves, since the business holds the code).
+
+Small Send-side touches, none importing merchant code (the `express-no-merchant-coupling` depcruise
+rule):
+- the snapshot's sender phone for a `business:` customer is the pickup contact phone;
+- `OrderLifecycleService.cancel` takes an optional narrower allowed-status set, checked inside its own
+  transaction. Merchant cancels pass the pre-pickup set, so a pickup landing mid-request can't be
+  cancelled (OV-8);
+- `OffersModule` exports `OffersService` (OV-7);
+- the shared `isBusinessBookingAccountPhone()` helper names the convention, and the admin order, issue
+  and customer views use it to show "Business: {name}" and to leave booking accounts out of customer
+  lists and KPIs (OV-9).
+
+`merchant_bookings` records who booked, who picked and who cancelled. The UI polls (3 s while finding a
+rider, 15 s after); a merchant socket feed is later. (auto)
 
 **D10 · Your riders.** `merchant_preferred_riders` (business, E.164 phone, label, added by, when),
 matched to riders by phone when used. Preferred never bends eligibility. All of it lives on the merchant
 side:
-- **Book a rider:** after `OrdersService.create`, the booking service pushes the job to the business's
-  eligible, online preferred riders within 10 km (the same eligibility SQL as `nearbyRiders`), through the
-  existing FCM path and the broadcast dedup set. Offers from them carry `preferred: true` in the
-  merchant offer list, and `rankOffers` gains an optional preferred bonus that the merchant web applies
-  (rankOffers already runs client-side only).
+- **Book a rider:** Send's broadcast is unchanged. Offers from the business's preferred riders carry
+  `preferred: true` in the merchant offer list, and `rankOffers` gains an optional preferred bonus that
+  the merchant web applies (`rankOffers` already runs client-side only). The draft's extra push to
+  preferred riders up to 10 km away is dropped (OV-2). A rider 5–10 km out lands on a 5 km board that
+  doesn't list the job for 30–60 s (`apps/mobile/app/rider/(tabs)/index.tsx:694`,
+  `orders.service.ts:563`), and being in the sent set would stop Send's own later push (TODO-6).
+- A business's own team members can't be its preferred riders.
 - **Restaurant auto-dispatch:** `DispatchStrategy.pickCandidate` receives the merchant's preferred rider
   ids and offers an eligible preferred rider first unless they are more than 2 km farther than the
   nearest eligible rider; ties by distance then rating.
@@ -208,20 +224,28 @@ side:
 ## 5. Scope and phasing
 
 **Phase 1 (approach B, "Everything, layered"), re-layered by the design doc and this CEO review.** Each
-layer is its own PR with its own migration, usable without the next, behind the existing
-`RESTAURANTS_ENABLED` kill switch (which therefore also gates shop bookings; §11 F1.4). *(Superseded
+layer ships as **two PRs** (OV-1): an **API PR** (migration, API, shared contracts) that merges on green,
+then a **web PR** (merchant web and admin console) merged only once the API release is at 100% in
+production. `deploy-merchant-azure.yml` deploys the web on every push to main that touches
+`apps/merchant/**` or `packages/shared/**`, independent of the API's staging gate and canary. A web PR
+that adds a D-43+ deviation also waits for the owner's approval of its screenshot sheet (OV-11). Each
+layer is usable without the next, behind the existing `RESTAURANTS_ENABLED` kill switch (which therefore
+also gates shop bookings; §11 F1.4). *(Superseded
 order, for history: L1 front door → L2 team → L3 Book a rider → L4 words. The office-hours design moved
 Book a rider ahead of Team because it is what the pilot's week 1 measures.)*
 
 *L1 — Front door* (migration `0053`)
-- `x-device-id` on the CORS allow-list; the merchant web sends a per-browser device id on verify; the
-  sign-in copy follows `deliveryChannel`; "Kitchen sign-in" → "Sign in".
+- `x-device-id` on the CORS allow-list (API PR); the merchant web sends a per-browser device id on
+  verify, the sign-in copy follows `deliveryChannel`, and "Kitchen sign-in" → "Sign in" (web PR).
 - `0053`: `merchants.business_type`, `merchants.shop_kind`, `merchant_members` + owner backfill.
 - `MerchantAccessService`, DB-backed `MerchantGuard`, `@OwnerOnly()`; every `resolveOwnMerchantId` /
   `ownerProfileId` caller and the kitchen socket go through the resolver.
 - `become` takes `{ ownerName, name, businessType, shopKind?, location, termsAccepted: true }`, creates
-  merchant + owner row in one transaction, saves `ownerName` to the profile only if its name is empty, and
-  flips no role.
+  merchant + owner row in one transaction (still setting `owner_profile_id`, which `ownerPhoneMasked`
+  reads), saves `ownerName` to the profile only if its name is empty, and flips no role. It refuses a
+  held profile or a banned/suspended rider (OV-5).
+- **L1 is forward-only** once one business signs up through `become` v2. Reverting to the role-claim
+  guard would lock that business out, because v2 never writes `role = merchant` (OV-4).
 - Web sign-up (type → kind → name, pin, landmark, terms) replacing the "not a merchant" dead end, with a
   type-aware `/setup`.
 - Admin: `PATCH /admin/merchants/:id/pilot` (restaurants only, audit-logged), "Awaiting go-live" and
@@ -232,17 +256,21 @@ Book a rider ahead of Team because it is what the pilot's week 1 measures.)*
 *L2 — Book a rider + the shop shell* (migration `0054`)
 - `0054`: `merchant_bookings` (order, business, booked by).
 - Booking account (lazy, race-safe upsert on its synthetic phone) and `MerchantBookingService` /
-  controller: quote, create, list, detail (snapshot), offers (with `preferred` from L3), pick, cancel
-  (pre-pickup only), rotate code, try again.
-- Send-side: sender phone on business bookings = pickup contact phone.
+  controller: quote, resolve a map link, create, list, detail (snapshot), offers (with `preferred` from
+  L3), pick (refusing members' offers), cancel (pre-pickup, narrowed inside Send's transaction), rotate
+  code, try again.
+- Send-side: sender phone on business bookings = pickup contact phone; the cancel narrowing; `OffersService`
+  exported; booking accounts labelled and excluded in admin views.
+- Short-link resolver: `maps.app.goo.gl` / `goo.gl/maps` only, https, ≤2 hops, `Location` header only,
+  3 s timeout.
 - Web: Deliveries page, booking form (Leaflet + OSM pin, link parsing, value cap, prohibited-goods text),
   live pick screen, code send/copy, states list; restaurant "Book a rider" button + bookings strip on
   Orders; shop nav + vocabulary + Help.
 
 *L3 — Your riders* (migration `0055`)
 - `0055`: `merchant_preferred_riders`. Riders page (owner edits, staff view), statuses, invite link.
-- Preferred push after booking create, `preferred` offer flag, `rankOffers` bonus, preferred-first
-  `DispatchStrategy` with the 2 km guardrail.
+- `preferred` offer flag, `rankOffers` bonus, preferred-first `DispatchStrategy` with the 2 km
+  guardrail, and no team members as riders. No extra push (OV-2).
 
 *L4 — Team* (migration `0056`)
 - `0056`: `merchant_invites`. Team page inside Shop, invite / remove / share link, Join / Not me with name
@@ -286,7 +314,7 @@ resolution.
      │   └ Merchant/FoodOrder/FoodDebt/FoodDispatch services (resolver replaces 4 wrappers)
      └ MerchantBookingService (L2) ──as the booking account──► OrdersService.create/getSnapshot
          │   merchant_bookings                                  OffersService (list)
-         │   merchant_preferred_riders (L3) ─► FCM push         MatchingService.selectOffer
+         │   merchant_preferred_riders (L3) ─► preferred flag   MatchingService.selectOffer
          │                                                      OrderLifecycleService.cancel/rotate
      FoodDispatchService ─► DispatchStrategy (L3: preferred-first, 2 km guardrail)
    Express (orders/offers/matching): unchanged except the business-sender phone (no merchant import)
@@ -314,7 +342,7 @@ resolution.
   SIGN-UP (new number, L1)                         BOOK A RIDER (L2)
   send code → verify (x-device-id)                 form (all fields first) → POST /merchant/bookings
    → GET /merchant/me → 403 not_a_member             → booking account (upsert) → OrdersService.create
-   → "Set up your business"                           → merchant_bookings row → (L3) preferred push
+   → "Set up your business"                           → merchant_bookings row
    → type (+kind) → name, pin, landmark, terms      → poll GET /merchant/bookings/:id every 3 s
    → POST /merchant/become                            → offers (fare, ETA, rating, Your rider)
       tx: merchant + owner member + profile name      → POST …/offers/:offerId/pick → code (once)
@@ -366,8 +394,10 @@ The shop-kind rule (`shop_kind` set iff `business_type = 'shop'`) is enforced in
 and service, not a CHECK on the existing table.
 
 **`0054_merchant_bookings` (L2)**: `merchant_bookings(order_id UUID PK → orders ON DELETE CASCADE,
-merchant_id UUID NOT NULL → merchants ON DELETE CASCADE, booked_by_profile_id UUID NOT NULL, created_at)`
-+ index `(merchant_id, created_at DESC)`. The business's list reads orders by the booking account
+merchant_id UUID NOT NULL → merchants ON DELETE CASCADE, booked_by_profile_id UUID NOT NULL,
+picked_by_profile_id UUID NULL, cancelled_by_profile_id UUID NULL, created_at)` + index
+`(merchant_id, created_at DESC)`. The insert is `ON CONFLICT DO NOTHING`, so an idempotent create replay
+never 500s (OV-8). The business's list reads orders by the booking account
 (`orders(customer_id, created_at)` is already indexed); re-broadcast clones have no row and show the
 original's booker through `rebroadcastOfId`.
 
@@ -397,7 +427,9 @@ The full registry is §11 "Failure Modes Registry". The ones a merchant sees:
 | any merchant route | removed member | 403 `not_a_member` | "You're no longer on {business}'s team" + sign out |
 | owner route as Staff | `@OwnerOnly` | 403 `owner_only`; nav hides it | "Only the owner can change this" |
 | go-live (admin) | a shop | 409 `shops_not_open` | (ops) "Shops open with LyniaGo Shops" |
-| booking create | business or person on hold | 403 `on_hold` | "Bookings are paused for this business. Message LyniaGo on WhatsApp." |
+| booking create | business or person on hold, or the person's rider account banned/suspended | 403 `on_hold` | "Bookings are paused for this business. Message LyniaGo on WhatsApp." |
+| drop-off link | not a Google Maps link, or no coordinates | 422 | "We couldn't read a location from that link. Drop a pin instead." |
+| offer pick | offer from one of the business's own team | 409 `own_member` | "Someone on your team can't take your own delivery." |
 | booking create | outside the 25 km area / value > $150 / no pin | 400 / 409 | field-level message; value copy per design L2 |
 | offer pick | another teammate picked first / rider went stale / window closed | 409 | refetch; "That rider is taken — pick another" / "No rider picked in time" |
 | cancel | already picked up | 409 | "The rider has it now — call the rider" |
@@ -416,15 +448,18 @@ The full registry is §11 "Failure Modes Registry". The ones a merchant sees:
   audit row, shop 409, 404); tracking gateway subscribe by membership; `migration-safety.spec.ts` passes on
   `0053`; web: device id minted once and sent only on verify, copy follows `deliveryChannel`, sign-up flow,
   type-aware `/setup`, 429 copy.
-- **L2:** booking service (member on hold 403; business held 403; creates as the booking account; records
-  `merchant_bookings`; list is business-wide; IDOR: another business's order 404; pick returns the code;
-  cancel refused after pickup; rotate); snapshot sender phone for a `business:` customer; the booking account
-  can't sign in (`normalizePhone('business:…')` throws); web: form validation (value cap copy, link parsing
-  table), pick screen polling + expiry, states.
-- **L3:** preferred rider CRUD (owner only, cap 20, rate limit, E.164); statuses (on LyniaGo / not yet /
-  can't take jobs) never leak names before a job; push audience = eligible online preferred riders within
-  10 km; `rankOffers` bonus (preferred first unless clearly better on fare and ETA together; unchanged
-  when no flag); `DispatchStrategy` preferred-first within 2 km of nearest, eligibility unchanged.
+- **L2:** booking service (member on hold 403; member's rider account banned 403; business held 403;
+  creates as the booking account; records `merchant_bookings`, replay-safe; list is business-wide; IDOR:
+  another business's order 404; pick returns the code; pick refuses a member's offer; cancel refused
+  after pickup, including a pickup that lands mid-request (the narrowed status set inside Send's tx);
+  rotate); snapshot sender phone for a `business:` customer; the booking account can't sign in
+  (`normalizePhone('business:…')` returns `null`, OV-10); short-link resolver (allow-list, https only,
+  hop cap, timeout, coordinate parse table); admin views label booking accounts; web: form validation
+  (value cap copy, link parsing table), pick screen polling + expiry, states.
+- **L3:** preferred rider CRUD (owner only, cap 20, rate limit, E.164, team members refused); statuses
+  (on LyniaGo / not yet / can't take jobs) never leak names before a job; the `preferred` flag on offers;
+  `rankOffers` bonus (preferred first unless clearly better on fare and ETA together; unchanged when no
+  flag); `DispatchStrategy` preferred-first within 2 km of nearest, eligibility unchanged.
 - **L4:** invites (create never reveals membership; Join resolves conflict; Not me deletes; expiry 14 d;
   first accepted wins); remove / leave; owner can't leave; `@OwnerOnly` covers every ❌ row of the
   permission table (one table-driven test); admin owner transfer (audit, member-or-free, old owner →
@@ -440,7 +475,9 @@ No RM mock draws sign-up, business type, shops, Team, roles, bookings or riders.
 are built in the RM visual language from existing primitives (Card, pill buttons, sheets, the option-row
 pattern from `RM.oos_sheet`) at 1024×680 **and** the D-32 phone tier (320px entry-phone check), and each
 is ledgered in `docs/DESIGN-DEVIATIONS.md` from D-43, with an upstream ask for real mocks.
-`packages/design/**` is not edited. Planned entries (one per layer PR):
+`packages/design/**` is not edited. Each entry lands in its layer's **web PR marked PROPOSED**, with a
+screenshot sheet (`tools/parity`), and becomes APPROVED when the owner approves that PR (OV-11). Planned
+entries:
 
 - **D-43 (L1)** sign-up screens and the type-aware `/setup` (undrawn); "Kitchen sign-in" → "Sign in" and
   the channel-aware code line on the drawn `RM.login` (D-40 extension).
@@ -595,16 +632,29 @@ L5 ≈ 1 day / 45 min.
 | CEO-3 · §9 | CONTRIBUTING forbids `ADD COLUMN … NOT NULL DEFAULT` | NOT NULL DEFAULT | nullable → default → backfill → SET NOT NULL | approved (auto) | `0053` `business_type` |
 | CEO-4 · §1 | `RestaurantsEnabledGuard` on all `/merchant/*` | one switch | keep one switch; document it also gates shop bookings | approved (auto) | ops note + Piranha TODO |
 | CEO-5 · §1 | depcruise `express-no-merchant-coupling` | preferred inside broadcast | merchant-side push + `preferred` flag | approved (auto) | L3 |
-| CEO-6 · §9 | preflight fails if the web sends `x-device-id` before the API allows it | — | API ships the CORS change first; the web retries verify once without the header on a network-level failure | approved (auto) | L1 web + deploy order |
+| CEO-6 · §9 | preflight fails if the web sends `x-device-id` before the API allows it | — | ~~web retries verify without the header~~ | **superseded** by OV-1 + OV-3 | the retry would burn a new number's code (`auth.service.ts:537` grace before the `:560` device check) |
 | CEO-7 · audit | `declaredValue` never returned by any read | doc: "shown to the rider" | correct the doc; showing it to riders is a Phase 2 mobile item | approved (auto) | design doc wording |
 | CEO-8 · §3 | rider-status oracle via Riders list | — | accept, bounded: cap 20, 10 adds/day, audit, masked phone, no name before a job | approved (auto) | L3 |
 | CEO-9 · §5 | 4 private wrappers + 3 direct `ownerProfileId` lookups | scattered | one `MerchantAccessService` | approved (auto) | L1 |
 | CEO-10 · §8 | success criteria need numbers | none | pilot SQL in the go-live runbook | approved (auto) | L1 runbook |
 | R2-1 … R2-25 · design doc | spec reviewer concerns | open | per the design doc's disposition table | approved (auto) | each concern's own remedy only |
-| TODO-1…5 · Closing | evidenced gaps deferred | — | `TODOS.md` | deferred (auto) | delivery scope only |
+| TODO-1…7 · Closing | evidenced gaps deferred | — | `TODOS.md` | deferred (auto) | delivery scope only |
+| OV-1 · outside voice | `deploy-merchant-azure.yml:27-32` deploys web on push to main; API release is gated + canaried | "API ships first" | each layer = API PR, then web PR after the API is at 100% | approved (auto) | all layers' PR structure |
+| OV-2 · outside voice | board asks 5 km (`rider/(tabs)/index.tsx:694`); list filter `orders.service.ts:563`; sent-set skip `matching.service.ts:335-340` | preferred push ≤10 km | drop the push and the reach; keep tag, bonus, dispatch preference | approved (auto) | L3; TODO-6 |
+| OV-3 · outside voice | verify stores grace before device check | CEO-6 retry | delete the retry | approved (auto) | L1 web |
+| OV-4 · outside voice | `ownerPhoneMasked` reads `ownerProfile`; resolver fallback trusts the column | fallback on any legacy owner | `become` + transfer maintain the column; fallback only when the merchant has no owner member; L1 forward-only | approved (auto) | L1 resolver, L4 transfer, runbook |
+| OV-5 · outside voice | Send's standing + self-bid checks key on the customer of record (`orders.service.ts:181-193`, `offers.service.ts:45-48`) | member hold only | member hold + rider standing at booking; refuse members' offers at pick; no members as riders; `become` refuses held/banned | approved (auto) | L1 `become`, L2 booking, L3 riders |
+| OV-6 · outside voice | phones share `maps.app.goo.gl`; WhatsApp pins aren't text | short links deferred | resolve allow-listed short links server-side in v1 | approved (auto) | L2; reopens Decision 3 |
+| OV-7 · outside voice | `offers.module.ts:9` no export; guard used by Uploads; tracking ↔ merchant cycle risk | new module edges | pure resolver on the global Prisma; export `OffersService`; tracking keeps its plain lookup | approved (auto) | L1, L2 wiring |
+| OV-8 · outside voice | customer cancel allows post-pickup (`order-lifecycle.service.ts:810-816`); `cancelledBy` = account | pre-check then cancel | narrowed status set inside Send's tx; picked_by / cancelled_by on `merchant_bookings`; insert ON CONFLICT | approved (auto) | L2 |
+| OV-9 · outside voice | `admin-orders.service.ts:685`, `issues.service.ts:208`, `admin-customers.service.ts:28` | raw `business:<id>` | label as "Business: {name}"; exclude from customer lists/KPIs | approved (auto) | L2 |
+| OV-10 · outside voice | `normalizePhone` returns null (`phone.ts:22-61`) | test expects a throw | assert null | approved (auto) | L2 test |
+| OV-11 · outside voice | CLAUDE.md: deviations "each approved by the user" | auto-decided D-43+ | web PR carries the entry as PROPOSED + screenshot sheet; merges after owner approval | approved (auto) | every web PR with a new deviation |
+| OV-12 · outside voice | pilot gated on L3 | pilot after L3 | pilot can start after L2; L3 lands in the first week; L4 stays (owner asked for team logins) | approved (auto, partial) | pilot timing only |
 
-**Approval readiness: PASS.** Checked MODE, P1–P5, APPROACH, CEO-1…CEO-10, R2-1…R2-25 and
-TODO-1…TODO-5. Each is backed by an owner answer or a recorded auto-decision. None is pending.
+**Approval readiness: PASS.** Checked MODE, P1–P5, APPROACH, CEO-1…CEO-10 (CEO-6 superseded),
+R2-1…R2-25, TODO-1…TODO-7 and OV-1…OV-12. Each is backed by an owner answer or a recorded auto-decision.
+None is pending.
 
 ### Section 1 · Architecture
 
@@ -661,7 +711,10 @@ The system diagram and access, sign-up and booking flows are in §6.
   `apps/merchant` and move every hit to the resolver.
 - **F1.3 · new coupling.** `MerchantModule` now also depends on `MatchingModule` and `OffersModule`.
   It's the sanctioned merchant → Send direction and adds no cycle, since those modules never import
-  merchant code.
+  merchant code. `OffersModule` has to start exporting `OffersService` (OV-7).
+  - The access resolver is a pure function over the global `PrismaService`. That's why the guard (also
+    used by `UploadsModule`) and the lookup util can share it with no new module edges. Tracking keeps
+    its own plain lookup, now over `merchant_members`, as its comment prescribes.
 - **F1.4 · kill switch (CEO-4).** `RESTAURANTS_ENABLED` now also gates shops' bookings. Production has it
   on (MOB-BOOT-02: the owner's installed app shows the live Restaurants UI). Pulling it in an incident
   stops shop bookings too, so the runbook says so and the Piranha TODO covers the switch's retirement.
@@ -680,8 +733,7 @@ The system diagram and access, sign-up and booking flows are in §6.
 ```
   METHOD / CODEPATH                         | WHAT CAN GO WRONG                       | EXCEPTION CLASS
   ------------------------------------------|-----------------------------------------|---------------------------
-  web verifyOtp (L1)                        | CORS preflight refused (old API)         | TypeError (fetch) → ApiError(0)
-                                            | device sign-up cap                      | HttpException 429
+  web verifyOtp (L1)                        | device sign-up cap                      | HttpException 429
   MerchantAccessService.resolve (L1)        | legacy owner, concurrent backfill        | Prisma P2002
                                             | DB unavailable                          | PrismaClientKnownRequestError
   MerchantGuard / @OwnerOnly (L1)           | not a member / not owner                 | ForbiddenException{reason}
@@ -696,15 +748,17 @@ The system diagram and access, sign-up and booking flows are in §6.
   MerchantBookingService.cancel (L2)        | already picked up                        | Conflict(picked_up)
   MerchantBookingService.rotateCode (L2)    | wrong status                             | Conflict
   booking lookups (L2)                      | another business's order id              | NotFound (never 403: no oracle)
+  MapLinkResolver.resolve (L2)              | host not allow-listed / http / >2 hops   | BadRequest(unsupported_link)
+                                            | no coordinates / timeout / DNS error     | UnprocessableEntity / AbortError
+  MerchantBookingService.pick (L2)          | offer from the business's own member     | Conflict(own_member)
   PreferredRidersService.add (L3)           | cap 20 / duplicate / bad phone / rate    | Conflict / P2002 / 400 / 429
-  preferred push (L3)                       | FCM error / query error                  | provider error (non-fatal)
+                                            | a team member's phone                    | Conflict(team_member)
   DispatchStrategy preferred lookup (L3)    | query error                              | Prisma error (non-fatal)
   InviteService.create / join (L4)          | expired / accepted elsewhere / race      | Gone / Conflict / P2002
   AdminMerchantsService.transferOwner (L4)  | target in another business / unknown     | Conflict / NotFound
 
   EXCEPTION                         | RESCUED? | RESCUE ACTION                                   | USER SEES
   ----------------------------------|----------|-------------------------------------------------|------------------------------
-  TypeError on verify (CORS)        | Y        | retry once without x-device-id (CEO-6)          | signs in (existing numbers)
   429 device cap                    | Y        | web maps to its own copy                        | "This device has added 3…"
   P2002 legacy backfill             | Y        | re-read the member row                          | nothing
   Forbidden not_a_member            | Y        | web: sign-up if never a member, else sign out   | "Set up your business" / "no longer on…"
@@ -715,7 +769,8 @@ The system diagram and access, sign-up and booking flows are in §6.
   Forbidden on_hold                 | Y        | message + WhatsApp support button               | "Bookings are paused…"
   Conflict from selectOffer         | Y        | refetch the booking                             | "That rider is taken — pick another"
   Conflict picked_up                | Y        | refetch; show Call rider                        | "The rider has it now…"
-  preferred push error              | Y        | log {orderId, merchantId, count}; Send's broadcast already went out | nothing
+  unsupported / unreadable link     | Y        | log {merchantId, host}; the pin stays available  | "We couldn't read a location from that link. Drop a pin instead."
+  Conflict own_member               | Y        | refetch offers                                  | "Someone on your team can't take your own delivery."
   preferred lookup error (dispatch) | Y        | log; fall back to nearest-first                 | nothing
   Gone invite expired               | Y        | Join shows expiry                               | "This invite has expired. Ask {Owner} to send a new one."
   DB unavailable                    | N (by design) | global filter logs + 500; the web keeps the session | "Couldn't reach the server…"
@@ -740,6 +795,8 @@ No catch-alls are introduced. Every rescue logs `{route, profileId, merchantId, 
 | T12 | Owner-transfer social engineering | Low | High | admin-only, required note, audit row, identity check in the runbook |
 | T13 | Removed staff keeps access until token expiry | — | — | guard reads the DB per request, so access ends on the next request; socket evicted |
 | T14 | Input abuse | Med | Low | zod: names 1–60/120, landmark 1–160, E.164 normalisation, enum kinds, value ≤ 150 |
+| T15 | SSRF through the short-link resolver (OV-6) | Med | High | exact host allow-list (`maps.app.goo.gl`, `goo.gl` + `/maps` path), https only, ≤2 hops each re-checked, `Location` header only (no body), 3 s timeout, throttled per member |
+| T16 | Self-dealing: a member who is also a rider takes their own business's jobs (OV-5) | Med | Med | refuse members' offers at pick; members can't be preferred riders; booking checks the member's rider standing |
 
 Audit trail: go-live, owner transfer, preferred-rider add/remove, invite/remove member (all via
 `auditData()` or the merchant audit equivalent). No new secrets. The only new client dependency is
@@ -763,6 +820,11 @@ Leaflet (widely used, pinned).
                           pick(offer2) ─────────► selectOffer: status ≠ open → 409 → B refetches
   (reverse order: B wins, A gets the 409; the mechanism is selectOffer's status check in one transaction)
 ```
+**Cancel vs pickup (OV-8).** The merchant's "before pickup" rule is enforced inside Send's cancel
+transaction: the narrowed allowed-status set is checked on the row read in that transaction, and the
+compare-and-swap `updateMany({ where: { id, status } })` loses to a pickup that commits first. There is
+no merchant-side pre-check to race.
+
 Also proven by the mechanism, not the schedule:
 - **Join races** use the unique `profile_id`.
 - **Double sign-up** uses the unique owner + `profile_id`.
@@ -802,7 +864,7 @@ Regression proof: service tests with a controlled `$transaction` interleave for 
 
 ```
   NEW THING                         TYPE          HAPPY                      FAILURE                       EDGE
-  device id + CORS (L1)             unit+web      header on verify only      preflight refused → retry     id persists across reloads
+  device id + CORS (L1)             unit+web      header on verify only      cap hit → own-phone copy      id persists across reloads
   resolver + guard (L1)             unit          member → access            none → 403                    legacy backfill race
   become (L1)                       unit          tx creates 2 rows          409 already_member            name only if empty; no role write
   customer scope (L1)               unit          restaurants listed         shop hidden / placeOrder 404  —
@@ -812,7 +874,7 @@ Regression proof: service tests with a controlled `$transaction` interleave for 
   pick / cancel / rotate (L2)       unit          code returned once         taken 409 / picked-up 409     two teammates
   sender phone (L2)                 unit          business → pickup phone    —                             non-business unchanged
   booking web (L2)                  RTL           form → pick → code         expiry → Try again            link parser table
-  preferred (L3)                    unit          push audience / bonus      push error non-fatal          no names before a job
+  preferred (L3)                    unit          flag + bonus               team member refused           no names before a job
   dispatch preferred (L3)           unit          preferred within 2 km      lookup error → nearest        tie by distance, rating
   invites / team (L4)               unit+RTL      join / remove / leave      expired 410 / elsewhere 409   Not me
   permission table (L4)             unit          owner allowed              staff 403 on every ❌ row      —
@@ -822,7 +884,8 @@ Regression proof: service tests with a controlled `$transaction` interleave for 
   a teammate on another device sees the booking. It's an integration test over the service layer.
 - **The hostile-QA test:** a Staff token calling every owner route, and another business's order ids on
   every booking route.
-- **The chaos test:** the verify preflight rejected, plus the preferred-push provider throwing.
+- **The chaos test:** the map-link resolver timing out or redirecting off the allow-list, plus a pickup
+  committing while a teammate cancels.
 - **The pyramid** is unit-heavy with RTL for flows, and no new E2E.
 - **Flakiness:** polling and countdowns use fake timers; no wall-clock tests.
 
@@ -865,12 +928,17 @@ No LLM or prompt changes.
 - **Migrations** run before the API rolls out (release workflow). `0053`–`0056` are expand-only; `0053`
   uses the nullable → backfill → NOT NULL pattern (CEO-3) and is instant on the pilot's handful of
   merchant rows.
-- **The risk window (CEO-6):**
-  - new API with old web is fine: the old web sends no device id, and membership is backfilled;
-  - old API with new web: the verify preflight would be refused, so the web retries verify once without
-    the header. Existing numbers still sign in, and new numbers get today's 400 until the API lands.
-  - So the API ships first. The release deploys the API before the web tiers; confirm the job order in
-    `release-azure.yml` at build time.
+- **The risk window (OV-1, replacing CEO-6).** The merchant web deploys to production on every push to
+  main that touches `apps/merchant/**` or `packages/shared/**` (`deploy-merchant-azure.yml:27-32`),
+  while the API waits for the staging gate and then runs a 10 → 50 → 100 canary. So "new web, old API"
+  would be the normal state for tens of minutes after every merge.
+  - The fix is sequencing, not code: every layer is an **API PR** first.
+  - The **web PR** merges only after that API release shows 100% in production (checked on the
+    release run).
+  - New API with old web is always safe: the old web sends no device id and never calls the new routes,
+    and membership is backfilled.
+  - The web never sends `x-device-id` to an API that refuses it, so the verify retry is dropped (OV-3).
+- **L1 is forward-only** once a business signs up through `become` v2 (OV-4). The runbook says so.
 - **Flags:** none new (the existing kill switch; F1.4).
 - **Post-deploy check, first 5 minutes:**
   - an existing merchant signs in and sees Orders;
@@ -931,6 +999,39 @@ No LLM or prompt changes.
 - **Recommendation:** run `/plan-design-review` before the L2 web build, since it has the most new UI.
   After implementation, `/design-review` on the live pages.
 
+### Outside voice (independent plan challenge)
+
+Codex isn't installed here, so the outside voice ran as the **native fallback**: a fresh-context Claude
+`Plan` subagent, read-only, given this plan and the design doc. It ran in the foreground, because this
+session has no `TaskOutput` for the skill's bounded background wait. Its findings count as native, **not
+as external coverage**, and there is no cross-model comparison.
+
+It checked the riskiest claims against the code. It confirmed two:
+- the re-broadcast clone copies `customerId` (`order-lifecycle.service.ts:1006`);
+- pushes only go to device tokens (`notifications.service.ts:409-414`), so a booking account gets none.
+
+It then reported 12 findings. Each was checked against the code before it changed the plan, and each is
+a ledger row OV-1…OV-12:
+
+| # | Severity | Finding | Verified | Disposition |
+|---|---|---|---|---|
+| 1 | high | "The API ships first" is false: the merchant web deploys on every push to main, and the API is gated and canaried | yes (`deploy-merchant-azure.yml:27-32`) | applied: API PR, then web PR per layer |
+| 2 | high | the preferred push can't reach 5–10 km riders (5 km board) and suppresses Send's own push | yes (`index.tsx:694`, `orders.service.ts:563`) | applied: push and reach dropped; TODO-6 |
+| 3 | medium | the CEO-6 retry burns a new number's code | yes (`auth.service.ts:537` before `:560`) | applied: retry deleted |
+| 4 | medium | `owner_profile_id` upkeep and a fallback that could re-admit a transferred-out owner; L1 revert strands v2 sign-ups | yes (`merchant.service.ts:590-596`, `merchant.guard.ts:10`) | applied: column maintained, narrowed fallback, forward-only |
+| 5 | medium | the booking account bypasses Send's per-person standing and self-bid checks | yes (`orders.service.ts:181-193`) | applied: member checks, own-member pick refusal, no members as riders, `become` standing check |
+| 6 | medium | link parsing misses `maps.app.goo.gl` and WhatsApp pins | reasoned (share formats) | applied: allow-listed short-link resolver in v1; TODO-7 |
+| 7 | low-med | `OffersService` not exported; guard DB dependency vs `UploadsModule`; tracking cycle risk | yes (`offers.module.ts:9`) | applied: pure resolver on global Prisma; export |
+| 8 | low | cancel check-then-act race; no per-person actor trail | yes (`order-lifecycle.service.ts:810-822`) | applied: narrowed status set in Send's tx; picked_by/cancelled_by |
+| 9 | low | admin shows `business:<uuid>`; booking accounts in customer KPIs | yes (`admin-orders.service.ts:685`) | applied: labels + exclusion |
+| 10 | low | `normalizePhone` returns null, not a throw | yes (`phone.ts`) | applied: test corrected |
+| 11 | process | D-43+ can't be auto-approved under CLAUDE.md | yes (CLAUDE.md "each approved by the user") | applied: web PRs carry PROPOSED entries + screenshots and wait for the owner |
+| 12 | strategic | the pilot waits on L3, whose push didn't work; hold L3 dispatch and L4 | partly | partly applied: the pilot may start after L2, and L3 lands in its first week. **L4 stays in scope** because the owner asked for team logins verbatim. |
+
+**Where it disagreed with the review and the review changed:** #1, #2, #3 and #5. **Where the review
+kept its position:** the booking account itself (the reviewer confirmed its two load-bearing claims) and
+L4's place in scope (#12).
+
 ### NOT in scope
 
 - **Deferred** (to `TODOS.md`, auto):
@@ -940,8 +1041,13 @@ No LLM or prompt changes.
     riders. One mobile release.
   - TODO-4: Web Push for bookings.
   - TODO-5: the Piranha pass now includes shop bookings.
+  - TODO-6: reach for a business's own riders beyond Send's radius (a Send-side board change), if pilot
+    data shows them out of range (OV-2).
+  - TODO-7: a "share my location" link the business sends the buyer, if wrong drop-offs drive
+    undelivered bookings (OV-6).
+- **Brought into scope by the outside voice:** server short-link resolution against a strict allow-list
+  (OV-6).
 - **Rejected** (auto, reason):
-  - server short-link resolution (SSRF surface; link coordinates and a pin cover v1);
   - COD (money movement; Send is rider-direct cash);
   - a paid return leg (Phase 2 product question);
   - variants, stock and barcodes (too heavy for informal shops, research §2c);
@@ -972,7 +1078,7 @@ The rescue map is in Section 2 (20 codepaths, 0 unrescued except DB-down by desi
 ```
   CODEPATH              | FAILURE MODE                         | RESCUED? | TEST? | USER SEES?           | LOGGED?
   ----------------------|--------------------------------------|----------|-------|----------------------|--------
-  web verify            | preflight refused (deploy order)     | Y        | Y     | signs in (retry)     | Y
+  web ahead of API      | new web calls routes the API lacks   | Y (OV-1) | —     | nothing (PR order)   | —
   web verify            | device cap                           | Y        | Y     | own-phone message    | Y
   resolver              | legacy owner backfill race           | Y        | Y     | nothing              | Y
   guard                 | not a member / owner-only            | Y        | Y     | message              | Y
@@ -983,15 +1089,18 @@ The rescue map is in Section 2 (20 codepaths, 0 unrescued except DB-down by desi
   booking cancel        | after pickup                         | Y        | Y     | call-rider message   | Y
   booking IDOR          | other business's id                  | Y        | Y     | 404                  | Y
   re-broadcast          | business lost on clone (pre-CEO-1)   | Y (CEO-1)| Y     | "your rider cancelled"| Y
-  preferred push        | provider / query error               | Y        | Y     | nothing (non-fatal)  | Y
+  map link resolver     | unsupported host / no coords / slow  | Y        | Y     | "drop a pin instead" | Y
+  pick                  | member bidding on own business       | Y        | Y     | message              | Y
   dispatch preferred    | lookup error                         | Y        | Y     | nothing (nearest)    | Y
   invite join           | expired / elsewhere / race           | Y        | Y     | message              | Y
   owner transfer        | target elsewhere / unknown           | Y        | Y     | ops message          | Y
   DB unavailable        | any                                  | N (500)  | —     | connection message   | Y
 ```
-0 critical gaps (no row is unrescued, untested and silent). Before this review there were two: the
-re-broadcast clone dropping the business (fixed by CEO-1) and a web-first deploy locking every merchant
-out of sign-in (fixed by CEO-6).
+0 critical gaps (no row is unrescued, untested and silent). Before this review there were three:
+- the re-broadcast clone dropping the business (fixed by CEO-1);
+- a web-first deploy breaking sign-up and the new pages (fixed by OV-1's PR order; CEO-6's retry was
+  itself unsafe, OV-3);
+- a member farming their own business's jobs (fixed by OV-5).
 
 ### Diagrams
 
@@ -1001,14 +1110,16 @@ out of sign-in (fixed by CEO-6).
 4. **Error flow:** Section 2.
 5. **Deployment sequence:**
 ```
-  merge L1 PR → release: prisma migrate deploy (0053) → API rollout (CORS + resolver + become + admin)
-             → admin web rollout → merchant web rollout (device id, sign-up)
-  window A (new API, old web): safe            window B (old API, new web): verify retries without the header
+  merge L1-API PR → release-azure: staging gate → prisma migrate deploy (0053) → canary 10→50→100
+                 (deploy-merchant-azure also redeploys the unchanged web, since packages/shared changed: safe)
+  API at 100% ──► merge L1-web PR → deploy-merchant-azure (device id, sign-up, copy) + admin console
+  window A (new API, old web): safe by construction     window B (old API, new web): never opened (PR order)
 ```
 6. **Rollback flowchart:**
 ```
-  L<n> broken? ─► revert L<n> PR (code) ─► redeploy ─► tables from L<n> stay, unused ─► fix forward
-       │ sign-in broken for everyone? ─► revert the web first (old web never sends the header)
+  L<n> broken? ─► revert L<n>'s web PR first, then its API PR if needed ─► tables stay, unused ─► fix forward
+       │ L1 after any v2 sign-up: forward-only (the old guard needs role=merchant, which v2 never writes)
+       │ sign-in broken for everyone? ─► revert the L1 web PR (old web never sends the header)
        │ merchant pages 403 for existing merchants? ─► resolver falls back to owner_profile_id;
        │                                               if still failing, revert the API
        └ incident in bookings? ─► hold the business's booking account (ops) or pull RESTAURANTS_ENABLED
@@ -1021,7 +1132,9 @@ is history and stays as written.
 ### Implementation Tasks
 
 Synthesized from this review's findings. Each task derives from a specific finding above. Checkbox as
-they ship. Ratios assumed: features ~30×, tests ~50×, migrations ~20×.
+they ship. Ratios assumed: features ~30×, tests ~50×, migrations ~20×. **PR shape (OV-1):** within each
+layer the `api` tasks form the API PR, and the `web`/`admin` tasks form the web PR, merged after the
+API is at 100%.
 
 - [ ] **T1 (P1, human: ~1d / CC: ~40min)** — api/L1 — migration `0053`, Prisma models, shared enums + contracts
   - Surfaced by: §7 data model; CEO-3
@@ -1043,9 +1156,9 @@ they ship. Ratios assumed: features ~30×, tests ~50×, migrations ~20×.
   - Surfaced by: R2-7, R2-14; RCA fix #1
   - Files: `apps/api/src/admin/admin-merchants.*`, `apps/admin/app/merchants/**`
   - Verify: admin specs; console action test
-- [ ] **T6 (P1, human: ~0.5d / CC: ~15min)** — api+web/L1 — CORS `x-device-id`, web device id, verify retry, channel copy, "Sign in"
-  - Surfaced by: D4; CEO-6
-  - Files: `apps/api/src/main.ts`, `apps/merchant/app/lib/{api-client,device-id}.ts`, `apps/merchant/app/login/page.tsx`
+- [ ] **T6 (P1, human: ~0.5d / CC: ~15min)** — api+web/L1 — CORS `x-device-id`, web device id, channel copy, "Sign in"
+  - Surfaced by: D4; OV-1, OV-3 (no retry; the CORS line ships in the API PR)
+  - Files: `apps/api/src/main.ts` (API PR); `apps/merchant/app/lib/{api-client,device-id}.ts`, `apps/merchant/app/login/page.tsx` (web PR)
   - Verify: api-client + login tests
 - [ ] **T7 (P1, human: ~2d / CC: ~60min)** — web/L1 — sign-up flow (type, kind, name, pin map, landmark, terms) + type-aware `/setup`
   - Surfaced by: D5; R2-16, R2-19
@@ -1055,15 +1168,15 @@ they ship. Ratios assumed: features ~30×, tests ~50×, migrations ~20×.
   - Surfaced by: §10; CEO-10
   - Files: `docs/DESIGN-DEVIATIONS.md`, `docs/runbooks/MERCHANT-GO-LIVE.md`, `docs/PIXEL-PARITY-TRACKER.md`
   - Verify: `design-freeze` CI job; doc review
-- [ ] **T9 (P1, human: ~2d / CC: ~70min)** — api/L2 — booking account, `MerchantBookingService` + controller, `merchant_bookings` (`0054`), sender-phone touch
-  - Surfaced by: CEO-1; R2-1…R2-6
+- [ ] **T9 (P1, human: ~2.5d / CC: ~90min)** — api/L2 — booking account, `MerchantBookingService` + controller, `merchant_bookings` (`0054`), member standing checks, own-member pick refusal, narrowed cancel, map-link resolver, sender phone, `OffersService` export, admin labels
+  - Surfaced by: CEO-1; R2-1…R2-6; OV-5, OV-6, OV-7, OV-8, OV-9
   - Files: `apps/api/src/merchant/merchant-booking.*`, `apps/api/src/orders/orders.service.ts` (one line), `packages/shared/src/*`
   - Verify: booking specs incl. IDOR and pick race
 - [ ] **T10 (P1, human: ~2.5d / CC: ~80min)** — web/L2 — Deliveries, booking form (Leaflet/OSM, link parser), pick screen (polling), code send/copy/rotate, restaurant button + strip, shop nav, `vocabulary()`, Help
   - Surfaced by: R2-3, R2-8, R2-12; CEO-2
   - Files: `apps/merchant/app/(app)/deliveries/**`, `components/KitchenNav.tsx`, `lib/vocabulary.ts`
   - Verify: RTL + parser table tests; D-44 ledger
-- [ ] **T11 (P1, human: ~1.5d / CC: ~45min)** — api+web/L3 — `merchant_preferred_riders` (`0055`), Riders page, preferred push, `preferred` flag, `rankOffers` bonus, preferred-first dispatch
+- [ ] **T11 (P1, human: ~1.5d / CC: ~45min)** — api+web/L3 — `merchant_preferred_riders` (`0055`), Riders page, `preferred` flag, `rankOffers` bonus, preferred-first dispatch, no members as riders
   - Surfaced by: D10; CEO-5, CEO-8
   - Files: `apps/api/src/merchant/merchant-riders.*`, `dispatch-strategy.ts`, `packages/shared/src/offer-ranking.ts`, `apps/merchant/app/(app)/riders/**`
   - Verify: specs listed in §9; D-45 ledger
@@ -1075,3 +1188,85 @@ they ship. Ratios assumed: features ~30×, tests ~50×, migrations ~20×.
   - Surfaced by: D7
   - Files: `components/menu/OosSheet.tsx`, `KitchenBar.tsx`, `KitchenNav.tsx`
   - Verify: RTL; parity tracker rows
+
+### Completion Summary
+
+```
+  +====================================================================+
+  |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
+  +====================================================================+
+  | Mode selected        | HOLD SCOPE (auto; owner rejected reduction)  |
+  | System Audit         | no merchant code touched in 30 d; RCA        |
+  |                      | pattern (capability w/o ops half); 3 gaps    |
+  |                      | outside scope (2 queued as tasks)            |
+  | Step 0               | HOLD SCOPE; approach B settled; CEO-1..10    |
+  |                      | + R2-1..25 + OV-1..12 dispositioned          |
+  | Section 1  (Arch)    | 7 issues found                               |
+  | Section 2  (Errors)  | 23 error paths mapped, 0 GAPS                |
+  | Section 3  (Security)| 16 issues found, 6 High severity (mitigated) |
+  | Section 4  (Data/UX) | 13 edge cases mapped, 0 unhandled            |
+  | Section 5  (Quality) | 5 issues found                               |
+  | Section 6  (Tests)   | Diagram produced, 0 gaps                     |
+  | Section 7  (Perf)    | 0 issues found                               |
+  | Section 8  (Observ)  | 1 gap found (pilot metrics; fixed CEO-10)    |
+  | Section 9  (Deploy)  | 2 risks flagged (PR order OV-1; L1 fwd-only) |
+  | Section 10 (Future)  | Reversibility: 4/5, debt items: 5            |
+  | Section 11 (Design)  | 7 states mapped; /plan-design-review advised |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (7 deferred, 4 rejected)             |
+  | What already exists  | written                                      |
+  | Dream state delta    | written                                      |
+  | Error/rescue registry| 23 rows, 0 CRITICAL GAPS                     |
+  | Failure modes        | 18 total, 0 CRITICAL GAPS (3 fixed)          |
+  | TODOS.md updates     | 7 items proposed (7 deferred)                |
+  | Scope proposals      | 0 proposed, 0 accepted (HOLD SCOPE)          |
+  | CEO plan             | skipped by mode (HOLD SCOPE)                 |
+  | Outside voice        | native Claude subagent, completed, 12        |
+  |                      | findings; no external coverage (no codex)    |
+  | Lake Score           | N/A (no user-answered scored questions)      |
+  | Diagrams produced    | 8 (system, access, sign-up + booking flows,  |
+  |                      | data flows, state machines, error flow,      |
+  |                      | deployment sequence, rollback)               |
+  | Stale diagrams found | 1 (old §6, replaced)                         |
+  | Unresolved decisions | 6 (auto-decided; owner to confirm, below)    |
+  +====================================================================+
+```
+
+### Unresolved Decisions
+
+No question went unanswered, because none was asked (see Review setup). These six auto-decisions change
+product behaviour the owner hasn't seen, so they are listed for confirmation. The build proceeds on
+them, and each is cheap to reverse before its layer ships.
+
+1. **Bookings belong to the business's booking account** (CEO-1, design Decision 2). A team member's
+   bookings never show in their personal LyniaGo app.
+2. **Shops don't enter the go-live queue** until the Shops section ships (R2-7, Decision 15).
+3. **Preferred riders: no rider consent in v1** (Decision 9). The business sees coarse statuses; an
+   opt-out comes with the Phase 2 rider-app release.
+4. **Prohibited goods go through report + ops cancel**, with no rider-app button in v1 (Decision 16).
+5. **The API resolves `maps.app.goo.gl` links** against a strict allow-list (OV-6, Decision 3).
+6. **Web PRs that add a new deviation wait for the owner's approval** of their screenshot sheet
+   instead of merging on green (OV-11, Decision 19).
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: HOLD_SCOPE, 0 critical gaps (3 found and fixed); 6 auto-decisions for owner confirmation |
+| Outside Review | native Claude `Plan` subagent (codex not installed) | Independent 2nd opinion | 1 | unavailable (external) · native completed | 12 findings (native); 12 resolved (11 applied, 1 partly); 0 unresolved; no completed external review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | not run |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | not run (recommended before the L2 web build) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not run |
+
+- **OUTSIDE COVERAGE:** codex · plan-review · unavailable (CLI not installed); native fallback completed
+  with 12 findings, recorded as `source: in-host`, `outside_status: unavailable`.
+- **VERDICT:** no review is CLEAR yet. The CEO review's findings are all applied and it has 0 critical
+  gaps, but 6 of its decisions await the owner, so its status is ISSUES OPEN. Eng review required.
+
+**UNRESOLVED DECISIONS:**
+- Owner to confirm CEO-1: bookings belong to each business's booking account, not the person who booked.
+- Owner to confirm R2-7: shops stay out of the go-live queue until LyniaGo Shops ships.
+- Owner to confirm Decision 9: no rider consent for preferred riders in v1 (opt-out in Phase 2).
+- Owner to confirm Decision 16: prohibited goods via report + ops cancel, no rider-app button in v1.
+- Owner to confirm OV-6: server-side resolution of `maps.app.goo.gl` links against a strict allow-list.
+- Owner to confirm OV-11: web PRs adding a new deviation wait for owner approval instead of merge-on-green.

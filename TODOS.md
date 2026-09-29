@@ -191,3 +191,33 @@ starts from reasoning, not archaeology.
 - **Context:** Plan §11 F1.4.
 - **Effort:** human S / CC S. **Priority:** P3.
 - **Trigger / blocked by:** the Piranha pass itself.
+
+### TODO-6 · Reach for a business's own riders beyond Send's radius
+
+- **What:** Let a business's preferred riders see its open bookings on their board beyond Send's widening
+  radius (5 → 8 → 12 km). For example, the board also lists open orders whose broadcast sent-set holds
+  the caller, with the push and the listing agreeing.
+- **Why:** The CEO review dropped an extra push to preferred riders up to 10 km away (OV-2). A rider
+  opening that push lands on a 5 km board (`apps/mobile/app/rider/(tabs)/index.tsx:694`) that doesn't list
+  the job for 30–60 s (`apps/api/src/orders/orders.service.ts:563`). Being in the sent set would also make
+  `expandBroadcast` skip them (`matching.service.ts:335-340`).
+- **Pros:** A shop's own courier gets its jobs from farther away. **Cons:** A change on Send's hottest
+  read path.
+- **Context:** Must stay Send-side with no merchant import (depcruise `express-no-merchant-coupling`).
+- **Effort:** human M / CC S. **Priority:** P3.
+- **Trigger / blocked by:** pilot data showing preferred riders' offers arriving late or not at all
+  because they were out of range.
+
+### TODO-7 · "Share my location" link for buyers
+
+- **What:** The business sends the buyer a `wa.me` message with a LyniaGo link. The buyer taps it, the
+  browser asks for their location, and it fills the booking's drop-off.
+- **Why:** v1 takes a pasted Google Maps link (short links resolved server-side) or a pin the business
+  drops. A buyer who can't produce a link leaves the business guessing, and wrong drop-offs end as
+  undelivered.
+- **Pros:** Accurate drop-offs without the buyer knowing how to share a map link. **Cons:** A public page
+  with its own abuse surface (rate limits, one-time tokens).
+- **Context:** Design doc L2 "Drop-off, v1"; CEO review OV-6.
+- **Effort:** human M / CC S. **Priority:** P2.
+- **Trigger / blocked by:** the pilot's `undelivered` reason `wrong_address` above about 10% of business
+  bookings.
