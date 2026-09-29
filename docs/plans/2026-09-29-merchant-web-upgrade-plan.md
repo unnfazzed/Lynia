@@ -1,6 +1,11 @@
 # Merchant web upgrade: restaurants **and** shops, team logins, simpler UI
 
-**Status:** DRAFT for `/plan-ceo-review` (2026-09-29) · branch `claude/merchant-web-platform-upgrade-oylm53`
+**Status:** `/plan-ceo-review` in progress (2026-09-29) · branch `claude/merchant-web-platform-upgrade-oylm53`
+
+> **Mid-review note.** §5 is already revised to the approved design doc's five layers. §4 and §6–§9 still
+> describe the pre-review model (phone-keyed members that claim themselves at sign-in, bookings owned
+> by the person). Where they disagree, **§5 and `docs/designs/merchant-web-upgrade.md` win** until the
+> CEO review's next PR revises them.
 **Owner ask (verbatim, 2026-09-29):**
 
 > i want to upgrade the merchant web side. It needs to enable both restaurants snd shops though a user
