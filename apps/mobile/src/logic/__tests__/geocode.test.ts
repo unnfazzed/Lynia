@@ -96,10 +96,23 @@ describe("toResolvedPlace (geocoder results → the picked-point shape)", () => 
   });
 
   it("admits the country's real edges", () => {
-    // Border towns at the country's southern and western ends: the box is padded past the border, not
-    // drawn along it.
+    // A border town at each end: south, west, east, north.
     expect(toResolvedPlace([{ latitude: -22.22, longitude: 30.0 }], "Beitbridge")).toMatchObject({ lat: -22.22, lng: 30.0 });
     expect(toResolvedPlace([{ latitude: -17.93, longitude: 25.84 }], "Victoria Falls")).toMatchObject({ lat: -17.93, lng: 25.84 });
+    expect(toResolvedPlace([{ latitude: -18.97, longitude: 32.67 }], "Mutare")).toMatchObject({ lat: -18.97, lng: 32.67 });
+    expect(toResolvedPlace([{ latitude: -16.52, longitude: 28.8 }], "Kariba")).toMatchObject({ lat: -16.52, lng: 28.8 });
+  });
+
+  it("reaches just inside the padding on every side", () => {
+    // Beyond the real border (lat −22.42…−15.61, lng 25.24…33.06), so a box drawn along the border, or
+    // any tighter, fails here. With the test below, each edge is pinned to within 0.1° from both sides.
+    const insideEachEdge = [
+      { latitude: -22.45, longitude: 30.0 }, // south
+      { latitude: -15.55, longitude: 30.0 }, // north
+      { latitude: -18.0, longitude: 25.15 }, // west
+      { latitude: -18.0, longitude: 33.15 }, // east
+    ];
+    for (const c of insideEachEdge) expect(toResolvedPlace([c], "somewhere")).not.toBeNull();
   });
 
   it("stops just past the padding on every side", () => {

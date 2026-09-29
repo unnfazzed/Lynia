@@ -33,14 +33,15 @@ export interface GeocodedLocation {
   longitude: number;
 }
 
-/** Appended when the query names a Zimbabwean town but not the country. */
+/** Appended when the query names one of the {@link NAMES_TOWN} towns but not the country. */
 const COUNTRY_SUFFIX = "Zimbabwe";
 
 /**
- * Appended when the query names no locality of its own. The platform geocoder is global and a bare
- * "14 Glenara Ave" resolves as happily in Glasgow as in the Avenues; biasing to the pilot corridor is
- * what makes a one-line query usable. Only ever a SECOND attempt, after the verbatim query: tried
- * first, it would move a Bulawayo or Mutare street to Harare whenever the customer left the town out.
+ * Appended when the query names neither the country nor a listed town. The platform geocoder is global
+ * and a bare "14 Glenara Ave" resolves as happily in Glasgow as in the Avenues; biasing to the pilot
+ * corridor is what makes a one-line query usable. Only ever a SECOND attempt, after the verbatim query:
+ * tried first, it would move a Bulawayo or Mutare street to Harare whenever the customer left the town
+ * out.
  */
 const CORRIDOR_SUFFIX = `Harare, ${COUNTRY_SUFFIX}`;
 
@@ -48,10 +49,11 @@ const CORRIDOR_SUFFIX = `Harare, ${COUNTRY_SUFFIX}`;
 const NAMES_COUNTRY = /\b(zimbabwe|zw)\b/i;
 
 /**
- * The query names a Zimbabwean town, so the Harare suffix would be noise or wrong. Some of these names
+ * The query names one of these towns, so the Harare suffix would be noise or wrong. Some of these names
  * exist abroad too (there is a Norton and an Epworth in England), so such a query still gets a second
  * attempt with the country appended: without one, a verbatim hit abroad fails the box below and the
- * lookup ends in not-found.
+ * lookup ends in not-found. A town missing from this list (Masvingo, Kwekwe) is treated like any other
+ * text: its retry gets the Harare suffix.
  */
 const NAMES_TOWN = /\b(harare|bulawayo|mutare|gweru|chitungwiza|norton|ruwa|epworth)\b/i;
 
@@ -65,9 +67,10 @@ const NAMES_TOWN = /\b(harare|bulawayo|mutare|gweru|chitungwiza|norton|ruwa|epwo
  * another country. That turn matters most on Android, where `geocodeAsync` asks `Geocoder` for a
  * single result, so a hit abroad leaves nothing else in the list to fall back on.
  *
- * A sanity check, not a border: the rectangle also takes in slivers of the neighbouring countries, and
- * whether a point is served is still decided by the service-corridor check at broadcast
- * (`isWithinServiceCorridor`, which `app/send.tsx` runs before broadcasting, and the server's own).
+ * A sanity check, not a border, so never reuse it as a country test: the rectangle also takes in whole
+ * towns across the border (Livingstone, Francistown, Musina, Manica). Whether a point is served is
+ * still decided by the service-corridor check at broadcast (`isWithinServiceCorridor`, which
+ * `app/send.tsx` runs before broadcasting, and the server's own).
  */
 const ZIMBABWE = { south: -22.5, north: -15.5, west: 25.1, east: 33.2 };
 
@@ -76,9 +79,10 @@ const LANDMARK_MAX = 120;
 
 /**
  * The queries to try, in order. Always the trimmed input first, so what the customer typed is never
- * overridden. A query that names no Zimbabwean locality gets a corridor-biased second attempt, and one
- * that names a town but not the country gets a country-suffixed one. Returns `[]` for a query too short
- * to be worth a geocoder round trip (mirrors the 3-character autocomplete threshold).
+ * overridden. A query that names neither the country nor a listed town gets a corridor-biased second
+ * attempt, and one that names a listed town but not the country gets a country-suffixed one. Returns
+ * `[]` for a query too short to be worth a geocoder round trip (mirrors the 3-character autocomplete
+ * threshold).
  */
 export function geocodeQueries(input: string): string[] {
   const q = input.trim().replace(/\s+/g, " ");
