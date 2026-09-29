@@ -1002,6 +1002,7 @@ model Merchant {
   members         MerchantMember[]
   bookings        MerchantBooking[]
   preferredRiders MerchantPreferredRider[]
+  invites         MerchantInvite[]
 
   @@map("merchants")
 }
@@ -1042,8 +1043,9 @@ model MerchantMember {
   role             MerchantMemberRole
   // The name the business knows this person by (sign-up's "Your name", or the invite's name).
   displayName      String             @map("display_name")
-  // When this person accepted the merchant terms + privacy notice (sign-up, or Join in L4). Null only
-  // for owners backfilled by migration 0053, who predate the terms.
+  // When this person accepted the merchant terms + privacy notice (sign-up, or Join in L4). Null for
+  // owners backfilled by migration 0053, who predate the terms, and for someone support handed a business
+  // to who wasn't on its team (L4 owner transfer: support can't accept on their behalf).
   termsAcceptedAt  DateTime?          @map("terms_accepted_at")
   addedByProfileId String?            @map("added_by_profile_id") @db.Uuid
   createdAt        DateTime           @default(now()) @map("created_at")
@@ -1092,6 +1094,26 @@ model MerchantPreferredRider {
   @@unique([merchantId, phone])
   @@index([phone])
   @@map("merchant_preferred_riders")
+}
+
+/// Merchant web upgrade L4 (design doc "L4 — Team"): an invite to join a business as Staff, pending the
+/// person's Join or Not me. Never reserves the number: the first Join wins (a person works at one business).
+model MerchantInvite {
+  id                 String   @id @default(uuid()) @db.Uuid
+  merchantId         String   @map("merchant_id") @db.Uuid
+  merchant           Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  /// E.164 (`+263…`), as `profiles.phone` stores it.
+  phone              String
+  /// The name the owner gave; prefilled at Join, where the person confirms or corrects it.
+  displayName        String   @map("display_name")
+  // Plain id (no relation): a team change or an erased profile never removes the invite.
+  invitedByProfileId String   @map("invited_by_profile_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+  expiresAt          DateTime @map("expires_at")
+
+  @@unique([merchantId, phone])
+  @@index([phone])
+  @@map("merchant_invites")
 }
 
 /**

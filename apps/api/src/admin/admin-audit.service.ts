@@ -70,6 +70,20 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // the pilotEnabled flip — the only go-live switch; a free-text forgery would read as a real one.
   "merchant.go_live",
   "merchant.go_dormant",
+  // Merchant web upgrade L3 + L4: written by the business's own Riders and Team endpoints, each in the
+  // same transaction as its change. The daily limits COUNT `merchant.rider.add` and `merchant.team.invite`
+  // rows, so a forged one would also eat a business's allowance for the day. The admin spec cross-checks
+  // this list against the services' exported constants.
+  "merchant.rider.add",
+  "merchant.rider.remove",
+  "merchant.team.invite",
+  "merchant.team.invite_cancel",
+  "merchant.team.remove",
+  "merchant.team.leave",
+  "merchant.team.join",
+  "merchant.team.decline",
+  // L4: `AdminMerchantsService.transferOwner` writes this in the same transaction as the handover.
+  "merchant.owner_transfer",
 ]);
 
 @Injectable()

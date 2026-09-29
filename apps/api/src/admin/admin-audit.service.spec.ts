@@ -1,5 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
+import { RIDER_ADD_ACTION, RIDER_REMOVE_ACTION } from "../merchant/merchant-riders.service";
+import { TEAM_DECLINE_ACTION, TEAM_JOIN_ACTION } from "../merchant/merchant-invites.service";
+import {
+  TEAM_INVITE_ACTION,
+  TEAM_INVITE_CANCEL_ACTION,
+  TEAM_LEAVE_ACTION,
+  TEAM_REMOVE_ACTION,
+} from "../merchant/merchant-team.service";
+import { OWNER_TRANSFER_ACTION } from "./admin-merchants.service";
 import { FEED_READ_ACTIONS } from "../notifications/notifications-feed.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuditService, RESERVED_AUDIT_ACTIONS } from "./admin-audit.service";
@@ -125,6 +134,23 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
   it("reserves every action the feed synthesizer reads back (FEED_READ_ACTIONS ⊆ RESERVED_AUDIT_ACTIONS)", () => {
     const unreserved = FEED_READ_ACTIONS.filter((a) => !RESERVED_AUDIT_ACTIONS.has(a));
     expect(unreserved).toEqual([]);
+  });
+
+  // Merchant web upgrade L3 + L4: the business's own Riders/Team endpoints write these beside their change,
+  // and two of them are counted for daily limits, so a forged row would also spend a business's allowance.
+  it("reserves every action the merchant Riders and Team endpoints write", () => {
+    const merchantActions = [
+      RIDER_ADD_ACTION,
+      RIDER_REMOVE_ACTION,
+      TEAM_INVITE_ACTION,
+      TEAM_INVITE_CANCEL_ACTION,
+      TEAM_REMOVE_ACTION,
+      TEAM_LEAVE_ACTION,
+      TEAM_JOIN_ACTION,
+      TEAM_DECLINE_ACTION,
+      OWNER_TRANSFER_ACTION,
+    ];
+    expect(merchantActions.filter((a) => !RESERVED_AUDIT_ACTIONS.has(a))).toEqual([]);
   });
 
   it("coerces missing reasonCode/note to null (nullable columns)", async () => {

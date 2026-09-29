@@ -1586,3 +1586,93 @@ export const AddMerchantRiderRequest = z
   })
   .strict();
 export type AddMerchantRiderRequest = z.infer<typeof AddMerchantRiderRequest>;
+
+/* ── Merchant web upgrade L4: Team (docs/designs/merchant-web-upgrade.md "L4 — Team") ──────────── */
+
+/** An invite lasts this long before the person must be invited again. */
+export const MERCHANT_INVITE_TTL_DAYS = 14;
+/** A business sends at most this many invites a day (rate-limited and audit-logged). */
+export const MERCHANT_INVITES_PER_DAY = 10;
+
+/** One person on the business's team (`GET /merchant/team`, owner only). */
+export const MerchantTeamMemberResponse = z
+  .object({
+    profileId: z.string().uuid(),
+    /** The name the business knows them by. */
+    name: z.string(),
+    phoneMasked: z.string(),
+    role: MerchantMemberRole,
+    /** The signed-in person themselves. */
+    you: z.boolean(),
+    joinedAt: z.string(),
+  })
+  .strict();
+export type MerchantTeamMemberResponse = z.infer<typeof MerchantTeamMemberResponse>;
+
+/** An invite still waiting for the person's Join or Not me. */
+export const MerchantTeamInviteResponse = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    phoneMasked: z.string(),
+    /** International digits, so the owner can send the link from their own WhatsApp. */
+    invitePhone: z.string(),
+    createdAt: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type MerchantTeamInviteResponse = z.infer<typeof MerchantTeamInviteResponse>;
+
+export const MerchantTeamResponse = z
+  .object({
+    members: z.array(MerchantTeamMemberResponse),
+    invites: z.array(MerchantTeamInviteResponse),
+  })
+  .strict();
+export type MerchantTeamResponse = z.infer<typeof MerchantTeamResponse>;
+
+/** `POST /merchant/team/invites` (owner only). Never reveals whether the number works elsewhere. */
+export const CreateMerchantInviteRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    phone: z.string().trim().min(6).max(20),
+  })
+  .strict();
+export type CreateMerchantInviteRequest = z.infer<typeof CreateMerchantInviteRequest>;
+
+/** An invite waiting for the signed-in person (`GET /merchant/invites`): "{Owner} added you to {Business}". */
+export const MyMerchantInviteResponse = z
+  .object({
+    id: z.string().uuid(),
+    businessName: z.string(),
+    businessType: MerchantBusinessType,
+    /** The owner's first name, as the invite line says it. */
+    ownerName: z.string(),
+    role: MerchantMemberRole,
+    /** The name the owner gave, which the person confirms or corrects at Join. */
+    name: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type MyMerchantInviteResponse = z.infer<typeof MyMerchantInviteResponse>;
+
+export const MyMerchantInvitesResponse = z.object({ invites: z.array(MyMerchantInviteResponse) }).strict();
+export type MyMerchantInvitesResponse = z.infer<typeof MyMerchantInvitesResponse>;
+
+/** `POST /merchant/invites/:id/join`: the person's name as they want it, and the one-tap terms line. */
+export const JoinMerchantInviteRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    termsAccepted: z.literal(true),
+  })
+  .strict();
+export type JoinMerchantInviteRequest = z.infer<typeof JoinMerchantInviteRequest>;
+
+/** `POST /admin/merchants/:id/owner`: support hands a business to another person after an identity check. */
+export const TransferMerchantOwnerRequest = z
+  .object({
+    phone: z.string().trim().min(6).max(20),
+    note: z.string().trim().min(10).max(500),
+  })
+  .strict();
+export type TransferMerchantOwnerRequest = z.infer<typeof TransferMerchantOwnerRequest>;

@@ -51,7 +51,7 @@ type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { sele
 type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>;
 
 /** Splits sign-up's single "Your name" into the profile's first/last name (first word, then the rest). */
-function splitPersonName(full: string): { firstName: string; lastName: string } {
+export function splitPersonName(full: string): { firstName: string; lastName: string } {
   const [first = "", ...rest] = full.trim().split(/\s+/);
   return { firstName: first, lastName: rest.join(" ") };
 }

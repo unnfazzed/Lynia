@@ -489,6 +489,27 @@ export class TrackingGateway
     }
   }
 
+  /**
+   * Merchant web upgrade L4 (Team): a person removed from a business, or who left it, stops receiving
+   * its live queue now rather than at their next reconnect. The queue room is only a signal channel
+   * (every read behind it re-checks membership in MerchantGuard), so this is the info-drip fix, not the
+   * security gate: best-effort, post-commit, same cluster-wide lookup as `kickRiderFromBoard`, and only
+   * this business's room is left. Never throws.
+   */
+  async evictFromMerchantQueue(profileId: string, merchantId: string): Promise<void> {
+    if (!this.server) return;
+    const room = merchantQueueRoom(merchantId);
+    try {
+      const sockets = await this.server.in(room).fetchSockets();
+      for (const s of sockets) {
+        const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
+        if (sub === profileId) await s.leave(room);
+      }
+    } catch (err) {
+      this.logger.warn(`merchant queue eviction failed for ${profileId}: ${(err as Error).message}`);
+    }
+  }
+
   /** Cluster-wide direct-to-rider emit (same socket lookup as `kickRiderFromBoard`/
    *  `evictRiderFromSupply`): find every socket authenticated as `riderId` on ANY instance via the
    *  Redis-backed `fetchSockets`, and emit straight to each — no room, since these are single-

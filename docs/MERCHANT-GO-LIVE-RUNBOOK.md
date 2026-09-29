@@ -118,7 +118,51 @@ under the business's own name for them. Only the owner adds or removes; the whol
   `DELETE FROM merchant_preferred_riders WHERE merchant_id = '<merchant id>' AND phone = '+263…';` The
   rider-side notice and opt-out ("{Business} calls you their rider") are Phase 2.
 
-## 8. Pilot numbers (CEO-10)
+## 8. Team (L4)
+
+A business can have several people signing in, each with their own number and code. Exactly one is the
+**owner**; everyone else is **Staff**. Staff run orders, bookings, busy mode and stock. Only the owner
+changes items, hours, the profile and pin, the cash rule, riders and the team, and only the owner sees the
+statement (the permission table is in `docs/designs/merchant-web-upgrade.md` "L4 — Team").
+
+- **How people join.** The owner types a name and a number in Team and sends the sign-in link from their own
+  WhatsApp. When that number signs in, it sees "{Owner} added you to {Business} as Staff" and chooses **Join**
+  (confirming their name and accepting the merchant terms) or **Not me**. Invites last 14 days, and the
+  retention sweep deletes them once expired. A business sends at most 10 invites a day.
+- **One business per number.** Several businesses can invite the same number; the first Join wins. Adding a
+  number never tells the owner whether it works somewhere else. Only the invited person hears it, at Join:
+  "Your number already works at another business on LyniaGo. Leave it first to join {Business}."
+- **Leaving and removing.** Staff can leave from their menu; the owner can remove anyone but themselves.
+  Either ends access on the person's next request, and their devices stop getting the live order queue
+  straight away. The owner can't be removed or leave.
+- **Trail.** Every step is an `audit_logs` row with target = the merchant id: `merchant.team.invite` and
+  `merchant.team.invite_cancel` (note = the invite id), `merchant.team.join` and `merchant.team.decline`
+  (actor = the invited person), `merchant.team.remove` and `merchant.team.leave` (note = the person's
+  profile id). These actions are reserved: the console's free-text audit form can't write them.
+- **Deleting an account.** A Staff member who deletes their LyniaGo account leaves the team, and every invite
+  to their number goes. An **owner can't delete their account** while they own a business: the app tells them
+  to message support, and support hands the business over first (below).
+
+### Handing a business to someone else
+
+The only way ownership moves, for a sale, a family handover or an owner who lost their number.
+
+1. **Check identity** by a call to both people where possible, or a visit, plus the new owner's ID. Never on
+   the strength of a WhatsApp message alone.
+2. The new owner must have signed in to LyniaGo once with their number, and must be on this business's team
+   already or on **no** business. Someone on another team leaves it first. A held or restricted account can't
+   be handed a business.
+3. Run `POST /admin/merchants/:id/owner` with `{ "phone": "+263…", "note": "…" }`. The note is required
+   (10–500 characters): say who you spoke to, how you checked, and why. It goes on the `merchant.owner_transfer`
+   audit row, which commits with the handover.
+4. The old owner stays on the team as Staff. The new owner can remove them in Team if that's what was agreed.
+5. Send the new owner the merchant terms. Someone who wasn't on the team never accepted them in the app, and
+   support can't accept on their behalf, so their team row has no acceptance time.
+
+Never change `merchants.owner_profile_id` or `merchant_members.role` by hand: the endpoint keeps the owner
+row, the column and the audit trail in step.
+
+## 9. Pilot numbers (CEO-10)
 
 Run against a read replica or with care. The booking queries arrive with L2 (`merchant_bookings`).
 

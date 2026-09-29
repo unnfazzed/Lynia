@@ -43,7 +43,7 @@
  */
 
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
-export const LEGAL_LAST_UPDATED = "28 September 2026";
+export const LEGAL_LAST_UPDATED = "29 September 2026";
 
 /**
  * Contact for privacy requests. Deliberately the SAME inbox the app already routes support to
@@ -219,6 +219,18 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: ["preferred_rider_store"],
   },
   {
+    label: "Working at a business on LyniaGo",
+    collected:
+      "If a business adds you to its team, the name it gave you, the mobile number it invited, when you joined and when you accepted the merchant terms. An invite you haven't answered is kept for 14 days.",
+    purpose:
+      "To let you sign in to that business's LyniaGo tablet or phone with your own number and code, and to show the business's owner who is on the team.",
+    basis:
+      "Performance of your contract with us, which you accept when you join. The owner sees your name and a masked number on the team page, never your orders or your account history.",
+    retention:
+      "Kept while you are on the team. It is deleted when you leave, when the owner removes you, or when you delete your LyniaGo account; an unanswered invite is deleted when you say Not me or after 14 days.",
+    manifestKeys: ["merchant_member_name", "merchant_invite_store", "merchant_invite_name"],
+  },
+  {
     label: "Device identifiers and diagnostics",
     collected:
       "A push-notification token for your device, your sign-in sessions, and crash/performance diagnostics (which may include the app version, device model and OS version).",
@@ -248,6 +260,11 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
     who: "A business that lists you as one of its riders",
     what:
       "Whether your number belongs to a LyniaGo rider who can take jobs right now (never why), and — once you have delivered for that business — your name, photo, how many of its deliveries you have made and your rating from them.",
+  },
+  {
+    who: "The business you work at",
+    what:
+      "Its owner sees your name, a masked version of your number and when you joined. When you book a rider or act on an order for the business, the business can see it was you.",
   },
   {
     who: "Google (Firebase Cloud Messaging, Google Maps)",

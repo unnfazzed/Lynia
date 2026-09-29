@@ -55,6 +55,9 @@ function eraseHarness(
     // see. Default 1 (predicate still matched → write applied).
     profileCasCount?: number;
     riderScrubCount?: number;
+    // Merchant web upgrade L4: the name of a business this person owns, or the business they're staff at.
+    ownsBusiness?: string;
+    staffAt?: string;
   } = {},
 ) {
   const preflightRider = profile ? buildRider(profile.rider) : null;
@@ -94,6 +97,13 @@ function eraseHarness(
     session: { deleteMany: vi.fn(async () => ((calls.sessionDel = true), { count: 2 })) },
     // Merchant web upgrade L3: the person's number leaves every business's own-rider list.
     merchantPreferredRider: { deleteMany: vi.fn(async (a: unknown) => ((calls.preferredDel = a), { count: 1 })) },
+    // L4 (Team): an owner is refused; invites to the number and a staff member's team row are deleted.
+    merchant: { findFirst: vi.fn(async (a: unknown) => ((calls.ownerCheck = a), extras.ownsBusiness ? { name: extras.ownsBusiness } : null)) },
+    merchantInvite: { deleteMany: vi.fn(async (a: unknown) => ((calls.inviteDel = a), { count: 1 })) },
+    merchantMember: {
+      findUnique: vi.fn(async () => (extras.staffAt ? { merchantId: extras.staffAt } : null)),
+      deleteMany: vi.fn(async (a: unknown) => ((calls.memberDel = a), { count: extras.staffAt ? 1 : 0 })),
+    },
     orderEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.eventUpdate = a), { count: 3 })) },
     // DS-01: SOS location is now scrubbed in the same transaction.
     sosEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.sosUpdate = a), { count: 1 })) },
@@ -238,6 +248,42 @@ describe("PrivacyService.eraseAccount", () => {
     const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: null }, false);
     await svc.eraseAccount("p1");
     expect(tx.topUp.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("L4: refuses to erase a business owner until support hands the business over, and changes nothing", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false, [], false, { ownsBusiness: "Mbare Auto Spares" });
+    const err = await svc.eraseAccount("p1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).getResponse()).toMatchObject({
+      reason: "business_owner",
+      message: "You own Mbare Auto Spares on LyniaGo. Message LyniaGo support to hand it to someone else, then delete your account.",
+    });
+    // Ownership reads the owner row, and the column for a business never backfilled.
+    expect(calls.ownerCheck).toEqual({
+      where: { OR: [{ ownerProfileId: "p1" }, { members: { some: { profileId: "p1", role: "owner" } } }] },
+      select: { name: true },
+    });
+    expect(calls.profileUpdate).toBeUndefined();
+    expect(calls.inviteDel).toBeUndefined();
+  });
+
+  it("L4: deletes every invite to the number and a staff member's team row, then evicts their devices from the queue", async () => {
+    const gateway = { evictFromMerchantQueue: vi.fn(async () => {}) } as unknown as TrackingGateway;
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false, [], false, { staffAt: "m-1", gateway });
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect(calls.inviteDel).toEqual({ where: { phone: "+263771234567" } });
+    // Only ever a staff row: an owner never reaches this point.
+    expect(calls.memberDel).toEqual({ where: { profileId: "p1", role: "staff" } });
+    expect(gateway.evictFromMerchantQueue).toHaveBeenCalledWith("p1", "m-1");
+  });
+
+  it("L4: someone on no team still has their invites deleted, and nobody is evicted", async () => {
+    const gateway = { evictFromMerchantQueue: vi.fn(async () => {}) } as unknown as TrackingGateway;
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false, [], false, { gateway });
+    await svc.eraseAccount("p1");
+    expect(calls.inviteDel).toEqual({ where: { phone: "+263771234567" } });
+    expect(calls.memberDel).toBeUndefined();
+    expect(gateway.evictFromMerchantQueue).not.toHaveBeenCalled();
   });
 
   it("re-checks the active-ride guard inside the tx and aborts if a ride appeared mid-erase (DS-10)", async () => {
@@ -478,6 +524,7 @@ describe("PrivacyService.purgeExpiredData", () => {
     let gpsWhere: { createdAt: { lt: Date } } | undefined;
     let sosWhere: { createdAt: { lt: Date } } | undefined;
     let sessWhere: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] } | undefined;
+    let inviteWhere: { expiresAt: { lt: Date } } | undefined;
     const prisma = {
       orderEvent: {
         updateMany: async (a: { where: { createdAt: { lt: Date } }; data: unknown }) => {
@@ -499,13 +546,17 @@ describe("PrivacyService.purgeExpiredData", () => {
           where: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] };
         }) => ((sessWhere = a.where), { count: 7 }),
       },
+      // Merchant web upgrade L4: invites nobody answered in their 14 days.
+      merchantInvite: { deleteMany: async (a: { where: { expiresAt: { lt: Date } } }) => ((inviteWhere = a.where), { count: 4 }) },
     } as unknown as PrismaService;
     const svc = new PrivacyService(prisma, env);
 
     const now = new Date("2026-07-06T00:00:00Z");
     const res = await svc.purgeExpiredData(now);
     // gpsScrubbed now folds in the SOS coords (5 + 2).
-    expect(res).toEqual({ gpsScrubbed: 7, sessionsPurged: 7 });
+    expect(res).toEqual({ gpsScrubbed: 7, sessionsPurged: 7, invitesPurged: 4 });
+    // An invite goes the moment it expires; its 14 days are the retention.
+    expect(inviteWhere!.expiresAt.lt.toISOString()).toBe(now.toISOString());
     // 90-day GPS cutoff (shared by order + SOS coords), 30-day session cutoff, measured back from `now`.
     expect(gpsWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
     expect(sosWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
@@ -526,6 +577,7 @@ describe("PrivacyService.purgeExpiredData", () => {
           where: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] };
         }) => ((sessWhere = a.where), { count: 3 }),
       },
+      merchantInvite: { deleteMany: async () => ({ count: 0 }) },
     } as unknown as PrismaService;
 
     const res = await new PrivacyService(prisma, env).purgeExpiredData(new Date("2026-07-06T00:00:00Z"));

@@ -1,9 +1,13 @@
-import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { businessBookingAccountPhone, RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { businessBookingAccountPhone, normalizePhone, RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, routeOf } from "./admin.shared";
+
+/** Merchant web upgrade L4: support's handover of a business, audit-logged in the same transaction. */
+export const OWNER_TRANSFER_ACTION = "merchant.owner_transfer";
 
 /** The directory/detail's shared column set (L1 added type, kind and the location for landmark + phone). */
 const MERCHANT_DIRECTORY_SELECT = {
@@ -320,6 +324,89 @@ export class AdminMerchantsService {
     });
   }
 
+  /**
+   * Hand a business to another person (merchant web upgrade L4, "Owner rules"): the only way ownership
+   * moves, for a sale or a lost number, after support has checked identity by call or visit plus ID
+   * (docs/MERCHANT-GO-LIVE-RUNBOOK.md). The note is required and goes on the audit row, which commits
+   * with the change. Nobody's data is edited by hand.
+   *
+   * The new owner is found by the number they sign in with. They must already be on this business's team
+   * or on no business at all, and in good standing (the same people who can't open a business can't be
+   * handed one). The old owner stays on the team as Staff, and the new owner can remove them in Team.
+   * `merchants.owner_profile_id` follows, so `ownerPhoneMasked` and the legacy resolver agree with the
+   * team.
+   */
+  async transferOwner(actor: string, id: string, input: { phone: string; note: string }) {
+    const phone = normalizePhone(input.phone);
+    if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the new owner's phone number, like 0771234567." });
+    try {
+      return await this.transferOwnerTx(actor, id, phone, input.note);
+    } catch (err) {
+      // The new owner joined another business in the same instant (unique member profile_id).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException({ reason: "member_elsewhere", message: "That number works at another business. They must leave it first." });
+      }
+      throw err;
+    }
+  }
+
+  private async transferOwnerTx(actor: string, id: string, phone: string, note: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // One handover at a time per business.
+      await tx.$executeRaw`SELECT 1 FROM merchants WHERE id = ${id}::uuid FOR UPDATE`;
+      const merchant = await tx.merchant.findUnique({ where: { id }, select: { id: true, name: true, ownerProfileId: true } });
+      if (!merchant) throw new NotFoundException("Merchant not found");
+      const next = await tx.profile.findUnique({
+        where: { phone },
+        select: { id: true, firstName: true, lastName: true, onHold: true, rider: { select: { accountStatus: true } } },
+      });
+      if (!next) {
+        throw new NotFoundException({ reason: "no_account", message: "That number has no LyniaGo account yet. Ask them to sign in once, then try again." });
+      }
+      if (next.onHold || (next.rider && next.rider.accountStatus !== "active")) {
+        throw new ConflictException({ reason: "account_restricted", message: "That account is on hold or restricted. Sort that out before handing it a business." });
+      }
+      const [nextMember, nextOwnsOther, currentOwner] = await Promise.all([
+        tx.merchantMember.findUnique({ where: { profileId: next.id }, select: { id: true, merchantId: true, role: true } }),
+        tx.merchant.findFirst({ where: { ownerProfileId: next.id, id: { not: id } }, select: { id: true } }),
+        tx.merchantMember.findFirst({ where: { merchantId: id, role: "owner" }, select: { id: true, profileId: true } }),
+      ]);
+      if ((nextMember && nextMember.merchantId !== id) || nextOwnsOther) {
+        throw new ConflictException({ reason: "member_elsewhere", message: "That number works at another business. They must leave it first." });
+      }
+      if (nextMember?.role === "owner") throw new ConflictException({ reason: "already_owner", message: "That number already owns this business." });
+
+      // The old owner steps down first: a business has exactly one owner (a partial unique index).
+      const previousOwnerProfileId = currentOwner?.profileId ?? merchant.ownerProfileId;
+      if (currentOwner) {
+        await tx.merchantMember.update({ where: { id: currentOwner.id }, data: { role: "staff" } });
+      } else if (merchant.ownerProfileId) {
+        // A business whose owner row was never backfilled: the old owner still joins the team as Staff.
+        const previous = await tx.profile.findUnique({ where: { id: merchant.ownerProfileId }, select: { firstName: true, lastName: true } });
+        const onATeam = await tx.merchantMember.count({ where: { profileId: merchant.ownerProfileId } });
+        if (previous && onATeam === 0) {
+          await tx.merchantMember.create({
+            data: { merchantId: id, profileId: merchant.ownerProfileId, role: "staff", displayName: personName(previous, merchant.name) },
+          });
+        }
+      }
+      if (nextMember) {
+        await tx.merchantMember.update({ where: { id: nextMember.id }, data: { role: "owner" } });
+      } else {
+        // Not on the team yet: they join as its owner. No terms acceptance is recorded for them, because
+        // support can't accept on someone's behalf (the runbook's handover steps cover the terms).
+        await tx.merchantMember.create({
+          data: { merchantId: id, profileId: next.id, role: "owner", displayName: personName(next, merchant.name), addedByProfileId: null },
+        });
+      }
+      await tx.merchant.update({ where: { id }, data: { ownerProfileId: next.id } });
+      // An invite to the new owner's number has nothing left to do.
+      await tx.merchantInvite.deleteMany({ where: { merchantId: id, phone } });
+      const audit = await tx.auditLog.create({ data: auditData(actor, OWNER_TRANSFER_ACTION, id, null, note), select: { id: true } });
+      return { id, ownerProfileId: next.id, previousOwnerProfileId: previousOwnerProfileId ?? null, auditId: audit.id };
+    });
+  }
+
   /** Shared Merchant projection for the directory + detail. */
   private toMerchant(
     m: {
@@ -355,4 +442,9 @@ export class AdminMerchantsService {
       joined: fmtDate(m.createdAt),
     };
   }
+}
+
+/** A person's name as a team shows it: their LyniaGo profile name, or the business's when it's empty. */
+function personName(p: { firstName: string; lastName: string }, fallback: string): string {
+  return `${p.firstName} ${p.lastName}`.trim() || fallback;
 }

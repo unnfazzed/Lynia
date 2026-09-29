@@ -12,10 +12,13 @@ import { MerchantController } from "./merchant.controller";
 import { MerchantBookingController } from "./merchant-booking.controller";
 import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
+import { MerchantInvitesService } from "./merchant-invites.service";
 import { MerchantOrderController } from "./merchant-order.controller";
 import { MerchantRidersController } from "./merchant-riders.controller";
 import { MerchantRidersService } from "./merchant-riders.service";
 import { MerchantService } from "./merchant.service";
+import { MerchantInvitesController, MerchantTeamController } from "./merchant-team.controller";
+import { MerchantTeamService } from "./merchant-team.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
@@ -46,14 +49,29 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * Merchant web upgrade L2 adds Book a rider: MerchantBookingService drives Send's own services as the
  * business's booking account, so MatchingModule (selectOffer) and OffersModule (the offer list) join
  * the imports — the same sanctioned merchant → Send direction (plan §11 F1.3).
+ *
+ * L3 adds Your riders (MerchantRidersService); L4 adds Team: MerchantTeamService (the owner's side and
+ * a staff member's Leave, which evicts the person's devices from the queue room through TrackingGateway)
+ * and MerchantInvitesService (Join / Not me, for a caller who isn't on a business yet).
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
-  controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController, MerchantBookingController, MerchantRidersController],
+  controllers: [
+    MerchantController,
+    RestaurantsController,
+    FoodOrderController,
+    MerchantOrderController,
+    MerchantBookingController,
+    MerchantRidersController,
+    MerchantTeamController,
+    MerchantInvitesController,
+  ],
   providers: [
     MerchantService,
     MerchantBookingService,
     MerchantRidersService,
+    MerchantTeamService,
+    MerchantInvitesService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     FoodOrderService,
