@@ -263,7 +263,7 @@ Book a rider ahead of Team because it is what the pilot's week 1 measures.)*
   exported; booking accounts labelled and excluded in admin views.
 - Short-link resolver: `maps.app.goo.gl` / `goo.gl/maps` only, https, ≤2 hops, `Location` header only,
   3 s timeout.
-- Web: Deliveries page, booking form (Leaflet + OSM pin, link parsing, value cap, prohibited-goods text),
+- Web: Deliveries page, booking form (L1's `LocationPin` over OSM, link parsing, value cap, prohibited-goods text),
   live pick screen, code send/copy, states list; restaurant "Book a rider" button + bookings strip on
   Orders; shop nav + vocabulary + Help.
 
@@ -799,8 +799,9 @@ No catch-alls are introduced. Every rescue logs `{route, profileId, merchantId, 
 | T16 | Self-dealing: a member who is also a rider takes their own business's jobs (OV-5) | Med | Med | refuse members' offers at pick; members can't be preferred riders; booking checks the member's rider standing |
 
 Audit trail: go-live, owner transfer, preferred-rider add/remove, invite/remove member (all via
-`auditData()` or the merchant audit equivalent). No new secrets. The only new client dependency is
-Leaflet (widely used, pinned).
+`auditData()` or the merchant audit equivalent). No new secrets and no new client dependency: the map
+pin is the web's own `LocationPin` over OpenStreetMap tiles (built in L1 instead of Leaflet, so no
+lockfile change; L2's booking form reuses it).
 
 ### Section 4 · Data Flow & Interaction Edge Cases
 
@@ -1172,7 +1173,7 @@ API is at 100%.
   - Surfaced by: CEO-1; R2-1…R2-6; OV-5, OV-6, OV-7, OV-8, OV-9
   - Files: `apps/api/src/merchant/merchant-booking.*`, `apps/api/src/orders/orders.service.ts` (one line), `packages/shared/src/*`
   - Verify: booking specs incl. IDOR and pick race
-- [ ] **T10 (P1, human: ~2.5d / CC: ~80min)** — web/L2 — Deliveries, booking form (Leaflet/OSM, link parser), pick screen (polling), code send/copy/rotate, restaurant button + strip, shop nav, `vocabulary()`, Help
+- [ ] **T10 (P1, human: ~2.5d / CC: ~80min)** — web/L2 — Deliveries, booking form (`LocationPin`/OSM, link parser), pick screen (polling), code send/copy/rotate, restaurant button + strip, shop nav, `vocabulary()`, Help
   - Surfaced by: R2-3, R2-8, R2-12; CEO-2
   - Files: `apps/merchant/app/(app)/deliveries/**`, `components/KitchenNav.tsx`, `lib/vocabulary.ts`
   - Verify: RTL + parser table tests; D-44 ledger

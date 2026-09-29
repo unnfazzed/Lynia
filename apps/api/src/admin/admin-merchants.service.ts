@@ -287,7 +287,7 @@ export class AdminMerchantsService {
    *    on now would surface there unreviewed (design doc R2-7);
    *  - a restaurant with no pickup pin (placeOrder would 409 every order) or no live, photo'd dish (the
    *    menu would be empty). The rest of the go-live checks are the ops runbook's human call
-   *    (docs/runbooks/MERCHANT-GO-LIVE.md).
+   *    (docs/MERCHANT-GO-LIVE-RUNBOOK.md).
    * Switching OFF is always allowed.
    */
   async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {

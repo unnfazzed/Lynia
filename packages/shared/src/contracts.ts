@@ -771,6 +771,19 @@ export type MerchantBusinessType = z.infer<typeof MerchantBusinessType>;
 export const MerchantShopKind = z.enum(["pharmacy", "grocery", "butchery", "fashion", "auto_parts", "hardware", "electronics", "other"]);
 export type MerchantShopKind = z.infer<typeof MerchantShopKind>;
 
+/** What a shopkeeper calls each kind — the design doc's words and order (merchant web upgrade L1.4), shared
+ *  so the sign-up and the admin console never name a kind two ways. */
+export const MERCHANT_SHOP_KIND_LABELS: Readonly<Record<MerchantShopKind, string>> = {
+  pharmacy: "Pharmacy",
+  grocery: "Grocery",
+  butchery: "Butchery",
+  fashion: "Clothes & shoes",
+  auto_parts: "Car parts",
+  hardware: "Hardware",
+  electronics: "Phones & electronics",
+  other: "Something else",
+};
+
 /** Two roles, not a permissions matrix (design doc L4's permission table). */
 export const MerchantMemberRole = z.enum(["owner", "staff"]);
 export type MerchantMemberRole = z.infer<typeof MerchantMemberRole>;

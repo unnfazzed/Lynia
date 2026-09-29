@@ -1,4 +1,4 @@
-import { tokens } from "@lynia/shared";
+import { MERCHANT_SHOP_KIND_LABELS, type MerchantShopKind, tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
 import type { MerchantDebtLedgerRow, MerchantDetail, TripRow } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -7,6 +7,7 @@ import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconStore } from "../../components/icons";
+import { GoLiveButton } from "../GoLiveButton";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
   opened: "Debt opened",
@@ -17,9 +18,11 @@ const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
 
 /** Merchant profile (X1): cash rule, pilot status, recent orders, and the full append-only
  *  collect-and-return debt-ledger trail (R-01/R-06/R-07) — the same evidence support needs to answer
- *  "why does this merchant show open debt". Read-only: there is no merchant-standing mutation (no
- *  `accountStatus` on Merchant) — cash-ban/suspension actions live on the customer (below) and rider
- *  (via the existing Riders console) records this debt ledger already produced. */
+ *  "why does this merchant show open debt". The one mutation is the go-live switch (merchant web upgrade
+ *  L1, restaurants only), with the contact phone and pin ops checks before using it
+ *  (docs/MERCHANT-GO-LIVE-RUNBOOK.md). There is no other merchant-standing mutation (no `accountStatus`
+ *  on Merchant) — cash-ban/suspension actions live on the customer (below) and rider (via the existing
+ *  Riders console) records this debt ledger already produced. */
 export default async function MerchantProfilePage({
   params,
   searchParams,
@@ -57,6 +60,8 @@ export default async function MerchantProfilePage({
 
   const m = res.data;
   const connected = true;
+  const isShop = m.businessType === "shop";
+  const kind = m.shopKind && m.shopKind in MERCHANT_SHOP_KIND_LABELS ? MERCHANT_SHOP_KIND_LABELS[m.shopKind as MerchantShopKind] : null;
 
   const tripCols: Column<TripRow>[] = [
     { key: "id", header: "Order", className: "mono", cell: (t) => t.id.slice(0, 8) },
@@ -109,11 +114,30 @@ export default async function MerchantProfilePage({
         </a>
         <h1 style={{ fontSize: 18 }}>{m.name}</h1>
         <span style={{ display: "flex", gap: 6 }}>
+          <Pill kind="mut">{isShop ? (kind ? `shop · ${kind.toLowerCase()}` : "shop") : "restaurant"}</Pill>
           <Pill kind="mut">{m.cashRule === "collect_and_return" ? "collect & return" : "pay upfront"}</Pill>
           {m.pilotEnabled ? <Pill kind="good">pilot</Pill> : null}
         </span>
         <Conn connected={connected} />
+        {isShop ? null : <GoLiveButton merchantId={m.id} name={m.name} live={m.pilotEnabled} connected={connected} />}
       </header>
+
+      {isShop ? (
+        <div className="warnbar">
+          <IconStore />
+          <span className="t">
+            <b>Shops open with LyniaGo Shops.</b> There&apos;s no go-live for a shop yet. Call it about booking a rider.
+          </span>
+        </div>
+      ) : !m.pilotEnabled ? (
+        <div className="warnbar">
+          <IconStore />
+          <span className="t">
+            <b>Customers can&apos;t see this restaurant yet.</b> Call {m.contactPhone ?? "the owner"}, run the go-live
+            checks in <span className="mono">docs/MERCHANT-GO-LIVE-RUNBOOK.md</span>, then use Go live.
+          </span>
+        </div>
+      ) : null}
 
       {m.openDebtCount > 0 ? (
         <div className="warnbar">
@@ -154,6 +178,24 @@ export default async function MerchantProfilePage({
             <div className="block-title">Details</div>
             <KeyValue
               rows={[
+                { label: "Type", value: isShop ? (kind ? `Shop · ${kind}` : "Shop") : "Restaurant" },
+                { label: "Contact phone", value: m.contactPhone ?? "—" },
+                { label: "Landmark", value: m.landmark ?? "—" },
+                {
+                  label: "Pin",
+                  value: m.pin ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${m.pin.lat},${m.pin.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: tokens.color.accentText }}
+                    >
+                      {m.pin.lat.toFixed(5)}, {m.pin.lng.toFixed(5)} ↗
+                    </a>
+                  ) : (
+                    "—"
+                  ),
+                },
                 { label: "Cash rule", value: m.cashRule === "collect_and_return" ? "Collect & return" : "Pay upfront" },
                 { label: "Busy mode", value: m.busyMode ? "On (+10 min prep)" : "Off" },
                 { label: "Joined", value: m.joined },

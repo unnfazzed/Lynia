@@ -6,7 +6,8 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-09-29 (**`FOOD-STANDING-01` and `UNDELIVERED-NOTE-01` FIXED** — interactive session. Both were
+**Last consolidated:** 2026-09-29 (**`WEB-SIGNUP-01` FIXED** by the merchant web upgrade's L1: a number LyniaGo had never seen
+couldn't sign in on the merchant web. Earlier the same day, **`FOOD-STANDING-01` and `UNDELIVERED-NOTE-01` FIXED** — interactive session. Both were
 spotted in passing during the merchant web upgrade's CEO review and fixed at the owner's request. A held customer, a
 banned/suspended rider or a cash-banned customer paying cash could all still place food orders. The undelivered contract
 accepted a rider note that no client sent and the API never stored. See the "Merchant web upgrade review 2026-09-29" entry
@@ -2716,7 +2717,7 @@ OTA can't rescue a binary that fails on a phone.
 
 ---
 
-## Merchant web upgrade review 2026-09-29 — two account-standing and contract gaps
+## Merchant web upgrade review 2026-09-29 — account-standing, contract and sign-in gaps
 
 Found while the `/plan-ceo-review` of the merchant web upgrade (`docs/plans/2026-09-29-merchant-web-upgrade-plan.md`
 §11) traced Send's per-person checks. Both are outside that project, so they got their own PR at the owner's request.
@@ -2725,3 +2726,4 @@ Found while the `/plan-ceo-review` of the merchant web upgrade (`docs/plans/2026
 |----|---------|----------|----------|--------|
 | FOOD-STANDING-01 | **Food orders ignored account standing.** Send's `OrdersService.create` refuses a held customer (`on_hold`) and a banned/suspended rider (F-01), but food `placeOrder` read neither. So a customer ops had put on hold, or a banned rider, could still order food. And `Profile.cashBanned` (R-08: "restricted to WALLET for food orders") was only ever written and lifted, never enforced, so a cash-banned customer could keep choosing cash. | `apps/api/src/merchant/food-order.service.ts` `placeOrder` | HIGH (a hold didn't hold; the R-08 cash ban was a no-op) | **FIXED**: `placeOrder` reads `onHold`, `cashBanned` and the rider standing in one select, before any read of the menu or any write, and throws Send's `{ reason, message }` 403s: `on_hold`, `account_banned`/`account_suspended`, and `cash_banned` ("Pay with your wallet for food orders.") when a cash-banned customer picks cash. A cash ban still never blocks a wallet order (the `admin-customers.service.ts` rule stands). Regression tests in `food-order.service.spec.ts`. |
 | UNDELIVERED-NOTE-01 | **The undelivered contract advertised a note that went nowhere.** `MarkUndeliveredRequest` accepted an optional `note` (≤280), but `lifecycle.controller.ts` passed only `reason`, there is no column for it, and the rider app has never sent one (`apps/mobile/src/api/orders.ts` posts `{ reason }`). | `packages/shared/src/contracts.ts` | LOW (dead field; no rider text was actually lost) | **FIXED**: `note` removed from the contract, which stays non-strict so a stale client sending one is stripped rather than 400'd out of a terminal hand-off. Storing a rider note would be a new rider-app screen, not a fix. Dispute evidence remains the proof-of-drop photo + GPS (KB-POD-DISPUTE). Regression test `packages/shared/src/contracts.test.ts`. |
+| WEB-SIGNUP-01 | **A number LyniaGo had never seen couldn't sign in on the merchant web.** `verifyOtp` requires `x-device-id` to create an account (the per-device sign-up cap, IR16-10), but the web never sent one and the API's CORS `allowedHeaders` didn't allow it. A new owner or cashier got a 400 ("A device id is required to create an account.") at the code step, after the code was spent. Numbers that already had an account were unaffected, which is why it went unnoticed. | `apps/merchant/app/lib/api-client.ts` `verifyOtp`; `apps/api/src/main.ts` CORS | HIGH for the merchant web upgrade (self-serve sign-up starts with a new number) | **FIXED** (merchant web upgrade L1): the API allows `x-device-id` (#985), and the web sends a random per-browser id (`app/lib/device-id.ts`: localStorage, cookie fallback, `web-` prefix) on verify only. The same 3-a-day cap applies; its 429 now carries `reason: "device_signup_cap"`, and the web says "This device has added 3 new people today. Sign in on your own phone, or try tomorrow." Regression tests in `device-id.test.ts`, `login/page.test.tsx` and `auth.service.spec.ts`. |

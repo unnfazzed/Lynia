@@ -12,7 +12,9 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 **RESOLVED** (decided in the mock's favour — not a deviation, an app defect to fix) · **RETIRED**
 (the kit absorbed it; align to the mock, nothing special to do) · **PENDING** (decided, but not yet in
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
-be reported back to Design).
+be reported back to Design) · **PROPOSED** (built in an open PR that waits on the owner's approval of its
+screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
+merchant web upgrade plan §10, OV-11).
 
 **Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42.** D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -1940,3 +1942,50 @@ headers), `robots.txt` and `sitemap.xml`.
 
 **Retire when:** the Play listing is public (then add the link edits), the About copy arrives (then
 add `/about`), or a terms page exists. Each of these updates this entry and `LAUNCH_EDITS` together.
+
+## D-43 · Merchant web: self-serve sign-up, "Sign in", and the type-aware `/setup` — PROPOSED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"upgrade the merchant web side. It needs to enable both restaurants
+and shops … simple for informal businesses in Zimbabwe … log in is by mobile number and whatsapp otp."*
+The product spec is `docs/designs/merchant-web-upgrade.md` (L1, "Front door"); the plan is
+`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` (§10 lists this entry). **No RM mock draws sign-up,
+business type or shops**, so these screens are built from RM primitives and ledgered here. The entry is
+PROPOSED until the owner approves the L1 web PR and its screenshot sheet (OV-11). Nothing in
+`packages/design/**` changes. **Upstream ask:** real mocks for sign-up and the shop checklist.
+
+### 1 · Undrawn screens
+
+Built at the merchant's 1024×680 and the D-32 phone tier, with the 320px check. Tokens only, targets
+≥ `--target-min`, one 52px (`--target-primary`) primary per step.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Set up your business, step 1:** "What do you sell?" Restaurant or Shop; a shop picks one of eight kinds; a pharmacy sees "Over-the-counter products only for now."; "You can't switch between restaurant and shop later." | `/onboarding` | The `RM.login` card (brand lockup, 22/800 title, 13.5 muted sub-line), the option-row pattern from `RM.oos_sheet`, pill chips |
+| **Step 2, "Your business":** your name, business name, the map pin, a landmark, the contact phone, and the one-tap privacy line | `/onboarding` | The same card; `RM.login`'s 52px inputs; an OpenStreetMap pin that stays centred while the map is dragged, with zoom ± and "Use my location" |
+| **A shop's `/setup`:** the pin (done at sign-up), "Book your first rider" and "Add your items" (both "Coming soon" until L2), and "Customers will find you when LyniaGo Shops opens. We'll check your items first." | `/setup` | `RM.setup`'s checklist card inside the login card's frame, not the kitchen shell (a shop has no Orders board and no alarm; its own nav lands in L2) |
+
+### 2 · Copy changes on drawn screens (structure untouched)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `RM.login` title | "Kitchen sign-in" | "Sign in" | Shops use this screen too |
+| `RM.login` code line | "Enter the code we sent to +263 77 •• •• 302." | "Enter the code we sent to your WhatsApp on {phone}." when the API's `deliveryChannel` is `whatsapp`; the drawn line otherwise | D-40's dynamic channel copy, extended to the merchant web |
+| `RM.login` phone step (undrawn step of a drawn screen) | — | "Enter your phone number. We'll send you a 6-digit code." (was "Enter the phone number for this kitchen.") | Channel-neutral before the send, and not kitchen-only |
+| `RM.login` error (undrawn) | — | On the API's `device_signup_cap` 429: "This device has added 3 new people today. Sign in on your own phone, or try tomorrow." | Says what to do on a shared counter device |
+| `RM.setup` not-live line | "You go live once payment numbers and the alarm test are done." | "Finish this list and LyniaGo will call you within a day to switch you on. It isn't automatic." (was the app's "Finish this list, then LyniaGo switches your shop on …") | Names who switches a restaurant on, and when: ops calls within one business day (`docs/MERCHANT-GO-LIVE-RUNBOOK.md`) |
+
+`RM.login` keeps its code boxes, the alarm notice and "Sign in & start the alarm". `RM.setup`'s restaurant
+checklist is unchanged.
+
+### 3 · Specified in the design doc, not built yet
+
+- "Work at a business that's already on LyniaGo? Ask the owner to add you in Team." lands with Team (L4).
+  Until then, step 1 ends with "Wrong number? Sign out".
+- The restaurant go-live card's "Message LyniaGo on WhatsApp" button lands with Help (L5), which needs
+  the same support number. The merchant web has none configured today (the mobile app's
+  `EXPO_PUBLIC_SUPPORT_WHATSAPP` is unset too).
+- The privacy line names only the privacy notice. No merchant terms text exists yet; the design doc calls
+  it a dependency (`TODOS.md`).
+
+**Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
+the app changes).

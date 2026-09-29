@@ -241,8 +241,8 @@ business's own riders come third because they make the wedge work with the couri
 - **Drop-off, v1.**
   - Paste the location link the buyer sent. Coordinates are read if the link contains them: Google Maps
     long links, `geo:`, plain "lat, lng".
-  - Otherwise, and always as an option, drop a pin on a map. The map is Leaflet with OpenStreetMap tiles
-    and attribution, centred on the business.
+  - Otherwise, and always as an option, drop a pin on a map. The map is OpenStreetMap tiles with
+    attribution, centred on the business (the web's own `LocationPin` from L1, no map library).
   - **Short links are resolved on the server in v1** (OV-6). A buyer's phone shares Google Maps as a
     `maps.app.goo.gl` link, and a WhatsApp location opens into exactly that, so it's the format that will
     arrive most. The API follows the redirect for an allow-listed host only (`maps.app.goo.gl`,
@@ -483,7 +483,7 @@ the premises is a new default.
 |---|---|---|
 | 1 | Book a rider needs no go-live; it runs at Send's trust level (value cap, disclaimer, holds). | auto |
 | 2 | Bookings belong to the business through its **booking account** (customer of record); team members act through merchant-scoped endpoints; who booked is recorded. Replaces the draft's `booked_by_merchant_id`. | auto |
-| 3 | Drop-off v1 is a pasted link (long links parsed in the browser; `maps.app.goo.gl` short links resolved by the API against a strict allow-list) or a map pin (Leaflet + OSM). | auto (reopened by OV-6) |
+| 3 | Drop-off v1 is a pasted link (long links parsed in the browser; `maps.app.goo.gl` short links resolved by the API against a strict allow-list) or a map pin (OSM, the L1 `LocationPin`). | auto (reopened by OV-6) |
 | 4 | Invites need acceptance and expire after 14 days. One business per phone, resolved at Join, never revealed at invite. | auto |
 | 5 | Team lives inside Shop. The restaurant nav stays the mock's six items. | auto |
 | 6 | No repair of already-flipped `Profile.role` values in this build. | auto |

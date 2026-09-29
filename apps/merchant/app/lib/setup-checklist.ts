@@ -23,7 +23,7 @@ import { DAY_KEYS, formatWindow, type PartialMerchantHours } from "./hours";
  * finishing this list. The screen says that instead of implying the last tick flips it.
  */
 
-export type SetupItemKey = "menu" | "hours" | "payment" | "alarm";
+export type SetupItemKey = "menu" | "hours" | "payment" | "alarm" | "pin" | "first_booking" | "items";
 
 export interface SetupItem {
   key: SetupItemKey;
@@ -32,6 +32,9 @@ export interface SetupItem {
   done: boolean;
   /** Absent when there is nothing this tablet can do about it (see `payment` above). */
   action?: { label: string; href?: string };
+  /** A step whose screen ships in a later layer of the merchant web upgrade (a shop's "Book your first
+   *  rider" is L2): shown so the list is honest about what's ahead, tagged "Coming soon", never counted. */
+  soon?: boolean;
 }
 
 const ALARM_TESTED_KEY = "lynia_merchant_alarm_tested";
@@ -143,4 +146,36 @@ export function buildSetupState({
     remaining: items.filter((i) => !i.done && i.action).length,
     live: profile.pilotEnabled,
   };
+}
+
+/**
+ * A shop's checklist (docs/designs/merchant-web-upgrade.md, "A shop's /setup checklist"). Each step goes
+ * live with its layer: the pin and landmark are done at sign-up (L1); booking a rider is L2, and the
+ * Items screen arrives with the shop's own nav in L2, so both are "Coming soon" here. There is no
+ * go-live for a shop yet — customers find shops when LyniaGo Shops opens (L1.5) — so `live` is false.
+ */
+export function buildShopSetupState(): SetupState {
+  const items: SetupItem[] = [
+    {
+      key: "pin",
+      title: "Your pin and landmark",
+      detail: "Done when you signed up. Riders use them to find you.",
+      done: true,
+    },
+    {
+      key: "first_booking",
+      title: "Book your first rider",
+      detail: "Book a LyniaGo rider to take an order to your customer, right from here.",
+      done: false,
+      soon: true,
+    },
+    {
+      key: "items",
+      title: "Add your items",
+      detail: "Customers will see them when LyniaGo Shops opens.",
+      done: false,
+      soon: true,
+    },
+  ];
+  return { items, remaining: items.filter((i) => !i.done && i.action).length, live: false };
 }

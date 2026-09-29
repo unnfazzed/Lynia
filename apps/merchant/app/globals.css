@@ -67,6 +67,9 @@
   /* Buttons are full pills (mirrors packages/design/tokens/spacing.css --radius-button/--radius-pill). */
   --radius-button: 999px;
   --radius-pill: 999px;
+  /* Tap targets (mirrors packages/design/tokens/spacing.css): every control, and the one primary. */
+  --target-min: 44px;
+  --target-primary: 52px;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   /* Wordmark-only face (mirrors packages/design typography.css --font-wordmark). */
   --font-wordmark: "Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans);
@@ -96,7 +99,8 @@ button {
  * on a counter is still sometimes driven with an attached keyboard/barcode-scanner-as-keyboard. */
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -517,4 +521,40 @@ input:focus-visible {
 }
 .kitchen-bar-flashing {
   animation: kitchen-flash 1s ease-in-out infinite;
+}
+
+/* ============================================================================================
+ * Sign-up (`/onboarding`, merchant web upgrade L1) and a shop's pre-L2 `/setup`: the login card's
+ * shape — a white card centred on the surface — widened for a form, and edge to edge on a phone so a
+ * 320px screen keeps every pixel for the fields and the map (D-43, docs/DESIGN-DEVIATIONS.md).
+ * ============================================================================================ */
+.onboarding-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: start center;
+  padding: 32px 16px;
+  background: var(--surface);
+}
+
+.onboarding-card {
+  width: 520px;
+  max-width: 100%;
+  background: var(--bg);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 28px;
+}
+
+@media (max-width: 680px) {
+  .onboarding-screen {
+    padding: 0;
+    background: var(--bg);
+  }
+
+  .onboarding-card {
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 20px 16px 28px;
+  }
 }

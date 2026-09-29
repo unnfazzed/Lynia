@@ -92,4 +92,7 @@ export const REASONS = {
     "Rider unreachable — releasing on the customer's confirm alone after follow-up",
   ],
   cashBanLift: ["Customer contacted and cleared", "Payment issue resolved", "Ban applied in error"],
+  // Merchant web upgrade L1: the go-live switch (docs/MERCHANT-GO-LIVE-RUNBOOK.md).
+  merchantGoLive: ["Ops call done — every go-live check passed", "Switching back on after a pause"],
+  merchantGoDormant: ["The owner asked to pause", "Failed a go-live check", "Quality or safety concern", "Closed or no longer trading"],
 } as const;

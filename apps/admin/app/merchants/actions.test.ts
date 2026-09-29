@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveHandshake } from "./actions";
+import { resolveHandshake, setMerchantPilot } from "./actions";
 
 /**
  * X1/R-05: the admin action that releases a frozen doorstep handshake — a rider's job lock and a
@@ -62,6 +62,37 @@ describe("resolveHandshake (R-05 admin dispute resolution)", () => {
   it("FAILS CLOSED: a rejected write throws and does NOT revalidate — a rider/customer must not see a phantom release", async () => {
     fetchMock.mockResolvedValue(res(409));
     await expect(resolveHandshake("order-1", "x", "")).rejects.toThrow(/Failed to resolve handshake/i);
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("setMerchantPilot (merchant web upgrade L1: the go-live switch)", () => {
+  it("posts {enabled, note} with the picked reason leading the audit note, then revalidates the profile and the list", async () => {
+    const out = await setMerchantPilot("m-1", true, "Ops call done — every go-live check passed", " spoke to Tendai ");
+
+    const c = lastCall();
+    expect(c.url).toBe("https://api.test/admin/merchants/m-1/pilot");
+    expect(c.method).toBe("POST");
+    expect(c.body).toEqual({ enabled: true, note: "Ops call done — every go-live check passed — spoke to Tendai" });
+    expect(c.headers["X-Operator"]).toBe("alice@corp.com");
+    expect(out).toEqual({ ok: true });
+    expect(revalidateMock).toHaveBeenCalledWith("/merchants/m-1");
+    expect(revalidateMock).toHaveBeenCalledWith("/merchants");
+  });
+
+  it("sends a null note when there is neither a reason nor a note", async () => {
+    await setMerchantPilot("m-1", false, null, "  ");
+    expect(lastCall().body).toEqual({ enabled: false, note: null });
+  });
+
+  it("FAILS CLOSED with the API's own words: a refusal is returned (not thrown, which production would redact) and nothing revalidates", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ reason: "no_live_dishes", message: "This restaurant has no dish with a photo yet — its menu would be empty." }),
+    });
+    const out = await setMerchantPilot("m-1", true, null, "");
+    expect(out).toEqual({ ok: false, message: "This restaurant has no dish with a photo yet — its menu would be empty." });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });
