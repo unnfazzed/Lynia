@@ -18,7 +18,7 @@
  * between tests. (Re-requiring the module under `jest.resetModules()` would hand the component a
  * second copy of React and break hooks.)
  */
-import { Text, TextInput } from "react-native";
+import { ActivityIndicator, Text, TextInput } from "react-native";
 import renderer, { act } from "react-test-renderer";
 import { AddressSearch } from "../AddressSearch";
 
@@ -239,6 +239,203 @@ describe("AddressSearch — a keyed search that returns nothing", () => {
 
     expect(mockPlaceDetails).toHaveBeenCalledWith("west", expect.any(String), "Westgate Shopping Centre");
     expect(onResolved).toHaveBeenCalledWith(place);
+    act(() => tree.unmount());
+  });
+});
+
+/** A promise the test settles by hand, to hold a request in flight across the customer's next move. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * A place chosen while a search is still pending. Every search came back empty until the Places key
+ * started answering again (2026-09-29), which hid this. `choose` and `pick` neither cancelled the
+ * debounced search nor retired the one in flight, so the older search landed after the tap. It put the
+ * list, the spinner or the no-match row back under the place just chosen. And a place lookup still in
+ * flight could land after the customer had tapped something else, typed, or cleared, and swap their
+ * choice for the older one.
+ */
+describe("AddressSearch — a place chosen while a search is still pending", () => {
+  const WESTGATE = { placeId: "west", primary: "Westgate Shopping Centre", secondary: "Harare" };
+  const EASTGATE = { placeId: "east", primary: "Eastgate Mall", secondary: "Harare" };
+  const WEST_PLACE = { lat: -17.79, lng: 30.99, landmark: "Westgate Shopping Centre, Lomagundi Rd, Harare", placeId: "west" };
+  const EAST_PLACE = { lat: -17.83, lng: 31.05, landmark: "Eastgate Mall, Robert Mugabe Rd, Harare", placeId: "east" };
+  const ESCAPE = "No results — look it up on this phone";
+
+  beforeEach(() => {
+    mockKeyed = true;
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function mount(onResolved = jest.fn()): Promise<renderer.ReactTestRenderer> {
+    let tree!: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<AddressSearch label="Drop-off" onResolved={onResolved} />);
+    });
+    return tree;
+  }
+  async function type(tree: renderer.ReactTestRenderer, text: string): Promise<void> {
+    await act(async () => {
+      tree.root.findByType(TextInput).props.onChangeText(text);
+    });
+  }
+  /** Past the 300 ms debounce, then let whatever resolved settle. */
+  async function waitOutDebounce(): Promise<void> {
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+  async function tap(tree: renderer.ReactTestRenderer, label: string): Promise<void> {
+    // The first match: a `Tappable` hands its props on to the Pressable it renders, so both carry the label.
+    const [target] = tree.root.findAllByProps({ accessibilityLabel: label });
+    if (!target) throw new Error(`nothing on screen is labelled "${label}"`);
+    await act(async () => {
+      (target.props as { onPress: () => void }).onPress();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+  const listed = (tree: renderer.ReactTestRenderer, label: string): boolean => tree.root.findAllByProps({ accessibilityLabel: label }).length > 0;
+  const fieldValue = (tree: renderer.ReactTestRenderer): string => tree.root.findByType(TextInput).props.value as string;
+
+  it("a tap inside the debounce window cancels the search that was about to start", async () => {
+    mockAutocomplete.mockResolvedValue([WESTGATE]);
+    mockPlaceDetails.mockResolvedValue(WEST_PLACE);
+    const onResolved = jest.fn();
+    const tree = await mount(onResolved);
+    await type(tree, "westg");
+    await waitOutDebounce();
+    expect(listed(tree, "Westgate Shopping Centre, Harare")).toBe(true);
+
+    // One more keystroke queues the next search, and the customer taps the row already on screen
+    // before its debounce runs out.
+    await type(tree, "westgate");
+    await tap(tree, "Westgate Shopping Centre, Harare");
+    expect(onResolved).toHaveBeenCalledWith(WEST_PLACE);
+
+    await waitOutDebounce();
+    expect(mockAutocomplete).toHaveBeenCalledTimes(1);
+    expect(listed(tree, "Westgate Shopping Centre, Harare")).toBe(false);
+    expect(fieldValue(tree)).toBe(WEST_PLACE.landmark);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["a list", [WESTGATE]],
+    ["no results", []],
+  ])("a search still in flight at the tap cannot bring back %s", async (_label, lateRows) => {
+    const late = deferred<unknown[]>();
+    mockAutocomplete.mockResolvedValueOnce([WESTGATE]).mockReturnValueOnce(late.promise);
+    mockPlaceDetails.mockResolvedValue(WEST_PLACE);
+    const tree = await mount();
+    await type(tree, "westg");
+    await waitOutDebounce();
+    await type(tree, "westgate");
+    await waitOutDebounce(); // the "westgate" search is now in flight
+    expect(mockAutocomplete).toHaveBeenCalledTimes(2);
+
+    await tap(tree, "Westgate Shopping Centre, Harare");
+    // The place resolved, so nothing is loading any more, even though that search has not answered.
+    expect(tree.root.findAllByType(ActivityIndicator)).toHaveLength(0);
+
+    await act(async () => {
+      late.resolve(lateRows);
+      await Promise.resolve();
+    });
+    expect(listed(tree, "Westgate Shopping Centre, Harare")).toBe(false);
+    expect(textOf(tree)).not.toContain(ESCAPE);
+    expect(fieldValue(tree)).toBe(WEST_PLACE.landmark);
+    act(() => tree.unmount());
+  });
+
+  it("the last place tapped wins, even when an earlier tap's lookup answers after it", async () => {
+    mockAutocomplete.mockResolvedValue([WESTGATE, EASTGATE]);
+    const slowWest = deferred<unknown>();
+    mockPlaceDetails.mockReturnValueOnce(slowWest.promise).mockResolvedValueOnce(EAST_PLACE);
+    const onResolved = jest.fn();
+    const tree = await mount(onResolved);
+    await type(tree, "gate");
+    await waitOutDebounce();
+
+    await tap(tree, "Westgate Shopping Centre, Harare"); // its lookup hangs…
+    await tap(tree, "Eastgate Mall, Harare"); // …so they tap the one they meant
+    await act(async () => {
+      slowWest.resolve(WEST_PLACE);
+      await Promise.resolve();
+    });
+
+    expect(onResolved).toHaveBeenCalledTimes(1);
+    expect(onResolved).toHaveBeenCalledWith(EAST_PLACE);
+    expect(fieldValue(tree)).toBe(EAST_PLACE.landmark);
+    act(() => tree.unmount());
+  });
+
+  it("a lookup that answers after the customer started typing again does not overwrite them", async () => {
+    mockAutocomplete.mockResolvedValue([WESTGATE]);
+    const slowWest = deferred<unknown>();
+    mockPlaceDetails.mockReturnValueOnce(slowWest.promise);
+    const onResolved = jest.fn();
+    const tree = await mount(onResolved);
+    await type(tree, "westgate");
+    await waitOutDebounce();
+
+    await tap(tree, "Westgate Shopping Centre, Harare");
+    await type(tree, "Avondale shops");
+    await act(async () => {
+      slowWest.resolve(WEST_PLACE);
+      await Promise.resolve();
+    });
+
+    expect(onResolved).not.toHaveBeenCalled();
+    expect(fieldValue(tree)).toBe("Avondale shops");
+    act(() => tree.unmount());
+  });
+
+  it("clearing the field inside the debounce window cancels the search that was about to start", async () => {
+    mockAutocomplete.mockResolvedValue([WESTGATE]);
+    const tree = await mount();
+    await type(tree, "westg");
+    await waitOutDebounce();
+    await type(tree, "westgate");
+
+    await tap(tree, "Clear search");
+    await waitOutDebounce();
+
+    expect(mockAutocomplete).toHaveBeenCalledTimes(1);
+    expect(listed(tree, "Westgate Shopping Centre, Harare")).toBe(false);
+    expect(fieldValue(tree)).toBe("");
+    act(() => tree.unmount());
+  });
+
+  it("a device lookup that answers after the customer started typing again does not overwrite them", async () => {
+    const slowDevice = deferred<unknown>();
+    mockGeocodeAddress.mockReturnValueOnce(slowDevice.promise);
+    const onResolved = jest.fn();
+    const tree = await mount(onResolved);
+    await type(tree, "14 Glenara Ave");
+    await waitOutDebounce(); // no Places rows, so the escape row is offered
+
+    await tap(tree, 'No results — look up "14 Glenara Ave" on this phone instead');
+    await type(tree, "Avondale shops");
+    await act(async () => {
+      slowDevice.resolve({ ok: true, place: { lat: -17.83, lng: 31.05, landmark: "14 Glenara Ave", placeId: "" } });
+      await Promise.resolve();
+    });
+
+    expect(onResolved).not.toHaveBeenCalled();
+    expect(fieldValue(tree)).toBe("Avondale shops");
     act(() => tree.unmount());
   });
 });
