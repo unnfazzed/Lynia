@@ -92,6 +92,8 @@ function eraseHarness(
     address: { deleteMany: vi.fn(async () => ((calls.addressDel = true), { count: 1 })) },
     deviceToken: { deleteMany: vi.fn(async () => ((calls.deviceDel = true), { count: 1 })) },
     session: { deleteMany: vi.fn(async () => ((calls.sessionDel = true), { count: 2 })) },
+    // Merchant web upgrade L3: the person's number leaves every business's own-rider list.
+    merchantPreferredRider: { deleteMany: vi.fn(async (a: unknown) => ((calls.preferredDel = a), { count: 1 })) },
     orderEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.eventUpdate = a), { count: 3 })) },
     // DS-01: SOS location is now scrubbed in the same transaction.
     sosEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.sosUpdate = a), { count: 1 })) },
@@ -144,6 +146,8 @@ describe("PrivacyService.eraseAccount", () => {
     expect(calls.addressDel).toBe(true);
     expect(calls.deviceDel).toBe(true);
     expect(calls.sessionDel).toBe(true);
+    // L3: by the real number, taken before the tombstone replaced it.
+    expect(calls.preferredDel).toEqual({ where: { phone: "+263771234567" } });
     expect((calls.eventUpdate as { data: Record<string, unknown> }).data).toEqual({ lat: null, lng: null });
     // DS-01: the SOS location trail is scrubbed for every SOS this profile raised, in the same tx.
     expect(calls.sosUpdate as { where: unknown; data: unknown }).toEqual({

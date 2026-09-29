@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   rankOffers,
   DEFAULT_OFFER_WEIGHTS,
+  MERCHANT_OFFER_WEIGHTS,
   NEW_RIDER_RATING_SCORE,
+  PREFERRED_OFFER_BONUS,
   type OfferRankInput,
 } from "./offer-ranking";
 
@@ -125,5 +127,67 @@ describe("rankOffers — property tests", () => {
     expect(ranked.map((r) => r.index)).toEqual([0, 1, 2]);
     expect(ranked.map((r) => r.score)).toEqual([0.5, 0.5, 0.5]);
     expect(ranked.map((r) => r.recommended)).toEqual([true, false, false]);
+  });
+});
+
+describe("rankOffers — a business's own riders (merchant web upgrade L3)", () => {
+  const base = { ratingAvg: 4.5, ratingCount: 20 };
+
+  it("changes nothing without the merchant weights, even when an offer is flagged", () => {
+    const offers: OfferRankInput[] = [
+      { offeredFare: 5, etaMinutes: 8, ...base, preferred: true },
+      { offeredFare: 4, etaMinutes: 8, ...base },
+    ];
+    expect(rankOffers(offers).map((r) => r.index)).toEqual([1, 0]);
+    expect(rankOffers(offers.map(({ preferred: _p, ...o }) => o)).map((r) => r.score)).toEqual(rankOffers(offers).map((r) => r.score));
+  });
+
+  it("lists the business's rider first when another offer is only cheaper", () => {
+    const offers: OfferRankInput[] = [
+      { offeredFare: 4, etaMinutes: 8, ...base },
+      { offeredFare: 5, etaMinutes: 8, ...base, preferred: true },
+    ];
+    expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 0]);
+  });
+
+  it("lists the business's rider first when another offer is only sooner, or only better rated", () => {
+    const sooner: OfferRankInput[] = [
+      { offeredFare: 5, etaMinutes: 3, ...base },
+      { offeredFare: 5, etaMinutes: 12, ...base, preferred: true },
+    ];
+    expect(rankOffers(sooner, MERCHANT_OFFER_WEIGHTS)[0]!.index).toBe(1);
+    const rated: OfferRankInput[] = [
+      { offeredFare: 5, etaMinutes: 8, ratingAvg: 5, ratingCount: 90 },
+      { offeredFare: 5, etaMinutes: 8, ratingAvg: 3.9, ratingCount: 9, preferred: true },
+    ];
+    expect(rankOffers(rated, MERCHANT_OFFER_WEIGHTS)[0]!.index).toBe(1);
+  });
+
+  it("puts another offer first when it's clearly better on fare and ETA together", () => {
+    const offers: OfferRankInput[] = [
+      { offeredFare: 6, etaMinutes: 15, ...base, preferred: true },
+      { offeredFare: 3.5, etaMinutes: 4, ...base },
+    ];
+    expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 0]);
+    expect(PREFERRED_OFFER_BONUS).toBeGreaterThan(Math.max(DEFAULT_OFFER_WEIGHTS.price, DEFAULT_OFFER_WEIGHTS.rating, DEFAULT_OFFER_WEIGHTS.eta));
+    expect(PREFERRED_OFFER_BONUS).toBeLessThan(DEFAULT_OFFER_WEIGHTS.price + DEFAULT_OFFER_WEIGHTS.eta);
+  });
+
+  it("ranks several of the business's riders among themselves on the usual blend", () => {
+    const offers: OfferRankInput[] = [
+      { offeredFare: 5, etaMinutes: 6, ...base, preferred: true },
+      { offeredFare: 4.5, etaMinutes: 5, ...base, preferred: true },
+      { offeredFare: 4, etaMinutes: 6, ...base },
+    ];
+    expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 0, 2]);
+  });
+
+  it("lets a clearly better offer sit above a weaker one of the business's riders", () => {
+    const offers: OfferRankInput[] = [
+      { offeredFare: 5, etaMinutes: 10, ...base, preferred: true },
+      { offeredFare: 4, etaMinutes: 5, ...base, preferred: true },
+      { offeredFare: 3, etaMinutes: 4, ...base },
+    ];
+    expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 2, 0]);
   });
 });

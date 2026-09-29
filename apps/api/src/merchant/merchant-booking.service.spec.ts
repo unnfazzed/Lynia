@@ -51,6 +51,7 @@ function makeWorld() {
   const orders = new Map<string, OrderRow>();
   const bookings = new Map<string, BookingRow>();
   const offers: Array<{ id: string; orderId: string; riderId: string; status: string }> = [];
+  const preferredRiders: Array<{ merchantId: string; phone: string }> = [];
 
   const byPhone = (phone: string) => [...profiles.values()].find((p) => p.phone === phone) ?? null;
 
@@ -85,7 +86,18 @@ function makeWorld() {
         Object.assign(profiles.get(where.id)!, data);
         return profiles.get(where.id);
       },
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.map((x) => profiles.get(x)).filter(Boolean),
+      findMany: async ({ where }: { where: { id?: { in: string[] }; phone?: { in: string[] } } }) => {
+        if (where.phone) {
+          // preferredRiderIds: rider accounts by phone, with their team (if any).
+          return [...profiles.values()]
+            .filter((p) => where.phone!.in.includes(p.phone) && p.riderStatus)
+            .map((p) => ({ id: p.id, merchantMembership: members.find((m) => m.profileId === p.id) ?? null }));
+        }
+        return where.id!.in.map((x) => profiles.get(x)).filter(Boolean);
+      },
+    },
+    merchantPreferredRider: {
+      findMany: async ({ where }: { where: { merchantId: string } }) => preferredRiders.filter((r) => r.merchantId === where.merchantId),
     },
     merchant: { findUnique: async ({ where }: { where: { id: string } }) => merchants.get(where.id) ?? null },
     merchantMember: {
@@ -221,7 +233,7 @@ function makeWorld() {
   profiles.set("rider-1", { id: "rider-1", phone: "+263774440000", firstName: "Farai", lastName: "Chari", onHold: false, riderStatus: "active" });
   members.push({ merchantId: "m1", profileId: "owner", displayName: "Tendai" }, { merchantId: "m1", profileId: "cashier", displayName: "Rudo" });
 
-  return { svc, prisma, profiles, merchants, members, orders, bookings, offers, ordersSvc, offersSvc, matching, lifecycle };
+  return { svc, prisma, profiles, merchants, members, orders, bookings, offers, preferredRiders, ordersSvc, offersSvc, matching, lifecycle };
 }
 
 const OWNER: MerchantAccess = { merchantId: "m1", role: "owner", businessType: "shop" };
@@ -332,6 +344,14 @@ describe("the Deliveries list and a booking's detail", () => {
       ["Farai Chari", false, false],
       ["Rudo Dube", true, false],
     ]);
+  });
+
+  it("marks an offer from one of the business's own riders (L3), matched by the number they sign in with", async () => {
+    const booking = await w.svc.create(OWNER, "owner", form());
+    w.preferredRiders.push({ merchantId: "m1", phone: "+263774440000" }, { merchantId: "other", phone: "+263771113333" });
+    w.offers.push({ id: "offer-1", orderId: booking.id, riderId: "rider-1", status: "pending" });
+    const detail = await w.svc.detail(OWNER, booking.id);
+    expect(detail.offers.map((o) => [o.rider.name, o.preferred])).toEqual([["Farai Chari", true]]);
   });
 
   it("a rider's cancel shows as the cancelled booking pointing at Send's re-broadcast, which keeps the booker", async () => {

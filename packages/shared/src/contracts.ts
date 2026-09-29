@@ -1532,3 +1532,57 @@ export type PickMerchantBookingOfferResponse = z.infer<typeof PickMerchantBookin
 /** `POST /merchant/bookings/:id/code` — Send's code rotation: a new code replaces the old one. */
 export const RotateMerchantBookingCodeResponse = z.object({ deliveryCode: z.string() }).strict();
 export type RotateMerchantBookingCodeResponse = z.infer<typeof RotateMerchantBookingCodeResponse>;
+
+/* ── Merchant web upgrade L3: Your riders (docs/designs/merchant-web-upgrade.md "L3") ─────────── */
+
+/** A business keeps up to this many of its own riders. */
+export const MERCHANT_PREFERRED_RIDER_CAP = 20;
+/** …and adds at most this many a day, so the list can't be used to look numbers up (CEO-8). */
+export const MERCHANT_PREFERRED_RIDER_DAILY_ADDS = 10;
+
+/**
+ * What a business sees about a number it added: an approved LyniaGo rider, not one (yet), or one who can't
+ * take jobs right now (suspended, banned or held). Never why.
+ */
+export const MerchantRiderStatus = z.enum(["on_lyniago", "not_on_lyniago", "unavailable"]);
+export type MerchantRiderStatus = z.infer<typeof MerchantRiderStatus>;
+
+/** One of the business's own riders (`GET /merchant/riders`). Deliberately little about the person. */
+export const MerchantPreferredRiderResponse = z
+  .object({
+    id: z.string().uuid(),
+    /** The business's own name for the rider ("Blessing"). */
+    label: z.string(),
+    phoneMasked: z.string(),
+    status: MerchantRiderStatus,
+    /** The number in international digits while it isn't a LyniaGo rider yet, so the business can send
+     *  the rider sign-up link on WhatsApp; null otherwise. */
+    invitePhone: z.string().nullable(),
+    /** Deliveries this rider completed for this business: its restaurant orders and its bookings. */
+    jobs: z.number().int(),
+    /** Their average rating from those jobs; null until rated. */
+    ratingAvg: z.number().nullable(),
+    /** The rider's own LyniaGo name and photo, only once they've done a job for this business. */
+    rider: z.object({ name: z.string(), photoUrl: z.string().nullable() }).strict().nullable(),
+    addedAt: z.string(),
+  })
+  .strict();
+export type MerchantPreferredRiderResponse = z.infer<typeof MerchantPreferredRiderResponse>;
+
+export const MerchantRidersResponse = z
+  .object({
+    riders: z.array(MerchantPreferredRiderResponse),
+    /** The most a business can keep (`MERCHANT_PREFERRED_RIDER_CAP`). */
+    cap: z.number().int(),
+  })
+  .strict();
+export type MerchantRidersResponse = z.infer<typeof MerchantRidersResponse>;
+
+/** `POST /merchant/riders` (owner only): the business's label and the number the rider signs in with. */
+export const AddMerchantRiderRequest = z
+  .object({
+    label: z.string().trim().min(1).max(40),
+    phone: z.string().trim().min(6).max(20),
+  })
+  .strict();
+export type AddMerchantRiderRequest = z.infer<typeof AddMerchantRiderRequest>;

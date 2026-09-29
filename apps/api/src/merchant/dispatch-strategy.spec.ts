@@ -9,6 +9,7 @@ function build(
   busyIds: string[] = [],
   offeredElsewhereIds: string[] = [],
   owingDebtIds: string[] = [],
+  ratings: Record<string, number> = {},
 ) {
   const tracking = { nearbyRiders: async () => nearby } as unknown as TrackingService;
   const prisma = {
@@ -24,9 +25,76 @@ function build(
         return busyIds.map((riderId) => ({ riderId }));
       },
     },
+    rider: {
+      findMany: async ({ where }: { where: { profileId: { in: string[] } } }) =>
+        where.profileId.in.map((profileId) => ({ profileId, ratingAvg: ratings[profileId] ?? 0 })),
+    },
   } as unknown as PrismaService;
   return new NearestRiderDispatchStrategy(tracking, prisma);
 }
+
+describe("NearestRiderDispatchStrategy.pickCandidate — the restaurant's own riders (merchant web upgrade L3)", () => {
+  const at = { lat: 0, lng: 0, radiusM: 5000, excludeRiderIds: [] as string[] };
+
+  it("offers one of the restaurant's riders first when they're within 2 km of the nearest", async () => {
+    const strategy = build([
+      { profileId: "near", distanceM: 300 },
+      { profileId: "mine", distanceM: 2200 },
+    ]);
+    expect(await strategy.pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "mine", distanceM: 2200, preferred: true });
+  });
+
+  it("offers the nearest rider when the restaurant's own is more than 2 km farther (food goes cold)", async () => {
+    const strategy = build([
+      { profileId: "near", distanceM: 300 },
+      { profileId: "mine", distanceM: 2400 },
+    ]);
+    expect(await strategy.pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+  });
+
+  it("never lets preferred bend eligibility: a busy, excluded, already-offered or owing rider of the restaurant's is skipped", async () => {
+    const nearby = [
+      { profileId: "near", distanceM: 300 },
+      { profileId: "mine", distanceM: 800 },
+    ];
+    expect(await build(nearby, ["mine"]).pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+    expect(await build(nearby, [], ["mine"]).pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+    expect(await build(nearby, [], [], ["mine"]).pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+    expect(await build(nearby).pickCandidate({ ...at, excludeRiderIds: ["mine"], preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+    // Not nearby at all (offline, unverified, held: nearbyRiders never returns them) — nothing to prefer.
+    expect(await build([{ profileId: "near", distanceM: 300 }]).pickCandidate({ ...at, preferredRiderIds: ["mine"] })).toEqual({ riderId: "near", distanceM: 300 });
+  });
+
+  it("orders several of the restaurant's riders by distance, then rating", async () => {
+    const nearby = [
+      { profileId: "near", distanceM: 200 },
+      { profileId: "a", distanceM: 900 },
+      { profileId: "b", distanceM: 950 },
+      { profileId: "c", distanceM: 1500 },
+    ];
+    // a and b are about as far (same 100 m band): the better-rated goes first.
+    expect(await build(nearby, [], [], [], { a: 4.2, b: 4.9, c: 5 }).pickCandidate({ ...at, preferredRiderIds: ["a", "b", "c"] })).toEqual({
+      riderId: "b",
+      distanceM: 950,
+      preferred: true,
+    });
+    // Otherwise the nearer goes first, whatever the rating.
+    expect(await build(nearby, [], [], [], { a: 4.2, c: 5 }).pickCandidate({ ...at, preferredRiderIds: ["a", "c"] })).toEqual({
+      riderId: "a",
+      distanceM: 900,
+      preferred: true,
+    });
+  });
+
+  it("is exactly nearest-first with no riders of the restaurant's own", async () => {
+    const strategy = build([
+      { profileId: "near", distanceM: 300 },
+      { profileId: "far", distanceM: 900 },
+    ]);
+    expect(await strategy.pickCandidate({ ...at, preferredRiderIds: [] })).toEqual({ riderId: "near", distanceM: 300 });
+    expect(await strategy.pickCandidate(at)).toEqual({ riderId: "near", distanceM: 300 });
+  });
+});
 
 describe("NearestRiderDispatchStrategy.pickCandidate", () => {
   it("returns null when nothing is nearby", async () => {

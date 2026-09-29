@@ -18,6 +18,7 @@ import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { preferredRiderIds } from "./preferred-riders";
 
 /**
  * C3 — food dispatch. Owns the hand-off `ready_for_pickup` → assigned a merchant order's kitchen
@@ -197,7 +198,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       lng: point.lng,
       radiusM,
       excludeRiderIds: order.dispatchExcludedRiderIds,
+      preferredRiderIds: await this.preferredFor(order.merchantId),
     });
+    if (candidate?.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${candidate.riderId} distanceM=${Math.round(candidate.distanceM)}`);
     const now = new Date();
     const startedAt = order.dispatchStartedAt ?? now;
 
@@ -252,6 +255,18 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`food:offer build failed for order ${orderId}: ${(err as Error).message}`);
     }
     return "offered";
+  }
+
+  /** The restaurant's own riders (L3), read once per tick. Best effort: a failed read logs and dispatch
+   *  carries on nearest-first, exactly as before L3 (plan §8 "preferred lookup error"). */
+  private async preferredFor(merchantId: string | null): Promise<string[]> {
+    if (!merchantId) return [];
+    try {
+      return await preferredRiderIds(this.prisma, merchantId);
+    } catch (err) {
+      this.logger.warn(`merchant.dispatch.preferred lookup failed for merchant ${merchantId}: ${(err as Error).message}`);
+      return [];
+    }
   }
 
   /** REDACTED (point + landmark, never contactPhone — mirrors `buildBoardNewOrderEvent`) offer

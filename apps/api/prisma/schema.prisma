@@ -1001,6 +1001,7 @@ model Merchant {
   reopenReminders RestaurantReopenReminder[]
   members         MerchantMember[]
   bookings        MerchantBooking[]
+  preferredRiders MerchantPreferredRider[]
 
   @@map("merchants")
 }
@@ -1071,6 +1072,26 @@ model MerchantBooking {
 
   @@index([merchantId, createdAt])
   @@map("merchant_bookings")
+}
+
+/// Merchant web upgrade L3 (plan D10): a business's own riders, by the phone they sign in to LyniaGo with.
+/// Matched to riders by phone when used (never a stored rider id), so a rider who signs up later is
+/// picked up on their own. Preferred never bends eligibility.
+model MerchantPreferredRider {
+  id               String   @id @default(uuid()) @db.Uuid
+  merchantId       String   @map("merchant_id") @db.Uuid
+  merchant         Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  /// E.164 (`+263…`), as `profiles.phone` stores it.
+  phone            String
+  /// The business's own name for the rider ("Blessing"), never the rider's LyniaGo name.
+  label            String
+  // Plain id (no relation): a team change or an erased profile never removes the list.
+  addedByProfileId String   @map("added_by_profile_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([merchantId, phone])
+  @@index([phone])
+  @@map("merchant_preferred_riders")
 }
 
 /**

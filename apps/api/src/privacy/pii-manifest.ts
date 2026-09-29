@@ -206,6 +206,13 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   address_store: { column: "Address", where: "addresses", tables: ["addresses"], disposition: "delete-row", note: "Saved addresses deleted outright on erase." },
   device_token_store: { column: "DeviceToken", where: "device_tokens", tables: ["device_tokens"], disposition: "delete-row", note: "Push tokens deleted (also logs every device out)." },
   session_store: { column: "Session", where: "sessions", tables: ["sessions"], disposition: "delete-row", note: "All sessions deleted on erase." },
+  preferred_rider_store: {
+    column: "phone",
+    where: "merchant_preferred_riders",
+    tables: ["merchant_preferred_riders"],
+    disposition: "delete-row",
+    note: "Merchant web upgrade L3: a business keeps its own riders by the number they sign in with. The number is the rider's, so every business's row for it is deleted on erase (by the pre-tombstone phone).",
+  },
   "kyc-object": { column: "kyc-object", where: "GCS (KYC photo/selfie)", tables: ["GCS"], disposition: "delete-object", note: "DS15-03: the referenced storage object itself is deleted, not just the DB pointer." },
 } as const;
 

@@ -117,6 +117,7 @@ describe("PII erasure manifest — eraseAccount references every scrub (reverse 
     address_store: "address.deleteMany",
     device_token_store: "deviceToken.deleteMany",
     session_store: "session.deleteMany",
+    preferred_rider_store: "merchantPreferredRider.deleteMany",
     "kyc-object": "deleteObject",
   };
 

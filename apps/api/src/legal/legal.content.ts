@@ -208,6 +208,17 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: ["phone"],
   },
   {
+    label: "Riders a business calls its own",
+    collected:
+      "A business on LyniaGo can add a rider's mobile number to its own list of riders, under the name it knows them by. The rider does not have to be on LyniaGo yet.",
+    purpose:
+      "To offer that business's deliveries to its own riders first — only when they are eligible and nearby — and to show the business whether the number belongs to a LyniaGo rider who can take jobs.",
+    basis:
+      "Our and the business's legitimate interest in matching a business with riders it already works with. The business sees only whether the number is a LyniaGo rider who can take jobs right now, never why, and sees the rider's LyniaGo name and photo only after they have delivered for it.",
+    retention: "Kept until the business removes the number; deleted from every business's list when the rider deletes their LyniaGo account.",
+    manifestKeys: ["preferred_rider_store"],
+  },
+  {
     label: "Device identifiers and diagnostics",
     collected:
       "A push-notification token for your device, your sign-in sessions, and crash/performance diagnostics (which may include the app version, device model and OS version).",
@@ -232,6 +243,11 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
     who: "The restaurant or shop you ordered from",
     what:
       "A restaurant sees what you ordered, any note you attached to a dish, the delivery point, and — if you submitted one — your payment reference so they can confirm they were paid. They do not see your national ID, your saved addresses, your other orders, or your order history with any other shop.",
+  },
+  {
+    who: "A business that lists you as one of its riders",
+    what:
+      "Whether your number belongs to a LyniaGo rider who can take jobs right now (never why), and — once you have delivered for that business — your name, photo, how many of its deliveries you have made and your rating from them.",
   },
   {
     who: "Google (Firebase Cloud Messaging, Google Maps)",

@@ -13,6 +13,8 @@ import { MerchantBookingController } from "./merchant-booking.controller";
 import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
 import { MerchantOrderController } from "./merchant-order.controller";
+import { MerchantRidersController } from "./merchant-riders.controller";
+import { MerchantRidersService } from "./merchant-riders.service";
 import { MerchantService } from "./merchant.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsController } from "./restaurants.controller";
@@ -47,10 +49,11 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
-  controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController, MerchantBookingController],
+  controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController, MerchantBookingController, MerchantRidersController],
   providers: [
     MerchantService,
     MerchantBookingService,
+    MerchantRidersService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     FoodOrderService,

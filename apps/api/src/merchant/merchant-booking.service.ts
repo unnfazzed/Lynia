@@ -24,6 +24,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ensureBookingAccount, findBookingAccountId } from "./booking-account";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
+import { preferredRiderIds } from "./preferred-riders";
 
 /** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). */
 const MERCHANT_CANCELLABLE = ["open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
@@ -287,11 +288,13 @@ export class MerchantBookingService {
 
   /** Pending offers, read through Send's own ownership- and block-gated list, marked for the business. */
   private async offersFor(merchantId: string, orderId: string, accountId: string): Promise<MerchantBookingOffer[]> {
-    const [offers, members] = await Promise.all([
+    const [offers, members, preferred] = await Promise.all([
       this.offers.listForOrder(orderId, accountId),
       this.prisma.merchantMember.findMany({ where: { merchantId }, select: { profileId: true } }),
+      preferredRiderIds(this.prisma, merchantId),
     ]);
     const memberIds = new Set(members.map((m) => m.profileId));
+    const preferredIds = new Set(preferred);
     return offers.map((o) => ({
       id: o.id,
       type: o.type,
@@ -304,8 +307,8 @@ export class MerchantBookingService {
         ratingCount: o.rider.ratingCount,
         tripsCount: o.rider.tripsCount,
       },
-      // L3 ("Your riders") marks the business's own riders.
-      preferred: false,
+      // L3 ("Your riders"): the business's own riders carry a "Your rider" tag and rank first.
+      preferred: preferredIds.has(o.rider.profileId),
       ownMember: memberIds.has(o.rider.profileId),
     }));
   }

@@ -463,6 +463,9 @@ export class PrivacyService {
     const itemPhotoKeys: string[] = [];
 
     await this.prisma.$transaction(async (tx) => {
+      // Merchant web upgrade L3: businesses keep their own riders by phone number. The number is this
+      // person's, so it leaves every business's list — read before the anonymise step tombstones it.
+      await tx.merchantPreferredRider.deleteMany({ where: { phone: profile.phone } });
       await this.anonymiseProfileTx(tx, profileId, now);
       await this.scrubPiiTx(tx, profileId, isRider, now, itemPhotoKeys);
     });

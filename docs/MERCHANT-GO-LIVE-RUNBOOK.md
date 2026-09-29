@@ -80,8 +80,8 @@ with the phone `business:<merchant id>`. Nobody can sign in to it. In the consol
 customer as "Business: {name}" and its phone as the business's contact phone, and it doesn't appear in the
 Customers list.
 
-- **Pause one business's bookings:** open the business in Merchants, follow "Booking account", and put
-  that account on hold (the ordinary customer hold). Every new booking from any team member then gets
+- **Pause one business's bookings:** open the business in Merchants, follow the "Book a rider" row's link
+  to its booking account, and put that account on hold (the ordinary customer hold). Every new booking from any team member then gets
   "Bookings are paused for this business." Lift the hold to resume. A single team member's own hold, or a
   banned or suspended rider account, stops only that person from booking.
 - **Prohibited goods** (prescription medicine, weapons, drugs, cash). A rider who finds them at pickup
@@ -97,7 +97,28 @@ Customers list.
 - **A business's own team can't take its deliveries.** The pick refuses an offer from a team member (the
   business holds the delivery code, so they could deliver to themselves).
 
-## 7. Pilot numbers (CEO-10)
+## 7. Your riders (L3)
+
+A business keeps a list of its own riders: up to 20, each by the number the rider signs in to LyniaGo with,
+under the business's own name for them. Only the owner adds or removes; the whole team sees the list.
+
+- **What it changes.** A rider on a business's list gets a "Your rider" tag on that business's booking
+  offers, which are listed first unless another offer is clearly better on two of fare, ETA and rating.
+  For a restaurant's own orders, auto-dispatch offers one of its riders first when they're eligible and no
+  more than 2 km farther than the nearest eligible rider. It never changes eligibility: KYC, suspension,
+  holds, one active ride and the debt lock all still apply. There is no extra push.
+- **What the business sees.** Only "On LyniaGo", "Not on LyniaGo yet" or "Can't take jobs right now" per
+  number, never why. The rider's LyniaGo name and photo appear only after they've delivered for that
+  business. A number on the business's own team can't be added, and a team member who was on the list
+  shows as "Can't take jobs right now".
+- **Limits and trail.** 20 numbers, 10 adds a day per business. Every add and removal is an `audit_logs`
+  row (`merchant.rider.add` / `merchant.rider.remove`, actor = the owner, target = the merchant id, note =
+  the list row id). A rider who deletes their account leaves every business's list.
+- **A rider asks to be taken off a business's list.** Delete the row (there's no console action yet):
+  `DELETE FROM merchant_preferred_riders WHERE merchant_id = '<merchant id>' AND phone = '+263…';` The
+  rider-side notice and opt-out ("{Business} calls you their rider") are Phase 2.
+
+## 8. Pilot numbers (CEO-10)
 
 Run against a read replica or with care. The booking queries arrive with L2 (`merchant_bookings`).
 
@@ -121,4 +142,15 @@ FROM merchants m
 JOIN merchant_members mm ON mm.merchant_id = m.id AND mm.role = 'owner'
 JOIN profiles p ON p.id = mm.profile_id
 WHERE m.created_at - p.created_at < interval '1 day';
+
+-- L3: the share of each business's delivered bookings taken by one of its own riders.
+SELECT mb.merchant_id,
+       count(*) AS delivered,
+       count(*) FILTER (WHERE mpr.id IS NOT NULL) AS by_own_rider
+FROM merchant_bookings mb
+JOIN orders o ON o.id = mb.order_id AND o.status IN ('delivered', 'completed')
+JOIN profiles rp ON rp.id = o.rider_id
+LEFT JOIN merchant_preferred_riders mpr ON mpr.merchant_id = mb.merchant_id AND mpr.phone = rp.phone
+GROUP BY mb.merchant_id
+ORDER BY delivered DESC;
 ```
