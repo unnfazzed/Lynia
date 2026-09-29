@@ -149,6 +149,29 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   /** `POST /restaurants/:merchantId/orders`. Price is always server-computed (D-35). */
   async placeOrder(customerId: string, merchantId: string, body: PlaceMerchantOrderRequest): Promise<MerchantOrderResponse> {
+    // FOOD-STANDING-01: account standing, checked first and before any write — the same gate, in the
+    // same { reason, message } shape, as Send's OrdersService.create, so the app's ApiError.code
+    // pipeline routes it identically. A held customer, or a banned/suspended rider (F-01: not even as a
+    // sender), can't place a food order either. A cash ban (R-08) never blocks ordering: it only takes
+    // cash off the table for food, so it's checked against the chosen payment method.
+    const account = await this.prisma.profile.findUnique({
+      where: { id: customerId },
+      select: { onHold: true, cashBanned: true, rider: { select: { accountStatus: true } } },
+    });
+    if (account?.onHold) {
+      throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
+    }
+    const accountStatus = account?.rider?.accountStatus;
+    if (accountStatus === "banned" || accountStatus === "suspended") {
+      throw new ForbiddenException({
+        reason: accountStatus === "banned" ? "account_banned" : "account_suspended",
+        message: "Your account is not in good standing.",
+      });
+    }
+    if (account?.cashBanned && body.paymentMethod === "cash") {
+      throw new ForbiddenException({ reason: "cash_banned", message: "Pay with your wallet for food orders." });
+    }
+
     if (body.idempotencyKey) {
       const existing = await this.findByIdempotencyKey(customerId, body.idempotencyKey);
       if (existing) return this.toResponse(existing);
