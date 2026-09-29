@@ -337,6 +337,9 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Monotonic request id so a slow autocomplete response can't overwrite a newer query's results.
   const reqSeq = useRef(0);
+  // The same for resolving a place (a tapped suggestion's Details, or the device geocoder): only the
+  // latest resolution may land. Typing, clearing, or choosing something else retires one in flight.
+  const resolveSeq = useRef(0);
   const input = useRef<TextInput>(null);
 
   useEffect(() => () => { if (debounce.current) clearTimeout(debounce.current); }, []);
@@ -383,6 +386,22 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
     [],
   );
 
+  /**
+   * The customer has moved past the list: they chose a suggestion, picked a saved or recent place, or
+   * cleared the field. Retire everything still pending: the debounced search not yet sent, the search
+   * in flight, and a place lookup not yet back. Otherwise a late autocomplete repaints the list, the
+   * spinner or the no-match row under the place they just chose, and a late lookup swaps that place
+   * for an older one.
+   */
+  const retirePending = useCallback((): void => {
+    if (debounce.current) clearTimeout(debounce.current);
+    reqSeq.current++;
+    resolveSeq.current++;
+    setLoading(false);
+    setResolving(false);
+    setNoMatch(false);
+  }, []);
+
   // The device-geocoder escape from a search that returns nothing. Same resolver, same confirm step,
   // and the same reason codes as the unkeyed path — see AddressSearchDeviceGeocode.
   const { onResolved } = props;
@@ -390,10 +409,13 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
   const tryDevice = useCallback((): void => {
     const q = query.trim();
     if (geocodeInFlight.current || q.length < 3) return;
+    const seq = ++resolveSeq.current;
+    setResolving(false); // a Details lookup it supersedes will not clear its own spinner
     geocodeInFlight.current = true;
     setGeocoding(true);
     void geocodeAddress(q)
       .then((outcome) => {
+        if (seq !== resolveSeq.current) return; // the customer has since typed, chosen or cleared
         if (outcome.ok) {
           onResolved(outcome.place);
           setNoMatch(false);
@@ -415,6 +437,9 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
       setFailed(false);
       setNoMatch(false);
       setDeviceMsg(null);
+      // An edit moves on from a place still resolving, so that answer must not overwrite the field.
+      resolveSeq.current++;
+      setResolving(false);
       if (debounce.current) clearTimeout(debounce.current);
       const trimmed = text.trim();
       if (trimmed.length < 3) {
@@ -431,11 +456,14 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
 
   const choose = useCallback(
     (s: PlaceSuggestion): void => {
+      retirePending();
+      const seq = resolveSeq.current;
       setResolving(true);
       setFailed(false);
       // The suggestion's own name leads the landmark — Details is asked for the address and point only.
       void placeDetails(s.placeId, sessionToken.current, s.primary)
         .then((place) => {
+          if (seq !== resolveSeq.current) return; // a newer tap, an edit or a clear has taken over
           if (!place) {
             // Details failed — leave the customer on the pin path with a calm hint.
             setFailed(true);
@@ -449,22 +477,25 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
           setSuggestions([]);
           sessionToken.current = newSessionToken();
         })
-        .finally(() => setResolving(false));
+        .finally(() => {
+          if (seq === resolveSeq.current) setResolving(false);
+        });
     },
-    [props],
+    [props, retirePending],
   );
 
   // Tapping an already-resolved place (a saved slot or a recent) short-circuits Details entirely — it
   // was resolved once, so we feed the picked point straight through and float it back up the recents.
   const pick = useCallback(
     (place: ResolvedPlace): void => {
+      retirePending();
       props.onResolved(place);
       void addRecent(place).then(setRecents);
       setQuery(place.landmark);
       setSuggestions([]);
       sessionToken.current = newSessionToken();
     },
-    [props],
+    [props, retirePending],
   );
 
   // "Save as Home/Work" affordance: a bookmark button on each recent row promotes it into the first
@@ -488,14 +519,13 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
   const idle = query.trim().length < 3;
 
   const clear = useCallback((): void => {
-    reqSeq.current++;
+    retirePending();
     setQuery("");
     setSuggestions([]);
     setFailed(false);
-    setNoMatch(false);
     setDeviceMsg(null);
     sessionToken.current = newSessionToken();
-  }, []);
+  }, [retirePending]);
 
   return (
     <View style={{ marginBottom: tokens.space.sm }}>
