@@ -124,3 +124,100 @@ starts from reasoning, not archaeology.
   the first merchant order; settlement is the missing half.
 - **Trigger / blocked by:** Any decision to schedule commission rate > 0% — settlement must be
   built BEFORE the rate flips.
+
+## Merchant web upgrade (from /plan-ceo-review 2026-09-29, `docs/plans/2026-09-29-merchant-web-upgrade-plan.md` §11)
+
+### TODO-1 · Retire the `owner_profile_id` fallback and repair flipped roles
+
+- **What:** Once every merchant route reads `merchant_members`, drop the resolver's
+  `merchants.owner_profile_id` fallback, and reset `Profile.role = merchant` values that the old
+  `POST /merchant/become` flipped (RCA C-4) back to `customer`.
+- **Why:** The fallback is a second source of truth kept only for the L1 rollout window. The flipped roles
+  break those people's customer app, and nothing reads `role = merchant` any more.
+- **Pros:** One access path. Merchant owners get their customer app back.
+- **Cons:** It's a data fix in production; it needs a dry-run count first.
+- **Context:** The L1 migration `0053` backfills an owner row for every existing merchant. The resolver
+  backfills any row it finds missing. After two weeks with zero fallback hits (log `merchant.access.fallback`),
+  the fallback is dead code.
+- **Effort:** human S / CC S. **Priority:** P2.
+- **Trigger / blocked by:** L1 shipped plus two weeks with no fallback hits in the logs.
+
+### TODO-2 · A merchant socket feed for bookings
+
+- **What:** Push booking changes to the merchant web over the existing `merchant:queue:<id>` room, and stop
+  polling every 3 s during the 90-second pick window.
+- **Why:** Polling is right for 2G at pilot scale. At about 100× pilot volume (roughly 300 live windows) it
+  becomes about 100 req/s on the order snapshot, the API's hottest read path.
+- **Pros:** Instant offers, less load. **Cons:** A reconnect path to get right on flaky links.
+- **Context:** Send's gateway already emits `offers:changed` and `order:status` to `order:<id>` rooms. Only
+  the order's customer and rider may subscribe, and a business's booking account has no socket, so a
+  merchant-side relay is needed.
+- **Effort:** human M / CC S. **Priority:** P3.
+- **Trigger / blocked by:** booking snapshot p95 latency or request rate alarms, or more than 50
+  concurrent booking windows.
+
+### TODO-3 · Rider-app half of Book a rider and Your riders (one mobile release)
+
+- **What:** In the rider app:
+  - a "Refuse: prohibited goods" action on an assigned business booking that carries no strike, doesn't
+    re-broadcast and files a report to ops;
+  - "{Business} calls you their rider" with an opt-out;
+  - the declared value on the job card.
+- **Why:** v1 changes nothing in the rider app. Refusal goes through "Report a problem" plus an ops
+  cancel, and preferred riders have no say. `declaredValue` is stored but no API read returns it, so
+  riders never see the liability figure.
+- **Pros:** Rider consent and a clean refusal path. **Cons:** A Play release through Closed testing.
+- **Context:** Design doc L2 "Prohibited goods" and L3 "The rider's side"; CEO review CEO-7.
+- **Effort:** human M / CC M. **Priority:** P2.
+- **Trigger / blocked by:** the next planned rider-app release after L3 ships.
+
+### TODO-4 · Web Push for bookings and orders
+
+- **What:** Web Push to the merchant web for new offers, a rider's cancel and new restaurant orders on a
+  backgrounded phone.
+- **Why:** v1 asks the merchant to stay on the page for 90 seconds. A shop owner switching to WhatsApp
+  misses the window.
+- **Pros:** Fewer expired bookings. **Cons:** VAPID keys, permission prompts, iOS limits.
+- **Context:** Design doc Open Question 3.
+- **Effort:** human M / CC M. **Priority:** P2.
+- **Trigger / blocked by:** the pilot's expired-booking rate above about 20%.
+
+### TODO-5 · The Piranha pass now covers shop bookings
+
+- **What:** When `RESTAURANTS_ENABLED` is retired (the "Post-launch flag cleanup" entry above), note that
+  it also gates `/merchant/bookings`. Retire it for both, or split a bookings switch first.
+- **Why:** Pulling the restaurants switch in an incident also stops every shop's Book a rider (CEO-4).
+- **Pros:** No surprise outage coupling. **Cons:** Paperwork.
+- **Context:** Plan §11 F1.4.
+- **Effort:** human S / CC S. **Priority:** P3.
+- **Trigger / blocked by:** the Piranha pass itself.
+
+### TODO-6 · Reach for a business's own riders beyond Send's radius
+
+- **What:** Let a business's preferred riders see its open bookings on their board beyond Send's widening
+  radius (5 → 8 → 12 km). For example, the board also lists open orders whose broadcast sent-set holds
+  the caller, with the push and the listing agreeing.
+- **Why:** The CEO review dropped an extra push to preferred riders up to 10 km away (OV-2). A rider
+  opening that push lands on a 5 km board (`apps/mobile/app/rider/(tabs)/index.tsx:694`) that doesn't list
+  the job for 30–60 s (`apps/api/src/orders/orders.service.ts:563`). Being in the sent set would also make
+  `expandBroadcast` skip them (`matching.service.ts:335-340`).
+- **Pros:** A shop's own courier gets its jobs from farther away. **Cons:** A change on Send's hottest
+  read path.
+- **Context:** Must stay Send-side with no merchant import (depcruise `express-no-merchant-coupling`).
+- **Effort:** human M / CC S. **Priority:** P3.
+- **Trigger / blocked by:** pilot data showing preferred riders' offers arriving late or not at all
+  because they were out of range.
+
+### TODO-7 · "Share my location" link for buyers
+
+- **What:** The business sends the buyer a `wa.me` message with a LyniaGo link. The buyer taps it, the
+  browser asks for their location, and it fills the booking's drop-off.
+- **Why:** v1 takes a pasted Google Maps link (short links resolved server-side) or a pin the business
+  drops. A buyer who can't produce a link leaves the business guessing, and wrong drop-offs end as
+  undelivered.
+- **Pros:** Accurate drop-offs without the buyer knowing how to share a map link. **Cons:** A public page
+  with its own abuse surface (rate limits, one-time tokens).
+- **Context:** Design doc L2 "Drop-off, v1"; CEO review OV-6.
+- **Effort:** human M / CC S. **Priority:** P2.
+- **Trigger / blocked by:** the pilot's `undelivered` reason `wrong_address` above about 10% of business
+  bookings.

@@ -177,6 +177,8 @@ business's own riders come third because they make the wedge work with the couri
      acceptance time is stored on the owner's team row.
    - Business type is **fixed after sign-up**; changing it is a support job, and the screen says so.
    - Pharmacies see "Over-the-counter products only for now".
+   - A number whose rider account is banned or suspended, or whose account is on hold, can't set up a
+     business (OV-5).
    - After sign-up the business lands on **`/setup`**, whose checklist depends on its type from L1 on.
      A restaurant sees today's restaurant checklist. A shop sees the shop checklist (L5 below), with
      "Book your first rider" live from L2.
@@ -203,70 +205,119 @@ business's own riders come third because they make the wedge work with the couri
      will find you when LyniaGo Shops opens. We'll check your items first."
 6. **Keeping shops out of restaurant results.** The customer restaurant API and `placeOrder` exclude shops.
 
-### L2 — Book a rider (shops and restaurants)
+### L2 — Book a rider (shops and restaurants), plus the shop shell
 
 - **Where it lives.**
-  - For a shop it is the home screen: **Deliveries** is the first nav item.
+  - For a shop it is the home screen: **Deliveries** is the first nav item. The shop shell ships in this
+    layer: shop nav (Deliveries · Items · Shop · Help; Riders joins in L3), the shop words on every screen
+    a shop uses, and Help opening WhatsApp support.
   - For a restaurant it is a "Book a rider" button on Orders, for phone orders. Restaurants get no new nav
-    item.
-- **Who owns a booking.**
-  - A booking is a Send order whose customer of record is the person who booked it, tagged with the
-    business in a new nullable `orders.booked_by_merchant_id` (parcel orders only).
-  - The Deliveries list is **business-wide**. Any team member can act on any booking through
-    merchant-scoped endpoints, which check the team row and then call the existing Send services.
-  - A removed member loses the business list. Bookings they created stay in their own LyniaGo order
-    history, as with any Send order they made.
+    item. A strip at the top of Orders ("2 bookings live · View") opens the same Deliveries page, which is
+    where a restaurant's pick screen, states and Try again live. The button, the strip and the page are
+    ledgered (R2-12).
+- **Who owns a booking: the business.**
+  - Each business gets one **booking account**: a LyniaGo customer account that stands for the business
+    on the Send rails. Its name is the business's name, and nobody can sign in to it: its phone field
+    holds `business:<merchant id>`, following the `erased:` convention erased accounts already use.
+  - Every booking is a Send order whose customer of record is that booking account. So:
+    - the Deliveries list is **business-wide**, and any team member acts on any booking through
+      merchant-scoped endpoints, which check the team row and then call the existing Send services as the
+      booking account;
+    - the customer app never sees or acts on a business booking, because no one holds that account's
+      login; there are no stray pushes or live cards on anyone's phone (R2-4);
+    - a removed member loses every booking with the team row; bookings never enter a member's personal
+      order history;
+    - Send's re-broadcast after a rider cancel copies the customer of record, so the new booking stays the
+      business's (R2-2);
+    - riders see the business's name as the sender, and the rider's "call the sender" is the business's
+      contact phone.
+  - **Who booked** is recorded per booking (`merchant_bookings`: booking, business, team member), shown on
+    the booking as "Booked by Tendai". The Phase 2 staff activity trail builds on it.
+  - **Holds** (R2-5). Ops can hold a whole business's bookings by holding its booking account, using the
+    customer hold that already exists. The admin merchant page links to it. The booking endpoint also
+    applies Send's per-person checks to the team member booking: their own hold, and a banned or
+    suspended rider account (OV-5).
 - **Pickup.** The business's pin, landmark and contact phone.
 - **Drop-off, v1.**
   - Paste the location link the buyer sent. Coordinates are read if the link contains them: Google Maps
     long links, `geo:`, plain "lat, lng".
   - Otherwise, and always as an option, drop a pin on a map. The map is Leaflet with OpenStreetMap tiles
     and attribution, centred on the business.
-  - Resolving short links like `maps.app.goo.gl` on the server is an eng-review option, not v1. It is
-    SSRF-sensitive.
-- **Required fields.** Buyer's phone, landmark, what's going, and its value (up to $150).
-- **Fare.** Prefilled from `quoteFare()`, distance-based, and editable. The screen says "You pay the rider
-  this fare in cash at pickup". That is the existing Send model; LyniaGo takes nothing at launch.
-- **Value.** This is Send's declared value, the liability cap shown to the rider.
+  - **Short links are resolved on the server in v1** (OV-6). A buyer's phone shares Google Maps as a
+    `maps.app.goo.gl` link, and a WhatsApp location opens into exactly that, so it's the format that will
+    arrive most. The API follows the redirect for an allow-listed host only (`maps.app.goo.gl`,
+    `goo.gl/maps`), over https, at most two hops, reading only the `Location` header with a 3-second
+    timeout, and parses the coordinates from the Google Maps URL it lands on. Anything else is refused,
+    so there is no open fetch to abuse.
+  - Send's service area applies: pickup and drop-off must both be inside the 25 km corridor.
+- **Required fields.** Buyer's phone, landmark, what's going, and what it's worth.
+- **Fare.** Prefilled from `quoteFare()` (straight-line distance, $1.50 + $0.60/km) and editable, as in
+  Send.
+  - Riders either accept the fare or offer their own, and the business sees every offer's fare before
+    picking. The form says: "Suggested fare $3.50. Riders may offer a different fare; you pay the rider you
+    pick, in cash at pickup." (R2-6)
+  - That is the existing Send model; LyniaGo takes nothing at launch.
+- **Value.** This is Send's declared value, the liability record for the booking. Today's rider app doesn't
+  show it (no API read returns it); showing it to riders is a Phase 2 mobile item (CEO-7).
+  - **Up to $150** (Send's pilot cap). A higher value blocks the form with "LyniaGo can carry goods worth up
+    to $150 for now. Split it into smaller deliveries, or use your own transport for this one." The form
+    never suggests declaring less than the goods are worth (R2-15).
   - **No cash-on-delivery in v1.** The rider collects nothing from the buyer; the buyer pays the business
     as they do today. The form says so.
-- **Prohibited goods.**
+- **Prohibited goods** (R2-1).
   - The form shows Send's liability disclaimer plus "No prescription medicine, weapons, drugs or cash".
     Pharmacies see "Over-the-counter items only".
-  - Riders may refuse a job. A report leads ops to put the account on hold (the existing lever).
+  - Before offering, a rider sees only "what's going". A rider who finds prohibited goods at pickup does
+    **not** cancel: in Send every rider cancel is a strike and re-broadcasts the job. Instead they use the
+    rider app's existing "Report a problem" on the job (type Other: "prohibited goods") and message
+    support.
+  - Ops then cancels the booking from the admin console with the reason "Safety concern". An admin cancel
+    carries no rider strike and no re-broadcast. Ops holds the business's booking account.
+  - This is a runbook step (`docs/runbooks/MERCHANT-GO-LIVE.md` § Bookings) and a line in rider
+    onboarding. A one-tap "Refuse: prohibited goods" in the rider app is a Phase 2 mobile release.
 - **The 90-second window.**
   - Send's offer window is 90 s from broadcast, so everything is collected *before* "Find a rider".
-  - The screen then stays live (socket plus polling) and says "Stay here for 90 seconds to pick a rider".
+  - The screen then stays live by **polling** (every 3 s while finding a rider, every 15 s after) and says
+    "Stay here for 90 seconds to pick a rider". A merchant socket feed is an optimisation for later;
+    polling is what works on 2G.
   - Leaving and coming back refetches the booking.
   - An expired booking shows **"No rider picked in time"** with a one-tap **Try again**, which re-broadcasts
     the same details and offers to raise the fare.
   - No Web Push in v1; that's Phase 2.
-- **States in the Deliveries list.**
+- **States in the Deliveries list** (R2-3).
 
   | State | Action |
   |---|---|
-  | Finding a rider (countdown) | wait, or cancel |
-  | Rider coming to you | Call rider |
-  | Picked up | Call rider |
+  | Finding a rider (countdown), with offers and their fares | pick one, wait, or cancel |
+  | Finding a rider again: "Your rider cancelled" (Send's re-broadcast, a fresh 90 s) | pick one, wait, or cancel |
+  | Rider coming to you | Call rider · **Cancel** (no charge before pickup) · Send a new code |
+  | Picked up | Call rider · Send a new code |
   | Delivered | (the code was confirmed) |
   | Not delivered | shows the reason; Call rider |
-  | Expired | Try again |
+  | No rider picked in time | Try again |
   | Cancelled | — |
 
 - **Unhappy paths reuse Send's rules.**
-  - **No offers:** the booking expires.
-  - **The business cancels before pickup:** Send's cancel rules apply.
-  - **The rider cancels:** Send's re-broadcast.
+  - **No offers:** the booking expires, then Try again.
+  - **The business cancels before pickup:** Send's customer-cancel rules; no rider penalty.
+  - **After pickup the business can't cancel in the app.** The goods are with the rider. "Picked up" offers
+    Call rider and Help (WhatsApp support). Ops can still cancel from the admin console.
+  - **The rider cancels:** Send's re-broadcast, which stays the business's. A business that has left the page
+    sees it on return. If nobody picks in 90 s, it ends as "No rider picked in time", then Try again.
+  - **A rider who never arrives:** Cancel on "Rider coming to you", then Try again.
   - **The buyer is unreachable or refuses:** Send's `undelivered` ending, with the reason shown. The
     business arranges the goods' return with the rider by phone; a paid return leg is Phase 2.
   - **The code is never confirmed:** the booking stays "Picked up" until the rider marks it undelivered.
     Help opens WhatsApp support.
 - **Getting the code to the buyer.**
-  - After a rider is picked, "Send the code to the buyer on WhatsApp" opens `wa.me/<buyer>` with a
-    prefilled message: the rider's name and plate, plus the 6-digit code. It goes from the booker's own
-    WhatsApp.
+  - Send returns the 6-digit code **once**, when the rider is picked; only its hash is stored. The page
+    shows it straight away with "Send the code to the buyer on WhatsApp". That opens `wa.me/<buyer>` with a
+    prefilled message (the rider's name and plate, plus the code) from the booker's own WhatsApp.
   - Fallbacks: **Copy code**, and the code shown large enough to read out or SMS. These cover devices
     without WhatsApp and buyers not on WhatsApp.
+  - The browser that picked keeps the code for that booking. Any team member can **Send a new code**
+    (Send's code rotation, any time until delivery), which replaces the old one. It's for a buyer who lost
+    the message, or a teammate on another device.
 
 ### L3 — Your riders (preferred riders)
 
@@ -275,6 +326,8 @@ business's own riders come third because they make the wedge work with the couri
     six-item nav stays as it is.
   - The owner adds a rider with a **name** (the business's own label, e.g. "Blessing") and the **phone
     number the rider signs in to LyniaGo with**.
+  - A number on the business's own team can't be added as its rider. An offer from a team member on the
+    business's own booking is refused at pick, because they could deliver to themselves (OV-5).
   - A business can keep up to 20. Adds are rate-limited and audit-logged.
   - Staff can see the list; only the owner adds or removes.
 - **What the business sees about a number.** Deliberately little, so the list can't be used to look people
@@ -288,13 +341,16 @@ business's own riders come third because they make the wedge work with the couri
 - **How "preferred" ranks.** Preferred never overrides eligibility: KYC, suspension or ban, holds, one
   active ride, and the cash-debt locks all still apply. Within that, preferred riders rank higher, balanced
   against distance, rating and reliability.
-  - **Book a rider (the Send broadcast).**
-    - The business's preferred riders who are online get the booking even beyond the normal nearby radius,
-      up to 10 km.
-    - Their offers carry a **"Your rider"** tag.
+  - **Book a rider (the Send broadcast).** Send's broadcast is unchanged: riders see a booking on their
+    board when they are within its widening radius (5 km, then 8 km at 30 s, 12 km at 60 s).
+    - A preferred rider's offer carries a **"Your rider"** tag.
     - `rankOffers` gains a preferred bonus, so a preferred offer is listed first unless another offer is
       clearly better on fare and ETA together.
     - The business still sees every offer and picks.
+    - *Dropped at the CEO review:* an extra push to preferred riders up to 10 km away. A rider opening that
+      push lands on a 5 km board that doesn't show the job yet, and the push would stop Send's own later
+      push reaching them (OV-2). Reach for a business's own riders beyond Send's radius is a later,
+      Send-side change (TODO-6).
   - **Restaurant auto-dispatch** (one rider offered at a time). The `DispatchStrategy` seam gets the
     merchant's preferred riders.
     - Within the current search radius, an eligible preferred rider is offered first **unless they are more
@@ -371,7 +427,8 @@ business's own riders come third because they make the wedge work with the couri
 
 **The shop shell ships in L2, not here** (R2-8). A shop that signs up after L1 lands on its type-aware
 `/setup`. From L2 it has its own nav and words on every screen it uses: Deliveries, Items and Shop. The
-founder sends the sign-up link to shops only once L2 is live, and pilot week 1 starts after L3.
+founder sends the sign-up link to shops only once L2 is live. Pilot week 1 can start then; L3 should land
+before a business's first week ends, so the riders criterion can be measured (OV-12).
 
 - **Vocabulary.** A `vocabulary(businessType)` module swaps Menu ↔ Items, dish ↔ item, kitchen ↔ shop,
   "What you cook" ↔ "What you sell", and sets starter categories per kind. It lands in L2 with the shop
@@ -415,28 +472,39 @@ founder sends the sign-up link to shops only once L2 is live, and pilot week 1 s
 **Wireframe** (in the repo): `docs/designs/merchant-web-upgrade-wireframe.png` (source `…-wireframe.html`).
 It shows sign-in → What do you sell? → Team → Book a rider → Your riders.
 
-## Decisions for the CEO review to confirm
+## Decisions (settled at the CEO review, 2026-09-29)
 
-These are new defaults in this doc that the owner hasn't approved yet:
+The owner approved the premises, approach B and the riders layer. The CEO review settled everything
+else below. Each one is the review's recommended option, taken without a question under the session's
+no-questions instruction and marked **auto** so the owner can overturn it. Nothing outside this list and
+the premises is a new default.
 
-1. Book a rider needs no go-live; it runs at Send's trust level.
-2. Bookings belong to the business, tagged `booked_by_merchant_id`, with merchant-scoped endpoints.
-3. Drop-off v1 is link coordinates or a map pin (Leaflet + OSM). Short-link resolution is deferred.
-4. Invites need acceptance and expire after 14 days. One business per phone.
-5. Team lives inside Shop. The restaurant nav stays the mock's six items.
-6. No role repair in this build.
-7. Pause/close is deferred to Phase 2.
-8. The definition of "simplify the restaurant side" above.
-9. **Your riders.**
-   - Status visibility is limited to On LyniaGo / Not yet / Can't take jobs, with no name before a job.
-   - No rider consent in v1; an opt-out comes in Phase 2.
-   - The 10 km reach for Book a rider and the 2 km cold-food guardrail for restaurants.
-   - Riders is a shop nav item, and lives inside Shop for restaurants.
+| # | Decision | How |
+|---|---|---|
+| 1 | Book a rider needs no go-live; it runs at Send's trust level (value cap, disclaimer, holds). | auto |
+| 2 | Bookings belong to the business through its **booking account** (customer of record); team members act through merchant-scoped endpoints; who booked is recorded. Replaces the draft's `booked_by_merchant_id`. | auto |
+| 3 | Drop-off v1 is a pasted link (long links parsed in the browser; `maps.app.goo.gl` short links resolved by the API against a strict allow-list) or a map pin (Leaflet + OSM). | auto (reopened by OV-6) |
+| 4 | Invites need acceptance and expire after 14 days. One business per phone, resolved at Join, never revealed at invite. | auto |
+| 5 | Team lives inside Shop. The restaurant nav stays the mock's six items. | auto |
+| 6 | No repair of already-flipped `Profile.role` values in this build. | auto |
+| 7 | Pause / close for today is deferred to Phase 2. | auto |
+| 8 | "Simplify the restaurant side" means the list in L5. | auto |
+| 9 | Your riders: coarse statuses only and no name before a job; no rider consent in v1 (opt-out is Phase 2); the "Your rider" tag and ranking bonus on Book a rider, no extra push or reach (OV-2); 2 km cold-food guardrail for restaurants; team members can't be a business's riders; Riders is a shop nav item and lives inside Shop for restaurants. | auto |
+| 10 | Build order puts Book a rider (L2) ahead of Team (L4), because it is what pilot week 1 measures. | auto |
+| 11 | No cash-on-delivery in v1. | auto |
+| 12 | No Web Push in v1; the booking screen asks the merchant to stay for the 90-second window and polls. | auto |
+| 13 | Exactly one owner. Transfer and lost-number recovery go through support, using an audit-logged admin action. | auto |
+| 14 | Business type is fixed after sign-up; a map pin and landmark are required at sign-up. | auto |
+| 15 | Shops don't enter the go-live queue until the Shops section ships; the switch refuses them. | auto |
+| 16 | Prohibited goods: a rider reports and doesn't cancel; ops cancels (no strike, no re-broadcast) and holds the business. A rider-app refusal button is Phase 2. | auto |
+| 17 | One migration per layer (L1 `0053` … L4 `0056`). | auto |
+| 18 | Each layer ships as an **API PR first, then a web PR** merged only after the API release is at 100% in production. The merchant web deploys on its own on every push to main (OV-1). | auto |
+| 19 | A web PR that adds a new deviation (D-43 onward) opens with the entry marked PROPOSED and a screenshot sheet, and merges once the owner approves it. API PRs merge on green (OV-11; CLAUDE.md: deviations are "each approved by the user"). | auto |
 
 ## Open Questions
 
-1. **Short-link resolution.** Should the server resolve `maps.app.goo.gl` short links against a strict host
-   allowlist? This is an eng-review choice.
+1. ~~**Short-link resolution.**~~ Settled at the CEO review: yes, in v1, against a strict allow-list (L2,
+   Decision 3).
 2. **Merchant terms.** Who writes the merchant terms and privacy notice, and by when? The website's Terms
    link is still `#` (D-42).
 3. **Web Push.** Does Phase 2 add Web Push for offers and orders on a backgrounded phone?
@@ -464,7 +532,7 @@ Criteria:
 - **Pilot:** 5 named Siyaso/Mbare businesses signed up, with **≥10 delivered bookings** in week 1 across
   them and **≥1 unprompted rebook**.
 - **CI:** green, including the layer migrations (L1 `0053`: business type, shop kind, `merchant_members`;
-  L2: `orders.booked_by_merchant_id` and the business-level hold; L3: `merchant_preferred_riders`; L4:
+  L2: `merchant_bookings`; L3: `merchant_preferred_riders`; L4:
   `merchant_invites`). Each must pass the migration-safety spec. The companion plan §7 lists them.
 
 ## Distribution Plan
@@ -488,7 +556,10 @@ Criteria:
   before onboarding it.
 - **Merchant terms and privacy notice** (Open Question 2).
 - **An ops owner for the go-live queue**, with a 1-business-day turnaround.
-- **The customer Shops section**, which is the next project.
+- **The customer Shops section**, which is the next project. Its launch requires an item review of every
+  shop before its first switch-on: over-the-counter only for pharmacies, and the prohibited-goods list for
+  every kind. Until then the pharmacy item editor says "Over-the-counter products only. LyniaGo checks
+  every item before customers see it." (R2-13)
 - **Bird Verify**, which is live.
 
 ## The Assignment
@@ -529,6 +600,39 @@ Before the build lands:
   from a competitor into supply. It came from knowing how these businesses already work, not from the
   research. Trust that instinct in the pilot: the courier a shop already uses is the fastest rider
   supply you can get near Siyaso/Mbare.
+
+## CEO review disposition of the Reviewer Concerns
+
+The concerns below are the spec reviewer's record and stay as written. The CEO review (2026-09-29)
+resolved each of them in the text above:
+
+| Concern | Resolved in |
+|---|---|
+| R2-1 prohibited goods refusal | L2 · Prohibited goods; Decision 16 |
+| R2-2 re-broadcast loses the business | L2 · Who owns a booking (the clone copies the booking account) |
+| R2-3 missing states | L2 · States and Unhappy paths |
+| R2-4 whose booking | L2 · Who owns a booking; Decision 2 |
+| R2-5 hold is per person | L2 · Holds |
+| R2-6 riders counter the fare | L2 · Fare |
+| R2-7 shops in the go-live queue | L1.5; Decision 15 |
+| R2-8 what a shop sees before L5 | L5 intro; L2 shop shell |
+| R2-9 companion plan out of date | Plan §4–§9 revised to this model (same review) |
+| R2-10 ledger rule too narrow | Constraints · Pixel parity |
+| R2-11 Staff lists disagree | L4 permission table and Staff navs; Success criteria |
+| R2-12 where restaurant bookings live | L2 · Where it lives |
+| R2-13 catalogue OTC enforcement | Dependencies (Shops launch item review) |
+| R2-14 go-live checks | L1.5 and the go-live runbook |
+| R2-15 goods over $150 | L2 · Value |
+| R2-16 owner's own name | L1.4 and L4 Join |
+| R2-17 terms at Join | L4 Join |
+| R2-18 wireframe contradicts text | Wireframe redrawn |
+| R2-19 wireframe-only decisions | L1.4 staff hint; L5 order alarm |
+| R2-20 incomplete decision list | Decisions table |
+| R2-21 membership oracle | L4 One business per phone |
+| R2-22 owner transfer mechanism | L4 Owner rules |
+| R2-23 rider-supply timing | Dependencies · Rider supply |
+| R2-24 rebook definition | Success criteria; Assignment item 5 |
+| R2-25 "What I noticed" | Rewritten |
 
 <!-- gstack:office-hours:concerns:start -->
 ## Reviewer Concerns
