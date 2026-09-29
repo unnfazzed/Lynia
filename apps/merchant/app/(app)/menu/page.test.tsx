@@ -5,7 +5,7 @@ import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shar
 import MenuPage from "./page";
 import { ApiError } from "../../lib/api-client";
 import { clearBusinessCache, primeBusiness } from "../../lib/business";
-import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes, setDishOutOfStock } from "../../lib/menu-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({
@@ -258,5 +258,21 @@ describe("Staff only mark items out of stock and back (merchant web upgrade L4)"
     expect(await screen.findByText("No dishes yet")).toBeTruthy();
     expect(screen.getByText("The owner adds the dishes here. You'll mark them out of stock and back.")).toBeTruthy();
     expect(screen.queryByText("+ Mains")).toBeNull();
+  });
+});
+
+describe("Out of stock for how long (merchant web upgrade L5, RM.oos_sheet)", () => {
+  it("sends the chosen duration", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(setDishOutOfStock).mockResolvedValue(dish({ outOfStock: true }));
+
+    render(<MenuPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mark out of stock" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Until I turn it back on" }));
+    const confirm = screen.getAllByRole("button", { name: "Mark out of stock" }).at(-1)!;
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(setDishOutOfStock).toHaveBeenCalledWith("d1", "until_back"));
   });
 });

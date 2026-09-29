@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
+import type { DishOutOfStockFor, MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { CategoryEditorSheet, type CategorySave } from "../../components/menu/CategoryEditorSheet";
@@ -131,9 +131,9 @@ export default function MenuPage() {
     await withSheet(() => deleteDish((sheet as { dish: MerchantDishResponse }).dish.id).then(() => undefined));
   }
 
-  async function onConfirmOos() {
+  async function onConfirmOos(forHowLong: DishOutOfStockFor) {
     if (sheet.kind !== "oos") return;
-    await withSheet(() => setDishOutOfStock(sheet.dish.id).then(() => undefined));
+    await withSheet(() => setDishOutOfStock(sheet.dish.id, forHowLong).then(() => undefined));
   }
 
   async function onClearOos(dishId: string) {

@@ -15,15 +15,19 @@ interface NavItem {
 
 /** Left rail (bottom bar on phone — see .kitchen-nav's media query in globals.css). Every item is now
  *  a real route (E4 built Menu/Shop/Hours, closing out the placeholders E1/E2/E3 left inert). Icon +
- *  label per item, matching the gallery's `KitchenNav`
- *  (packages/design/explorations/restaurants/r-parts.jsx:616 — inbox/utensils/store/clock/receipt). */
-const RESTAURANT_ITEMS: NavItem[] = [
-  { id: "queue", label: "Orders", href: "/queue", icon: "inbox" },
-  { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },
-  { id: "shop", label: "Shop", href: "/shop", icon: "store" },
-  { id: "hours", label: "Hours", href: "/hours", icon: "clock" },
-  { id: "money", label: "Statement", href: "/statement", icon: "receipt" },
-];
+ *  label per item, matching the gallery's `KitchenNav` (packages/design/explorations/restaurants/
+ *  r-parts.jsx:616 — inbox/utensils/store/clock/receipt/circle-alert), Help included from the merchant
+ *  web upgrade's L5: it opens support's WhatsApp, and hides when no number is set (D-47). */
+function restaurantItems(): NavItem[] {
+  return [
+    { id: "queue", label: "Orders", href: "/queue", icon: "inbox" },
+    { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },
+    { id: "shop", label: "Shop", href: "/shop", icon: "store" },
+    { id: "hours", label: "Hours", href: "/hours", icon: "clock" },
+    { id: "money", label: "Statement", href: "/statement", icon: "receipt" },
+    ...helpItems(),
+  ];
+}
 
 /** Help opens LyniaGo support on WhatsApp, and hides rather than open a dead link when no number is set. */
 function helpItems(): NavItem[] {
@@ -70,7 +74,7 @@ export function KitchenNav({ active }: { active: string }) {
   // Restaurants are the default until the business is known, so a kitchen never sees its drawn nav flicker.
   const staff = business?.myRole === "staff";
   const items =
-    business?.businessType === "shop" ? (staff ? shopStaffItems() : shopItems()) : staff ? restaurantStaffItems() : RESTAURANT_ITEMS;
+    business?.businessType === "shop" ? (staff ? shopStaffItems() : shopItems()) : staff ? restaurantStaffItems() : restaurantItems();
   return (
     <nav className="kitchen-nav" aria-label={business?.businessType === "shop" ? "Shop sections" : "Kitchen sections"}>
       {items.map((item) =>

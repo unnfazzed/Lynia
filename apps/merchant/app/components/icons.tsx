@@ -37,7 +37,8 @@ export type IconName =
   | "package"
   | "bike"
   | "users"
-  | "user";
+  | "user"
+  | "power";
 
 const PATHS: Record<IconName, string[]> = {
   inbox: [
@@ -101,6 +102,8 @@ const PATHS: Record<IconName, string[]> = {
     "M16 3.13a4 4 0 0 1 0 7.75",
   ],
   user: ["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"],
+  // Lucide `power` (L5: the drawn "Open for orders" pill, r-parts.jsx KitchenBar).
+  power: ["M12 2v10", "M18.4 6.6a9 9 0 1 1-12.77.04"],
   "chevron-left": ["m15 18-6-6 6-6"],
   locate: ["M2 12h3", "M19 12h3", "M12 2v3", "M12 19v3", "M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0"],
   "map-pin": [

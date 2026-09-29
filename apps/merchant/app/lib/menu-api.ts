@@ -1,4 +1,5 @@
 import type {
+  DishOutOfStockFor,
   MerchantCategoryRequest,
   MerchantCategoryResponse,
   MerchantDishRequest,
@@ -83,10 +84,10 @@ export function deleteDish(id: string): Promise<{ ok: true }> {
   return authedFetch<{ ok: true }>(`/merchant/dishes/${id}`, { method: "DELETE" });
 }
 
-/** N-14: "for the rest of today" is the only duration the server actually implements — the auto-reset
- *  at midnight is what makes it safe to offer as the one button (no forgot-to-turn-it-back-on risk). */
-export function setDishOutOfStock(id: string): Promise<MerchantDishResponse> {
-  return authedFetch<MerchantDishResponse>(`/merchant/dishes/${id}/out-of-stock`, { method: "POST" });
+/** `RM.oos_sheet` (merchant web upgrade L5): until turned back on, the rest of today or one hour. An API
+ *  from before L5 ignores the duration and uses the rest of today, N-14's always-safe choice. */
+export function setDishOutOfStock(id: string, forHowLong: DishOutOfStockFor = "rest_of_today"): Promise<MerchantDishResponse> {
+  return authedFetch<MerchantDishResponse>(`/merchant/dishes/${id}/out-of-stock`, { method: "POST", body: { for: forHowLong } });
 }
 
 export function clearDishOutOfStock(id: string): Promise<MerchantDishResponse> {

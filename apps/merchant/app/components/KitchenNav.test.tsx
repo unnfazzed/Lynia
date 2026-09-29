@@ -19,15 +19,22 @@ function labels(): string[] {
 }
 
 describe("KitchenNav is type-aware (merchant web upgrade L2)", () => {
-  it("a restaurant keeps the drawn nav, also while the business is still loading", () => {
+  it("a restaurant keeps the drawn nav, Help included (L5), also while the business is still loading", () => {
     vi.mocked(useBusiness).mockReturnValue(null);
     vi.mocked(supportWhatsAppUrl).mockReturnValue("https://wa.me/263770000000");
     render(<KitchenNav active="queue" />);
-    expect(labels()).toEqual(["Orders", "Menu", "Shop", "Hours", "Statement"]);
+    expect(labels()).toEqual(["Orders", "Menu", "Shop", "Hours", "Statement", "Help"]);
     expect(screen.getByRole("navigation", { name: "Kitchen sections" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Help" }).getAttribute("href")).toBe("https://wa.me/263770000000");
 
     cleanup();
     vi.mocked(useBusiness).mockReturnValue(merchantProfile());
+    render(<KitchenNav active="queue" />);
+    expect(labels()).toEqual(["Orders", "Menu", "Shop", "Hours", "Statement", "Help"]);
+
+    // No support number set: Help hides rather than open a dead link.
+    cleanup();
+    vi.mocked(supportWhatsAppUrl).mockReturnValue(null);
     render(<KitchenNav active="queue" />);
     expect(labels()).toEqual(["Orders", "Menu", "Shop", "Hours", "Statement"]);
   });

@@ -2114,7 +2114,7 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
 
 | Where | Mock / earlier | App | Why |
 |---|---|---|---|
-| `KitchenBar` (RM, all screens) | brand · "Merchant" · Connected · (D-32 dropped the alarm pill) | + who is signed in at the end, "Tendai · Staff", which opens "Switch person" and, for Staff, "Leave this business". At phone width the first name only, and the secondary "Merchant" label gives way to it; below 360px (and offline) the icon alone, the name in its menu, so the wordmark is never cut | Design doc L4 "Shared devices": everyone signs in with their own code, and a shared tablet says whose it is |
+| `KitchenBar` (RM, all screens) | brand · "Merchant" · Connected · (D-32 dropped the alarm pill) | + who is signed in at the end, "Tendai · Staff", which opens "Switch person" and, for Staff, "Leave this business". At phone width the first name only, and the secondary label ("Merchant"; the business's name from L5, D-47) gives way to it; below 360px (and offline) the icon alone, the name in its menu, so the wordmark is never cut | Design doc L4 "Shared devices": everyone signs in with their own code, and a shared tablet says whose it is |
 | `KitchenNav`, restaurant Staff | Orders · Menu · Shop · Hours · Statement | Orders · Menu · Hours · Help | The permission table: Shop and Statement are the owner's; Help opens support's WhatsApp (hidden when unset) |
 | `KitchenNav`, shop Staff (D-44/D-45) | Deliveries · Riders · Items · Shop · Help | Deliveries · Riders · Items · Help | The permission table |
 | `RM.catalog` (M4·1) and Items (D-44), Staff | the owner's list with Edit, add and category controls | the list with "Mark out of stock" / "Back in stock" only, and "Mark items out of stock and back. Only the owner changes the items." under the title; an empty list says "The owner adds the dishes here." | The permission table: stock toggles only |
@@ -2135,4 +2135,34 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
   owner-side transfer.
 
 **Retire when:** a design export draws Team, Join or the signed-in person (then align to it), or the owner
+rejects a row (then the app changes).
+
+## D-47 · Merchant web: finishing the drawn restaurant screens (L5) — PROPOSED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"improving restaurant side also to simplify."* Spec:
+`docs/designs/merchant-web-upgrade.md` L5 ("Shop words + finishing the drawn restaurant screens"). Most of L5
+**removes** divergences, aligning the app to what the RM mocks already draw. The entry lists those alignments so
+the sheet (`docs/parity/MERCHANT-L5-D47-2026-09-29.png`) can be read against them, and ledgers the few places the
+app still differs. PROPOSED until the owner approves the web PR and its sheet (OV-11). Nothing in
+`packages/design/**` changes.
+
+### 1 · Aligned to the mock (no longer a deviation)
+
+| Where | Before | Now (as drawn) |
+|---|---|---|
+| `RM.oos_sheet` (M4·3) | one button, "for the rest of today", defended in a code comment | the three drawn choices: Until I turn it back on · For the rest of today (chosen to start with, as drawn) · For 1 hour, and the drawn line only. `POST /merchant/dishes/:id/out-of-stock` takes the duration; none means the rest of today |
+| `KitchenNav`, restaurants | Orders · Menu · Shop · Hours · Statement | + **Help**, the mock's sixth item, opening support's WhatsApp |
+| `KitchenBar` | "Merchant" beside the lockup | the business's name there, as drawn |
+| `KitchenBar`, restaurants | no open state | the drawn **Open for orders** / **Closed** pill after Connected: open while the restaurant is live and inside today's hours |
+
+### 2 · Still different
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `KitchenBar` label | "Sadza Republic · Fife Ave" | the name alone | No area field exists; the landmark is a sentence, not an area |
+| `KitchenBar` open pill | shown | tablet only; at phone width it gives way to the connection and the signed-in person (D-32's phone tier) | The bar can't hold four pills at 320–680px |
+| `KitchenNav` Help | always drawn | hidden when `MERCHANT_SUPPORT_WHATSAPP` isn't set | A dead link is worse than no item (the mobile app does the same) |
+| `KitchenBar`, shops | (no shop mock) | no open pill and no alarm flashing: a shop takes no customer orders | Design doc L5 "Order alarm" |
+
+**Retire when:** a design export draws an area on the bar or a phone-tier bar (then align to it), or the owner
 rejects a row (then the app changes).

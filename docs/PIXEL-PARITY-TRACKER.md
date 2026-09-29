@@ -441,7 +441,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): the Book a rider strip under the heading | |
+| ⬜ | M2·1 | `RM queue_empty` | Open · no orders  (RV M1·1) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): the Book a rider strip under the heading. L5 (D-47): the bar's business name and Open for orders pill, and Help in the nav, as drawn | |
 | ⬜ | M2·2 | `RM queue_loading` | Loading  (RV M1·2) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M2·3 | `RM queue_new` | NEW ORDER · alarm  (RV M1·3) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`) | |
 | ⬜ | M2·4 | `RM queue_board` | Kitchen board · 3 live  (RV M1·4) | gated route — needs seeded `PARITY_MERCHANT_URL` to shoot (see `docs/parity/PHASE6-merchant.md`). D-44 (PROPOSED, merchant web upgrade L2): the Book a rider strip ("N bookings live · View") under the heading | |
@@ -492,7 +492,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | M5·6 | `RM item_edit` | Edit dish · photo required  (RV M4·5) | D-44 (PROPOSED, merchant web upgrade L2): "Edit item" for a shop | |
 | ⬜ | M5·7 | `RM dish_photo` | Dish photo · crop  (RV M4·6) | | |
 | ⬜ | M5·8 | `RM dish_draft` | Draft · needs a photo  (RV M4·b2) | | |
-| ⬜ | M5·9 | `RM oos_sheet` | Out of stock today  (RV M4·7) | | |
+| ⬜ | M5·9 | `RM oos_sheet` | Out of stock today  (RV M4·7) | merchant web upgrade L5 (D-47): the three drawn durations and the drawn line, now built (was one button) | |
 | ⬜ | M5·10 | `RM hours` | Operating hours  (RV M4·8) | D-46 (PROPOSED, merchant web upgrade L4): Staff read the week and keep busy mode | |
 | ⬜ | M5·11 | `RM statement` | Weekly statement  (RV M4·9) | D-46 (PROPOSED, merchant web upgrade L4): Staff see one line | |
 | ⬜ | M5·12 | `RM eod` | End of day  (RV M4·10) | | |

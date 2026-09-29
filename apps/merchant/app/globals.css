@@ -197,6 +197,25 @@ input:focus-visible,
   flex-shrink: 0;
 }
 
+/* Merchant web upgrade L5: the drawn "Open for orders" / "Closed" pill (r-parts.jsx KitchenBar),
+ * restaurants only. */
+.kitchen-bar-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kitchen-bar-open[data-open="true"] {
+  color: var(--accent-text);
+}
+
 /* Merchant web upgrade L4: who is signed in, at the end of the bar (PersonMenu). A 44px target on a
  * 56/52px bar; on a phone it keeps the first name and sheds the role, which the menu repeats. */
 .kitchen-bar-person-wrap {
@@ -394,6 +413,11 @@ input:focus-visible,
    * secondary "Merchant" label gives way to them, so the wordmark stays whole. Offline, the wider pill
    * takes the name's room too, leaving the icon (a 44px target either way). */
   .kitchen-bar[data-person="true"] .kitchen-bar-role {
+    display: none;
+  }
+  /* L5: a phone keeps the connection and the person; the open pill is the tablet's (the queue's own
+   * header says whether orders are coming in). */
+  .kitchen-bar-open {
     display: none;
   }
   .kitchen-bar-person-role {
