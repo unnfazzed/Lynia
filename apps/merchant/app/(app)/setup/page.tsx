@@ -11,6 +11,7 @@ import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { bookingsAvailable } from "../../lib/booking";
 import { listBookings } from "../../lib/bookings-api";
+import { listRiders } from "../../lib/riders-api";
 import { getMerchantProfile, listDishes } from "../../lib/menu-api";
 import {
   buildSetupState,
@@ -37,7 +38,8 @@ import { shopKindLabel } from "../../lib/sign-up";
 type LoadState =
   | { status: "loading" }
   // `bookings`: how many the business has made; null where the API can't book riders yet (L2).
-  | { status: "ready"; profile: MerchantProfileResponse; dishes: MerchantDishResponse[]; bookings: number | null }
+  // `riders`: how many of its own riders a shop keeps (L3); null where the API doesn't keep them yet.
+  | { status: "ready"; profile: MerchantProfileResponse; dishes: MerchantDishResponse[]; bookings: number | null; riders: number | null }
   | { status: "error"; message: string };
 
 const ICONS: Record<SetupItemKey, IconName> = {
@@ -48,6 +50,7 @@ const ICONS: Record<SetupItemKey, IconName> = {
   pin: "map-pin",
   first_booking: "navigation",
   items: "package",
+  riders: "bike",
 };
 
 export default function SetupPage() {
@@ -61,9 +64,14 @@ export default function SetupPage() {
       .then(async ([profile, dishes]) => {
         // A shop's "Book your first rider" ticks with its first booking (L2). Best effort: a failed
         // read just leaves the step untick'd.
-        const bookings =
-          profile.businessType === "shop" && bookingsAvailable(profile) ? await listBookings().then((b) => b.length, () => 0) : null;
-        setState({ status: "ready", profile, dishes, bookings });
+        const shop = profile.businessType === "shop";
+        const [bookings, riders] = await Promise.all([
+          shop && bookingsAvailable(profile) ? listBookings().then((b) => b.length, () => 0) : null,
+          // L3's own riders: an API without them answers 404 ("coming soon"); any other failure just
+          // leaves the optional step open.
+          shop ? listRiders().then((r) => r.riders.length, (err: unknown) => (err instanceof ApiError && err.status === 404 ? null : 0)) : null,
+        ]);
+        setState({ status: "ready", profile, dishes, bookings, riders });
         setAlarmTested(readAlarmTested(profile.id));
       })
       .catch((err: unknown) => {
@@ -83,7 +91,7 @@ export default function SetupPage() {
   }
 
   if (state.status === "ready" && state.profile.businessType === "shop") {
-    return <ShopSetup profile={state.profile} items={state.dishes.length} bookings={state.bookings} onSignOut={signOut} />;
+    return <ShopSetup profile={state.profile} items={state.dishes.length} bookings={state.bookings} riders={state.riders} onSignOut={signOut} />;
   }
 
   const setup = state.status === "ready" ? buildSetupState({ profile: state.profile, dishes: state.dishes, alarmTested }) : null;
@@ -164,14 +172,16 @@ function ShopSetup({
   profile,
   items,
   bookings,
+  riders,
   onSignOut,
 }: {
   profile: MerchantProfileResponse;
   items: number;
   bookings: number | null;
+  riders: number | null;
   onSignOut: () => void;
 }) {
-  const setup = buildShopSetupState({ bookingsOn: bookings !== null, bookings: bookings ?? 0, items });
+  const setup = buildShopSetupState({ bookingsOn: bookings !== null, bookings: bookings ?? 0, items, riders });
   return (
     <Kitchen active="setup">
       <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 12, overflow: "auto", height: "100%", maxWidth: 720 }}>
@@ -233,6 +243,7 @@ function ChecklistCard({ item, icon, onAlarmTest }: { item: SetupItem; icon: Ico
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>{item.title}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{item.detail}</div>
+        {item.optional && !item.done && <span style={tagStyle}>Optional</span>}
         {item.soon && (
           <span
             style={{
@@ -287,3 +298,15 @@ function ChecklistCard({ item, icon, onAlarmTest }: { item: SetupItem; icon: Ico
     </div>
   );
 }
+
+const tagStyle: React.CSSProperties = {
+  display: "inline-block",
+  marginTop: 8,
+  marginRight: 8,
+  padding: "3px 9px",
+  borderRadius: "var(--radius-pill)",
+  background: "var(--surface)",
+  color: "var(--muted)",
+  fontSize: 11.5,
+  fontWeight: 700,
+};

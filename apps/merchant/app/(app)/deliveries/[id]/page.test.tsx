@@ -72,6 +72,23 @@ describe("One booking (merchant web upgrade L2)", () => {
     expect(screen.getByText("On your team, so they can't take your own delivery.")).toBeTruthy();
   });
 
+  it("tags the business's own rider and lists them first (L3)", async () => {
+    vi.mocked(getBooking).mockResolvedValue(
+      merchantBooking({
+        expiresAt: new Date(Date.now() + 80_000).toISOString(),
+        offers: [
+          bookingOffer({ id: "o1", offeredFare: "3.00" }),
+          bookingOffer({ id: "o2", offeredFare: "3.80", rider: { name: "Tino", photoUrl: null, ratingAvg: 4.8, ratingCount: 31, tripsCount: 120 }, preferred: true }),
+        ],
+      }),
+    );
+    render(<BookingPage />);
+
+    const picks = await screen.findAllByRole("button", { name: /^Pick / });
+    expect(picks.map((b) => b.getAttribute("aria-label"))).toEqual(["Pick Tino for $3.80", "Pick Blessing for $3.00"]);
+    expect(screen.getAllByText("Your rider")).toHaveLength(1);
+  });
+
   it("picking a rider shows the code once, keeps it in this browser, and sends it to the buyer on WhatsApp", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ expiresAt: new Date(Date.now() + 80_000).toISOString(), offers: [bookingOffer()] }));
     vi.mocked(pickOffer).mockResolvedValue({

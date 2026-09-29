@@ -15,6 +15,7 @@ import {
   codeMessage,
   isFinding,
   newIdempotencyKey,
+  orderOffers,
   pollIntervalMs,
   recallCode,
   rememberCode,
@@ -351,10 +352,18 @@ function FindingPanel({
       {booking.offers.length === 0 ? (
         <div style={{ fontSize: 13.5, color: "var(--muted)" }}>Waiting for riders' offers…</div>
       ) : (
-        booking.offers.map((o) => (
+        orderOffers(booking.offers).map((o) => (
           <div key={o.id} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>{o.rider.name}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {o.rider.name}
+                {/* L3: one of the business's own riders (D-45). */}
+                {o.preferred && (
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--accent-text)", background: "var(--accent-wash)", borderRadius: 999, padding: "2px 9px" }}>
+                    Your rider
+                  </span>
+                )}
+              </div>
               <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
                 {o.rider.ratingAvg != null ? `★ ${o.rider.ratingAvg.toFixed(1)} (${o.rider.ratingCount})` : "New rider"} · {o.rider.tripsCount} trips · {o.etaMinutes} min away
               </div>

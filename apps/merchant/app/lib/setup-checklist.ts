@@ -23,7 +23,7 @@ import { DAY_KEYS, formatWindow, type PartialMerchantHours } from "./hours";
  * finishing this list. The screen says that instead of implying the last tick flips it.
  */
 
-export type SetupItemKey = "menu" | "hours" | "payment" | "alarm" | "pin" | "first_booking" | "items";
+export type SetupItemKey = "menu" | "hours" | "payment" | "alarm" | "pin" | "first_booking" | "items" | "riders";
 
 export interface SetupItem {
   key: SetupItemKey;
@@ -35,6 +35,8 @@ export interface SetupItem {
   /** A step whose screen ships in a later layer of the merchant web upgrade (a shop's "Book your first
    *  rider" is L2): shown so the list is honest about what's ahead, tagged "Coming soon", never counted. */
   soon?: boolean;
+  /** Worth doing, never required (a shop's own riders, L3): tagged "Optional", never counted. */
+  optional?: boolean;
 }
 
 const ALARM_TESTED_KEY = "lynia_merchant_alarm_tested";
@@ -151,11 +153,14 @@ export function buildSetupState({
 /**
  * A shop's checklist (docs/designs/merchant-web-upgrade.md, "A shop's /setup checklist"). Each step goes
  * live with its layer: the pin and landmark are done at sign-up (L1); booking a rider (L2) is live once
- * the API can book riders, and ticks with the first booking; the Items screen (L2's shop nav) ticks with
- * the first item. There is no go-live for a shop yet — customers find shops when LyniaGo Shops opens
+ * the API can book riders, and ticks with the first booking; its own riders (L3, optional) once the API
+ * keeps them (`riders` is null before), ticking with the first; the Items screen (L2's shop nav) ticks
+ * with the first item. There is no go-live for a shop yet — customers find shops when LyniaGo Shops opens
  * (L1.5) — so `live` is false.
  */
-export function buildShopSetupState(input: { bookingsOn: boolean; bookings: number; items: number } = { bookingsOn: false, bookings: 0, items: 0 }): SetupState {
+export function buildShopSetupState(
+  input: { bookingsOn: boolean; bookings: number; items: number; riders?: number | null } = { bookingsOn: false, bookings: 0, items: 0 },
+): SetupState {
   const booked = input.bookings > 0;
   const hasItems = input.items > 0;
   const items: SetupItem[] = [
@@ -180,6 +185,25 @@ export function buildShopSetupState(input: { bookingsOn: boolean; bookings: numb
           done: false,
           soon: true,
         },
+    input.riders == null
+      ? {
+          key: "riders",
+          title: "Add your riders",
+          detail: "The riders you already work with get your deliveries first.",
+          done: false,
+          soon: true,
+        }
+      : {
+          key: "riders",
+          title: "Add your riders",
+          detail:
+            input.riders > 0
+              ? `${input.riders} rider${input.riders === 1 ? "" : "s"} on your list. They get your deliveries first.`
+              : "The riders you already work with get your deliveries first.",
+          done: input.riders > 0,
+          optional: true,
+          action: input.riders > 0 ? { label: "See your riders", href: "/riders" } : { label: "Add riders", href: "/riders" },
+        },
     {
       key: "items",
       title: "Add your items",
@@ -190,5 +214,5 @@ export function buildShopSetupState(input: { bookingsOn: boolean; bookings: numb
       action: { label: hasItems ? "Edit your items" : "Add items", href: "/menu" },
     },
   ];
-  return { items, remaining: items.filter((i) => !i.done && i.action).length, live: false };
+  return { items, remaining: items.filter((i) => !i.done && i.action && !i.optional).length, live: false };
 }

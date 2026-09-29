@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { MerchantCashRule, MerchantProfileResponse } from "@lynia/shared";
+import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
 import { RetryableError } from "../../components/RetryableError";
-import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
 import { vocabulary } from "../../lib/vocabulary";
@@ -362,6 +364,23 @@ export default function ShopPage() {
                     Changes apply from your next order. Riders see your rule on the offer before they accept.
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* L3: a restaurant's own riders live inside Shop, so its drawn nav stays as it is (D-45). A
+             *  shop has Riders in its own nav. */}
+            {!isShop && (
+              <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <Icon name="bike" size={22} color="var(--accent-text)" />
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800 }}>Your riders</div>
+                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.45 }}>
+                    Riders you already work with are offered your orders first when they&apos;re nearby.
+                  </div>
+                </div>
+                <Link href="/riders" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
+                  Manage riders
+                </Link>
               </div>
             )}
           </>

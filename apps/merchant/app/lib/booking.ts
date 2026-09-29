@@ -1,11 +1,14 @@
 import {
   type CreateMerchantBookingRequest,
   type LatLng,
+  MERCHANT_OFFER_WEIGHTS,
+  type MerchantBookingOffer,
   type MerchantBookingResponse,
   type MerchantBookingState,
   type MerchantProfileResponse,
   normalizePhone,
   quoteFare,
+  rankOffers,
   type Waypoint,
 } from "@lynia/shared";
 import { insideServiceArea } from "./geo";
@@ -92,6 +95,24 @@ export function pollIntervalMs(state: MerchantBookingState): number | null {
   if (isFinding(state)) return 3_000;
   if (state === "coming" || state === "picked_up") return 15_000;
   return null;
+}
+
+/**
+ * The offers in the order the business should read them (L3): the usual fare/rating/ETA blend plus the
+ * bonus for the business's own riders, and a teammate's offer (which can't be picked) last.
+ */
+export function orderOffers(offers: readonly MerchantBookingOffer[]): MerchantBookingOffer[] {
+  const ranked = rankOffers(
+    offers.map((o) => ({
+      offeredFare: Number(o.offeredFare),
+      ratingAvg: o.rider.ratingAvg ?? 0,
+      ratingCount: o.rider.ratingCount,
+      etaMinutes: o.etaMinutes,
+      preferred: o.preferred,
+    })),
+    MERCHANT_OFFER_WEIGHTS,
+  ).map((r) => offers[r.index]!);
+  return [...ranked.filter((o) => !o.ownMember), ...ranked.filter((o) => o.ownMember)];
 }
 
 /** A booking a rider cancelled has been re-sent by Send as a new one: follow that instead. */

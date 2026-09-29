@@ -8,6 +8,7 @@ describe("buildShopSetupState (merchant web upgrade L1, live steps from L2)", ()
     expect(setup.items.map((i) => [i.key, i.done, !!i.soon])).toEqual([
       ["pin", true, false],
       ["first_booking", false, true],
+      ["riders", false, true],
       ["items", false, false],
     ]);
     expect(setup.items.find((i) => i.key === "first_booking")?.action).toBeUndefined();
@@ -25,12 +26,21 @@ describe("buildShopSetupState (merchant web upgrade L1, live steps from L2)", ()
     expect(setup.remaining).toBe(2);
   });
 
-  it("ticks booking with the first booking and items with the first item", () => {
-    const setup = buildShopSetupState({ bookingsOn: true, bookings: 3, items: 1 });
+  it("ticks booking with the first booking, riders with the first rider and items with the first item", () => {
+    const setup = buildShopSetupState({ bookingsOn: true, bookings: 3, items: 1, riders: 2 });
     expect(setup.items.every((i) => i.done)).toBe(true);
     expect(setup.items.find((i) => i.key === "first_booking")?.action).toEqual({ label: "See deliveries", href: "/deliveries" });
     expect(setup.items.find((i) => i.key === "items")?.detail).toBe("1 item added. Customers will see them when LyniaGo Shops opens.");
     expect(setup.remaining).toBe(0);
+  });
+
+  it("a shop's own riders (L3) are optional: offered, never counted as work", () => {
+    const setup = buildShopSetupState({ bookingsOn: true, bookings: 0, items: 0, riders: 0 });
+    const riders = setup.items.find((i) => i.key === "riders")!;
+    expect(riders).toMatchObject({ done: false, optional: true, action: { label: "Add riders", href: "/riders" } });
+    expect(riders.soon).toBeFalsy();
+    // Book a rider and add items: two real steps; the riders step isn't one of them.
+    expect(setup.remaining).toBe(2);
   });
 
   it("is never live: customers find shops when LyniaGo Shops opens", () => {

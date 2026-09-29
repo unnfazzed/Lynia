@@ -2053,3 +2053,40 @@ state pill carries its words.
 
 **Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
 the app changes).
+
+## D-45 · Merchant web: Your riders — PROPOSED (2026-09-29)
+
+**Owner instruction (2026-09-29, the design review revision):** *"merchants have their preferred bikers ..
+they have to put them on the platform by their phone numbers used to sign in to the platform. Can do a
+section where they can manage these riders .. the ranking mechanism will tag them preferred and depending on
+various factors rank them higher."* Spec: `docs/designs/merchant-web-upgrade.md` L3; plan §10 lists this
+entry. **No RM mock draws a riders list, a rider's status or a "Your rider" tag**, so these are built from RM
+primitives and ledgered here. PROPOSED until the owner approves the web PR and its screenshot sheet
+(`docs/parity/MERCHANT-L3-D45-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+ask:** a real mock for the riders list.
+
+### 1 · Undrawn screens
+
+Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, targets ≥ `--target-min`.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Your riders:** "N of 20"; the owner's "Add a rider" (their name, the number they sign in to LyniaGo with); each rider's label, masked number, status pill (On LyniaGo · Not on LyniaGo yet · Can't take jobs right now, never why), their LyniaGo name and "12 deliveries for you · ★ 4.9" only after a job; "Send the sign-up link on WhatsApp" for a number not on LyniaGo yet; Remove with an inline confirm; "Only the owner can add or remove riders." for staff; "No riders yet"; "Your riders is on its way." on an API before L3 | `/riders` | `RM.setup`'s cards, the booking form's inputs, the state-pill shape from D-44 |
+
+### 2 · On drawn and D-44 screens
+
+| Where | Mock / D-44 | App | Why |
+|---|---|---|---|
+| `KitchenNav`, shops (D-44) | Deliveries · Items · Shop · Help | Deliveries · **Riders** · Items · Shop · Help | Design doc L3: a nav item for shops, next to Deliveries |
+| `RM.shop` (M5), restaurants | ends with How riders pay you | a "Your riders" card after it, with "Manage riders" | Design doc L3: for restaurants Riders sits inside Shop, so the drawn nav stays as it is |
+| The pick screen (D-44) | offers in the API's order | ordered by `rankOffers` with the preferred bonus (a teammate's unpickable offer last), and a **"Your rider"** tag | Design doc L3 "How preferred ranks" |
+| A shop's `/setup` (D-43/D-44) | pin, booking, items | + "Add your riders", tagged **Optional** and never counted | Design doc "A shop's /setup checklist" item 3 |
+
+### 3 · Specified, not built yet
+
+- The rider-side notice and opt-out ("{Business} calls you their rider") are a Phase 2 mobile release
+  (TODO-3); v1 changes nothing in the rider app.
+- Reach beyond Send's broadcast radius for a business's own riders is a later, Send-side change (TODO-6).
+
+**Retire when:** a design export draws the riders list (then align to it), or the owner rejects a row (then
+the app changes).

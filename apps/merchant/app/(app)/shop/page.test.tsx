@@ -116,4 +116,16 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
     expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
     expect(screen.getByText("How riders pay you")).toBeTruthy();
   });
+
+  it("a restaurant reaches its own riders from Shop (L3); a shop has them in its nav instead", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage riders" })).getAttribute("href")).toBe("/riders");
+
+    cleanup();
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts" }));
+    render(<ShopPage />);
+    await screen.findByText("WHAT YOU SELL · up to 3");
+    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+  });
 });

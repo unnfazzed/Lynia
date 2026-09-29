@@ -34,7 +34,8 @@ export type IconName =
   | "chevron-left"
   | "locate"
   | "map-pin"
-  | "package";
+  | "package"
+  | "bike";
 
 const PATHS: Record<IconName, string[]> = {
   inbox: [
@@ -83,6 +84,13 @@ const PATHS: Record<IconName, string[]> = {
   pencil: ["M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.36-1.33a2 2 0 0 0 .83-.5z", "m15 5 4 4"],
   "trash-2": ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", "M10 11v6", "M14 11v6"],
   navigation: ["m3 11 19-9-9 19-2-8-8-2z"],
+  // Lucide `bike`, its circles as arcs (this file draws paths only).
+  bike: [
+    "M22 17.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0",
+    "M9 17.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0",
+    "M16 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0",
+    "M12 17.5V14l-3-3 4-3 2 3h2",
+  ],
   "chevron-left": ["m15 18-6-6 6-6"],
   locate: ["M2 12h3", "M19 12h3", "M12 2v3", "M12 19v3", "M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0"],
   "map-pin": [

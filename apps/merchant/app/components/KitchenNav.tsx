@@ -26,12 +26,13 @@ const RESTAURANT_ITEMS: NavItem[] = [
 ];
 
 /** A shop's own set (merchant web upgrade L2, design doc L5 "Navigation"): Deliveries first — booking a
- *  rider is what a shop does here — then Items and Shop, and Help when support's WhatsApp is set.
- *  Undrawn, ledgered as D-44. Riders joins in L3. */
+ *  rider is what a shop does here — then its own Riders (L3), Items and Shop, and Help when support's
+ *  WhatsApp is set. Undrawn, ledgered as D-44 and D-45. */
 function shopItems(): NavItem[] {
   const help = supportWhatsAppUrl();
   return [
     { id: "deliveries", label: "Deliveries", href: "/deliveries", icon: "navigation" },
+    { id: "riders", label: "Riders", href: "/riders", icon: "bike" },
     { id: "catalog", label: "Items", href: "/menu", icon: "package" },
     { id: "shop", label: "Shop", href: "/shop", icon: "store" },
     ...(help ? [{ id: "help", label: "Help", href: help, icon: "circle-alert" as const, external: true }] : []),

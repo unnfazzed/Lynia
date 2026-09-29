@@ -8,6 +8,7 @@ import {
   homePath,
   isLiveBooking,
   newIdempotencyKey,
+  orderOffers,
   pollIntervalMs,
   recallCode,
   rememberCode,
@@ -18,7 +19,7 @@ import {
   validateBooking,
   whatsappLink,
 } from "./booking";
-import { merchantProfile } from "../testing/fixtures";
+import { bookingOffer, merchantProfile } from "../testing/fixtures";
 
 const HARARE = { lat: -17.8292, lng: 31.0522 };
 
@@ -134,5 +135,26 @@ describe("the delivery code", () => {
     rememberCode("b1", "482910");
     expect(recallCode("b1")).toBe("482910");
     expect(recallCode("b2")).toBeNull();
+  });
+});
+
+describe("orderOffers (L3: the business's own riders first)", () => {
+  const rider = (name: string) => ({ name, photoUrl: null, ratingAvg: 4.5, ratingCount: 20, tripsCount: 50 });
+
+  it("lists the business's own rider first when another offer is only cheaper, and a teammate last", () => {
+    const offers = [
+      bookingOffer({ id: "cheap", offeredFare: "3.00", etaMinutes: 6, rider: rider("Cheap") }),
+      bookingOffer({ id: "mine", offeredFare: "3.80", etaMinutes: 6, rider: rider("Mine"), preferred: true }),
+      bookingOffer({ id: "team", offeredFare: "2.50", etaMinutes: 2, rider: rider("Teammate"), ownMember: true }),
+    ];
+    expect(orderOffers(offers).map((o) => o.id)).toEqual(["mine", "cheap", "team"]);
+  });
+
+  it("is the plain blend with none of the business's riders", () => {
+    const offers = [
+      bookingOffer({ id: "slow", offeredFare: "3.00", etaMinutes: 12, rider: rider("Slow") }),
+      bookingOffer({ id: "fast", offeredFare: "3.00", etaMinutes: 3, rider: rider("Fast") }),
+    ];
+    expect(orderOffers(offers).map((o) => o.id)).toEqual(["fast", "slow"]);
   });
 });

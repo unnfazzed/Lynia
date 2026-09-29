@@ -2,12 +2,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SetupPage from "./page";
+import { ApiError } from "../../lib/api-client";
 import { listBookings } from "../../lib/bookings-api";
 import { getMerchantProfile, listDishes } from "../../lib/menu-api";
+import { listRiders } from "../../lib/riders-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn() }));
 vi.mock("../../lib/bookings-api", () => ({ listBookings: vi.fn() }));
+vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn() }));
 
 // One stable value, as the real provider memoizes it: the page's load depends on `signOut`, so a fresh
 // function per render would re-run the load on every render.
@@ -31,6 +34,8 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
   it("a shop gets its own checklist in its own shell, with no go-live promise (API that can't book riders yet)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ name: "Mbare Auto Spares", businessType: "shop", shopKind: "auto_parts" }));
     vi.mocked(listDishes).mockResolvedValue([]);
+    // An API from before L3 has no /merchant/riders.
+    vi.mocked(listRiders).mockRejectedValue(new ApiError(404, "Cannot GET /merchant/riders"));
 
     render(<SetupPage />);
 
@@ -38,8 +43,8 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
     expect(screen.getByText("Car parts · Shop")).toBeTruthy();
     expect(screen.getByText("Your pin and landmark")).toBeTruthy();
     expect(screen.getByText("Book your first rider")).toBeTruthy();
-    // Only booking waits on the API; items are live work from L2.
-    expect(screen.getAllByText("Coming soon")).toHaveLength(1);
+    // Booking and the shop's own riders wait on the API; items are live work from L2.
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Add items" }).getAttribute("href")).toBe("/menu");
     expect(screen.getByText("Customers will find you when LyniaGo Shops opens. We'll check your items first.")).toBeTruthy();
     expect(screen.getByTestId("kitchen-shell")).toBeTruthy();
@@ -52,11 +57,15 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(shop);
     vi.mocked(listDishes).mockResolvedValue([]);
     vi.mocked(listBookings).mockResolvedValue([]);
+    vi.mocked(listRiders).mockResolvedValue({ riders: [], cap: 20 });
 
     render(<SetupPage />);
 
     expect((await screen.findByRole("link", { name: "Book a rider" })).getAttribute("href")).toBe("/deliveries/new");
     expect(screen.queryByText("Coming soon")).toBeNull();
+    // L3: the shop's own riders, optional.
+    expect(screen.getByRole("link", { name: "Add riders" }).getAttribute("href")).toBe("/riders");
+    expect(screen.getByText("Optional")).toBeTruthy();
 
     cleanup();
     vi.mocked(listBookings).mockResolvedValue([{ id: "b1" } as never]);
