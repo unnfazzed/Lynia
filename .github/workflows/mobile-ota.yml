@@ -136,33 +136,22 @@ jobs:
           fi
           echo "Computed runtime version for this update: $COMPUTED"
 
-          BUILT="$(eas build:list --json --non-interactive --platform android --channel "$BRANCH" --status finished --limit 20 2>/tmp/eas-build-list.err \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write([...new Set(JSON.parse(s).map(b=>b.runtimeVersion).filter(Boolean))].join("\n"))}catch{}})' || true)"
-          {
-            echo "### OTA preflight"
-            echo ""
-            echo "- Channel: \`$BRANCH\`"
-            echo "- Runtime version to publish: \`$COMPUTED\`"
-            echo "- Runtime versions of finished builds on this channel:"
-            if [ -n "$BUILT" ]; then printf '  - `%s`\n' $BUILT; else echo "  - _(none found)_"; fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ -z "$BUILT" ]; then
-            # Run 36263972969 computed a2b0ceb0 = build 44538dd1 exactly, yet this lookup returned
-            # nothing. Surface the CLI's own error instead of discarding it.
-            echo "::warning::eas build:list returned no runtime versions for '$BRANCH'. CLI stderr:"
-            sed 's/^/  /' /tmp/eas-build-list.err >&2 || true
+          # (3) Compare against the finished builds on this channel. scripts/eas-build-list.mjs reads
+          # the list and decides, because the list's shape has already changed under this step once:
+          # eas-cli 22 (2026-08-14) moved `runtimeVersion` to `runtime.version`, the old inline reader
+          # found no runtime on any build, and from then on this check could only refuse or be
+          # overridden (run 36541014843 refused build 39's own runtime, 5d04edb3…). The script says
+          # which case it hit (list unreadable, no builds, runtime field missing, different runtime),
+          # and each one refuses unless allow_runtime_mismatch=true.
+          if ! eas build:list --json --non-interactive --platform android --channel "$BRANCH" --status finished --limit 20 \
+              > /tmp/eas-builds.json 2> /tmp/eas-build-list.err; then
+            echo "::group::eas build:list failed. CLI stderr:"
+            sed 's/^/  /' /tmp/eas-build-list.err || true
+            echo "::endgroup::"
+            : > /tmp/eas-builds.json
           fi
-          if printf '%s\n' $BUILT | grep -qx "$COMPUTED"; then
-            echo "Runtime version matches a finished build on '$BRANCH' — the update can land."
-            exit 0
-          fi
-          if [ "$ALLOW_MISMATCH" = "true" ]; then
-            echo "::warning::No finished build on '$BRANCH' has runtime version $COMPUTED. Publishing anyway because allow_runtime_mismatch=true — this update may reach zero devices."
-            exit 0
-          fi
-          echo "::error::No finished build on channel '$BRANCH' has runtime version $COMPUTED, so this update would be ignored by every installed binary. The usual cause is a version bump since the installed build was made (\`version\` is hashed into the fingerprint runtimeVersion) or a native/dependency change — both require a new store build via mobile-release.yml. Re-dispatch with allow_runtime_mismatch=true only if you know which binaries you are targeting."
-          exit 1
+          node ../../scripts/eas-build-list.mjs preflight --channel "$BRANCH" --runtime "$COMPUTED" \
+            --allow-mismatch "$ALLOW_MISMATCH" < /tmp/eas-builds.json
 
       - name: Publish OTA update
         working-directory: apps/mobile
