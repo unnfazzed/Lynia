@@ -1,6 +1,11 @@
 # Merchant web upgrade: restaurants **and** shops, team logins, simpler UI
 
-**Status:** DRAFT for `/plan-ceo-review` (2026-09-29) · branch `claude/merchant-web-platform-upgrade-oylm53`
+**Status:** `/plan-ceo-review` in progress (2026-09-29) · branch `claude/merchant-web-platform-upgrade-oylm53`
+
+> **Mid-review note.** §5 is already revised to the approved design doc's five layers. §4 and §6–§9 still
+> describe the pre-review model (phone-keyed members that claim themselves at sign-in, bookings owned
+> by the person). Where they disagree, **§5 and `docs/designs/merchant-web-upgrade.md` win** until the
+> CEO review's next PR revises them.
 **Owner ask (verbatim, 2026-09-29):**
 
 > i want to upgrade the merchant web side. It needs to enable both restaurants snd shops though a user
@@ -221,40 +226,54 @@ parcel order owned by the person who booked it.
 
 ## 5. Scope and phasing
 
-**Phase 1 (approach B, "Everything, layered").** Each layer is usable without the next. All of it is
-behind the existing `RESTAURANTS_ENABLED` kill switch.
+**Phase 1 (approach B, "Everything, layered"), re-layered by the design doc and this CEO review.** The
+design doc `docs/designs/merchant-web-upgrade.md` is the product spec; this section is the build
+order. Each layer is its own PR with its own migration, and each is usable without the next. All of it
+sits behind the existing `RESTAURANTS_ENABLED` kill switch. *(Superseded order, for history: L1 front
+door → L2 team → L3 Book a rider → L4 words. The office-hours design moved Book a rider ahead of Team
+because it is what the pilot's week 1 measures.)*
 
-*L1 — Front door*
+*L1 — Front door* (migration `0053`)
 - `x-device-id` goes on the CORS allow-list, and the merchant web sends a stable per-browser device id
   on verify. The sign-in copy names WhatsApp, driven by `deliveryChannel`.
-- Migration `0053`:
-  - `merchants.business_type` (NOT NULL DEFAULT `restaurant`, metadata-only on PG16);
-  - `merchants.shop_kind` (nullable);
-  - `merchant_members` (new table plus an owner backfill).
-- `become` takes `{ name, businessType, shopKind?, location }`, creates the owner row, and **flips no
-  role**.
-- Sign-up flow in the web: What do you sell? → kind → name + location → `/setup`.
-- **Admin go-live switch:** `PATCH /admin/merchants/:id/pilot`, audit-logged, plus a console button.
-  The admin list shows the business type.
+- Migration `0053`: `merchants.business_type` (NOT NULL DEFAULT `restaurant`), `merchants.shop_kind`
+  (nullable), and `merchant_members` with an owner backfill.
+- `MerchantAccessService` + a DB-backed `MerchantGuard` + `@OwnerOnly()`. The lookup util, the kitchen
+  socket and `become` read membership. `owner_profile_id` stays as a fallback during rollout.
+- `become` takes `{ ownerName, name, businessType, shopKind?, location, termsAccepted }`, creates the
+  merchant and its owner row in one transaction, and **flips no role**.
+- Sign-up in the web: What do you sell? → kind → your name + business name + map pin + landmark +
+  terms → a type-aware `/setup`.
+- **Admin go-live:** `PATCH /admin/merchants/:id/pilot` (audit-logged; refuses shops), an "Awaiting
+  go-live" list of restaurants, a "Shops (signed up)" filter, and the console button.
 - Customer restaurant reads and `placeOrder` are scoped to `businessType = restaurant`.
+- Runbook `docs/runbooks/MERCHANT-GO-LIVE.md` (the ops checks before switching a restaurant on).
 
-*L2 — Team*
-- `MerchantAccessService`, a DB-backed `MerchantGuard` and `@OwnerOnly()`. The lookup util, the
-  tracking socket and `become` move to membership.
-- Team API: `GET/POST /merchant/team` and `DELETE /merchant/team/:id`. Owner-only, at most 15 people,
-  throttled, one business per phone.
-- Team page (add by phone, remove, share the sign-in link on WhatsApp) and role-aware nav.
+*L2 — Book a rider + the shop shell* (migration `0054`)
+- `orders.booked_by_merchant_id` (nullable FK) and a business-level booking hold on `merchants`.
+- Merchant-scoped booking endpoints over the Send services: quote, create, list, detail, pick an
+  offer, cancel, try again. The re-broadcast clone keeps the business tag. The customer app neither
+  lists nor acts on business bookings.
+- The Deliveries page (a shop's home; a restaurant opens it from a "Book a rider" button and a bookings
+  strip on Orders), the booking form with a Leaflet + OSM pin map, the live 90-second pick screen, and
+  "Send the code to the buyer on WhatsApp".
+- The shop shell: shop nav (Deliveries · Items · Shop · Help), `vocabulary(businessType)` on the screens
+  a shop uses, and Help → WhatsApp support.
 
-*L3 — Book a rider* (D9)
-- A booking screen on the existing parcel API (`POST /orders`, offers, select), with drop-off from a
-  WhatsApp location link.
-- The delivery code is shared to the buyer on WhatsApp.
-- A Today list of bookings.
+*L3 — Your riders* (migration `0055`)
+- `merchant_preferred_riders`, owner-managed Riders page (a shop nav item; inside Shop for restaurants).
+- Preferred reach and the "Your rider" tag on Book a rider offers, a `rankOffers` preferred bonus, and
+  preferred-first restaurant auto-dispatch with the 2 km cold-food guardrail.
 
-*L4 — Shop words + kit fixes*
-- A `vocabulary(businessType)` module, with starter categories per shop kind.
-- OOS durations `today | hour | indefinite` and the three-option sheet.
-- The top bar shows the shop's name. **Help** in the nav opens WhatsApp support.
+*L4 — Team* (migration `0056`)
+- `merchant_invites`, the Team page inside Shop (invite, remove, share the link on WhatsApp), Join / Not
+  me with name confirm and terms, Leave this business, "Switch person", role-aware navs.
+- `POST /admin/merchants/:id/owner` (audit-logged owner transfer for support).
+
+*L5 — Finishing the drawn restaurant screens*
+- The three-option out-of-stock sheet (`today | hour | indefinite`), the top bar with the business's
+  name and who is signed in, Help as the sixth restaurant nav item, and the remaining vocabulary on
+  shared screens.
 
 **Phase 2: next.**
 - Pause 30 min / Close for today (server `pausedUntil`, the customer list, `placeOrder`, a mobile OTA).
