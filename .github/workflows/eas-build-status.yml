@@ -64,7 +64,13 @@ jobs:
           LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
-          eas build:list --platform android --limit "${LIMIT:-5}" --json --non-interactive > /tmp/builds.json
+          eas build:list --platform android --limit "${LIMIT:-5}" --json --non-interactive > /tmp/builds.raw.json
+          # eas-cli 22+ nests the runtime and the channel (`runtime.version`, `updateChannel.name`);
+          # every jq below reads them flat, and printed `?` for both from 2026-08-14 on.
+          # scripts/eas-build-list.mjs is the one reader of that shape (mobile-ota.yml's preflight
+          # uses it too): `normalize` lifts both fields to the top level from whichever shape the
+          # installed CLI printed.
+          node ../../scripts/eas-build-list.mjs normalize < /tmp/builds.raw.json > /tmp/builds.json
 
           # One line per build in the log + step summary; full error message for anything failed.
           jq -r '.[] | "\(.createdAt)  \(.status)  profile=\(.buildProfile // "?")  channel=\(.channel // "?")  runtime=\(.runtimeVersion // "?")  \(.id)"' /tmp/builds.json

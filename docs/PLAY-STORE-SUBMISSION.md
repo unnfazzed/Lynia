@@ -1845,6 +1845,27 @@ Lessons:
   the map, the camera, push, background GPS and low-end speed. The app is not public on Google Play
   (the store page still 404s by design).
 
+**Second OTA — 2026-09-29 (address search on vc 39).** It carries #974's Places API (New) client, built
+from `main` at `9774f3a` and published to `preview` for build `15e221af` (v0.50.1 / vc 39, runtime
+`5d04edb3…`):
+
+| Run | Result | Why |
+|---|---|---|
+| 36541014843 | preflight refused | computed `5d04edb3…` = build 39, and the `eas build:list` lookup again found no runtime version (stderr empty) |
+| 36541157449 | **published** | same, `allow_runtime_mismatch=true` after checking `5d04edb3…` against build 39's EAS record; Android update group `49381f6c…` (update `01a0ec39…`) on branch `preview` |
+
+- **Delivery checked.** Asked for runtime `5d04edb3…` on channel `preview`, the update server
+  returns update `01a0ec39…`, so a vc 39 phone gets it on its next launch and runs it on the one after.
+- **Why the lookup came back empty, both times.** It was neither an empty list nor a CLI error, which
+  is why stderr had nothing to say. eas-cli 22.0.0 (2026-08-14) moved `runtimeVersion` to
+  `runtime.version`, and `channel` to `updateChannel.name`, in the JSON `eas build:list` prints. The
+  workflows install `eas-version: latest` and read the old field, so every build looked runtime-less
+  (KNOWN_BUGS `REL-04`).
+- **Fixed.** `scripts/eas-build-list.mjs` is now the one reader of that output, for `mobile-ota.yml`'s
+  preflight and for `eas-build-status.yml`. It reads both shapes. The preflight names which case it
+  hit (list unreadable, no builds, runtime field missing, or a different runtime), and each one refuses
+  unless `allow_runtime_mismatch=true`. The next OTA should not need the override.
+
 ---
 
 ## 9. Pre-submission checklist
