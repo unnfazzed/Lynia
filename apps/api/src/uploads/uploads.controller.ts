@@ -7,7 +7,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
-import { MerchantGuard } from "../merchant/merchant.guard";
+import { MerchantGuard, OwnerOnly } from "../merchant/merchant.guard";
 import { RestaurantsEnabledGuard } from "../merchant/restaurants-enabled.guard";
 
 // Restrict to the formats expo-image-picker yields, so a signed URL is never minted for an arbitrary
@@ -89,6 +89,8 @@ export class UploadsController {
    */
   @Post("merchant-dish-photo")
   @UseGuards(RestaurantsEnabledGuard, MerchantGuard)
+  // Photos only feed owner-only edits (items, shop front) — plan 2026-09-29 permission table.
+  @OwnerOnly()
   dishPhoto(
     @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
     @CurrentUser() profileId: string,
@@ -99,6 +101,8 @@ export class UploadsController {
   /** Mint a signed PUT URL for the shop's cover banner (D-30/D-32). Same gating as dishPhoto. */
   @Post("merchant-banner-photo")
   @UseGuards(RestaurantsEnabledGuard, MerchantGuard)
+  // Photos only feed owner-only edits (items, shop front) — plan 2026-09-29 permission table.
+  @OwnerOnly()
   bannerPhoto(
     @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
     @CurrentUser() profileId: string,

@@ -230,6 +230,9 @@ model Profile {
 
   rider           Rider?
   merchant        Merchant?
+  // Merchant web upgrade L1: the business this person works at (owner or staff). One per person —
+  // `merchant_members.profile_id` is unique — and the ONLY thing merchant access reads (not `role`).
+  merchantMembership MerchantMember?
   customerOrders  Order[]                    @relation("customerOrders")
   cancelledOrders Order[]                    @relation("cancelledByOrders")
   sessions        Session[]
@@ -981,6 +984,12 @@ model Merchant {
   // dispatch adds its own generated-geography column (mirrors orders.pickup_geog) when it needs a
   // GiST radius search; this field is read-through only until then.
   location       Json?
+  // Merchant web upgrade L1 (docs/plans/2026-09-29-merchant-web-upgrade-plan.md §7): what the business
+  // sells, chosen once at sign-up and never changed by the merchant (a wrong pick is a support fix).
+  // `shopKind` is set exactly when `businessType = shop` — enforced by BecomeMerchantRequest + become,
+  // not a CHECK on this existing table. Customer-facing restaurant reads filter on `restaurant`.
+  businessType   MerchantBusinessType @default(restaurant) @map("business_type")
+  shopKind       MerchantShopKind?    @map("shop_kind")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
@@ -988,8 +997,55 @@ model Merchant {
   categories      MerchantCategory[]
   debtLedger      MerchantDebtLedger[]
   reopenReminders RestaurantReopenReminder[]
+  members         MerchantMember[]
 
   @@map("merchants")
+}
+
+enum MerchantBusinessType {
+  restaurant
+  shop
+}
+
+enum MerchantShopKind {
+  pharmacy
+  grocery
+  butchery
+  fashion
+  auto_parts
+  hardware
+  electronics
+  other
+}
+
+enum MerchantMemberRole {
+  owner
+  staff
+}
+
+/// Merchant web upgrade L1: who works at a business. The single source of truth for merchant access —
+/// MerchantGuard, the kitchen socket and every merchant service resolve "which business is this
+/// person on, and as what" from here, never from the JWT `role` claim (RCA-MERCHANT-NOT-SET-UP C-1/C-2).
+/// One business per person (`profileId` unique) and exactly one owner per business (the partial
+/// unique index `merchant_members_one_owner`, raw SQL in migration 0053 — Prisma can't express it).
+/// Pending invites are a separate table (L4), so a row here is always an accepted member.
+model MerchantMember {
+  id               String             @id @default(uuid()) @db.Uuid
+  merchantId       String             @map("merchant_id") @db.Uuid
+  merchant         Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  profileId        String             @unique @map("profile_id") @db.Uuid
+  profile          Profile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  role             MerchantMemberRole
+  // The name the business knows this person by (sign-up's "Your name", or the invite's name).
+  displayName      String             @map("display_name")
+  // When this person accepted the merchant terms + privacy notice (sign-up, or Join in L4). Null only
+  // for owners backfilled by migration 0053, who predate the terms.
+  termsAcceptedAt  DateTime?          @map("terms_accepted_at")
+  addedByProfileId String?            @map("added_by_profile_id") @db.Uuid
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  @@index([merchantId])
+  @@map("merchant_members")
 }
 
 /**

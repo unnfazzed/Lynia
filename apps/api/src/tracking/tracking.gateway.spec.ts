@@ -342,14 +342,15 @@ describe("TrackingGateway.subscribeMerchantQueue (C5 kitchen socket queue)", () 
     expect(client.join).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-merchant role", async () => {
-    const g = gateway({ ownMerchantId: vi.fn(async () => "m1") });
-    const client = fakeSocket({ sub: "c1", role: "customer" });
-    expect(await g.subscribeMerchantQueue(client as never)).toEqual({ error: "forbidden" });
-    expect(client.join).not.toHaveBeenCalled();
+  it("membership decides, not the JWT role claim: a customer-role member (a staff login, or an owner who signed up after become stopped flipping roles) joins", async () => {
+    const ownMerchantId = vi.fn(async () => "m1");
+    const g = gateway({ ownMerchantId });
+    const client = fakeSocket({ sub: "staff-1", role: "customer" });
+    expect(await g.subscribeMerchantQueue(client as never)).toEqual({ joined: "m1" });
+    expect(ownMerchantId).toHaveBeenCalledWith("staff-1");
   });
 
-  it("rejects a merchant-role profile with no Merchant row yet (e.g. a become/setup race)", async () => {
+  it("rejects a caller on no business — even with a stale merchant role claim", async () => {
     const g = gateway({ ownMerchantId: vi.fn(async () => null) });
     const client = fakeSocket({ sub: "owner-1", role: "merchant" });
     expect(await g.subscribeMerchantQueue(client as never)).toEqual({ error: "forbidden" });

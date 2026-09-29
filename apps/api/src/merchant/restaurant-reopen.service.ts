@@ -2,6 +2,7 @@ import { isMerchantOpenNow, type MerchantHours } from "@lynia/shared";
 import { Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { CUSTOMER_VISIBLE_RESTAURANT } from "./merchant-lookup.util";
 
 /**
  * D1 `menu_closed` / `list_empty` — "Remind me when they open".
@@ -61,7 +62,7 @@ export class RestaurantReopenService implements OnModuleInit, OnModuleDestroy {
     const merchant = await this.prisma.merchant.findFirst({
       // Same visibility rule as the browse list: a merchant outside the pilot allowlist doesn't exist
       // to a customer, so it can't be subscribed to either.
-      where: { id: merchantId, pilotEnabled: true },
+      where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
       select: { id: true, hours: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");

@@ -7,6 +7,7 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { PaymentRail } from "../adapters/payments/payment-rail.interface";
 import type { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
+import { withMembershipShim } from "./testing/membership-shim";
 
 // #670: the PaymentRail seam. Default mirrors StubPaymentRail (always `pending` — never fabricates a
 // confirm), so existing tests are unaffected; the prompt tests pass a rail that confirms or fails.
@@ -52,7 +53,7 @@ function build(methods: Record<string, unknown>, gateway: TrackingGateway = fake
   queueChanges.length = 0;
   // placeOrder's account-standing read (FOOD-STANDING-01): a customer in good standing unless a test
   // overrides `profile`.
-  const prisma = { profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, ...methods } as Record<string, unknown>;
+  const prisma = withMembershipShim({ profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway, rail);
   return { svc, prisma };

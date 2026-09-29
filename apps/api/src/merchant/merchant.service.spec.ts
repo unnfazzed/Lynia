@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import { MerchantService } from "./merchant.service";
+import { withMembershipShim } from "./testing/membership-shim";
 
 /** Mirrors the shared mock shape used across the repo's other *.service.spec.ts files (e.g.
  *  rider.service.spec.ts): a plain object standing in for PrismaService, with a default
@@ -14,8 +15,13 @@ import { MerchantService } from "./merchant.service";
  *  hardcode GCS's actual signed-URL shape. */
 const defaultStorageStub = { createReadUrl: async (key: string) => `https://signed.example/${key}` };
 
+/** L1: the caller's membership. Unless a test says otherwise, the caller is the owner of "m1" — so the
+ *  pre-L1 tests (which only mock `merchant.findUnique`) keep testing what they always tested. */
+const OWNER_OF_M1 = { merchantId: "m1", role: "owner", merchant: { businessType: "restaurant" } };
+
 function svc(prisma: Partial<Record<string, unknown>>, storage: Partial<Record<string, unknown>> = defaultStorageStub) {
   const p = prisma as Record<string, unknown>;
+  if (!p.merchantMember) p.merchantMember = { findUnique: async () => OWNER_OF_M1 };
   if (!p.$transaction) {
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
@@ -26,78 +32,131 @@ function svc(prisma: Partial<Record<string, unknown>>, storage: Partial<Record<s
 const p2002 = () =>
   new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
 
-describe("MerchantService.becomeMerchant", () => {
-  it("409s with a stable reason if the profile is already a merchant", async () => {
-    const s = svc({ merchant: { findUnique: async () => ({ id: "m1" }) } });
-    await expect(s.becomeMerchant("p1", { name: "Nandos" })).rejects.toMatchObject({
-      response: { reason: "already_merchant" },
-    });
-  });
+describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
+  const PIN = { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Next to the Siyaso rank", contactPhone: "+263771234567" };
+  const body = (over: Record<string, unknown> = {}) =>
+    ({ ownerName: "Farai Moyo", name: "Siyaso Spares", businessType: "shop", shopKind: "auto_parts", location: PIN, termsAccepted: true, ...over }) as never;
 
-  /** findUnique is called twice by becomeMerchant: once as the pre-check (must miss), once as the
-   *  post-transaction re-read (must hit) — a call counter distinguishes the two without needing a
-   *  real DB's read-your-writes. */
-  function becomeMerchantMock() {
-    let profileUpdated: unknown;
-    let merchantCreated: { name: string; ownerProfileId: string; cashRule?: string } | undefined;
-    let findUniqueCalls = 0;
+  /** A caller on no business yet: `become` writes a merchant + an owner member in one transaction, then
+   *  `getMyMerchant` resolves the new membership (the second member lookup) and re-reads the row. */
+  function harness(profile: Record<string, unknown> = { firstName: "", lastName: "", onHold: false, rider: null }) {
+    let merchantData: Record<string, unknown> | undefined;
+    let memberData: Record<string, unknown> | undefined;
+    let profileData: unknown;
+    let memberLookups = 0;
     const s = svc({
-      merchant: {
-        findUnique: async () => {
-          findUniqueCalls += 1;
-          if (findUniqueCalls === 1) return null;
-          return {
-            id: "m1",
-            name: merchantCreated!.name,
-            ownerProfile: { phone: "+263771234567" },
-            description: null,
-            coverPhotoUrl: null,
-            logoUrl: null,
-            cuisineTags: [],
-            priceLevel: null,
-            hours: null,
-            cashRule: merchantCreated!.cashRule ?? "collect_and_return",
-            busyMode: false,
-            pilotEnabled: false,
-          };
-        },
-        create: async ({ data }: { data: typeof merchantCreated }) => {
-          merchantCreated = data;
-          return { id: "m1" };
-        },
+      profile: {
+        findUnique: async () => profile,
+        update: async ({ data }: { data: unknown }) => (profileData = data),
       },
-      profile: { update: async ({ data }: { data: unknown }) => (profileUpdated = data) },
+      merchantMember: {
+        findUnique: async () => (memberLookups++ === 0 ? null : { merchantId: "m-new", role: "owner", merchant: { businessType: merchantData?.businessType } }),
+        create: async ({ data }: { data: Record<string, unknown> }) => (memberData = data),
+      },
+      merchant: {
+        findFirst: async () => null, // no legacy owner row
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          merchantData = data;
+          return { id: "m-new" };
+        },
+        findUnique: async () => ({
+          id: "m-new",
+          name: merchantData!.name,
+          ownerProfile: { phone: "+263771234567" },
+          description: null,
+          coverPhotoUrl: null,
+          logoUrl: null,
+          cuisineTags: [],
+          priceLevel: null,
+          hours: null,
+          cashRule: merchantData!.cashRule,
+          busyMode: false,
+          pilotEnabled: false,
+          businessType: merchantData!.businessType,
+          shopKind: merchantData!.shopKind,
+        }),
+      },
     });
-    return { s, getProfileUpdated: () => profileUpdated, getMerchantCreated: () => merchantCreated };
+    return { s, merchant: () => merchantData, member: () => memberData, profileUpdate: () => profileData };
   }
 
-  it("upgrades the profile role and creates the Merchant row, then returns the fresh profile", async () => {
-    const { s, getProfileUpdated, getMerchantCreated } = becomeMerchantMock();
-    const res = await s.becomeMerchant("p1", { name: "Nandos" });
-    expect(getProfileUpdated()).toEqual({ role: "merchant" });
-    expect(getMerchantCreated()).toMatchObject({ name: "Nandos", ownerProfileId: "p1", cashRule: "collect_and_return" });
-    expect(res.name).toBe("Nandos");
-    expect(res.ownerPhoneMasked).toBe("+263•••••4567");
-    expect(res.cashRule).toBe("collect_and_return");
+  it("creates the business and its OWNER membership, dormant, and never writes profiles.role (RCA C-4)", async () => {
+    const h = harness();
+    const res = await h.s.becomeMerchant("p1", body());
+    expect(h.merchant()).toMatchObject({
+      name: "Siyaso Spares",
+      ownerProfileId: "p1",
+      businessType: "shop",
+      shopKind: "auto_parts",
+      location: PIN,
+      cashRule: "collect_and_return",
+    });
+    expect(h.member()).toMatchObject({ merchantId: "m-new", profileId: "p1", role: "owner", displayName: "Farai Moyo", addedByProfileId: "p1" });
+    expect(h.member()!.termsAcceptedAt).toBeInstanceOf(Date);
+    expect(h.profileUpdate()).not.toHaveProperty("role");
+    expect(res).toMatchObject({ id: "m-new", name: "Siyaso Spares", businessType: "shop", shopKind: "auto_parts", myRole: "owner", pilotEnabled: false });
   });
 
-  it("defaults cashRule to collect_and_return when omitted, honors an explicit pay_upfront", async () => {
-    const { s, getMerchantCreated } = becomeMerchantMock();
-    await s.becomeMerchant("p1", { name: "Nandos", cashRule: "pay_upfront" });
-    expect(getMerchantCreated()?.cashRule).toBe("pay_upfront");
+  it("fills an EMPTY profile name from 'Your name' (first word, then the rest)", async () => {
+    const h = harness();
+    await h.s.becomeMerchant("p1", body());
+    expect(h.profileUpdate()).toEqual({ firstName: "Farai", lastName: "Moyo" });
   });
 
-  it("maps a concurrent-duplicate P2002 to the same already_merchant conflict", async () => {
+  it("never overwrites a name the person already chose in the app", async () => {
+    const h = harness({ firstName: "Tino", lastName: "", onHold: false, rider: null });
+    await h.s.becomeMerchant("p1", body());
+    expect(h.profileUpdate()).toBeUndefined();
+  });
+
+  it("a restaurant stores no shop kind, and honours an explicit cash rule", async () => {
+    const h = harness();
+    await h.s.becomeMerchant("p1", body({ businessType: "restaurant", shopKind: undefined, cashRule: "pay_upfront" }));
+    expect(h.merchant()).toMatchObject({ businessType: "restaurant", shopKind: null, cashRule: "pay_upfront" });
+  });
+
+  it("409s already_member for a caller already on a business (a lost-response retry the web treats as success)", async () => {
     const s = svc({
-      merchant: { findUnique: async () => null, create: async () => ({ id: "m1" }) },
-      profile: { update: async () => ({}) },
+      profile: { findUnique: async () => ({ firstName: "", lastName: "", onHold: false, rider: null }) },
+      merchant: { findFirst: async () => null },
+    }); // default membership: owner of m1
+    await expect(s.becomeMerchant("p1", body())).rejects.toMatchObject({ status: 409, response: { reason: "already_member" } });
+  });
+
+  it("maps a concurrent-duplicate P2002 to the same already_member conflict", async () => {
+    const s = svc({
+      profile: { findUnique: async () => ({ firstName: "", lastName: "", onHold: false, rider: null }) },
+      merchantMember: { findUnique: async () => null },
+      merchant: { findFirst: async () => null },
       $transaction: async () => {
         throw p2002();
       },
     });
-    await expect(s.becomeMerchant("p1", { name: "Nandos" })).rejects.toMatchObject({
-      response: { reason: "already_merchant" },
-    });
+    await expect(s.becomeMerchant("p1", body())).rejects.toMatchObject({ response: { reason: "already_member" } });
+  });
+
+  it("refuses a held account, and a banned or suspended rider (OV-5: Send's standing rules)", async () => {
+    for (const [profile, reason] of [
+      [{ firstName: "", lastName: "", onHold: true, rider: null }, "on_hold"],
+      [{ firstName: "", lastName: "", onHold: false, rider: { accountStatus: "banned" } }, "account_restricted"],
+      [{ firstName: "", lastName: "", onHold: false, rider: { accountStatus: "suspended" } }, "account_restricted"],
+    ] as const) {
+      const h = harness(profile as Record<string, unknown>);
+      await expect(h.s.becomeMerchant("p1", body())).rejects.toMatchObject({ status: 403, response: { reason } });
+      expect(h.merchant()).toBeUndefined();
+    }
+  });
+
+  it("an active rider can open a business", async () => {
+    const h = harness({ firstName: "", lastName: "", onHold: false, rider: { accountStatus: "active" } });
+    await expect(h.s.becomeMerchant("p1", body())).resolves.toMatchObject({ id: "m-new" });
+  });
+
+  it("refuses a pin outside the area LyniaGo covers (the Send corridor), before writing anything", async () => {
+    const h = harness();
+    const far = { ...PIN, point: { lat: -20.15, lng: 28.58 } }; // Bulawayo
+    await expect(h.s.becomeMerchant("p1", body({ location: far }))).rejects.toMatchObject({ status: 400, response: { reason: "outside_service_area" } });
+    expect(h.merchant()).toBeUndefined();
   });
 });
 
@@ -184,7 +243,7 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
   const dishRow = (photoUrl: string | null) => ({ id: "d1", categoryId: "c1", merchantId: "m1", name: "Sadza", description: null, priceUsd: 5, photoUrl, isDraft: !photoUrl, outOfStockUntil: null, sortOrder: 0 });
 
   function withVerifier(prisma: Record<string, unknown>, verify = vi.fn(async (_key: string, _kind: string) => ({}))) {
-    const p = { $transaction: async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg), ...prisma };
+    const p = withMembershipShim({ $transaction: async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg), ...prisma });
     const s = new MerchantService(p as unknown as PrismaService, defaultStorageStub as never, undefined, undefined, undefined, {
       verify,
     } as unknown as UploadVerifier);
@@ -543,7 +602,7 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
 });
 
 describe("MerchantService customer read API (flag + pilotEnabled allowlist)", () => {
-  it("listRestaurants only returns pilotEnabled merchants", async () => {
+  it("listRestaurants only returns pilotEnabled RESTAURANTS — shops never appear (L1, plan D8)", async () => {
     let receivedWhere: unknown;
     const s = svc({
       merchant: {
@@ -556,7 +615,7 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
       },
     });
     const res = await s.listRestaurants();
-    expect(receivedWhere).toEqual({ pilotEnabled: true });
+    expect(receivedWhere).toEqual({ pilotEnabled: true, businessType: "restaurant" });
     expect(res.restaurants).toHaveLength(1);
     expect(res.restaurants[0]!.id).toBe("m1");
     // D1 (browse): the raw weekly hours pass through untouched — open/closed is derived client-side.

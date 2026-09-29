@@ -192,11 +192,11 @@ business's own riders come third because they make the wedge work with the couri
      LyniaGo Shops"). When Shops launches, every shop and its items are checked before its first
      switch-on (R2-13).
    - **Ops queue.** The admin console gets an "Awaiting go-live" list of restaurants (newest first, with
-     phone, landmark and pin) and a go-live switch (`PATCH /admin/merchants/:id/pilot`, audit-logged).
+     phone, landmark and pin) and a go-live switch (`POST /admin/merchants/:id/pilot`, audit-logged).
      New shops appear in the same admin list under a "Shops (signed up)" filter, so ops can call them
      about Book a rider. They get no go-live promise.
    - **What ops checks before switching a restaurant on** (runbook
-     `docs/runbooks/MERCHANT-GO-LIVE.md`): it answers its contact phone; the pin is where it is (street
+     `docs/MERCHANT-GO-LIVE-RUNBOOK.md`): it answers its contact phone; the pin is where it is (street
      view, a photo from the owner, or a visit); it's a restaurant; at least one menu item has a photo
      and a price; opening hours are set; the owner's name is recorded.
    - Target: ops calls a restaurant within **1 business day**.
@@ -273,7 +273,7 @@ business's own riders come third because they make the wedge work with the couri
     support.
   - Ops then cancels the booking from the admin console with the reason "Safety concern". An admin cancel
     carries no rider strike and no re-broadcast. Ops holds the business's booking account.
-  - This is a runbook step (`docs/runbooks/MERCHANT-GO-LIVE.md` § Bookings) and a line in rider
+  - This is a runbook step (`docs/MERCHANT-GO-LIVE-RUNBOOK.md` § Bookings) and a line in rider
     onboarding. A one-tap "Refuse: prohibited goods" in the rider app is a Phase 2 mobile release.
 - **The 90-second window.**
   - Send's offer window is 90 s from broadcast, so everything is collected *before* "Find a rider".

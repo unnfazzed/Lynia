@@ -20,14 +20,15 @@
  *   3. Flags-off (absent and explicit "false") HTTP legs: every merchant/restaurant route 503s with
  *      no auth header at all — the guard fires first.
  *   4. Flags-on HTTP legs against the REAL controllers: no auth → 401 (JwtAuthGuard, now reached);
- *      wrong role → 403 (MerchantGuard); merchant role → 200 (genuinely alive end to end, not just
- *      "guard passed then crashed"); the customer read API needs no merchant role → 200.
+ *      a caller on no business → 403 (MerchantGuard — membership, not the JWT role claim, since the
+ *      merchant web upgrade L1); a member → 200 (genuinely alive end to end, not just "guard passed
+ *      then crashed"); the customer read API needs no membership → 200.
  * Import-coupling (matching/offers/orders never importing merchant code) is separately enforced by
  * the depcruise `express-no-merchant-coupling` rule.
  */
 import "reflect-metadata";
 import { Module, type INestApplication } from "@nestjs/common";
-import { NestFactory } from "@nestjs/core";
+import { NestFactory, Reflector } from "@nestjs/core";
 import request from "supertest";
 import { MerchantFeatureFlagsResponse } from "@lynia/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +48,7 @@ import { MerchantService } from "../merchant/merchant.service";
 import { RestaurantsController } from "../merchant/restaurants.controller";
 import { RestaurantsEnabledGuard } from "../merchant/restaurants-enabled.guard";
 import { AppModule } from "../app.module";
+import { PrismaService } from "../prisma/prisma.service";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 
@@ -75,12 +77,23 @@ function collectControllers(mod: unknown, seen = new Set<unknown>()): Array<{ na
 
 Reflect.defineMetadata("design:paramtypes", [HealthService, Object], HealthController);
 // esbuild (vitest's transform) drops emitDecoratorMetadata design:paramtypes — restore just enough
-// for Nest's reflective DI to construct these two real controllers + the one guard with an injected
-// dependency (RestaurantsEnabledGuard's ENV). MerchantGuard has no constructor params, so it needs
-// no patch (see authz-e2e.ts's AdminGuard, the same shape).
+// for Nest's reflective DI to construct these real controllers + the guards with injected
+// dependencies: RestaurantsEnabledGuard's ENV, and (merchant web upgrade L1) MerchantGuard's
+// PrismaService + Reflector, since membership is now a per-request DB read.
 Reflect.defineMetadata("design:paramtypes", [MerchantService], MerchantController);
 Reflect.defineMetadata("design:paramtypes", [MerchantService], RestaurantsController);
 Reflect.defineMetadata("design:paramtypes", [Object], RestaurantsEnabledGuard);
+Reflect.defineMetadata("design:paramtypes", [PrismaService, Reflector], MerchantGuard);
+
+/** L1: MerchantGuard reads `merchant_members`. "member-1" works at m1 (with a CUSTOMER role claim — the
+ *  claim is no longer read); every other profile is on no business. No legacy owners. */
+const prismaStub = {
+  merchantMember: {
+    findUnique: async ({ where }: { where: { profileId: string } }) =>
+      where.profileId === "member-1" ? { merchantId: "m1", role: "owner", merchant: { businessType: "restaurant" } } : null,
+  },
+  merchant: { findFirst: async () => null },
+};
 // C2: the two new food-order controllers, same reflective-DI patch shape.
 // C4: both controllers also take FoodDebtService now (the doorstep handshake + debt-ledger routes);
 // MerchantOrderController's real constructor also always took FoodDispatchService (C3) — listed here
@@ -108,6 +121,9 @@ const merchantServiceStub = {
     cashRule: "collect_and_return",
     busy: false,
     pilotEnabled: false,
+    businessType: "restaurant",
+    shopKind: null,
+    myRole: "owner",
   }),
   listRestaurants: async () => ({ restaurants: [] }),
 };
@@ -135,6 +151,7 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
     controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
     providers: [
       { provide: ENV, useValue: env },
+      { provide: PrismaService, useValue: prismaStub },
       TokenService,
       JwtAuthGuard,
       MerchantGuard,
@@ -248,13 +265,14 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(res.status).toBe(401);
     });
 
-    it("a valid non-merchant token → 403 (MerchantGuard)", async () => {
-      const res = await request(app.getHttpServer()).get("/merchant/me").set("Authorization", bearer("p1", "customer"));
+    it("a valid token for a profile on no business → 403 (MerchantGuard), even with a stale merchant role claim", async () => {
+      const res = await request(app.getHttpServer()).get("/merchant/me").set("Authorization", bearer("p1", "merchant"));
       expect(res.status).toBe(403);
+      expect(res.body.reason).toBe("not_a_member");
     });
 
-    it("a valid merchant token → 200, real controller through to the real service", async () => {
-      const res = await request(app.getHttpServer()).get("/merchant/me").set("Authorization", bearer("p1", "merchant"));
+    it("a member → 200, real controller through to the real service (the role claim isn't read)", async () => {
+      const res = await request(app.getHttpServer()).get("/merchant/me").set("Authorization", bearer("member-1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("Test Kitchen");
     });
@@ -265,14 +283,14 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(res.body).toEqual({ restaurants: [] });
     });
 
-    it("C2: /merchant/orders needs the merchant role — no auth 401, wrong role 403, merchant 200", async () => {
+    it("C2: /merchant/orders needs membership — no auth 401, not a member 403, member 200", async () => {
       const noAuth = await request(app.getHttpServer()).get("/merchant/orders");
       expect(noAuth.status).toBe(401);
-      const wrongRole = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("p1", "customer"));
-      expect(wrongRole.status).toBe(403);
-      const asMerchant = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("p1", "merchant"));
-      expect(asMerchant.status).toBe(200);
-      expect(asMerchant.body).toEqual([]);
+      const notMember = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      const asMember = await request(app.getHttpServer()).get("/merchant/orders").set("Authorization", bearer("member-1", "customer"));
+      expect(asMember.status).toBe(200);
+      expect(asMember.body).toEqual([]);
     });
 
     it("C2: /restaurants/orders/:id needs no merchant role — any authenticated caller gets 200", async () => {

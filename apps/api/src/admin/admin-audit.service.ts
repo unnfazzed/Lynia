@@ -66,6 +66,10 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // X1: `AdminCustomersService.liftCashBan` writes this in the same transaction as the
   // cashBanned=false write — the R-08 cash-ban's only lift path, same forgery risk as customer.lift.
   "customer.cash_ban_lift",
+  // Merchant web upgrade L1: `AdminMerchantsService.setPilot` writes these in the same transaction as
+  // the pilotEnabled flip — the only go-live switch; a free-text forgery would read as a real one.
+  "merchant.go_live",
+  "merchant.go_dormant",
 ]);
 
 @Injectable()

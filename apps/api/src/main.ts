@@ -112,7 +112,11 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: corsOriginResolver(allowedOrigins),
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["authorization", "content-type"],
+    // x-device-id: the merchant web sends it on /auth/otp/verify so a number LyniaGo has never seen can
+    // create its account there — verifyOtp requires a device id to create one (the per-device sign-up
+    // cap, KB-IDENTITY-BINDING), which the app always sends and a browser couldn't until now
+    // (merchant web upgrade L1, plan 2026-09-29 D4).
+    allowedHeaders: ["authorization", "content-type", "x-device-id"],
     maxAge: 600,
   });
 

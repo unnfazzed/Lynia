@@ -248,10 +248,10 @@ Book a rider ahead of Team because it is what the pilot's week 1 measures.)*
   guard would lock that business out, because v2 never writes `role = merchant` (OV-4).
 - Web sign-up (type → kind → name, pin, landmark, terms) replacing the "not a merchant" dead end, with a
   type-aware `/setup`.
-- Admin: `PATCH /admin/merchants/:id/pilot` (restaurants only, audit-logged), "Awaiting go-live" and
+- Admin: `POST /admin/merchants/:id/pilot` (restaurants only, audit-logged), "Awaiting go-live" and
   "Shops (signed up)" filters on the merchants list, the switch on the detail page.
 - Customer reads and `placeOrder` scoped to restaurants.
-- Runbook `docs/runbooks/MERCHANT-GO-LIVE.md`.
+- Runbook `docs/MERCHANT-GO-LIVE-RUNBOOK.md`.
 
 *L2 — Book a rider + the shop shell* (migration `0054`)
 - `0054`: `merchant_bookings` (order, business, booked by).
@@ -917,7 +917,7 @@ No LLM or prompt changes.
   - 403 `not_a_member` rate.
 - **Admin:** the awaiting list; the merchant detail shows members, the booking account link and its
   bookings count.
-- **Runbooks** (`docs/runbooks/MERCHANT-GO-LIVE.md`): go-live checks; prohibited goods (cancel with
+- **Runbooks** (`docs/MERCHANT-GO-LIVE-RUNBOOK.md`): go-live checks; prohibited goods (cancel with
   "Safety concern" + hold the booking account); owner transfer identity check; a removed staff member
   still on a tablet; pulling `RESTAURANTS_ENABLED` also stops shop bookings.
 - **Three-weeks-later debuggability:** `merchant_bookings` plus the order events plus audit rows
@@ -1166,7 +1166,7 @@ API is at 100%.
   - Verify: RTL flow tests; 320px check
 - [ ] **T8 (P1, human: ~0.5d / CC: ~15min)** — docs/L1 — D-43 ledger entry, go-live runbook with pilot SQL
   - Surfaced by: §10; CEO-10
-  - Files: `docs/DESIGN-DEVIATIONS.md`, `docs/runbooks/MERCHANT-GO-LIVE.md`, `docs/PIXEL-PARITY-TRACKER.md`
+  - Files: `docs/DESIGN-DEVIATIONS.md`, `docs/MERCHANT-GO-LIVE-RUNBOOK.md`, `docs/PIXEL-PARITY-TRACKER.md`
   - Verify: `design-freeze` CI job; doc review
 - [ ] **T9 (P1, human: ~2.5d / CC: ~90min)** — api/L2 — booking account, `MerchantBookingService` + controller, `merchant_bookings` (`0054`), member standing checks, own-member pick refusal, narrowed cancel, map-link resolver, sender phone, `OffersService` export, admin labels
   - Surfaced by: CEO-1; R2-1…R2-6; OV-5, OV-6, OV-7, OV-8, OV-9

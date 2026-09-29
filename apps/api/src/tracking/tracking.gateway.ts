@@ -348,17 +348,16 @@ export class TrackingGateway
 
   /**
    * C5 kitchen socket queue: a merchant's tablet joins its own queue's live channel. Self-driven —
-   * the socket carries no body; the merchant's own JWT (`role==="merchant"`) resolves which
-   * `Merchant.id` to join via `TrackingService.ownMerchantId`, mirroring `boardSubscribe`'s "the
-   * server decides the room, not the client" shape. A profile that has upgraded to `role:"merchant"`
-   * but never completed shop setup (no `Merchant` row yet, or a race with `POST /merchant/become`)
-   * gets `{error: "forbidden"}` rather than a room nobody will ever push to.
+   * the socket carries no body; the caller's own membership (`merchant_members`, owner or staff)
+   * resolves which `Merchant.id` to join via `TrackingService.ownMerchantId`, mirroring
+   * `boardSubscribe`'s "the server decides the room, not the client" shape. The JWT role claim is not
+   * read (plan 2026-09-29 D2): a profile on no business gets `{error: "forbidden"}` rather than a room
+   * nobody will ever push to.
    */
   @SubscribeMessage(WS_EVENTS.merchantQueueSubscribe)
   async subscribeMerchantQueue(@ConnectedSocket() client: Socket): Promise<{ joined: string } | { error: string }> {
     const user = client.data.user as SocketUser | undefined;
     if (!user) return { error: "unauthenticated" };
-    if (user.role !== "merchant") return { error: "forbidden" };
     const merchantId = await this.tracking.ownMerchantId(user.sub);
     if (!merchantId) return { error: "forbidden" };
     await client.join(merchantQueueRoom(merchantId));

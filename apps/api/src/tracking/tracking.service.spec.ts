@@ -59,14 +59,26 @@ describe("TrackingService.canAccessOrder", () => {
 });
 
 describe("TrackingService.ownMerchantId (C5 kitchen socket queue subscribe gate)", () => {
-  function merchantSvc(merchant: unknown) {
-    return new TrackingService(noRedisEnv, { merchant: { findUnique: async () => merchant } } as unknown as PrismaService, fakeMetrics());
+  function merchantSvc(member: unknown, legacy: unknown = null) {
+    const findFirst = vi.fn(async () => legacy);
+    const prisma = { merchantMember: { findUnique: async () => member }, merchant: { findFirst } };
+    return { svc: new TrackingService(noRedisEnv, prisma as unknown as PrismaService, fakeMetrics()), findFirst };
   }
-  it("returns the Merchant.id owned by the profile", async () => {
-    expect(await merchantSvc({ id: "m1" }).ownMerchantId("owner-1")).toBe("m1");
+  it("returns the business the profile is a member of (owner or staff)", async () => {
+    const { svc: s, findFirst } = merchantSvc({ merchantId: "m1" });
+    expect(await s.ownMerchantId("staff-1")).toBe("m1");
+    expect(findFirst).not.toHaveBeenCalled();
   });
-  it("returns null when the profile owns no Merchant row", async () => {
-    expect(await merchantSvc(null).ownMerchantId("owner-1")).toBeNull();
+  it("falls back to a legacy owner row only while that business has no owner member yet", async () => {
+    const { svc: s, findFirst } = merchantSvc(null, { id: "m2" });
+    expect(await s.ownMerchantId("owner-1")).toBe("m2");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { ownerProfileId: "owner-1", members: { none: { role: "owner" } } },
+      select: { id: true },
+    });
+  });
+  it("returns null for a profile on no business", async () => {
+    expect(await merchantSvc(null, null).svc.ownMerchantId("c1")).toBeNull();
   });
 });
 
