@@ -74,6 +74,8 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
           pilotEnabled: false,
           businessType: merchantData!.businessType,
           shopKind: merchantData!.shopKind,
+          // L4: the caller's own team row, read with the business.
+          members: [{ displayName: (memberData as { displayName?: string } | undefined)?.displayName ?? "" }],
         }),
       },
     });
@@ -95,6 +97,8 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     expect(h.member()!.termsAcceptedAt).toBeInstanceOf(Date);
     expect(h.profileUpdate()).not.toHaveProperty("role");
     expect(res).toMatchObject({ id: "m-new", name: "Siyaso Spares", businessType: "shop", shopKind: "auto_parts", myRole: "owner", pilotEnabled: false });
+    // L4: the top bar's "who is signed in" is their name on the team.
+    expect(res.myName).toBe("Farai Moyo");
   });
 
   it("fills an EMPTY profile name from 'Your name' (first word, then the rest)", async () => {

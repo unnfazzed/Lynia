@@ -865,6 +865,9 @@ export const MerchantProfileResponse = z
      *  form's map centre and fare quote. Null until the business has a pin; absent from an API older
      *  than L2 (optional, so the change stays additive). */
     location: Waypoint.nullable().optional(),
+    /** L4: the CALLER's name on this business's team, for the top bar ("Tendai · Staff"). Absent from an
+     *  API older than L4 (optional, so the change stays additive). */
+    myName: z.string().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
