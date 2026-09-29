@@ -75,6 +75,11 @@ the same values, so it adds little over the API restriction and quota cap.)
 > re-created in the live project **`lyniago-app`**, the one that already holds Firebase and the Play
 > service account. `infra/terraform/apikeys.tf` still describes the suspended project, so the new
 > keys are console-managed until that module is re-pointed; the steps below apply to them as written.
+>
+> **Billing must be active, not just linked.** A billing account opened from the Maps Platform sign-up
+> stayed inactive until a one-time prepayment (US$30, 2026-09-28). Until it was paid, every call from
+> a key in `lyniago-app` was refused with a bare 403, *"The caller does not have permission"*, with no
+> reason code. Billing → Overview shows the prepayment prompt. Check there before suspecting the key.
 
 **These restrictions are Terraform-managed** (`infra/terraform/apikeys.tf`), gated off by
 `maps_api_keys_enabled` until the keys are imported — steps 1 and 2 below are what that config
@@ -110,8 +115,10 @@ Contain them in the GCP console:
    > for the upload certificate alone renders tiles perfectly in a sideloaded APK and returns
    > `Authorization failure` — a blank grey map — in every Play-installed build, so the failure only
    > appears after a track upload and looks like a regression that "worked yesterday". List **both**
-   > fingerprints against `zw.co.lynia`: Play Console → Test and release → Setup → **App integrity** →
-   > *App signing key certificate* SHA-1 (the one devices actually run), plus the upload key SHA-1 for
+   > fingerprints against `zw.co.lynia`: Play Console → **Protected with Play** → **App signing** →
+   > *Classical key* → SHA-1 certificate fingerprint (the one devices actually run; since 2026-09 the
+   > old App integrity page only says it has moved). For `zw.co.lynia` it is
+   > `35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08`. Add the upload key SHA-1 for
    > sideloaded QA APKs. Confirm from the handset with
    > **Confirm without a cable:** GitHub → Actions → **Maps Key Doctor** → Run workflow, pasting that
    > app-signing SHA-1. It probes the live key and names the cause (allowlist / billing / invalid /

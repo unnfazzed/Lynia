@@ -1866,6 +1866,37 @@ from `main` at `9774f3a` and published to `preview` for build `15e221af` (v0.50.
   hit (list unreadable, no builds, runtime field missing, or a different runtime), and each one refuses
   unless `allow_runtime_mismatch=true`. The next OTA should not need the override.
 
+**Build 40 to Closed testing — 2026-09-29 (Maps key from `lyniago-app`).** The Android map has had no
+working key since 2026-09-17. Every build carried a Maps key from the suspended `lynia-500911`, which
+Google refuses with *"Google has disabled the use of APIs from this API project"* (MOB-MAP-03). A native
+key cannot travel by OTA (`REL-01`), so this is a store build.
+
+- **The key.** A new key in `lyniago-app` with an Android-app restriction: `zw.co.lynia` plus the Play
+  app-signing SHA-1 `35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08`. That SHA-1 is under
+  Play Console → **Protected with Play → App signing → Classical key**; Google has moved it out of App
+  integrity. The owner confirmed Maps SDK for Android is enabled on the project. The key replaced
+  `GOOGLE_MAPS_API_KEY` in the EAS `preview` environment, which the `closed` profile builds with.
+- **A false start.** The first attempt left `GOOGLE_MAPS_API_KEY` unchanged. Maps Key Doctor runs
+  36545920694, 36545991426 and 36545994268 still read the dead key in `preview`, `production` and
+  `development`, so the build was held until that variable held the new key.
+- **Checked before building.** Maps Key Doctor run 36553528105 (`key_source: eas`, `preview`, the SHA-1
+  above) found the key live and billed. It answered `API_NOT_ACTIVATED` on the static-maps probe, where
+  the old key answered `PROJECT_DISABLED`. That probe cannot reach the SHA-1 check on this project,
+  because Google tests whether the called API is enabled before it applies the app restriction, and
+  `lyniago-app` does not enable Static Maps. The SHA-1 and the Maps SDK service are console settings, so
+  either can be fixed without a new build.
+- **Build.** `mobile-release.yml` run 36553625930 (`profile: closed`, `main` at `d41227f`) queued EAS
+  build `1babe958` (v0.51.0 / vc 40, runtime `db601ead…`). It FINISHED in 9 minutes (10:08 to 10:17
+  UTC), and submission `9d3def73` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  36555101503).
+- **What it carries.** The new Maps key, the Places API (New) client (#974, already on vc 39 by OTA),
+  the stale-search race fix (#977) and the Zimbabwe box for the phone-geocoder fallback (#976).
+- **Still owed.** Play's review first: the `closed` submit profile sets only the track, so EAS
+  creates a completed release, and testers see it only after Play approves it. Ten minutes after
+  submission the owner still saw the track as not updated. Then a tester seeing map tiles on vc 40. A
+  blank map there points at the key's console settings (the SHA-1 or the Maps SDK service), and neither
+  needs a new build to change.
+
 ---
 
 ## 9. Pre-submission checklist

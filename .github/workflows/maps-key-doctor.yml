@@ -36,7 +36,7 @@ on:
         # THE input. Without it the job can still say whether the key is alive and billed, but not
         # whether the certificate installed builds actually run under is on the allowlist — which is
         # the MOB-MAP-02 question.
-        description: "Signing certificate SHA-1 to test. Play Console → Test and release → Setup → App integrity → 'App signing key certificate'. Colons optional."
+        description: "Signing certificate SHA-1 to test. Play Console → Protected with Play → App signing → 'Classical key' → SHA-1 certificate fingerprint. Colons optional."
         type: string
         default: ""
       key_source:
