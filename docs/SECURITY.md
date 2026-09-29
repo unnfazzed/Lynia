@@ -436,8 +436,11 @@ admin audit trail, retained per policy.
   `/security-review` on every substantive change). Threat-model new features that touch PII,
   money, or auth.
 - **Dependency management** — Dependabot + `osv-scanner` in CI (P1-1, fails on any CVSS ≥ 7 in
-  `pnpm-lock.yaml`); triage weekly. Fixes go in as range-scoped `pnpm.overrides` in the root
-  `package.json`. **Note:** pnpm applies one override per package name — a stale entry for an
+  `pnpm-lock.yaml` or the website's npm deploy lockfile, `apps/website/deploy/package-lock.json`);
+  triage weekly. Fixes go in as range-scoped `pnpm.overrides` in the root `package.json`; for the
+  deploy lockfile, as npm `overrides` in `apps/website/deploy/package.json`, keyed to the
+  vulnerable range (`"undici@>=7.0.0 <7.29.1"`) so the entry goes inert once a wrangler bump brings
+  a fixed version. **Note:** pnpm applies one override per package name — a stale entry for an
   already-upgraded major silently shadows a newer one, so replace those entries rather than
   stacking them. When upstream has no compatible fix, a **time-boxed** exception goes in
   [`osv-scanner.toml`](../osv-scanner.toml) with the reachability argument and a mandatory
