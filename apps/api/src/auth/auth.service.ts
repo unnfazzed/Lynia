@@ -561,7 +561,10 @@ export class AuthService {
           throw new BadRequestException("A device id is required to create an account.");
         }
         // A fresh SIM is free; a fresh device is not. This is now unconditional on the signup path.
-        await this.enforceRate(`rl:signup:device:${device}`, rlFrom(this.env).deviceSignup);
+        // `reason: "device_signup_cap"` lets a client tell this cap apart from the route's own per-IP
+        // verify throttle, which answers with the same 429 and message (merchant web upgrade L1: the
+        // web names the cap — "This device has added 3 new people today" — and only for this one).
+        await this.enforceRate(`rl:signup:device:${device}`, rlFrom(this.env).deviceSignup, "device_signup_cap");
       } else {
         this.flagUnrecognisedDevice(existing, device);
       }
@@ -917,10 +920,16 @@ export class AuthService {
     };
   }
 
-  private async enforceRate(key: string, limit: { max: number; windowSec: number }): Promise<void> {
+  /** A fixed-window cap on `key`. `reason`, when given, rides along in the 429 body — the body is
+   *  otherwise the same `{ statusCode, message }` Nest sends for a plain-string HttpException. */
+  private async enforceRate(key: string, limit: { max: number; windowSec: number }, reason?: string): Promise<void> {
     const count = await this.store.hit(key, limit.windowSec);
     if (count > limit.max) {
-      throw new HttpException("Too many requests — try again later", HttpStatus.TOO_MANY_REQUESTS);
+      const message = "Too many requests — try again later";
+      throw new HttpException(
+        reason ? { statusCode: HttpStatus.TOO_MANY_REQUESTS, message, reason } : message,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
   }
 }

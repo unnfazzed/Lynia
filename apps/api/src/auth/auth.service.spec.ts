@@ -549,6 +549,33 @@ describe("AuthService.verifyOtp", () => {
     await expect(svc.verifyOtp("+263770000059", "654321", "ua", device)).rejects.toThrow(/too many/i);
   });
 
+  it("the device sign-up cap's 429 carries reason device_signup_cap; the per-phone send cap's does not", async () => {
+    // The merchant web names this cap ("This device has added 3 new people today") and must not say so
+    // for the route's per-IP verify throttle or the send caps, which answer with the same 429 + message.
+    const prisma = {
+      profile: { findUnique: async () => null, upsert: async () => profileRow },
+      session: { create: async () => ({ id: "s1" }) },
+    };
+    const { svc, store } = make(baseEnv, prisma);
+    for (let i = 0; i < 3; i++) {
+      await store.put(`+26377000007${i}`, tokens.hash("654321"), 300);
+      await svc.verifyOtp(`+26377000007${i}`, "654321", "ua", "shared-tablet");
+    }
+    await store.put("+263770000079", tokens.hash("654321"), 300);
+    const capped = await svc.verifyOtp("+263770000079", "654321", "ua", "shared-tablet").catch((e: unknown) => e);
+    expect(capped).toMatchObject({ status: 429 });
+    expect((capped as { getResponse(): unknown }).getResponse()).toEqual({
+      statusCode: 429,
+      message: "Too many requests — try again later",
+      reason: "device_signup_cap",
+    });
+
+    for (let i = 0; i < 5; i++) await svc.requestOtp("+263770000078", "9.9.9.9");
+    const sendCapped = await svc.requestOtp("+263770000078", "9.9.9.9").catch((e: unknown) => e);
+    expect(sendCapped).toMatchObject({ status: 429 });
+    expect((sendCapped as { getResponse(): unknown }).getResponse()).toBe("Too many requests — try again later");
+  });
+
   it("KB-IDENTITY-BINDING L1: does NOT throttle an EXISTING account (the cap is signup-only, not sign-in)", async () => {
     // An existing account signing in from a shared device many times is NOT a signup → never throttled.
     const prisma = {
