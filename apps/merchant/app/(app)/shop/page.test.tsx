@@ -94,3 +94,58 @@ describe("ShopPage initial-load failure has a way out (LC-D##)", () => {
     expect(getMerchantProfile).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
+  it("asks what it sells, says when customers will see it, and has no cash-order rule to choose", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ name: "Mbare Auto Spares", businessType: "shop", shopKind: "auto_parts" }));
+
+    render(<ShopPage />);
+
+    expect(await screen.findByText("WHAT YOU SELL · up to 3")).toBeTruthy();
+    expect(screen.getByText("This is your shop front. Customers will see it when LyniaGo Shops opens.")).toBeTruthy();
+    expect(screen.queryByText("How riders pay you")).toBeNull();
+    expect(screen.queryAllByText(/food|cook/i)).toHaveLength(0);
+  });
+
+  it("a restaurant keeps the drawn profile, cash rule included", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant" }));
+
+    render(<ShopPage />);
+
+    expect(await screen.findByText("WHAT YOU COOK · up to 3")).toBeTruthy();
+    expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
+    expect(screen.getByText("How riders pay you")).toBeTruthy();
+  });
+
+  it("a restaurant reaches its own riders from Shop (L3); a shop has them in its nav instead", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage riders" })).getAttribute("href")).toBe("/riders");
+
+    cleanup();
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts" }));
+    render(<ShopPage />);
+    await screen.findByText("WHAT YOU SELL · up to 3");
+    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+  });
+
+  it("the owner reaches the team from Shop, for both types (L4)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts", myRole: "owner" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
+
+    cleanup();
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "owner" }));
+    render(<ShopPage />);
+    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
+  });
+
+  it("Staff who reach Shop get one line, not the owner's editor (L4)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "staff" }));
+    render(<ShopPage />);
+    expect(await screen.findByText("Only the owner changes the shop's details, its riders and its team.")).toBeTruthy();
+    expect(screen.queryByText("Shop profile")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+  });
+});

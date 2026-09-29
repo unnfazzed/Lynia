@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cropRectFromView, MAX_ZOOM, MIN_ZOOM, type CropRect } from "../../lib/image-compress";
+import { useVocabulary, type Vocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
 import { ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
 
@@ -23,12 +24,13 @@ import { ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
 
 export type CropKind = "dish" | "banner" | "logo";
 
-const COPY: Record<CropKind, { title: string; sub: string; save: string; previewLabel: string }> = {
+/** A shop's item photo speaks its words (lib/vocabulary, D-44); a restaurant's is the drawn M4·6 copy. */
+const copyFor = (v: Vocabulary): Record<CropKind, { title: string; sub: string; save: string; previewLabel: string }> => ({
   dish: {
-    title: "Position the dish photo",
-    sub: "Square crop. Fill the frame with the food, not the table.",
+    title: `Position the ${v.item} photo`,
+    sub: v.itemCropSub,
     save: "Save photo",
-    previewLabel: "HOW IT LOOKS ON THE MENU",
+    previewLabel: v.itemPreviewLabel,
   },
   banner: {
     title: "Position your banner",
@@ -42,7 +44,7 @@ const COPY: Record<CropKind, { title: string; sub: string; save: string; preview
     save: "Save logo",
     previewLabel: "LIVE PREVIEW",
   },
-};
+});
 
 interface View {
   zoom: number;
@@ -111,6 +113,8 @@ export function PhotoCropSheet({
   /** The merchant's framing, in SOURCE pixels. Nothing is uploaded until this resolves. */
   onConfirm: (crop: CropRect) => void;
 }) {
+  const words = useVocabulary();
+  const COPY = copyFor(words);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -366,12 +370,10 @@ export function PhotoCropSheet({
             {kind === "banner" ? (
               <BannerPreview crop={crop} natural={natural} url={objectUrl} shopName={shopName} />
             ) : (
-              <DishPreview crop={crop} natural={natural} url={objectUrl} square={kind === "logo"} />
+              <DishPreview crop={crop} natural={natural} url={objectUrl} square={kind === "logo"} words={words} />
             )}
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 10, lineHeight: 1.45 }}>
-              {kind === "dish"
-                ? "Customers scan photos before they read names. One clear daylight shot per dish is enough."
-                : "A real photo of your food beats a logo on the banner. Shoot in daylight, no flash — and keep the left edge clear, your logo sits there."}
+              {kind === "dish" ? `Customers scan photos before they read names. One clear daylight shot per ${words.item} is enough.` : words.bannerPhotoTip}
             </div>
             {ready && !canPan && (
               <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8, lineHeight: 1.45 }}>
@@ -423,11 +425,13 @@ function DishPreview({
   natural,
   url,
   square,
+  words,
 }: {
   crop: CropRect | null;
   natural: { width: number; height: number } | null;
   url: string | null;
   square: boolean;
+  words: Vocabulary;
 }) {
   const thumb = 56;
   return (
@@ -440,13 +444,13 @@ function DishPreview({
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{square ? "Your shop" : "This dish"}</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{square ? "Your logo, as customers see it" : "How the photo reads at menu size"}</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{square ? "Your shop" : `This ${words.item}`}</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{square ? "Your logo, as customers see it" : words.itemPreviewSub}</div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0", borderTop: "1px solid var(--line)", opacity: 0.45 }}>
         <div style={{ width: thumb, height: thumb, borderRadius: 10, background: "var(--surface)", flexShrink: 0 }} />
-        <div style={{ fontSize: 15, fontWeight: 700 }}>Another dish</div>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Another {words.item}</div>
       </div>
     </div>
   );

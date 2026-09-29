@@ -451,6 +451,25 @@ export class PrivacyService {
     }
   }
 
+  /**
+   * Merchant web upgrade L4 ("Owner rules"): a business owner can't be erased while they own it, or the
+   * business would be left with nobody who can run it. Support hands it over first
+   * (`POST /admin/merchants/:id/owner`). In the transaction, so a handover landing mid-erase is seen.
+   * Ownership is either reading: the owner row, or `owner_profile_id` for a business never backfilled.
+   */
+  private async assertOwnsNoBusinessTx(tx: Prisma.TransactionClient, profileId: string): Promise<void> {
+    const owned = await tx.merchant.findFirst({
+      where: { OR: [{ ownerProfileId: profileId }, { members: { some: { profileId, role: "owner" } } }] },
+      select: { name: true },
+    });
+    if (owned) {
+      throw new ConflictException({
+        reason: "business_owner",
+        message: `You own ${owned.name} on LyniaGo. Message LyniaGo support to hand it to someone else, then delete your account.`,
+      });
+    }
+  }
+
   /** Right to erasure. Anonymises the caller's profile + scrubs their PII; keeps the order/audit ledger. */
   async eraseAccount(profileId: string): Promise<{ erased: true }> {
     const now = new Date();
@@ -462,19 +481,35 @@ export class PrivacyService {
     // the tx and deleted post-commit alongside the KYC/profile photos (deleteObject swallows its errors).
     const itemPhotoKeys: string[] = [];
 
+    // Merchant web upgrade L4: the business a staff member leaves by erasing, for the post-commit eviction.
+    let leftBusinessId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
+      await this.assertOwnsNoBusinessTx(tx, profileId);
+      // Merchant web upgrade L3: businesses keep their own riders by phone number. The number is this
+      // person's, so it leaves every business's list — read before the anonymise step tombstones it.
+      await tx.merchantPreferredRider.deleteMany({ where: { phone: profile.phone } });
+      // L4 (Team): every invite to this number goes the same way, and so does a staff member's place on
+      // a team, which holds the name the business knew them by.
+      await tx.merchantInvite.deleteMany({ where: { phone: profile.phone } });
+      const membership = await tx.merchantMember.findUnique({ where: { profileId }, select: { merchantId: true } });
+      if (membership) {
+        await tx.merchantMember.deleteMany({ where: { profileId, role: "staff" } });
+        leftBusinessId = membership.merchantId;
+      }
       await this.anonymiseProfileTx(tx, profileId, now);
       await this.scrubPiiTx(tx, profileId, isRider, now, itemPhotoKeys);
     });
 
     await this.postCommitPurge(profileId, isRider, profile, itemPhotoKeys);
+    // Best effort: the erased staff member's open devices stop receiving the business's live queue now.
+    if (leftBusinessId) void this.gateway?.evictFromMerchantQueue(profileId, leftBusinessId);
 
     this.logger.log(`Account ${profileId} erased (anonymised in place)`);
     return { erased: true };
   }
 
   /** Retention sweep — drop expired GPS coords + lapsed sessions. Driven by Cloud Scheduler daily. */
-  async purgeExpiredData(now: Date = new Date()): Promise<{ gpsScrubbed: number; sessionsPurged: number }> {
+  async purgeExpiredData(now: Date = new Date()): Promise<{ gpsScrubbed: number; sessionsPurged: number; invitesPurged: number }> {
     const gpsCutoff = new Date(now.getTime() - this.env.GPS_RETENTION_DAYS * 86_400_000);
     const sessionCutoff = new Date(now.getTime() - this.env.SESSION_RETENTION_DAYS * 86_400_000);
 
@@ -504,9 +539,13 @@ export class PrivacyService {
       where: { OR: [{ expiresAt: { lt: sessionCutoff } }, { revokedAt: { lt: sessionCutoff } }] },
     });
 
+    // Merchant web upgrade L4: an invite nobody answered in its 14 days holds a name and a number for no
+    // purpose (the reads already ignore it), so it goes on the next sweep, as the privacy notice says.
+    const invites = await this.prisma.merchantInvite.deleteMany({ where: { expiresAt: { lt: now } } });
+
     this.logger.log(
-      `Retention sweep: scrubbed ${gps.count} GPS events + ${sosGps.count} SOS coords, purged ${sessions.count} expired sessions`,
+      `Retention sweep: scrubbed ${gps.count} GPS events + ${sosGps.count} SOS coords, purged ${sessions.count} expired sessions + ${invites.count} expired invites`,
     );
-    return { gpsScrubbed: gps.count + sosGps.count, sessionsPurged: sessions.count };
+    return { gpsScrubbed: gps.count + sosGps.count, sessionsPurged: sessions.count, invitesPurged: invites.count };
   }
 }

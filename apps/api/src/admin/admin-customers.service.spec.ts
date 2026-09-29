@@ -8,6 +8,22 @@ const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
 describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => {
   const profile = { id: "c1", firstName: "Rudo", lastName: "K", phone: "+263771112222", createdAt: new Date("2026-02-01T00:00:00Z") };
 
+  it("merchant web upgrade L2 (OV-9): leaves businesses' booking accounts out of the customer directory", async () => {
+    let where: unknown;
+    const prisma = {
+      profile: {
+        findMany: async (args: { where: unknown }) => {
+          where = args.where;
+          return [];
+        },
+      },
+      order: { groupBy: async () => [], findMany: async () => [] },
+      report: { groupBy: async () => [] },
+    };
+    await new AdminCustomersService(prisma as unknown as PrismaService).listCustomers();
+    expect(where).toEqual({ role: "customer", NOT: { phone: { startsWith: "business:" } } });
+  });
+
   it("aggregates orders/spend/cancel-rate/flags and MASKS the phone", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },

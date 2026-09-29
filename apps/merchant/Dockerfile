@@ -32,6 +32,9 @@ FROM deps AS build
 # `gcloud run deploy` time, unlike apps/admin's server-only API_BASE_URL.
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# Optional (merchant web upgrade L2): the support WhatsApp number behind the Help item; empty hides it.
+ARG NEXT_PUBLIC_SUPPORT_WHATSAPP=""
+ENV NEXT_PUBLIC_SUPPORT_WHATSAPP=$NEXT_PUBLIC_SUPPORT_WHATSAPP
 COPY . .
 RUN pnpm --filter @lynia/shared build \
  && pnpm --filter @lynia/merchant build

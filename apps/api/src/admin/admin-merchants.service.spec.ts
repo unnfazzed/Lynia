@@ -58,6 +58,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
   it("detail includes the recent-orders trail and the full debt-ledger trail", async () => {
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
@@ -88,6 +90,29 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
       { id: "l2", orderId: "o2", riderId: "r1", type: "written_off", amount: "-8.00", note: "non-return", actor: "m1", at: "2026-07-30T00:00:00.000Z" },
     ]);
     expect(d.debtLedgerNextCursor).toBeNull();
+    expect(d.bookingAccount).toBeNull();
+  });
+
+  it("L2 (R2-5): the detail links the business's booking account, where ops holds a whole business's bookings", async () => {
+    let asked: unknown;
+    const prisma = {
+      merchant: { findUnique: async () => merchant },
+      profile: {
+        findUnique: async (args: { where: { phone: string } }) => {
+          asked = args.where.phone;
+          return { id: "acct-1", onHold: true };
+        },
+      },
+      order: {
+        count: async () => 0,
+        aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
+        findMany: async () => [],
+      },
+      merchantDebtLedger: { findMany: async () => [] },
+    };
+    const d = (await new AdminMerchantsService(prisma as unknown as PrismaService).getMerchantDetail("m1"))!;
+    expect(asked).toBe("business:m1");
+    expect(d.bookingAccount).toEqual({ id: "acct-1", onHold: true });
   });
 
   /** One debt-ledger row builder, newest-first ids (l1 = newest). */
@@ -113,6 +138,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
     );
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
@@ -132,6 +159,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
   it("LC-D-T1: debtCursor pages past the first 30 entries instead of always returning the newest page", async () => {
     const prisma = {
       merchant: { findUnique: async () => merchant },
+      // L2: the business's booking account (none yet).
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 12,
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
@@ -415,5 +444,141 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     await svc.listMerchants();
     expect(wheres).toEqual([{ businessType: "restaurant", pilotEnabled: false }, { businessType: "shop" }, {}]);
     expect(row).toMatchObject({ businessType: "restaurant", shopKind: null, landmark: "Next to the rank", contactPhoneMasked: "+263•••••4567" });
+  });
+});
+
+describe("AdminMerchantsService.transferOwner (merchant web upgrade L4 — support hands a business over)", () => {
+  interface Member { id: string; merchantId: string; profileId: string; role: "owner" | "staff"; displayName: string; addedByProfileId?: string | null }
+  interface Person { id: string; phone: string; firstName: string; lastName: string; onHold: boolean; rider: { accountStatus: string } | null }
+
+  /** A small in-memory world: two businesses, their owners, and whoever a test adds. */
+  function transferHarness() {
+    const people = new Map<string, Person>();
+    const merchants = new Map<string, { id: string; name: string; ownerProfileId: string | null }>([
+      ["m1", { id: "m1", name: "Mbare Auto Spares", ownerProfileId: "farai" }],
+      ["m2", { id: "m2", name: "Sadza Republic", ownerProfileId: "rudo" }],
+    ]);
+    const members: Member[] = [
+      { id: "mm-farai", merchantId: "m1", profileId: "farai", role: "owner", displayName: "Farai Chari" },
+      { id: "mm-rudo", merchantId: "m2", profileId: "rudo", role: "owner", displayName: "Rudo Dube" },
+    ];
+    const invites = [{ id: "inv-1", merchantId: "m1", phone: "+263773000003" }];
+    const audit: Array<Record<string, unknown>> = [];
+    const add = (p: Partial<Person> & Pick<Person, "id" | "phone">) =>
+      people.set(p.id, { firstName: "", lastName: "", onHold: false, rider: null, ...p });
+    add({ id: "farai", phone: "+263771000001", firstName: "Farai", lastName: "Chari" });
+    add({ id: "rudo", phone: "+263772000002", firstName: "Rudo", lastName: "Dube" });
+
+    let n = 0;
+    const prisma: Record<string, unknown> = {
+      $executeRaw: async () => 1,
+      merchant: {
+        findUnique: async ({ where }: { where: { id: string } }) => merchants.get(where.id) ?? null,
+        findFirst: async ({ where }: { where: { ownerProfileId: string; id: { not: string } } }) =>
+          [...merchants.values()].find((m) => m.ownerProfileId === where.ownerProfileId && m.id !== where.id.not) ?? null,
+        update: async ({ where, data }: { where: { id: string }; data: { ownerProfileId: string } }) => Object.assign(merchants.get(where.id)!, data),
+      },
+      profile: {
+        findUnique: async ({ where }: { where: { phone?: string; id?: string } }) =>
+          [...people.values()].find((p) => (where.phone ? p.phone === where.phone : p.id === where.id)) ?? null,
+      },
+      merchantMember: {
+        findUnique: async ({ where }: { where: { profileId: string } }) => members.find((m) => m.profileId === where.profileId) ?? null,
+        findFirst: async ({ where }: { where: { merchantId: string; role: string } }) =>
+          members.find((m) => m.merchantId === where.merchantId && m.role === where.role) ?? null,
+        count: async ({ where }: { where: { profileId: string } }) => members.filter((m) => m.profileId === where.profileId).length,
+        update: async ({ where, data }: { where: { id: string }; data: { role: "owner" | "staff" } }) => {
+          const row = members.find((m) => m.id === where.id)!;
+          // The partial unique index: one owner per business.
+          if (data.role === "owner" && members.some((m) => m.merchantId === row.merchantId && m.role === "owner" && m.id !== row.id)) {
+            throw new Error("unique violation: one owner per business");
+          }
+          return Object.assign(row, data);
+        },
+        create: async ({ data }: { data: Omit<Member, "id"> }) => {
+          if (data.role === "owner" && members.some((m) => m.merchantId === data.merchantId && m.role === "owner")) {
+            throw new Error("unique violation: one owner per business");
+          }
+          const row = { ...data, id: `mm-${++n}` };
+          members.push(row);
+          return row;
+        },
+      },
+      merchantInvite: {
+        deleteMany: async ({ where }: { where: { merchantId: string; phone: string } }) => {
+          const i = invites.findIndex((x) => x.merchantId === where.merchantId && x.phone === where.phone);
+          if (i >= 0) invites.splice(i, 1);
+          return { count: i >= 0 ? 1 : 0 };
+        },
+      },
+      auditLog: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          audit.push(data);
+          return { id: `audit-${audit.length}` };
+        },
+      },
+    };
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), people, merchants, members, invites, audit, add };
+  }
+
+  const NOTE = "Called Farai and Chipo; saw Chipo's ID at the shop";
+
+  it("promotes a staff member: the old owner stays on as Staff, the column follows, and the audit row carries the note", async () => {
+    const h = transferHarness();
+    h.add({ id: "chipo", phone: "+263773000003", firstName: "Chipo", lastName: "Moyo" });
+    h.members.push({ id: "mm-chipo", merchantId: "m1", profileId: "chipo", role: "staff", displayName: "Chipo" });
+
+    const res = await h.svc.transferOwner("ops@lyniago", "m1", { phone: "0773 000 003", note: NOTE });
+
+    expect(res).toEqual({ id: "m1", ownerProfileId: "chipo", previousOwnerProfileId: "farai", auditId: "audit-1" });
+    expect(h.members.filter((m) => m.merchantId === "m1").map((m) => [m.profileId, m.role])).toEqual([
+      ["farai", "staff"],
+      ["chipo", "owner"],
+    ]);
+    expect(h.merchants.get("m1")!.ownerProfileId).toBe("chipo");
+    expect(h.audit).toEqual([{ actor: "ops@lyniago", action: "merchant.owner_transfer", target: "m1", reasonCode: null, note: NOTE }]);
+    // A pending invite to the new owner's number has nothing left to do.
+    expect(h.invites).toEqual([]);
+  });
+
+  it("hands the business to someone on no business, who joins as its owner under their profile name", async () => {
+    const h = transferHarness();
+    h.add({ id: "tino", phone: "+263774000004", firstName: "Tinashe", lastName: "Moyo" });
+    await h.svc.transferOwner("ops", "m1", { phone: "+263774000004", note: NOTE });
+    expect(h.members.find((m) => m.profileId === "tino")).toMatchObject({ merchantId: "m1", role: "owner", displayName: "Tinashe Moyo" });
+    expect(h.members.find((m) => m.profileId === "farai")).toMatchObject({ role: "staff" });
+  });
+
+  it("refuses someone who works at, or owns, another business", async () => {
+    const h = transferHarness();
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "+263772000002", note: NOTE })).rejects.toMatchObject({
+      status: 409,
+      response: { reason: "member_elsewhere" },
+    });
+    expect(h.members.find((m) => m.profileId === "farai")).toMatchObject({ role: "owner" });
+    expect(h.audit).toEqual([]);
+  });
+
+  it("refuses a number with no account, a held or restricted account, the current owner, and a bad number", async () => {
+    const h = transferHarness();
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "+263779999999", note: NOTE })).rejects.toMatchObject({ status: 404, response: { reason: "no_account" } });
+    h.add({ id: "held", phone: "+263775000005", onHold: true });
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "+263775000005", note: NOTE })).rejects.toMatchObject({ response: { reason: "account_restricted" } });
+    h.add({ id: "banned", phone: "+263776000006", rider: { accountStatus: "banned" } });
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "+263776000006", note: NOTE })).rejects.toMatchObject({ response: { reason: "account_restricted" } });
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "+263771000001", note: NOTE })).rejects.toMatchObject({ response: { reason: "already_owner" } });
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "12", note: NOTE })).rejects.toMatchObject({ status: 400, response: { reason: "bad_phone" } });
+    await expect(h.svc.transferOwner("ops", "nope", { phone: "+263771000001", note: NOTE })).rejects.toMatchObject({ status: 404 });
+    expect(h.audit).toEqual([]);
+  });
+
+  it("keeps the old owner on the team as Staff even when their owner row was never backfilled", async () => {
+    const h = transferHarness();
+    h.members.splice(h.members.findIndex((m) => m.profileId === "farai"), 1);
+    h.add({ id: "tino", phone: "+263774000004", firstName: "Tinashe", lastName: "Moyo" });
+    const res = await h.svc.transferOwner("ops", "m1", { phone: "+263774000004", note: NOTE });
+    expect(res.previousOwnerProfileId).toBe("farai");
+    expect(h.members.find((m) => m.profileId === "farai")).toMatchObject({ merchantId: "m1", role: "staff", displayName: "Farai Chari" });
   });
 });

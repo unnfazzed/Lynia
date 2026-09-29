@@ -1,4 +1,6 @@
+import type { BecomeMerchantRequest, MerchantProfileResponse } from "@lynia/shared";
 import { API_BASE_URL } from "./config";
+import { getDeviceId } from "./device-id";
 import { getReachabilityStore } from "./reachability";
 import {
   clearMerchantSession,
@@ -17,9 +19,32 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** The API's machine-readable `reason` when it sent one (e.g. `not_a_member`, `already_member`,
+     *  `owner_only`, `outside_service_area`) — what screens branch on, never the human message. */
+    public reason?: string,
   ) {
     super(message);
   }
+}
+
+/** The `{ reason }` a Nest `{ reason, message }` exception body carries, if any. */
+function reasonOf(body: unknown): string | undefined {
+  const reason = (body as { reason?: unknown } | null)?.reason;
+  return typeof reason === "string" ? reason : undefined;
+}
+
+/**
+ * Merchant web upgrade L4 (Team): a 403 `not_a_member` means the signed-in person isn't on the business
+ * any more (the owner removed them, or they left on another device). The shell listens, so a removed
+ * person's device signs out on their next tap and its order alarm stops (design doc "Shared devices").
+ */
+const membershipLostListeners = new Set<() => void>();
+
+export function onMembershipLost(listener: () => void): () => void {
+  membershipLostListeners.add(listener);
+  return () => {
+    membershipLostListeners.delete(listener);
+  };
 }
 
 /** Any 401 from an authenticated call — a definitively-dead session or a domain-level rejection —
@@ -42,6 +67,9 @@ export function redirectIfSessionExpired(err: unknown, signOut: () => void): boo
 interface OtpRequestResult {
   sent: true;
   channel: string;
+  /** Where the code actually went — the sign-in copy names it ("…sent to your WhatsApp"). Absent on an
+   *  older API, in which case the copy stays channel-neutral. */
+  deliveryChannel?: "whatsapp" | "sms";
   devCode?: string;
 }
 
@@ -59,7 +87,13 @@ export function requestOtp(phone: string): Promise<OtpRequestResult> {
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<VerifyResult> {
-  const result = await rawFetch<VerifyResult>("/auth/otp/verify", { method: "POST", body: { phone, code } });
+  // x-device-id on verify ONLY (merchant web upgrade L1, D4): the API needs it to create an account for
+  // a number it has never seen, under the per-device sign-up cap. Nothing else needs it.
+  const result = await rawFetch<VerifyResult>("/auth/otp/verify", {
+    method: "POST",
+    body: { phone, code },
+    headers: { "x-device-id": getDeviceId() },
+  });
   saveMerchantSession({
     accessToken: result.accessToken,
     refreshToken: result.refreshToken,
@@ -71,16 +105,32 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyResu
   return result;
 }
 
-export interface MerchantProfile {
-  id: string;
-  name: string;
-}
+export type MerchantProfile = MerchantProfileResponse;
 
-/** Resolves the caller's own merchant row (MerchantGuard-protected) — confirms the signed-in profile
- *  actually holds `role: "merchant"` server-side, not just what an earlier (possibly stale) token
- *  claims. Throws ApiError(403) if the account isn't a merchant. */
+/** The business the signed-in person works at (MerchantGuard-protected: membership, read per request —
+ *  never the token's role claim). Throws ApiError(403, reason "not_a_member") for a number that isn't
+ *  on a business yet, which is the cue for "Set up your business". */
 export function getMyMerchant(): Promise<MerchantProfile> {
   return authedFetch<MerchantProfile>("/merchant/me");
+}
+
+/** L1 self-serve sign-up: creates the business and the caller's owner membership. A 409
+ *  `already_member` means this person is already on a business (e.g. a retry of a sign-up whose
+ *  response was lost) — callers treat it as success and go to `/setup`. */
+export function becomeMerchant(body: BecomeMerchantRequest): Promise<MerchantProfile> {
+  return authedFetch<MerchantProfile>("/merchant/become", { method: "POST", body });
+}
+
+/** The fields of `GET /auth/me` the web reads: the sign-up prefills "Your name" and the contact phone
+ *  from the person's own LyniaGo account. */
+export interface MyAccount {
+  firstName: string;
+  lastName: string;
+  phone: string;
+}
+
+export function getMyAccount(): Promise<MyAccount> {
+  return authedFetch<MyAccount>("/auth/me");
 }
 
 /** The exact two messages JwtAuthGuard throws on a missing/invalid bearer (jwt-auth.guard.ts) — only
@@ -92,8 +142,11 @@ function isAuthGuard401(body: unknown): boolean {
   return typeof message === "string" && AUTH_GUARD_401_MESSAGES.includes(message);
 }
 
-async function rawFetch<T>(path: string, opts: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+async function rawFetch<T>(
+  path: string,
+  opts: { method?: string; body?: unknown; token?: string; headers?: Record<string, string> } = {},
+): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...opts.headers };
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
   let res: Response;
   try {
@@ -113,7 +166,7 @@ async function rawFetch<T>(path: string, opts: { method?: string; body?: unknown
       (typeof body?.message === "string" && body.message) ||
       (Array.isArray(body?.message) && body.message.join("; ")) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, reasonOf(body));
   }
   return (await res.json()) as T;
 }
@@ -227,7 +280,7 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
   if (res.status === 401) {
     const body = await res.json().catch(() => null);
     if (!isAuthGuard401(body)) {
-      throw new ApiError(401, (body as { message?: string } | null)?.message ?? "Rejected (401).");
+      throw new ApiError(401, (body as { message?: string } | null)?.message ?? "Rejected (401).", reasonOf(body));
     }
     const outcome = await refreshSession(session.refreshToken);
     if (outcome.kind === "dead") {
@@ -259,7 +312,9 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
     const message =
       (typeof (body as { message?: unknown } | null)?.message === "string" && (body as { message: string }).message) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message);
+    const reason = reasonOf(body);
+    if (res.status === 403 && reason === "not_a_member") for (const listener of membershipLostListeners) listener();
+    throw new ApiError(res.status, message, reason);
   }
   return (await res.json()) as T;
 }

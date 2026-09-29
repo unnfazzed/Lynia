@@ -206,6 +206,34 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   address_store: { column: "Address", where: "addresses", tables: ["addresses"], disposition: "delete-row", note: "Saved addresses deleted outright on erase." },
   device_token_store: { column: "DeviceToken", where: "device_tokens", tables: ["device_tokens"], disposition: "delete-row", note: "Push tokens deleted (also logs every device out)." },
   session_store: { column: "Session", where: "sessions", tables: ["sessions"], disposition: "delete-row", note: "All sessions deleted on erase." },
+  preferred_rider_store: {
+    column: "phone",
+    where: "merchant_preferred_riders",
+    tables: ["merchant_preferred_riders"],
+    disposition: "delete-row",
+    note: "Merchant web upgrade L3: a business keeps its own riders by the number they sign in with. The number is the rider's, so every business's row for it is deleted on erase (by the pre-tombstone phone).",
+  },
+  merchant_invite_store: {
+    column: "phone",
+    where: "merchant_invites",
+    tables: ["merchant_invites"],
+    disposition: "delete-row",
+    note: "Merchant web upgrade L4: an invite to join a business is kept by the invited number until they Join, say Not me, or it expires. The number is the person's, so every invite to it is deleted on erase (by the pre-tombstone phone).",
+  },
+  merchant_invite_name: {
+    column: "display_name",
+    where: "merchant_invites",
+    tables: ["merchant_invites"],
+    disposition: "delete-row",
+    note: "Merchant web upgrade L4: the name an owner typed on an invite. Goes with the invite row (merchant_invite_store).",
+  },
+  merchant_member_name: {
+    column: "display_name",
+    where: "merchant_members",
+    tables: ["merchant_members"],
+    disposition: "delete-row",
+    note: "Merchant web upgrade L4: the name a business knows a team member by. A staff member's team row is deleted on erase. An owner can't be erased while they own a business (support hands it over first), so an owner's row is never left orphaned.",
+  },
   "kyc-object": { column: "kyc-object", where: "GCS (KYC photo/selfie)", tables: ["GCS"], disposition: "delete-object", note: "DS15-03: the referenced storage object itself is deleted, not just the DB pointer." },
 } as const;
 

@@ -6,11 +6,24 @@ import type { MerchantDishResponse, MerchantProfileResponse } from "@lynia/share
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Icon, type IconName } from "../../components/icons";
+import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { bookingsAvailable } from "../../lib/booking";
+import { listBookings } from "../../lib/bookings-api";
+import { listRiders } from "../../lib/riders-api";
+import { getTeam } from "../../lib/team-api";
 import { getMerchantProfile, listDishes } from "../../lib/menu-api";
-import { buildSetupState, markAlarmTested, readAlarmTested, type SetupItem, type SetupItemKey } from "../../lib/setup-checklist";
+import {
+  buildSetupState,
+  buildShopSetupState,
+  markAlarmTested,
+  readAlarmTested,
+  type SetupItem,
+  type SetupItemKey,
+} from "../../lib/setup-checklist";
+import { shopKindLabel } from "../../lib/sign-up";
 
 /**
  * M0·2 `setup` (r-merchant.jsx:103-128) — the first-run checklist: add your menu, set your hours,
@@ -19,13 +32,37 @@ import { buildSetupState, markAlarmTested, readAlarmTested, type SetupItem, type
  * Every tick is derived from real state (see `lib/setup-checklist.ts` for exactly which, and for the
  * two places the kit's version assumes capability this codebase doesn't have). Nothing here writes
  * anything except the alarm test, which is a local per-tablet fact and is labelled as one.
+ *
+ * Type-aware from the merchant web upgrade's L1: a shop gets its own checklist and no kitchen chrome
+ * (it takes no customer orders, so it has no Orders board or alarm; its own nav lands in L2). Undrawn,
+ * ledgered as D-43.
  */
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; profile: MerchantProfileResponse; dishes: MerchantDishResponse[] }
+  // `bookings`: how many the business has made; null where the API can't book riders yet (L2).
+  // `riders`: how many of its own riders a shop keeps (L3); null where the API doesn't keep them yet.
+  // `team`: its people and waiting invites (L4); null where the API has no Team yet.
+  | {
+      status: "ready";
+      profile: MerchantProfileResponse;
+      dishes: MerchantDishResponse[];
+      bookings: number | null;
+      riders: number | null;
+      team: { members: number; invites: number } | null;
+    }
   | { status: "error"; message: string };
 
-const ICONS: Record<SetupItemKey, IconName> = { menu: "utensils", hours: "clock", payment: "wallet", alarm: "volume-2" };
+const ICONS: Record<SetupItemKey, IconName> = {
+  menu: "utensils",
+  hours: "clock",
+  payment: "wallet",
+  alarm: "volume-2",
+  pin: "map-pin",
+  first_booking: "navigation",
+  items: "package",
+  riders: "bike",
+  team: "users",
+};
 
 export default function SetupPage() {
   const { alarm, signOut } = useKitchenConnection();
@@ -35,8 +72,25 @@ export default function SetupPage() {
   const refresh = useCallback(() => {
     setState({ status: "loading" });
     Promise.all([getMerchantProfile(), listDishes()])
-      .then(([profile, dishes]) => {
-        setState({ status: "ready", profile, dishes });
+      .then(async ([profile, dishes]) => {
+        // A shop's "Book your first rider" ticks with its first booking (L2). Best effort: a failed
+        // read just leaves the step untick'd.
+        const shop = profile.businessType === "shop";
+        const owner = profile.myRole !== "staff";
+        const [bookings, riders, team] = await Promise.all([
+          shop && bookingsAvailable(profile) ? listBookings().then((b) => b.length, () => 0) : null,
+          // L3's own riders: an API without them answers 404 ("coming soon"); any other failure just
+          // leaves the optional step open.
+          shop ? listRiders().then((r) => r.riders.length, (err: unknown) => (err instanceof ApiError && err.status === 404 ? null : 0)) : null,
+          // L4's team, the owner's to see: same "coming soon" rule.
+          shop && owner
+            ? getTeam().then(
+                (t) => ({ members: t.members.length, invites: t.invites.length }),
+                (err: unknown) => (err instanceof ApiError && err.status === 404 ? null : { members: 1, invites: 0 }),
+              )
+            : null,
+        ]);
+        setState({ status: "ready", profile, dishes, bookings, riders, team });
         setAlarmTested(readAlarmTested(profile.id));
       })
       .catch((err: unknown) => {
@@ -53,6 +107,30 @@ export default function SetupPage() {
     alarm.testRing();
     markAlarmTested(merchantId);
     setAlarmTested(true);
+  }
+
+  // L4: setting the business up is the owner's; Staff who land here get one line, in their own shell.
+  if (state.status === "ready" && state.profile.myRole === "staff") {
+    return (
+      <Kitchen active={state.profile.businessType === "shop" ? "deliveries" : "queue"}>
+        <div className="kitchen-page" style={{ overflow: "auto", height: "100%" }}>
+          <OwnerOnlyNotice>Only the owner sets up {state.profile.name}.</OwnerOnlyNotice>
+        </div>
+      </Kitchen>
+    );
+  }
+
+  if (state.status === "ready" && state.profile.businessType === "shop") {
+    return (
+      <ShopSetup
+        profile={state.profile}
+        items={state.dishes.length}
+        bookings={state.bookings}
+        riders={state.riders}
+        team={state.team}
+        onSignOut={signOut}
+      />
+    );
   }
 
   const setup = state.status === "ready" ? buildSetupState({ profile: state.profile, dishes: state.dishes, alarmTested }) : null;
@@ -88,7 +166,8 @@ export default function SetupPage() {
 
             {/* The go-live gate. `pilotEnabled` is the flag the customer read API really filters on and
              *  it is an admin switch — the kit's "you go live once X and Y are done" would be a promise
-             *  this app cannot keep, so the copy names who actually flips it. */}
+             *  this app cannot keep, so the copy names who actually flips it, and when (ops calls a new
+             *  restaurant within one business day — docs/MERCHANT-GO-LIVE-RUNBOOK.md). */}
             <div
               style={{
                 ...cardStyle,
@@ -113,7 +192,7 @@ export default function SetupPage() {
                 <div style={{ fontSize: 13, color: "var(--ink)", marginTop: 4, lineHeight: 1.5 }}>
                   {setup.live
                     ? "Customers can find you and order. Anything you change on this list goes live straight away."
-                    : "Finish this list, then LyniaGo switches your shop on — it isn't automatic, and support does it once your menu and hours are in."}
+                    : "Finish this list and LyniaGo will call you within a day to switch you on. It isn't automatic."}
                 </div>
               </div>
               <Link href="/queue" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block", whiteSpace: "nowrap" }}>
@@ -122,6 +201,65 @@ export default function SetupPage() {
             </div>
           </>
         )}
+      </div>
+    </Kitchen>
+  );
+}
+
+/** A shop's `/setup` (merchant web upgrade L1, inside the shop's own shell from L2). */
+function ShopSetup({
+  profile,
+  items,
+  bookings,
+  riders,
+  team,
+  onSignOut,
+}: {
+  profile: MerchantProfileResponse;
+  items: number;
+  bookings: number | null;
+  riders: number | null;
+  team: { members: number; invites: number } | null;
+  onSignOut: () => void;
+}) {
+  const setup = buildShopSetupState({ bookingsOn: bookings !== null, bookings: bookings ?? 0, items, riders, team });
+  return (
+    <Kitchen active="setup">
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 12, overflow: "auto", height: "100%", maxWidth: 720 }}>
+        <div>
+          <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Set up {profile.name}</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
+            {profile.shopKind ? `${shopKindLabel(profile.shopKind)} · Shop` : "Shop"}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {setup.items.map((item) => (
+            <ChecklistCard key={item.key} item={item} icon={ICONS[item.key]} />
+          ))}
+        </div>
+
+        <div
+          style={{
+            ...cardStyle,
+            display: "flex",
+            gap: 12,
+            alignItems: "flex-start",
+            background: "var(--highlight-wash)",
+            boxShadow: "none",
+          }}
+        >
+          <Icon name="circle-alert" size={20} color="var(--highlight-ink)" style={{ marginTop: 2 }} />
+          <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>
+            Customers will find you when LyniaGo Shops opens. We'll check your items first.
+          </div>
+        </div>
+
+        <div>
+          <button type="button" onClick={onSignOut} style={ghostButtonStyle}>
+            Sign out
+          </button>
+        </div>
       </div>
     </Kitchen>
   );
@@ -146,6 +284,23 @@ function ChecklistCard({ item, icon, onAlarmTest }: { item: SetupItem; icon: Ico
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>{item.title}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{item.detail}</div>
+        {item.optional && !item.done && <span style={tagStyle}>Optional</span>}
+        {item.soon && (
+          <span
+            style={{
+              display: "inline-block",
+              marginTop: 10,
+              padding: "4px 10px",
+              borderRadius: "var(--radius-pill)",
+              background: "var(--surface)",
+              color: "var(--muted)",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            Coming soon
+          </span>
+        )}
         {item.action &&
           (item.action.href ? (
             <Link
@@ -184,3 +339,15 @@ function ChecklistCard({ item, icon, onAlarmTest }: { item: SetupItem; icon: Ico
     </div>
   );
 }
+
+const tagStyle: React.CSSProperties = {
+  display: "inline-block",
+  marginTop: 8,
+  marginRight: 8,
+  padding: "3px 9px",
+  borderRadius: "var(--radius-pill)",
+  background: "var(--surface)",
+  color: "var(--muted)",
+  fontSize: 11.5,
+  fontWeight: 700,
+};

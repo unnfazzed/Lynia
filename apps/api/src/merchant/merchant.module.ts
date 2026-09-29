@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { MatchingModule } from "../matching/matching.module";
+import { OffersModule } from "../offers/offers.module";
 import { OrdersModule } from "../orders/orders.module";
 import { TrackingModule } from "../tracking/tracking.module";
 import { DISPATCH_STRATEGY, NearestRiderDispatchStrategy } from "./dispatch-strategy";
@@ -7,9 +9,16 @@ import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderController } from "./food-order.controller";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantController } from "./merchant.controller";
+import { MerchantBookingController } from "./merchant-booking.controller";
+import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
+import { MerchantInvitesService } from "./merchant-invites.service";
 import { MerchantOrderController } from "./merchant-order.controller";
+import { MerchantRidersController } from "./merchant-riders.controller";
+import { MerchantRidersService } from "./merchant-riders.service";
 import { MerchantService } from "./merchant.service";
+import { MerchantInvitesController, MerchantTeamController } from "./merchant-team.controller";
+import { MerchantTeamService } from "./merchant-team.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
@@ -36,12 +45,33 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * OrdersModule joins the imports — the sanctioned merchant→shared direction (express-no-merchant-
  * coupling only forbids the reverse). FoodOrderService also depends on FoodDebtService directly
  * (confirmPickup opens the debt inside its own transaction), so no import-order concern either way.
+ *
+ * Merchant web upgrade L2 adds Book a rider: MerchantBookingService drives Send's own services as the
+ * business's booking account, so MatchingModule (selectOffer) and OffersModule (the offer list) join
+ * the imports — the same sanctioned merchant → Send direction (plan §11 F1.3).
+ *
+ * L3 adds Your riders (MerchantRidersService); L4 adds Team: MerchantTeamService (the owner's side and
+ * a staff member's Leave, which evicts the person's devices from the queue room through TrackingGateway)
+ * and MerchantInvitesService (Join / Not me, for a caller who isn't on a business yet).
  */
 @Module({
-  imports: [TrackingModule, OrdersModule],
-  controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
+  imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
+  controllers: [
+    MerchantController,
+    RestaurantsController,
+    FoodOrderController,
+    MerchantOrderController,
+    MerchantBookingController,
+    MerchantRidersController,
+    MerchantTeamController,
+    MerchantInvitesController,
+  ],
   providers: [
     MerchantService,
+    MerchantBookingService,
+    MerchantRidersService,
+    MerchantTeamService,
+    MerchantInvitesService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     FoodOrderService,

@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import MenuPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes } from "../../lib/menu-api";
+import { clearBusinessCache, primeBusiness } from "../../lib/business";
+import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes, setDishOutOfStock } from "../../lib/menu-api";
+import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({
   listCategories: vi.fn(),
@@ -177,5 +179,100 @@ describe("MenuPage initial-load failure has a way out (LC-D##)", () => {
 
     await screen.findByText("Menu");
     expect(listCategories).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("A shop's Items screen speaks its own words (merchant web upgrade L2, D-44)", () => {
+  afterEach(() => clearBusinessCache());
+
+  it("offers the shop kind's own starting categories", async () => {
+    primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("+ Engine")).toBeTruthy();
+    expect(screen.queryByText("+ Mains")).toBeNull();
+    expect(screen.getByText("Items live inside categories — Engine, Brakes, Electrical, whatever fits your shop. Create one and you can add items straight into it.")).toBeTruthy();
+  });
+
+  it("titles the list Items and counts items, in the list and in the editor", async () => {
+    primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
+    vi.mocked(listCategories).mockResolvedValue([category({ name: "Brakes" })]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ name: "Brake pads", outOfStock: false })]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("Items")).toBeTruthy();
+    expect(screen.getByText("1 category · 1 item")).toBeTruthy();
+    expect(screen.getByText("+ Add item here")).toBeTruthy();
+    expect(screen.getByText(/as the tabs in your shop/)).toBeTruthy();
+    expect(screen.queryAllByText(/dish|menu/i)).toHaveLength(0);
+
+    fireEvent.click(screen.getByText("+ Add an item"));
+    expect(screen.getByText("Add an item")).toBeTruthy();
+    expect(screen.getByText("ITEM PHOTO")).toBeTruthy();
+    expect(screen.queryAllByText(/dish/i)).toHaveLength(0);
+  });
+
+  it("a restaurant keeps the drawn words", async () => {
+    primeBusiness(merchantProfile());
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("Menu")).toBeTruthy();
+    expect(screen.getByText("1 category · 1 dish")).toBeTruthy();
+    expect(screen.getByText("+ Add a dish")).toBeTruthy();
+  });
+});
+
+describe("Staff only mark items out of stock and back (merchant web upgrade L4)", () => {
+  afterEach(() => clearBusinessCache());
+
+  it("shows the list with stock toggles and none of the owner's editing", async () => {
+    primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts", myRole: "staff" }));
+    vi.mocked(listCategories).mockResolvedValue([category({ name: "Brakes" })]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ name: "Brake pads", outOfStock: false })]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("Mark items out of stock and back. Only the owner changes the items.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark out of stock" })).toBeTruthy();
+    for (const owners of ["Edit", "Edit category", "+ New category", "+ Add an item", "+ Add item here"]) {
+      expect(screen.queryByRole("button", { name: owners })).toBeNull();
+    }
+    expect(screen.queryByRole("link", { name: "Manage categories" })).toBeNull();
+    expect(screen.queryByText(/change the order/)).toBeNull();
+  });
+
+  it("an empty list offers Staff no starting categories", async () => {
+    primeBusiness(merchantProfile({ myRole: "staff" }));
+    vi.mocked(listCategories).mockResolvedValue([]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+
+    render(<MenuPage />);
+
+    expect(await screen.findByText("No dishes yet")).toBeTruthy();
+    expect(screen.getByText("The owner adds the dishes here. You'll mark them out of stock and back.")).toBeTruthy();
+    expect(screen.queryByText("+ Mains")).toBeNull();
+  });
+});
+
+describe("Out of stock for how long (merchant web upgrade L5, RM.oos_sheet)", () => {
+  it("sends the chosen duration", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(setDishOutOfStock).mockResolvedValue(dish({ outOfStock: true }));
+
+    render(<MenuPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mark out of stock" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Until I turn it back on" }));
+    const confirm = screen.getAllByRole("button", { name: "Mark out of stock" }).at(-1)!;
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(setDishOutOfStock).toHaveBeenCalledWith("d1", "until_back"));
   });
 });

@@ -67,6 +67,9 @@
   /* Buttons are full pills (mirrors packages/design/tokens/spacing.css --radius-button/--radius-pill). */
   --radius-button: 999px;
   --radius-pill: 999px;
+  /* Tap targets (mirrors packages/design/tokens/spacing.css): every control, and the one primary. */
+  --target-min: 44px;
+  --target-primary: 52px;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   /* Wordmark-only face (mirrors packages/design typography.css --font-wordmark). */
   --font-wordmark: "Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans);
@@ -96,7 +99,8 @@ button {
  * on a counter is still sometimes driven with an attached keyboard/barcode-scanner-as-keyboard. */
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -191,6 +195,66 @@ input:focus-visible {
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+}
+
+/* Merchant web upgrade L5: the drawn "Open for orders" / "Closed" pill (r-parts.jsx KitchenBar),
+ * restaurants only. */
+.kitchen-bar-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kitchen-bar-open[data-open="true"] {
+  color: var(--accent-text);
+}
+
+/* Merchant web upgrade L4: who is signed in, at the end of the bar (PersonMenu). A 44px target on a
+ * 56/52px bar; on a phone it keeps the first name and sheds the role, which the menu repeats. */
+.kitchen-bar-person-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.kitchen-bar-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target-min);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.kitchen-bar-person-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kitchen-bar-person-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  box-shadow: var(--shadow-card);
 }
 
 /* ---- Left rail / bottom bar ---------------------------------------------------------------- */
@@ -345,6 +409,31 @@ input:focus-visible {
   .kitchen-bar[data-offline="true"] .kitchen-bar-role {
     display: none;
   }
+  /* L4: on a phone the person keeps their first name and the role is in the menu it opens; the
+   * secondary "Merchant" label gives way to them, so the wordmark stays whole. Offline, the wider pill
+   * takes the name's room too, leaving the icon (a 44px target either way). */
+  .kitchen-bar[data-person="true"] .kitchen-bar-role {
+    display: none;
+  }
+  /* L5: a phone keeps the connection and the person; the open pill is the tablet's (the queue's own
+   * header says whether orders are coming in). */
+  .kitchen-bar-open {
+    display: none;
+  }
+  .kitchen-bar-person-role {
+    display: none;
+  }
+  .kitchen-bar-person {
+    padding: 0 10px;
+    min-width: var(--target-min);
+    justify-content: center;
+  }
+  .kitchen-bar-person-text {
+    max-width: 72px;
+  }
+  .kitchen-bar[data-offline="true"] .kitchen-bar-person-text {
+    display: none;
+  }
 
   .kitchen-page {
     padding: 14px 12px 20px;
@@ -434,6 +523,14 @@ input:focus-visible {
   }
 }
 
+/* L4: below the 360px phone, a first name no longer fits beside the wordmark and the connection pill.
+ * The icon stays (the name is in its label and in the menu), so the wordmark is never cut. */
+@media (max-width: 359px) {
+  .kitchen-bar-person-text {
+    display: none;
+  }
+}
+
 /* ---- Full-screen takeovers ------------------------------------------------------------------
  * A takeover is the order (or the hold) beside a decision rail. On a phone the rail drops below the
  * order instead of being squeezed: the Accept / Can't-take-it pair is what silences the alarm, so it
@@ -517,4 +614,40 @@ input:focus-visible {
 }
 .kitchen-bar-flashing {
   animation: kitchen-flash 1s ease-in-out infinite;
+}
+
+/* ============================================================================================
+ * Sign-up (`/onboarding`, merchant web upgrade L1) and a shop's pre-L2 `/setup`: the login card's
+ * shape — a white card centred on the surface — widened for a form, and edge to edge on a phone so a
+ * 320px screen keeps every pixel for the fields and the map (D-43, docs/DESIGN-DEVIATIONS.md).
+ * ============================================================================================ */
+.onboarding-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: start center;
+  padding: 32px 16px;
+  background: var(--surface);
+}
+
+.onboarding-card {
+  width: 520px;
+  max-width: 100%;
+  background: var(--bg);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 28px;
+}
+
+@media (max-width: 680px) {
+  .onboarding-screen {
+    padding: 0;
+    background: var(--bg);
+  }
+
+  .onboarding-card {
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 20px 16px 28px;
+  }
 }

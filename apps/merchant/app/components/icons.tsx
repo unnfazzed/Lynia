@@ -30,7 +30,15 @@ export type IconName =
   | "pencil"
   | "trash-2"
   | "navigation"
-  | "phone";
+  | "phone"
+  | "chevron-left"
+  | "locate"
+  | "map-pin"
+  | "package"
+  | "bike"
+  | "users"
+  | "user"
+  | "power";
 
 const PATHS: Record<IconName, string[]> = {
   inbox: [
@@ -79,6 +87,35 @@ const PATHS: Record<IconName, string[]> = {
   pencil: ["M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.36-1.33a2 2 0 0 0 .83-.5z", "m15 5 4 4"],
   "trash-2": ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", "M10 11v6", "M14 11v6"],
   navigation: ["m3 11 19-9-9 19-2-8-8-2z"],
+  // Lucide `bike`, its circles as arcs (this file draws paths only).
+  bike: [
+    "M22 17.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0",
+    "M9 17.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0",
+    "M16 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0",
+    "M12 17.5V14l-3-3 4-3 2 3h2",
+  ],
+  // Lucide `users` and `user` (Team, L4), their circles as arcs.
+  users: [
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2",
+    "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+    "M22 21v-2a4 4 0 0 0-3-3.87",
+    "M16 3.13a4 4 0 0 1 0 7.75",
+  ],
+  user: ["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"],
+  // Lucide `power` (L5: the drawn "Open for orders" pill, r-parts.jsx KitchenBar).
+  power: ["M12 2v10", "M18.4 6.6a9 9 0 1 1-12.77.04"],
+  "chevron-left": ["m15 18-6-6 6-6"],
+  locate: ["M2 12h3", "M19 12h3", "M12 2v3", "M12 19v3", "M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0"],
+  "map-pin": [
+    "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0",
+    "M15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  ],
+  package: [
+    "M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z",
+    "M12 22V12",
+    "m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7",
+    "m7.5 4.27 9 5.15",
+  ],
   phone: [
     "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.24 14 14 0 0 0 6.39 6.38",
   ],

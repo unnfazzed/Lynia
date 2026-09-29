@@ -72,6 +72,46 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merchant web upgrade L3)", () => {
+  function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }) {
+    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "mine", distanceM: 900, preferred: true })) };
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: vi.fn(async () => ({ count: 1 })) },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        merchantPreferredRider: preferred,
+        profile: {
+          findMany: async () => [
+            { id: "mine", merchantMembership: null },
+            // On the restaurant's own team: never its rider (OV-5).
+            { id: "cook", merchantMembership: { merchantId: MERCHANT_ID } },
+          ],
+        },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { create: vi.fn(async () => ({})) },
+      },
+      strategy,
+    );
+    return { svc, strategy };
+  }
+
+  it("hands the strategy the restaurant's riders, matched by phone, never its own team", async () => {
+    const { svc, strategy } = world({ findMany: async () => [{ phone: "+263771230000" }, { phone: "+263771239999" }] });
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(strategy.pickCandidate).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
+  });
+
+  it("carries on nearest-first when the lookup fails", async () => {
+    const { svc, strategy } = world({
+      findMany: async () => {
+        throw new Error("connection reset");
+      },
+    });
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(strategy.pickCandidate).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
+  });
+});
+
 describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
   it("offers the nearest candidate on the first attempt and logs a FoodDispatchAttempt row", async () => {
     const attemptCreate = vi.fn(async () => ({}));

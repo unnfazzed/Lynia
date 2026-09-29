@@ -8,6 +8,8 @@ import { useWakeLock } from "./use-wake-lock";
 import { API_BASE_URL } from "../lib/config";
 import { createMerchantQueueSocket } from "../lib/queue-socket";
 import { getReachabilityStore, type ReachabilityState } from "../lib/reachability";
+import { onMembershipLost } from "../lib/api-client";
+import { clearBusinessCache, hasKnownBusiness } from "../lib/business";
 import { clearMerchantSession, loadMerchantSession, type MerchantSession } from "../lib/session";
 
 export interface KitchenConnectionValue {
@@ -140,9 +142,24 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   const signOut = useCallback(() => {
     clearMerchantSession();
+    clearBusinessCache();
     setSession(null);
     router.replace("/login");
   }, [router]);
+
+  // Merchant web upgrade L4 (Team): someone the owner removed signs out on their next tap and their
+  // device's order alarm stops, so a shared counter tablet goes back to "Sign in" for the next person.
+  // Only for a person this tab knew as a member: a number that never had a business is sent to "Set up
+  // your business" by the screen that asked.
+  useEffect(
+    () =>
+      onMembershipLost(() => {
+        if (!hasKnownBusiness()) return;
+        getAlarmController().stop();
+        signOut();
+      }),
+    [signOut],
+  );
 
   // Memoized so a re-render that doesn't touch alarm/session/reachability/wakeLock state (e.g. a
   // parent re-render) doesn't hand every context consumer — KitchenBar, ReconnectBanner, the queue

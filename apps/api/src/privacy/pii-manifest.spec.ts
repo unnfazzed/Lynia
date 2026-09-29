@@ -38,6 +38,8 @@ const PII_NAME_PATTERNS: RegExp[] = [
   /(^|_)description$/,
   /position_updated_at/,
   /(first|last)_name/,
+  // Merchant web upgrade L4: the name a business knows a person by (team rows, invites).
+  /(^|_)display_name$/,
   /(^|_)bike_reg$/,
   /vehicle_info/,
   /suspend_reason/,
@@ -108,6 +110,8 @@ describe("PII erasure manifest — schema coverage (Class-C write-time guard)", 
     expect(piiColumns).toContain("reports.note");
     // DS18-01 regression: the object-KEY media column is now caught (the `_url`-only pattern missed it).
     expect(piiColumns).toContain("orders.pickup_photo_key");
+    // L4: a team row's name is scanned as personal data.
+    expect(piiColumns).toContain("merchant_members.display_name");
   });
 });
 
@@ -117,6 +121,10 @@ describe("PII erasure manifest — eraseAccount references every scrub (reverse 
     address_store: "address.deleteMany",
     device_token_store: "deviceToken.deleteMany",
     session_store: "session.deleteMany",
+    preferred_rider_store: "merchantPreferredRider.deleteMany",
+    merchant_invite_store: "merchantInvite.deleteMany",
+    merchant_invite_name: "merchantInvite.deleteMany",
+    merchant_member_name: "merchantMember.deleteMany",
     "kyc-object": "deleteObject",
   };
 

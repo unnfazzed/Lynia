@@ -41,6 +41,13 @@ import { FoodDebtService } from "../merchant/food-debt.service";
 import { FoodDispatchService } from "../merchant/food-dispatch.service";
 import { FoodOrderController } from "../merchant/food-order.controller";
 import { FoodOrderService } from "../merchant/food-order.service";
+import { MerchantBookingController } from "../merchant/merchant-booking.controller";
+import { MerchantBookingService } from "../merchant/merchant-booking.service";
+import { MerchantRidersController } from "../merchant/merchant-riders.controller";
+import { MerchantRidersService } from "../merchant/merchant-riders.service";
+import { MerchantInvitesService } from "../merchant/merchant-invites.service";
+import { MerchantInvitesController, MerchantTeamController } from "../merchant/merchant-team.controller";
+import { MerchantTeamService } from "../merchant/merchant-team.service";
 import { MerchantController } from "../merchant/merchant.controller";
 import { MerchantGuard } from "../merchant/merchant.guard";
 import { MerchantOrderController } from "../merchant/merchant-order.controller";
@@ -85,12 +92,17 @@ Reflect.defineMetadata("design:paramtypes", [MerchantService], RestaurantsContro
 Reflect.defineMetadata("design:paramtypes", [Object], RestaurantsEnabledGuard);
 Reflect.defineMetadata("design:paramtypes", [PrismaService, Reflector], MerchantGuard);
 
-/** L1: MerchantGuard reads `merchant_members`. "member-1" works at m1 (with a CUSTOMER role claim — the
- *  claim is no longer read); every other profile is on no business. No legacy owners. */
+/** L1: MerchantGuard reads `merchant_members`. "member-1" owns m1 and "staff-1" works there as staff (both
+ *  with a CUSTOMER role claim — the claim is no longer read); every other profile is on no business. No
+ *  legacy owners. */
 const prismaStub = {
   merchantMember: {
     findUnique: async ({ where }: { where: { profileId: string } }) =>
-      where.profileId === "member-1" ? { merchantId: "m1", role: "owner", merchant: { businessType: "restaurant" } } : null,
+      where.profileId === "member-1"
+        ? { merchantId: "m1", role: "owner", merchant: { businessType: "restaurant" } }
+        : where.profileId === "staff-1"
+          ? { merchantId: "m1", role: "staff", merchant: { businessType: "restaurant" } }
+          : null,
   },
   merchant: { findFirst: async () => null },
 };
@@ -101,6 +113,11 @@ const prismaStub = {
 // an unexercised param, since a 3-arg constructor with a 1-entry paramtypes array is fragile.
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDebtService], FoodOrderController);
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDispatchService, FoodDebtService], MerchantOrderController);
+// Merchant web upgrade L2: Book a rider, same patch shape. L3: Your riders. L4: Team (both sides).
+Reflect.defineMetadata("design:paramtypes", [MerchantBookingService], MerchantBookingController);
+Reflect.defineMetadata("design:paramtypes", [MerchantRidersService], MerchantRidersController);
+Reflect.defineMetadata("design:paramtypes", [MerchantTeamService], MerchantTeamController);
+Reflect.defineMetadata("design:paramtypes", [MerchantInvitesService], MerchantInvitesController);
 
 const healthService = { check: async () => ({ status: "ok", db: true, redis: true, provider: "test" }) };
 
@@ -126,6 +143,8 @@ const merchantServiceStub = {
     myRole: "owner",
   }),
   listRestaurants: async () => ({ restaurants: [] }),
+  // L5: echoes the duration it was given, so the leg below can see what reached the service.
+  setDishOutOfStock: async (_profileId: string, id: string, forHowLong?: string) => ({ id, forHowLong: forHowLong ?? null }),
 };
 
 /** C2: never reached by the flags-off/no-auth/wrong-role legs, same shape as merchantServiceStub —
@@ -140,6 +159,20 @@ const foodOrderServiceStub = {
 // pulling in TrackingGateway/NotificationsService/etc, except getOfferForRider (C5 rider offer
 // alarm channel poll fallback), which one golden-matrix leg below DOES call through.
 const foodDispatchServiceStub = { getOfferForRider: async () => null };
+/** L2: only the member leg below calls through. */
+const merchantBookingServiceStub = { list: async () => [] };
+/** L3: only the member and owner legs below call through. */
+const merchantRidersServiceStub = {
+  list: async () => ({ riders: [], cap: 20 }),
+  add: async () => ({ id: "r1" }),
+};
+/** L4: only the owner, staff-leave and invitee legs below call through. */
+const merchantTeamServiceStub = {
+  team: async () => ({ members: [], invites: [] }),
+  invite: async () => ({ id: "i1" }),
+  leave: async () => ({ ok: true }),
+};
+const merchantInvitesServiceStub = { mine: async () => ({ invites: [] }) };
 const foodDebtServiceStub = {};
 
 /** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
@@ -148,7 +181,16 @@ const foodDebtServiceStub = {};
 async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplication> {
   const env = { ...TEST_ENV, ...envOverrides } as Env;
   @Module({
-    controllers: [MerchantController, RestaurantsController, FoodOrderController, MerchantOrderController],
+    controllers: [
+      MerchantController,
+      RestaurantsController,
+      FoodOrderController,
+      MerchantOrderController,
+      MerchantBookingController,
+      MerchantRidersController,
+      MerchantTeamController,
+      MerchantInvitesController,
+    ],
     providers: [
       { provide: ENV, useValue: env },
       { provide: PrismaService, useValue: prismaStub },
@@ -160,6 +202,10 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       { provide: FoodOrderService, useValue: foodOrderServiceStub },
       { provide: FoodDispatchService, useValue: foodDispatchServiceStub },
       { provide: FoodDebtService, useValue: foodDebtServiceStub },
+      { provide: MerchantBookingService, useValue: merchantBookingServiceStub },
+      { provide: MerchantRidersService, useValue: merchantRidersServiceStub },
+      { provide: MerchantTeamService, useValue: merchantTeamServiceStub },
+      { provide: MerchantInvitesService, useValue: merchantInvitesServiceStub },
     ],
   })
   class MerchantTestModule {}
@@ -214,8 +260,12 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
     // assertion below is what actually matters.
     expect(merchantDomainControllers.map((c) => c.name).sort()).toEqual([
       "FoodOrderController",
+      "MerchantBookingController",
       "MerchantController",
+      "MerchantInvitesController",
       "MerchantOrderController",
+      "MerchantRidersController",
+      "MerchantTeamController",
       "RestaurantsController",
     ]);
 
@@ -237,6 +287,12 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "/merchant/orders",
       "/restaurants/orders/11111111-1111-1111-1111-111111111111",
       "/merchant/orders/dispatch/offer",
+      // Merchant web upgrade L2: the kill switch stops shop bookings too (plan §11 F1.4, CEO-4). L3: riders.
+      // L4: the team, and the invites waiting for a number.
+      "/merchant/bookings",
+      "/merchant/riders",
+      "/merchant/team",
+      "/merchant/invites",
     ]) {
       const res = await request(app.getHttpServer()).get(path); // no Authorization header at all
       expect(res.status, `${path} must be dead (503) while RESTAURANTS_ENABLED is unset`).toBe(503);
@@ -299,6 +355,89 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
         .set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body.id).toBe("o1");
+    });
+
+    it("L2: /merchant/bookings needs membership — no auth 401, not a member 403, member 200", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/bookings");
+      expect(noAuth.status).toBe(401);
+      const notMember = await request(app.getHttpServer()).get("/merchant/bookings").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      expect(notMember.body.reason).toBe("not_a_member");
+      const asMember = await request(app.getHttpServer()).get("/merchant/bookings").set("Authorization", bearer("member-1", "customer"));
+      expect(asMember.status).toBe(200);
+      expect(asMember.body).toEqual([]);
+    });
+
+    it("L3: /merchant/riders — the team reads it, only the owner changes it", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/riders");
+      expect(noAuth.status).toBe(401);
+      const notMember = await request(app.getHttpServer()).get("/merchant/riders").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      const staffRead = await request(app.getHttpServer()).get("/merchant/riders").set("Authorization", bearer("staff-1", "customer"));
+      expect(staffRead.status).toBe(200);
+      expect(staffRead.body).toEqual({ riders: [], cap: 20 });
+      const body = { label: "Blessing", phone: "0772223333" };
+      const staffAdd = await request(app.getHttpServer()).post("/merchant/riders").set("Authorization", bearer("staff-1", "customer")).send(body);
+      expect(staffAdd.status).toBe(403);
+      expect(staffAdd.body.reason).toBe("owner_only");
+      const ownerAdd = await request(app.getHttpServer()).post("/merchant/riders").set("Authorization", bearer("member-1", "customer")).send(body);
+      expect(ownerAdd.status).toBe(201);
+    });
+
+    it("L4: /merchant/team is the owner's; staff may only leave", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/team");
+      expect(noAuth.status).toBe(401);
+      const notMember = await request(app.getHttpServer()).get("/merchant/team").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      expect(notMember.body.reason).toBe("not_a_member");
+      const staffRead = await request(app.getHttpServer()).get("/merchant/team").set("Authorization", bearer("staff-1", "customer"));
+      expect(staffRead.status).toBe(403);
+      expect(staffRead.body.reason).toBe("owner_only");
+      const body = { name: "Chipo", phone: "0773000003" };
+      const staffInvite = await request(app.getHttpServer()).post("/merchant/team/invites").set("Authorization", bearer("staff-1", "customer")).send(body);
+      expect(staffInvite.status).toBe(403);
+      expect(staffInvite.body.reason).toBe("owner_only");
+      const staffRemove = await request(app.getHttpServer())
+        .delete("/merchant/team/members/11111111-1111-4111-8111-111111111111")
+        .set("Authorization", bearer("staff-1", "customer"));
+      expect(staffRemove.status).toBe(403);
+      const staffCancel = await request(app.getHttpServer())
+        .delete("/merchant/team/invites/11111111-1111-4111-8111-111111111111")
+        .set("Authorization", bearer("staff-1", "customer"));
+      expect(staffCancel.status).toBe(403);
+      const ownerRead = await request(app.getHttpServer()).get("/merchant/team").set("Authorization", bearer("member-1", "customer"));
+      expect(ownerRead.status).toBe(200);
+      expect(ownerRead.body).toEqual({ members: [], invites: [] });
+      const ownerInvite = await request(app.getHttpServer()).post("/merchant/team/invites").set("Authorization", bearer("member-1", "customer")).send(body);
+      expect(ownerInvite.status).toBe(201);
+      const staffLeave = await request(app.getHttpServer()).post("/merchant/team/leave").set("Authorization", bearer("staff-1", "customer"));
+      expect(staffLeave.status).toBe(200);
+    });
+
+    it("L5: Staff mark a dish out of stock for how long they choose; no body still means the rest of today", async () => {
+      const path = "/merchant/dishes/11111111-1111-4111-8111-111111111111/out-of-stock";
+      const noBody = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer"));
+      expect(noBody.status).toBe(201);
+      expect(noBody.body.forHowLong).toBeNull();
+      const hour = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer")).send({ for: "one_hour" });
+      expect(hour.status).toBe(201);
+      expect(hour.body.forHowLong).toBe("one_hour");
+      const bad = await request(app.getHttpServer()).post(path).set("Authorization", bearer("staff-1", "customer")).send({ for: "forever" });
+      expect(bad.status).toBe(400);
+    });
+
+    it("L4: /merchant/invites is for a number on no business yet — any signed-in caller, no MerchantGuard", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/invites");
+      expect(noAuth.status).toBe(401);
+      const res = await request(app.getHttpServer()).get("/merchant/invites").set("Authorization", bearer("p1", "customer"));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ invites: [] });
+      // Join needs the one-tap terms line.
+      const noTerms = await request(app.getHttpServer())
+        .post("/merchant/invites/11111111-1111-4111-8111-111111111111/join")
+        .set("Authorization", bearer("p1", "customer"))
+        .send({ name: "Chipo" });
+      expect(noTerms.status).toBe(400);
     });
 
     it("C5: /merchant/orders/dispatch/offer is a rider action — no MerchantGuard, any authenticated caller gets 200", async () => {

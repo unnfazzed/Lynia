@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { compressImage, type CropRect } from "../../lib/image-compress";
 import { mintBannerPhotoUpload, mintDishPhotoUpload, uploadPhotoBlob } from "../../lib/menu-api";
+import { useVocabulary } from "../../lib/vocabulary";
 import { ghostButtonStyle } from "../queue/styles";
 import { PhotoCropSheet } from "./PhotoCropSheet";
 
@@ -48,6 +49,7 @@ export function PhotoPicker({
   disabled?: boolean;
   onUploaded: (key: string) => void;
 }) {
+  const v = useVocabulary();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cropping, setCropping] = useState<File | null>(null);
@@ -116,7 +118,7 @@ export function PhotoPicker({
           <img src={showUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
           <span style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "center" }}>
-            {kind === "dish" ? "dish photo · 1:1" : kind === "logo" ? "logo · 1:1" : "cover banner · 1200×400"}
+            {kind === "dish" ? `${v.item} photo · 1:1` : kind === "logo" ? "logo · 1:1" : "cover banner · 1200×400"}
           </span>
         )}
       </div>

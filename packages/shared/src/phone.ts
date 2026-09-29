@@ -115,3 +115,22 @@ export function formatPhoneDisplay(raw: string, countryCode: string = DEFAULT_CO
   }
   return e164;
 }
+
+/**
+ * Merchant web upgrade L2 (plan 2026-09-29 D9): each business books riders on the Send rails through
+ * one **booking account** — a customer profile that stands for the business. Its `phone` holds
+ * `business:<merchantId>`, the same non-dialable convention erased accounts use (`erased:<profileId>`).
+ * Sign-in looks a profile up by the E.164 number `normalizePhone` produces, which never starts with a
+ * letter, so nobody can sign in to a booking account.
+ */
+export const BUSINESS_BOOKING_ACCOUNT_PREFIX = "business:";
+
+/** The booking account's `phone` for a business. */
+export function businessBookingAccountPhone(merchantId: string): string {
+  return `${BUSINESS_BOOKING_ACCOUNT_PREFIX}${merchantId}`;
+}
+
+/** True for a booking account's `phone` — admin views label it "Business" and leave it out of customer lists. */
+export function isBusinessBookingAccountPhone(phone: string | null | undefined): boolean {
+  return typeof phone === "string" && phone.startsWith(BUSINESS_BOOKING_ACCOUNT_PREFIX);
+}

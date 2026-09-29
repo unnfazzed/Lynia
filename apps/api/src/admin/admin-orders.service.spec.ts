@@ -161,6 +161,20 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     expect(d.riderPhone).toBe("+263782000001");
   });
 
+  it("merchant web upgrade L2 (OV-9): a business's booking reads as the business, on its pickup contact phone", async () => {
+    const live = baseOrder({
+      events: [{ status: "en_route_dropoff", createdAt: new Date(Date.now() - 60000) }],
+      customer: { firstName: "Mbare Auto Spares", lastName: "", phone: "business:m1" },
+      pickup: { landmark: "Mbare Musika, stall 14", contactPhone: "+263773334444" },
+    });
+    const d = (await new AdminOrdersService(detailPrisma(live) as unknown as PrismaService).getOrderDetail("o1"))!;
+    expect(d.customer).toBe("Business: Mbare Auto Spares");
+    expect(d.customerPhone).toBe("+263773334444");
+
+    const closed = (await new AdminOrdersService(detailPrisma({ ...live, status: "cancelled" }) as unknown as PrismaService).getOrderDetail("o1"))!;
+    expect(closed.customerPhone).toBe("+263•••••4444");
+  });
+
   it("MASKS both phones once the order is terminal (outside the reveal window, A-03)", async () => {
     const prisma = detailPrisma(baseOrder({ status: "cancelled" }));
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);

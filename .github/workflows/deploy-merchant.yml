@@ -108,6 +108,7 @@ jobs:
           docker buildx build \
             -f apps/merchant/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL="${{ vars.MERCHANT_API_BASE_URL }}" \
+            --build-arg NEXT_PUBLIC_SUPPORT_WHATSAPP="${{ vars.MERCHANT_SUPPORT_WHATSAPP }}" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
             --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true" \
             -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" \

@@ -12,9 +12,13 @@ Status key: **APPROVED** (user-approved, keep) · **OPEN** (needs the user's dec
 **RESOLVED** (decided in the mock's favour — not a deviation, an app defect to fix) · **RETIRED**
 (the kit absorbed it; align to the mock, nothing special to do) · **PENDING** (decided, but not yet in
 effect — see the entry for what is blocking) · **UPSTREAM** (a defect in the kit; the app is right, to
-be reported back to Design).
+be reported back to Design) · **PROPOSED** (built in an open PR that waits on the owner's approval of its
+screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
+merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42.** D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47.** D-43 to D-47 are the
+merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
+restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
 decision — the mocks were not re-exported as part of it, so it stands as a ledgered app-side divergence
 until they are. D-39 was authored by
@@ -1940,3 +1944,228 @@ headers), `robots.txt` and `sitemap.xml`.
 
 **Retire when:** the Play listing is public (then add the link edits), the About copy arrives (then
 add `/about`), or a terms page exists. Each of these updates this entry and `LAUNCH_EDITS` together.
+
+## D-43 · Merchant web: self-serve sign-up, "Sign in", and the type-aware `/setup` — APPROVED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"upgrade the merchant web side. It needs to enable both restaurants
+and shops … simple for informal businesses in Zimbabwe … log in is by mobile number and whatsapp otp."*
+The product spec is `docs/designs/merchant-web-upgrade.md` (L1, "Front door"); the plan is
+`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` (§10 lists this entry). **No RM mock draws sign-up,
+business type or shops**, so these screens are built from RM primitives and ledgered here. The entry was
+PROPOSED until the owner approved the web PR and its screenshot sheet (OV-11); **the owner approved it on
+2026-09-29 with PR #986**. Nothing in
+`packages/design/**` changes. **Upstream ask:** real mocks for sign-up and the shop checklist.
+
+### 1 · Undrawn screens
+
+Built at the merchant's 1024×680 and the D-32 phone tier, with the 320px check. Tokens only, targets
+≥ `--target-min`, one 52px (`--target-primary`) primary per step.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Set up your business, step 1:** "What do you sell?" Restaurant or Shop; a shop picks one of eight kinds; a pharmacy sees "Over-the-counter products only for now."; "You can't switch between restaurant and shop later." | `/onboarding` | The `RM.login` card (brand lockup, 22/800 title, 13.5 muted sub-line), the option-row pattern from `RM.oos_sheet`, pill chips |
+| **Step 2, "Your business":** your name, business name, the map pin, a landmark, the contact phone, and the one-tap privacy line | `/onboarding` | The same card; `RM.login`'s 52px inputs; an OpenStreetMap pin that stays centred while the map is dragged, with zoom ± and "Use my location" |
+| **A shop's `/setup`:** the pin (done at sign-up), "Book your first rider" and "Add your items" (both "Coming soon" until L2), and "Customers will find you when LyniaGo Shops opens. We'll check your items first." | `/setup` | `RM.setup`'s checklist card inside the login card's frame, not the kitchen shell (a shop has no Orders board and no alarm; its own nav lands in L2). **From L2 (D-44)** it sits inside the shop's own shell and both steps go live |
+
+### 2 · Copy changes on drawn screens (structure untouched)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `RM.login` title | "Kitchen sign-in" | "Sign in" | Shops use this screen too |
+| `RM.login` code line | "Enter the code we sent to +263 77 •• •• 302." | "Enter the code we sent to your WhatsApp on {phone}." when the API's `deliveryChannel` is `whatsapp`; the drawn line otherwise | D-40's dynamic channel copy, extended to the merchant web |
+| `RM.login` phone step (undrawn step of a drawn screen) | — | "Enter your phone number. We'll send you a 6-digit code." (was "Enter the phone number for this kitchen.") | Channel-neutral before the send, and not kitchen-only |
+| `RM.login` error (undrawn) | — | On the API's `device_signup_cap` 429: "This device has added 3 new people today. Sign in on your own phone, or try tomorrow." | Says what to do on a shared counter device |
+| `RM.setup` not-live line | "You go live once payment numbers and the alarm test are done." | "Finish this list and LyniaGo will call you within a day to switch you on. It isn't automatic." (was the app's "Finish this list, then LyniaGo switches your shop on …") | Names who switches a restaurant on, and when: ops calls within one business day (`docs/MERCHANT-GO-LIVE-RUNBOOK.md`) |
+
+`RM.login` keeps its code boxes, the alarm notice and "Sign in & start the alarm". `RM.setup`'s restaurant
+checklist is unchanged.
+
+### 3 · Specified in the design doc, not built yet
+
+- "Work at a business that's already on LyniaGo? Ask the owner to add you in Team." lands with Team (L4).
+  Until then, step 1 ends with "Wrong number? Sign out".
+- The restaurant go-live card's "Message LyniaGo on WhatsApp" button lands with Help (L5), which needs
+  the same support number. The merchant web has none configured today (the mobile app's
+  `EXPO_PUBLIC_SUPPORT_WHATSAPP` is unset too). L2 builds the plumbing (`NEXT_PUBLIC_SUPPORT_WHATSAPP`,
+  from the `MERCHANT_SUPPORT_WHATSAPP` repository variable); it stays hidden until the owner sets it.
+- The privacy line names only the privacy notice. No merchant terms text exists yet; the design doc calls
+  it a dependency (`TODOS.md`).
+
+**Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
+the app changes).
+
+## D-44 · Merchant web: Book a rider, the shop's own shell, and shop words — APPROVED (2026-09-29)
+
+**Owner instruction (2026-09-29):** the merchant web serves restaurants and shops, simply, for informal
+businesses (D-43 quotes it). L2 of `docs/designs/merchant-web-upgrade.md` ("Book a rider (shops and
+restaurants), plus the shop shell") and plan §10 list this entry. **No RM mock draws booking a rider, a
+shop's navigation or a shop's words**, so these are built from RM primitives and ledgered here. **The owner
+approved it on 2026-09-29 with PR #986** and its screenshot sheet (`docs/parity/MERCHANT-L2-D44-2026-09-29.png`,
+OV-11). Nothing in `packages/design/**` changes. **Upstream ask:** real mocks for Deliveries, the booking
+form, the pick screen and the shop nav.
+
+Book a rider appears only once the API serves it: `GET /merchant/me` carries `location` from L2 on, and
+the web shows nothing new until it does, whichever of the two deploys first.
+
+### 1 · Undrawn screens
+
+Built at the merchant's 1024×680 and the D-32 phone tier, with the 320px check. Tokens only, targets
+≥ `--target-min`, one 52px (`--target-primary`) primary per screen. Status is never colour alone: every
+state pill carries its words.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Deliveries:** "Live now", then "Earlier"; each booking a card with its state pill, the countdown and offer count while finding a rider, the fare, what's going, where, the rider and "Booked by …"; "Book your first rider" when empty; "Booking riders is on its way." on an API that can't book yet; Sign out for a shop (its home) | `/deliveries` | `RM.queue`'s order card, its tag shape and the accept timer's countdown grammar |
+| **Book a rider:** paste the location the buyer sent (a Google Maps link, short ones read by the API; a WhatsApp location; `geo:`; "lat, lng") or drag the pin; what the rider looks for; the buyer's phone; what's going; what it's worth (up to $150); the fare (Send's suggestion until typed over: "Suggested fare $x. Riders may offer a different fare; you pay the rider you pick, in cash at pickup."); a note; Send's three liability lines, "No prescription medicine, weapons, drugs or cash." (+ "Over-the-counter items only." for a pharmacy) and "No cash-on-delivery …"; "I understand and agree."; "Find a rider" | `/deliveries/new` | `RM.login`'s 52px inputs, L1's `LocationPin` (OpenStreetMap), `RM.setup`'s card |
+| **One booking:** the 90-second countdown with each rider's offer (Pick; a teammate's offer disabled, "On your team, so they can't take your own delivery."); the delivery code, large, with "Send the code to the buyer on WhatsApp", Copy code and Send a new code; the rider with Call rider and "Pay $x in cash at pickup"; Picked up (no cancel, "message LyniaGo"); Delivered; Not delivered (the reason, Call rider); Cancelled (by the rider: follow the booking LyniaGo re-sent; by the business or the LyniaGo team, with its reason); No rider picked in time and the business's own cancel, with Try again and its fare | `/deliveries/[id]` | the same cards; the offer row follows the rider app's offer list |
+
+### 2 · On drawn screens
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `RM.queue` (Orders), restaurants | no booking control | A strip under the heading: "A phone order to deliver? Book a LyniaGo rider." with "Book a rider", or "N bookings live · View" while any is live | R2-12: restaurants book riders for phone orders; no new nav item |
+| `KitchenNav`, shops | Orders · Menu · Shop · Hours · Statement | Deliveries · Items · Shop · Help (Help opens WhatsApp support, and hides while no number is set) | A shop takes no customer orders, so its home is Deliveries (design doc L5 "Navigation"). Restaurants keep the drawn nav |
+| `RM.setup`, shops | (D-43) | Inside the shop's shell. "Book your first rider" → the booking form, ticked by the first booking; "Add your items" → Items, ticked by the first item | Each step goes live with its layer |
+| `RM.shop` (M5), shops | "How riders pay you" | Not shown | It's the rule for customers' cash orders, and shops take none yet (L1.5) |
+
+### 3 · Shop words on drawn screens (restaurants unchanged)
+
+`apps/merchant/app/lib/vocabulary.ts` (plan D6) owns every word that differs. Each swap, restaurant → shop:
+
+| Screen | Restaurant (drawn) | Shop |
+|---|---|---|
+| Nav, `RM.catalog` title | Menu | Items |
+| `RM.catalog` loading / error | Loading your menu… / Couldn't load your menu. | Loading your items… / Couldn't load your items. |
+| `RM.catalog_empty` | "Dishes live inside categories — Mains, Sides, Drinks, whatever fits your kitchen. Create one and you can add dishes straight into it." | "Items live inside categories — {first three starters}, whatever fits your shop. Create one and you can add items straight into it." |
+| `RM.catalog_empty` chips | Mains · Sides · Drinks · Breakfast | Per kind. Pharmacy: Pain relief · Cold & flu · Vitamins · Personal care. Grocery: Groceries · Drinks · Household · Snacks. Butchery: Beef · Chicken · Pork · Braai packs. Clothes & shoes: Women · Men · Kids · Shoes. Car parts: Engine · Brakes · Electrical · Tyres. Hardware: Building · Plumbing · Electrical · Tools. Phones & electronics: Phones · Accessories · Chargers · Audio. Something else: Popular · New in · Specials · Other |
+| `RM.catalog`, `RM.category_manage` counts | N dish / dishes | N item / items |
+| `RM.catalog` | + Add a dish · + Add dish here · No dishes yet. · "…every dish needs one photo before it goes live." · "…as the tabs on your menu" | + Add an item · + Add item here · No items yet. · "…every item needs one photo…" · "…as the tabs in your shop" |
+| `RM.item_edit` | Add a dish / Edit dish · Delete dish · DISH PHOTO · "Every dish needs one photo before it goes live — dishes with photos are ordered about twice as often. Pick the file from this tablet; we shrink it for you." | Add an item / Edit item · Delete item · ITEM PHOTO · "Every item needs one photo before customers see it. Pick the file from this device; we shrink it for you." (the "twice as often" claim is about dishes) |
+| `RM.category_edit` / `RM.category_rename` | "Customers see this name as a tab on your menu. Keep it short — “Breakfast”, “Combos”, “Kids”." · "…dishes inside it…" · "Hidden — customers don't see it or its dishes" | "Customers see this name as a tab in your shop. Keep it short — {first three starters}." · "…items inside it…" · "…or its items" |
+| `RM.category_manage` | "…the tabs on your menu…" · Back to the menu · "…your dishes get somewhere to live." · "…your menu has no tabs right now." · "A hidden category and its dishes…" | "…the tabs in your shop…" · Back to your items · "…your items…" · "…your shop has no tabs…" · "…its items…" |
+| `RM.dish_photo` | Position the dish photo · "Square crop. Fill the frame with the food, not the table." · HOW IT LOOKS ON THE MENU · This dish / Another dish · "How the photo reads at menu size" · "One clear daylight shot per dish is enough." · dish photo · 1:1 | Position the item photo · "…with the item, not the table." · HOW IT LOOKS IN YOUR SHOP · This item / Another item · "…at list size" · "…per item…" · item photo · 1:1 |
+| `RM.shop` | WHAT YOU COOK · "This is your shop front. Changes go live straight away." · "A real photo of your food beats a logo on the banner. …" | WHAT YOU SELL · "This is your shop front. Customers will see it when LyniaGo Shops opens." · "A real photo of your shop beats a logo on the banner. …" |
+
+### 4 · Specified in the design doc, not built yet
+
+- Riders (L3) and Team (L4) in the shop nav and inside Shop.
+- The top bar's business name and who is signed in, restaurant Help, the out-of-stock sheet's three
+  options, and shop words on the screens a shop doesn't use (the reconnect banner's "you are not
+  receiving orders", Hours, Statement) land with L5.
+- Web Push and a merchant socket feed for bookings (Phase 2); the pick screen polls.
+
+**Retire when:** a design export draws these screens (then align to it), or the owner rejects a row (then
+the app changes).
+
+## D-45 · Merchant web: Your riders — APPROVED (2026-09-29)
+
+**Owner instruction (2026-09-29, the design review revision):** *"merchants have their preferred bikers ..
+they have to put them on the platform by their phone numbers used to sign in to the platform. Can do a
+section where they can manage these riders .. the ranking mechanism will tag them preferred and depending on
+various factors rank them higher."* Spec: `docs/designs/merchant-web-upgrade.md` L3; plan §10 lists this
+entry. **No RM mock draws a riders list, a rider's status or a "Your rider" tag**, so these are built from RM
+primitives and ledgered here. **The owner approved it on 2026-09-29 with PR #986** and its
+screenshot sheet (`docs/parity/MERCHANT-L3-D45-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+ask:** a real mock for the riders list.
+
+### 1 · Undrawn screens
+
+Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, targets ≥ `--target-min`.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Your riders:** "N of 20"; the owner's "Add a rider" (their name, the number they sign in to LyniaGo with); each rider's label, masked number, status pill (On LyniaGo · Not on LyniaGo yet · Can't take jobs right now, never why), their LyniaGo name and "12 deliveries for you · ★ 4.9" only after a job; "Send the sign-up link on WhatsApp" for a number not on LyniaGo yet; Remove with an inline confirm; "Only the owner can add or remove riders." for staff; "No riders yet"; "Your riders is on its way." on an API before L3 | `/riders` | `RM.setup`'s cards, the booking form's inputs, the state-pill shape from D-44 |
+
+### 2 · On drawn and D-44 screens
+
+| Where | Mock / D-44 | App | Why |
+|---|---|---|---|
+| `KitchenNav`, shops (D-44) | Deliveries · Items · Shop · Help | Deliveries · **Riders** · Items · Shop · Help | Design doc L3: a nav item for shops, next to Deliveries |
+| `RM.shop` (M5), restaurants | ends with How riders pay you | a "Your riders" card after it, with "Manage riders" | Design doc L3: for restaurants Riders sits inside Shop, so the drawn nav stays as it is |
+| The pick screen (D-44) | offers in the API's order | ordered by `rankOffers` with the preferred bonus (a teammate's unpickable offer last), and a **"Your rider"** tag | Design doc L3 "How preferred ranks" |
+| A shop's `/setup` (D-43/D-44) | pin, booking, items | + "Add your riders", tagged **Optional** and never counted | Design doc "A shop's /setup checklist" item 3 |
+
+### 3 · Specified, not built yet
+
+- The rider-side notice and opt-out ("{Business} calls you their rider") are a Phase 2 mobile release
+  (TODO-3); v1 changes nothing in the rider app.
+- Reach beyond Send's broadcast radius for a business's own riders is a later, Send-side change (TODO-6).
+
+**Retire when:** a design export draws the riders list (then align to it), or the owner rejects a row (then
+the app changes).
+
+## D-46 · Merchant web: Team, Join, who is signed in, and the Staff views — APPROVED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"They can add multiple users to log into same shop."* Spec:
+`docs/designs/merchant-web-upgrade.md` L4 ("Team"), with its one permission table; plan §10 lists this entry.
+**No RM mock draws a team, an invite, a Join screen, who is signed in, or a Staff view**, so these are built
+from RM primitives and the in-repo wireframe (`docs/designs/merchant-web-upgrade-wireframe.png`, screen 3), and
+ledgered here. **The owner approved it on 2026-09-29 with PR #986** and its
+screenshot sheet (`docs/parity/MERCHANT-L4-D46-2026-09-29.png`, OV-11). Nothing in `packages/design/**` changes. **Upstream
+ask:** real mocks for Team, Join and the top bar's signed-in person.
+
+### 1 · Undrawn screens
+
+Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, targets ≥ `--target-min`.
+
+| Screen | Route | Built from |
+|---|---|---|
+| **Team** (owner only, inside Shop): "‹ Shop", "Team", what Staff do in the business's words; each person's name, masked number ("· you" on the owner's own row) and an Owner / Staff tag; each pending invite's "invited, hasn't joined yet", an **Invited** tag, "Send the link on WhatsApp" and "Cancel invite"; "Add someone" → their name, their phone number, Invite → "Invite ready. Send them the link on WhatsApp."; Remove with an inline confirm that warns "If {name} is signed in on the counter tablet, sign it in again with someone else."; "Only the owner can see and change the team." for Staff; "Team is on its way." on an API before L4 | `/team` | the wireframe's screen 3, D-45's list rows, cards and inputs |
+| **Join:** "{Owner} added you to {Business} as Staff." per invite; "Your name" (the invite's, to confirm or correct) and the sign-up's own one-tap privacy line; "Join {Business}" / "Not me"; "Set up my own business instead"; "Wrong number? Sign out" | `/join` | D-43's sign-up card and its privacy line |
+
+### 2 · On drawn and earlier-ledgered screens
+
+| Where | Mock / earlier | App | Why |
+|---|---|---|---|
+| `KitchenBar` (RM, all screens) | brand · "Merchant" · Connected · (D-32 dropped the alarm pill) | + who is signed in at the end, "Tendai · Staff", which opens "Switch person" and, for Staff, "Leave this business". At phone width the first name only, and the secondary label ("Merchant"; the business's name from L5, D-47) gives way to it; below 360px (and offline) the icon alone, the name in its menu, so the wordmark is never cut | Design doc L4 "Shared devices": everyone signs in with their own code, and a shared tablet says whose it is |
+| `KitchenNav`, restaurant Staff | Orders · Menu · Shop · Hours · Statement | Orders · Menu · Hours · Help | The permission table: Shop and Statement are the owner's; Help opens support's WhatsApp (hidden when unset) |
+| `KitchenNav`, shop Staff (D-44/D-45) | Deliveries · Riders · Items · Shop · Help | Deliveries · Riders · Items · Help | The permission table |
+| `RM.catalog` (M4·1) and Items (D-44), Staff | the owner's list with Edit, add and category controls | the list with "Mark out of stock" / "Back in stock" only, and "Mark items out of stock and back. Only the owner changes the items." under the title; an empty list says "The owner adds the dishes here." | The permission table: stock toggles only |
+| `RM.hours` (M5), Staff | the week's toggles and times, Save hours | the week as text, no Save; "Only the owner changes the opening hours. You can turn busy mode on and off."; busy mode unchanged | The permission table: busy mode only |
+| `RM.shop` (M5), owner, both types | ends with How riders pay you (restaurants) / the profile (shops) | + a "Your team" card with "Manage team" | Design doc L5: Team lives inside Shop for both types, owner only |
+| `RM.shop`, `RM.statement`, `RM.setup`, `category_manage`, Staff by an old link | the owner's screens | one line each ("Only the owner changes the shop's details, its riders and its team." · "Only the owner sees the statement and the day's totals." · "Only the owner sets up {Business}." · "Only the owner changes the categories.") | The permission table; the API refuses the controls anyway |
+| `RM.setup` nudge on Orders (SetupBanner) | shown while the checklist is open | not shown to Staff | Setting up is the owner's |
+| A shop's `/setup` (D-43…D-45) | pin, booking, riders, items | + "Add your team", tagged **Optional** and never counted ("N people on your team with you", or "N invites waiting") | Design doc "A shop's /setup checklist" item 5 |
+| "Set up your business" (D-43) | the type cards | + "Work at a business that's already on LyniaGo? Ask the owner to add you in **Team**." under them; a number with a pending invite sees Join instead | Design doc L1.4 and L4 |
+
+### 3 · Behaviour worth knowing
+
+- Someone the owner removed signs out on their next tap, and their device's order alarm stops, so a shared
+  tablet goes back to "Sign in". Their devices also leave the live queue at once (server side).
+- Adding a number never tells the owner whether it works somewhere else; only the invited person hears it,
+  at Join, without the other business being named.
+- Support hands a business to a new owner from the admin console ("Hand over…", runbook §8); there is no
+  owner-side transfer.
+
+**Retire when:** a design export draws Team, Join or the signed-in person (then align to it), or the owner
+rejects a row (then the app changes).
+
+## D-47 · Merchant web: finishing the drawn restaurant screens (L5) — APPROVED (2026-09-29)
+
+**Owner instruction (2026-09-29):** *"improving restaurant side also to simplify."* Spec:
+`docs/designs/merchant-web-upgrade.md` L5 ("Shop words + finishing the drawn restaurant screens"). Most of L5
+**removes** divergences, aligning the app to what the RM mocks already draw. The entry lists those alignments so
+the sheet (`docs/parity/MERCHANT-L5-D47-2026-09-29.png`) can be read against them, and ledgers the few places the
+app still differs. **The owner approved it on 2026-09-29 with PR #986** and its sheet (OV-11). Nothing in
+`packages/design/**` changes.
+
+### 1 · Aligned to the mock (no longer a deviation)
+
+| Where | Before | Now (as drawn) |
+|---|---|---|
+| `RM.oos_sheet` (M4·3) | one button, "for the rest of today", defended in a code comment | the three drawn choices: Until I turn it back on · For the rest of today (chosen to start with, as drawn) · For 1 hour, and the drawn line only. `POST /merchant/dishes/:id/out-of-stock` takes the duration; none means the rest of today |
+| `KitchenNav`, restaurants | Orders · Menu · Shop · Hours · Statement | + **Help**, the mock's sixth item, opening support's WhatsApp |
+| `KitchenBar` | "Merchant" beside the lockup | the business's name there, as drawn |
+| `KitchenBar`, restaurants | no open state | the drawn **Open for orders** / **Closed** pill after Connected: open while the restaurant is live and inside today's hours |
+
+### 2 · Still different
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `KitchenBar` label | "Sadza Republic · Fife Ave" | the name alone | No area field exists; the landmark is a sentence, not an area |
+| `KitchenBar` open pill | shown | tablet only; at phone width it gives way to the connection and the signed-in person (D-32's phone tier) | The bar can't hold four pills at 320–680px |
+| `KitchenNav` Help | always drawn | hidden when `MERCHANT_SUPPORT_WHATSAPP` isn't set | A dead link is worse than no item (the mobile app does the same) |
+| `KitchenBar`, shops | (no shop mock) | no open pill and no alarm flashing: a shop takes no customer orders | Design doc L5 "Order alarm" |
+
+**Retire when:** a design export draws an area on the bar or a phone-tier bar (then align to it), or the owner
+rejects a row (then the app changes).

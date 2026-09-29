@@ -93,6 +93,8 @@ export default function HoursPage() {
   }
 
   const disabled = actionsDisabled || saving;
+  // L4: Staff see the week and switch busy mode; the schedule is the owner's (the permission table).
+  const staff = state.status === "ready" && state.profile.myRole === "staff";
 
   return (
     <Kitchen active="hours">
@@ -105,7 +107,9 @@ export default function HoursPage() {
           <>
             <div>
               <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Opening hours</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Customers can browse when you&apos;re closed, but can&apos;t order.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
+                {staff ? "Only the owner changes the opening hours. You can turn busy mode on and off." : "Customers can browse when you're closed, but can't order."}
+              </div>
             </div>
 
             <div className="kitchen-split">
@@ -117,7 +121,11 @@ export default function HoursPage() {
                   return (
                     <div key={day} className="kitchen-row" style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600 }}>{DAY_LABELS[day]}</span>
-                      {on ? (
+                      {staff ? (
+                        <span style={{ fontSize: 15, color: on ? "var(--ink)" : "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                          {on ? `${window!.open} – ${window!.close}` : "Closed"}
+                        </span>
+                      ) : on ? (
                         // Grouped so the open–close pair wraps as one unit onto its own line under
                         // the day name on a phone, instead of splitting across two lines with the
                         // dash left dangling. `display: contents` on the tablet, so the drawn row is
@@ -142,15 +150,17 @@ export default function HoursPage() {
                       ) : (
                         <span style={{ fontSize: 15, color: "var(--muted)" }}>Closed</span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => toggleDay(day)}
-                        disabled={disabled}
-                        aria-label={`${on ? "Close" : "Open"} on ${DAY_LABELS[day]}`}
-                        style={{ width: 44, height: 26, borderRadius: 999, background: on ? "var(--accent)" : "var(--line)", position: "relative", border: "none", cursor: "pointer", flexShrink: 0 }}
-                      >
-                        <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
-                      </button>
+                      {!staff && (
+                        <button
+                          type="button"
+                          onClick={() => toggleDay(day)}
+                          disabled={disabled}
+                          aria-label={`${on ? "Close" : "Open"} on ${DAY_LABELS[day]}`}
+                          style={{ width: 44, height: 26, borderRadius: 999, background: on ? "var(--accent)" : "var(--line)", position: "relative", border: "none", cursor: "pointer", flexShrink: 0 }}
+                        >
+                          <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff" }} />
+                        </button>
+                      )}
                       {invalid && <span className="hours-invalid" style={{ fontSize: 11.5, color: "var(--danger-ink)", whiteSpace: "nowrap" }}>Start before end</span>}
                     </div>
                   );
@@ -158,16 +168,18 @@ export default function HoursPage() {
 
                 {error && <div style={{ fontSize: 13, color: "var(--danger-ink)", marginTop: 12, fontWeight: 700 }}>{error}</div>}
 
-                <div style={{ padding: "16px 0 4px" }}>
-                  <button
-                    type="button"
-                    disabled={disabled || !allValid}
-                    onClick={onSave}
-                    style={{ ...primaryButtonStyle, opacity: disabled || !allValid ? 0.5 : 1 }}
-                  >
-                    {saving ? "Saving…" : "Save hours"}
-                  </button>
-                </div>
+                {!staff && (
+                  <div style={{ padding: "16px 0 4px" }}>
+                    <button
+                      type="button"
+                      disabled={disabled || !allValid}
+                      onClick={onSave}
+                      style={{ ...primaryButtonStyle, opacity: disabled || !allValid ? 0.5 : 1 }}
+                    >
+                      {saving ? "Saving…" : "Save hours"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="kitchen-aside">

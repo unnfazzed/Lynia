@@ -72,7 +72,97 @@ riders are given at pickup, plus the pin.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
   covers (the 25 km Send corridor).
 
-## 6. Pilot numbers (CEO-10)
+## 6. Bookings (Book a rider, L2)
+
+A business books a LyniaGo rider from its own pin for its own customer. Each booking is an ordinary Send
+order whose customer is the business's **booking account**: a customer profile named after the business,
+with the phone `business:<merchant id>`. Nobody can sign in to it. In the console, its orders show the
+customer as "Business: {name}" and its phone as the business's contact phone, and it doesn't appear in the
+Customers list.
+
+- **Pause one business's bookings:** open the business in Merchants, follow the "Book a rider" row's link
+  to its booking account, and put that account on hold (the ordinary customer hold). Every new booking from any team member then gets
+  "Bookings are paused for this business." Lift the hold to resume. A single team member's own hold, or a
+  banned or suspended rider account, stops only that person from booking.
+- **Prohibited goods** (prescription medicine, weapons, drugs, cash). A rider who finds them at pickup
+  does not cancel: in Send every rider cancel is a strike and re-broadcasts the job. They use "Report a
+  problem" on the job (type Other: "prohibited goods") and message support. Then:
+  1. Cancel the booking from the order's admin page with the reason **"Safety concern"**. An admin cancel
+     carries no rider strike and no re-broadcast; the business sees "Cancelled by the LyniaGo team".
+  2. Hold the business's booking account (above) while you talk to the owner.
+- **A business can cancel only before pickup.** After pickup the goods are with the rider: the business
+  calls the rider, and ops can still cancel from the console.
+- **Money:** the business pays the rider the picked fare in cash at pickup (Send's model). There is no
+  cash-on-delivery: the rider collects nothing from the buyer. The declared value is capped at $150.
+- **A business's own team can't take its deliveries.** The pick refuses an offer from a team member (the
+  business holds the delivery code, so they could deliver to themselves).
+
+## 7. Your riders (L3)
+
+A business keeps a list of its own riders: up to 20, each by the number the rider signs in to LyniaGo with,
+under the business's own name for them. Only the owner adds or removes; the whole team sees the list.
+
+- **What it changes.** A rider on a business's list gets a "Your rider" tag on that business's booking
+  offers, which are listed first unless another offer is clearly better on two of fare, ETA and rating.
+  For a restaurant's own orders, auto-dispatch offers one of its riders first when they're eligible and no
+  more than 2 km farther than the nearest eligible rider. It never changes eligibility: KYC, suspension,
+  holds, one active ride and the debt lock all still apply. There is no extra push.
+- **What the business sees.** Only "On LyniaGo", "Not on LyniaGo yet" or "Can't take jobs right now" per
+  number, never why. The rider's LyniaGo name and photo appear only after they've delivered for that
+  business. A number on the business's own team can't be added, and a team member who was on the list
+  shows as "Can't take jobs right now".
+- **Limits and trail.** 20 numbers, 10 adds a day per business. Every add and removal is an `audit_logs`
+  row (`merchant.rider.add` / `merchant.rider.remove`, actor = the owner, target = the merchant id, note =
+  the list row id). A rider who deletes their account leaves every business's list.
+- **A rider asks to be taken off a business's list.** Delete the row (there's no console action yet):
+  `DELETE FROM merchant_preferred_riders WHERE merchant_id = '<merchant id>' AND phone = '+263…';` The
+  rider-side notice and opt-out ("{Business} calls you their rider") are Phase 2.
+
+## 8. Team (L4)
+
+A business can have several people signing in, each with their own number and code. Exactly one is the
+**owner**; everyone else is **Staff**. Staff run orders, bookings, busy mode and stock. Only the owner
+changes items, hours, the profile and pin, the cash rule, riders and the team, and only the owner sees the
+statement (the permission table is in `docs/designs/merchant-web-upgrade.md` "L4 — Team").
+
+- **How people join.** The owner types a name and a number in Team and sends the sign-in link from their own
+  WhatsApp. When that number signs in, it sees "{Owner} added you to {Business} as Staff" and chooses **Join**
+  (confirming their name and accepting the merchant terms) or **Not me**. Invites last 14 days, and the
+  retention sweep deletes them once expired. A business sends at most 10 invites a day.
+- **One business per number.** Several businesses can invite the same number; the first Join wins. Adding a
+  number never tells the owner whether it works somewhere else. Only the invited person hears it, at Join:
+  "Your number already works at another business on LyniaGo. Leave it first to join {Business}."
+- **Leaving and removing.** Staff can leave from their menu; the owner can remove anyone but themselves.
+  Either ends access on the person's next request, and their devices stop getting the live order queue
+  straight away. The owner can't be removed or leave.
+- **Trail.** Every step is an `audit_logs` row with target = the merchant id: `merchant.team.invite` and
+  `merchant.team.invite_cancel` (note = the invite id), `merchant.team.join` and `merchant.team.decline`
+  (actor = the invited person), `merchant.team.remove` and `merchant.team.leave` (note = the person's
+  profile id). These actions are reserved: the console's free-text audit form can't write them.
+- **Deleting an account.** A Staff member who deletes their LyniaGo account leaves the team, and every invite
+  to their number goes. An **owner can't delete their account** while they own a business: the app tells them
+  to message support, and support hands the business over first (below).
+
+### Handing a business to someone else
+
+The only way ownership moves, for a sale, a family handover or an owner who lost their number.
+
+1. **Check identity** by a call to both people where possible, or a visit, plus the new owner's ID. Never on
+   the strength of a WhatsApp message alone.
+2. The new owner must have signed in to LyniaGo once with their number, and must be on this business's team
+   already or on **no** business. Someone on another team leaves it first. A held or restricted account can't
+   be handed a business.
+3. Run `POST /admin/merchants/:id/owner` with `{ "phone": "+263…", "note": "…" }`. The note is required
+   (10–500 characters): say who you spoke to, how you checked, and why. It goes on the `merchant.owner_transfer`
+   audit row, which commits with the handover.
+4. The old owner stays on the team as Staff. The new owner can remove them in Team if that's what was agreed.
+5. Send the new owner the merchant terms. Someone who wasn't on the team never accepted them in the app, and
+   support can't accept on their behalf, so their team row has no acceptance time.
+
+Never change `merchants.owner_profile_id` or `merchant_members.role` by hand: the endpoint keeps the owner
+row, the column and the audit trail in step.
+
+## 9. Pilot numbers (CEO-10)
 
 Run against a read replica or with care. The booking queries arrive with L2 (`merchant_bookings`).
 
@@ -96,4 +186,15 @@ FROM merchants m
 JOIN merchant_members mm ON mm.merchant_id = m.id AND mm.role = 'owner'
 JOIN profiles p ON p.id = mm.profile_id
 WHERE m.created_at - p.created_at < interval '1 day';
+
+-- L3: the share of each business's delivered bookings taken by one of its own riders.
+SELECT mb.merchant_id,
+       count(*) AS delivered,
+       count(*) FILTER (WHERE mpr.id IS NOT NULL) AS by_own_rider
+FROM merchant_bookings mb
+JOIN orders o ON o.id = mb.order_id AND o.status IN ('delivered', 'completed')
+JOIN profiles rp ON rp.id = o.rider_id
+LEFT JOIN merchant_preferred_riders mpr ON mpr.merchant_id = mb.merchant_id AND mpr.phone = rp.phone
+GROUP BY mb.merchant_id
+ORDER BY delivered DESC;
 ```

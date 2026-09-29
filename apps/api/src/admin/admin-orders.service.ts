@@ -5,6 +5,7 @@ import {
   commissionBasis,
   DELIVERY_OTP_MAX_ATTEMPTS,
   HeldReason,
+  isBusinessBookingAccountPhone,
   type OrderStatus,
   type OrderType,
   perRideCommission,
@@ -664,6 +665,11 @@ export class AdminOrdersService {
           }
         : null;
 
+    const businessSender = isBusinessBookingAccountPhone(order.customer.phone);
+    const customerPhone = businessSender
+      ? ((order.pickup as { contactPhone?: unknown } | null)?.contactPhone as string | undefined) ?? ""
+      : order.customer.phone;
+
     return {
       id: order.id,
       orderType: order.orderType,
@@ -681,8 +687,10 @@ export class AdminOrdersService {
       // terminal/closed order. Provide the (masked) string either way so the UI shows the redaction.
       riderPhone: order.rider ? (revealed ? order.rider.profile.phone : maskPhone(order.rider.profile.phone)) : undefined,
       bike: order.rider?.bikeReg,
-      customer: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
-      customerPhone: revealed ? order.customer.phone : maskPhone(order.customer.phone),
+      // Merchant web upgrade L2 (OV-9): a business's booking is sent by its booking account (phone
+      // `business:<id>`), so it reads as the business, reachable on its pickup contact phone.
+      customer: businessSender ? `Business: ${order.customer.firstName}` : `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+      customerPhone: revealed ? customerPhone : maskPhone(customerPhone),
       proposed: order.proposedFare.toString(),
       agreed: order.agreedFare?.toString() ?? null,
       fareProvenance,

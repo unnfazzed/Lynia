@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { KycStatus, OrderStatus, OrderType } from "@lynia/shared";
+import { KycStatus, OrderStatus, OrderType, TransferMerchantOwnerRequest } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -340,6 +340,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.merchantsService.setPilot(actor, id, body);
+  }
+
+  /** Hand a business to another person (merchant web upgrade L4): after support's identity check, by the
+   *  new owner's phone, with a required note. The old owner stays on as Staff. Audit-logged. */
+  @Post("merchants/:id/owner")
+  transferMerchantOwner(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(TransferMerchantOwnerRequest)) body: TransferMerchantOwnerRequest,
+    @AdminActor() actor: string,
+  ) {
+    return this.merchantsService.transferOwner(actor, id, body);
   }
 
   /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, plus

@@ -16,12 +16,15 @@ export interface OfferRankInput {
   ratingCount: number;
   /** Rider's ETA to pickup, minutes. Lower is better. */
   etaMinutes: number;
+  /** One of the business's own riders (merchant web upgrade L3). Only counts when the weights give it a
+   *  bonus (`MERCHANT_OFFER_WEIGHTS`); the customer app's ranking never sets it. */
+  preferred?: boolean;
 }
 
 export interface RankedOffer {
   /** Index into the original `offers` array. */
   index: number;
-  /** Blended best-match score in [0,1]; higher is better. */
+  /** Blended best-match score in [0,1], plus any preferred bonus; higher is better. */
   score: number;
   /** True for the single best offer when there are ≥2 to choose between. */
   recommended: boolean;
@@ -31,6 +34,8 @@ export interface OfferRankWeights {
   price: number;
   rating: number;
   eta: number;
+  /** Added to a preferred offer's score. Absent (0) keeps the ranking exactly as before. */
+  preferred?: number;
 }
 
 /**
@@ -39,6 +44,18 @@ export interface OfferRankWeights {
  * best-match doesn't collapse into "cheapest" (price weight must stay below rating+eta combined).
  */
 export const DEFAULT_OFFER_WEIGHTS: OfferRankWeights = { price: 0.45, rating: 0.35, eta: 0.2 };
+
+/**
+ * A business's own rider (merchant web upgrade L3, design doc "How preferred ranks"): worth more than any
+ * one of fare (0.45), rating (0.35) or ETA (0.2) on its own, and less than fare and ETA together (0.65).
+ * So the business's rider is listed first unless another offer is clearly better on two counts — cheaper
+ * AND sooner always is. Preferred never touches eligibility: it only orders offers the business already
+ * sees, and the business still picks.
+ */
+export const PREFERRED_OFFER_BONUS = 0.5;
+
+/** The merchant web's weights: the customer app's blend plus the preferred bonus. */
+export const MERCHANT_OFFER_WEIGHTS: OfferRankWeights = { ...DEFAULT_OFFER_WEIGHTS, preferred: PREFERRED_OFFER_BONUS };
 
 /**
  * A new rider (no ratings yet) scores at the neutral midpoint on the rating axis — same as a rated rider
@@ -91,7 +108,8 @@ export function rankOffers(offers: OfferRankInput[], weights: OfferRankWeights =
     const priceScore = norm(fares[index]!, fareMin, fareMax, true);
     const etaScore = norm(etas[index]!, etaMin, etaMax, true);
     const ratingScore = o.ratingCount > 0 ? norm(ratingAvgs[index]!, ratingMin, ratingMax, false) : NEW_RIDER_RATING_SCORE;
-    const score = weights.price * priceScore + weights.rating * ratingScore + weights.eta * etaScore;
+    const bonus = o.preferred ? (weights.preferred ?? 0) : 0;
+    const score = weights.price * priceScore + weights.rating * ratingScore + weights.eta * etaScore + bonus;
     return { index, score, recommended: false };
   });
 

@@ -1,19 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BookingsStrip } from "../../components/bookings/BookingsStrip";
 import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
 import { SetupBanner } from "../../components/SetupBanner";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
+import { bookingsAvailable, homePath } from "../../lib/booking";
+import { primeBusiness } from "../../lib/business";
 import { useQueuePoll } from "../../lib/use-queue-poll";
-import { ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { ghostButtonStyle } from "../../components/queue/styles";
 
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; merchant: MerchantProfile }
-  | { status: "not-a-merchant" }
   | { status: "error"; message: string };
 
 /**
@@ -23,6 +26,7 @@ type LoadState =
  */
 export default function QueuePage() {
   const { alarm, actionsDisabled, reachability, signOut } = useKitchenConnection();
+  const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   const loadMerchant = useCallback(() => {
@@ -30,12 +34,22 @@ export default function QueuePage() {
     setState({ status: "loading" });
     getMyMerchant()
       .then((merchant) => {
-        if (!cancelled) setState({ status: "ready", merchant });
+        if (cancelled) return;
+        primeBusiness(merchant);
+        // A shop takes no customer orders yet, so it has no Orders board: its home is Deliveries (merchant
+        // web upgrade L2), or the setup checklist on an API that can't book riders yet.
+        if (merchant.businessType === "shop") {
+          router.replace(homePath(merchant));
+          return;
+        }
+        setState({ status: "ready", merchant });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 403) {
-          setState({ status: "not-a-merchant" });
+          // Not on any business yet (`not_a_member`): the self-serve sign-up, not the old
+          // "contact support" dead end (merchant web upgrade L1, D5).
+          router.replace("/onboarding");
         } else if (err instanceof ApiError) {
           setState({ status: "error", message: err.message });
         } else {
@@ -45,7 +59,7 @@ export default function QueuePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => loadMerchant(), [loadMerchant]);
 
@@ -104,28 +118,6 @@ export default function QueuePage() {
           <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your kitchen…</div>
         )}
 
-        {state.status === "not-a-merchant" && (
-          <div
-            style={{
-              background: "var(--bg)",
-              borderRadius: 16,
-              boxShadow: "var(--shadow-card)",
-              padding: 24,
-              maxWidth: 480,
-              width: "100%",
-            }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>This number isn't set up as a merchant yet</div>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
-              This phone signs in fine, but it isn't linked to a kitchen. Contact LyniaGo support to get your
-              restaurant set up before using this tablet.
-            </div>
-            <button type="button" onClick={signOut} style={primaryButtonStyle}>
-              Sign out
-            </button>
-          </div>
-        )}
-
         {state.status === "error" && <RetryableError message={state.message} onRetry={loadMerchant} />}
 
         {state.status === "ready" && (
@@ -143,6 +135,8 @@ export default function QueuePage() {
             </div>
             {/* M0·2's way in — renders nothing once the checklist is done (SetupBanner). */}
             <SetupBanner />
+            {/* L2: Book a rider for phone orders, and the live bookings (D-44). */}
+            {bookingsAvailable(state.merchant) && <BookingsStrip />}
             <div className="queue-board-slot">
               <QueueBoard orders={orders} disabled={actionsDisabled} refetch={refetch} />
             </div>

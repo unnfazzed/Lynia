@@ -263,7 +263,7 @@ Book a rider ahead of Team because it is what the pilot's week 1 measures.)*
   exported; booking accounts labelled and excluded in admin views.
 - Short-link resolver: `maps.app.goo.gl` / `goo.gl/maps` only, https, ≤2 hops, `Location` header only,
   3 s timeout.
-- Web: Deliveries page, booking form (Leaflet + OSM pin, link parsing, value cap, prohibited-goods text),
+- Web: Deliveries page, booking form (L1's `LocationPin` over OSM, link parsing, value cap, prohibited-goods text),
   live pick screen, code send/copy, states list; restaurant "Book a rider" button + bookings strip on
   Orders; shop nav + vocabulary + Help.
 
@@ -290,8 +290,8 @@ with an item review of every shop before its first switch-on. Prescription items
 sign-off (plan 2026-07-26 §6 P6).
 
 **Explicitly not in scope:** variants/sizes, stock counts, barcodes, bulk CSV import, multi-branch
-owners, Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg, server-side short-link
-resolution.
+owners, Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg. (Server-side short-link
+resolution was out of scope in the draft; the outside voice brought it into L2, OV-6.)
 
 ---
 
@@ -659,7 +659,7 @@ None is pending.
 ### Section 1 · Architecture
 
 **Current scope:** HOLD SCOPE (auto). Accepted: L1–L5 as in §5, with CEO-1…CEO-10 and the R2
-dispositions. Deferred: TODO-1…TODO-5. Rejected: server short-link resolution, COD, a paid return leg,
+dispositions. Deferred: TODO-1…TODO-5. Rejected: COD, a paid return leg,
 variants/stock/barcodes.
 
 The system diagram and access, sign-up and booking flows are in §6.
@@ -799,8 +799,9 @@ No catch-alls are introduced. Every rescue logs `{route, profileId, merchantId, 
 | T16 | Self-dealing: a member who is also a rider takes their own business's jobs (OV-5) | Med | Med | refuse members' offers at pick; members can't be preferred riders; booking checks the member's rider standing |
 
 Audit trail: go-live, owner transfer, preferred-rider add/remove, invite/remove member (all via
-`auditData()` or the merchant audit equivalent). No new secrets. The only new client dependency is
-Leaflet (widely used, pinned).
+`auditData()` or the merchant audit equivalent). No new secrets and no new client dependency: the map
+pin is the web's own `LocationPin` over OpenStreetMap tiles (built in L1 instead of Leaflet, so no
+lockfile change; L2's booking form reuses it).
 
 ### Section 4 · Data Flow & Interaction Edge Cases
 
@@ -1172,7 +1173,7 @@ API is at 100%.
   - Surfaced by: CEO-1; R2-1…R2-6; OV-5, OV-6, OV-7, OV-8, OV-9
   - Files: `apps/api/src/merchant/merchant-booking.*`, `apps/api/src/orders/orders.service.ts` (one line), `packages/shared/src/*`
   - Verify: booking specs incl. IDOR and pick race
-- [ ] **T10 (P1, human: ~2.5d / CC: ~80min)** — web/L2 — Deliveries, booking form (Leaflet/OSM, link parser), pick screen (polling), code send/copy/rotate, restaurant button + strip, shop nav, `vocabulary()`, Help
+- [ ] **T10 (P1, human: ~2.5d / CC: ~80min)** — web/L2 — Deliveries, booking form (`LocationPin`/OSM, link parser), pick screen (polling), code send/copy/rotate, restaurant button + strip, shop nav, `vocabulary()`, Help
   - Surfaced by: R2-3, R2-8, R2-12; CEO-2
   - Files: `apps/merchant/app/(app)/deliveries/**`, `components/KitchenNav.tsx`, `lib/vocabulary.ts`
   - Verify: RTL + parser table tests; D-44 ledger

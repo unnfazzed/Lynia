@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
 import { Icon } from "../components/icons";
-import { ApiError, requestOtp, verifyOtp } from "../lib/api-client";
+import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
+import { homePath } from "../lib/booking";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
+import { noBusinessPath } from "../lib/team-api";
 
-type Step = { kind: "phone" } | { kind: "code"; phone: string };
+type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
-/** M0·1 — Kitchen sign-in (D-05: "the sign-in button is labelled 'Sign in & start the alarm'" —
- *  the tap is the browser gesture that unlocks AudioContext for the whole page load). */
+/** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). A
+ *  shared counter tablet is where it bites, so the copy says what to do instead. */
+const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on your own phone, or try tomorrow.";
+
+/** M0·1 — sign-in (D-05: "the sign-in button is labelled 'Sign in & start the alarm'" — the tap is the
+ *  browser gesture that unlocks AudioContext for the whole page load). Restaurants and shops share it
+ *  (merchant web upgrade L1), so the title is "Sign in" and the code line names the channel the code
+ *  actually went by — both D-43. */
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,8 +58,8 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await requestOtp(phone);
-      setStep({ kind: "code", phone });
+      const sent = await requestOtp(phone);
+      setStep({ kind: "code", phone, deliveryChannel: sent.deliveryChannel });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't send the code — try again.");
     } finally {
@@ -72,12 +80,10 @@ export default function LoginPage() {
       // The submit click IS the user gesture — unlock the alarm's AudioContext now, at sign-in,
       // exactly as D-05 specifies, before navigating into the dashboard.
       getAlarmController().arm();
-      const next = searchParams.get("next");
-      // CWE-601 guard: `next` is an attacker-controllable query param — only ever follow it back to
-      // a genuine in-app path, never a protocol-relative URL that would leave the app.
-      router.replace(isSafeMerchantRedirectPath(next) ? next : "/queue");
+      router.replace(await landingPath(searchParams.get("next")));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "That code didn't work — try again.");
+      if (err instanceof ApiError && err.status === 429 && err.reason === "device_signup_cap") setError(DEVICE_CAP_MESSAGE);
+      else setError(err instanceof ApiError ? err.message : "That code didn't work — try again.");
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -98,17 +104,19 @@ export default function LoginPage() {
             Lynia<span style={{ color: "var(--accent-700)" }}>Go</span>
           </span>
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Kitchen sign-in</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Sign in</div>
 
         {step.kind === "phone" && (
           <form onSubmit={submitPhone}>
             <div style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 16 }}>
-              Enter the phone number for this kitchen.
+              Enter your phone number. We'll send you a 6-digit code.
             </div>
             <input
               ref={inputRef}
               type="tel"
               inputMode="tel"
+              autoComplete="tel"
+              aria-label="Phone number"
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -125,7 +133,9 @@ export default function LoginPage() {
         {step.kind === "code" && (
           <form onSubmit={submitCode}>
             <div style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 16 }}>
-              Enter the code we sent to {step.phone}.
+              {step.deliveryChannel === "whatsapp"
+                ? `Enter the code we sent to your WhatsApp on ${step.phone}.`
+                : `Enter the code we sent to ${step.phone}.`}
             </div>
             {/* r-merchant.jsx:87-91 — the code is six segmented boxes (52×60, radius 12), the
              *  next-empty box carrying the accent border. A single transparent input laid over the
@@ -209,6 +219,27 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Where a fresh sign-in lands (merchant web upgrade L1). Membership is read, never the token's role: a
+ * number that isn't on a business yet goes to Join when a team invited it (L4), otherwise to "Set up your
+ * business", and a shop — which takes no
+ * customer orders, so has no Orders board — goes to its setup checklist. Everyone else goes back to
+ * what they were opening (`next`), or to Orders. If the check itself fails, fall through to the normal
+ * landing, whose own load shows the error with a Retry.
+ */
+async function landingPath(next: string | null): Promise<string> {
+  // CWE-601 guard: `next` is an attacker-controllable query param — only ever follow it back to a
+  // genuine in-app path, never a protocol-relative URL that would leave the app.
+  const fallback = isSafeMerchantRedirectPath(next) ? next : "/queue";
+  try {
+    const merchant = await getMyMerchant();
+    // A shop's home is Deliveries (L2), or its setup checklist on an API that can't book riders yet.
+    return merchant.businessType === "shop" ? homePath(merchant) : fallback;
+  } catch (err) {
+    return err instanceof ApiError && err.status === 403 ? await noBusinessPath() : fallback;
+  }
 }
 
 const inputStyle: React.CSSProperties = {

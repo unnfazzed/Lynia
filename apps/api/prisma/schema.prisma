@@ -726,6 +726,8 @@ model Order {
   rating           Rating[]
   // Commission debits reference the ride they came from (at most one ride_commission row per order).
   commissionLedger CommissionLedger[]
+  // Merchant web upgrade L2: set only on a business's booking (who booked, picked and cancelled it).
+  merchantBooking  MerchantBooking?
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -998,6 +1000,9 @@ model Merchant {
   debtLedger      MerchantDebtLedger[]
   reopenReminders RestaurantReopenReminder[]
   members         MerchantMember[]
+  bookings        MerchantBooking[]
+  preferredRiders MerchantPreferredRider[]
+  invites         MerchantInvite[]
 
   @@map("merchants")
 }
@@ -1038,14 +1043,77 @@ model MerchantMember {
   role             MerchantMemberRole
   // The name the business knows this person by (sign-up's "Your name", or the invite's name).
   displayName      String             @map("display_name")
-  // When this person accepted the merchant terms + privacy notice (sign-up, or Join in L4). Null only
-  // for owners backfilled by migration 0053, who predate the terms.
+  // When this person accepted the merchant terms + privacy notice (sign-up, or Join in L4). Null for
+  // owners backfilled by migration 0053, who predate the terms, and for someone support handed a business
+  // to who wasn't on its team (L4 owner transfer: support can't accept on their behalf).
   termsAcceptedAt  DateTime?          @map("terms_accepted_at")
   addedByProfileId String?            @map("added_by_profile_id") @db.Uuid
   createdAt        DateTime           @default(now()) @map("created_at")
 
   @@index([merchantId])
   @@map("merchant_members")
+}
+
+/**
+ * Merchant web upgrade L2 (plan 2026-09-29 D9): the person behind each business delivery. A booking is a
+ * Send order whose customer of record is the business's booking account (a Profile with phone
+ * `business:<merchantId>`); this row records which team member booked it, picked the rider and cancelled
+ * it. Send's re-broadcast clones get no row of their own at creation — they show the original's booker
+ * through `Order.rebroadcastOfId` — and one is added when a teammate acts on the clone.
+ */
+model MerchantBooking {
+  orderId              String   @id @map("order_id") @db.Uuid
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId           String   @map("merchant_id") @db.Uuid
+  merchant             Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  // Plain ids (no relation): a team change or an erased profile never removes the business's history.
+  bookedByProfileId    String   @map("booked_by_profile_id") @db.Uuid
+  pickedByProfileId    String?  @map("picked_by_profile_id") @db.Uuid
+  cancelledByProfileId String?  @map("cancelled_by_profile_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([merchantId, createdAt])
+  @@map("merchant_bookings")
+}
+
+/// Merchant web upgrade L3 (plan D10): a business's own riders, by the phone they sign in to LyniaGo with.
+/// Matched to riders by phone when used (never a stored rider id), so a rider who signs up later is
+/// picked up on their own. Preferred never bends eligibility.
+model MerchantPreferredRider {
+  id               String   @id @default(uuid()) @db.Uuid
+  merchantId       String   @map("merchant_id") @db.Uuid
+  merchant         Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  /// E.164 (`+263…`), as `profiles.phone` stores it.
+  phone            String
+  /// The business's own name for the rider ("Blessing"), never the rider's LyniaGo name.
+  label            String
+  // Plain id (no relation): a team change or an erased profile never removes the list.
+  addedByProfileId String   @map("added_by_profile_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([merchantId, phone])
+  @@index([phone])
+  @@map("merchant_preferred_riders")
+}
+
+/// Merchant web upgrade L4 (design doc "L4 — Team"): an invite to join a business as Staff, pending the
+/// person's Join or Not me. Never reserves the number: the first Join wins (a person works at one business).
+model MerchantInvite {
+  id                 String   @id @default(uuid()) @db.Uuid
+  merchantId         String   @map("merchant_id") @db.Uuid
+  merchant           Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  /// E.164 (`+263…`), as `profiles.phone` stores it.
+  phone              String
+  /// The name the owner gave; prefilled at Join, where the person confirms or corrects it.
+  displayName        String   @map("display_name")
+  // Plain id (no relation): a team change or an erased profile never removes the invite.
+  invitedByProfileId String   @map("invited_by_profile_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+  expiresAt          DateTime @map("expires_at")
+
+  @@unique([merchantId, phone])
+  @@index([phone])
+  @@map("merchant_invites")
 }
 
 /**

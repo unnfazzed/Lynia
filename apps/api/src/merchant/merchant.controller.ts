@@ -3,6 +3,7 @@ import {
   BecomeMerchantRequest,
   MerchantCategoryRequest,
   MerchantDishRequest,
+  SetDishOutOfStockRequest,
   SetMerchantBusyModeRequest,
   UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
@@ -179,10 +180,16 @@ export class MerchantController {
     return this.merchant.deleteDish(profileId, id);
   }
 
+  // Staff may (the permission table). L5: the body says for how long; none means the rest of today.
   @Post("dishes/:id/out-of-stock")
   @UseGuards(MerchantGuard)
-  setOutOfStock(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() profileId: string) {
-    return this.merchant.setDishOutOfStock(profileId, id);
+  setOutOfStock(
+    @Param("id", ParseUUIDPipe) id: string,
+    // Optional: an older client posts no body at all, which must still mean the rest of today.
+    @Body(new ZodBody(SetDishOutOfStockRequest.optional())) body: SetDishOutOfStockRequest | undefined,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.merchant.setDishOutOfStock(profileId, id, body?.for);
   }
 
   @Delete("dishes/:id/out-of-stock")

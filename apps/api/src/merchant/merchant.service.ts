@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { Prisma } from "@prisma/client";
 import type {
   BecomeMerchantRequest,
+  DishOutOfStockFor,
   MerchantCategoryRequest,
   MerchantCategoryResponse,
   MerchantDishRequest,
@@ -43,15 +44,16 @@ import { resolveMerchantAccess } from "./merchant-access";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
-/** The caller's own business, plus the caller's role on it (L1: `MerchantProfileResponse.myRole`). */
-type OwnMerchant = MerchantWithOwner & { myRole: MerchantMemberRole };
+/** The caller's own business, plus the caller's role on it (L1: `MerchantProfileResponse.myRole`) and
+ *  their name on its team (L4: `myName`). */
+type OwnMerchant = MerchantWithOwner & { myRole: MerchantMemberRole; myName: string | null };
 
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
 type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>;
 
 /** Splits sign-up's single "Your name" into the profile's first/last name (first word, then the rest). */
-function splitPersonName(full: string): { firstName: string; lastName: string } {
+export function splitPersonName(full: string): { firstName: string; lastName: string } {
   const [first = "", ...rest] = full.trim().split(/\s+/);
   return { firstName: first, lastName: rest.join(" ") };
 }
@@ -96,6 +98,17 @@ function endOfToday(): Date {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d;
+}
+
+/** `RM.oos_sheet`'s "Until I turn it back on" (merchant web upgrade L5): a date no kitchen reaches, so
+ *  every existing read (`isDishOutOfStock`, the customer menu) keeps treating it as out of stock until
+ *  "Back in stock" clears it. No new column, no reset job. */
+export const OUT_OF_STOCK_UNTIL_BACK = new Date(Date.UTC(9999, 11, 31, 23, 59, 59));
+
+function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date {
+  if (forHowLong === "until_back") return OUT_OF_STOCK_UNTIL_BACK;
+  if (forHowLong === "one_hour") return new Date(Date.now() + 60 * 60 * 1000);
+  return endOfToday();
 }
 
 @Injectable()
@@ -217,7 +230,7 @@ export class MerchantService {
 
   async getMyMerchant(profileId: string): Promise<MerchantProfileResponse> {
     const merchant = await this.findOwnMerchantOrThrow(profileId);
-    return await this.toProfileResponse(merchant, merchant.myRole);
+    return await this.toProfileResponse(merchant, merchant);
   }
 
   async updateProfile(profileId: string, body: UpdateMerchantProfileRequest): Promise<MerchantProfileResponse> {
@@ -240,7 +253,7 @@ export class MerchantService {
       data,
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated, merchant.myRole);
+    return await this.toProfileResponse(updated, merchant);
   }
 
   async updateHours(profileId: string, body: UpdateMerchantHoursRequest): Promise<MerchantProfileResponse> {
@@ -250,7 +263,7 @@ export class MerchantService {
       data: { hours: body.hours as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated, merchant.myRole);
+    return await this.toProfileResponse(updated, merchant);
   }
 
   async updateCashRule(profileId: string, body: UpdateMerchantCashRuleRequest): Promise<MerchantProfileResponse> {
@@ -260,7 +273,7 @@ export class MerchantService {
       data: { cashRule: body.cashRule },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated, merchant.myRole);
+    return await this.toProfileResponse(updated, merchant);
   }
 
   /** C2: the shop's own pickup point — required before placeOrder can price a trip (N-01 needs a
@@ -272,7 +285,7 @@ export class MerchantService {
       data: { location: body.location as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated, merchant.myRole);
+    return await this.toProfileResponse(updated, merchant);
   }
 
   /** For FoodOrderService.placeOrder — the merchant's pickup point, or null if not set yet. */
@@ -288,7 +301,7 @@ export class MerchantService {
       data: { busyMode: body.active },
       include: { ownerProfile: { select: { phone: true } } },
     });
-    return await this.toProfileResponse(updated, merchant.myRole);
+    return await this.toProfileResponse(updated, merchant);
   }
 
   // --- Categories (D-29) ---
@@ -427,8 +440,8 @@ export class MerchantService {
     return { ok: true };
   }
 
-  async setDishOutOfStock(profileId: string, dishId: string): Promise<MerchantDishResponse> {
-    return this.writeDishOutOfStock(profileId, dishId, endOfToday());
+  async setDishOutOfStock(profileId: string, dishId: string, forHowLong?: DishOutOfStockFor): Promise<MerchantDishResponse> {
+    return this.writeDishOutOfStock(profileId, dishId, outOfStockUntil(forHowLong));
   }
 
   async clearDishOutOfStock(profileId: string, dishId: string): Promise<MerchantDishResponse> {
@@ -646,10 +659,11 @@ export class MerchantService {
     if (!access) throw new NotFoundException("Merchant not found");
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: access.merchantId },
-      include: { ownerProfile: { select: { phone: true } } },
+      include: { ownerProfile: { select: { phone: true } }, members: { where: { profileId }, select: { displayName: true } } },
     });
     if (!merchant) throw new NotFoundException("Merchant not found");
-    return { ...merchant, myRole: access.role };
+    const { members, ...rest } = merchant;
+    return { ...rest, myRole: access.role, myName: members?.[0]?.displayName ?? null };
   }
 
   private async findOwnMerchantIdOrThrow(profileId: string): Promise<string> {
@@ -682,7 +696,7 @@ export class MerchantService {
     return (this.microCacheBypassed(ttlMs) ? mint() : this.photoUrlCache.getOrLoad(key, ttlMs, mint)).catch(() => null);
   }
 
-  private async toProfileResponse(merchant: MerchantWithOwner, myRole: MerchantMemberRole): Promise<MerchantProfileResponse> {
+  private async toProfileResponse(merchant: MerchantWithOwner, me: Pick<OwnMerchant, "myRole" | "myName">): Promise<MerchantProfileResponse> {
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
       id: merchant.id,
@@ -699,7 +713,11 @@ export class MerchantService {
       pilotEnabled: merchant.pilotEnabled,
       businessType: merchant.businessType,
       shopKind: merchant.shopKind,
-      myRole,
+      myRole: me.myRole,
+      // L2: every booking's pickup, and the booking form's map centre and fare quote.
+      location: (merchant.location as Waypoint | null) ?? null,
+      // L4: who is signed in, as the team knows them.
+      ...(me.myName ? { myName: me.myName } : {}),
     };
   }
 

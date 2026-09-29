@@ -1124,6 +1124,34 @@ describe("OrderLifecycleService.cancel", () => {
     expect(jobCancelled).toEqual([["o1", true, "customer"]]);
   });
 
+  it("merchant web upgrade L2 (OV-8): a caller can narrow the statuses it cancels at; the check runs in the transaction", async () => {
+    const narrowed = { allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"], refusal: { reason: "picked_up", message: "The rider has it now. Call the rider." } };
+    const { svc } = build(
+      cancellable({
+        order: {
+          findUnique: async () => order({ status: "picked_up", collectedAt: new Date() }),
+          updateMany: async () => {
+            throw new Error("must not write");
+          },
+        },
+      }),
+    );
+    // The same customer may cancel after pickup in the app (CUSTOMER_CANCELLABLE) — but not through the narrowed call.
+    await expect(svc.cancel("o1", "c1", "business cancel", narrowed)).rejects.toMatchObject({ status: 409, response: { reason: "picked_up" } });
+  });
+
+  it("merchant web upgrade L2: a narrower set can never widen what the caller may cancel", async () => {
+    const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
+    // A rider can't cancel after pickup, even if a caller passed picked_up in its set.
+    await expect(svc.cancel("o1", "r1", undefined, { allowedStatuses: ["picked_up"] })).rejects.toThrow(/can't be cancelled anymore/i);
+  });
+
+  it("merchant web upgrade L2: inside the narrowed set, the cancel goes through as the customer's", async () => {
+    const { svc } = build(cancellable());
+    const res = await svc.cancel("o1", "c1", undefined, { allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"] });
+    expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer" });
+  });
+
   it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
     await expect(svc.cancel("o1", "r1")).rejects.toThrow(/can't be cancelled anymore/i);

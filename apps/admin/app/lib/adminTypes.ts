@@ -307,6 +307,14 @@ export interface Merchant {
   pilotEnabled: boolean;
   busyMode: boolean;
   cuisineTags: string[];
+  /** Merchant web upgrade L1: what the business sells, fixed at sign-up. */
+  businessType: "restaurant" | "shop";
+  /** A shop's kind (`pharmacy`, `auto_parts`, …); null for a restaurant. */
+  shopKind: string | null;
+  /** The landmark riders look for, from the sign-up pin. */
+  landmark: string | null;
+  /** The business contact phone, masked in the directory (in full on the detail page). */
+  contactPhoneMasked: string | null;
   orders: number;
   openDebtAmount: string;
   openDebtCount: number;
@@ -327,11 +335,19 @@ export interface MerchantDebtLedgerRow {
 export interface MerchantDetail extends Merchant {
   description: string | null;
   priceLevel: number | null;
+  /** The number ops calls before switching a restaurant on (go-live runbook), in full. */
+  contactPhone: string | null;
+  /** The sign-up pin riders are sent to. */
+  pin: { lat: number; lng: number } | null;
   trail: TripRow[];
   debtLedger: MerchantDebtLedgerRow[];
   /** LC-D-T1: last entry id of this debt-ledger page, for `?debtCursor=` — present only when older
    *  entries exist. */
   debtLedgerNextCursor: string | null;
+  /** Merchant web upgrade L2: the customer account every booking is made as (created at the first
+   *  booking, so null before it). Holding it holds the whole business's bookings. Absent on an API that
+   *  can't book riders yet. */
+  bookingAccount?: { id: string; onHold: boolean } | null;
 }
 
 /* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */

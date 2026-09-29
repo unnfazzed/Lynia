@@ -122,3 +122,22 @@ describe("HoursPage initial-load failure has a way out (LC-D##)", () => {
     expect(getMerchantProfile).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("Staff keep busy mode, and read the hours (merchant web upgrade L4)", () => {
+  it("shows the week as text with busy mode, and no way to change the schedule", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ myRole: "staff", hours: { mon: { open: "08:00", close: "20:00" } } as MerchantProfileResponse["hours"] }));
+    vi.mocked(setBusyMode).mockResolvedValue(profile({ myRole: "staff", busy: true }));
+
+    render(<HoursPage />);
+
+    expect(await screen.findByText("Only the owner changes the opening hours. You can turn busy mode on and off.")).toBeTruthy();
+    expect(screen.getByText("08:00 – 20:00")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save hours" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Open|Close) on / })).toBeNull();
+    expect(screen.queryByDisplayValue("08:00")).toBeNull();
+
+    fireEvent.click(screen.getByText(/Turn on busy mode/i));
+    expect(await screen.findByText(/Busy mode is ON/)).toBeTruthy();
+    expect(setBusyMode).toHaveBeenCalledWith({ active: true });
+  });
+});

@@ -771,6 +771,19 @@ export type MerchantBusinessType = z.infer<typeof MerchantBusinessType>;
 export const MerchantShopKind = z.enum(["pharmacy", "grocery", "butchery", "fashion", "auto_parts", "hardware", "electronics", "other"]);
 export type MerchantShopKind = z.infer<typeof MerchantShopKind>;
 
+/** What a shopkeeper calls each kind — the design doc's words and order (merchant web upgrade L1.4), shared
+ *  so the sign-up and the admin console never name a kind two ways. */
+export const MERCHANT_SHOP_KIND_LABELS: Readonly<Record<MerchantShopKind, string>> = {
+  pharmacy: "Pharmacy",
+  grocery: "Grocery",
+  butchery: "Butchery",
+  fashion: "Clothes & shoes",
+  auto_parts: "Car parts",
+  hardware: "Hardware",
+  electronics: "Phones & electronics",
+  other: "Something else",
+};
+
 /** Two roles, not a permissions matrix (design doc L4's permission table). */
 export const MerchantMemberRole = z.enum(["owner", "staff"]);
 export type MerchantMemberRole = z.infer<typeof MerchantMemberRole>;
@@ -848,6 +861,13 @@ export const MerchantProfileResponse = z
     shopKind: MerchantShopKind.nullable(),
     /** L1: the CALLER's role on this business (the web hides owner-only sections for staff). */
     myRole: MerchantMemberRole,
+    /** L2: the business's pin, landmark and contact phone — every booking's pickup, and the booking
+     *  form's map centre and fare quote. Null until the business has a pin; absent from an API older
+     *  than L2 (optional, so the change stays additive). */
+    location: Waypoint.nullable().optional(),
+    /** L4: the CALLER's name on this business's team, for the top bar ("Tendai · Staff"). Absent from an
+     *  API older than L4 (optional, so the change stays additive). */
+    myName: z.string().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
@@ -912,6 +932,15 @@ export const UpdateMerchantDishRequest = z
   })
   .strict();
 export type UpdateMerchantDishRequest = z.infer<typeof UpdateMerchantDishRequest>;
+
+/** How long a dish stays out of stock (`RM.oos_sheet`, merchant web upgrade L5): until the kitchen turns it
+ *  back on, the rest of today (the default, N-14's always-safe choice) or one hour. */
+export const DishOutOfStockFor = z.enum(["until_back", "rest_of_today", "one_hour"]);
+export type DishOutOfStockFor = z.infer<typeof DishOutOfStockFor>;
+
+/** `POST /merchant/dishes/:id/out-of-stock`. The body is optional: none means the rest of today. */
+export const SetDishOutOfStockRequest = z.object({ for: DishOutOfStockFor.optional() }).strict();
+export type SetDishOutOfStockRequest = z.infer<typeof SetDishOutOfStockRequest>;
 
 export const MerchantDishResponse = z
   .object({
@@ -1375,3 +1404,287 @@ export const MerchantEndOfDaySummaryResponse = z
   })
   .strict();
 export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySummaryResponse>;
+
+/* ── Merchant web upgrade L2: Book a rider (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
+ * A business books a Send delivery from its own pin. The order's customer of record is the business's
+ * booking account (phone `business:<merchantId>`), so every booking is business-wide and the customer
+ * app never sees one. These are the merchant-scoped shapes; Send's own contracts are unchanged. */
+
+/** `POST /merchant/bookings`. The pickup is always the business's own pin, landmark and contact phone. */
+export const CreateMerchantBookingRequest = z
+  .object({
+    /** The buyer: where to go, what riders look for there, and the phone the rider calls. */
+    dropoff: Waypoint,
+    /** What's going (Send's line items). */
+    items: z.array(OrderItem).min(1).max(10),
+    /** What it's worth — Send's declared value, the liability record. Send's pilot cap applies. */
+    declaredValue: z.number().nonnegative().max(150),
+    /** The fare the business offers, prefilled from `quoteFare` and editable (Send's model). */
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+    note: z.string().trim().max(280).optional(),
+    /** The Send liability disclaimer version the booker accepted on the form. */
+    disclaimerVersion: z.string().min(1).max(40),
+    /** One per form attempt, so a double tap or a timed-out retry books once. */
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
+export type CreateMerchantBookingRequest = z.infer<typeof CreateMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/:id/try-again` — re-broadcast an expired booking's details, optionally for more. */
+export const RetryMerchantBookingRequest = z
+  .object({
+    proposedFare: z.number().positive().max(100_000).multipleOf(0.01).optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
+export type RetryMerchantBookingRequest = z.infer<typeof RetryMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/:id/cancel` — before pickup only. */
+export const CancelMerchantBookingRequest = z.object({ reason: z.string().trim().max(160).optional() }).strict();
+export type CancelMerchantBookingRequest = z.infer<typeof CancelMerchantBookingRequest>;
+
+/** `POST /merchant/bookings/resolve-link` — a Google Maps short link the browser can't follow itself. */
+export const ResolveMapLinkRequest = z.object({ url: z.string().trim().min(1).max(500) }).strict();
+export type ResolveMapLinkRequest = z.infer<typeof ResolveMapLinkRequest>;
+export const ResolveMapLinkResponse = z.object({ point: LatLng }).strict();
+export type ResolveMapLinkResponse = z.infer<typeof ResolveMapLinkResponse>;
+
+/**
+ * The merchant's view of Send's states (design doc L2 "States in the Deliveries list"):
+ * finding / finding_again (a rider cancelled; Send re-broadcast it) → coming → picked_up → delivered,
+ * or not_delivered, expired ("No rider picked in time") or cancelled.
+ */
+export const MerchantBookingState = z.enum([
+  "finding",
+  "finding_again",
+  "coming",
+  "picked_up",
+  "delivered",
+  "not_delivered",
+  "expired",
+  "cancelled",
+]);
+export type MerchantBookingState = z.infer<typeof MerchantBookingState>;
+
+/** One rider's offer on an open booking. */
+export const MerchantBookingOffer = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(["accept", "counter"]),
+    offeredFare: z.string(),
+    etaMinutes: z.number().int(),
+    rider: z
+      .object({
+        name: z.string(),
+        photoUrl: z.string().nullable(),
+        ratingAvg: z.number().nullable(),
+        ratingCount: z.number().int(),
+        tripsCount: z.number().int(),
+      })
+      .strict(),
+    /** L3: one of the business's own riders. */
+    preferred: z.boolean(),
+    /** Someone on the business's team, who can't take its deliveries (409 `own_member` on pick). */
+    ownMember: z.boolean(),
+  })
+  .strict();
+export type MerchantBookingOffer = z.infer<typeof MerchantBookingOffer>;
+
+export const MerchantBookingResponse = z
+  .object({
+    id: z.string().uuid(),
+    state: MerchantBookingState,
+    /** Send's own status, for support. */
+    status: z.string(),
+    createdAt: z.string(),
+    /** Present only while finding a rider: when the 90-second window closes. */
+    expiresAt: z.string().nullable(),
+    /** The buyer's end: point, landmark and phone (the business's own buyer). */
+    dropoff: Waypoint,
+    itemsSummary: z.string(),
+    declaredValue: z.string(),
+    proposedFare: z.string(),
+    agreedFare: z.string().nullable(),
+    /** "Booked by Tendai"; null when the booker has left the team and has no name. */
+    bookedBy: z.string().nullable(),
+    rider: z
+      .object({
+        name: z.string(),
+        /** Only while Send's reveal window is open (assigned … delivered / undelivered). */
+        phone: z.string().nullable(),
+        bikeReg: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    offerCount: z.number().int(),
+    undeliveredReason: z.string().nullable(),
+    cancelledBy: z.enum(["business", "rider", "ops"]).nullable(),
+    cancelReason: z.string().nullable(),
+    /** A rider cancelled and Send re-broadcast this booking as a new one (follow it). */
+    rebroadcastedToId: z.string().uuid().nullable(),
+    /** This booking is Send's re-broadcast of an earlier one whose rider cancelled. */
+    rebroadcastOfId: z.string().uuid().nullable(),
+    /** When the delivery code was last issued (a teammate's "Send a new code" replaces it). */
+    codeIssuedAt: z.string().nullable(),
+    /** Detail only (empty in the list): pending offers while finding a rider. */
+    offers: z.array(MerchantBookingOffer),
+  })
+  .strict();
+export type MerchantBookingResponse = z.infer<typeof MerchantBookingResponse>;
+
+/** `POST /merchant/bookings/:id/offers/:offerId/pick` — the delivery code, shown ONCE (only its hash is kept). */
+export const PickMerchantBookingOfferResponse = z
+  .object({
+    booking: MerchantBookingResponse,
+    deliveryCode: z.string(),
+  })
+  .strict();
+export type PickMerchantBookingOfferResponse = z.infer<typeof PickMerchantBookingOfferResponse>;
+
+/** `POST /merchant/bookings/:id/code` — Send's code rotation: a new code replaces the old one. */
+export const RotateMerchantBookingCodeResponse = z.object({ deliveryCode: z.string() }).strict();
+export type RotateMerchantBookingCodeResponse = z.infer<typeof RotateMerchantBookingCodeResponse>;
+
+/* ── Merchant web upgrade L3: Your riders (docs/designs/merchant-web-upgrade.md "L3") ─────────── */
+
+/** A business keeps up to this many of its own riders. */
+export const MERCHANT_PREFERRED_RIDER_CAP = 20;
+/** …and adds at most this many a day, so the list can't be used to look numbers up (CEO-8). */
+export const MERCHANT_PREFERRED_RIDER_DAILY_ADDS = 10;
+
+/**
+ * What a business sees about a number it added: an approved LyniaGo rider, not one (yet), or one who can't
+ * take jobs right now (suspended, banned or held). Never why.
+ */
+export const MerchantRiderStatus = z.enum(["on_lyniago", "not_on_lyniago", "unavailable"]);
+export type MerchantRiderStatus = z.infer<typeof MerchantRiderStatus>;
+
+/** One of the business's own riders (`GET /merchant/riders`). Deliberately little about the person. */
+export const MerchantPreferredRiderResponse = z
+  .object({
+    id: z.string().uuid(),
+    /** The business's own name for the rider ("Blessing"). */
+    label: z.string(),
+    phoneMasked: z.string(),
+    status: MerchantRiderStatus,
+    /** The number in international digits while it isn't a LyniaGo rider yet, so the business can send
+     *  the rider sign-up link on WhatsApp; null otherwise. */
+    invitePhone: z.string().nullable(),
+    /** Deliveries this rider completed for this business: its restaurant orders and its bookings. */
+    jobs: z.number().int(),
+    /** Their average rating from those jobs; null until rated. */
+    ratingAvg: z.number().nullable(),
+    /** The rider's own LyniaGo name and photo, only once they've done a job for this business. */
+    rider: z.object({ name: z.string(), photoUrl: z.string().nullable() }).strict().nullable(),
+    addedAt: z.string(),
+  })
+  .strict();
+export type MerchantPreferredRiderResponse = z.infer<typeof MerchantPreferredRiderResponse>;
+
+export const MerchantRidersResponse = z
+  .object({
+    riders: z.array(MerchantPreferredRiderResponse),
+    /** The most a business can keep (`MERCHANT_PREFERRED_RIDER_CAP`). */
+    cap: z.number().int(),
+  })
+  .strict();
+export type MerchantRidersResponse = z.infer<typeof MerchantRidersResponse>;
+
+/** `POST /merchant/riders` (owner only): the business's label and the number the rider signs in with. */
+export const AddMerchantRiderRequest = z
+  .object({
+    label: z.string().trim().min(1).max(40),
+    phone: z.string().trim().min(6).max(20),
+  })
+  .strict();
+export type AddMerchantRiderRequest = z.infer<typeof AddMerchantRiderRequest>;
+
+/* ── Merchant web upgrade L4: Team (docs/designs/merchant-web-upgrade.md "L4 — Team") ──────────── */
+
+/** An invite lasts this long before the person must be invited again. */
+export const MERCHANT_INVITE_TTL_DAYS = 14;
+/** A business sends at most this many invites a day (rate-limited and audit-logged). */
+export const MERCHANT_INVITES_PER_DAY = 10;
+
+/** One person on the business's team (`GET /merchant/team`, owner only). */
+export const MerchantTeamMemberResponse = z
+  .object({
+    profileId: z.string().uuid(),
+    /** The name the business knows them by. */
+    name: z.string(),
+    phoneMasked: z.string(),
+    role: MerchantMemberRole,
+    /** The signed-in person themselves. */
+    you: z.boolean(),
+    joinedAt: z.string(),
+  })
+  .strict();
+export type MerchantTeamMemberResponse = z.infer<typeof MerchantTeamMemberResponse>;
+
+/** An invite still waiting for the person's Join or Not me. */
+export const MerchantTeamInviteResponse = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    phoneMasked: z.string(),
+    /** International digits, so the owner can send the link from their own WhatsApp. */
+    invitePhone: z.string(),
+    createdAt: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type MerchantTeamInviteResponse = z.infer<typeof MerchantTeamInviteResponse>;
+
+export const MerchantTeamResponse = z
+  .object({
+    members: z.array(MerchantTeamMemberResponse),
+    invites: z.array(MerchantTeamInviteResponse),
+  })
+  .strict();
+export type MerchantTeamResponse = z.infer<typeof MerchantTeamResponse>;
+
+/** `POST /merchant/team/invites` (owner only). Never reveals whether the number works elsewhere. */
+export const CreateMerchantInviteRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    phone: z.string().trim().min(6).max(20),
+  })
+  .strict();
+export type CreateMerchantInviteRequest = z.infer<typeof CreateMerchantInviteRequest>;
+
+/** An invite waiting for the signed-in person (`GET /merchant/invites`): "{Owner} added you to {Business}". */
+export const MyMerchantInviteResponse = z
+  .object({
+    id: z.string().uuid(),
+    businessName: z.string(),
+    businessType: MerchantBusinessType,
+    /** The owner's first name, as the invite line says it. */
+    ownerName: z.string(),
+    role: MerchantMemberRole,
+    /** The name the owner gave, which the person confirms or corrects at Join. */
+    name: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type MyMerchantInviteResponse = z.infer<typeof MyMerchantInviteResponse>;
+
+export const MyMerchantInvitesResponse = z.object({ invites: z.array(MyMerchantInviteResponse) }).strict();
+export type MyMerchantInvitesResponse = z.infer<typeof MyMerchantInvitesResponse>;
+
+/** `POST /merchant/invites/:id/join`: the person's name as they want it, and the one-tap terms line. */
+export const JoinMerchantInviteRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    termsAccepted: z.literal(true),
+  })
+  .strict();
+export type JoinMerchantInviteRequest = z.infer<typeof JoinMerchantInviteRequest>;
+
+/** `POST /admin/merchants/:id/owner`: support hands a business to another person after an identity check. */
+export const TransferMerchantOwnerRequest = z
+  .object({
+    phone: z.string().trim().min(6).max(20),
+    note: z.string().trim().min(10).max(500),
+  })
+  .strict();
+export type TransferMerchantOwnerRequest = z.infer<typeof TransferMerchantOwnerRequest>;

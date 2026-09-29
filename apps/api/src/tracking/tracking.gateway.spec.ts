@@ -400,6 +400,34 @@ describe("TrackingGateway.isMerchantOnline (C5 accept-window pause)", () => {
   });
 });
 
+describe("TrackingGateway.evictFromMerchantQueue (merchant web upgrade L4 Team)", () => {
+  it("takes only the removed person's devices out of only that business's queue room", async () => {
+    const room = merchantQueueRoom("m1");
+    const removed = remoteSocket("staff-1", [room, orderRoom("their-own-order")]);
+    const stays = remoteSocket("owner-1", [room]);
+    const { server, in: inFn } = fakeServer([removed, stays]);
+    const g = gateway();
+    g.server = server as never;
+
+    await g.evictFromMerchantQueue("staff-1", "m1");
+
+    expect(inFn).toHaveBeenCalledWith(room);
+    expect(removed.leave).toHaveBeenCalledTimes(1);
+    expect(removed.leave).toHaveBeenCalledWith(room);
+    expect(removed.rooms.has(orderRoom("their-own-order"))).toBe(true);
+    expect(stays.leave).not.toHaveBeenCalled();
+  });
+
+  it("never throws: no server, or a failed lookup, leaves the committed removal standing", async () => {
+    const g = gateway();
+    await expect(g.evictFromMerchantQueue("staff-1", "m1")).resolves.toBeUndefined();
+
+    const server = { in: vi.fn(() => ({ fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) })) } as unknown;
+    g.server = server as never;
+    await expect(g.evictFromMerchantQueue("staff-1", "m1")).resolves.toBeUndefined();
+  });
+});
+
 describe("TrackingGateway.emitOffersChanged", () => {
   it("signals offers:changed to the order's room (no offer contents)", () => {
     const { server, to, emit } = fakeServer();

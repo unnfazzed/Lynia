@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse } from "@lynia/shared";
 import CategoryManagePage from "./page";
 import { deleteCategory, listCategories } from "../../../lib/menu-api";
+import { clearBusinessCache, primeBusiness } from "../../../lib/business";
+import { merchantProfile } from "../../../testing/fixtures";
 
 /**
  * CF-02-SIB-5 (crash-fuzz 2026-08-23): `run()` — the shared helper behind move/toggle/delete — guarded
@@ -115,5 +117,19 @@ describe("menu/categories/page.tsx — CF-02-SIB-5 (crash-fuzz 2026-08-23)", () 
       await Promise.resolve();
     });
     expect(deleteCategory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Categories are the owner's (merchant web upgrade L4)", () => {
+  afterEach(() => clearBusinessCache());
+
+  it("Staff who reach the screen get one line and the way back, no controls", async () => {
+    primeBusiness(merchantProfile({ myRole: "staff" }));
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    render(<CategoryManagePage />);
+    expect(await screen.findByText("Only the owner changes the categories.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to the menu" }).getAttribute("href")).toBe("/menu");
+    expect(screen.queryByRole("button", { name: /New category/ })).toBeNull();
+    expect(screen.queryByText("Mains")).toBeNull();
   });
 });

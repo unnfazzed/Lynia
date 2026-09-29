@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import { formatMoney, parseAmountInput } from "../../lib/money-input";
+import { useVocabulary } from "../../lib/vocabulary";
 import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
 import { PhotoPicker } from "./PhotoPicker";
 
@@ -43,6 +44,7 @@ export function DishEditorSheet({
   onDelete?: () => void;
   onCancel: () => void;
 }) {
+  const v = useVocabulary();
   const [name, setName] = useState(dish?.name ?? "");
   const [description, setDescription] = useState(dish?.description ?? "");
   const [priceText, setPriceText] = useState(dish ? formatMoney(dish.priceUsd) : "");
@@ -57,7 +59,7 @@ export function DishEditorSheet({
   return (
     <div className="kitchen-sheet-overlay">
       <div className="kitchen-sheet" style={{ maxWidth: 640 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{dish ? "Edit dish" : "Add a dish"}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{dish ? `Edit ${v.item}` : `Add ${v.anItem}`}</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
           Changes apply to new orders only — never to an order already placed.
         </div>
@@ -110,7 +112,7 @@ export function DishEditorSheet({
             {isDraft && (
               <div style={{ display: "flex", gap: 10, marginTop: 14, padding: "12px 14px", background: "var(--highlight-wash)", borderRadius: 12 }}>
                 <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", lineHeight: 1.4 }}>
-                  Saved, but customers can&apos;t see it yet — every dish needs one photo before it goes live.
+                  Saved, but customers can&apos;t see it yet — every {v.item} needs one photo before it goes live.
                 </div>
               </div>
             )}
@@ -147,7 +149,7 @@ export function DishEditorSheet({
                 disabled={disabled || submitting}
                 style={{ ...dangerGhostButtonStyle, width: "100%", marginTop: 10, opacity: disabled || submitting ? 0.5 : 1 }}
               >
-                Delete dish
+                Delete {v.item}
               </button>
             )}
           </div>
@@ -155,7 +157,7 @@ export function DishEditorSheet({
           <div className="kitchen-aside" style={{ width: 260 }}>
             {/* M4·5 labels the slot, with REQUIRED beside it (r-merchant.jsx:1134-1136 — the pill
              *  itself lives in PhotoPicker). */}
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>DISH PHOTO</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>{v.item.toUpperCase()} PHOTO</div>
             <PhotoPicker
               kind="dish"
               aspect={1}
@@ -168,10 +170,7 @@ export function DishEditorSheet({
                 setPhotoPreviewUrl(null);
               }}
             />
-            <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 10 }}>
-              Every dish needs one photo before it goes live — dishes with photos are ordered about twice as often. Pick the
-              file from this tablet; we shrink it for you.
-            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 10 }}>{v.itemPhotoNote}</div>
           </div>
         </div>
       </div>

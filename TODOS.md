@@ -221,3 +221,35 @@ starts from reasoning, not archaeology.
 - **Effort:** human M / CC S. **Priority:** P2.
 - **Trigger / blocked by:** the pilot's `undelivered` reason `wrong_address` above about 10% of business
   bookings.
+
+### TODO-8 · Merchant terms: write them, publish them, name them at sign-up
+
+- **What:** A merchant terms page (like `GET /legal/privacy`), and the sign-up's one-tap line naming it
+  next to the privacy notice ("I accept LyniaGo's merchant terms and privacy notice").
+- **Why:** The design doc makes the terms text a dependency. L1 ships the line with the privacy notice
+  only, because there are no terms to link. A business signing up today accepts nothing about
+  prohibited goods, the $150 Send limit or liability.
+- **Pros:** Sign-ups accept real terms, and `merchant_members.terms_accepted_at` means what it says.
+  **Cons:** Needs a lawyer or owner-approved text. Businesses that signed up earlier accepted only the
+  privacy notice.
+- **Context:** Design doc L1.4 and the L2 "Prohibited goods" section; ledger D-43 §3.
+- **Effort:** human M (the text) / CC S (the page and the line). **Priority:** P1.
+- **Trigger / blocked by:** before the founder sends the sign-up link to shops (which waits for L2).
+
+### TODO-9 · A support WhatsApp number for the merchant web
+
+- **What:** A `NEXT_PUBLIC_SUPPORT_WHATSAPP` build arg (Dockerfile and `deploy-merchant-azure.yml`), from a
+  repository variable, that turns on "Message LyniaGo on WhatsApp" on a restaurant's go-live card and
+  the Help nav item. Both stay hidden while the number is unset, as the mobile help row does.
+- **Why:** The design doc puts a WhatsApp button on the not-live checklist, and Help routes to WhatsApp
+  (L5). There is no number anywhere to point them at: the mobile app's `EXPO_PUBLIC_SUPPORT_WHATSAPP` is
+  unset too.
+- **Pros:** New restaurants can reach ops before the go-live call. **Cons:** A build arg per deployable.
+- **Context:** Ledger D-43 §3.
+- **Effort:** human S (pick the number) / CC S. **Priority:** P2.
+- **Trigger / blocked by:** the owner choosing the support number. Build it with L5's Help item.
+- **Status (L2, 2026-09-29):** the plumbing is built: the build arg, `SUPPORT_WHATSAPP` in
+  `apps/merchant/app/lib/config.ts`, a shop's Help nav item and the "message LyniaGo" link on a picked-up
+  booking. All of it stays hidden until the owner sets the `MERCHANT_SUPPORT_WHATSAPP` repository
+  variable (international digits, e.g. `263771234567`) and the merchant web redeploys. The restaurant
+  go-live card's button and restaurant Help land with L5.

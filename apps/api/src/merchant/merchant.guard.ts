@@ -1,4 +1,4 @@
-import { type CanActivate, type ExecutionContext, ForbiddenException, Injectable, SetMetadata } from "@nestjs/common";
+import { type CanActivate, createParamDecorator, type ExecutionContext, ForbiddenException, Injectable, SetMetadata } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { type MerchantAccess, resolveMerchantAccess } from "./merchant-access";
@@ -13,6 +13,14 @@ export interface MerchantAccessRequest {
   user?: { sub?: string; role?: string };
   merchantAccess?: MerchantAccess;
 }
+
+/** The access MerchantGuard resolved for this request (use on a route behind MerchantGuard). Throws the
+ *  guard's own 403 if it's missing, so a route wired without the guard fails closed, never open. */
+export const CurrentMerchantAccess = createParamDecorator((_data: unknown, ctx: ExecutionContext): MerchantAccess => {
+  const access = ctx.switchToHttp().getRequest<MerchantAccessRequest>().merchantAccess;
+  if (!access) throw new ForbiddenException({ reason: "not_a_member", message: "This number isn't on a business on LyniaGo yet." });
+  return access;
+});
 
 /**
  * Requires the caller to be ON a business — a `merchant_members` row, resolved per request
