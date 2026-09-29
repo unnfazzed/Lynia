@@ -11,6 +11,8 @@ import { merchantProfile } from "../../testing/fixtures";
 vi.mock("../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn() }));
 vi.mock("../../lib/bookings-api", () => ({ listBookings: vi.fn() }));
 vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn() }));
+// L4: the owner alone on the team, unless a test says otherwise.
+vi.mock("../../lib/team-api", () => ({ getTeam: vi.fn(async () => ({ members: [{}], invites: [] })) }));
 
 // One stable value, as the real provider memoizes it: the page's load depends on `signOut`, so a fresh
 // function per render would re-run the load on every render.
@@ -63,9 +65,10 @@ describe("/setup is type-aware (merchant web upgrade L1)", () => {
 
     expect((await screen.findByRole("link", { name: "Book a rider" })).getAttribute("href")).toBe("/deliveries/new");
     expect(screen.queryByText("Coming soon")).toBeNull();
-    // L3: the shop's own riders, optional.
+    // L3: the shop's own riders, and L4: its team, both optional.
     expect(screen.getByRole("link", { name: "Add riders" }).getAttribute("href")).toBe("/riders");
-    expect(screen.getByText("Optional")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Add someone" }).getAttribute("href")).toBe("/team");
+    expect(screen.getAllByText("Optional")).toHaveLength(2);
 
     cleanup();
     vi.mocked(listBookings).mockResolvedValue([{ id: "b1" } as never]);

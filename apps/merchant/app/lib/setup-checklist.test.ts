@@ -10,6 +10,7 @@ describe("buildShopSetupState (merchant web upgrade L1, live steps from L2)", ()
       ["first_booking", false, true],
       ["riders", false, true],
       ["items", false, false],
+      ["team", false, true],
     ]);
     expect(setup.items.find((i) => i.key === "first_booking")?.action).toBeUndefined();
     expect(setup.items.find((i) => i.key === "items")?.action).toEqual({ label: "Add items", href: "/menu" });
@@ -27,7 +28,7 @@ describe("buildShopSetupState (merchant web upgrade L1, live steps from L2)", ()
   });
 
   it("ticks booking with the first booking, riders with the first rider and items with the first item", () => {
-    const setup = buildShopSetupState({ bookingsOn: true, bookings: 3, items: 1, riders: 2 });
+    const setup = buildShopSetupState({ bookingsOn: true, bookings: 3, items: 1, riders: 2, team: { members: 2, invites: 0 } });
     expect(setup.items.every((i) => i.done)).toBe(true);
     expect(setup.items.find((i) => i.key === "first_booking")?.action).toEqual({ label: "See deliveries", href: "/deliveries" });
     expect(setup.items.find((i) => i.key === "items")?.detail).toBe("1 item added. Customers will see them when LyniaGo Shops opens.");
@@ -41,6 +42,22 @@ describe("buildShopSetupState (merchant web upgrade L1, live steps from L2)", ()
     expect(riders.soon).toBeFalsy();
     // Book a rider and add items: two real steps; the riders step isn't one of them.
     expect(setup.remaining).toBe(2);
+  });
+
+  it("a shop's team (L4) is optional too, and done once someone has joined", () => {
+    const alone = buildShopSetupState({ bookingsOn: true, bookings: 0, items: 0, team: { members: 1, invites: 0 } });
+    expect(alone.items.find((i) => i.key === "team")).toMatchObject({ done: false, optional: true, action: { label: "Add someone", href: "/team" } });
+    expect(alone.remaining).toBe(2);
+
+    const waiting = buildShopSetupState({ bookingsOn: true, bookings: 0, items: 0, team: { members: 1, invites: 2 } });
+    expect(waiting.items.find((i) => i.key === "team")?.detail).toBe("2 invites waiting. They join when they sign in.");
+
+    const joined = buildShopSetupState({ bookingsOn: true, bookings: 0, items: 0, team: { members: 3, invites: 0 } });
+    expect(joined.items.find((i) => i.key === "team")).toMatchObject({
+      done: true,
+      detail: "2 people on your team with you.",
+      action: { label: "See your team", href: "/team" },
+    });
   });
 
   it("is never live: customers find shops when LyniaGo Shops opens", () => {

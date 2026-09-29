@@ -2122,6 +2122,7 @@ Built at 1024×680 and the D-32 phone tier, with the 320px check; tokens only, t
 | `RM.shop` (M5), owner, both types | ends with How riders pay you (restaurants) / the profile (shops) | + a "Your team" card with "Manage team" | Design doc L5: Team lives inside Shop for both types, owner only |
 | `RM.shop`, `RM.statement`, `RM.setup`, `category_manage`, Staff by an old link | the owner's screens | one line each ("Only the owner changes the shop's details, its riders and its team." · "Only the owner sees the statement and the day's totals." · "Only the owner sets up {Business}." · "Only the owner changes the categories.") | The permission table; the API refuses the controls anyway |
 | `RM.setup` nudge on Orders (SetupBanner) | shown while the checklist is open | not shown to Staff | Setting up is the owner's |
+| A shop's `/setup` (D-43…D-45) | pin, booking, riders, items | + "Add your team", tagged **Optional** and never counted ("N people on your team with you", or "N invites waiting") | Design doc "A shop's /setup checklist" item 5 |
 | "Set up your business" (D-43) | the type cards | + "Work at a business that's already on LyniaGo? Ask the owner to add you in **Team**." under them; a number with a pending invite sees Join instead | Design doc L1.4 and L4 |
 
 ### 3 · Behaviour worth knowing

@@ -23,7 +23,7 @@ import { DAY_KEYS, formatWindow, type PartialMerchantHours } from "./hours";
  * finishing this list. The screen says that instead of implying the last tick flips it.
  */
 
-export type SetupItemKey = "menu" | "hours" | "payment" | "alarm" | "pin" | "first_booking" | "items" | "riders";
+export type SetupItemKey = "menu" | "hours" | "payment" | "alarm" | "pin" | "first_booking" | "items" | "riders" | "team";
 
 export interface SetupItem {
   key: SetupItemKey;
@@ -150,16 +150,45 @@ export function buildSetupState({
   };
 }
 
+/** L4's optional "Add your team": done once someone besides the owner has joined. */
+function teamItem(team: { members: number; invites: number } | null | undefined): SetupItem {
+  if (team == null) {
+    return { key: "team", title: "Add your team", detail: "Everyone who works with you signs in with their own phone.", done: false, soon: true };
+  }
+  const others = Math.max(0, team.members - 1);
+  const detail =
+    others > 0
+      ? `${others} ${others === 1 ? "person" : "people"} on your team with you.`
+      : team.invites > 0
+        ? `${team.invites} invite${team.invites === 1 ? "" : "s"} waiting. They join when they sign in.`
+        : "Everyone who works with you signs in with their own phone.";
+  return {
+    key: "team",
+    title: "Add your team",
+    detail,
+    done: others > 0,
+    optional: true,
+    action: { label: others > 0 ? "See your team" : "Add someone", href: "/team" },
+  };
+}
+
 /**
  * A shop's checklist (docs/designs/merchant-web-upgrade.md, "A shop's /setup checklist"). Each step goes
  * live with its layer: the pin and landmark are done at sign-up (L1); booking a rider (L2) is live once
  * the API can book riders, and ticks with the first booking; its own riders (L3, optional) once the API
  * keeps them (`riders` is null before), ticking with the first; the Items screen (L2's shop nav) ticks
- * with the first item. There is no go-live for a shop yet — customers find shops when LyniaGo Shops opens
- * (L1.5) — so `live` is false.
+ * with the first item; its team (L4, optional) once someone besides the owner has joined. There is no
+ * go-live for a shop yet — customers find shops when LyniaGo Shops opens (L1.5) — so `live` is false.
  */
 export function buildShopSetupState(
-  input: { bookingsOn: boolean; bookings: number; items: number; riders?: number | null } = { bookingsOn: false, bookings: 0, items: 0 },
+  input: {
+    bookingsOn: boolean;
+    bookings: number;
+    items: number;
+    riders?: number | null;
+    // L4: the people on the team (the owner included) and the invites waiting; null before the API has Team.
+    team?: { members: number; invites: number } | null;
+  } = { bookingsOn: false, bookings: 0, items: 0 },
 ): SetupState {
   const booked = input.bookings > 0;
   const hasItems = input.items > 0;
@@ -213,6 +242,7 @@ export function buildShopSetupState(
       done: hasItems,
       action: { label: hasItems ? "Edit your items" : "Add items", href: "/menu" },
     },
+    teamItem(input.team),
   ];
   return { items, remaining: items.filter((i) => !i.done && i.action && !i.optional).length, live: false };
 }

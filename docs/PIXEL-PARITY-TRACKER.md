@@ -434,7 +434,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | 👁 | M1·1 | `RM login` | Phone + OTP login  (RV M0·1) | merchant login align (`docs/parity/PHASE6-merchant.md`, `tools/parity/out/phase6_merchant.png`); D-43 (PROPOSED, merchant web upgrade L1): title "Sign in" and the channel-aware code line — structure unchanged | |
-| ⬜ | M1·2 | `RM setup` | First login · setup  (RV M0·2) | D-43 (PROPOSED, merchant web upgrade L1): the not-live line names the call within a day; a shop gets its own undrawn checklist. D-44 (PROPOSED, merchant web upgrade L2): the shop checklist sits in the shop's own shell, and its steps go live. D-45 (L3): + an optional "Add your riders". D-46 (PROPOSED, L4): Staff see one line, not the checklist | |
+| ⬜ | M1·2 | `RM setup` | First login · setup  (RV M0·2) | D-43 (PROPOSED, merchant web upgrade L1): the not-live line names the call within a day; a shop gets its own undrawn checklist. D-44 (PROPOSED, merchant web upgrade L2): the shop checklist sits in the shop's own shell, and its steps go live. D-45 (L3): + an optional "Add your riders". D-46 (PROPOSED, L4): a shop's gains an optional "Add your team"; Staff see one line, not the checklist | |
 | ⬜ | M1·3 | `RM reboot` | Tablet rebooted mid-shift  (RV M0·b1) | | |
 
 ### M2 · The queue
