@@ -43,7 +43,7 @@
 </style>
 </head>
 <body>
-<h1>Merchant web upgrade: sign-in → "What do you sell?" → Book a rider → Team (phone width, 360px)</h1>
+<h1>Merchant web upgrade: sign-in → "What do you sell?" → Team → Book a rider → Your riders (phone width, 360px)</h1>
 <div class="row">
 
   <!-- SCREEN 1: sign-in. One field. WhatsApp named up front, because that is where the code lands and
@@ -112,7 +112,7 @@
         <div class="btn">Add to team</div>
         <div class="btn ghost">Send them the link on WhatsApp</div>
       </div>
-      <div class="nav"><span>Deliveries</span><span>Items</span><span>Shop</span><span><b>Team</b></span><span>Help</span></div>
+      <div class="nav"><span>Deliveries</span><span>Riders</span><span>Items</span><span><b>Shop</b></span><span>Help</span></div>
     </div>
     <div class="cap">3 · Owner's Team page. Staff never see this tab, Money or price editing.</div>
   </div>
@@ -140,9 +140,34 @@
         <div class="muted">No prescription medicine, weapons, drugs or cash.</div>
         <div class="btn">Find a rider</div>
       </div>
-      <div class="nav"><span><b>Deliveries</b></span><span>Items</span><span>Shop</span><span>Team</span><span>Help</span></div>
+      <div class="nav"><span><b>Deliveries</b></span><span>Riders</span><span>Items</span><span>Shop</span><span>Help</span></div>
     </div>
     <div class="cap">4 · A shop's home. After "Find a rider": riders' offers (name, rating, ETA, fare) for 90 s → Pick → "Send the code to the buyer on WhatsApp" (wa.me) or Copy code.</div>
+  </div>
+
+  <!-- SCREEN 5: Your riders (owner's addition at the design review). The business adds the bikers it
+       already trusts by the phone they sign in to LyniaGo with. The list shows the business's OWN label
+       and a coarse status only (no LyniaGo name/photo until they've done a job here), so it can't be used
+       to look people up. Preferred riders get this business's bookings first (up to 10 km) and a
+       "Your rider" tag on their offers; eligibility rules never bend. -->
+  <div>
+    <div class="phone">
+      <div class="bar"><span>Siyaso Spares</span><span>Farai · Owner</span></div>
+      <div class="title">Your riders</div>
+      <div class="sub">Riders you already trust. They get your deliveries first when they're online.</div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Blessing</b> <span class="muted">· online</span><br><span class="muted">077 ••• 0123 · 14 jobs for you · ★4.8</span></span><span class="tag">On LyniaGo</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Tafadzwa</b><br><span class="muted">071 ••• 5566 · 0 jobs yet</span></span><span class="tag">On LyniaGo</span></div>
+      <div class="member"><span class="av"></span><span class="grow"><b>Kuda</b><br><span class="muted">078 ••• 9001</span></span><span class="tag">Not on LyniaGo yet</span></div>
+      <div class="btn ghost">Send Kuda the rider sign-up link on WhatsApp</div>
+      <div class="btn">+ Add a rider</div>
+      <div class="card" style="margin-top:12px">
+        <div class="input">Name you call them · e.g. Blessing</div>
+        <div class="input">Phone they sign in with · 07…</div>
+        <div class="btn">Add rider</div>
+      </div>
+      <div class="nav"><span>Deliveries</span><span><b>Riders</b></span><span>Items</span><span>Shop</span><span>Help</span></div>
+    </div>
+    <div class="cap">5 · Your riders. On a booking, their offers show "Your rider" and rank first unless another offer is clearly better on fare + ETA.</div>
   </div>
 
 </div>
