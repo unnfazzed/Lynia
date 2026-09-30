@@ -13,6 +13,7 @@
  *   node tools/parity/shoot-merchant-mobile.mjs --set orders --out docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set menu --out docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set account --out docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30
+ *   node tools/parity/shoot-merchant-mobile.mjs --set shop --out docs/parity/MERCHANT-MOBILE-SHOP-2026-09-30
  */
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -140,10 +141,47 @@ const MONEY_SUMMARY = {
 };
 const WEEK = { rangeStart: ago(7 * 1440), rangeEnd: ago(0), ordersDelivered: 0, foodSalesTotal: 0, commissionRatePct: 0, commissionCharged: 0, illustrativeRatePct: 10, illustrativeCommission: 0, cookedFoodLossTotal: 0, lineItems: [] };
 
+// ── PR 4a: the shop (D1–D5, D7) ───────────────────────────────────────────────────────────────
+const bookRider = { name: "Blessing Moyo", phone: "+263772222222", bikeReg: "AFG 2231" };
+function booking(id, over) {
+  return {
+    id, state: "coming", status: "assigned", createdAt: ago(31), expiresAt: null,
+    dropoff: { point: { lat: -17.79, lng: 31.04 }, landmark: "12 Fife Ave, Avondale", contactPhone: "+263779982210" },
+    itemsSummary: "2× Brake pads (front) · 1× Oil filter", declaredValue: "51.00", proposedFare: "3.50", agreedFare: "3.50", bookedBy: "Farai",
+    rider: bookRider, offerCount: 0, undeliveredReason: null, cancelledBy: null, cancelReason: null, rebroadcastedToId: null, rebroadcastOfId: null,
+    codeIssuedAt: ago(20), offers: [], ...over,
+  };
+}
+const offer = (id, name, fare, eta, rating, trips, over = {}) => ({
+  id, type: "counter", offeredFare: fare, etaMinutes: eta, rider: { name, photoUrl: null, ratingAvg: rating, ratingCount: 20, tripsCount: trips }, preferred: false, ownMember: false, ...over,
+});
+const BOOKINGS = {
+  finding: booking("b1000000-0000-4000-8000-000000000000", {
+    state: "finding", status: "open_for_offers", itemsSummary: "Car battery", proposedFare: "4.20", agreedFare: null, rider: null, expiresAt: ahead(1.03), offerCount: 3,
+    dropoff: { point: { lat: -17.83, lng: 31.05 }, landmark: "Copacabana rank", contactPhone: "+263779982210" },
+    offers: [
+      offer("o1000000-0000-4000-8000-000000000000", "Kuda Moyo", "3.80", 4, 4.7, 150),
+      offer("o2000000-0000-4000-8000-000000000000", "Tendai Phiri", "5.00", 3, 4.4, 44),
+      offer("o3000000-0000-4000-8000-000000000000", "Farai Chari", "4.20", 6, 4.9, 120, { preferred: true, type: "accept" }),
+    ],
+  }),
+  coming: booking("b2000000-0000-4000-8000-000000000000", { state: "picked_up", status: "en_route_dropoff", itemsSummary: "Brake pads" }),
+  tracking: booking("b3000000-0000-4000-8000-000000000000", { state: "picked_up", status: "en_route_dropoff" }),
+  delivered: booking("b4000000-0000-4000-8000-000000000000", { state: "delivered", status: "delivered" }),
+};
+const SHOP_ME = { ...SHOP, hours: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: "08:00", close: "18:00" }])) };
+const SHOP_ITEMS = [
+  { id: "d7000000-0000-4000-8000-000000000000", categoryId: "c3000000-0000-4000-8000-000000000000", name: "Brake pads (front)", description: null, priceUsd: 22, photoUrl: null, isDraft: false, outOfStock: false, sortOrder: 0 },
+  { id: "d8000000-0000-4000-8000-000000000000", categoryId: "c3000000-0000-4000-8000-000000000000", name: "Oil filter", description: null, priceUsd: 7, photoUrl: null, isDraft: false, outOfStock: false, sortOrder: 1 },
+];
+
 function apiRoute(route, scenario) {
   const path = new URL(route.request().url()).pathname.replace(/^\/__api/, "");
   const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   if (path === "/merchant/orders") return json(200, scenario.orders ?? []);
+  if (path === "/merchant/bookings") return json(200, scenario.bookings ?? []);
+  const bk = path.match(/^\/merchant\/bookings\/([0-9a-f-]+)$/);
+  if (bk) return json(200, (scenario.bookings ?? []).find((b) => b.id === bk[1]) ?? {});
   const one = path.match(/^\/merchant\/orders\/([0-9a-f-]+)$/);
   if (one) return json(200, (scenario.orders ?? []).find((o) => o.id === one[1]) ?? {});
   if (/\/pickup-code\/reveal$/.test(path)) return json(200, { pickupCode: "7205" });
@@ -151,6 +189,7 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/statement/weekly") return json(200, WEEK);
   if (path === "/merchant/categories") return json(200, scenario.menu?.categories ?? []);
   if (path === "/merchant/dishes") return json(200, scenario.menu?.dishes ?? []);
+  if (path === "/merchant/bookings" && route.request().method() === "POST") return json(201, BOOKINGS.finding);
   if (path === "/auth/otp/request") return json(200, { sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
   if (path === "/auth/me") return json(200, { firstName: "Farai", lastName: "Chari", phone: "+263771234567" });
   if (path === "/merchant/me") return scenario.me ? json(200, scenario.me) : json(403, { reason: "not_a_member", message: "Not on a business." });
@@ -247,6 +286,50 @@ const ACCOUNT_ROWS = [
   { id: "E4", label: "E4 · Preferred riders", app: { name: "E4", path: "/riders", scenario: { me: KITCHEN } } },
 ];
 
+const toD3 = async (p) => {
+  await p.getByLabel("Search street or area, or paste the buyer's location").fill("-17.79, 31.04");
+  await p.getByLabel("Buyer’s phone").fill("779982210");
+  await p.getByRole("button", { name: "Next", exact: true }).click();
+  for (const name of [/Brake pads \(front\)/, /Brake pads \(front\)/, /Oil filter/]) {
+    await p.getByRole("button", { name: "From your items" }).click();
+    await p.getByRole("dialog", { name: "Your items" }).getByRole("button", { name }).click();
+  }
+};
+const SHOP_ROWS = [
+  {
+    id: "D1",
+    label: "D1 · Shop Orders home",
+    mode: "shop",
+    sub: "no New · Packing · Ready yet: shops take no customer orders (owner decision)",
+    app: { name: "D1", path: "/deliveries", scenario: { me: SHOP_ME, bookings: [BOOKINGS.finding, BOOKINGS.coming] } },
+  },
+  {
+    id: "D2",
+    label: "D2 · Book · where",
+    mode: "shop",
+    sub: "keyless run: a pasted location stands in for a Places result",
+    app: {
+      name: "D2",
+      path: "/deliveries/new",
+      scenario: { me: SHOP_ME },
+      before: async (p) => {
+        await p.getByLabel("Search street or area, or paste the buyer's location").fill("-17.79, 31.04");
+        await p.getByLabel("Buyer’s phone").fill("779982210");
+      },
+    },
+  },
+  { id: "D3", label: "D3 · Book · what + fare", mode: "shop", app: { name: "D3", path: "/deliveries/new", scenario: { me: SHOP_ME, menu: { dishes: SHOP_ITEMS } }, before: toD3 } },
+  { id: "D4", label: "D4 · Offers", mode: "shop", app: { name: "D4", path: `/deliveries/${BOOKINGS.finding.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.finding] } } },
+  {
+    id: "D5",
+    label: "D5 · Tracking",
+    mode: "shop",
+    sub: "code shown to whoever picked; this browser didn't (no ETA, no Cash back step until cash on delivery)",
+    app: { name: "D5", path: `/deliveries/${BOOKINGS.tracking.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.tracking] } },
+  },
+  { id: "D7", label: "D7 · Delivered", mode: "shop", sub: "no cash card until cash on delivery (PR 4b)", app: { name: "D7", path: `/deliveries/${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
+];
+
 const PR1_ROWS = [
   { id: "A1", label: "A1 · Sign in", app: { name: "A1", path: "/login", signedIn: false } },
   { id: "A2", label: "A2 · Code", app: { name: "A2", path: "/login", signedIn: false, before: toCode } },
@@ -267,7 +350,7 @@ await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
 const rows = [];
 try {
-  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : SET === "account" ? ACCOUNT_ROWS : PR1_ROWS) {
+  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : SET === "account" ? ACCOUNT_ROWS : SET === "shop" ? SHOP_ROWS : PR1_ROWS) {
     const mock = r.id ? await shootProto(browser, r.id, r.mode) : undefined;
     const app = await shootApp(browser, r.app);
     rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: 360, ...(r.id ? {} : { mockNote: "drawn by the prototype's wiring, not as a screen" }) });
@@ -285,6 +368,8 @@ await buildSheet({
         ? "Merchant mobile redesign · PR 3a (D-48): Menu C1–C2, Money C3, Items E1"
         : SET === "account"
           ? "Merchant mobile redesign · PR 3b (D-48): Hours C5, Team E2–E3, Riders E4"
+          : SET === "shop"
+            ? "Merchant mobile redesign · PR 4a (D-48): the shop D1–D5, D7"
         : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
   out: OUT,
   rows,

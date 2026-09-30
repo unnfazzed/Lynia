@@ -1,5 +1,4 @@
 import {
-  type CreateMerchantBookingRequest,
   type LatLng,
   MERCHANT_OFFER_WEIGHTS,
   type MerchantBookingOffer,
@@ -9,15 +8,12 @@ import {
   normalizePhone,
   quoteFare,
   rankOffers,
-  type Waypoint,
 } from "@lynia/shared";
-import { insideServiceArea } from "./geo";
-import { parseAmountInput } from "./money-input";
 import { randomUuid } from "./random-id";
 
 /**
  * Book a rider's pure rules (merchant web upgrade L2, docs/designs/merchant-web-upgrade.md "L2 — Book a
- * rider"): when the feature is on, the states and their words, how often to poll, the booking form,
+ * rider"): when the feature is on, the states and their words, how often to poll,
  * and getting the delivery code to the buyer.
  */
 
@@ -55,19 +51,6 @@ export const STATE_LABEL: Record<MerchantBookingState, string> = {
   not_delivered: "Not delivered",
   expired: "No rider picked in time",
   cancelled: "Cancelled",
-};
-
-export type BookingTone = "live" | "good" | "warn" | "muted";
-
-export const STATE_TONE: Record<MerchantBookingState, BookingTone> = {
-  finding: "live",
-  finding_again: "warn",
-  coming: "live",
-  picked_up: "live",
-  delivered: "good",
-  not_delivered: "warn",
-  expired: "warn",
-  cancelled: "muted",
 };
 
 /** Send's undelivered reasons, in the business's words (the rider picked one at the door). */
@@ -159,60 +142,9 @@ export function recallCode(bookingId: string): string | null {
 
 /* ── The booking form ───────────────────────────────────────────────────────────────────────── */
 
-export interface BookingForm {
-  point: LatLng;
-  /** False until the booker placed the pin (a read link, a drag, the arrow keys). */
-  pinConfirmed: boolean;
-  landmark: string;
-  buyerPhone: string;
-  what: string;
-  value: string;
-  fare: string;
-  note: string;
-  accepted: boolean;
-}
-
-export type BookingField = "point" | "landmark" | "buyerPhone" | "what" | "value" | "fare" | "accepted";
-export type BookingErrors = Partial<Record<BookingField, string>>;
-
 /** Send's suggested fare for the trip ($1.50 + $0.60/km, straight line), as the form's starting fare. */
 export function suggestedFare(pickup: LatLng, dropoff: LatLng): number {
   return quoteFare(pickup, dropoff).suggestedFare;
-}
-
-export function validateBooking(form: BookingForm): BookingErrors {
-  const errors: BookingErrors = {};
-  if (!form.pinConfirmed) errors.point = "Paste the location the buyer sent, or drag the map until the pin is on their door.";
-  else if (!insideServiceArea(form.point)) errors.point = "That's outside the area LyniaGo covers for now.";
-  if (!form.landmark.trim()) errors.landmark = "Tell the rider what to look for.";
-  else if (form.landmark.trim().length > 160) errors.landmark = "Keep it under 160 letters.";
-  if (!normalizePhone(form.buyerPhone.trim()) || form.buyerPhone.trim().length > 20) errors.buyerPhone = "Enter the buyer's phone, like 0771234567.";
-  if (!form.what.trim()) errors.what = "Say what's going.";
-  else if (form.what.trim().length > 140) errors.what = "Keep it under 140 letters.";
-  const value = parseAmountInput(form.value);
-  if (value === null) errors.value = "Enter what it's worth in dollars, like 45.";
-  else if (value > DECLARED_VALUE_CAP) errors.value = VALUE_CAP_MESSAGE;
-  if (parseAmountInput(form.fare) === null) errors.fare = "Enter the fare in dollars, like 3.50.";
-  if (!form.accepted) errors.accepted = "Tick the box to accept how LyniaGo works.";
-  return errors;
-}
-
-/** The `POST /merchant/bookings` body. Only call once `validateBooking` passes. */
-export function toCreateRequest(form: BookingForm, idempotencyKey: string): CreateMerchantBookingRequest {
-  const dropoff: Waypoint = {
-    point: form.point,
-    landmark: form.landmark.trim(),
-    contactPhone: normalizePhone(form.buyerPhone.trim()) ?? form.buyerPhone.trim(),
-  };
-  return {
-    dropoff,
-    items: [{ description: form.what.trim(), quantity: 1 }],
-    declaredValue: parseAmountInput(form.value) ?? 0,
-    proposedFare: parseAmountInput(form.fare) ?? 0,
-    ...(form.note.trim() ? { note: form.note.trim() } : {}),
-    disclaimerVersion: SEND_DISCLAIMER_VERSION,
-    idempotencyKey,
-  };
 }
 
 /** A fresh idempotency key per form attempt (a double tap or a retried request books once). */

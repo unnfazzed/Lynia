@@ -1,35 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { isShortMapLink, type LatLng, type MerchantProfileResponse, parseMapLocation } from "@lynia/shared";
+import { isShortMapLink, type LatLng, type MerchantDishResponse, type MerchantProfileResponse, parseMapLocation } from "@lynia/shared";
+import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
-import { Icon } from "../../../components/icons";
-import { LocationPin } from "../../../components/LocationPin";
+import { AppBar } from "../../../components/m/AppBar";
 import { RetryableError } from "../../../components/RetryableError";
-import { cardStyle, disabledStyle, primaryButtonStyle } from "../../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import {
-  type BookingErrors,
-  type BookingForm,
-  bookingsAvailable,
-  DECLARED_VALUE_CAP,
-  newIdempotencyKey,
-  suggestedFare,
-  toCreateRequest,
-  validateBooking,
-} from "../../../lib/booking";
+  addLine,
+  type BookLine,
+  startFare,
+  stepFare,
+  toBookingRequest,
+  typicalLine,
+  validateWhat,
+  validateWhere,
+  type Where,
+  type WhereErrors,
+  worth,
+} from "../../../lib/book-form";
+import { bookingsAvailable, newIdempotencyKey, suggestedFare } from "../../../lib/booking";
 import { createBooking, resolveMapLink } from "../../../lib/bookings-api";
 import { primeBusiness } from "../../../lib/business";
-import { getMerchantProfile } from "../../../lib/menu-api";
-import { formatMoney } from "../../../lib/money-input";
+import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
+import { parseAmountInput } from "../../../lib/money-input";
+import { money } from "../../../lib/orders-view";
+import { formatLocalDigits, localDigits } from "../../../lib/phone-input";
+import { newSessionToken, type PlaceSuggestion, resolvePlace, searchPlaces } from "../../../lib/places";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
-type LinkStatus = { kind: "idle" } | { kind: "reading" } | { kind: "read" } | { kind: "unreadable"; message: string };
+type Sheet = null | "items" | "type" | "terms";
 
-const UNREADABLE_LINK = "We couldn't read a location from that link. Drop a pin instead.";
+const UNREADABLE_LINK = "We couldn't read a location from that link. Search for the street instead.";
 /** A typed short link is resolved once typing stops; a paste lands whole, so it resolves right after. */
 const RESOLVE_DELAY_MS = 400;
 
@@ -41,44 +46,31 @@ const SEND_TERMS = [
 ];
 
 /**
- * Book a rider (merchant web upgrade L2): every detail first, then "Find a rider", because Send's offer
- * window is 90 seconds from the broadcast. The pickup is always the business's own pin. The buyer's
- * location comes from the link they sent (read here, or by the API for a Google Maps short link) or a
- * pin the booker drags onto their door. Undrawn, ledgered as D-44.
+ * D2 · Book · where and D3 · Book · what + fare (packages/design/handoff/merchant-mobile, ledger D-48).
+ * Step 1: "Where is it going?" — an address search whose results are rows (the picked one mint, with a
+ * check); a location the buyer sent (a Google Maps or WhatsApp link) pasted into the same field works
+ * too — and the buyer's phone. Step 2: the items (from the shop's own list or typed), "Worth" summed
+ * from them, the fare stepper (± $0.50, from $1.50) with "Typical $3–4", "Booking terms" and "Find a
+ * rider · $3.50". The pickup is always the business's own pin; everything is set before the broadcast,
+ * because riders have 90 seconds to offer.
  */
 export default function NewBookingPage() {
   const router = useRouter();
   const { signOut, actionsDisabled } = useKitchenConnection();
   const [gate, setGate] = useState<Gate>({ status: "loading" });
-  const [form, setForm] = useState<BookingForm>({
-    point: { lat: 0, lng: 0 },
-    pinConfirmed: false,
-    landmark: "",
-    buyerPhone: "",
-    what: "",
-    value: "",
-    fare: "",
-    note: "",
-    accepted: false,
-  });
-  const [linkText, setLinkText] = useState("");
-  const [link, setLink] = useState<LinkStatus>({ kind: "idle" });
-  const [fareTouched, setFareTouched] = useState(false);
-  const [errors, setErrors] = useState<BookingErrors>({});
+  const [step, setStep] = useState<1 | 2>(1);
+  const [where, setWhere] = useState<Where | null>(null);
+  const [phone, setPhone] = useState("");
+  const [whereErrors, setWhereErrors] = useState<WhereErrors>({});
+  const [lines, setLines] = useState<BookLine[]>([]);
+  const [fare, setFare] = useState<number | null>(null);
+  const [whatError, setWhatError] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<Sheet>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
   // One key per form: a double tap, or a retry after a lost answer, books once (Send dedupes on it).
   const idempotencyKey = useRef(newIdempotencyKey());
-  // Only the latest link counts: an older short link's answer arriving late never moves the pin.
-  const linkSeq = useRef(0);
-  const linkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (linkTimer.current) clearTimeout(linkTimer.current);
-    },
-    [],
-  );
 
   const load = useCallback(async () => {
     setGate({ status: "loading" });
@@ -94,7 +86,6 @@ export default function NewBookingPage() {
         return;
       }
       setGate({ status: "ready", business, pickup: business.location.point });
-      setForm((f) => (f.pinConfirmed ? f : { ...f, point: business.location!.point }));
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
       setGate({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load the booking form." });
@@ -106,69 +97,26 @@ export default function NewBookingPage() {
   }, [load]);
 
   const pickup = gate.status === "ready" ? gate.pickup : null;
+  const suggested = pickup && where ? suggestedFare(pickup, where.point) : null;
+  const shownFare = fare ?? (suggested !== null ? startFare(suggested) : null);
+  const pharmacy = gate.status === "ready" && gate.business.businessType === "shop" && gate.business.shopKind === "pharmacy";
 
-  // The fare follows Send's suggestion for the trip until the booker types their own.
-  useEffect(() => {
-    if (!pickup || fareTouched || !form.pinConfirmed) return;
-    setForm((f) => ({ ...f, fare: formatMoney(suggestedFare(pickup, f.point)) }));
-  }, [pickup, form.point, form.pinConfirmed, fareTouched]);
-
-  function update<K extends keyof BookingForm>(key: K, value: BookingForm[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
-    if (key in errors) setErrors((e) => ({ ...e, [key]: undefined }));
+  function next() {
+    const found = validateWhere(where, phone);
+    setWhereErrors(found);
+    if (Object.keys(found).length === 0) setStep(2);
   }
 
-  function placePin(point: LatLng) {
-    setForm((f) => ({ ...f, point, pinConfirmed: true }));
-    setErrors((e) => ({ ...e, point: undefined }));
-  }
-
-  function readLink(text: string) {
-    setLinkText(text);
-    const seq = ++linkSeq.current;
-    if (linkTimer.current) clearTimeout(linkTimer.current);
-    if (!text.trim()) {
-      setLink({ kind: "idle" });
-      return;
-    }
-    const direct = parseMapLocation(text);
-    if (direct) {
-      placePin(direct);
-      setLink({ kind: "read" });
-      return;
-    }
-    const url = /https:\/\/\S+/i.exec(text)?.[0];
-    if (url && isShortMapLink(url)) {
-      setLink({ kind: "reading" });
-      linkTimer.current = setTimeout(() => {
-        resolveMapLink(url).then(
-          (point) => {
-            if (seq !== linkSeq.current) return;
-            placePin(point);
-            setLink({ kind: "read" });
-          },
-          (err: unknown) => {
-            if (seq !== linkSeq.current || redirectIfSessionExpired(err, signOut)) return;
-            setLink({ kind: "unreadable", message: err instanceof ApiError ? err.message : UNREADABLE_LINK });
-          },
-        );
-      }, RESOLVE_DELAY_MS);
-      return;
-    }
-    setLink({ kind: "unreadable", message: UNREADABLE_LINK });
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (submittingRef.current) return;
-    const found = validateBooking(form);
-    setErrors(found);
+  async function book() {
+    if (submittingRef.current || !where || shownFare === null) return;
+    const problem = validateWhat(lines);
+    setWhatError(problem);
     setBanner(null);
-    if (Object.keys(found).length > 0) return;
+    if (problem) return;
     submittingRef.current = true;
     setBusy(true);
     try {
-      const booking = await createBooking(toCreateRequest(form, idempotencyKey.current));
+      const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current));
       router.replace(`/deliveries/${booking.id}`);
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
@@ -179,216 +127,392 @@ export default function NewBookingPage() {
     }
   }
 
-  const business = gate.status === "ready" ? gate.business : null;
-  const pharmacy = business?.businessType === "shop" && business.shopKind === "pharmacy";
+  const shop = gate.status === "ready" && gate.business.businessType === "shop";
 
   return (
-    <Kitchen active={business?.businessType === "shop" ? "deliveries" : "queue"}>
-      <div className="kitchen-page" style={{ overflow: "auto", height: "100%" }}>
-        <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 14 }}>
-          <Link href="/deliveries" style={backLink}>
-            <Icon name="chevron-left" size={16} /> Deliveries
-          </Link>
-          <div>
-            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Book a rider</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
-              Fill everything in first: riders have 90 seconds to offer once you send it.
-            </div>
-          </div>
+    <Kitchen active={shop ? "deliveries" : "queue"} tabs={false}>
+      <div className="m-page">
+        {step === 1 ? (
+          <AppBar back="/deliveries" title="Book a rider" right={<span className="m-hint">1 of 2</span>} />
+        ) : (
+          <AppBar onBack={() => setStep(1)} title="What’s going?" right={<span className="m-hint">2 of 2</span>} />
+        )}
 
-          {gate.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading…</div>}
+        <div className="m-bd" style={{ gap: 14 }}>
+          {gate.status === "loading" && <div className="m-hint">Loading…</div>}
           {gate.status === "error" && <RetryableError message={gate.message} onRetry={() => void load()} />}
-          {gate.status === "no_pin" && (
-            <div style={{ ...cardStyle, fontSize: 14, lineHeight: 1.5 }}>
-              <b>Your business has no pin yet.</b> Riders need it to find you. Message LyniaGo to set it.
-            </div>
+          {gate.status === "no_pin" && <p className="m-sub">Set your shop&apos;s location first, so riders know where to collect.</p>}
+
+          {gate.status === "ready" && step === 1 && (
+            <>
+              <h1 className="m-h1">Where is it going?</h1>
+              <WhereSearch value={where} error={whereErrors.where} signOut={signOut} onChange={(w) => {
+                setWhere(w);
+                setFare(null);
+                setWhereErrors((e) => ({ ...e, where: undefined }));
+              }} />
+              <div className="m-fld">
+                <label htmlFor="buyer-phone">Buyer’s phone</label>
+                <span className="m-in" data-invalid={!!whereErrors.phone}>
+                  <b style={{ fontSize: 16 }}>+263</b>
+                  <input
+                    id="buyer-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="off"
+                    placeholder="77 123 4567"
+                    value={formatLocalDigits(phone)}
+                    onChange={(e) => {
+                      setPhone(localDigits(e.target.value));
+                      setWhereErrors((er) => ({ ...er, phone: undefined }));
+                    }}
+                  />
+                </span>
+                {whereErrors.phone && (
+                  <span className="m-err" role="alert">
+                    {whereErrors.phone}
+                  </span>
+                )}
+              </div>
+            </>
           )}
 
-          {gate.status === "ready" && (
-            <form onSubmit={submit} noValidate style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <label htmlFor="buyer-link" style={labelStyle}>
-                  Where is it going?
-                </label>
-                <div style={hintStyle}>Paste the location the buyer sent you, or drag the map until the pin is on their door.</div>
-                <input
-                  id="buyer-link"
-                  value={linkText}
-                  onChange={(e) => readLink(e.target.value)}
-                  placeholder="Paste a Google Maps link or a WhatsApp location"
-                  style={inputStyle}
-                />
-                {link.kind === "reading" && <div style={noteStyle}>Reading the link…</div>}
-                {link.kind === "read" && <div style={{ ...noteStyle, color: "var(--accent-text)" }}>Got it. Check the pin below.</div>}
-                {link.kind === "unreadable" && <div style={fieldErrorStyle}>{link.message}</div>}
-                <div style={{ marginTop: 10 }}>
-                  <LocationPin value={form.point} onMove={placePin} height={240} label="The buyer's door on the map. Use the arrow keys to move it." />
+          {gate.status === "ready" && step === 2 && (
+            <>
+              <div className="m-fld">
+                <span className="m-label">Items · {lines.length}</span>
+                {lines.length > 0 && (
+                  <div className="m-card" style={{ padding: "0 14px", gap: 0 }}>
+                    {lines.map((l, i) => (
+                      <div key={`${l.name}-${i}`} className="m-li" style={{ minHeight: 56 }}>
+                        <b className="m-num" style={{ width: 28, fontSize: 15 }}>
+                          {l.qty}×
+                        </b>
+                        <div className="m-t">
+                          <b>{l.name}</b>
+                          <span className="m-num">{money(l.qty * l.unitPrice)}</span>
+                        </div>
+                        <button type="button" className="m-back" aria-label={`Remove ${l.name}`} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
+                          <Icon name="x" size={18} color="var(--muted)" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="m-gh" style={{ flex: 1 }} onClick={() => setSheet("items")}>
+                    <Icon name="package" size={18} /> From your items
+                  </button>
+                  <button type="button" className="m-gh" style={{ flex: 1 }} onClick={() => setSheet("type")}>
+                    <Icon name="plus" size={18} /> Type one
+                  </button>
                 </div>
-                {errors.point && <div style={fieldErrorStyle}>{errors.point}</div>}
               </div>
 
-              <Field id="landmark" label="What should the rider look for?" error={errors.landmark}>
-                <input
-                  id="landmark"
-                  value={form.landmark}
-                  onChange={(e) => update("landmark", e.target.value)}
-                  maxLength={160}
-                  placeholder="e.g. Blue gate opposite the church, 12 Fife Ave"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field id="buyer-phone" label="Buyer's phone" hint="The rider calls this number at the door." error={errors.buyerPhone}>
-                <input
-                  id="buyer-phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="off"
-                  value={form.buyerPhone}
-                  onChange={(e) => update("buyerPhone", e.target.value)}
-                  maxLength={20}
-                  placeholder="0771234567"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field id="what" label="What's going?" error={errors.what}>
-                <input
-                  id="what"
-                  value={form.what}
-                  onChange={(e) => update("what", e.target.value)}
-                  maxLength={140}
-                  placeholder="e.g. 2 brake pads and an oil filter"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field
-                id="value"
-                label="What is it worth? (US$)"
-                hint={`Up to $${DECLARED_VALUE_CAP}. It's the record of what the rider carried.`}
-                error={errors.value}
-              >
-                <input id="value" inputMode="decimal" value={form.value} onChange={(e) => update("value", e.target.value)} placeholder="45" style={inputStyle} />
-              </Field>
-
-              <Field
-                id="fare"
-                label="Fare you offer (US$)"
-                hint={
-                  pickup && form.pinConfirmed
-                    ? `Suggested fare $${formatMoney(suggestedFare(pickup, form.point))}. Riders may offer a different fare; you pay the rider you pick, in cash at pickup.`
-                    : "Riders may offer a different fare; you pay the rider you pick, in cash at pickup."
-                }
-                error={errors.fare}
-              >
-                <input
-                  id="fare"
-                  inputMode="decimal"
-                  value={form.fare}
-                  onChange={(e) => {
-                    setFareTouched(true);
-                    update("fare", e.target.value);
-                  }}
-                  placeholder="3.50"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field id="note" label="Note for the rider (optional)">
-                <input
-                  id="note"
-                  value={form.note}
-                  onChange={(e) => update("note", e.target.value)}
-                  maxLength={280}
-                  placeholder="e.g. Ask for Rudo at the counter"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <div style={{ background: "var(--surface)", borderRadius: 12, padding: "12px 14px", fontSize: 12.5, lineHeight: 1.5 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>How LyniaGo works</div>
-                <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4 }}>
-                  {SEND_TERMS.map((t) => (
-                    <li key={t}>{t}</li>
-                  ))}
-                  <li>No prescription medicine, weapons, drugs or cash.{pharmacy ? " Over-the-counter items only." : ""}</li>
-                  <li>No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today.</li>
-                </ul>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <b style={{ fontSize: 15 }}>Worth</b>
+                <b className="m-num" style={{ fontSize: 18 }}>
+                  {money(worth(lines))}
+                </b>
               </div>
-              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.45, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.accepted}
-                  onChange={(e) => update("accepted", e.target.checked)}
-                  style={{ width: 22, height: 22, margin: 0, flexShrink: 0, accentColor: "var(--cta-fill)" }}
-                />
-                <span>I understand and agree.</span>
-              </label>
-              {errors.accepted && <div style={fieldErrorStyle}>{errors.accepted}</div>}
 
-              {banner && (
-                <div role="alert" style={bannerStyle}>
-                  {banner}
+              {shownFare !== null && (
+                <div className="m-fld">
+                  <span className="m-label">Fare you offer</span>
+                  <div className="m-card m-fare">
+                    <button type="button" aria-label="Offer $0.50 less" disabled={shownFare <= 1.5} onClick={() => setFare(stepFare(shownFare, -1))}>
+                      <Icon name="minus" size={20} />
+                    </button>
+                    <div>
+                      <b className="m-num">{money(shownFare)}</b>
+                      {suggested !== null && <span>{typicalLine(suggested)}</span>}
+                    </div>
+                    <button type="button" aria-label="Offer $0.50 more" onClick={() => setFare(stepFare(shownFare, 1))}>
+                      <Icon name="plus" size={20} />
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={busy || actionsDisabled}
-                style={{ ...primaryButtonStyle, height: "var(--target-primary)", padding: "0 16px", fontSize: 16, ...disabledStyle(busy || actionsDisabled) }}
-              >
-                {busy ? "Sending…" : "Find a rider"}
-              </button>
-            </form>
+              {whatError && (
+                <div className="m-alert" role="alert">
+                  {whatError}
+                </div>
+              )}
+              {banner && (
+                <div className="m-alert" role="alert">
+                  {banner}
+                </div>
+              )}
+            </>
           )}
         </div>
+
+        {gate.status === "ready" && (
+          <div className="m-foot" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {step === 1 ? (
+              <button type="button" className="m-btn" onClick={next}>
+                Next
+              </button>
+            ) : (
+              <>
+                <button type="button" className="m-lnk m-muted" style={{ textDecoration: "underline", fontWeight: 400 }} onClick={() => setSheet("terms")}>
+                  Booking terms
+                </button>
+                <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
+                  {busy ? "Booking…" : `Find a rider · ${money(shownFare)}`}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {sheet && (
+        <div className="m-overlay" style={{ zIndex: 70 }}>
+          <div className="m-overlay-frame">
+            <button type="button" className="m-scrim" aria-label="Close" onClick={() => setSheet(null)} />
+            <div className="m-sheet" role="dialog" aria-modal="true" aria-label={sheet === "items" ? "Your items" : sheet === "type" ? "Type an item" : "Booking terms"}>
+              <div className="m-grab" />
+              {sheet === "items" && (
+                <ItemsPicker
+                  onPick={(d) => {
+                    setLines((ls) => addLine(ls, { dishId: d.id, name: d.name, qty: 1, unitPrice: d.priceUsd }));
+                    setWhatError(null);
+                    setSheet(null);
+                  }}
+                  onDone={() => setSheet(null)}
+                />
+              )}
+              {sheet === "type" && (
+                <TypeOne
+                  onAdd={(l) => {
+                    setLines((ls) => addLine(ls, l));
+                    setWhatError(null);
+                    setSheet(null);
+                  }}
+                  onDone={() => setSheet(null)}
+                />
+              )}
+              {sheet === "terms" && (
+                <>
+                  <b style={{ fontSize: 18 }}>Booking terms</b>
+                  <ul className="m-sub" style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {SEND_TERMS.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                    <li>No prescription medicine, weapons, drugs or cash.{pharmacy ? " Over-the-counter items only." : ""}</li>
+                    <li>No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today.</li>
+                  </ul>
+                  <p className="m-hint">Booking a rider means you accept these.</p>
+                  <button type="button" className="m-btn" onClick={() => setSheet(null)}>
+                    OK
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </Kitchen>
   );
 }
 
-function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: React.ReactNode }) {
+/** D2's search: Places rows as you type, or a pasted location link read straight away. */
+function WhereSearch({ value, error, signOut, onChange }: { value: Where | null; error?: string; signOut: () => void; onChange: (w: Where | null) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PlaceSuggestion[]>([]);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const session = useRef(newSessionToken());
+  // Only the latest link counts: an older short link's answer arriving late never moves the location.
+  const linkSeq = useRef(0);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 3 || /https?:\/\//i.test(q) || parseMapLocation(q)) return undefined;
+    let alive = true;
+    const t = setTimeout(() => {
+      void searchPlaces(q, session.current).then((rows) => {
+        if (alive) setResults(rows);
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [query]);
+
+  function type(text: string) {
+    setQuery(text);
+    setNote(null);
+    const seq = ++linkSeq.current;
+    const direct = parseMapLocation(text);
+    if (direct) {
+      setResults([]);
+      setPicked("link");
+      onChange({ point: direct, address: "The location the buyer sent" });
+      return;
+    }
+    const url = /https:\/\/\S+/i.exec(text)?.[0];
+    if (url && isShortMapLink(url)) {
+      setResults([]);
+      setNote("Reading the link…");
+      setTimeout(() => {
+        resolveMapLink(url).then(
+          (point) => {
+            if (seq !== linkSeq.current) return;
+            setNote(null);
+            setPicked("link");
+            onChange({ point, address: "The location the buyer sent" });
+          },
+          (err: unknown) => {
+            if (seq !== linkSeq.current || redirectIfSessionExpired(err, signOut)) return;
+            setNote(err instanceof ApiError ? err.message : UNREADABLE_LINK);
+          },
+        );
+      }, RESOLVE_DELAY_MS);
+      return;
+    }
+    if (/https?:\/\//i.test(text)) setNote(UNREADABLE_LINK);
+  }
+
+  async function pick(s: PlaceSuggestion) {
+    const place = await resolvePlace(s, session.current);
+    session.current = newSessionToken();
+    if (!place) {
+      setNote("Couldn't find that place. Try another search.");
+      return;
+    }
+    setPicked(s.placeId);
+    onChange({ point: place.point, address: [s.primary, s.secondary].filter(Boolean).join(", ") || place.address });
+  }
+
   return (
-    <div>
-      <label htmlFor={id} style={labelStyle}>
-        {label}
+    <div className="m-fld">
+      <label className="m-in m-srch-g" data-invalid={!!error}>
+        <Icon name="search" size={20} color="var(--muted)" />
+        <input
+          aria-label="Search street or area, or paste the buyer's location"
+          placeholder="Search street or area"
+          value={query}
+          onChange={(e) => type(e.target.value)}
+        />
       </label>
-      {hint && <div style={hintStyle}>{hint}</div>}
-      {children}
+      {note && <span className="m-hint">{note}</span>}
+      <div>
+        {picked === "link" && value && (
+          <div className="m-res" aria-current="true">
+            <Icon name="map-pin" size={20} color="var(--accent-text)" />
+            <div className="m-t">
+              <b>{value.address}</b>
+              <span className="m-num">
+                {value.point.lat.toFixed(5)}, {value.point.lng.toFixed(5)}
+              </span>
+            </div>
+            <Icon name="check" size={20} color="var(--accent-text)" />
+          </div>
+        )}
+        {results.map((s) => {
+          const on = picked === s.placeId;
+          return (
+            <button key={s.placeId} type="button" className="m-res" aria-current={on || undefined} onClick={() => void pick(s)}>
+              <Icon name="map-pin" size={20} color={on ? "var(--accent-text)" : "var(--muted)"} />
+              <div className="m-t">
+                <b>{s.primary}</b>
+                {s.secondary && <span>{s.secondary}</span>}
+              </div>
+              {on && <Icon name="check" size={20} color="var(--accent-text)" />}
+            </button>
+          );
+        })}
+      </div>
       {error && (
-        <div role="alert" style={fieldErrorStyle}>
+        <span className="m-err" role="alert">
           {error}
-        </div>
+        </span>
       )}
     </div>
   );
 }
 
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 };
-const hintStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--muted)", marginBottom: 8, lineHeight: 1.45 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  padding: "0 14px",
-  borderRadius: "var(--radius-input)",
-  border: "1.5px solid var(--line)",
-  fontFamily: "inherit",
-  background: "var(--bg)",
-  color: "var(--ink)",
-};
-const noteStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--muted)", marginTop: 6 };
-const fieldErrorStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--danger-ink)", marginTop: 6 };
-const bannerStyle: React.CSSProperties = { color: "var(--danger-ink)", background: "var(--danger-wash)", borderRadius: 10, padding: "10px 12px", fontSize: 13 };
-const backLink: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 4,
-  minHeight: "var(--target-min)",
-  color: "var(--accent-text)",
-  fontSize: 14,
-  fontWeight: 600,
-  textDecoration: "none",
-  alignSelf: "flex-start",
-};
+function ItemsPicker({ onPick, onDone }: { onPick: (d: MerchantDishResponse) => void; onDone: () => void }) {
+  const [dishes, setDishes] = useState<MerchantDishResponse[] | null>(null);
+  useEffect(() => {
+    listDishes()
+      .then((ds) => setDishes(ds.filter((d) => !d.isDraft)))
+      .catch(() => setDishes([]));
+  }, []);
+  return (
+    <>
+      <b style={{ fontSize: 18 }}>Your items</b>
+      <div style={{ maxHeight: "50dvh", overflowY: "auto" }}>
+        {dishes === null && <div className="m-hint">Loading…</div>}
+        {dishes?.length === 0 && <div className="m-hint">No items yet. Type one instead.</div>}
+        {dishes?.map((d) => (
+          <button key={d.id} type="button" className="m-li" onClick={() => onPick(d)}>
+            <div className="m-t">
+              <b>{d.name}</b>
+            </div>
+            <b className="m-num">{money(d.priceUsd)}</b>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="m-lnk" onClick={onDone}>
+        Done
+      </button>
+    </>
+  );
+}
+
+function TypeOne({ onAdd, onDone }: { onAdd: (l: BookLine) => void; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [qty, setQty] = useState("1");
+  const [price, setPrice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  function add(e: React.FormEvent) {
+    e.preventDefault();
+    const q = Number.parseInt(qty, 10);
+    const p = parseAmountInput(price);
+    if (!name.trim()) return setError("Say what it is.");
+    if (!Number.isInteger(q) || q < 1 || q > 99) return setError("How many, from 1 to 99.");
+    if (p === null) return setError("What one costs, in dollars, like 7.");
+    onAdd({ name: name.trim(), qty: q, unitPrice: p });
+  }
+  return (
+    <form onSubmit={add} noValidate style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <b style={{ fontSize: 18 }}>Type an item</b>
+      <div className="m-fld">
+        <label htmlFor="line-name">What it is</label>
+        <span className="m-in">
+          <input id="line-name" value={name} maxLength={140} placeholder="e.g. Oil filter" onChange={(e) => setName(e.target.value)} />
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div className="m-fld" style={{ flex: 1 }}>
+          <label htmlFor="line-qty">How many</label>
+          <span className="m-in">
+            <input id="line-qty" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, "").slice(0, 2))} />
+          </span>
+        </div>
+        <div className="m-fld" style={{ flex: 1 }}>
+          <label htmlFor="line-price">Price of one ($)</label>
+          <span className="m-in">
+            <input id="line-price" inputMode="decimal" value={price} placeholder="7.00" onChange={(e) => setPrice(e.target.value)} />
+          </span>
+        </div>
+      </div>
+      {error && (
+        <span className="m-err" role="alert">
+          {error}
+        </span>
+      )}
+      <button type="submit" className="m-btn">
+        Add
+      </button>
+      <button type="button" className="m-lnk" onClick={onDone}>
+        Done
+      </button>
+    </form>
+  );
+}
