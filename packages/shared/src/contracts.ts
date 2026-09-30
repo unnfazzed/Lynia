@@ -798,8 +798,7 @@ export const MerchantLocationInput = z
     landmark: z.string().trim().min(1).max(160).optional(),
     address: z.string().trim().min(1).max(200).optional(),
     contactPhone: z.string().min(6).max(20),
-  })
-  .strict();
+  });
 export type MerchantLocationInput = z.infer<typeof MerchantLocationInput>;
 
 /** The stored `Waypoint` for a merchant location: the landmark if one was given, else the address line,
