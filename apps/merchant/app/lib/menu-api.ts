@@ -9,6 +9,7 @@ import type {
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
   UpdateMerchantHoursRequest,
+  UpdateMerchantOrderSettingsRequest,
   UpdateMerchantProfileRequest,
 } from "@lynia/shared";
 import { authedFetch } from "./api-client";
@@ -45,6 +46,12 @@ export function setOpen(open: boolean): Promise<MerchantProfileResponse> {
 
 export function setBusyMode(body: SetMerchantBusyModeRequest): Promise<MerchantProfileResponse> {
   return authedFetch<MerchantProfileResponse>("/merchant/busy-mode", { method: "PATCH", body });
+}
+
+/** Auto-accept (owner only): how the restaurant takes orders — accept automatically, and whether
+ *  customers with a live order can see the business's number. */
+export function updateOrderSettings(body: UpdateMerchantOrderSettingsRequest): Promise<MerchantProfileResponse> {
+  return authedFetch<MerchantProfileResponse>("/merchant/order-settings", { method: "PATCH", body });
 }
 
 // ── Categories (D-29) ────────────────────────────────────────────────────────────────────────────

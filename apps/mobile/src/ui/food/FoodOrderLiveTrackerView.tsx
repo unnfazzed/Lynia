@@ -35,6 +35,7 @@ export function FoodOrderLiveTrackerView({
   order,
   restaurantName,
   reachable,
+  notice,
   now,
   busy,
   trackData,
@@ -51,6 +52,8 @@ export function FoodOrderLiveTrackerView({
   order: LiveTrackerOrder;
   restaurantName: string;
   reachable: boolean;
+  /** Optional strip under the header — the auto-accept "changed your order" notice. */
+  notice?: React.ReactNode;
   now: number;
   busy: boolean;
   trackData: OrderSnapshot | undefined;
@@ -111,6 +114,7 @@ export function FoodOrderLiveTrackerView({
         </Card>
       ) : null}
       <OrderHeader restaurantName={restaurantName} pillLabel={TRACK_STATUS_LABEL[order.status] ?? "On the way"} pillTone="success" />
+      {notice}
       <ScrollView showsVerticalScrollIndicator={false}>
         {trackData ? (
           <LiveTrackingCard

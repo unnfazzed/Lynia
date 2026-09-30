@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49.** D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50.** D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -2366,3 +2366,28 @@ merchant sign-in, and a website export with the Terms link and without About us.
 
 **Not legal advice.** Like the privacy notice, the terms describe the system accurately but were not
 written by counsel; have them reviewed before the public production listing.
+
+---
+
+## D-50 · Restaurant auto-accept: the confirming state, the ops call list, and "Collected" — APPROVED (2026-09-30)
+
+**Owner instruction, this session (2026-09-30):** *"let the restaurant auto accept orders. rather than
+removing order in 3 minutes. they can respond offline with customer but continue the order in the
+platform for tracking"* — framed as change management from phone-based ordering to the app. The owner
+then chose, in this session: ops calls the restaurant and the customer may call it; the rider search
+starts near the end of prep time; the rider confirms pickup without a code; the restaurant (or ops)
+edits items agreed by phone; and "Implement" on the five safeguards (no rider until the kitchen is
+confirmed; pickup only at the restaurant; hours enforced by the server; ops tools; phone numbers only
+with consent). Plan: `docs/plans/2026-09-30-restaurant-auto-accept.md`.
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Customer food tracker (`RC.track_*`) | Waiting-for-accept then Cooking | A **"Confirming"** state between them for auto-accepted orders: "Sent to {Restaurant}", free cancel, and a "Call {Restaurant}" row only when the restaurant agreed to show its number; an "{Restaurant} changed your order" notice after a phone-agreed edit | No mock draws an order accepted on the restaurant's behalf |
+| Rider food job, at the restaurant (`RJM` pickup) | 4-digit pickup-code entry | For auto-accept restaurants, a **"Collected"** card; the server accepts it only within 150 m of the restaurant | The kitchen may not be in the app to read a code out |
+| Merchant Orders (B1) and Cooking (B3) | New = ringing orders; Cooking ticket | An auto-accepted order sits under **New** with "Accepted for you" and **"Got it, we're making it"**; Cooking shows the customer's number and a **"Change items"** sheet | Not drawn in `handoff/merchant-mobile` |
+| Merchant Account (C4) | Shop front · Opening hours · Preferred riders · Team · Help | Adds **"Taking orders"** (owner only): accept automatically, show our number to customers | Not drawn |
+| Admin console | No food-ops queue | **"Orders to confirm"** call list (confirm · no answer · change items · can't make it) and a **"Taking orders"** section on the merchant page | Ops work the restaurants that don't use the app |
+
+Nothing in `packages/design/**` changes. **Upstream ask:** draw the confirming state, the Collected card,
+the merchant auto-accept card, the Taking orders settings and the ops call list.
+

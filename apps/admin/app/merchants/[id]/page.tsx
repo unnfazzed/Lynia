@@ -8,6 +8,7 @@ import { StatusPill, Pill } from "../../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconStore } from "../../components/icons";
 import { GoLiveButton } from "../GoLiveButton";
+import { OrderSettingsCard } from "../OrderSettingsCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
@@ -176,6 +177,15 @@ export default async function MerchantProfilePage({
         </section>
 
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
+          {isShop ? null : (
+            <OrderSettingsCard
+              merchantId={m.id}
+              name={m.name}
+              autoAccept={m.autoAccept ?? false}
+              showPhoneToCustomers={m.showPhoneToCustomers ?? false}
+              connected={connected}
+            />
+          )}
           <section className="card">
             <div className="block-title">Details</div>
             <KeyValue

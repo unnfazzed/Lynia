@@ -859,6 +859,32 @@ export type UpdateMerchantCashRuleRequest = z.infer<typeof UpdateMerchantCashRul
 export const SetMerchantBusyModeRequest = z.object({ active: z.boolean() }).strict();
 export type SetMerchantBusyModeRequest = z.infer<typeof SetMerchantBusyModeRequest>;
 
+/** `PATCH /merchant/order-settings` (owner) and `PATCH /admin/merchants/:id/order-settings` (ops):
+ *  how the restaurant takes orders. Both fields optional; at least one must be sent. */
+export const UpdateMerchantOrderSettingsRequest = z
+  .object({ autoAccept: z.boolean().optional(), showPhoneToCustomers: z.boolean().optional() })
+  .strict()
+  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined, { message: "Nothing to change" });
+export type UpdateMerchantOrderSettingsRequest = z.infer<typeof UpdateMerchantOrderSettingsRequest>;
+
+/** Change an order's items after placement (agreed with the customer by phone): the new quantity per
+ *  line, 0 removes it. Optional new prep time. At least one line must stay. */
+export const EditMerchantOrderItemsRequest = z
+  .object({
+    lines: z
+      .array(z.object({ itemId: z.string().uuid(), quantity: z.number().int().min(0).max(99) }).strict())
+      .min(1)
+      .max(30),
+    prepMinutes: z.number().int().min(5).max(120).optional(),
+  })
+  .strict();
+export type EditMerchantOrderItemsRequest = z.infer<typeof EditMerchantOrderItemsRequest>;
+
+/** `POST /merchant/orders/:id/collected` — the rider's no-code pickup at an auto-accept restaurant.
+ *  Accepted only within RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM of the restaurant. */
+export const ConfirmCollectedRequest = z.object({ point: LatLng }).strict();
+export type ConfirmCollectedRequest = z.infer<typeof ConfirmCollectedRequest>;
+
 /** `PATCH /merchant/open` — the Orders header's open/closed switch (merchant mobile B1/B5, D-48).
  *  Closing holds until the next day starts or the merchant opens again; opening clears it. */
 export const SetMerchantOpenRequest = z.object({ open: z.boolean() }).strict();
@@ -893,6 +919,10 @@ export const MerchantProfileResponse = z
     myName: z.string().optional(),
     /** D-48: closed by hand until this time (ISO); absent or null = open by hours. */
     closedUntil: z.string().nullable().optional(),
+    /** Auto-accept: new orders skip the accept window (optional, so older APIs stay valid). */
+    autoAccept: z.boolean().optional(),
+    /** The restaurant agreed to show its phone number to customers with a live order. */
+    showPhoneToCustomers: z.boolean().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
@@ -1154,6 +1184,8 @@ export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest
 
 export const MerchantOrderItemView = z
   .object({
+    /** The line's own id — what an item edit refers to. Optional so older APIs stay valid. */
+    itemId: z.string().uuid().optional(),
     dishId: z.string().uuid().nullable(),
     name: z.string(),
     priceUsd: z.number(),
@@ -1304,6 +1336,17 @@ export const MerchantOrderResponse = z
     merchantClosedAt: z.string().nullable().optional(),
     merchantCloseReason: z.enum(["no_cash", "force"]).nullable().optional(),
     timeline: z.array(z.object({ status: z.string(), at: z.string() })).optional(),
+    // Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md). All optional/additive.
+    /** The order skipped the accept window. Until `kitchenConfirmedAt` is set no rider is sent, and the
+     *  rider picks up with "Collected" instead of the pickup code. */
+    autoAccepted: z.boolean().optional(),
+    kitchenConfirmedAt: z.string().nullable().optional(),
+    kitchenConfirmedBy: z.enum(["merchant", "ops"]).nullable().optional(),
+    itemsEditedAt: z.string().nullable().optional(),
+    /** The restaurant's number, only when it agreed to show it to customers. */
+    restaurantPhone: z.string().nullable().optional(),
+    /** The customer's contact number — on the restaurant's own views only. */
+    customerPhone: z.string().nullable().optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;

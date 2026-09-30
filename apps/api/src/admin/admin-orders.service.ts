@@ -13,6 +13,7 @@ import {
   subMoney,
   TERMINAL_STATUSES,
 } from "@lynia/shared";
+import { notifyFoodQueueChanged } from "../merchant/merchant-lookup.util";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -129,7 +130,7 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true, collectedAt: true, pickup: true },
+        select: { status: true, riderId: true, collectedAt: true, pickup: true, orderType: true, merchantId: true, customerId: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (TERMINAL_STATUSES.includes(order.status)) {
@@ -154,6 +155,11 @@ export class AdminOrdersService {
           cancelledBy: null,
           cancelReason: input.reason,
           cancelledAt: new Date(),
+          // Food orders: leave no kitchen or dispatch state behind on a dead order (the kitchen board and
+          // the rider-offer screen key off these), and record why for the customer's cancelled screen.
+          ...(order.orderType === "merchant"
+            ? { merchantPhase: null, rejectionReason: "other", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: null, dispatchNextCheckAt: null }
+            : {}),
         },
       });
       if (cancelled.count === 0) {
@@ -177,6 +183,7 @@ export class AdminOrdersService {
         // DS13-07: was the order still an open auction? If so, close its board card post-commit.
         wasOpenForOffers: order.status === "open_for_offers",
         pickupPoint: (order.pickup as { point?: { lat: number; lng: number } } | null)?.point,
+        food: order.orderType === "merchant" ? { merchantId: order.merchantId, customerId: order.customerId } : null,
       };
     });
 
@@ -196,6 +203,23 @@ export class AdminOrdersService {
     // party), so notify ALL parties: no excludeProfileId. Best-effort — notifyOrderStatus never throws, so a
     // push miss can't affect the already-committed cancel; guarded no-op when no NotificationsService (tests).
     void this.notifications?.notifyOrderStatus(orderId, "cancelled", {});
+    // Food orders: the generic status push above has no food rows (it's a no-op for them), so tell the
+    // customer and the rider directly, and refresh the restaurant's board so the order leaves it.
+    if (result.food) {
+      if (this.gateway) notifyFoodQueueChanged(this.gateway, result.food.merchantId, orderId);
+      void this.notifications?.notifyProfiles([result.food.customerId], {
+        title: "Your order was cancelled",
+        body: "LyniaGo cancelled this order. Nothing was charged.",
+        data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
+      });
+      if (result.riderId) {
+        void this.notifications?.notifyProfiles([result.riderId], {
+          title: "Order cancelled",
+          body: result.collected ? "LyniaGo cancelled this order. Take the food back to the restaurant." : "LyniaGo cancelled this order. You're free for the next job.",
+          data: { orderId, status: "cancelled", to: "rider", orderType: "merchant" },
+        });
+      }
+    }
     return { id: result.id, status: result.status, auditId: result.auditId };
   }
 

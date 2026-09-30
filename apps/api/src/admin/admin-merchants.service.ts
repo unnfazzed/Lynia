@@ -103,7 +103,7 @@ export class AdminMerchantsService {
   async getMerchantDetail(id: string, debtCursor?: string) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id },
-      select: { ...MERCHANT_DIRECTORY_SELECT, description: true, priceLevel: true },
+      select: { ...MERCHANT_DIRECTORY_SELECT, description: true, priceLevel: true, autoAccept: true, showPhoneToCustomers: true },
     });
     if (!merchant) return null;
 
@@ -138,6 +138,10 @@ export class AdminMerchantsService {
       ...base,
       description: merchant.description,
       priceLevel: merchant.priceLevel,
+      // Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): how the restaurant takes orders —
+      // the current values behind the profile's "Taking orders" switches.
+      autoAccept: merchant.autoAccept ?? false,
+      showPhoneToCustomers: merchant.showPhoneToCustomers ?? false,
       // The detail page is where ops calls a business before switching it on (go-live runbook): the
       // business contact phone is the number riders are given at pickup, so it's shown in full here
       // (the directory list keeps it masked).

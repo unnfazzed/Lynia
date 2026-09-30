@@ -11,6 +11,7 @@ import {
   UpdateMerchantDishRequest,
   UpdateMerchantHoursRequest,
   UpdateMerchantLocationRequest,
+  UpdateMerchantOrderSettingsRequest,
   UpdateMerchantProfileRequest,
 } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -110,6 +111,17 @@ export class MerchantController {
   @UseGuards(MerchantGuard)
   setOpen(@Body(new ZodBody(SetMerchantOpenRequest)) body: SetMerchantOpenRequest, @CurrentUser() profileId: string) {
     return this.merchant.setOpen(profileId, body);
+  }
+
+  /** Auto-accept: take orders automatically / show our number to customers. Owner only. */
+  @Patch("order-settings")
+  @UseGuards(MerchantGuard)
+  @OwnerOnly()
+  updateOrderSettings(
+    @Body(new ZodBody(UpdateMerchantOrderSettingsRequest)) body: UpdateMerchantOrderSettingsRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.merchant.updateOrderSettings(profileId, body);
   }
 
   @Patch("busy-mode")

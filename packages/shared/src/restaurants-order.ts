@@ -45,6 +45,24 @@ export const RESTAURANTS_TIMING = {
   paymentReminderWindowMs: 15 * 60 * 1000,
 } as const;
 
+/**
+ * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): for restaurants still taking orders by
+ * phone. A new cash order skips the accept window and goes straight to cooking, but no rider is sent
+ * until the kitchen is confirmed — in the merchant app, or by LyniaGo ops after calling the restaurant.
+ */
+export const RESTAURANTS_AUTO_ACCEPT = {
+  /** Prep time when the restaurant hasn't set its usual one (`prepBaselineMinutes`). */
+  defaultPrepMinutes: 20,
+  /** An order still unconfirmed this long after placement turns urgent on the ops call list. Never
+   *  cancelled automatically: ops or the customer decide. */
+  escalateAfterMs: 5 * 60 * 1000,
+  /** The rider search starts this long before prep time runs out (roughly a rider's trip to the
+   *  counter), or straight away when the kitchen is confirmed later than that. */
+  dispatchLeadMs: 8 * 60 * 1000,
+  /** "Collected" (no pickup code) is only accepted this close to the restaurant's pin. */
+  pickupGeofenceM: 150,
+} as const;
+
 /** N-04: five prep-time chips, minutes. Free text is deliberately not offered (design rationale:
  *  invites "5 min" fiction). */
 export const PREP_CHIPS_MIN = [10, 15, 20, 30, 45] as const;

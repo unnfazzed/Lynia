@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Icon, StatusPill } from "../index";
+import { Banner, Icon, StatusPill } from "../index";
 
 /** Shared header row (back + restaurant name + status pill) reused across every phase/status branch of
  *  the food order tracking screen (app/food/order/[orderId].tsx) and its extracted terminal-state views.
@@ -61,6 +61,16 @@ export function Row({ label, value }: { label: string; value: string }): React.R
     <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
       <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.color.muted }}>{label}</Text>
       <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{value}</Text>
+    </View>
+  );
+}
+
+/** Auto-accept: the restaurant edited the order after it was placed (`itemsEditedAt`). A calm warn
+ *  strip on the in-kitchen / tracking views, built from the kit `Banner` so it reads native. */
+export function ItemsEditedNotice({ restaurantName, total }: { restaurantName: string; total: string }): React.ReactElement {
+  return (
+    <View style={{ borderRadius: tokens.radius.input, overflow: "hidden", marginBottom: tokens.space.sm }}>
+      <Banner tone="warn" icon="circle-alert" title={`${restaurantName} changed your order. New total ${total}.`} />
     </View>
   );
 }

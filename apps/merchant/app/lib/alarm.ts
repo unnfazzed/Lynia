@@ -22,6 +22,16 @@
  * is behind a minimal injectable interface so the class can be driven deterministically in tests.
  */
 
+import type { MerchantOrderResponse } from "@lynia/shared";
+import { needsKitchenConfirm } from "./order-groups";
+
+/** The orders the alarm rings for: every unanswered ringing order (D-05), and every auto-accepted order
+ *  the kitchen hasn't confirmed yet — no rider is sent until someone says they're making it. Only the
+ *  ringing ones get the full-screen takeover. */
+export function alarmOrders(orders: readonly MerchantOrderResponse[]): MerchantOrderResponse[] {
+  return orders.filter((o) => o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o));
+}
+
 /** ~1.2s on, 0.8s off per D-05's own parenthetical. */
 export const ALARM_TONE_ON_MS = 1200;
 export const ALARM_TONE_OFF_MS = 800;

@@ -62,3 +62,22 @@ export async function transferMerchantOwner(
   revalidatePath(`/merchants/${merchantId}`);
   return { ok: true };
 }
+
+/**
+ * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): how a restaurant takes orders, set by
+ * ops on its behalf — `POST /admin/merchants/:id/order-settings`. The endpoint writes the
+ * `merchant.order_settings` audit row in the SAME transaction (A-01), so the modal sets
+ * `auditInEndpoint`. Returns the failure rather than throwing it (see `setMerchantPilot`).
+ */
+export async function setMerchantOrderSettings(
+  merchantId: string,
+  settings: { autoAccept?: boolean; showPhoneToCustomers?: boolean },
+  reasonCode: string | null,
+  note: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const auditNote = [reasonCode, note.trim()].filter(Boolean).join(" — ");
+  const res = await adminPostResult(`/admin/merchants/${merchantId}/order-settings`, { ...settings, note: auditNote || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/merchants/${merchantId}`);
+  return { ok: true };
+}

@@ -93,6 +93,32 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
     expect(d.bookingAccount).toBeNull();
   });
 
+  it("auto-accept: the detail carries how the restaurant takes orders (defaults off)", async () => {
+    let selected: Record<string, unknown> | undefined;
+    const prismaFor = (m: object) => ({
+      merchant: {
+        findUnique: async (args: { select: Record<string, unknown> }) => {
+          selected = args.select;
+          return m;
+        },
+      },
+      profile: { findUnique: async () => null },
+      order: {
+        count: async () => 0,
+        aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
+        findMany: async () => [],
+      },
+      merchantDebtLedger: { findMany: async () => [] },
+    });
+    const on = (await new AdminMerchantsService(
+      prismaFor({ ...merchant, autoAccept: true, showPhoneToCustomers: true }) as unknown as PrismaService,
+    ).getMerchantDetail("m1"))!;
+    expect(selected).toMatchObject({ autoAccept: true, showPhoneToCustomers: true });
+    expect(on).toMatchObject({ autoAccept: true, showPhoneToCustomers: true });
+    const off = (await new AdminMerchantsService(prismaFor(merchant) as unknown as PrismaService).getMerchantDetail("m1"))!;
+    expect(off).toMatchObject({ autoAccept: false, showPhoneToCustomers: false });
+  });
+
   it("L2 (R2-5): the detail links the business's booking account, where ops holds a whole business's bookings", async () => {
     let asked: unknown;
     const prisma = {

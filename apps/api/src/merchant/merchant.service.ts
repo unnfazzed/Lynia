@@ -21,6 +21,7 @@ import type {
   RestaurantSearchDish,
   RestaurantSearchResponse,
   SetMerchantBusyModeRequest,
+  UpdateMerchantOrderSettingsRequest,
   SetMerchantOpenRequest,
   UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
@@ -326,6 +327,20 @@ export class MerchantService {
     const updated = await this.prisma.merchant.update({
       where: { id: merchant.id },
       data: { closedUntil: body.open ? null : startOfNextDay(new Date()) },
+      include: { ownerProfile: { select: { phone: true } } },
+    });
+    return await this.toProfileResponse(updated, merchant);
+  }
+
+  /** Auto-accept: how the restaurant takes orders (owner only; ops can set the same from admin). */
+  async updateOrderSettings(profileId: string, body: UpdateMerchantOrderSettingsRequest): Promise<MerchantProfileResponse> {
+    const merchant = await this.findOwnMerchantOrThrow(profileId);
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchant.id },
+      data: {
+        ...(body.autoAccept !== undefined ? { autoAccept: body.autoAccept } : {}),
+        ...(body.showPhoneToCustomers !== undefined ? { showPhoneToCustomers: body.showPhoneToCustomers } : {}),
+      },
       include: { ownerProfile: { select: { phone: true } } },
     });
     return await this.toProfileResponse(updated, merchant);
@@ -814,6 +829,8 @@ export class MerchantService {
       ...(me.myName ? { myName: me.myName } : {}),
       // D-48: closed by hand (only while it still holds).
       closedUntil: merchant.closedUntil && merchant.closedUntil.getTime() > Date.now() ? merchant.closedUntil.toISOString() : null,
+      autoAccept: merchant.autoAccept,
+      showPhoneToCustomers: merchant.showPhoneToCustomers,
     };
   }
 

@@ -16,11 +16,14 @@ export function FoodOrderPreparingView({
   order,
   restaurantName,
   reachable,
+  notice,
   now,
 }: {
   order: PreparingOrder;
   restaurantName: string;
   reachable: boolean;
+  /** Optional strip under the header — the auto-accept "changed your order" notice. */
+  notice?: React.ReactNode;
   now: number;
 }): React.ReactElement {
   const totalMs = (order.prepMinutes ?? 0) * 60_000;
@@ -31,6 +34,7 @@ export function FoodOrderPreparingView({
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel="Cooking" pillTone="success" />
+      {notice}
       <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
         {/* Kit R6·1 (r-customer-b.jsx:236) labels the prep ring "min prep". */}
         <CountdownRing elapsedMs={elapsedMs} totalMs={totalMs} label={String(remainingMin)} sub="min prep" />

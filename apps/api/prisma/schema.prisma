@@ -709,6 +709,19 @@ model Order {
   // D-48: the merchant closed its side after pickup without counting cash ("no_cash" | "force").
   merchantClosedAt        DateTime?           @map("merchant_closed_at")
   merchantCloseReason     String?             @map("merchant_close_reason")
+  // Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): the order skipped the 3:00 accept
+  // window because the restaurant takes orders automatically. Until someone confirms the kitchen is
+  // really making it (the restaurant in the app, or LyniaGo ops after a phone call), no rider is sent.
+  autoAccepted            Boolean             @default(false) @map("auto_accepted")
+  kitchenConfirmedAt      DateTime?           @map("kitchen_confirmed_at")
+  // "merchant" (tapped in the app) | "ops" (LyniaGo called the restaurant).
+  kitchenConfirmedBy      String?             @map("kitchen_confirmed_by")
+  // Set once when the order has gone unconfirmed too long; ops sees it as urgent.
+  kitchenEscalatedAt      DateTime?           @map("kitchen_escalated_at")
+  // Ops' unanswered calls to the restaurant, oldest first.
+  opsNoAnswerAt           DateTime[]          @default([]) @map("ops_no_answer_at")
+  // Last time the restaurant or ops changed the items after placement (agreed with the customer by phone).
+  itemsEditedAt           DateTime?           @map("items_edited_at")
   // N-10 customer no-show at the door: call log (mirrors paymentCallLoggedAt's shape) a rider builds
   // up before `reportNoShow` is allowed (>= RESTAURANTS_DEBT.noShowMinCalls entries, the earliest at
   // least RESTAURANTS_DEBT.noShowWindowMs ago).
@@ -974,6 +987,11 @@ model Merchant {
   // D-48 (merchant mobile redesign): closed by hand from the Orders header until this time (or until
   // the merchant opens again). Null = open by hours.
   closedUntil    DateTime?        @map("closed_until")
+  // Auto-accept: new cash orders skip the accept window and go straight to cooking. For restaurants
+  // still taking orders by phone; the kitchen (or LyniaGo ops) confirms each order before a rider is sent.
+  autoAccept     Boolean          @default(false) @map("auto_accept")
+  // The restaurant agreed to show its phone number to customers with a live order.
+  showPhoneToCustomers Boolean    @default(false) @map("show_phone_to_customers")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
   // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
   // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).

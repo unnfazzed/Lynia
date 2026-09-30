@@ -1,6 +1,6 @@
 import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
 import { dayKeyFor, DAY_KEYS, type PartialMerchantHours } from "./hours";
-import { groupQueue, isNoRiderHold, isReadyBucket } from "./order-groups";
+import { groupQueue, isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
 
 /**
  * The merchant mobile Orders screens' logic (packages/design/handoff/merchant-mobile B1–B7, ledger
@@ -36,7 +36,8 @@ export function isAfterPickup(o: Pick<MerchantOrderResponse, "status">): boolean
 }
 
 export interface HomeSections {
-  /** New: the ringing orders, then the older undecided lanes (item approval, legacy wallet payment). */
+  /** New: the ringing orders, the auto-accepted ones waiting for the kitchen to confirm, then the older
+   *  undecided lanes (item approval, legacy wallet payment). */
   new: MerchantOrderResponse[];
   cooking: MerchantOrderResponse[];
   /** Ready and waiting for a rider — searching, holding, or a rider coming to the counter. */
@@ -49,7 +50,7 @@ export interface HomeSections {
 export function homeSections(orders: readonly MerchantOrderResponse[]): HomeSections {
   const g = groupQueue(orders.filter((o) => !isAfterPickup(o)));
   return {
-    new: [...g.awaitingAccept, ...g.awaitingItemApproval, ...g.awaitingPayment],
+    new: [...g.awaitingAccept, ...g.awaitingKitchenConfirm, ...g.awaitingItemApproval, ...g.awaitingPayment],
     cooking: g.preparing,
     ready: g.ready,
     outForDelivery: orders.filter((o) => isAfterPickup(o) && !o.merchantClosedAt),
@@ -77,6 +78,7 @@ export function rowSub(o: MerchantOrderResponse): string {
   const rider = riderFirstName(o);
   if (o.merchantPhase === "awaiting_item_approval") return "Waiting for the customer to approve";
   if (o.merchantPhase === "awaiting_payment") return "Waiting for payment";
+  if (needsKitchenConfirm(o)) return "Waiting for you to confirm";
   if (o.merchantPhase === "preparing") {
     // The title already carries the items; the sub says when it'll be ready.
     const ready = o.prepStartedAt && o.prepMinutes ? hm(new Date(new Date(o.prepStartedAt).getTime() + o.prepMinutes * 60_000).toISOString()) : "";
@@ -92,6 +94,11 @@ export function rowSub(o: MerchantOrderResponse): string {
   if (o.status === "delivered" || o.status === "completed") return `Delivered${cash}`;
   if (o.status === "undelivered") return `Not delivered${cash}`;
   return `On the way${cash}`;
+}
+
+/** "HH:MM" the items were last changed, or null when they never were. */
+export function itemsEditedLabel(o: Pick<MerchantOrderResponse, "itemsEditedAt">): string | null {
+  return o.itemsEditedAt ? `Items changed ${hm(o.itemsEditedAt)}` : null;
 }
 
 export interface Step {

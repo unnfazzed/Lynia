@@ -19,6 +19,20 @@ export const REASONS = {
     "Service failure — late or incomplete",
   ],
   orderCancel: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
+  // Auto-accept: "Can't make it" on the Orders to confirm list — why the kitchen can't take the order.
+  kitchenCancel: [
+    "The restaurant can't make it",
+    "The restaurant is closed",
+    "Items not available and the customer didn't agree a change",
+    "Couldn't reach the restaurant",
+  ],
+  // Auto-accept: why ops changed how a restaurant takes orders.
+  merchantOrderSettings: [
+    "The restaurant takes orders by phone",
+    "The restaurant now uses the merchant app",
+    "The restaurant agreed to show its number",
+    "The restaurant asked to hide its number",
+  ],
   // KB-POD-DISPUTE Phase B — why ops is overturning an `undelivered` outcome to `delivered`.
   orderAdjudicateDelivered: [
     "Proof photo + GPS confirm the drop; recipient withheld the code",
