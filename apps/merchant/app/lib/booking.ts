@@ -39,11 +39,11 @@ export function bookingsAvailable(profile: Pick<MerchantProfileResponse, "locati
   return !!profile && profile.location !== undefined;
 }
 
-/** Where a signed-in business lands: a restaurant on its Orders board; a shop on Deliveries (L2), or on its
- *  setup checklist while the API can't book riders yet. Shared by sign-in, sign-up and Orders. */
-export function homePath(merchant: Pick<MerchantProfileResponse, "businessType" | "location">): string {
-  if (merchant.businessType !== "shop") return "/queue";
-  return bookingsAvailable(merchant) ? "/deliveries" : "/setup";
+/** Where a signed-in business lands: its Orders home — the board for a restaurant, Deliveries for a shop
+ *  until shops take customer orders. The setup checklist is gone (merchant mobile redesign, D-48).
+ *  Shared by sign-in, sign-up and Orders. */
+export function homePath(merchant: Pick<MerchantProfileResponse, "businessType">): string {
+  return merchant.businessType === "shop" ? "/deliveries" : "/queue";
 }
 
 export const STATE_LABEL: Record<MerchantBookingState, string> = {

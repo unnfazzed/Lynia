@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./mobile.css";
+import { ToastProvider } from "./components/m/Toast";
 
 export const metadata: Metadata = {
-  title: "LyniaGo — Merchant",
-  description: "Merchant dashboard for the LyniaGo Restaurants vertical",
+  title: "LyniaGo Merchant",
+  description: "Orders, menu and money for LyniaGo restaurants and shops",
 };
 
-// Merchants run this on a phone as often as on the counter tablet, so the shell has to own the
+// A phone-first app (the merchant-mobile redesign, 360px), so the shell has to own the
 // viewport rather than inherit Next's default. `viewportFit: "cover"` is what puts the safe-area
 // insets the bottom nav and the sheets read (`env(safe-area-inset-bottom)`) into play on a notched
 // device. Zoom is deliberately NOT capped — pinch-zoom is an accessibility affordance, and nothing
@@ -25,7 +27,9 @@ export const dynamic = "force-dynamic";
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

@@ -44,24 +44,23 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Join (merchant web upgrade L4)", () => {
-  it("says who added them, and joins under their own name once they accept the privacy notice", async () => {
+describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
+  const sub = (text: string) => (_: string, el: Element | null) => el?.tagName === "P" && el.textContent === text;
+
+  it("names the business and who added them, and joins under their own name — no privacy tick, it was accepted at sign-in", async () => {
     vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite()] });
     const joined = merchantProfile({ name: "Siyaso Spares", businessType: "shop", myRole: "staff", location: null });
     vi.mocked(joinInvite).mockResolvedValue(joined);
 
     render(<JoinPage />);
 
-    expect(await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === "Farai added you to Siyaso Spares as Staff.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Join Siyaso Spares" })).toBeTruthy();
+    expect(screen.getByText(sub("Farai added you as Staff."))).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     const name = screen.getByLabelText("Your name") as HTMLInputElement;
     expect(name.value).toBe("Tendai");
 
-    fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
-    expect(await screen.findByText("Tick the box to accept LyniaGo's privacy notice.")).toBeTruthy();
-    expect(joinInvite).not.toHaveBeenCalled();
-
     fireEvent.change(name, { target: { value: " Tendai Moyo " } });
-    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
@@ -77,7 +76,6 @@ describe("Join (merchant web upgrade L4)", () => {
 
     render(<JoinPage />);
     await screen.findByLabelText("Your name");
-    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
 
     expect((await screen.findByText("Your number already works at another business on LyniaGo. Leave it first to join Siyaso Spares.")).getAttribute("role")).toBe(
@@ -86,21 +84,16 @@ describe("Join (merchant web upgrade L4)", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it("drops an expired invite and says whom to ask", async () => {
-    vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite(), invite({ id: "22222222-2222-4222-8222-222222222222", businessName: "Sadza Republic", ownerName: "Rudo" })] });
+  it("drops an expired invite, says whom to ask, and shows the next one", async () => {
+    vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite(), invite({ id: "22222222-2222-4222-8222-222222222222", businessName: "Sadza Republic", businessType: "restaurant", ownerName: "Rudo" })] });
     vi.mocked(joinInvite).mockRejectedValue(new ApiError(410, "This invite has expired. Ask Farai to send a new one.", "invite_expired"));
 
     render(<JoinPage />);
-    // Two invites: each asks first.
-    const joins = await screen.findAllByRole("button", { name: "Join" });
-    expect(joins).toHaveLength(2);
-    fireEvent.click(joins[0]!);
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Join Siyaso Spares" }));
 
     expect(await screen.findByText("This invite has expired. Ask Farai to send a new one.")).toBeTruthy();
-    expect(screen.queryByText((_, el) => el?.tagName === "P" && el.textContent === "Farai added you to Siyaso Spares as Staff.")).toBeNull();
-    expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "Rudo added you to Sadza Republic as Staff.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Join Sadza Republic" })).toBeTruthy();
+    expect(screen.getByText(sub("Rudo added you as Staff."))).toBeTruthy();
   });
 
   it("Not me deletes the invite, and with none left goes to the sign-up", async () => {
@@ -117,7 +110,7 @@ describe("Join (merchant web upgrade L4)", () => {
   it("can set up their own business instead", async () => {
     vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite()] });
     render(<JoinPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Set up my own business instead" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start my own business" }));
     expect(push).toHaveBeenCalledWith("/onboarding?own=1");
   });
 

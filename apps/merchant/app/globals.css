@@ -367,7 +367,7 @@ input:focus-visible,
   display: contents;
 }
 
-@media (max-width: 680px) {
+@container merchant (max-width: 680px) {
   /* Degrade the left rail to a bottom bar below tablet width (design says "degrades to phone", not
    * drawn in the gallery — this is the straightforward, standard collapse). */
   .kitchen-shell-body {
@@ -525,7 +525,7 @@ input:focus-visible,
 
 /* L4: below the 360px phone, a first name no longer fits beside the wordmark and the connection pill.
  * The icon stays (the name is in its label and in the menu), so the wordmark is never cut. */
-@media (max-width: 359px) {
+@container merchant (max-width: 359px) {
   .kitchen-bar-person-text {
     display: none;
   }
@@ -550,7 +550,7 @@ input:focus-visible,
   width: 300px;
   flex-shrink: 0;
 }
-@media (max-width: 680px) {
+@container merchant (max-width: 680px) {
   .takeover-body {
     flex-direction: column;
     gap: 14px;
@@ -587,7 +587,7 @@ input:focus-visible,
   max-height: calc(100dvh - 32px);
   overflow: auto;
 }
-@media (max-width: 680px) {
+@container merchant (max-width: 680px) {
   .kitchen-sheet-overlay {
     align-items: flex-end;
     padding: 0;
@@ -638,7 +638,7 @@ input:focus-visible,
   padding: 28px;
 }
 
-@media (max-width: 680px) {
+@container merchant (max-width: 680px) {
   .onboarding-screen {
     padding: 0;
     background: var(--bg);

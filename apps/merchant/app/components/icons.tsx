@@ -38,9 +38,17 @@ export type IconName =
   | "bike"
   | "users"
   | "user"
-  | "power";
+  | "power"
+  | "chevron-right"
+  | "search"
+  | "x"
+  | "timer";
 
 const PATHS: Record<IconName, string[]> = {
+  "chevron-right": ["m9 18 6-6-6-6"],
+  search: ["M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0", "m21 21-4.3-4.3"],
+  x: ["M18 6 6 18", "m6 6 12 12"],
+  timer: ["M10 2h4", "m12 14 3-3", "M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0"],
   inbox: [
     "M22 12h-6l-2 3h-4l-2-3H2",
     "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z",

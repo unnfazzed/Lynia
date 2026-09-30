@@ -4,13 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MyMerchantInviteResponse } from "@lynia/shared";
 import { getAlarmController } from "../components/alarm-singleton";
-import { Icon } from "../components/icons";
+import { AppBar } from "../components/m/AppBar";
 import { RetryableError } from "../components/RetryableError";
-import { disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../components/queue/styles";
 import { ApiError, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { primeBusiness } from "../lib/business";
-import { API_BASE_URL } from "../lib/config";
 import { clearMerchantSession } from "../lib/session";
 import { ROLE_LABEL, validateJoinName } from "../lib/team";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
@@ -21,22 +19,21 @@ type LoadState = { status: "checking" } | { status: "ready"; invites: MyMerchant
 const OWN_BUSINESS_PATH = "/onboarding?own=1";
 
 /**
- * Join (merchant web upgrade L4, design doc "L4 — Team"): what a signed-in number with a pending invite
- * sees instead of "Set up your business". "{Owner} added you to {Business} as Staff", then **Join** — the
- * person confirms or corrects their name and accepts the privacy notice in the same one-tap line as
- * sign-up — or **Not me**, which deletes the invite. "One business per phone" is settled by the API at
- * Join, and only this person hears about it. They can still set up their own business instead.
+ * A5 · Join a team (packages/design/handoff/merchant-mobile): what a signed-in number with a pending
+ * invite sees instead of "Set up your business". The business's tile, "Join Siyaso Spares", "Farai
+ * added you as **Staff**.", your name, then **Join**, or **Not me** (deletes the invite) · **Start my
+ * own business**. The privacy notice was accepted on the sign-in screen (README A1), so there is no
+ * tick here. "One business per phone" is settled by the API at Join. With more than one invite, the
+ * next one shows once the first is joined or declined.
  *
- * Outside the `(app)` group, like the sign-up: no kitchen chrome, no alarm and no queue socket, because
- * the person isn't on a business yet. Undrawn, ledgered as D-46.
+ * Outside the `(app)` group, like the sign-up: no tab bar and no queue socket.
  */
 export default function JoinPage() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "checking" });
   const [openId, setOpenId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [terms, setTerms] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; terms?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string }>({});
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const actingRef = useRef(false);
@@ -49,7 +46,6 @@ export default function JoinPage() {
   const openInvite = useCallback((invite: MyMerchantInviteResponse) => {
     setOpenId(invite.id);
     setName(invite.name);
-    setTerms(false);
     setErrors({});
   }, []);
 
@@ -74,8 +70,8 @@ export default function JoinPage() {
         return;
       }
       setState({ status: "ready", invites });
-      // One invite is the usual case: its Join form is open from the start.
-      if (invites.length === 1) openInvite(invites[0]!);
+      // The first invite's Join form is open from the start.
+      if (invites[0]) openInvite(invites[0]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return signOut();
       // An API without Team yet has no invites to show.
@@ -101,11 +97,18 @@ export default function JoinPage() {
     if (openId === id) setOpenId(null);
   }
 
+  // Declined (or gone), the next invite opens; the screen shows one business at a time.
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const first = state.invites[0];
+    if (first && !state.invites.some((i) => i.id === openId)) openInvite(first);
+  }, [state, openId, openInvite]);
+
   async function onJoin(e: React.FormEvent, invite: MyMerchantInviteResponse) {
     e.preventDefault();
     if (actingRef.current) return;
     const nameError = validateJoinName(name);
-    const found = { ...(nameError ? { name: nameError } : {}), ...(terms ? {} : { terms: "Tick the box to accept LyniaGo's privacy notice." }) };
+    const found = nameError ? { name: nameError } : {};
     setErrors(found);
     setBanner(null);
     if (Object.keys(found).length > 0) return;
@@ -149,172 +152,58 @@ export default function JoinPage() {
     }
   }
 
+  const invite = state.status === "ready" ? state.invites.find((i) => i.id === openId) : undefined;
+
   return (
-    // The sign-up's own screen and card, so the two read as one flow.
-    <div className="onboarding-screen">
-      <div className="onboarding-card">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a static brand SVG from /public */}
-          <img src="/brand/lyniago-mark.svg" alt="" width={32} height={32} />
-          <span style={{ fontFamily: "var(--font-wordmark)", fontSize: 22, fontWeight: 600 }}>
-            Lynia<span style={{ color: "var(--accent-700)" }}>Go</span>
-          </span>
+    <div className="m-app">
+      <AppBar onBack={signOut} />
+      {state.status === "checking" && <div className="m-bd" aria-busy="true" />}
+      {state.status === "error" && (
+        <div className="m-bd" style={{ padding: "16px 20px" }}>
+          <RetryableError message={state.message} onRetry={() => void load()} />
         </div>
-
-        {state.status === "checking" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Checking your invites…</div>}
-        {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
-
-        {state.status === "ready" && (
-          <div>
-            <h1 style={titleStyle}>{state.invites.length === 1 ? "You've been added to a team" : "You've been added to a few teams"}</h1>
-            <div style={subStyle}>You sign in with your own number and code. A phone works at one business at a time.</div>
-
-            {banner && (
-              <div role="alert" style={bannerStyle}>
-                {banner}
-              </div>
-            )}
-
-            <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
-              {state.invites.map((invite) => (
-                <div key={invite.id} style={{ border: "1.5px solid var(--line)", borderRadius: 14, padding: 14 }}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                    <span style={{ width: 40, height: 40, borderRadius: 12, background: "var(--accent-wash)", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                      <Icon name={invite.businessType === "shop" ? "store" : "utensils"} size={20} color="var(--accent-text)" />
-                    </span>
-                    <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, overflowWrap: "anywhere" }}>
-                      {invite.ownerName} added you to <b>{invite.businessName}</b> as {ROLE_LABEL[invite.role]}.
-                    </p>
-                  </div>
-
-                  {openId === invite.id ? (
-                    <form onSubmit={(e) => void onJoin(e, invite)} noValidate style={{ marginTop: 14 }}>
-                      <label htmlFor={`join-name-${invite.id}`} style={labelStyle}>
-                        Your name
-                      </label>
-                      <input
-                        id={`join-name-${invite.id}`}
-                        value={name}
-                        onChange={(e) => {
-                          setName(e.target.value);
-                          if (errors.name) setErrors((x) => ({ ...x, name: undefined }));
-                        }}
-                        autoComplete="name"
-                        maxLength={60}
-                        aria-invalid={!!errors.name}
-                        style={inputStyle}
-                      />
-                      <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>The team sees you by this name.</div>
-                      {errors.name && (
-                        <div role="alert" style={fieldErrorStyle}>
-                          {errors.name}
-                        </div>
-                      )}
-
-                      <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.45, cursor: "pointer", marginTop: 14 }}>
-                        <input
-                          type="checkbox"
-                          checked={terms}
-                          onChange={(e) => {
-                            setTerms(e.target.checked);
-                            if (errors.terms) setErrors((x) => ({ ...x, terms: undefined }));
-                          }}
-                          style={{ width: 22, height: 22, margin: 0, flexShrink: 0, accentColor: "var(--cta-fill)" }}
-                        />
-                        <span>
-                          I accept LyniaGo&apos;s{" "}
-                          <a href={`${API_BASE_URL}/legal/privacy`} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)", fontWeight: 600 }}>
-                            privacy notice
-                          </a>
-                          .
-                        </span>
-                      </label>
-                      {errors.terms && (
-                        <div role="alert" style={fieldErrorStyle}>
-                          {errors.terms}
-                        </div>
-                      )}
-
-                      <button type="submit" disabled={busy !== null} style={{ ...primaryWideStyle, marginTop: 16, ...disabledStyle(busy !== null) }}>
-                        {busy === invite.id ? "Joining…" : `Join ${invite.businessName}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void onNotMe(invite)}
-                        disabled={busy !== null}
-                        style={{ ...ghostButtonStyle, width: "100%", marginTop: 10, ...disabledStyle(busy !== null) }}
-                      >
-                        Not me
-                      </button>
-                    </form>
-                  ) : (
-                    <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                      <button type="button" onClick={() => openInvite(invite)} disabled={busy !== null} style={{ ...primaryButtonStyle, ...disabledStyle(busy !== null) }}>
-                        Join
-                      </button>
-                      <button type="button" onClick={() => void onNotMe(invite)} disabled={busy !== null} style={{ ...ghostButtonStyle, ...disabledStyle(busy !== null) }}>
-                        Not me
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button type="button" onClick={() => router.push(OWN_BUSINESS_PATH)} style={{ ...ghostButtonStyle, width: "100%", marginTop: 16 }}>
-              Set up my own business instead
-            </button>
-            <div style={{ marginTop: 14, textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
-              Wrong number?{" "}
-              <button type="button" onClick={signOut} style={inlineLinkStyle}>
-                Sign out
-              </button>
-            </div>
+      )}
+      {invite && (
+        <form className="m-bd" style={{ flex: 1, padding: "16px 20px 20px", gap: 16 }} onSubmit={(e) => void onJoin(e, invite)} noValidate>
+          <div className={`m-th ${invite.businessType === "shop" ? "m-tile-shop" : "m-tile-food"}`} style={{ width: 64, height: 64, borderRadius: 18 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static illustrations from /public */}
+            <img src={invite.businessType === "shop" ? "/brand/biz-small-business.svg" : "/brand/food.svg"} alt="" style={{ width: 58 }} />
           </div>
-        )}
-      </div>
+          <div>
+            <h1 className="m-h1">Join {invite.businessName}</h1>
+            <p className="m-sub" style={{ marginTop: 8 }}>
+              {invite.ownerName ? `${invite.ownerName} added you` : "You were added"} as <b style={{ color: "var(--ink)" }}>{ROLE_LABEL[invite.role]}</b>.
+            </p>
+          </div>
+          <div className="m-fld">
+            <label htmlFor="join-name">Your name</label>
+            <div className="m-in" data-invalid={errors.name ? true : undefined}>
+              <input id="join-name" value={name} autoComplete="name" aria-invalid={errors.name ? true : undefined} onChange={(e) => setName(e.target.value)} />
+            </div>
+            {errors.name && <span className="m-err">{errors.name}</span>}
+          </div>
+          {banner && (
+            <div className="m-alert" role="alert">
+              {banner}
+            </div>
+          )}
+          <div style={{ flex: 1 }} />
+          <button type="submit" className="m-btn" disabled={busy !== null}>
+            {busy === invite.id ? "Joining…" : `Join ${invite.businessName}`}
+          </button>
+          <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
+            <button type="button" className="m-lnk" disabled={busy !== null} onClick={() => void onNotMe(invite)}>
+              Not me
+            </button>
+            <span className="m-lnk m-muted" aria-hidden="true">
+              ·
+            </span>
+            <button type="button" className="m-lnk" onClick={() => router.push(OWN_BUSINESS_PATH)}>
+              Start my own business
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
-
-const titleStyle: React.CSSProperties = { fontSize: 22, fontWeight: 800, margin: 0 };
-const subStyle: React.CSSProperties = { fontSize: 13.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.45 };
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  padding: "0 14px",
-  borderRadius: "var(--radius-input)",
-  border: "1.5px solid var(--line)",
-  fontFamily: "inherit",
-  background: "var(--bg)",
-  color: "var(--ink)",
-};
-const primaryWideStyle: React.CSSProperties = {
-  ...primaryButtonStyle,
-  width: "100%",
-  height: "var(--target-primary)",
-  padding: "0 16px",
-  fontSize: 16,
-};
-const fieldErrorStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--danger-ink)", marginTop: 6 };
-const bannerStyle: React.CSSProperties = {
-  color: "var(--danger-ink)",
-  background: "var(--danger-wash)",
-  borderRadius: 10,
-  padding: "10px 12px",
-  fontSize: 13,
-  marginTop: 14,
-};
-const inlineLinkStyle: React.CSSProperties = {
-  minHeight: "var(--target-min)",
-  padding: "0 4px",
-  border: "none",
-  background: "none",
-  color: "var(--accent-text)",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontFamily: "inherit",
-};

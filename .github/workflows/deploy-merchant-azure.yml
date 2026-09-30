@@ -109,12 +109,16 @@ jobs:
           # Merchant web upgrade L2: the support WhatsApp number (international digits) behind the Help
           # nav item. Optional: unset, the item stays hidden, as the mobile app's help row does.
           SUPPORT_WHATSAPP: ${{ vars.MERCHANT_SUPPORT_WHATSAPP }}
+          # D-48: the referrer-restricted browser key for address search (Places New + Geocoding).
+          # Optional: unset, the sign-up's search field hides and GPS still works.
+          GOOGLE_PLACES_KEY: ${{ vars.MERCHANT_GOOGLE_PLACES_KEY }}
         run: |
           set -euo pipefail
           docker buildx build \
             -f apps/merchant/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL="$MERCHANT_API_BASE_URL" \
             --build-arg NEXT_PUBLIC_SUPPORT_WHATSAPP="$SUPPORT_WHATSAPP" \
+            --build-arg NEXT_PUBLIC_GOOGLE_PLACES_KEY="$GOOGLE_PLACES_KEY" \
             --cache-from "type=registry,ref=$REGISTRY/lynia-merchant:buildcache" \
             --cache-to "type=registry,ref=$REGISTRY/lynia-merchant:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
             -t "$REGISTRY/lynia-merchant:${GITHUB_SHA}" \

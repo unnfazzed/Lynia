@@ -116,7 +116,7 @@ export function getMyMerchant(): Promise<MerchantProfile> {
 
 /** L1 self-serve sign-up: creates the business and the caller's owner membership. A 409
  *  `already_member` means this person is already on a business (e.g. a retry of a sign-up whose
- *  response was lost) — callers treat it as success and go to `/setup`. */
+ *  response was lost) — callers treat it as success and go home. */
 export function becomeMerchant(body: BecomeMerchantRequest): Promise<MerchantProfile> {
   return authedFetch<MerchantProfile>("/merchant/become", { method: "POST", body });
 }

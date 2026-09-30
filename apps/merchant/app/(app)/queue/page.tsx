@@ -7,7 +7,6 @@ import { Kitchen } from "../../components/Kitchen";
 import { QueueBoard } from "../../components/queue/QueueBoard";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { RetryableError } from "../../components/RetryableError";
-import { SetupBanner } from "../../components/SetupBanner";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { bookingsAvailable, homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
@@ -36,8 +35,7 @@ export default function QueuePage() {
       .then((merchant) => {
         if (cancelled) return;
         primeBusiness(merchant);
-        // A shop takes no customer orders yet, so it has no Orders board: its home is Deliveries (merchant
-        // web upgrade L2), or the setup checklist on an API that can't book riders yet.
+        // A shop takes no customer orders yet, so its Orders home is Deliveries (D-48).
         if (merchant.businessType === "shop") {
           router.replace(homePath(merchant));
           return;
@@ -133,8 +131,6 @@ export default function QueuePage() {
                 <div style={{ fontSize: 12.5, color: "var(--danger-ink)" }}>{queueError.message}</div>
               )}
             </div>
-            {/* M0·2's way in — renders nothing once the checklist is done (SetupBanner). */}
-            <SetupBanner />
             {/* L2: Book a rider for phone orders, and the live bookings (D-44). */}
             {bookingsAvailable(state.merchant) && <BookingsStrip />}
             <div className="queue-board-slot">
