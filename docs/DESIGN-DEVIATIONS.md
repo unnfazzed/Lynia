@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48.** D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49.** D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -1935,15 +1935,16 @@ rule. A change comes back as a new export.
 | #1 Play Store link | **Keep `href="#app"`** while the listing is closed-testing only; the public URL 404s today (`CLAUDE.md` § Expo/EAS). | None. Exactly as delivered. |
 | #2 OG image | Built to the README's spec: green `#00B14F`, the on-green Paper Dove (as `lyniago-icon.svg` and the app splash) with the Fredoka wordmark, and "Stay home. We'll bring it." in the hero's type. Source: `apps/website/og-image/`. | A new file, `assets/og-image.png`, that the page's existing `og:image` tag already names. |
 | #3 About us | **Launch without it.** `/about` serves `404.html`: the page's own header and footer (derived by the check script), a "Page not found" heading and a "Back home" button, as README "Deploy" §6 allows. | A new page. The home page is unchanged. |
-| #4 Terms / Privacy | **Privacy → `https://api.lyniago.com/legal/privacy`** (the live notice). Terms stays `#`. | One `href` in the footer changes (`LAUNCH_EDITS` → `privacy-link`). It looks identical. |
+| #4 Terms / Privacy | **Privacy → `https://api.lyniago.com/legal/privacy`** (the live notice). **Terms → `https://api.lyniago.com/legal/terms`** (owner, 2026-09-30, once the terms page existed; D-49). | Two `href`s in the footer change (`LAUNCH_EDITS` → `privacy-link`, `terms-link`). It looks identical. |
+| #3 About us, revisited | **Remove the link** (owner, 2026-09-30: *"remove the about us section in the website"*). There is no About page, so the footer's "About us" link is dropped rather than left pointing at a 404. | The footer loses one link (`LAUNCH_EDITS` → `about-removed`); `INTENTIONAL_404` is empty. `/about` still 404s like any unknown path. |
 
 | (not a README TODO) Menu buttons stop short on phones | **Fix it** (owner, 2026-09-28, after the gstack QA and design reviews both found it). The lazy `biz-scooter-rider.svg` had no reserved size, so on a first visit at ≤960px the page grew about 350px while scrolling. The first tap on "Download the app" or "Send a parcel" then stopped 320–540px short of `#app`. The fix uses the README's own screenshot pattern: `width="460" height="460"` (the SVG's size) on that `<img>`, plus `height:auto` in `.biz-ill`. | Nothing looks different: the parity harness shows 0 px at all 7 widths. On a cold load the buttons now land where the reference lands (0px at 360, 390 and 768). **Report upstream** so the next export carries it; this row then retires. `LAUNCH_EDITS` → `biz-ill-size` and `biz-ill-height-auto`. |
 
 Hosting-only files, none of which render: `_headers` (the README's caching rules plus security
 headers), `robots.txt` and `sitemap.xml`.
 
-**Retire when:** the Play listing is public (then add the link edits), the About copy arrives (then
-add `/about`), or a terms page exists. Each of these updates this entry and `LAUNCH_EDITS` together.
+**Retire when:** the Play listing is public (then add the link edits), or a new handoff export carries
+the Terms link and drops About us (then `terms-link` and `about-removed` retire). Each of these updates this entry and `LAUNCH_EDITS` together.
 
 ## D-43 · Merchant web: self-serve sign-up, "Sign in", and the type-aware `/setup` — APPROVED (2026-09-29)
 
@@ -2291,3 +2292,23 @@ Evidence: `docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30.png` (mock left, app r
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).
+
+## D-49 · Terms & conditions: one page for customers, riders and businesses — APPROVED (2026-09-30)
+
+**Owner instruction, this session (2026-09-30):** *"create a Terms which is combined for both merchants,
+riders and customers. dont make it sophisticated. learn from the privacy [notice], our business at
+lyniago.com and chowdeck nigeria. Then when done link it to the website and apps .. Also remove the about
+us section in the website .. ship everything and auto approve."*
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `GET /legal/terms` (API) | — (a hosted legal page, like `/legal/privacy`) | Plain-language terms: Part A for everyone, then parts for customers, riders and businesses. Copy in `apps/api/src/legal/legal.content.ts` (`termsHtml`), pinned by `legal.content.spec.ts` to the policy the code enforces (US$150 cap, 3 strikes → 2 h offline, 0% commission) | The owner's instruction; the store listing and lyniago.com need a terms page |
+| Settings (`LJ.settings`, both roles) | No terms row | A **"Terms & conditions"** row (`file-text` icon) after "Privacy notice", opening the hosted page in the browser | No mock draws a terms screen; the row is listed as an `extra` in `LJ.settings_perms*.json` |
+| Merchant sign-in line | "By continuing you accept the privacy notice." | "By continuing you accept the **terms** and **privacy notice**." — both links to the API pages | Merchants accept the terms where they already accept the privacy notice |
+| lyniago.com footer | `Terms` → `#`, `About us` → `/about` | `Terms` → the terms page; `About us` removed | See D-42 §3 |
+
+Nothing in `packages/design/**` changes. **Upstream ask:** a drawn terms entry in Settings and in the
+merchant sign-in, and a website export with the Terms link and without About us.
+
+**Not legal advice.** Like the privacy notice, the terms describe the system accurately but were not
+written by counsel; have them reviewed before the public production listing.

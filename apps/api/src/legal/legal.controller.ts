@@ -1,8 +1,8 @@
 import { Controller, Get, Header } from "@nestjs/common";
-import { accountDeletionHtml, privacyPolicyHtml } from "./legal.content";
+import { accountDeletionHtml, privacyPolicyHtml, termsHtml } from "./legal.content";
 
 /**
- * Public legal pages (`/legal/privacy`, `/legal/account-deletion`).
+ * Public legal pages (`/legal/privacy`, `/legal/account-deletion`, `/legal/terms`).
  *
  * Google Play will not review a listing without a reachable privacy-policy URL, and — for any app
  * that lets users create an account — a separate account/data-deletion URL on the Data safety form.
@@ -45,5 +45,14 @@ export class LegalController {
   @Header("Cache-Control", "public, max-age=86400")
   accountDeletion(): string {
     return accountDeletionHtml();
+  }
+
+  /** The one set of terms for customers, riders and businesses; linked from lyniago.com and both apps. */
+  @Get("terms")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  @Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+  @Header("Cache-Control", "public, max-age=86400")
+  terms(): string {
+    return termsHtml();
   }
 }

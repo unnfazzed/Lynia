@@ -8,7 +8,7 @@
 #  2. the home page, fetched as a browser would, is byte-identical to apps/website/site/index.html
 #     (nothing on the edge rewrote it)
 #  3. every asset the home page references loads, with the right type and the immutable cache header
-#  4. /about serves the 404 page with a 404 status; www and plain http redirect to https://lyniago.com
+#  4. an unknown path (/about, no longer linked) serves the 404 page with a 404 status; www and plain http redirect to https://lyniago.com
 set -euo pipefail
 
 ORIGIN="${1:-https://lyniago.com}"

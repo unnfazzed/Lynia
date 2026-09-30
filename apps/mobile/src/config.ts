@@ -82,6 +82,13 @@ export const WS_URL: string = API_URL;
  */
 
 /**
+ * The terms & conditions page (one set for customers, riders and businesses), served by the API like
+ * the privacy notice. Unlike privacy there is no drawn in-app terms screen, so the Settings row opens
+ * the hosted page in the browser (owner instruction 2026-09-30, D-42 / D-49).
+ */
+export const TERMS_URL = `${API_URL}/legal/terms`;
+
+/**
  * Google Places (browser/REST) API key for search-first addressing. OPTIONAL — the autocomplete path is
  * key-gated: when this is unset `AddressSearch` falls back to the device geocoder (src/logic/geocode.ts),
  * so the app builds and runs fully with no key and an address can still become a coordinate. Used for

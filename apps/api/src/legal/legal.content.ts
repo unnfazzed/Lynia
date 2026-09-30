@@ -45,6 +45,16 @@
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
 export const LEGAL_LAST_UPDATED = "29 September 2026";
 
+/** Stamped on the terms page. Bump when the terms materially change, and tell users in the app. */
+export const TERMS_LAST_UPDATED = "30 September 2026";
+
+/** The company behind LyniaGo, as the website footer names it. */
+export const OPERATOR_NAME = "FortyoneX Studio (Private) Limited";
+
+/** The WhatsApp help line the website and the app route support to. */
+export const HELP_WHATSAPP_DISPLAY = "+263 77 883 1938";
+export const HELP_WHATSAPP_URL = "https://wa.me/263778831938";
+
 /**
  * Contact for privacy requests. Deliberately the SAME inbox the app already routes support to
  * (`SUPPORT_URL` in apps/mobile/src/config.ts) rather than a freshly-invented `privacy@` alias — an
@@ -345,7 +355,7 @@ footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid #e4e7ec; 
 ${bodyHtml}
 <footer>
   <p>Lynia (LyniaGo), Zimbabwe · Android package <code>${ANDROID_PACKAGE}</code></p>
-  <p><a href="/legal/privacy">Privacy notice</a> · <a href="/legal/account-deletion">Delete your account &amp; data</a></p>
+  <p><a href="/legal/terms">Terms &amp; conditions</a> · <a href="/legal/privacy">Privacy notice</a> · <a href="/legal/account-deletion">Delete your account &amp; data</a></p>
 </footer>
 </body>
 </html>`;
@@ -608,5 +618,230 @@ keep. None of it identifies you after your profile is anonymised:</p>
 <h2>Contact</h2>
 <p><a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a> · See also our
 <a href="/legal/privacy">privacy notice</a>.</p>`,
+  );
+}
+
+/**
+ * `GET /legal/terms` — one set of terms for all three kinds of user (customers, riders, businesses).
+ *
+ * Owner instruction (2026-09-30): *"create a Terms which is combined for both merchants, riders and
+ * customers. dont make it sophisticated. learn from the privacy [notice], our business at lyniago.com
+ * and chowdeck nigeria."* So: plain words, short sections, one shared part for everyone and one part per
+ * kind of user. Chowdeck's terms of use were read for the sections a delivery marketplace needs
+ * (orders, taking delivery, restricted activities, liability, termination, governing law); the
+ * facts are ours:
+ *
+ *   • Lynia is a matchmaker, not a carrier, restaurant or payment processor. The customer names the
+ *     parcel price and picks a rider (docs/PRICING.md); money for goods, food and delivery moves
+ *     directly between the people involved (docs/CONCEPT.md §6).
+ *   • Declared value cap US$150 and the prohibited-items list (packages/shared contracts, CONCEPT §3.5).
+ *   • Riders: KYC before going online; a rider cancellation is a strike and every third strike takes the
+ *     rider offline for 2 hours (order-lifecycle.service.ts); commission comes from a prepaid wallet and
+ *     is 0% today (COMMISSION.ratePct), so the terms promise notice before it applies instead of a rate.
+ *   • Food cash: the rider collects the food money at the door and returns it to the restaurant, keeping
+ *     the delivery fee; not returning it gets the rider suspended (food-debt.service.ts, R-06/R-07).
+ *   • A failed food delivery: the food goes back to the restaurant and the rider keeps the delivery fee
+ *     (RESTAURANTS-DECISIONS N-11).
+ *
+ * Like the privacy notice, this is written to be accurate, not by counsel. Have it reviewed before the
+ * public production listing.
+ */
+export function termsHtml(): string {
+  return page(
+    "Terms and conditions",
+    `<h1>LyniaGo terms and conditions</h1>
+<p class="meta">Last updated ${TERMS_LAST_UPDATED}</p>
+
+<p>These terms are the agreement between you and LyniaGo when you use the LyniaGo app, the LyniaGo
+Merchant app or lyniago.com. LyniaGo is operated by <strong>${OPERATOR_NAME}</strong> in Zimbabwe
+("LyniaGo", "we", "us").</p>
+
+<div class="note">
+  <strong>The short version.</strong> LyniaGo connects people who need something delivered with
+  independent riders, and connects hungry customers with restaurants and shops. We do not carry the
+  parcel, cook the food or take your money for it: you agree the price and pay the rider or the business
+  directly. Be honest, be safe, be respectful, and pay what you agreed.
+</div>
+
+<p>Part A applies to everyone. Then read the part for how you use LyniaGo: <a href="#customers">Part B
+for customers</a>, <a href="#riders">Part C for riders</a> and <a href="#businesses">Part D for
+businesses</a>. One person can be more than one of these.</p>
+
+<h2>Part A · For everyone</h2>
+
+<h3>1. Accepting these terms</h3>
+<p>By creating an account or using LyniaGo you accept these terms and our
+<a href="/legal/privacy">privacy notice</a>. If you do not accept them, do not use LyniaGo.</p>
+
+<h3>2. What LyniaGo is</h3>
+<p>LyniaGo is a marketplace. We provide the app that lets customers, riders and businesses find each
+other, agree a price and follow a delivery. Riders are independent: they are not our employees or agents.
+Restaurants and shops sell their own food and goods. The agreement to carry a parcel is between the
+customer and the rider, and the sale of food or goods is between the customer and the business.</p>
+
+<h3>3. Your account</h3>
+<ul>
+  <li>You must be <strong>18 or older</strong> to use LyniaGo.</li>
+  <li>You sign in with your mobile number and a one-time code. Keep your phone and your codes to
+  yourself: you are responsible for what happens on your account.</li>
+  <li>Give us true details and keep them up to date. One person, one account.</li>
+  <li>You can delete your account at any time in the app (Account → Settings → Delete account). See
+  <a href="/legal/account-deletion">Delete your account &amp; data</a>.</li>
+</ul>
+
+<h3>4. Prices and payment</h3>
+<ul>
+  <li>For parcels, <strong>you set the price</strong>. We show a suggested fare, riders accept it or
+  counter, and you choose. The price you choose is the agreed price.</li>
+  <li>For food and shop orders, the business sets the item prices and the app shows the delivery fee
+  before you order.</li>
+  <li><strong>LyniaGo does not take payment for parcels, food or goods.</strong> You pay the rider or
+  the business directly, in cash or by mobile money, as the order shows. Pay the agreed amount.</li>
+  <li>Any fee LyniaGo charges you is shown in the app before it applies.</li>
+</ul>
+
+<h3>5. Rules for everyone</h3>
+<p>Do not use LyniaGo to:</p>
+<ul>
+  <li>break the law, or send, sell or carry anything illegal or dangerous;</li>
+  <li>cheat, including fake orders, fake accounts, fake ratings or not paying what you agreed;</li>
+  <li>threaten, harass, abuse or discriminate against anyone;</li>
+  <li>use someone else's account or number;</li>
+  <li>copy, scrape, hack or interfere with the app or its data.</li>
+</ul>
+
+<h3>6. Ratings and reports</h3>
+<p>After an order, customers and riders rate each other. Ratings must be honest. If something goes wrong,
+report it in the app or contact us (section 12). We will look into it and may ask everyone involved
+for their side.</p>
+
+<h3>7. Suspending or closing accounts</h3>
+<p>We may warn you, limit your account, suspend it or close it if you break these terms, if we suspect
+fraud or a safety risk, or if the law requires it. Where it is safe to do so, we will tell you why. If
+you think we got it wrong, contact us.</p>
+
+<h3>8. The app</h3>
+<p>We work to keep LyniaGo running, but it can be slow or unavailable, for example when the network is
+down. We may change, add or remove features. The LyniaGo name, logo and app belong to us; you may use
+the app, but not copy or resell it.</p>
+
+<h3>9. Our responsibility</h3>
+<ul>
+  <li>We are responsible for running the app with reasonable care.</li>
+  <li>We are <strong>not</strong> responsible for the quality, safety or legality of food, goods or
+  parcels, or for what riders, customers or businesses do or fail to do. The rider is responsible for
+  the parcel while carrying it; the business is responsible for its food and goods.</li>
+  <li>We are not responsible for losses we could not reasonably foresee, or for lost profits or lost
+  business.</li>
+  <li>If we are found responsible for a loss, the most we will pay is the total fees you paid LyniaGo in
+  the 3 months before the claim.</li>
+  <li>Nothing in these terms takes away rights you have under Zimbabwean law that cannot be taken
+  away.</li>
+</ul>
+<p>If you break these terms and it causes us a loss or a claim against us, you are responsible for it.</p>
+
+<h3>10. Your data</h3>
+<p>How we collect and use personal data is explained in our <a href="/legal/privacy">privacy notice</a>.</p>
+
+<h3>11. Changes to these terms</h3>
+<p>We may update these terms. We change the date at the top when we do, and we tell you in the app
+before a big change takes effect. If you keep using LyniaGo after that, you accept the new terms.</p>
+
+<h3>12. Contact, complaints and law</h3>
+<p>Help: WhatsApp <a href="${HELP_WHATSAPP_URL}">${HELP_WHATSAPP_DISPLAY}</a>, or email
+<a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a>. These terms are governed by the
+laws of Zimbabwe, and the courts of Zimbabwe decide any dispute. If part of these terms cannot be
+enforced, the rest still applies.</p>
+
+<h2 id="customers">Part B · For customers</h2>
+
+<h3>13. Sending a parcel</h3>
+<ul>
+  <li>Describe the item honestly, and add a photo if asked. The declared value of a parcel may not be
+  more than <strong>US$150</strong>.</li>
+  <li><strong>Do not send:</strong> cash, weapons, drugs, prescription medicine, stolen goods, anything
+  illegal or dangerous (such as fuel, gas or explosives), live animals, or anything worth more than the
+  cap. A rider may refuse or cancel a parcel that breaks these rules.</li>
+  <li>Pack it properly, be ready at the pickup point, and make sure someone is at the drop-off point
+  to receive it.</li>
+  <li>The receiver gives the rider the delivery code. Only share it when the parcel is in your hands
+  (or theirs).</li>
+</ul>
+
+<h3>14. Ordering food and shop items</h3>
+<ul>
+  <li>The restaurant or shop prepares your order and is responsible for it, including what is in it.
+  If you have an allergy, tell the business in the note before you order.</li>
+  <li>Once the business starts preparing your order, you may not be able to cancel it.</li>
+  <li>Be at the delivery point and answer your phone. If the rider cannot reach you, or you refuse the
+  order at the door without a good reason, the order goes back to the business, the rider keeps the
+  delivery fee and you may not get a refund.</li>
+  <li>If something is missing or wrong, report it in the app or contact us straight away.</li>
+</ul>
+
+<h2 id="riders">Part C · For riders</h2>
+
+<h3>15. Becoming a rider</h3>
+<ul>
+  <li>You must pass our ID check (your national ID and a selfie) before you can go online.</li>
+  <li>You must hold a valid driving licence, and your motorbike must be registered, roadworthy and
+  insured as the law requires.</li>
+  <li>You are an independent rider. You choose when to go online and which jobs to take. You are
+  responsible for your own taxes, fuel, phone and equipment.</li>
+</ul>
+
+<h3>16. On the job</h3>
+<ul>
+  <li>Only accept a job you can do. Collect it, carry it carefully and deliver it to the right person
+  with the delivery code. Obey the road rules.</li>
+  <li>You are responsible for a parcel or order from pickup until handover.</li>
+  <li>Do not open, swap or keep anything you carry. Refuse any item on the list in section 13 and report
+  it.</li>
+  <li>Cancelling a job after you have been chosen counts as a strike. Every third strike takes you
+  offline for 2 hours.</li>
+  <li>Your location is shared with the customer while you are on a job, as explained in the
+  <a href="/legal/privacy">privacy notice</a>.</li>
+</ul>
+
+<h3>17. Money you collect</h3>
+<ul>
+  <li>The customer pays you the agreed fare directly.</li>
+  <li>For a cash food order, you collect the amount the app shows at the door, keep the delivery fee
+  and return the rest to the restaurant as the app tells you. <strong>Not returning a business's money
+  is theft</strong>: we will suspend your account and may report it.</li>
+</ul>
+
+<h3>18. Commission and your wallet</h3>
+<p>LyniaGo may charge riders a commission on completed jobs, taken from a prepaid wallet you top up.
+<strong>The commission is 0% today.</strong> Before it changes, we will tell you the rate in the app.
+When a commission applies, you may not be able to go online while your wallet balance is too low.</p>
+
+<h2 id="businesses">Part D · For businesses</h2>
+
+<h3>19. Your business on LyniaGo</h3>
+<ul>
+  <li>You must be allowed to run your business and sell what you list. Only list items you can legally
+  sell; a pharmacy lists over-the-counter products only.</li>
+  <li>Keep your menu or items, prices, photos, opening hours and location accurate. Do not charge
+  LyniaGo customers more than the price you listed.</li>
+  <li>Food must be safe, prepared hygienically and packed so it travels well.</li>
+  <li>Accept or decline orders promptly, and have them ready when the rider arrives.</li>
+  <li>You are responsible for your food and goods, and for the people you add to your team. Remove
+  anyone who should no longer have access.</li>
+</ul>
+
+<h3>20. Payment and riders</h3>
+<ul>
+  <li>Customers pay you directly, or pay the rider, who returns your money to you. Check the amount and
+  confirm it in the app.</li>
+  <li>If a rider does not return your money, report it in the app straight away.</li>
+  <li>When you book a rider for your own deliveries, you pay the rider the agreed fare.</li>
+  <li>Any fee LyniaGo charges your business is shown to you in the app, or agreed in writing, before it
+  applies.</li>
+</ul>
+
+<p style="margin-top:2.5rem">Questions about these terms? WhatsApp
+<a href="${HELP_WHATSAPP_URL}">${HELP_WHATSAPP_DISPLAY}</a> or email
+<a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a>.</p>`,
   );
 }

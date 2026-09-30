@@ -145,7 +145,12 @@ export default function LoginPage() {
             {busy ? "Sending…" : "Send code"}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
+            {/* Terms added by owner instruction 2026-09-30 (D-49): one set for every kind of user. */}
             By continuing you accept the{" "}
+            <a href={`${API_BASE_URL}/legal/terms`} target="_blank" rel="noreferrer">
+              terms
+            </a>{" "}
+            and{" "}
             <a href={`${API_BASE_URL}/legal/privacy`} target="_blank" rel="noreferrer">
               privacy notice
             </a>

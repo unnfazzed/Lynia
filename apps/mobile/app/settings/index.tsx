@@ -9,6 +9,7 @@ import React from "react";
 import { AppState, Linking, Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
+import { TERMS_URL } from "../../src/config";
 import { AppBar, Screen } from "../../src/ui";
 import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/ui/account/AccountRows";
 
@@ -124,6 +125,9 @@ export default function SettingsScreen(): React.ReactElement {
     // and how long we keep it, and carries the route into deletion. The hosted notice stays the
     // store-listing artefact; the app no longer bounces the user out to it.
     { icon: "shield", label: "Privacy notice", onPress: () => router.push("/settings/privacy") },
+    // Terms & conditions (owner instruction 2026-09-30, D-49): no mock draws an in-app terms screen,
+    // so the row opens the hosted terms page — one set for customers, riders and businesses.
+    { icon: "file-text", label: "Terms & conditions", onPress: () => void Linking.openURL(TERMS_URL) },
     { icon: "x", label: "Sign out", danger: true, onPress: () => void signOut() },
     // Deletion is its own two-screen flow (LJ.delete_account → LJ.delete_final): irreversible, so the
     // explainer + the live "is a delivery running?" check + the acknowledgement tick live on their

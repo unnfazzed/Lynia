@@ -57,7 +57,8 @@ import { WalletModule } from "./wallet/wallet.module";
     NotificationsModule,
     HealthModule,
     // Public legal pages (/legal/privacy, /legal/account-deletion) — the two unauthenticated URLs
-    // the Google Play listing + Data safety form require. See docs/PLAY-STORE-SUBMISSION.md.
+    // the Google Play listing + Data safety form require (docs/PLAY-STORE-SUBMISSION.md) — plus
+    // /legal/terms, the terms & conditions linked from lyniago.com and both apps.
     LegalModule,
     // Lane B — auth (OTP + JWT/refresh sessions).
     AuthModule,

@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 // so a barrel import (`import { X } from "lucide-react-native"`) drags every glyph's bytecode into
 // the Hermes bundle — the file's old "stays lean" claim was simply wrong and cost ~1MB. Import each
 // glyph from its own module file instead: the CJS per-icon path resolves via Metro's `.js`
-// sourceExt, so only these 25 files (plus the shared createLucideIcon helper they all require) land
+// sourceExt, so only these 44 files (plus the shared createLucideIcon helper they all require) land
 // in the bundle. The paths sit outside the package's `exports` map, so since Expo SDK 53 turned
 // Metro's `exports` resolution on, an export prints one "not listed in the exports" warning per
 // glyph and falls back to file resolution: expected noise, same files. The kebab-case file names
@@ -24,6 +24,7 @@ import CircleAlert from "lucide-react-native/dist/cjs/icons/circle-alert";
 import CircleCheck from "lucide-react-native/dist/cjs/icons/circle-check";
 import Clock from "lucide-react-native/dist/cjs/icons/clock";
 import Copy from "lucide-react-native/dist/cjs/icons/copy";
+import FileText from "lucide-react-native/dist/cjs/icons/file-text";
 import Flag from "lucide-react-native/dist/cjs/icons/flag";
 // lucide-react-native 1.27.0 renamed the `history` glyph to `rotate-ccw-clock` and dropped the old
 // path, which broke every suite importing this barrel (deps bump 02ef04c). Same glyph, new filename;
@@ -99,6 +100,7 @@ const ICONS = {
   flag: Flag, // report a problem
   "shield-alert": ShieldAlert, // SOS / emergency
   shield: Shield, // privacy notice (settings)
+  "file-text": FileText, // terms & conditions (settings)
   "shopping-bag": ShoppingBag, // role select — "Use LyniaGo" (order food, send parcels)
   trash: Trash, // delete account (settings)
   bell: Bell, // BrandHeader notifications
