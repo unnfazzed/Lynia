@@ -1,17 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
-import { resolveMerchantAccess } from "./merchant-access";
+import { ACTIVE_MEMBERSHIP_ORDER, lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 
 const p2002 = () => new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
 
 function prismaWith(overrides: { member?: unknown[]; legacy?: unknown; create?: (args: unknown) => Promise<unknown> }) {
   const members = [...(overrides.member ?? [])];
-  const findUnique = vi.fn(async () => (members.length ? members.shift() : null));
+  const memberFindFirst = vi.fn(async () => (members.length ? members.shift() : null));
   const findFirst = vi.fn(async () => overrides.legacy ?? null);
   const create = vi.fn(overrides.create ?? (async () => ({})));
-  const prisma = { merchantMember: { findUnique, create }, merchant: { findFirst } };
-  return { prisma: prisma as unknown as PrismaService, findUnique, findFirst, create };
+  const prisma = { merchantMember: { findFirst: memberFindFirst, create }, merchant: { findFirst } };
+  return { prisma: prisma as unknown as PrismaService, memberFindFirst, findFirst, create };
 }
 
 describe("resolveMerchantAccess (merchant web upgrade L1, plan D2)", () => {
@@ -19,6 +19,15 @@ describe("resolveMerchantAccess (merchant web upgrade L1, plan D2)", () => {
     const { prisma, findFirst } = prismaWith({ member: [{ merchantId: "m1", role: "staff", merchant: { businessType: "shop" } }] });
     expect(await resolveMerchantAccess(prisma, "p1")).toEqual({ merchantId: "m1", role: "staff", businessType: "shop" });
     expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("an owner with branches works on the one they last switched to (multi-branch owners)", async () => {
+    const { prisma, memberFindFirst } = prismaWith({ member: [{ merchantId: "branch-2", role: "owner", merchant: { businessType: "restaurant" } }] });
+    expect(await resolveMerchantAccess(prisma, "p1")).toEqual({ merchantId: "branch-2", role: "owner", businessType: "restaurant" });
+    expect(memberFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { profileId: "p1" }, orderBy: ACTIVE_MEMBERSHIP_ORDER }));
+    // Latest switch first (never-switched rows last), then the oldest row: one person on one business
+    // resolves exactly as before.
+    expect(ACTIVE_MEMBERSHIP_ORDER).toEqual([{ activeAt: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }, { id: "asc" }]);
   });
 
   it("no member row and no legacy business → null (not on any team)", async () => {
@@ -67,5 +76,18 @@ describe("resolveMerchantAccess (merchant web upgrade L1, plan D2)", () => {
       },
     });
     await expect(resolveMerchantAccess(prisma, "owner-1")).rejects.toThrow("db down");
+  });
+});
+
+describe("lockMembershipsTx (multi-branch owners)", () => {
+  it("locks the person's profile row before reading the businesses they're on", async () => {
+    const order: string[] = [];
+    const tx = {
+      $executeRaw: vi.fn(async () => (order.push("lock"), 1)),
+      merchantMember: { findMany: vi.fn(async () => (order.push("read"), [{ merchantId: "m1", role: "owner" }])) },
+    };
+    expect(await lockMembershipsTx(tx as never, "p1")).toEqual([{ merchantId: "m1", role: "owner" }]);
+    expect(order).toEqual(["lock", "read"]);
+    expect(tx.merchantMember.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { profileId: "p1" }, orderBy: ACTIVE_MEMBERSHIP_ORDER }));
   });
 });

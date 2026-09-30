@@ -47,6 +47,8 @@ import { MerchantRidersController } from "../merchant/merchant-riders.controller
 import { MerchantRidersService } from "../merchant/merchant-riders.service";
 import { MerchantInvitesService } from "../merchant/merchant-invites.service";
 import { MerchantInvitesController, MerchantTeamController } from "../merchant/merchant-team.controller";
+import { MerchantBranchesController } from "../merchant/merchant-branches.controller";
+import { MerchantBranchesService } from "../merchant/merchant-branches.service";
 import { MerchantTeamService } from "../merchant/merchant-team.service";
 import { MerchantController } from "../merchant/merchant.controller";
 import { MerchantGuard } from "../merchant/merchant.guard";
@@ -97,7 +99,8 @@ Reflect.defineMetadata("design:paramtypes", [PrismaService, Reflector], Merchant
  *  legacy owners. */
 const prismaStub = {
   merchantMember: {
-    findUnique: async ({ where }: { where: { profileId: string } }) =>
+    // The resolver reads the caller's active row (multi-branch owners); each profile here is on one business.
+    findFirst: async ({ where }: { where: { profileId: string } }) =>
       where.profileId === "member-1"
         ? { merchantId: "m1", role: "owner", merchant: { businessType: "restaurant" } }
         : where.profileId === "staff-1"
@@ -118,6 +121,8 @@ Reflect.defineMetadata("design:paramtypes", [MerchantBookingService], MerchantBo
 Reflect.defineMetadata("design:paramtypes", [MerchantRidersService], MerchantRidersController);
 Reflect.defineMetadata("design:paramtypes", [MerchantTeamService], MerchantTeamController);
 Reflect.defineMetadata("design:paramtypes", [MerchantInvitesService], MerchantInvitesController);
+// Multi-branch owners (docs/plans/2026-09-30-multi-branch-owners.md): list, switch, open a branch.
+Reflect.defineMetadata("design:paramtypes", [MerchantBranchesService], MerchantBranchesController);
 
 const healthService = { check: async () => ({ status: "ok", db: true, redis: true, provider: "test" }) };
 
@@ -173,6 +178,12 @@ const merchantTeamServiceStub = {
   leave: async () => ({ ok: true }),
 };
 const merchantInvitesServiceStub = { mine: async () => ({ invites: [] }) };
+/** Multi-branch owners: only the member, switch and owner legs below call through. */
+const merchantBranchesServiceStub = {
+  list: async () => ({ branches: [] }),
+  switchTo: async () => ({ id: "m1" }),
+  create: async () => ({ id: "m2" }),
+};
 const foodDebtServiceStub = {};
 
 /** Boots the REAL merchant/restaurant controllers (+ real guards) with a chosen env — the only way
@@ -190,6 +201,7 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       MerchantRidersController,
       MerchantTeamController,
       MerchantInvitesController,
+      MerchantBranchesController,
     ],
     providers: [
       { provide: ENV, useValue: env },
@@ -206,6 +218,7 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       { provide: MerchantRidersService, useValue: merchantRidersServiceStub },
       { provide: MerchantTeamService, useValue: merchantTeamServiceStub },
       { provide: MerchantInvitesService, useValue: merchantInvitesServiceStub },
+      { provide: MerchantBranchesService, useValue: merchantBranchesServiceStub },
     ],
   })
   class MerchantTestModule {}
@@ -261,6 +274,7 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
     expect(merchantDomainControllers.map((c) => c.name).sort()).toEqual([
       "FoodOrderController",
       "MerchantBookingController",
+      "MerchantBranchesController",
       "MerchantController",
       "MerchantInvitesController",
       "MerchantOrderController",
@@ -293,6 +307,8 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "/merchant/riders",
       "/merchant/team",
       "/merchant/invites",
+      // Multi-branch owners.
+      "/merchant/branches",
     ]) {
       const res = await request(app.getHttpServer()).get(path); // no Authorization header at all
       expect(res.status, `${path} must be dead (503) while RESTAURANTS_ENABLED is unset`).toBe(503);
@@ -412,6 +428,30 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(ownerInvite.status).toBe(201);
       const staffLeave = await request(app.getHttpServer()).post("/merchant/team/leave").set("Authorization", bearer("staff-1", "customer"));
       expect(staffLeave.status).toBe(200);
+    });
+
+    it("branches: anyone on a business lists and switches; only the owner opens one", async () => {
+      const noAuth = await request(app.getHttpServer()).get("/merchant/branches");
+      expect(noAuth.status).toBe(401);
+      const notMember = await request(app.getHttpServer()).get("/merchant/branches").set("Authorization", bearer("p1", "merchant"));
+      expect(notMember.status).toBe(403);
+      expect(notMember.body.reason).toBe("not_a_member");
+      const staffList = await request(app.getHttpServer()).get("/merchant/branches").set("Authorization", bearer("staff-1", "customer"));
+      expect(staffList.status).toBe(200);
+      const staffSwitch = await request(app.getHttpServer())
+        .post("/merchant/branches/switch")
+        .set("Authorization", bearer("staff-1", "customer"))
+        .send({ merchantId: "11111111-1111-4111-8111-111111111111" });
+      expect(staffSwitch.status).toBe(200);
+      const badSwitch = await request(app.getHttpServer()).post("/merchant/branches/switch").set("Authorization", bearer("member-1", "customer")).send({ merchantId: "m2" });
+      expect(badSwitch.status).toBe(400);
+      const body = { name: "Test Kitchen · Avondale", location: { point: { lat: -17.8, lng: 31.05 }, contactPhone: "+263771234567" } };
+      const staffOpen = await request(app.getHttpServer()).post("/merchant/branches").set("Authorization", bearer("staff-1", "customer")).send(body);
+      expect(staffOpen.status).toBe(403);
+      expect(staffOpen.body.reason).toBe("owner_only");
+      const ownerOpen = await request(app.getHttpServer()).post("/merchant/branches").set("Authorization", bearer("member-1", "customer")).send(body);
+      expect(ownerOpen.status).toBe(201);
+      expect(ownerOpen.body).toEqual({ id: "m2" });
     });
 
     it("L5: Staff mark a dish out of stock for how long they choose; no body still means the rest of today", async () => {

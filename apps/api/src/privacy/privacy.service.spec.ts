@@ -101,7 +101,7 @@ function eraseHarness(
     merchant: { findFirst: vi.fn(async (a: unknown) => ((calls.ownerCheck = a), extras.ownsBusiness ? { name: extras.ownsBusiness } : null)) },
     merchantInvite: { deleteMany: vi.fn(async (a: unknown) => ((calls.inviteDel = a), { count: 1 })) },
     merchantMember: {
-      findUnique: vi.fn(async () => (extras.staffAt ? { merchantId: extras.staffAt } : null)),
+      findMany: vi.fn(async () => (extras.staffAt ? [{ merchantId: extras.staffAt }] : [])),
       deleteMany: vi.fn(async (a: unknown) => ((calls.memberDel = a), { count: extras.staffAt ? 1 : 0 })),
     },
     orderEvent: { updateMany: vi.fn(async (a: unknown) => ((calls.eventUpdate = a), { count: 3 })) },

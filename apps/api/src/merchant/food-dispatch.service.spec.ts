@@ -82,9 +82,9 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merch
         merchantPreferredRider: preferred,
         profile: {
           findMany: async () => [
-            { id: "mine", merchantMembership: null },
+            { id: "mine", merchantMemberships: [] },
             // On the restaurant's own team: never its rider (OV-5).
-            { id: "cook", merchantMembership: { merchantId: MERCHANT_ID } },
+            { id: "cook", merchantMemberships: [{ merchantId: MERCHANT_ID }] },
           ],
         },
         orderEvent: { create: async () => ({}) },

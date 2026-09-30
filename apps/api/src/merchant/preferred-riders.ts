@@ -14,7 +14,7 @@ export async function preferredRiderIds(prisma: PrismaService, merchantId: strin
   if (rows.length === 0) return [];
   const riders = await prisma.profile.findMany({
     where: { phone: { in: rows.map((r) => r.phone) }, rider: { isNot: null } },
-    select: { id: true, merchantMembership: { select: { merchantId: true } } },
+    select: { id: true, merchantMemberships: { select: { merchantId: true } } },
   });
-  return riders.filter((p) => p.merchantMembership?.merchantId !== merchantId).map((p) => p.id);
+  return riders.filter((p) => !p.merchantMemberships.some((m) => m.merchantId === merchantId)).map((p) => p.id);
 }
