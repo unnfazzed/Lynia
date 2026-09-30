@@ -133,7 +133,7 @@ export function steps(o: MerchantOrderResponse): Step[] {
 }
 
 /** When the next opening window starts, "HH:MM", looking a week ahead from `from`. */
-function nextOpenTime(hours: PartialMerchantHours | null, from: Date): string | null {
+export function nextOpenTime(hours: PartialMerchantHours | null, from: Date): string | null {
   if (!hours) return null;
   const nowHm = `${String(from.getHours()).padStart(2, "0")}:${String(from.getMinutes()).padStart(2, "0")}`;
   const today = hours[dayKeyFor(from)];

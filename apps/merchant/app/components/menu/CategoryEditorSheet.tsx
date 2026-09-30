@@ -27,6 +27,8 @@ export function CategoryEditorSheet({
   error,
   onSave,
   onDelete,
+  onMove,
+  position,
   onCancel,
 }: {
   category: MerchantCategoryResponse | null;
@@ -35,6 +37,10 @@ export function CategoryEditorSheet({
   error: string | null;
   onSave: (body: CategorySave) => void;
   onDelete?: () => void;
+  /** C1: "/menu/categories becomes category chips (long-press to reorder)" — a long-pressed chip opens
+   *  this sheet, and these move it one place along the chip row (the order customers see as tabs). */
+  onMove?: (delta: -1 | 1) => void;
+  position?: { index: number; count: number };
   onCancel: () => void;
 }) {
   const words = useVocabulary();
@@ -73,6 +79,29 @@ export function CategoryEditorSheet({
           Category name
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} style={inputStyle} disabled={disabled || submitting} />
         </label>
+
+        {category && onMove && position && position.count > 1 && (
+          <div style={{ display: "flex", gap: 10, margin: "12px 0 4px" }}>
+            <button
+              type="button"
+              className="m-gh"
+              style={{ flex: 1 }}
+              disabled={disabled || submitting || position.index === 0}
+              onClick={() => onMove(-1)}
+            >
+              ← Move earlier
+            </button>
+            <button
+              type="button"
+              className="m-gh"
+              style={{ flex: 1 }}
+              disabled={disabled || submitting || position.index === position.count - 1}
+              onClick={() => onMove(1)}
+            >
+              Move later →
+            </button>
+          </div>
+        )}
 
         <button
           type="button"

@@ -964,7 +964,7 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
 describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () => {
   /** order.aggregate serves three sums (wallet, confirmed cash, D-48 placed); order.findMany two reads
    *  (prep times, D-48 overdue cash) — told apart by what each asks for. */
-  function summaryPrisma(opts: { overdue?: unknown[]; placed?: { count: number; sum: number | null } } = {}) {
+  function summaryPrisma(opts: { overdue?: unknown[]; placed?: { count: number; sum: number | null }; today?: unknown[] } = {}) {
     return {
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
@@ -977,10 +977,12 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
         findMany: async ({ where }: { where: Record<string, unknown> }) =>
           where.debtStatus === "open"
             ? (opts.overdue ?? [])
-            : [
-                { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
-                { readyAt: new Date("2026-07-30T11:10:00.000Z"), prepStartedAt: new Date("2026-07-30T11:00:00.000Z") },
-              ],
+            : where.readyAt
+              ? [
+                  { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
+                  { readyAt: new Date("2026-07-30T11:10:00.000Z"), prepStartedAt: new Date("2026-07-30T11:00:00.000Z") },
+                ]
+              : (opts.today ?? []),
       },
     };
   }
@@ -1020,6 +1022,29 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     // Open, not closed by the merchant, and delivered more than the 30-minute return window ago.
     expect(overdueWhere).toMatchObject({ debtStatus: "open", merchantClosedAt: null });
     expect((overdueWhere!.deliveredAt as { lt: Date }).lt.getTime()).toBeLessThanOrEqual(Date.now() - 30 * 60_000 + 1000);
+  });
+
+  it("D-48 C3: lists today's orders with how each ended, earning only when delivered or still on", async () => {
+    const at = (h: number) => new Date(Date.UTC(2026, 8, 30, h));
+    const row = (id: string, over: Record<string, unknown>) => ({ id: `${id}0000000-0000-4000-8000-000000000000`, prepStartedAt: at(9), createdAt: at(9), deliveredAt: null, cancelledAt: null, merchantGoodsTotal: 12, ...over });
+    const res = await svc(
+      summaryPrisma({
+        today: [
+          row("a", { status: "delivered", deliveredAt: at(12) }),
+          row("b", { status: "cancelled", prepStartedAt: null, cancelledAt: at(11) }),
+          row("c", { status: "cancelled", cancelledAt: at(10) }),
+          row("d", { status: "en_route_dropoff" }),
+          row("e", { status: "undelivered" }),
+        ],
+      }),
+    ).getTodaySummary("p1");
+    expect(res.lines!.map((l) => [l.outcome, l.amount, l.at])).toEqual([
+      ["delivered", 12, at(12).toISOString()],
+      ["rejected", 0, at(11).toISOString()],
+      ["cancelled", 0, at(10).toISOString()],
+      ["in_progress", 12, at(9).toISOString()],
+      ["not_delivered", 0, at(9).toISOString()],
+    ]);
   });
 
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {

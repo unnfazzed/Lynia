@@ -1,96 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DishOutOfStockFor } from "@lynia/shared";
-import { primaryButtonStyle, ghostButtonStyle } from "../queue/styles";
-
-/** `RM.oos_sheet`'s three choices, in the mock's order and words. */
-const OPTIONS: { value: DishOutOfStockFor; label: string }[] = [
-  { value: "until_back", label: "Until I turn it back on" },
-  { value: "rest_of_today", label: "For the rest of today" },
-  { value: "one_hour", label: "For 1 hour" },
-];
 
 /**
- * M4·3 `oos_sheet` (r-merchant.jsx:1152-1175): "Two taps, with an automatic reset so it can't be
- * forgotten." Until I turn it back on · For the rest of today (chosen to start with, as drawn: N-14's
- * always-safe reset) · For 1 hour. Staff may use it (the permission table).
+ * C2 · Out-of-stock sheet (packages/design/handoff/merchant-mobile, ledger D-48): "Mazondo is off. For
+ * how long?" with **Rest of today** (chosen to start with, "Back on automatically at 08:00") and "Until
+ * I turn it back on", then "Turn off" and "Keep it on". The scrim and Escape keep it on. Staff may use
+ * it (the permission table).
  */
 export function OosSheet({
   dishName,
+  backOn,
   disabled,
   submitting,
   onConfirm,
   onCancel,
 }: {
   dishName: string;
+  /** "Back on automatically at 08:00" — tomorrow's opening time (lib/menu-view backOnLine). */
+  backOn: string;
   disabled: boolean;
   submitting: boolean;
   onConfirm: (forHowLong: DishOutOfStockFor) => void;
   onCancel: () => void;
 }) {
   const [choice, setChoice] = useState<DishOutOfStockFor>("rest_of_today");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   return (
-    <div className="kitchen-sheet-overlay">
-      <div className="kitchen-sheet" style={{ maxWidth: 500 }}>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>Mark &ldquo;{dishName}&rdquo; out of stock</div>
-        <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 4, marginBottom: 16 }}>
-          Customers still see it, greyed out, so they know you normally have it.
-        </div>
-        <div role="radiogroup" aria-label="For how long">
-          {OPTIONS.map((o) => {
-            const on = choice === o.value;
-            return (
-              <button
-                key={o.value}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setChoice(o.value)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  width: "100%",
-                  minHeight: "var(--target-min)",
-                  padding: "13px 15px",
-                  marginBottom: 8,
-                  border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                  background: on ? "var(--accent-wash)" : "var(--bg)",
-                  borderRadius: 12,
-                  color: "var(--ink)",
-                  fontFamily: "inherit",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: "50%",
-                    border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                    background: on ? "var(--accent)" : "var(--bg)",
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontSize: 15, fontWeight: 600 }}>{o.label}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-          <button type="button" onClick={onCancel} disabled={submitting} style={{ ...ghostButtonStyle, flex: 1 }}>
-            Cancel
+    <div className="m-overlay" style={{ zIndex: 70 }}>
+      <div className="m-overlay-frame">
+        <button type="button" className="m-scrim" aria-label="Keep it on" onClick={onCancel} />
+        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-oos-title">
+          <div className="m-grab" />
+          <b id="m-oos-title" style={{ fontSize: 18 }}>
+            {dishName} is off. For how long?
+          </b>
+          <div role="radiogroup" aria-label="For how long" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button type="button" role="radio" aria-checked={choice === "rest_of_today"} aria-label={`Rest of today. ${backOn}`} className="m-opt" onClick={() => setChoice("rest_of_today")}>
+              <span className="m-rad" />
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, padding: "10px 0" }}>
+                <b style={{ fontSize: 15 }}>Rest of today</b>
+                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{backOn}</span>
+              </span>
+            </button>
+            <button type="button" role="radio" aria-checked={choice === "until_back"} className="m-opt" onClick={() => setChoice("until_back")}>
+              <span className="m-rad" />
+              <b style={{ fontSize: 15 }}>Until I turn it back on</b>
+            </button>
+          </div>
+          <button type="button" className="m-btn" disabled={disabled || submitting} onClick={() => onConfirm(choice)}>
+            Turn off
           </button>
-          <button
-            type="button"
-            disabled={disabled || submitting}
-            onClick={() => onConfirm(choice)}
-            style={{ ...primaryButtonStyle, flex: 1, opacity: disabled || submitting ? 0.5 : 1 }}
-          >
-            {submitting ? "Marking…" : "Mark out of stock"}
+          <button type="button" className="m-lnk" onClick={onCancel}>
+            Keep it on
           </button>
         </div>
       </div>

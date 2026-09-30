@@ -11,6 +11,7 @@
  *   API_BASE_URL=http://127.0.0.1:4312/__api node tools/parity/serve-web.mjs merchant
  *   node tools/parity/shoot-merchant-mobile.mjs --out docs/parity/MERCHANT-MOBILE-PR1-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set orders --out docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30
+ *   node tools/parity/shoot-merchant-mobile.mjs --set menu --out docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30
  */
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -26,7 +27,7 @@ const PROTO = pathToFileURL(resolve("../../packages/design/handoff/merchant-mobi
 
 const PHONE = { width: 360, height: 720 };
 const setArg = process.argv.indexOf("--set");
-/** `--set orders` shoots PR 2b's Orders screens; the default is PR 1's. */
+/** `--set orders` shoots PR 2b's Orders screens, `--set menu` PR 3a's Menu and Money; the default is PR 1's. */
 const SET = setArg > 0 ? process.argv[setArg + 1] : "pr1";
 
 const SESSION = { accessToken: "parity", refreshToken: "parity.refresh", expiresIn: 900, issuedAt: Date.now(), profileId: "p-parity", role: "customer" };
@@ -92,6 +93,38 @@ const BOARD = [ORDERS.cooking, order("a2230000-0000-4000-8000-000000000000", {})
 const SUMMARY = { date: "2026-09-30", delivered: 6, rejected: 0, cashTaken: 30, walletTaken: 0, averagePrepMinutes: 15, orders: 7, sales: 59.5, cashOverdue: 9.5, overdue: [] };
 const KITCHEN = { ...PROFILE, name: "Sadza Republic", businessType: "restaurant", shopKind: null, hours: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: "08:00", close: "22:00" }])) };
 
+// ── PR 3a: Menu (C1, C2, E1) and Money (C3) ───────────────────────────────────────────────────
+const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+const cat = (id, name, sortOrder, dishCount) => ({ id, name, sortOrder, availableFrom: null, availableTo: null, hidden: false, dishCount });
+const dish = (id, categoryId, name, priceUsd, over = {}) => ({ id, categoryId, name, description: null, priceUsd, photoUrl: null, isDraft: false, outOfStock: false, outOfStockUntil: null, sortOrder: 0, ...over });
+const C_MAINS = "c1000000-0000-4000-8000-000000000000";
+const C_DRINKS = "c2000000-0000-4000-8000-000000000000";
+const MENU = {
+  categories: [cat(C_MAINS, "Mains", 0, 3), cat(C_DRINKS, "Drinks", 1, 1)],
+  dishes: [
+    dish("d1000000-0000-4000-8000-000000000000", C_MAINS, "Mazondo", 5),
+    dish("d2000000-0000-4000-8000-000000000000", C_MAINS, "Sadza & beef stew", 4.5),
+    dish("d3000000-0000-4000-8000-000000000000", C_MAINS, "Sadza & road-runner", 6, { outOfStock: true, outOfStockUntil: at(23, 59) }),
+    dish("d4000000-0000-4000-8000-000000000000", C_DRINKS, "Mazoe orange 2L", 3),
+  ],
+};
+const C_BRAKES = "c3000000-0000-4000-8000-000000000000";
+const ITEMS = {
+  categories: [cat(C_BRAKES, "Brakes", 0, 2), cat("c4000000-0000-4000-8000-000000000000", "Engine", 1, 0)],
+  dishes: [dish("d5000000-0000-4000-8000-000000000000", C_BRAKES, "Brake pads", 18), dish("d6000000-0000-4000-8000-000000000000", C_BRAKES, "Car battery", 65)],
+};
+const MONEY_SUMMARY = {
+  ...SUMMARY,
+  overdue: [{ orderId: "a0980000-0000-4000-8000-000000000000", amount: 9.5, riderName: "Tino", dueAt: at(11, 40) }],
+  lines: [
+    { orderId: "a1110000-0000-4000-8000-000000000000", at: at(12, 31), outcome: "delivered", amount: 12 },
+    { orderId: "a0980000-0000-4000-8000-000000000000", at: at(11, 52), outcome: "delivered", amount: 9.5 },
+    { orderId: "a0950000-0000-4000-8000-000000000000", at: at(11, 30), outcome: "delivered", amount: 14 },
+    { orderId: "a0900000-0000-4000-8000-000000000000", at: at(11, 10), outcome: "rejected", amount: 0 },
+  ],
+};
+const WEEK = { rangeStart: ago(7 * 1440), rangeEnd: ago(0), ordersDelivered: 0, foodSalesTotal: 0, commissionRatePct: 0, commissionCharged: 0, illustrativeRatePct: 10, illustrativeCommission: 0, cookedFoodLossTotal: 0, lineItems: [] };
+
 function apiRoute(route, scenario) {
   const path = new URL(route.request().url()).pathname.replace(/^\/__api/, "");
   const json = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -99,7 +132,10 @@ function apiRoute(route, scenario) {
   const one = path.match(/^\/merchant\/orders\/([0-9a-f-]+)$/);
   if (one) return json(200, (scenario.orders ?? []).find((o) => o.id === one[1]) ?? {});
   if (/\/pickup-code\/reveal$/.test(path)) return json(200, { pickupCode: "7205" });
-  if (path === "/merchant/summary/today") return json(200, SUMMARY);
+  if (path === "/merchant/summary/today") return json(200, scenario.summary ?? SUMMARY);
+  if (path === "/merchant/statement/weekly") return json(200, WEEK);
+  if (path === "/merchant/categories") return json(200, scenario.menu?.categories ?? []);
+  if (path === "/merchant/dishes") return json(200, scenario.menu?.dishes ?? []);
   if (path === "/auth/otp/request") return json(200, { sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
   if (path === "/auth/me") return json(200, { firstName: "Farai", lastName: "Chari", phone: "+263771234567" });
   if (path === "/merchant/me") return scenario.me ? json(200, scenario.me) : json(403, { reason: "not_a_member", message: "Not on a business." });
@@ -173,6 +209,17 @@ const ORDER_ROWS = [
   { id: "B7", label: "B7 · Delivered + cash back", app: { name: "B7", path: `/queue/${ORDERS.delivered.id}`, scenario: { me: KITCHEN, orders: [ORDERS.delivered] } } },
 ];
 
+const MENU_ROWS = [
+  { id: "C1", label: "C1 · Menu", sub: "the off line reads until when it comes back (from the API)", app: { name: "C1", path: "/menu", scenario: { me: KITCHEN, menu: MENU } } },
+  {
+    id: "C2",
+    label: "C2 · Out-of-stock sheet",
+    app: { name: "C2", path: "/menu", scenario: { me: KITCHEN, menu: MENU }, before: async (p) => p.getByRole("switch", { name: "Mazondo in stock" }).click() },
+  },
+  { id: "C3", label: "C3 · Money", app: { name: "C3", path: "/statement", scenario: { me: KITCHEN, summary: MONEY_SUMMARY } } },
+  { id: "E1", label: "E1 · Items (shop)", mode: "shop", app: { name: "E1", path: "/menu", scenario: { me: { ...SHOP, hours: KITCHEN.hours }, menu: ITEMS } } },
+];
+
 const PR1_ROWS = [
   { id: "A1", label: "A1 · Sign in", app: { name: "A1", path: "/login", signedIn: false } },
   { id: "A2", label: "A2 · Code", app: { name: "A2", path: "/login", signedIn: false, before: toCode } },
@@ -193,7 +240,7 @@ await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
 const rows = [];
 try {
-  for (const r of SET === "orders" ? ORDER_ROWS : PR1_ROWS) {
+  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : PR1_ROWS) {
     const mock = r.id ? await shootProto(browser, r.id, r.mode) : undefined;
     const app = await shootApp(browser, r.app);
     rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: 360, ...(r.id ? {} : { mockNote: "drawn by the prototype's wiring, not as a screen" }) });
@@ -204,7 +251,12 @@ try {
 }
 
 await buildSheet({
-  title: SET === "orders" ? "Merchant mobile redesign · PR 2b (D-48): Orders B1–B7" : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
+  title:
+    SET === "orders"
+      ? "Merchant mobile redesign · PR 2b (D-48): Orders B1–B7"
+      : SET === "menu"
+        ? "Merchant mobile redesign · PR 3a (D-48): Menu C1–C2, Money C3, Items E1"
+        : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
   out: OUT,
   rows,
 });
