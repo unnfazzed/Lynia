@@ -1,47 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MerchantPreferredRiderResponse, MerchantProfileResponse, MerchantRiderStatus } from "@lynia/shared";
+import type { MerchantPreferredRiderResponse, MerchantProfileResponse } from "@lynia/shared";
+import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
-import { Icon } from "../../components/icons";
+import { AppBar } from "../../components/m/AppBar";
+import { ConfirmSheet } from "../../components/m/ConfirmSheet";
+import { useToast } from "../../components/m/Toast";
 import { RetryableError } from "../../components/RetryableError";
-import { cardStyle, dangerGhostButtonStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
 import { addRider, listRiders, removeRider } from "../../lib/riders-api";
-import {
-  type AddRiderErrors,
-  type AddRiderForm,
-  RIDER_STATUS_LABEL,
-  riderInviteLink,
-  riderInviteMessage,
-  riderTrackRecord,
-  validateAddRider,
-} from "../../lib/riders";
+import { type AddRiderErrors, type AddRiderForm, riderInviteLink, riderInviteMessage, riderLine, riderPill, validateAddRider } from "../../lib/riders";
 
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; riders: MerchantPreferredRiderResponse[]; cap: number; business: MerchantProfileResponse | null }
-  | { status: "unavailable"; business: MerchantProfileResponse | null }
+  | { status: "unavailable" }
   | { status: "error"; message: string };
 
 const EMPTY_FORM: AddRiderForm = { label: "", phone: "" };
 
+const PILL_CLASS = { online: "m-wal", offline: "m-grey", paused: "m-gold-out" } as const;
+
 /**
- * Your riders (merchant web upgrade L3): the riders a business already works with, by the number each signs
- * in to LyniaGo with. The owner adds and removes; the team sees the list. What the page knows about a
- * number is deliberately little (the API's three statuses, the rider's own name only after they've
- * delivered for the business). A shop's nav item; inside Shop for a restaurant. Undrawn, ledgered as D-45.
+ * E4 · Preferred riders (packages/design/handoff/merchant-mobile, ledger D-48): "4 of 20", then a row
+ * per rider with an Online / Offline / Paused pill, their trips for you and rating; a number that
+ * isn't on LyniaGo yet gets "Send sign-up link" (from the owner's own WhatsApp). "+ Add a rider"
+ * (owner) opens a sheet ("not drawn"). What the business may know stays deliberately little (L3,
+ * CEO-8): no reason for a pause, the rider's own name only once they've worked for it.
  */
 export default function RidersPage() {
   const { signOut, actionsDisabled } = useKitchenConnection();
+  const toast = useToast();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<MerchantPreferredRiderResponse | null>(null);
   const [form, setForm] = useState<AddRiderForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<AddRiderErrors>({});
-  const [banner, setBanner] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const actingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -54,7 +53,7 @@ export default function RidersPage() {
       if (redirectIfSessionExpired(err, signOut)) return;
       // An API from before L3 has no such route yet: say it's coming, not that something broke.
       if (err instanceof ApiError && err.status === 404) {
-        setState({ status: "unavailable", business });
+        setState({ status: "unavailable" });
         return;
       }
       setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your riders." });
@@ -65,325 +64,217 @@ export default function RidersPage() {
     void load();
   }, [load]);
 
-  const business = state.status === "ready" || state.status === "unavailable" ? state.business : null;
+  const business = state.status === "ready" ? state.business : null;
   const owner = business?.myRole === "owner";
-  const shop = business?.businessType === "shop";
-
-  function update<K extends keyof AddRiderForm>(key: K, value: string) {
-    setForm((f) => ({ ...f, [key]: value }));
-    if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
-  }
-
-  async function onAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (actingRef.current || state.status !== "ready") return;
-    const found = validateAddRider(form);
-    setErrors(found);
-    setBanner(null);
-    if (Object.keys(found).length > 0) return;
-    actingRef.current = true;
-    setBusy("add");
-    try {
-      const added = await addRider({ label: form.label.trim(), phone: form.phone.trim() });
-      setState((s) => (s.status === "ready" ? { ...s, riders: [...s.riders, added] } : s));
-      setForm(EMPTY_FORM);
-    } catch (err) {
-      if (redirectIfSessionExpired(err, signOut)) return;
-      const reason = err instanceof ApiError ? err.reason : undefined;
-      const message = err instanceof ApiError ? err.message : "Couldn't add the rider. Try again.";
-      // Refusals about the number sit under the number; the rest (the cap, the daily limit) above the form.
-      if (reason === "bad_phone" || reason === "already_added" || reason === "team_member") setErrors({ phone: message });
-      else setBanner(message);
-    } finally {
-      setBusy(null);
-      actingRef.current = false;
-    }
-  }
-
-  async function onRemove(id: string) {
-    if (actingRef.current) return;
-    actingRef.current = true;
-    setBusy(id);
-    setBanner(null);
-    try {
-      await removeRider(id);
-      setState((s) => (s.status === "ready" ? { ...s, riders: s.riders.filter((r) => r.id !== id) } : s));
-      setConfirmRemove(null);
-    } catch (err) {
-      if (redirectIfSessionExpired(err, signOut)) return;
-      setBanner(err instanceof ApiError ? err.message : "Couldn't remove the rider. Try again.");
-    } finally {
-      setBusy(null);
-      actingRef.current = false;
-    }
-  }
-
-  const disabled = actionsDisabled || busy !== null;
   const full = state.status === "ready" && state.riders.length >= state.cap;
 
-  return (
-    <Kitchen active={shop ? "riders" : "shop"}>
-      <div className="kitchen-page" style={{ overflow: "auto", height: "100%" }}>
-        <div style={{ maxWidth: 720, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Your riders</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.45 }}>
-                {shop
-                  ? "Riders you already work with. When one offers on your booking, they're marked “Your rider” and listed first."
-                  : "Riders you already work with. They're offered your orders first when they're nearby, and marked “Your rider” when you book one."}
-              </div>
-            </div>
-            {state.status === "ready" && (
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", paddingTop: 4 }}>
-                {state.riders.length} of {state.cap}
-              </div>
-            )}
-          </div>
+  function closeAdd() {
+    setAdding(false);
+    setForm(EMPTY_FORM);
+    setErrors({});
+    setSheetError(null);
+  }
 
-          {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your riders…</div>}
+  async function act(fn: () => Promise<void>, fallback: string): Promise<boolean> {
+    if (actingRef.current) return false;
+    actingRef.current = true;
+    setBusy(true);
+    setSheetError(null);
+    try {
+      await fn();
+      return true;
+    } catch (err) {
+      if (redirectIfSessionExpired(err, signOut)) return false;
+      const reason = err instanceof ApiError ? err.reason : undefined;
+      const message = err instanceof ApiError ? err.message : fallback;
+      // Refusals about the number sit under the number; the rest (the cap, the daily limit) above the button.
+      if (reason === "bad_phone" || reason === "already_added" || reason === "team_member") setErrors({ phone: message });
+      else setSheetError(message);
+      return false;
+    } finally {
+      setBusy(false);
+      actingRef.current = false;
+    }
+  }
+
+  function onAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const found = validateAddRider(form);
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
+    void act(async () => {
+      const added = await addRider({ label: form.label.trim(), phone: form.phone.trim() });
+      setState((s) => (s.status === "ready" ? { ...s, riders: [...s.riders, added] } : s));
+      closeAdd();
+      toast(`${added.label} added`);
+    }, "Couldn't add the rider. Try again.");
+  }
+
+  const disabled = actionsDisabled || busy;
+
+  return (
+    <Kitchen active="riders" tabs={false}>
+      <div className="m-page">
+        <AppBar
+          back="/account"
+          title="Preferred riders"
+          right={
+            state.status === "ready" ? (
+              <span className="m-num" style={{ fontSize: 13, color: "var(--muted)" }}>
+                {state.riders.length} of {state.cap}
+              </span>
+            ) : undefined
+          }
+        />
+        <div className="m-bd">
+          {state.status === "loading" && <div className="m-hint">Loading your riders…</div>}
           {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
           {state.status === "unavailable" && (
-            <div style={{ ...cardStyle, fontSize: 14, lineHeight: 1.5 }}>
-              <b>Your riders is on its way.</b> You'll add the riders you already work with here.
+            <p className="m-sub">
+              <b>Your riders is on its way.</b> You&apos;ll add the riders you already work with here.
+            </p>
+          )}
+          {state.status === "ready" && !owner && <p className="m-hint">Only the owner can add or remove riders.</p>}
+
+          {state.status === "ready" && state.riders.length === 0 && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, paddingTop: 40 }}>
+              <Icon name="bike" size={32} color="var(--muted)" />
+              <b style={{ fontSize: 17 }}>No riders yet</b>
+              <p className="m-sub">
+                Add the riders you already use, by the number they sign in to LyniaGo with. Someone who isn&apos;t on LyniaGo yet gets a sign-up link from you on
+                WhatsApp.
+              </p>
             </div>
           )}
 
-          {banner && (
-            <div role="alert" style={bannerStyle}>
-              {banner}
-            </div>
-          )}
-
-          {state.status === "ready" && owner && (
-            <form onSubmit={onAdd} noValidate style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>Add a rider</div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: "1 1 200px" }}>
-                  <label htmlFor="rider-label" style={labelStyle}>
-                    Their name
-                  </label>
-                  <input
-                    id="rider-label"
-                    value={form.label}
-                    onChange={(e) => update("label", e.target.value)}
-                    maxLength={40}
-                    placeholder="e.g. Blessing"
-                    style={inputStyle}
-                    disabled={full}
-                  />
-                  {errors.label && (
-                    <div role="alert" style={fieldErrorStyle}>
-                      {errors.label}
+          {state.status === "ready" && state.riders.length > 0 && (
+            <section aria-label="Your riders">
+              {state.riders.map((r) => {
+                const pill = riderPill(r);
+                return (
+                  <div key={r.id} className="m-li">
+                    <span className={`m-av${pill?.tone === "online" ? " m-av-on" : ""}`}>
+                      {r.rider?.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- a signed rider photo URL, not a static asset
+                        <img src={r.rider.photoUrl} alt="" width={40} height={40} style={{ objectFit: "cover", borderRadius: "50%" }} />
+                      ) : (
+                        r.label.charAt(0).toUpperCase()
+                      )}
+                    </span>
+                    <div className="m-t">
+                      {/* Not drawn: the owner taps a rider to remove them (behind the confirm sheet). */}
+                      {owner ? (
+                        <button type="button" className="m-stretch" aria-label={`Remove ${r.label}`} disabled={disabled} onClick={() => setRemoving(r)}>
+                          <b>{r.label}</b>
+                        </button>
+                      ) : (
+                        <b>{r.label}</b>
+                      )}
+                      <span className="m-num">
+                        {riderLine(r)}
+                        {r.invitePhone && (
+                          <>
+                            {" · "}
+                            <a href={riderInviteLink(r.invitePhone, riderInviteMessage(r.label, business?.name ?? "us"))} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>
+                              Send sign-up link
+                            </a>
+                          </>
+                        )}
+                      </span>
                     </div>
-                  )}
-                </div>
-                <div style={{ flex: "1 1 200px" }}>
-                  <label htmlFor="rider-phone" style={labelStyle}>
-                    The number they sign in to LyniaGo with
-                  </label>
+                    {pill && <span className={`m-pl ${PILL_CLASS[pill.tone]}`}>{pill.label}</span>}
+                  </div>
+                );
+              })}
+            </section>
+          )}
+          {full && owner && <p className="m-hint">You have {state.status === "ready" ? state.cap : 20} riders, the most you can keep. Remove one to add another.</p>}
+        </div>
+        {state.status === "ready" && owner && !full && (
+          <div className="m-foot">
+            <button type="button" className="m-btn" disabled={actionsDisabled} onClick={() => setAdding(true)}>
+              <Icon name="plus" size={20} /> Add a rider
+            </button>
+          </div>
+        )}
+      </div>
+
+      {removing && (
+        <ConfirmSheet
+          title={`Remove ${removing.label}?`}
+          body="They stop getting your jobs first. You can add them again."
+          confirmLabel="Remove"
+          busy={busy}
+          error={sheetError}
+          onConfirm={() =>
+            void act(async () => {
+              const r = removing;
+              await removeRider(r.id);
+              setState((s) => (s.status === "ready" ? { ...s, riders: s.riders.filter((x) => x.id !== r.id) } : s));
+              setRemoving(null);
+              toast(`${r.label} removed`);
+            }, "Couldn't remove the rider. Try again.")
+          }
+          onCancel={() => {
+            setRemoving(null);
+            setSheetError(null);
+          }}
+        />
+      )}
+
+      {adding && (
+        <div className="m-overlay" style={{ zIndex: 70 }}>
+          <div className="m-overlay-frame">
+            <button type="button" className="m-scrim" aria-label="Keep" onClick={closeAdd} />
+            <form className="m-sheet" role="dialog" aria-modal="true" aria-label="Add a rider" onSubmit={onAdd} noValidate>
+              <div className="m-grab" />
+              <b style={{ fontSize: 18 }}>Add a rider</b>
+              <div className="m-fld">
+                <label htmlFor="rider-label">Their name</label>
+                <span className="m-in" data-invalid={!!errors.label}>
+                  <input id="rider-label" value={form.label} maxLength={40} placeholder="e.g. Blessing" onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} />
+                </span>
+                {errors.label && (
+                  <span className="m-err" role="alert">
+                    {errors.label}
+                  </span>
+                )}
+              </div>
+              <div className="m-fld">
+                <label htmlFor="rider-phone">The number they sign in to LyniaGo with</label>
+                <span className="m-in" data-invalid={!!errors.phone}>
                   <input
                     id="rider-phone"
                     type="tel"
                     inputMode="tel"
                     autoComplete="off"
                     value={form.phone}
-                    onChange={(e) => update("phone", e.target.value)}
                     maxLength={20}
                     placeholder="0771234567"
-                    style={inputStyle}
-                    disabled={full}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                   />
-                  {errors.phone && (
-                    <div role="alert" style={fieldErrorStyle}>
-                      {errors.phone}
-                    </div>
-                  )}
+                </span>
+                {errors.phone && (
+                  <span className="m-err" role="alert">
+                    {errors.phone}
+                  </span>
+                )}
+              </div>
+              {sheetError && (
+                <div className="m-alert" role="alert">
+                  {sheetError}
                 </div>
-              </div>
-              {full ? (
-                <div style={{ fontSize: 13, color: "var(--muted)" }}>You have {state.cap} riders, the most you can keep. Remove one to add another.</div>
-              ) : (
-                <button type="submit" disabled={disabled} style={{ ...primaryButtonStyle, alignSelf: "flex-start", ...disabledStyle(disabled) }}>
-                  {busy === "add" ? "Adding…" : "Add rider"}
-                </button>
               )}
+              <button type="submit" className="m-btn" disabled={disabled}>
+                {busy ? "Adding…" : "Add rider"}
+              </button>
+              <button type="button" className="m-lnk" onClick={closeAdd}>
+                Keep
+              </button>
             </form>
-          )}
-
-          {state.status === "ready" && !owner && (
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>Only the owner can add or remove riders.</div>
-          )}
-
-          {state.status === "ready" && state.riders.length === 0 && (
-            <div style={{ ...cardStyle, textAlign: "center", padding: "24px 20px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent-wash)", display: "grid", placeItems: "center", margin: "0 auto 12px" }}>
-                <Icon name="bike" size={22} color="var(--accent-text)" />
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 800 }}>No riders yet</div>
-              <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5, maxWidth: 400, marginInline: "auto" }}>
-                Add the riders you already use, by the number they sign in to LyniaGo with. Someone who isn't on LyniaGo yet gets a
-                sign-up link from you on WhatsApp.
-              </div>
-            </div>
-          )}
-
-          {state.status === "ready" && state.riders.length > 0 && (
-            <section aria-label="Your riders" style={{ display: "grid", gap: 10 }}>
-              {state.riders.map((r) => (
-                <RiderRow
-                  key={r.id}
-                  rider={r}
-                  businessName={business?.name ?? "us"}
-                  owner={owner}
-                  disabled={disabled}
-                  removing={busy === r.id}
-                  confirming={confirmRemove === r.id}
-                  onAskRemove={() => setConfirmRemove(r.id)}
-                  onKeep={() => setConfirmRemove(null)}
-                  onRemove={() => void onRemove(r.id)}
-                />
-              ))}
-            </section>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </Kitchen>
   );
 }
-
-function RiderRow({
-  rider,
-  businessName,
-  owner,
-  disabled,
-  removing,
-  confirming,
-  onAskRemove,
-  onKeep,
-  onRemove,
-}: {
-  rider: MerchantPreferredRiderResponse;
-  businessName: string;
-  owner: boolean;
-  disabled: boolean;
-  removing: boolean;
-  confirming: boolean;
-  onAskRemove: () => void;
-  onKeep: () => void;
-  onRemove: () => void;
-}) {
-  const record = riderTrackRecord(rider);
-  return (
-    <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span
-          aria-hidden="true"
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: "50%",
-            background: "var(--surface)",
-            display: "grid",
-            placeItems: "center",
-            overflow: "hidden",
-            flexShrink: 0,
-            fontWeight: 800,
-            color: "var(--muted)",
-          }}
-        >
-          {rider.rider?.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- a signed rider photo URL, not a static asset
-            <img src={rider.rider.photoUrl} alt="" width={42} height={42} style={{ objectFit: "cover" }} />
-          ) : (
-            rider.label.charAt(0).toUpperCase()
-          )}
-        </span>
-        <div style={{ flex: 1, minWidth: 160 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 700 }}>{rider.label}</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-            {rider.phoneMasked}
-            {rider.rider ? ` · ${rider.rider.name} on LyniaGo` : ""}
-          </div>
-          {record && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{record}</div>}
-        </div>
-        <StatusPill status={rider.status} />
-      </div>
-
-      {(rider.invitePhone || owner) && !confirming && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {rider.invitePhone && (
-            <a
-              href={riderInviteLink(rider.invitePhone, riderInviteMessage(rider.label, businessName))}
-              target="_blank"
-              rel="noreferrer"
-              style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}
-            >
-              Send the sign-up link on WhatsApp
-            </a>
-          )}
-          {owner && (
-            <button type="button" onClick={onAskRemove} disabled={disabled} style={{ ...dangerGhostButtonStyle, ...disabledStyle(disabled) }}>
-              Remove
-            </button>
-          )}
-        </div>
-      )}
-
-      {confirming && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 14, flex: "1 1 180px" }}>
-            Remove <b>{rider.label}</b> from your riders?
-          </span>
-          <button type="button" onClick={onRemove} disabled={disabled} style={{ ...dangerGhostButtonStyle, ...disabledStyle(disabled) }}>
-            {removing ? "Removing…" : "Yes, remove"}
-          </button>
-          <button type="button" onClick={onKeep} style={ghostButtonStyle}>
-            Keep
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const TONE: Record<MerchantRiderStatus, { bg: string; fg: string; border: string }> = {
-  on_lyniago: { bg: "var(--accent-wash)", fg: "var(--accent-text)", border: "#bfe7cf" },
-  not_on_lyniago: { bg: "var(--surface)", fg: "var(--muted)", border: "var(--line)" },
-  unavailable: { bg: "var(--highlight-wash)", fg: "var(--highlight-ink)", border: "var(--highlight-border)" },
-};
-
-function StatusPill({ status }: { status: MerchantRiderStatus }) {
-  const t = TONE[status];
-  return (
-    <span
-      style={{
-        borderRadius: 8,
-        padding: "4px 9px",
-        fontSize: 12,
-        fontWeight: 800,
-        background: t.bg,
-        color: t.fg,
-        border: `1px solid ${t.border}`,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {RIDER_STATUS_LABEL[status]}
-    </span>
-  );
-}
-
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  padding: "0 14px",
-  borderRadius: "var(--radius-input)",
-  border: "1.5px solid var(--line)",
-  fontFamily: "inherit",
-  background: "var(--bg)",
-  color: "var(--ink)",
-};
-const fieldErrorStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--danger-ink)", marginTop: 6 };
-const bannerStyle: React.CSSProperties = { color: "var(--danger-ink)", background: "var(--danger-wash)", borderRadius: 10, padding: "10px 12px", fontSize: 13 };

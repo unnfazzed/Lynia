@@ -4,12 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import ShopPage from "./page";
 import { ApiError } from "../../lib/api-client";
-import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
+import { getMerchantProfile, updateProfile } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
   getMerchantProfile: vi.fn(),
   updateProfile: vi.fn(),
-  updateCashRule: vi.fn(),
   mintBannerPhotoUpload: vi.fn(),
   mintDishPhotoUpload: vi.fn(),
   uploadPhotoBlob: vi.fn(),
@@ -63,20 +62,6 @@ describe("ShopPage session-expiry on a mutation (LC-D##)", () => {
     });
     expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
   });
-
-  it("signs out instead of showing an inline error when choosing a cash rule hits a dead session", async () => {
-    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ cashRule: "collect_and_return" }));
-    vi.mocked(updateCashRule).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
-
-    render(<ShopPage />);
-    await screen.findByText("Shop profile");
-    fireEvent.click(screen.getByText("Pay me upfront"));
-
-    await waitFor(() => {
-      expect(signOut).toHaveBeenCalledTimes(1);
-    });
-    expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
-  });
 });
 
 describe("ShopPage initial-load failure has a way out (LC-D##)", () => {
@@ -107,43 +92,28 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
     expect(screen.queryAllByText(/food|cook/i)).toHaveLength(0);
   });
 
-  it("a restaurant keeps the drawn profile, cash rule included", async () => {
+  it("a restaurant keeps the profile, with no cash rule (every cash order is collect-and-return, D-48)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant" }));
 
     render(<ShopPage />);
 
     expect(await screen.findByText("WHAT YOU COOK · up to 3")).toBeTruthy();
     expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
-    expect(screen.getByText("How riders pay you")).toBeTruthy();
+    expect(screen.queryByText("How riders pay you")).toBeNull();
   });
 
-  it("a restaurant reaches its own riders from Shop (L3); a shop has them in its nav instead", async () => {
-    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant" }));
-    render(<ShopPage />);
-    expect((await screen.findByRole("link", { name: "Manage riders" })).getAttribute("href")).toBe("/riders");
-
-    cleanup();
-    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts" }));
-    render(<ShopPage />);
-    await screen.findByText("WHAT YOU SELL · up to 3");
-    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
-  });
-
-  it("the owner reaches the team from Shop, for both types (L4)", async () => {
-    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "auto_parts", myRole: "owner" }));
-    render(<ShopPage />);
-    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
-
-    cleanup();
+  it("is a pushed screen off Account; riders and team live on Account now", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "owner" }));
     render(<ShopPage />);
-    expect((await screen.findByRole("link", { name: "Manage team" })).getAttribute("href")).toBe("/team");
+    expect((await screen.findByRole("link", { name: "Back" })).getAttribute("href")).toBe("/account");
+    expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
   });
 
   it("Staff who reach Shop get one line, not the owner's editor (L4)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "staff" }));
     render(<ShopPage />);
-    expect(await screen.findByText("Only the owner changes the shop's details, its riders and its team.")).toBeTruthy();
+    expect(await screen.findByText("Only the owner changes the shop front.")).toBeTruthy();
     expect(screen.queryByText("Shop profile")).toBeNull();
     expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();

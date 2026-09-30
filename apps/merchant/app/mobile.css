@@ -909,3 +909,87 @@
   font-size: 12.5px;
   color: var(--muted);
 }
+/* C5 time fields (18/600) and the M–S days-open chips. */
+.m-in.m-time {
+  min-height: 52px;
+  border-radius: 14px;
+}
+.m-in.m-time input {
+  width: 100%;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.m-in.m-time.m-sm {
+  min-height: 44px;
+  padding: 0 8px;
+}
+.m-in.m-time.m-sm input {
+  width: 4.5ch;
+  font-size: 15px;
+  height: 42px;
+}
+.m-days {
+  display: flex;
+  gap: 6px;
+}
+.m-days button {
+  flex: 1;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
+.m-days button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--on-accent);
+}
+.m-days button:disabled {
+  cursor: default;
+}
+/* E2: an invited person's gold avatar and outlined pill. */
+.m-av.m-av-gold {
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+}
+.m-pl.m-gold-out {
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+  border: 1px solid var(--highlight-border);
+  height: 26px;
+  padding: 0 10px;
+  font-family: inherit;
+  cursor: pointer;
+}
+/* E4: an online rider's mint avatar. */
+.m-av.m-av-on {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+/* A whole-row tap target that still lets a link inside the row take its own tap (E2 invites, E4). */
+.m-li {
+  position: relative;
+}
+.m-stretch {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.m-stretch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.m-li a {
+  position: relative;
+  z-index: 1;
+}

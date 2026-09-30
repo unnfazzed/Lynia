@@ -1633,6 +1633,8 @@ export const MerchantPreferredRiderResponse = z
     label: z.string(),
     phoneMasked: z.string(),
     status: MerchantRiderStatus,
+    /** D-48 E4: an `on_lyniago` rider whose app is online right now. Absent on older servers. */
+    online: z.boolean().optional(),
     /** The number in international digits while it isn't a LyniaGo rider yet, so the business can send
      *  the rider sign-up link on WhatsApp; null otherwise. */
     invitePhone: z.string().nullable(),

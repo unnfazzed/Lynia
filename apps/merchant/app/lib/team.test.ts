@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstName, removeWarning, ROLE_LABEL, signedInLabel, staffCanLine, teamInviteLink, teamInviteMessage, validateInvite, validateJoinName } from "./team";
+import { firstName, invitedAgo, longMasked, removeConsequence, ROLE_LABEL, shortMasked, signedInLabel, teamInviteLink, teamInviteMessage, validateInvite, validateJoinName } from "./team";
 
 describe("Team's rules (merchant web upgrade L4)", () => {
   it("names the two roles and who is signed in", () => {
@@ -10,9 +10,16 @@ describe("Team's rules (merchant web upgrade L4)", () => {
     expect(signedInLabel(undefined, "owner")).toBe("Owner");
   });
 
-  it("says what Staff do, in the business's own words", () => {
-    expect(staffCanLine("shop")).toContain("Staff book riders and mark items out of stock.");
-    expect(staffCanLine("restaurant")).toContain("Staff take orders, book riders and mark dishes out of stock.");
+  it("masks the number the way E2 and E3 draw it", () => {
+    expect(shortMasked("+263•••••4567")).toBe("•••• 4567");
+    expect(longMasked("+263•••••2210")).toBe("+263 •• ••• 2210");
+  });
+
+  it("says how long ago someone was invited", () => {
+    const now = new Date(2026, 8, 30, 9, 0);
+    expect(invitedAgo(new Date(2026, 8, 30, 8, 0).toISOString(), now)).toBe("Invited today");
+    expect(invitedAgo(new Date(2026, 8, 29, 23, 0).toISOString(), now)).toBe("Invited yesterday");
+    expect(invitedAgo(new Date(2026, 8, 28, 10, 0).toISOString(), now)).toBe("Invited 2 days ago");
   });
 
   it("invites from the owner's own WhatsApp, to sign in with the invited number", () => {
@@ -21,8 +28,8 @@ describe("Team's rules (merchant web upgrade L4)", () => {
     expect(teamInviteLink("+263 77 222 3333", "Hi there")).toBe("https://wa.me/263772223333?text=Hi%20there");
   });
 
-  it("warns about the counter tablet before a removal", () => {
-    expect(removeWarning("Tendai")).toBe("If Tendai is signed in on the counter tablet, sign it in again with someone else.");
+  it("says what removing someone does (E3)", () => {
+    expect(removeConsequence("Tendai")).toBe("Removing Tendai signs them out now. Bookings they made stay on your record.");
   });
 
   it("asks for a name and a phone number", () => {

@@ -1,4 +1,4 @@
-import { type MerchantPreferredRiderResponse, type MerchantRiderStatus, normalizePhone } from "@lynia/shared";
+import { type MerchantPreferredRiderResponse, normalizePhone } from "@lynia/shared";
 import { whatsAppLink } from "./whatsapp";
 
 /**
@@ -9,12 +9,13 @@ import { whatsAppLink } from "./whatsapp";
 /** "Become a rider" on the LyniaGo website: where a rider signs up. */
 export const RIDER_SIGNUP_URL = "https://lyniago.com/#riders";
 
-/** What the business may know about a number, never why (the API's three statuses). */
-export const RIDER_STATUS_LABEL: Record<MerchantRiderStatus, string> = {
-  on_lyniago: "On LyniaGo",
-  not_on_lyniago: "Not on LyniaGo yet",
-  unavailable: "Can't take jobs right now",
-};
+/** E4's pill for a rider: Online / Offline for one who can take jobs, Paused for one who can't right now,
+ *  none for a number that isn't a LyniaGo rider yet (its line says so). What, never why. */
+export function riderPill(r: Pick<MerchantPreferredRiderResponse, "status" | "online">): { label: string; tone: "online" | "offline" | "paused" } | null {
+  if (r.status === "unavailable") return { label: "Paused", tone: "paused" };
+  if (r.status === "not_on_lyniago") return null;
+  return r.online ? { label: "Online", tone: "online" } : { label: "Offline", tone: "offline" };
+}
 
 /** The message the owner sends from their own WhatsApp to a rider who isn't on LyniaGo yet. */
 export function riderInviteMessage(label: string, businessName: string): string {
@@ -26,11 +27,14 @@ export function riderInviteLink(invitePhone: string, text: string): string {
   return whatsAppLink(invitePhone, text);
 }
 
-/** "12 deliveries for you · ★ 4.9", once they've worked for the business. */
-export function riderTrackRecord(r: Pick<MerchantPreferredRiderResponse, "jobs" | "ratingAvg">): string | null {
-  if (r.jobs === 0) return null;
-  const jobs = `${r.jobs} deliver${r.jobs === 1 ? "y" : "ies"} for you`;
-  return r.ratingAvg == null ? jobs : `${jobs} · ★ ${r.ratingAvg.toFixed(1)}`;
+/** E4's line: "12 trips for you · ★ 4.9", "No trips yet", "Paused by LyniaGo". A number that isn't a rider
+ *  yet reads "Not on LyniaGo" and gets the sign-up link beside it. */
+export function riderLine(r: Pick<MerchantPreferredRiderResponse, "status" | "jobs" | "ratingAvg">): string {
+  if (r.status === "not_on_lyniago") return "Not on LyniaGo";
+  if (r.status === "unavailable") return "Paused by LyniaGo";
+  if (r.jobs === 0) return "No trips yet";
+  const trips = `${r.jobs} trip${r.jobs === 1 ? "" : "s"} for you`;
+  return r.ratingAvg == null ? trips : `${trips} · ★ ${r.ratingAvg.toFixed(1)}`;
 }
 
 export interface AddRiderForm {

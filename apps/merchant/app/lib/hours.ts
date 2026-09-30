@@ -54,3 +54,25 @@ export function rightNowStatus(hours: PartialMerchantHours | MerchantHours | nul
   if (hhmm < today.open) return { open: false, label: `Opens at ${today.open}` };
   return { open: false, label: "Closed for today" };
 }
+
+/** C5's "Same every day" editor: one window for every open day. */
+export interface SameEveryDay {
+  window: MerchantHoursWindow;
+  days: DayKey[];
+}
+
+/** C5 opens on "Same every day" when every open day shares one window (or none is set), else "Per day". */
+export function asSameEveryDay(hours: PartialMerchantHours | null): SameEveryDay | null {
+  const open = DAY_KEYS.filter((d) => hours?.[d]);
+  if (open.length === 0) return { window: { open: "08:00", close: "22:00" }, days: [...DAY_KEYS] };
+  const first = hours![open[0]!]!;
+  const same = open.every((d) => hours![d]!.open === first.open && hours![d]!.close === first.close);
+  return same ? { window: { ...first }, days: open } : null;
+}
+
+export function fromSameEveryDay({ window, days }: SameEveryDay): PartialMerchantHours {
+  return Object.fromEntries(days.map((d) => [d, { ...window }])) as PartialMerchantHours;
+}
+
+/** "M T W T F S S" — the days-open chips. */
+export const DAY_INITIALS: Record<DayKey, string> = { mon: "M", tue: "T", wed: "W", thu: "T", fri: "F", sat: "S", sun: "S" };

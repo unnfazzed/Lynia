@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantTeamInviteResponse, MerchantTeamMemberResponse } from "@lynia/shared";
 import TeamPage from "./page";
+import { ToastProvider } from "../../components/m/Toast";
 import { ApiError } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
 import { cancelInvite, getTeam, invitePerson, removeMember } from "../../lib/team-api";
@@ -23,6 +24,12 @@ vi.mock("../../components/Kitchen", () => ({
     </div>
   ),
 }));
+
+const Page = () => (
+  <ToastProvider>
+    <TeamPage />
+  </ToastProvider>
+);
 
 afterEach(() => {
   cleanup();
@@ -56,63 +63,52 @@ function invite(over: Partial<MerchantTeamInviteResponse> = {}): MerchantTeamInv
 const TENDAI = member({ profileId: "22222222-2222-4222-8222-222222222222", name: "Tendai", phoneMasked: "+263•••••2210", role: "staff", you: false });
 const SHOP = merchantProfile({ name: "Siyaso Spares", businessType: "shop", shopKind: "auto_parts" });
 
-describe("Team (merchant web upgrade L4)", () => {
-  it("lists the owner, the staff and who hasn't joined yet, inside Shop", async () => {
+describe("E2 · Team (merchant mobile, D-48)", () => {
+  it("lists the owner, staff and invited, with their pills and masked numbers", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member(), TENDAI], invites: [invite()] });
-
-    render(<TeamPage />);
-
+    render(<Page />);
     const team = await screen.findByRole("region", { name: "Your team" });
-    expect(within(team).getByText("+263•••••4567 · you")).toBeTruthy();
+    expect(within(team).getByText("Farai Chari (you)")).toBeTruthy();
+    expect(within(team).getByText("•••• 4567")).toBeTruthy();
     expect(within(team).getByText("Owner")).toBeTruthy();
     expect(within(team).getByText("Staff")).toBeTruthy();
-    expect(within(team).getByText("+263•••••9034 · invited, hasn't joined yet")).toBeTruthy();
     expect(within(team).getByText("Invited")).toBeTruthy();
-    const link = within(team).getByRole("link", { name: "Send the link on WhatsApp" });
-    expect(link.getAttribute("href")).toContain("https://wa.me/263778889034?text=");
-    expect(decodeURIComponent(link.getAttribute("href")!.split("?text=")[1]!)).toBe(
+    const resend = within(team).getByRole("link", { name: "Resend" });
+    expect(decodeURIComponent(resend.getAttribute("href")!.split("?text=")[1]!)).toBe(
       "Hi Rudo, I've added you to Siyaso Spares on LyniaGo. Sign in with this number to join: http://localhost:3000/login",
     );
-    // The owner can't be removed; staff can.
-    expect(within(team).getAllByRole("button", { name: "Remove" })).toHaveLength(1);
-    expect(screen.getByText(/Staff book riders and mark items out of stock/)).toBeTruthy();
-    expect(screen.getByTestId("kitchen-shell").getAttribute("data-active")).toBe("shop");
+    expect(screen.getByTestId("kitchen-shell").getAttribute("data-active")).toBe("team");
+    // Only staff open the person sheet; the owner's own row doesn't.
+    expect(within(team).queryByRole("button", { name: /Farai/ })).toBeNull();
   });
 
-  it("invites a name and a number, then offers the WhatsApp link", async () => {
+  it("invites a name and a number from the Add someone sheet, then offers the WhatsApp link", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [] });
     vi.mocked(invitePerson).mockResolvedValue(invite({ name: "Tendai", invitePhone: "263771112210" }));
-
-    render(<TeamPage />);
+    render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Add someone" }));
     fireEvent.change(screen.getByLabelText("Their name"), { target: { value: " Tendai " } });
     fireEvent.change(screen.getByLabelText("Their phone number"), { target: { value: "077 111 2210" } });
     fireEvent.click(screen.getByRole("button", { name: "Invite" }));
-
     expect(await screen.findByText("Invite ready. Send them the link on WhatsApp.")).toBeTruthy();
     expect(invitePerson).toHaveBeenCalledWith({ name: "Tendai", phone: "077 111 2210" });
     expect(screen.getByRole("link", { name: "Send them the link on WhatsApp" }).getAttribute("href")).toContain("https://wa.me/263771112210?text=");
-    expect(screen.getByText("+263•••••9034 · invited, hasn't joined yet")).toBeTruthy();
-    expect((screen.getByLabelText("Their name") as HTMLInputElement).value).toBe("");
   });
 
-  it("puts a refusal about the number under it, and the daily limit above the form", async () => {
+  it("puts a refusal about the number under it, and anything else above the button", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [] });
     vi.mocked(invitePerson)
       .mockRejectedValueOnce(new ApiError(409, "That number is already on your team.", "already_on_team"))
       .mockRejectedValueOnce(new ApiError(429, "You've sent 10 invites today. Send more tomorrow.", "too_many_invites"));
-
-    render(<TeamPage />);
+    render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Add someone" }));
     fireEvent.change(screen.getByLabelText("Their name"), { target: { value: "Tendai" } });
     fireEvent.change(screen.getByLabelText("Their phone number"), { target: { value: "0771112210" } });
-
     fireEvent.click(screen.getByRole("button", { name: "Invite" }));
     expect(await screen.findByText("That number is already on your team.")).toBeTruthy();
-
     fireEvent.click(screen.getByRole("button", { name: "Invite" }));
     expect((await screen.findByText("You've sent 10 invites today. Send more tomorrow.")).getAttribute("role")).toBe("alert");
   });
@@ -120,47 +116,41 @@ describe("Team (merchant web upgrade L4)", () => {
   it("checks the form before asking the API", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [] });
-    render(<TeamPage />);
+    render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Add someone" }));
     fireEvent.click(screen.getByRole("button", { name: "Invite" }));
     expect(await screen.findByText("Give them a name you'll recognise.")).toBeTruthy();
     expect(invitePerson).not.toHaveBeenCalled();
   });
 
-  it("removes someone after a confirm that warns about the counter tablet", async () => {
+  it("E3: tapping staff opens their sheet, which says what removing does, and removes", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member(), TENDAI], invites: [] });
     vi.mocked(removeMember).mockResolvedValue({ ok: true });
-
-    render(<TeamPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
-    expect(
-      screen.getByText(
-        (_, el) =>
-          el?.tagName === "SPAN" &&
-          el.textContent === "Remove Tendai from the team? If Tendai is signed in on the counter tablet, sign it in again with someone else.",
-      ),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Yes, remove" }));
-
-    await waitFor(() => expect(screen.queryByText("Tendai")).toBeNull());
-    expect(removeMember).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222");
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: /Tendai/ }));
+    expect(screen.getByText("+263 •• ••• 2210 · Staff")).toBeTruthy();
+    expect(screen.getByText("Removing Tendai signs them out now. Bookings they made stay on your record.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Tendai" }));
+    await waitFor(() => expect(removeMember).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222"));
+    expect(await screen.findByText("Tendai removed")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Tendai/ })).toBeNull();
   });
 
-  it("cancels an invite", async () => {
+  it("an invite's sheet cancels it", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [invite()] });
     vi.mocked(cancelInvite).mockResolvedValue({ ok: true });
-
-    render(<TeamPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel invite" }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Rudo's invite" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel invite" }));
+    await waitFor(() => expect(cancelInvite).toHaveBeenCalledWith("33333333-3333-4333-8333-333333333333"));
     await waitFor(() => expect(screen.queryByText("Rudo")).toBeNull());
-    expect(cancelInvite).toHaveBeenCalledWith("33333333-3333-4333-8333-333333333333");
   });
 
   it("tells staff the team is the owner's, without asking the API", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(merchantProfile({ myRole: "staff" }));
-    render(<TeamPage />);
+    render(<Page />);
     expect(await screen.findByText("Only the owner can see and change the team.")).toBeTruthy();
     expect(getTeam).not.toHaveBeenCalled();
   });
@@ -168,7 +158,7 @@ describe("Team (merchant web upgrade L4)", () => {
   it("says Team is on its way on an API that doesn't have it yet", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockRejectedValue(new ApiError(404, "Cannot GET /merchant/team"));
-    render(<TeamPage />);
+    render(<Page />);
     expect(await screen.findByText("Team is on its way.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add someone" })).toBeNull();
   });

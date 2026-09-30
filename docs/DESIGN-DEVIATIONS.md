@@ -2229,7 +2229,7 @@ components to the design system.
 
 | Where | Handoff | App now | Retires with |
 |---|---|---|---|
-| The Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (C5, E2–E4) | the older screen bodies inside the new phone shell | PR 3b |
+| Shop front | not redrawn ("Banner, logo and tags") | the older profile editor under the new app bar | a design export that draws it |
 | Shop Orders home, Book a rider, Offers, Tracking, Items | redrawn (D1–D5, D7, E1) | the older screens inside the new shell | PR 4 |
 | A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
 | Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
@@ -2269,6 +2269,25 @@ Evidence: `docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30.png` (mock left, ap
 | C3 | Sales, overdue row, Orders | the old statement's commission, "would have been", prep-time and cooked-food-loss tiles are gone | not drawn ⇒ not rendered |
 | C3 overdue row | tap calls the rider ("Calling Tino…") | opens that order's cash-back screen (B7) | rider phone numbers are not exposed to merchants; B7 is where the cash is confirmed or reported |
 | E1 | "All" chip first | "All" first on a shop's Items only (C1 draws none for a restaurant) | as drawn per screen |
+
+### 7 · Hours C5, Team E2–E3, Riders E4 (PR 3b)
+
+Evidence: `docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30.png` (mock left, app right, 360×720).
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| C5 "Per day" | the segment is drawn, its content isn't | one row per day: the day, open–close, a switch | the week the API stores; C5 opens on it when days differ |
+| C5 time fields | "08:00" | 24-hour text fields that put the colon in themselves | a phone's own time picker draws "08:00 AM" and a clock in some locales |
+| C5, staff | not drawn | the fields locked, no Save, one line saying only the owner changes hours; busy mode still works | the permission table (L4) |
+| E2 staff row | "•••• 2210 · active today" | "•••• 2210" | the API has no last-active signal for a team member |
+| E2 invite row | tap shows "Invite pending" | tap opens a sheet: send the link on WhatsApp, or cancel the invite | cancelling an invite needs a home, and nothing else draws one |
+| E2 "+ Add someone" | toast "Add by phone number" | a sheet: their name, their phone number, Invite, then the WhatsApp link | not drawn; the L4 invite flow in the new sheet |
+| **E3 Owner / Staff switch** | segmented role change | **not built** | the API keeps one owner per business, so making someone an Owner is an ownership change, not a toggle. **Open owner decision** (two owners, or a transfer) |
+| E3 | "Remove Tendai" | the same, with the drawn consequence copy | — (a record) |
+| E4 Online / Offline | pills | the same, from a new optional `online` on the riders list (an approved rider whose app still heartbeats within 3 minutes) | the API had three statuses only; still never a reason |
+| E4 remove | not drawn | the owner taps a rider → "Remove Blessing?" confirm | the list needs a way to drop a rider, and the drawn row has no control |
+| E4 "+ Add a rider" | "opens a sheet; not drawn" | a sheet: their name, the number they sign in with | — |
+| Shop front "How riders pay you" | "Removed, since rider cash-back is now the single rule" (route map) | removed, and the Shop front's riders and team cards with it (they live on Account) | as the route map says |
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).

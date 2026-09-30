@@ -6,7 +6,6 @@ import type {
   MerchantDishResponse,
   MerchantProfileResponse,
   SetMerchantBusyModeRequest,
-  UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
   UpdateMerchantHoursRequest,
@@ -37,10 +36,6 @@ export function updateProfile(body: UpdateMerchantProfileRequest): Promise<Merch
 
 export function updateHours(body: UpdateMerchantHoursRequest): Promise<MerchantProfileResponse> {
   return authedFetch<MerchantProfileResponse>("/merchant/hours", { method: "PATCH", body });
-}
-
-export function updateCashRule(body: UpdateMerchantCashRuleRequest): Promise<MerchantProfileResponse> {
-  return authedFetch<MerchantProfileResponse>("/merchant/cash-rule", { method: "PATCH", body });
 }
 
 /** D-48 (merchant mobile B1/B5): the Orders header's open/closed switch. */

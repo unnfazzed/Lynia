@@ -15,6 +15,9 @@ import { findBookingAccountId } from "./booking-account";
 import type { MerchantAccess } from "./merchant-access";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** D-48 E4: a rider reads Online only while their app still heartbeats (matching's own TTL is 60s;
+ *  this allows a couple of missed beats on a slow network). */
+const ONLINE_FRESH_MS = 3 * 60_000;
 /** The audit actions this list writes; the daily add limit counts the first. */
 export const RIDER_ADD_ACTION = "merchant.rider.add";
 export const RIDER_REMOVE_ACTION = "merchant.rider.remove";
@@ -26,7 +29,7 @@ const PERSON_SELECT = {
   lastName: true,
   photoUrl: true,
   onHold: true,
-  rider: { select: { kycStatus: true, accountStatus: true, onHold: true } },
+  rider: { select: { kycStatus: true, accountStatus: true, onHold: true, isOnline: true, lastHeartbeatAt: true } },
   merchantMembership: { select: { merchantId: true } },
 } satisfies Prisma.ProfileSelect;
 type Person = Prisma.ProfileGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -47,6 +50,13 @@ export function riderStatusOf(person: Person | undefined, merchantId: string): M
   if (rider.accountStatus !== "active" || rider.onHold || person.onHold) return "unavailable";
   if (person.merchantMembership?.merchantId === merchantId) return "unavailable";
   return "on_lyniago";
+}
+
+/** D-48 E4's Online / Offline pill: only for a rider who can take jobs, never a reason. */
+export function riderOnline(person: Person | undefined, status: MerchantRiderStatus, now = Date.now()): boolean {
+  const rider = person?.rider;
+  if (status !== "on_lyniago" || !rider?.isOnline || !rider.lastHeartbeatAt) return false;
+  return now - rider.lastHeartbeatAt.getTime() < ONLINE_FRESH_MS;
 }
 
 /**
@@ -175,6 +185,7 @@ export class MerchantRidersService {
       label: row.label,
       phoneMasked: maskPhone(row.phone),
       status,
+      online: riderOnline(person, status),
       invitePhone: status === "not_on_lyniago" ? row.phone.replace(/^\+/, "") : null,
       jobs,
       ratingAvg: jobs > 0 ? (done?.ratingAvg ?? null) : null,

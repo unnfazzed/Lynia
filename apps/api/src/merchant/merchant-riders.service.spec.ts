@@ -13,7 +13,7 @@ interface Person {
   lastName: string;
   photoUrl: string | null;
   onHold: boolean;
-  rider: { kycStatus: string; accountStatus: string; onHold: boolean } | null;
+  rider: { kycStatus: string; accountStatus: string; onHold: boolean; isOnline?: boolean; lastHeartbeatAt?: Date | null } | null;
   merchantMembership: { merchantId: string } | null;
 }
 interface Row { id: string; merchantId: string; phone: string; label: string; addedByProfileId: string; createdAt: Date }
@@ -123,6 +123,24 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
     expect(riders[0]!.phoneMasked).toBe("+263•••••0001");
     // The number comes back whole only where the business needs it to send the sign-up link.
     expect(riders.map((r) => r.invitePhone)).toEqual([null, null, null, null, null, "263771000006", "263771000007", "263771000008"]);
+  });
+
+  it("D-48 E4: says Online only for a rider who can take jobs and whose app still heartbeats", async () => {
+    const live = { kycStatus: "verified", accountStatus: "active", onHold: false, isOnline: true, lastHeartbeatAt: new Date() };
+    w.people.set("on", w.person({ id: "on", phone: "+263771000001", rider: live }));
+    w.people.set("stale", w.person({ id: "stale", phone: "+263771000002", rider: { ...live, lastHeartbeatAt: new Date(Date.now() - 10 * 60_000) } }));
+    w.people.set("off", w.person({ id: "off", phone: "+263771000003", rider: { ...live, isOnline: false } }));
+    w.people.set("held", w.person({ id: "held", phone: "+263771000004", rider: { ...live, onHold: true } }));
+    for (const n of ["01", "02", "03", "04"]) keep(`+2637710000${n}`, `Rider ${n}`);
+
+    const { riders } = await w.svc.list(OWNER);
+
+    expect(riders.map((r) => [r.status, r.online])).toEqual([
+      ["on_lyniago", true],
+      ["on_lyniago", false],
+      ["on_lyniago", false],
+      ["unavailable", false],
+    ]);
   });
 
   it("shows the rider's own name, photo, jobs and rating only once they've worked for this business", async () => {
