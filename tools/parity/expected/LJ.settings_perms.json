@@ -76,6 +76,11 @@
    "ref": "packages/design/explorations/journey/screens-shipped.jsx :: Privacy"
   },
   {
+   "text": "Terms & conditions",
+   "reason": "Owner instruction 2026-09-30: one set of terms for customers, riders and businesses, reachable from settings. No mock draws a terms screen, so the row opens the hosted /legal/terms page.",
+   "ref": "docs/DESIGN-DEVIATIONS.md#D-49"
+  },
+  {
    "text": "Sign out",
    "reason": "The base LJ.settings mock draws a 'Sign out' danger row at the bottom of the settings list; the focused SH11 permissions shipped-state omits it, but the real settings screen keeps it.",
    "ref": "packages/design/explorations/journey/screens.jsx :: Settings"

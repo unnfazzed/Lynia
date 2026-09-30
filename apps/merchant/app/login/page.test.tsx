@@ -61,6 +61,7 @@ describe("A1 · Sign in (merchant mobile redesign, D-48)", () => {
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
     expect(screen.getByText("+263")).toBeTruthy();
     expect(screen.getByRole("link", { name: "privacy notice" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "terms" }).getAttribute("href")).toMatch(/\/legal\/terms$/);
     expect(screen.queryByText(/alarm/i)).toBeNull();
   });
 

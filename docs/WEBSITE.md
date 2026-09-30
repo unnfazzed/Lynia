@@ -43,8 +43,8 @@ byte-identical to the handoff, except for:
 |---|---|---|---|
 | 1 | Play Store link | Keep `href="#app"` as designed while the listing is closed-testing only (the public listing 404s). | Open: when the app is public, add one `LAUNCH_EDITS` entry per button (the three "Download the app", "Send a parcel" and "Become a rider") pointing at `https://play.google.com/store/apps/details?id=zw.co.lynia` with `target="_blank" rel="noopener"`. "How it works" stays `#riders`. |
 | 2 | OG share image | Built to the README spec (green, mark + wordmark, "Stay home. We'll bring it."). | Done: `assets/og-image.png` |
-| 3 | About us | Launch without it: `/about` serves the 404 page (header, footer, "Back home"). | Open: needs the owner's copy. Then add `site/about/index.html` with the same header and footer, remove `/about` from `INTENTIONAL_404`, and add the file to `EXTRA_FILES`. |
-| 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy` (the live notice); Terms stays `#`. | Terms open until a terms page exists. |
+| 3 | About us | Launched without it; then **removed from the footer** (owner, 2026-09-30, `LAUNCH_EDITS` `about-removed`). `/about` still serves the 404 page like any unknown path. | Done. |
+| 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy`; Terms → `https://api.lyniago.com/legal/terms` (owner, 2026-09-30, D-49). | Done. |
 | 5 | Analytics | None. | No trackers, no cookies. |
 | — | Menu buttons stop short on phones (found in review) | Fix it: `width`/`height` on the lazy scooter illustration plus `.biz-ill{height:auto}` (`LAUNCH_EDITS` `biz-ill-*`). | Done. Report upstream so the next export carries it. |
 

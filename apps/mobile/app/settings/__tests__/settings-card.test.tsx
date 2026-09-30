@@ -95,7 +95,7 @@ function cardInset(tree: renderer.ReactTestRenderer): number {
 
 // No "Edit profile": D-26 removed the row outright. See identity-card-inert.test.tsx for the guard
 // that it (and the identity card's handler) stay gone.
-const ROWS = ["Location", "Notifications", "Language", "Payment", "Privacy notice", "Sign out", "Delete account"];
+const ROWS = ["Location", "Notifications", "Language", "Payment", "Privacy notice", "Terms & conditions", "Sign out", "Delete account"];
 
 describe("settings draws the Account tab's card design (D-25)", () => {
   it("puts every row — permissions included — in ONE card", async () => {
@@ -156,5 +156,17 @@ describe("settings draws the Account tab's card design (D-25)", () => {
       act(() => void row.props.onPress());
       expect(mockPush).toHaveBeenCalledWith(route);
     }
+  });
+
+  it("opens the hosted terms page from Terms & conditions (D-49)", async () => {
+    const { Linking } = require("react-native");
+    const { TERMS_URL } = require("../../../src/config");
+    const open = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const tree = await render(SettingsScreen);
+    const row = tree.root.find((n) => n.props?.accessibilityRole === "button" && n.props?.accessibilityLabel === "Terms & conditions");
+    act(() => void row.props.onPress());
+    expect(open).toHaveBeenCalledWith(TERMS_URL);
+    expect(TERMS_URL).toMatch(/\/legal\/terms$/);
+    open.mockRestore();
   });
 });

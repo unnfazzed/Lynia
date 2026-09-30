@@ -50,9 +50,23 @@ export const LAUNCH_EDITS = [
   {
     id: "privacy-link",
     todo: "README TODO #4 (Terms / Privacy)",
-    decision: "owner 2026-09-28: Privacy links to the live privacy notice; Terms stays # (D-42)",
+    decision: "owner 2026-09-28: Privacy links to the live privacy notice (D-42)",
     from: '<a href="#">Privacy</a>',
     to: '<a href="https://api.lyniago.com/legal/privacy">Privacy</a>',
+  },
+  {
+    id: "terms-link",
+    todo: "README TODO #4 (Terms / Privacy)",
+    decision: "owner 2026-09-30: Terms links to the live terms page, one set for customers, riders and businesses (D-42)",
+    from: '<a href="#">Terms</a>',
+    to: '<a href="https://api.lyniago.com/legal/terms">Terms</a>',
+  },
+  {
+    id: "about-removed",
+    todo: "README TODO #3 (About us)",
+    decision: "owner 2026-09-30: remove the About us link from the footer; there is no About page (D-42)",
+    from: '<a href="/about">About us</a>',
+    to: "",
   },
   // The two edits below are one fix. The lazy scooter illustration had no reserved size, so the page
   // grew by ~350px as it loaded and the first tap on "Download the app" / "Send a parcel" stopped
@@ -98,8 +112,11 @@ const EXTRA_FILES = new Set([
   "assets/og-image.png", // README TODO #2, built to its spec (apps/website/og-image/)
 ]);
 
-/** Paths linked on purpose that have no page yet, so they serve 404.html (D-42). */
-const INTENTIONAL_404 = new Set(["/about"]);
+/**
+ * Paths linked on purpose that have no page yet, so they serve 404.html (D-42). Empty since the About
+ * us link was removed (owner, 2026-09-30); kept so a future placeholder link has a sanctioned home.
+ */
+const INTENTIONAL_404 = new Set([]);
 
 /**
  * Every <script> element: group 1 = attributes, group 2 = text. Case-insensitive, and lenient about

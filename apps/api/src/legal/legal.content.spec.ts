@@ -8,6 +8,7 @@ import {
   LEGAL_CONTACT_EMAIL,
   LEGAL_DATA_CATEGORIES,
   privacyPolicyHtml,
+  termsHtml,
 } from "./legal.content";
 
 /**
@@ -138,7 +139,7 @@ describe("account deletion page", () => {
   });
 });
 
-describe("both pages are self-contained", () => {
+describe("every legal page is self-contained", () => {
   /**
    * The routes serve `default-src 'none'; style-src 'unsafe-inline'` — a remote stylesheet, font,
    * script or image would be blocked by that CSP and render a broken policy page to a Play reviewer.
@@ -148,6 +149,7 @@ describe("both pages are self-contained", () => {
   it.each([
     ["privacy", privacyPolicyHtml()],
     ["account-deletion", accountDeletionHtml()],
+    ["terms", termsHtml()],
   ])("%s loads no remote subresource", (_name, html) => {
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/<(link|img|iframe|source)\b/i);
@@ -158,6 +160,7 @@ describe("both pages are self-contained", () => {
   it.each([
     ["privacy", privacyPolicyHtml()],
     ["account-deletion", accountDeletionHtml()],
+    ["terms", termsHtml()],
   ])("%s is a complete, viewport-tagged document", (_name, html) => {
     expect(html.startsWith("<!doctype html>")).toBe(true);
     expect(html).toContain('name="viewport"'); // Play reviews on a phone.
@@ -165,7 +168,7 @@ describe("both pages are self-contained", () => {
   });
 });
 
-describe("contact address on both pages", () => {
+describe("contact address on every legal page", () => {
   /**
    * The public contact is on the lyniago.com brand domain (owner decision 2026-09-28). Pinned
    * literally, like the hosting region, so it can't drift back to support@lyniafinance.com unnoticed.
@@ -173,9 +176,46 @@ describe("contact address on both pages", () => {
   it.each([
     ["privacy", privacyPolicyHtml()],
     ["account-deletion", accountDeletionHtml()],
+    ["terms", termsHtml()],
   ])("%s lists hello@lyniago.com as the contact, and no lyniafinance.com address", (_name, html) => {
     expect(LEGAL_CONTACT_EMAIL).toBe("hello@lyniago.com");
     expect(html).toContain('href="mailto:hello@lyniago.com"');
     expect(html).not.toMatch(/lyniafinance/i);
+  });
+});
+
+describe("terms page", () => {
+  const html = termsHtml();
+
+  it("is one set of terms with a part for each kind of user", () => {
+    // Owner instruction 2026-09-30: combined terms for customers, riders and businesses.
+    expect(html).toContain('id="customers"');
+    expect(html).toContain('id="riders"');
+    expect(html).toContain('id="businesses"');
+  });
+
+  it("describes LyniaGo as a marketplace that does not take payment for goods, food or parcels", () => {
+    // Same fact the privacy notice pins: a terms page that implied we process the payment would
+    // misdescribe the business and invite Play's financial-features review.
+    expect(html).toMatch(/does not take payment for parcels, food or goods/i);
+    expect(html).toMatch(/independent/i);
+  });
+
+  it("matches the policy the code enforces", () => {
+    expect(html).toContain("US$150"); // declaredValue .max(150) in @lynia/shared contracts
+    expect(html).toMatch(/third strike takes you\s+offline for 2 hours/); // RIDER_STRIKE_LIMIT / COOLDOWN
+    expect(html).toMatch(/commission is 0% today/i); // COMMISSION.ratePct
+  });
+
+  it("links the privacy notice and deletion page, and names Zimbabwean law", () => {
+    expect(html).toContain('href="/legal/privacy"');
+    expect(html).toContain('href="/legal/account-deletion"');
+    expect(html).toMatch(/laws of Zimbabwe/);
+  });
+
+  it("is linked from the shared footer of every legal page", () => {
+    for (const page of [privacyPolicyHtml(), accountDeletionHtml(), html]) {
+      expect(page).toContain('href="/legal/terms"');
+    }
   });
 });
