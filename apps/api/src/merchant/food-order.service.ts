@@ -544,6 +544,27 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
+  /**
+   * D-48 (merchant mobile B3 "Can't finish this order"): cancel a CASH order the kitchen already
+   * accepted and started, before it goes to dispatch. Nothing has been paid on a cash order, so there
+   * is nothing to refund; the customer is told why. A confirmed WALLET order still goes through the
+   * refund path (FoodDebtService.refundOrder), which needs the merchant's refund reference.
+   */
+  async cancelPreparing(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
+    const merchantId = await this.ownMerchantId(profileId);
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash" },
+      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "other", merchantPhase: null },
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException({ reason: "not_cancellable", message: "This order can no longer be cancelled here." });
+    }
+    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    await this.notifyCancelledCustomer(orderId, "other");
+    this.notifyQueue(merchantId, orderId);
+    return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
   /** R-16: logged before the request-payment button unlocks. */
   async logCall(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);

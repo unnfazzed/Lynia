@@ -235,6 +235,13 @@ export class MerchantOrderController {
     return this.debt.reportNonReturn(profileId, orderId, body.note);
   }
 
+  /** D-48: "Can't finish this order" on a cash order still cooking (B3). */
+  @Post(":orderId/cancel")
+  @UseGuards(MerchantGuard)
+  cancelPreparing(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.cancelPreparing(profileId, orderId);
+  }
+
   /** D-48: the merchant closes its side after pickup without counting cash (B6/B7). */
   @Post(":orderId/close")
   @UseGuards(MerchantGuard)

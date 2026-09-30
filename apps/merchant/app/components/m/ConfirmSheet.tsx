@@ -39,7 +39,8 @@ export function ConfirmSheet({
   }, [onCancel]);
 
   return (
-    <div className="m-overlay">
+    // Above any full-screen takeover (the ringing order sits at 60), so its own confirm shows on top.
+    <div className="m-overlay" style={{ zIndex: 70 }}>
       <div className="m-overlay-frame">
         <button type="button" className="m-scrim" aria-label="Keep" onClick={onCancel} />
         <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-confirm-title">

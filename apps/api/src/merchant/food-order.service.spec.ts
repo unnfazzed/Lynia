@@ -1100,3 +1100,36 @@ describe("D-48 · merchant mobile redesign: open switch, cash only, closing an o
 });
 
 type MerchantOrderResponseLike = Record<string, unknown> & { cashDueAt?: string; deliveredAt?: string; createdAt?: string; merchantCloseReason?: string };
+
+describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-48)", () => {
+  it("cancels a cash order still cooking and tells the customer — nothing was paid, so nothing to refund", async () => {
+    let where: Record<string, unknown> | undefined;
+    let data: Record<string, unknown> | undefined;
+    const events: unknown[] = [];
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          where = args.where;
+          data = args.data;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ id: "o1", merchantId: "m1", customerId: "c1", status: "cancelled", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
+      },
+      orderEvent: { create: async (args: unknown) => events.push(args) },
+    });
+    const res = await svc.cancelPreparing("p1", "o1");
+    expect(where).toMatchObject({ id: "o1", merchantId: "m1", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash" });
+    expect(data).toMatchObject({ status: "cancelled", merchantPhase: null, rejectionReason: "other" });
+    expect(events).toHaveLength(1);
+    expect(res.status).toBe("cancelled");
+  });
+
+  it("refuses anything else — a wallet order (refund path), one already at dispatch, or one not cooking", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { updateMany: async () => ({ count: 0 }) },
+    });
+    await expect(svc.cancelPreparing("p1", "o1")).rejects.toMatchObject({ response: { reason: "not_cancellable" }, status: 409 });
+  });
+});

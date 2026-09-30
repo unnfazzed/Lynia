@@ -43,6 +43,11 @@ export function updateCashRule(body: UpdateMerchantCashRuleRequest): Promise<Mer
   return authedFetch<MerchantProfileResponse>("/merchant/cash-rule", { method: "PATCH", body });
 }
 
+/** D-48 (merchant mobile B1/B5): the Orders header's open/closed switch. */
+export function setOpen(open: boolean): Promise<MerchantProfileResponse> {
+  return authedFetch<MerchantProfileResponse>("/merchant/open", { method: "PATCH", body: { open } });
+}
+
 export function setBusyMode(body: SetMerchantBusyModeRequest): Promise<MerchantProfileResponse> {
   return authedFetch<MerchantProfileResponse>("/merchant/busy-mode", { method: "PATCH", body });
 }

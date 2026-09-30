@@ -102,3 +102,14 @@ export function getWeeklyStatement(): Promise<MerchantWeeklyStatementResponse> {
 export function getTodaySummary(): Promise<MerchantEndOfDaySummaryResponse> {
   return authedFetch<MerchantEndOfDaySummaryResponse>("/merchant/summary/today");
 }
+
+/** D-48 (merchant mobile B6/B7): close the merchant's side after pickup without counting cash —
+ *  "no_cash" is "No cash on this one · mark completed", "force" is "Mark ride completed". */
+export function closeOrder(orderId: string, reason: "no_cash" | "force"): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/close`, { method: "POST", body: { reason } });
+}
+
+/** D-48 (merchant mobile B3): "Can't finish this order" on a cash order still cooking. */
+export function cancelPreparing(orderId: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/cancel`, { method: "POST" });
+}
