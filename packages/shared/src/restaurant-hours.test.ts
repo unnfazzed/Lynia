@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantHours } from "./contracts";
-import { isMerchantOpenNow, minutesUntilClose, nextOpenDescription } from "./restaurant-hours";
+import { effectiveMerchantHours, isMerchantOpenNow, minutesUntilClose, nextOpenDescription, startOfNextDay } from "./restaurant-hours";
 
 // Wednesday 2026-07-29 (matches the plan's "today"); getDay() === 3.
 const WED_NOON = new Date(2026, 6, 29, 12, 0);
@@ -68,5 +68,29 @@ describe("nextOpenDescription", () => {
 
   it("is null while currently open", () => {
     expect(nextOpenDescription(HOURS, WED_NOON)).toBeNull();
+  });
+});
+
+describe("effectiveMerchantHours — closed by hand (merchant mobile B5, D-48)", () => {
+  const LATER = new Date(2026, 6, 29, 23, 59);
+
+  it("drops today's window while closed, so the restaurant reads closed and says when it opens next", () => {
+    const hours = effectiveMerchantHours(HOURS, LATER, WED_NOON);
+    expect(isMerchantOpenNow(hours, WED_NOON)).toBe(false);
+    expect(nextOpenDescription(hours, WED_NOON)).toBe("Opens tomorrow at 09:00");
+    expect(HOURS.wed).toBeDefined(); // the stored week is never mutated
+  });
+
+  it("an always-open restaurant (no hours) reads closed too", () => {
+    expect(isMerchantOpenNow(effectiveMerchantHours(null, LATER, WED_NOON), WED_NOON)).toBe(false);
+  });
+
+  it("passes the hours through untouched once the close has passed, or when there is none", () => {
+    expect(effectiveMerchantHours(HOURS, WED_EARLY, WED_NOON)).toBe(HOURS);
+    expect(effectiveMerchantHours(HOURS, null, WED_NOON)).toBe(HOURS);
+  });
+
+  it("a close by hand ends at the start of the next day", () => {
+    expect(startOfNextDay(WED_NOON)).toEqual(new Date(2026, 6, 30, 0, 0));
   });
 });

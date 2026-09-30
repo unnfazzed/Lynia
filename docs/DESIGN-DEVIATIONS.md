@@ -2206,6 +2206,20 @@ lands (below).
 | Google Maps | **Google Places (New) for address search and GPS lookup, OpenStreetMap for maps.** Keyless builds fall back to "your current location". |
 | Delivery | **Four phased PRs**, each auto-merging on green: (1) handoff + shell + get-in + Account; (2) Orders, cash back and its backend; (3) Menu, Money, Hours, Team, Riders; (4) shop booking and Items. |
 
+**Second round (2026-09-30, asked before PR 2):**
+
+| Handoff draws | Decision |
+|---|---|
+| B4: the merchant types the rider's pickup code | **Keep today's direction**: the merchant's four boxes show the code and the rider types it in the rider app; "✓ Code matches" appears when the rider confirms. No rider-app change. |
+| B1/B5: an open/closed switch | **Add a manual switch**: `merchants.closed_until`. Off holds until the next day starts or the merchant opens again; the API serves the restaurant with today's window dropped (so installed customer apps read it as closed) and refuses new orders (`restaurant_closed`). |
+| B6/D5: "Mark ride completed … even if steps are left" | **Only after pickup**: it closes the merchant's side (nothing owed) and never changes the delivery, rider or customer. Before pickup it would be a cancel, which it is not. Same endpoint as B7's "No cash on this one" (`POST /merchant/orders/:id/close`). |
+
+**Cash only, in the customer app:** the food checkout's "Mobile money" row (`RC.checkout_wallet`) is
+removed and every food order is placed as cash at the door. This is an owner decision against the
+customer gallery mock, recorded here; `RC.checkout_wallet` is no longer reachable. Every cash food
+order is collect-and-return whatever the shop's older rule said. The cash is due back 30 minutes after
+delivery (`RESTAURANTS_DEBT.cashReturnWindowMs`) and shows as overdue after that — shown, never chased.
+
 The handoff's "Differences from the customer and rider apps" (8 open items) follow its own suggested
 resolution unless the owner says otherwise: match tracking layout, delivery-code card, stepper time
 placement and status label to the customer app; keep the merchant header and 4 tabs; add the new

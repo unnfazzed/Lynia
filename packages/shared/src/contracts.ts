@@ -859,6 +859,11 @@ export type UpdateMerchantCashRuleRequest = z.infer<typeof UpdateMerchantCashRul
 export const SetMerchantBusyModeRequest = z.object({ active: z.boolean() }).strict();
 export type SetMerchantBusyModeRequest = z.infer<typeof SetMerchantBusyModeRequest>;
 
+/** `PATCH /merchant/open` — the Orders header's open/closed switch (merchant mobile B1/B5, D-48).
+ *  Closing holds until the next day starts or the merchant opens again; opening clears it. */
+export const SetMerchantOpenRequest = z.object({ open: z.boolean() }).strict();
+export type SetMerchantOpenRequest = z.infer<typeof SetMerchantOpenRequest>;
+
 /** `GET/PATCH /merchant/me` response — the authenticated merchant's own view of their shop. */
 export const MerchantProfileResponse = z
   .object({
@@ -886,6 +891,8 @@ export const MerchantProfileResponse = z
     /** L4: the CALLER's name on this business's team, for the top bar ("Tendai · Staff"). Absent from an
      *  API older than L4 (optional, so the change stays additive). */
     myName: z.string().optional(),
+    /** D-48: closed by hand until this time (ISO); absent or null = open by hours. */
+    closedUntil: z.string().nullable().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
@@ -1284,6 +1291,16 @@ export const MerchantOrderResponse = z
     refundReference: z.string().nullable().optional(),
     refundAmount: z.number().nullable().optional(),
     refundedAt: z.string().nullable().optional(),
+    // D-48 (merchant mobile redesign): what the Orders screens draw beyond the kitchen phases — when it
+    // was placed and delivered, when the rider's cash back is due, whether the merchant closed its side
+    // without cash, and (single-order reads only) the step times for the tracking stepper. All
+    // optional and omitted when empty, so an installed client is unaffected.
+    createdAt: z.string().optional(),
+    deliveredAt: z.string().nullable().optional(),
+    cashDueAt: z.string().nullable().optional(),
+    merchantClosedAt: z.string().nullable().optional(),
+    merchantCloseReason: z.enum(["no_cash", "force"]).nullable().optional(),
+    timeline: z.array(z.object({ status: z.string(), at: z.string() })).optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
@@ -1372,6 +1389,12 @@ export const RefundMerchantOrderRequest = z
   .strict();
 export type RefundMerchantOrderRequest = z.infer<typeof RefundMerchantOrderRequest>;
 
+/** `POST /merchant/orders/:id/close` — the merchant closes its side of a food order after pickup
+ *  without counting cash (D-48): "no_cash" is B7's "No cash on this one · mark completed", "force" is
+ *  B6's "Mark ride completed". The delivery itself, the rider and the customer are untouched. */
+export const CloseMerchantOrderRequest = z.object({ reason: z.enum(["no_cash", "force"]) }).strict();
+export type CloseMerchantOrderRequest = z.infer<typeof CloseMerchantOrderRequest>;
+
 // ── E3: merchant money surfaces — weekly statement + end-of-day summary (N-13) ──────────────────────
 
 /** One delivered order's row on the weekly statement. */
@@ -1419,6 +1442,15 @@ export const MerchantEndOfDaySummaryResponse = z
     cashTaken: z.number(),
     walletTaken: z.number(),
     averagePrepMinutes: z.number().nullable(),
+    // D-48: the Orders header's tiles and Money's overdue row. `orders` counts today's orders that went
+    // through (placed, not cancelled); `sales` is their food total; `cashOverdue` is cash a rider owes
+    // back past its due time and not yet confirmed or closed, with one row per order in `overdue`.
+    orders: z.number().int().optional(),
+    sales: z.number().optional(),
+    cashOverdue: z.number().optional(),
+    overdue: z
+      .array(z.object({ orderId: z.string().uuid(), amount: z.number(), riderName: z.string().nullable(), dueAt: z.string() }))
+      .optional(),
   })
   .strict();
 export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySummaryResponse>;

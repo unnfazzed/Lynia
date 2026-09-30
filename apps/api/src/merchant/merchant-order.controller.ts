@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
+  CloseMerchantOrderRequest,
   ConfirmMerchantPickupRequest,
   ConfirmMerchantReturnedCashRequest,
   type FoodOfferResponse,
@@ -232,6 +233,17 @@ export class MerchantOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.debt.reportNonReturn(profileId, orderId, body.note);
+  }
+
+  /** D-48: the merchant closes its side after pickup without counting cash (B6/B7). */
+  @Post(":orderId/close")
+  @UseGuards(MerchantGuard)
+  closeOrder(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(CloseMerchantOrderRequest)) body: CloseMerchantOrderRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.foodOrders.closeOrder(profileId, orderId, body.reason);
   }
 
   @Post(":orderId/refund")

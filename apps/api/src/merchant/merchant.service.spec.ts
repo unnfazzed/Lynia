@@ -246,6 +246,39 @@ describe("MerchantService profile self-service", () => {
   });
 });
 
+describe("MerchantService.setOpen — the Orders header's open/closed switch (D-48)", () => {
+  function harness() {
+    let data: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: {
+        findUnique: async () => ({ id: "m1" }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { id: "m1", name: "Shop", ownerProfile: null, cuisineTags: [], hours: null, busyMode: false, pilotEnabled: true, ...args.data };
+        },
+      },
+    });
+    return { s, data: () => data };
+  }
+
+  it("closing holds until the next day starts, and the profile says until when", async () => {
+    const h = harness();
+    const res = await h.s.setOpen("p1", { open: false });
+    const until = h.data()!.closedUntil as Date;
+    const tomorrow = new Date();
+    tomorrow.setHours(24, 0, 0, 0);
+    expect(until.getTime()).toBe(tomorrow.getTime());
+    expect(res.closedUntil).toBe(until.toISOString());
+  });
+
+  it("opening clears it", async () => {
+    const h = harness();
+    const res = await h.s.setOpen("p1", { open: true });
+    expect(h.data()).toEqual({ closedUntil: null });
+    expect(res.closedUntil).toBeNull();
+  });
+});
+
 describe("MerchantService attach-time photo verification (C1 / E8)", () => {
   const profileRow = {
     id: "m1",
@@ -672,6 +705,19 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[0]!.hours).toEqual({ mon: { open: "09:00", close: "21:00" } });
   });
 
+  it("D-48: a restaurant closed by hand is served with today's window dropped, so every client reads it as closed", async () => {
+    const today = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][new Date().getDay()]!;
+    const week = { mon: { open: "09:00", close: "21:00" }, tue: { open: "09:00", close: "21:00" }, wed: { open: "09:00", close: "21:00" }, thu: { open: "09:00", close: "21:00" }, fri: { open: "09:00", close: "21:00" }, sat: { open: "09:00", close: "21:00" }, sun: { open: "09:00", close: "21:00" } };
+    const row = { id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: week };
+    const closed = svc({ merchant: { findMany: async () => [{ ...row, closedUntil: new Date(Date.now() + 3_600_000) }] } });
+    const hours = (await closed.listRestaurants()).restaurants[0]!.hours as Record<string, unknown>;
+    expect(hours[today]).toBeUndefined();
+    expect(Object.keys(hours)).toHaveLength(6);
+
+    const lapsed = svc({ merchant: { findMany: async () => [{ ...row, closedUntil: new Date(Date.now() - 1000) }] } });
+    expect((await lapsed.listRestaurants()).restaurants[0]!.hours).toEqual(week);
+  });
+
   it("listRestaurants defaults hours to null when the merchant hasn't set any", async () => {
     const s = svc({
       merchant: {
@@ -915,21 +961,32 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
   });
 });
 
-describe("MerchantService.getTodaySummary (E3, M4·6)", () => {
-  it("aggregates today's delivered/rejected counts, wallet + confirmed-cash-return totals, and average prep time", async () => {
-    const s = svc({
+describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () => {
+  /** order.aggregate serves three sums (wallet, confirmed cash, D-48 placed); order.findMany two reads
+   *  (prep times, D-48 overdue cash) — told apart by what each asks for. */
+  function summaryPrisma(opts: { overdue?: unknown[]; placed?: { count: number; sum: number | null } } = {}) {
+    return {
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
         count: async ({ where }: { where: { status: string } }) => (where.status === "delivered" ? 5 : 1),
-        aggregate: async ({ where }: { where: Record<string, unknown> }) =>
-          where.merchantPaymentMethod === "wallet" ? { _sum: { merchantGoodsTotal: 20 } } : { _sum: { debtAmount: 13 } },
-        findMany: async () => [
-          { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
-          { readyAt: new Date("2026-07-30T11:10:00.000Z"), prepStartedAt: new Date("2026-07-30T11:00:00.000Z") },
-        ],
+        aggregate: async ({ where }: { where: Record<string, unknown> }) => {
+          if (where.merchantPaymentMethod === "wallet") return { _sum: { merchantGoodsTotal: 20 } };
+          if (where.prepStartedAt) return { _count: { _all: opts.placed?.count ?? 0 }, _sum: { merchantGoodsTotal: opts.placed?.sum ?? null } };
+          return { _sum: { debtAmount: 13 } };
+        },
+        findMany: async ({ where }: { where: Record<string, unknown> }) =>
+          where.debtStatus === "open"
+            ? (opts.overdue ?? [])
+            : [
+                { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
+                { readyAt: new Date("2026-07-30T11:10:00.000Z"), prepStartedAt: new Date("2026-07-30T11:00:00.000Z") },
+              ],
       },
-    });
-    const res = await s.getTodaySummary("p1");
+    };
+  }
+
+  it("aggregates today's delivered/rejected counts, wallet + confirmed-cash-return totals, and average prep time", async () => {
+    const res = await svc(summaryPrisma()).getTodaySummary("p1");
     expect(res.delivered).toBe(5);
     expect(res.rejected).toBe(1);
     expect(res.walletTaken).toBe(20);
@@ -937,12 +994,40 @@ describe("MerchantService.getTodaySummary (E3, M4·6)", () => {
     expect(res.averagePrepMinutes).toBe(15);
   });
 
+  it("D-48: counts today's orders and their sales, and lists cash overdue past its due time with who owes it", async () => {
+    const deliveredAt = new Date("2026-09-30T11:10:00.000Z");
+    let overdueWhere: Record<string, unknown> | undefined;
+    const prisma = summaryPrisma({
+      placed: { count: 7, sum: 59.5 },
+      overdue: [
+        { id: "11111111-1111-4111-8111-111111111111", debtAmount: 9.5, deliveredAt, rider: { profile: { firstName: "Tino" } } },
+        { id: "22222222-2222-4222-8222-222222222222", debtAmount: 4, deliveredAt, rider: null },
+      ],
+    });
+    const findMany = prisma.order.findMany;
+    prisma.order.findMany = async (args: { where: Record<string, unknown> }) => {
+      if (args.where.debtStatus === "open") overdueWhere = args.where;
+      return findMany(args);
+    };
+    const res = await svc(prisma).getTodaySummary("p1");
+    expect(res.orders).toBe(7);
+    expect(res.sales).toBe(59.5);
+    expect(res.cashOverdue).toBe(13.5);
+    expect(res.overdue).toEqual([
+      { orderId: "11111111-1111-4111-8111-111111111111", amount: 9.5, riderName: "Tino", dueAt: "2026-09-30T11:40:00.000Z" },
+      { orderId: "22222222-2222-4222-8222-222222222222", amount: 4, riderName: null, dueAt: "2026-09-30T11:40:00.000Z" },
+    ]);
+    // Open, not closed by the merchant, and delivered more than the 30-minute return window ago.
+    expect(overdueWhere).toMatchObject({ debtStatus: "open", merchantClosedAt: null });
+    expect((overdueWhere!.deliveredAt as { lt: Date }).lt.getTime()).toBeLessThanOrEqual(Date.now() - 30 * 60_000 + 1000);
+  });
+
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
         count: async () => 0,
-        aggregate: async () => ({ _sum: { merchantGoodsTotal: null, debtAmount: null } }),
+        aggregate: async () => ({ _count: { _all: 0 }, _sum: { merchantGoodsTotal: null, debtAmount: null } }),
         findMany: async () => [],
       },
     });
@@ -950,6 +1035,10 @@ describe("MerchantService.getTodaySummary (E3, M4·6)", () => {
     expect(res.averagePrepMinutes).toBeNull();
     expect(res.cashTaken).toBe(0);
     expect(res.walletTaken).toBe(0);
+    expect(res.orders).toBe(0);
+    expect(res.sales).toBe(0);
+    expect(res.cashOverdue).toBe(0);
+    expect(res.overdue).toEqual([]);
   });
 });
 
