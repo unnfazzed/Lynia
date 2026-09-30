@@ -2230,7 +2230,7 @@ components to the design system.
 | Where | Handoff | App now | Retires with |
 |---|---|---|---|
 | Shop front | not redrawn ("Banner, logo and tags") | the older profile editor under the new app bar | a design export that draws it |
-| Shop Orders home, Book a rider, Offers, Tracking, Items | redrawn (D1–D5, D7, E1) | the older screens inside the new shell | PR 4 |
+| D5 / D7 cash back | "Cash back to you" step, D7 cash card | not yet | PR 4b: optional cash on delivery per booking (owner decision, below) |
 | A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
 | Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
 
@@ -2282,12 +2282,39 @@ Evidence: `docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30.png` (mock left, app r
 | E2 staff row | "•••• 2210 · active today" | "•••• 2210" | the API has no last-active signal for a team member |
 | E2 invite row | tap shows "Invite pending" | tap opens a sheet: send the link on WhatsApp, or cancel the invite | cancelling an invite needs a home, and nothing else draws one |
 | E2 "+ Add someone" | toast "Add by phone number" | a sheet: their name, their phone number, Invite, then the WhatsApp link | not drawn; the L4 invite flow in the new sheet |
-| **E3 Owner / Staff switch** | segmented role change | **not built** | the API keeps one owner per business, so making someone an Owner is an ownership change, not a toggle. **Open owner decision** (two owners, or a transfer) |
+| **E3 Owner / Staff switch** | segmented role change | **not built** | the API keeps one owner per business, so making someone an Owner is an ownership change, not a toggle. **Owner decision (2026-09-30): leave it out for now** — one owner per business |
 | E3 | "Remove Tendai" | the same, with the drawn consequence copy | — (a record) |
 | E4 Online / Offline | pills | the same, from a new optional `online` on the riders list (an approved rider whose app still heartbeats within 3 minutes) | the API had three statuses only; still never a reason |
 | E4 remove | not drawn | the owner taps a rider → "Remove Blessing?" confirm | the list needs a way to drop a rider, and the drawn row has no control |
 | E4 "+ Add a rider" | "opens a sheet; not drawn" | a sheet: their name, the number they sign in with | — |
 | Shop front "How riders pay you" | "Removed, since rider cash-back is now the single rule" (route map) | removed, and the Shop front's riders and team cards with it (they live on Account) | as the route map says |
+
+### 8 · The shop D1–D5, D7 (PR 4a)
+
+Evidence: `docs/parity/MERCHANT-MOBILE-SHOP-2026-09-30.png` (mock left, app right, 360×720).
+
+**Owner decision (2026-09-30, asked before PR 4):** the rider collecting the goods' price for the shop is
+**optional per booking** (a "buyer pays cash on delivery" choice on the booking). Until PR 4b builds it
+(API, rider app, D3 toggle, D5 7th step, D7 cash card, Money), bookings stay delivery-only and the
+booking terms still say "No cash-on-delivery".
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| D1 | New · Packing · Ready and a new-order card (D6) | not shown | shops take no customer orders yet (owner decision §3) |
+| D1 trackers | finding and coming only | also the last day's ended bookings (grey), so a delivery can be opened for its result | the old Deliveries list's "Earlier" had no other home |
+| D1 / D5 ETA pill | "6 min" / "12 min" | none | the booking has no rider ETA |
+| D2 search | Places rows | Places rows; a Google Maps / WhatsApp location pasted into the same field is read too ("The location the buyer sent") | the buyer usually sends a location; the drawn field carries it (live-vs-static rule) |
+| D3 "Type one" / "From your items" | toasts in the prototype | sheets: the shop's items with prices; or name, how many, price of one | not drawn; the price is needed for "Worth" |
+| D3 terms | a "Booking terms" link | the link opens the terms; booking means accepting them (the old tick box is gone) | as drawn — the same pattern as A1's privacy line |
+| D4 | the third offer card has no Pick button | every pickable offer has one (ghost below the first) | a drawing shortcut; every offer is pickable |
+| D4 counter above the fare | "$0.40 less" | also "$0.80 more" (muted) | a counter can go either way |
+| D5 rider row | "AFG 2231 · ★ 4.9" | the plate only | the booking payload carries no rating |
+| D5 code | always shown | shown to whoever picked; anyone else gets "Get a new code" (the old one stops working) | the code is shown once and only its hash is kept |
+| D5 links | "Cancel booking" · "Mark ride completed" | Cancel before pickup; "Help" after (the API refuses a cancel once the rider has it); no "Mark ride completed" | a booking has nothing to close until cash on delivery (PR 4b) |
+| D5 stepper times | a time per step | "Booked" only; the current step says "live" | the booking payload has no per-step times |
+| D7 hero | "Delivered 12:41" | "Delivered" | no delivered time in the booking payload |
+| Not delivered · cancelled · nobody picked | not drawn | a hero in D7's pattern, call the rider, follow a re-sent booking, "Try again" with the fare stepper | the old screen's endings, restyled |
+| Sign out on the shop home | — | removed | Account has it (C4) |
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).

@@ -993,3 +993,182 @@
   position: relative;
   z-index: 1;
 }
+
+/* ── Shop (merchant mobile D1–D7) ───────────────────────────────────────────────────────────── */
+/* D1's white "Book a rider" in the mint header. */
+.m-hdbtn {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--target-primary);
+  border-radius: var(--radius-button);
+  background: var(--bg);
+  color: var(--accent-text);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+/* D1's mint pill trackers ("the customer home pattern"). */
+.m-trk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 14px 8px 8px;
+  border-radius: 30px;
+  background: var(--accent-wash);
+  color: inherit;
+  text-decoration: none;
+}
+.m-trk.m-done {
+  background: var(--surface);
+}
+.m-trk > i {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.m-trk.m-done > i {
+  background: var(--line);
+}
+.m-trk .m-t {
+  flex: 1;
+  min-width: 0;
+}
+.m-trk .m-t b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-trk .m-t span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.m-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.m-bar i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #cdeeda;
+}
+.m-bar i.m-on {
+  background: var(--accent);
+}
+/* D2: the search field (mint ring, as drawn) and its result rows (picked = mint, with a check). */
+.m-in.m-srch-g {
+  min-height: 52px;
+  border-radius: 14px;
+}
+.m-res {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.m-res[aria-current="true"] {
+  background: var(--accent-wash);
+}
+.m-res .m-t {
+  flex: 1;
+  min-width: 0;
+}
+.m-res .m-t b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-res .m-t span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+/* D3's fare stepper. */
+.m-fare {
+  flex-direction: row;
+  align-items: center;
+  padding: 8px;
+}
+.m-fare > div {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+}
+.m-fare > div b {
+  font-size: 26px;
+  font-weight: 700;
+}
+.m-fare > div span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.m-fare > button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.m-fare > button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* D4 offer cards: the business's own rider with a 2px accent border. */
+.m-offer.m-pref {
+  border: 2px solid var(--accent);
+  padding: 13px;
+}
+/* D5's sheet over the map, and the grey buyer's-code card (24px accent-text digits, spaced). */
+.m-over {
+  flex: 1;
+  margin-top: -20px;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  position: relative;
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.m-codecard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.m-codecard b {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--accent-text);
+}

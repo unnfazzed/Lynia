@@ -3,28 +3,25 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MerchantEndOfDaySummaryResponse, MerchantOrderResponse, PREP_CHIPS_MIN } from "@lynia/shared";
+import type { MerchantOrderResponse, PREP_CHIPS_MIN } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Segmented } from "../../components/m/Segmented";
-import { Switch } from "../../components/m/Switch";
+import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
 import { NewOrderTakeover } from "../../components/queue/NewOrderTakeover";
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
-import { setBusyMode, setOpen } from "../../lib/menu-api";
-import { acceptOrder, getTodaySummary, rejectOrder } from "../../lib/orders-api";
-import { homeSections, itemsLine, money, openStatus, orderLabel, riderFirstName, rowSub } from "../../lib/orders-view";
+import { acceptOrder, rejectOrder } from "../../lib/orders-api";
+import { homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 
 type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantProfile } | { status: "error"; message: string };
 type Segment = "new" | "cooking" | "ready";
-
-const SUMMARY_POLL_MS = 30_000;
 
 /**
  * B1 · Orders home and B5 · Closed (packages/design/handoff/merchant-mobile, ledger D-48). The mint
@@ -38,11 +35,8 @@ export default function QueuePage() {
   const { alarm, actionsDisabled, reachability, signOut } = useKitchenConnection();
   const router = useRouter();
   const toast = useToast();
-  const now = useNow(30_000);
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [summary, setSummary] = useState<MerchantEndOfDaySummaryResponse | null>(null);
   const [segment, setSegment] = useState<Segment>("new");
-  const [switching, setSwitching] = useState(false);
 
   const loadMerchant = useCallback(() => {
     let cancelled = false;
@@ -78,23 +72,8 @@ export default function QueuePage() {
   }, [reachability.reachable]);
 
   const ready = state.status === "ready";
-  const owner = ready && state.merchant.myRole === "owner";
+  const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
   const { orders, error: queueError, refetch } = useQueuePoll(ready);
-
-  // The header tiles: owners only (Money is the owner's), refreshed every half minute and whenever
-  // the queue changes shape.
-  const loadSummary = useCallback(() => {
-    if (!owner) return;
-    getTodaySummary()
-      .then(setSummary)
-      .catch(() => {});
-  }, [owner]);
-  useEffect(() => {
-    loadSummary();
-    if (!owner) return undefined;
-    const t = setInterval(loadSummary, SUMMARY_POLL_MS);
-    return () => clearInterval(t);
-  }, [owner, loadSummary, orders.length]);
 
   // D-05: rings the whole time any order is unanswered, and stops the instant none are.
   const ringing = orders.filter((o) => o.merchantPhase === "awaiting_accept");
@@ -113,28 +92,6 @@ export default function QueuePage() {
   const backfillCount = useBackfillCount(orders, reachability.reachable);
 
   const sections = useMemo(() => homeSections(orders), [orders]);
-  const status = openStatus(ready ? state.merchant : null, new Date(now));
-
-  async function toggleOpen(next: boolean, busy = false) {
-    if (state.status !== "ready" || switching) return;
-    if (next && !status.closedByHand && !status.open) {
-      toast("Outside your opening hours · change them in Account");
-      return;
-    }
-    setSwitching(true);
-    try {
-      let merchant = await setOpen(next);
-      if (busy) merchant = await setBusyMode({ active: true });
-      primeBusiness(merchant);
-      setState({ status: "ready", merchant });
-      toast(next ? (busy ? "Open · busy mode +10 min" : "You’re open") : "Closed · new orders won’t come in");
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Couldn't change that. Try again.");
-    } finally {
-      setSwitching(false);
-    }
-  }
-
   const handleAccept = useCallback(
     async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => {
       await acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined });
@@ -160,37 +117,13 @@ export default function QueuePage() {
     );
   }
 
-  const closed = status.closedByHand;
+  const closed = open.status.closedByHand;
   const segmentOrders = sections[segment];
   const nothing = orders.length === 0;
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
-      <div className={`m-hd${closed ? " m-hd-off" : ""}`}>
-        <div className="m-hdt">
-          <div className="m-biz">
-            <b>{state.merchant.name}</b>
-            <span style={status.open ? undefined : { color: "var(--muted)" }}>● {status.label}</span>
-          </div>
-          <Switch checked={status.open} label={status.open ? "Open for orders" : "Closed"} disabled={switching || actionsDisabled} onChange={(next) => void toggleOpen(next)} />
-        </div>
-        {owner && !closed && (
-          <div className="m-stats">
-            <div className="m-stat">
-              <span>Orders</span>
-              <b>{summary?.orders ?? "–"}</b>
-            </div>
-            <div className="m-stat">
-              <span>Sales</span>
-              <b>{summary?.sales !== undefined ? money(summary.sales) : "–"}</b>
-            </div>
-            <Link href="/statement" className="m-stat m-overdue">
-              <span>Cash overdue</span>
-              <b>{money(summary?.cashOverdue)}</b>
-            </Link>
-          </div>
-        )}
-      </div>
+      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length} />
 
       {closed ? (
         <div className="m-bd" style={{ alignItems: "center", textAlign: "center", gap: 10, paddingTop: 48 }}>
@@ -198,10 +131,10 @@ export default function QueuePage() {
             <Icon name="power" size={30} color="var(--muted)" />
           </div>
           <b style={{ fontSize: 18 }}>You’re closed</b>
-          <button type="button" className="m-btn" style={{ width: "auto", padding: "0 28px", marginTop: 6 }} disabled={switching || actionsDisabled} onClick={() => void toggleOpen(true)}>
+          <button type="button" className="m-btn" style={{ width: "auto", padding: "0 28px", marginTop: 6 }} disabled={open.switching || actionsDisabled} onClick={() => void open.toggleOpen(true)}>
             Open now
           </button>
-          <button type="button" className="m-lnk" style={{ fontSize: 13 }} disabled={switching || actionsDisabled} onClick={() => void toggleOpen(true, true)}>
+          <button type="button" className="m-lnk" style={{ fontSize: 13 }} disabled={open.switching || actionsDisabled} onClick={() => void open.toggleOpen(true, true)}>
             Open in busy mode (+10 min)
           </button>
           {/* Orders already in progress still need finishing while closed. */}

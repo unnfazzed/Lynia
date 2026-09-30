@@ -3,70 +3,77 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import type { MerchantBookingOffer, MerchantBookingResponse } from "@lynia/shared";
-import { money, timeOf } from "../../../components/bookings/BookingParts";
+import type { MerchantBookingOffer, MerchantBookingResponse, MerchantProfileResponse } from "@lynia/shared";
+import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
-import { Icon } from "../../../components/icons";
+import { AppBar } from "../../../components/m/AppBar";
+import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
+import { StaticMap } from "../../../components/m/StaticMap";
+import { Stepper } from "../../../components/m/Stepper";
+import { useToast } from "../../../components/m/Toast";
 import { RetryableError } from "../../../components/RetryableError";
-import { cardStyle, dangerGhostButtonStyle, disabledStyle, ghostButtonStyle, primaryButtonStyle } from "../../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
-import {
-  codeMessage,
-  isFinding,
-  newIdempotencyKey,
-  orderOffers,
-  pollIntervalMs,
-  recallCode,
-  rememberCode,
-  STATE_LABEL,
-  undeliveredText,
-  whatsappLink,
-} from "../../../lib/booking";
+import { startFare, stepFare } from "../../../lib/book-form";
+import { codeMessage, isFinding, newIdempotencyKey, pollIntervalMs, recallCode, rememberCode, undeliveredText, whatsappLink } from "../../../lib/booking";
+import { bookingSteps, fareDelta, type OfferSort, shortName, sortOffers } from "../../../lib/booking-view";
 import { cancelBooking, getBooking, pickOffer, retryBooking, rotateBookingCode } from "../../../lib/bookings-api";
 import { useBusiness } from "../../../lib/business";
 import { supportWhatsAppUrl } from "../../../lib/config";
 import { formatCountdown, msUntil } from "../../../lib/countdown";
-import { formatMoney, parseAmountInput } from "../../../lib/money-input";
+import { money } from "../../../lib/orders-view";
 import { useNow } from "../../../lib/use-now";
 
 type LoadState = { status: "loading" } | { status: "ready"; booking: MerchantBookingResponse } | { status: "error"; message: string };
 
+interface Ctx {
+  booking: MerchantBookingResponse;
+  business: MerchantProfileResponse | null;
+  busy: string | null;
+  disabled: boolean;
+  error: string | null;
+  code: string | null;
+  onPick: (o: MerchantBookingOffer) => void;
+  onNewCode: () => void;
+  onCancel: () => void;
+  onRetry: (fare: number) => void;
+}
+
 /**
- * One booking (merchant web upgrade L2): the pick screen while riders offer, then the delivery code and
- * the rider, then how it ended. Polls (3 s while finding a rider, 15 s after), and a return to the page
- * refetches. The code comes back once, at the pick, and this browser keeps it; any teammate can "Send a
- * new code", which replaces it. Undrawn, ledgered as D-44.
+ * One booking (packages/design/handoff/merchant-mobile, ledger D-48): D4 · Pick a rider while riders
+ * offer (a gold countdown, sort chips, the business's own rider on top); D5 · Tracking once one has it
+ * (a map, the rider, the **buyer's code** to send them, the stepper); D7 · Delivered at the end; and the
+ * other endings (not delivered, cancelled, nobody picked) with a way to go again. Polls (3 s while
+ * finding a rider, 15 s after). The code comes back once, at the pick, and this browser keeps it; any
+ * teammate can get a new code, which replaces it.
  */
 export default function BookingPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const toast = useToast();
   const { signOut, actionsDisabled } = useKitchenConnection();
   const business = useBusiness();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [retryFare, setRetryFare] = useState("");
-  const [copied, setCopied] = useState(false);
   const actingRef = useRef(false);
   const retryKey = useRef(newIdempotencyKey());
-  // Try again starts from the booking's own fare, once: a booker clearing the box to type isn't refilled.
-  const retryFareSeeded = useRef(false);
+  const signOutRef = useRef(signOut);
+  signOutRef.current = signOut;
 
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setState({ status: "loading" });
       try {
-        const booking = await getBooking(id);
-        setState({ status: "ready", booking });
+        setState({ status: "ready", booking: await getBooking(id) });
       } catch (err) {
-        if (redirectIfSessionExpired(err, signOut)) return;
+        if (redirectIfSessionExpired(err, signOutRef.current)) return;
         if (!quiet) setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this booking." });
       }
     },
-    [id, signOut],
+    [id],
   );
 
   useEffect(() => {
@@ -82,26 +89,17 @@ export default function BookingPage() {
     return () => clearInterval(t);
   }, [interval, load]);
 
-  useEffect(() => {
-    if (!booking || retryFareSeeded.current) return;
-    retryFareSeeded.current = true;
-    setRetryFare(formatMoney(Number(booking.proposedFare)));
-  }, [booking]);
-
-  const finding = booking ? isFinding(booking.state) : false;
-  const now = useNow(1000, finding);
-
   /** One action at a time; a refused one refetches, since the booking moved under us. */
   async function act<T>(name: string, run: () => Promise<T>, done: (value: T) => void) {
     if (actingRef.current) return;
     actingRef.current = true;
     setBusy(name);
-    setActionError(null);
+    setError(null);
     try {
       done(await run());
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
-      setActionError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
+      setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
       void load(true);
     } finally {
       setBusy(null);
@@ -109,378 +107,384 @@ export default function BookingPage() {
     }
   }
 
-  function pick(offer: MerchantBookingOffer) {
-    void act("pick", () => pickOffer(id, offer.id), (res) => {
-      rememberCode(id, res.deliveryCode);
-      setCode(res.deliveryCode);
-      setState({ status: "ready", booking: res.booking });
-    });
-  }
-
-  function newCode() {
-    void act("code", () => rotateBookingCode(id), (res) => {
-      rememberCode(id, res.deliveryCode);
-      setCode(res.deliveryCode);
-      setCopied(false);
-    });
-  }
-
-  function cancel() {
-    void act("cancel", () => cancelBooking(id), (b) => {
-      setConfirmCancel(false);
-      setState({ status: "ready", booking: b });
-    });
-  }
-
-  function retry() {
-    const fare = parseAmountInput(retryFare);
-    if (fare === null) {
-      setActionError("Enter the fare in dollars, like 3.50.");
-      return;
-    }
-    void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(`/deliveries/${b.id}`));
-  }
-
-  async function copyCode() {
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   const shop = business?.businessType === "shop";
-  const disabled = actionsDisabled || busy !== null;
-  const help = supportWhatsAppUrl();
-  // Nobody picked in time, the business cancelled, or a rider cancelled and Send couldn't re-send it. A
-  // cancel by the LyniaGo team (a safety concern) is not offered again.
-  const canRetry =
-    !!booking &&
-    (booking.state === "expired" ||
-      (booking.state === "cancelled" && (booking.cancelledBy === "business" || (booking.cancelledBy === "rider" && !booking.rebroadcastedToId))));
+  const ctx: Ctx | null = booking && {
+    booking,
+    business,
+    busy,
+    disabled: actionsDisabled || busy !== null,
+    error,
+    code,
+    onPick: (o) =>
+      void act("pick", () => pickOffer(id, o.id), (res) => {
+        rememberCode(id, res.deliveryCode);
+        setCode(res.deliveryCode);
+        setState({ status: "ready", booking: res.booking });
+        toast(`${shortName(o.rider.name) ?? "Your rider"} is on the way`);
+      }),
+    onNewCode: () =>
+      void act("code", () => rotateBookingCode(id), (res) => {
+        rememberCode(id, res.deliveryCode);
+        setCode(res.deliveryCode);
+        toast("New code · the old one stops working");
+      }),
+    onCancel: () => setConfirmCancel(true),
+    onRetry: (fare) => void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(`/deliveries/${b.id}`)),
+  };
 
   return (
-    <Kitchen active={shop ? "deliveries" : "queue"}>
-      <div className="kitchen-page" style={{ overflow: "auto", height: "100%" }}>
-        <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 14 }}>
-          <Link href="/deliveries" style={backLink}>
-            <Icon name="chevron-left" size={16} /> Deliveries
-          </Link>
-
-          {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading the booking…</div>}
-          {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
-
-          {booking && (
-            <>
-              <div>
-                {/* The state is the title; the list's pill would only repeat it here. */}
-                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{STATE_LABEL[booking.state]}</div>
-                <div style={{ fontSize: 13.5, color: "var(--ink)", marginTop: 6 }}>
-                  <b>{booking.itemsSummary}</b> to {booking.dropoff.landmark}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                  Worth {money(booking.declaredValue)} · {booking.bookedBy ? `Booked by ${booking.bookedBy} at ` : "Booked at "}
-                  {timeOf(booking.createdAt)}
-                </div>
-              </div>
-
-              {actionError && (
-                <div role="alert" style={bannerStyle}>
-                  {actionError}
-                </div>
-              )}
-
-              {finding && (
-                <FindingPanel
-                  booking={booking}
-                  left={msUntil(booking.expiresAt, now)}
-                  disabled={disabled}
-                  picking={busy === "pick"}
-                  onPick={pick}
-                />
-              )}
-
-              {(booking.state === "coming" || booking.state === "picked_up") && (
-                <>
-                  <CodeCard
-                    code={code}
-                    buyerPhone={booking.dropoff.contactPhone}
-                    message={code ? codeMessage({ businessName: business?.name ?? "your shop", riderName: booking.rider?.name ?? null, bikeReg: booking.rider?.bikeReg ?? null, code }) : ""}
-                    copied={copied}
-                    onCopy={() => void copyCode()}
-                    onNewCode={newCode}
-                    rotating={busy === "code"}
-                    disabled={disabled}
-                  />
-                  {booking.rider && <RiderCard rider={booking.rider} fare={booking.agreedFare ?? booking.proposedFare} />}
-                </>
-              )}
-
-              {booking.state === "picked_up" && (
-                <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                  The rider has it now, so this booking can't be cancelled here. Call the rider
-                  {help ? (
-                    <>
-                      , or{" "}
-                      <a href={help} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
-                        message LyniaGo
-                      </a>
-                    </>
-                  ) : null}
-                  .
-                </div>
-              )}
-
-              {booking.state === "delivered" && (
-                <div style={{ ...cardStyle, display: "flex", gap: 12, alignItems: "center" }}>
-                  <Icon name="circle-check" size={22} color="var(--accent-text)" />
-                  <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-                    The buyer gave the rider the code. {booking.rider ? `${booking.rider.name} was paid ${money(booking.agreedFare)} at pickup.` : ""}
-                  </div>
-                </div>
-              )}
-
-              {booking.state === "not_delivered" && (
-                <div style={{ ...cardStyle, fontSize: 14, lineHeight: 1.5 }}>
-                  <b>{undeliveredText(booking.undeliveredReason)}</b> Call the rider to arrange getting the goods back.
-                  {booking.rider?.phone && (
-                    <div style={{ marginTop: 10 }}>
-                      <a href={`tel:${booking.rider.phone}`} style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <Icon name="phone" size={16} /> Call rider
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {booking.state === "cancelled" && (
-                <div style={{ ...cardStyle, fontSize: 14, lineHeight: 1.5 }}>
-                  {booking.cancelledBy === "rider" ? (
-                    <>
-                      <b>Your rider cancelled.</b>{" "}
-                      {booking.rebroadcastedToId ? (
-                        <>
-                          LyniaGo sent it out again.{" "}
-                          <Link href={`/deliveries/${booking.rebroadcastedToId}`} style={{ color: "var(--accent-text)", fontWeight: 700 }}>
-                            Follow the new booking
-                          </Link>
-                        </>
-                      ) : null}
-                    </>
-                  ) : booking.cancelledBy === "business" ? (
-                    <b>This booking was cancelled.</b>
-                  ) : (
-                    <>
-                      <b>Cancelled by the LyniaGo team.</b> {booking.cancelReason ?? ""}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {canRetry && (
-                <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-                    {booking.state === "expired"
-                      ? "Nobody was picked in time. Send it again, and raise the fare if riders didn't bite."
-                      : "Send the same delivery again."}
-                  </div>
-                  <label htmlFor="retry-fare" style={{ fontSize: 13, fontWeight: 700 }}>
-                    Fare you offer (US$)
-                  </label>
-                  <input id="retry-fare" inputMode="decimal" value={retryFare} onChange={(e) => setRetryFare(e.target.value)} style={inputStyle} />
-                  <button type="button" onClick={retry} disabled={disabled} style={{ ...primaryButtonStyle, ...disabledStyle(disabled) }}>
-                    {busy === "retry" ? "Sending…" : "Try again"}
-                  </button>
-                </div>
-              )}
-
-              {(finding || booking.state === "coming") &&
-                (confirmCancel ? (
-                  <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-                      <b>Cancel this booking?</b> {booking.state === "coming" ? "There's no charge before pickup." : ""}
-                    </div>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <button type="button" onClick={cancel} disabled={disabled} style={{ ...dangerGhostButtonStyle, ...disabledStyle(disabled) }}>
-                        {busy === "cancel" ? "Cancelling…" : "Yes, cancel"}
-                      </button>
-                      <button type="button" onClick={() => setConfirmCancel(false)} style={ghostButtonStyle}>
-                        Keep it
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setConfirmCancel(true)} disabled={disabled} style={{ ...dangerGhostButtonStyle, alignSelf: "flex-start", ...disabledStyle(disabled) }}>
-                    Cancel booking
-                  </button>
-                ))}
-            </>
-          )}
-        </div>
+    <Kitchen active={shop ? "deliveries" : "queue"} tabs={false}>
+      <div className="m-page">
+        {!ctx && (
+          <>
+            <AppBar back="/deliveries" title="Delivery" />
+            <div className="m-bd">
+              {state.status === "loading" && <div className="m-hint">Loading the booking…</div>}
+              {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
+            </div>
+          </>
+        )}
+        {ctx && isFinding(ctx.booking.state) && <Offers {...ctx} />}
+        {ctx && (ctx.booking.state === "coming" || ctx.booking.state === "picked_up") && <Tracking {...ctx} />}
+        {ctx && ctx.booking.state === "delivered" && <Delivered {...ctx} />}
+        {ctx && (ctx.booking.state === "not_delivered" || ctx.booking.state === "cancelled" || ctx.booking.state === "expired") && <Ended {...ctx} />}
       </div>
+
+      {confirmCancel && booking && (
+        <ConfirmSheet
+          title="Cancel this booking?"
+          body="The rider is told. You can book again any time."
+          confirmLabel="Cancel booking"
+          busy={busy === "cancel"}
+          error={error}
+          onConfirm={() =>
+            void act("cancel", () => cancelBooking(id), (b) => {
+              setConfirmCancel(false);
+              setState({ status: "ready", booking: b });
+              toast("Booking cancelled");
+            })
+          }
+          onCancel={() => setConfirmCancel(false)}
+        />
+      )}
     </Kitchen>
   );
 }
 
-function FindingPanel({
-  booking,
-  left,
-  disabled,
-  picking,
-  onPick,
-}: {
-  booking: MerchantBookingResponse;
-  left: number;
-  disabled: boolean;
-  picking: boolean;
-  onPick: (offer: MerchantBookingOffer) => void;
-}) {
+// ── D4 · Pick a rider ─────────────────────────────────────────────────────────────────────────
+function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
+  const now = useNow(1000);
+  const [sort, setSort] = useState<OfferSort>("best");
+  const left = msUntil(booking.expiresAt, now);
+  const offers = sortOffers(booking.offers, sort);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ fontSize: 30, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: left < 20_000 ? "var(--danger-ink)" : "var(--ink)" }}>
-          {formatCountdown(left)}
-        </span>
-        <span style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+    <>
+      <AppBar
+        back="/deliveries"
+        title="Pick a rider"
+        right={
+          booking.expiresAt ? (
+            <span className={`m-pl m-num ${left < 20_000 ? "m-red" : "m-gold"}`} style={{ height: 32, fontSize: 15, padding: "0 12px" }}>
+              {formatCountdown(left)}
+            </span>
+          ) : undefined
+        }
+      />
+      <div className="m-bd">
+        <p className="m-sub">
           {booking.state === "finding_again" ? "Your rider cancelled, so LyniaGo sent it out again. " : ""}
-          Stay here to pick a rider. Offers appear as riders respond.
-        </span>
-      </div>
-
-      {booking.offers.length === 0 ? (
-        <div style={{ fontSize: 13.5, color: "var(--muted)" }}>Waiting for riders' offers…</div>
-      ) : (
-        orderOffers(booking.offers).map((o) => (
-          <div key={o.id} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {o.rider.name}
-                {/* L3: one of the business's own riders (D-45). */}
-                {o.preferred && (
-                  <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--accent-text)", background: "var(--accent-wash)", borderRadius: 999, padding: "2px 9px" }}>
-                    Your rider
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                {o.rider.ratingAvg != null ? `★ ${o.rider.ratingAvg.toFixed(1)} (${o.rider.ratingCount})` : "New rider"} · {o.rider.tripsCount} trips · {o.etaMinutes} min away
-              </div>
-              {o.ownMember && <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", marginTop: 4 }}>On your team, so they can't take your own delivery.</div>}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 17, fontWeight: 800 }}>{money(o.offeredFare)}</div>
-              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{o.type === "accept" ? "your fare" : "their fare"}</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onPick(o)}
-              disabled={disabled || o.ownMember}
-              style={{ ...primaryButtonStyle, ...disabledStyle(disabled || o.ownMember) }}
-              aria-label={`Pick ${o.rider.name} for ${money(o.offeredFare)}`}
-            >
-              {picking ? "Picking…" : "Pick"}
+          {booking.itemsSummary} → {booking.dropoff.landmark} · you offered <b style={{ color: "var(--ink)" }}>{money(Number(booking.proposedFare))}</b>
+        </p>
+        <div className="m-chips" role="tablist" aria-label="Sort offers">
+          {(
+            [
+              ["best", "Best match"],
+              ["cheapest", "Cheapest"],
+              ["closest", "Closest"],
+            ] as const
+          ).map(([value, label]) => (
+            <button key={value} type="button" role="tab" aria-selected={sort === value} className={`m-chip${sort === value ? " m-on" : ""}`} onClick={() => setSort(value)}>
+              {label}
             </button>
+          ))}
+        </div>
+        {error && (
+          <div className="m-alert" role="alert">
+            {error}
           </div>
-        ))
-      )}
-    </div>
+        )}
+        {offers.length === 0 && <div className="m-hint">Waiting for riders&apos; offers…</div>}
+        {offers.map((o, i) => {
+          const name = shortName(o.rider.name) ?? o.rider.name;
+          const first = o.preferred || (i === 0 && !o.ownMember && sort === "best" && !offers.some((x) => x.preferred));
+          const delta = fareDelta(o.offeredFare, booking.proposedFare);
+          return (
+            <div key={o.id} className={`m-card m-offer${o.preferred ? " m-pref" : ""}`}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className={`m-av${o.preferred ? " m-av-on" : ""}`}>{name.charAt(0).toUpperCase()}</span>
+                <div className="m-t" style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontSize: 15.5, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {name}
+                    {o.preferred && <span className="m-pl m-wal">Preferred rider</span>}
+                  </b>
+                  <span className="m-hint m-num" style={{ fontSize: 13 }}>
+                    {o.rider.ratingAvg != null ? `★ ${o.rider.ratingAvg.toFixed(1)} · ` : ""}
+                    {o.rider.tripsCount} trips · {o.etaMinutes} min away
+                  </span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <b className="m-num" style={{ fontSize: 20 }}>
+                    {money(Number(o.offeredFare))}
+                  </b>
+                  {delta && (
+                    <span className="m-num" style={{ display: "block", fontSize: 12, fontWeight: 700, color: delta.less ? "var(--accent-text)" : "var(--muted)" }}>
+                      {delta.text}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {o.ownMember ? (
+                <span className="m-hint" style={{ color: "var(--highlight-ink)" }}>
+                  On your team, so they can&apos;t take your own delivery.
+                </span>
+              ) : (
+                <button type="button" className={first ? "m-btn" : "m-gh"} disabled={disabled} onClick={() => onPick(o)}>
+                  {busy === "pick" ? "Picking…" : `Pick ${o.rider.name.split(/\s+/)[0]}`}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button type="button" className="m-lnk m-red" disabled={disabled} onClick={onCancel}>
+          Cancel booking
+        </button>
+      </div>
+    </>
   );
 }
 
-function CodeCard({
-  code,
-  buyerPhone,
-  message,
-  copied,
-  onCopy,
-  onNewCode,
-  rotating,
-  disabled,
-}: {
-  code: string | null;
-  buyerPhone: string;
-  message: string;
-  copied: boolean;
-  onCopy: () => void;
-  onNewCode: () => void;
-  rotating: boolean;
-  disabled: boolean;
-}) {
-  const wa = code ? whatsappLink(buyerPhone, message) : null;
+// ── D5 · Tracking ─────────────────────────────────────────────────────────────────────────────
+function Tracking({ booking, business, disabled, error, code, onNewCode, onCancel }: Ctx) {
+  const rider = booking.rider;
+  const message = code ? codeMessage({ businessName: business?.name ?? "your shop", riderName: rider?.name ?? null, bikeReg: rider?.bikeReg ?? null, code }) : "";
+  const wa = code ? whatsappLink(booking.dropoff.contactPhone, message) : null;
+  const help = supportWhatsAppUrl();
   return (
-    <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 700 }}>Delivery code</div>
-      {code ? (
-        <>
-          <div aria-label={`Delivery code ${code.split("").join(" ")}`} style={{ fontSize: 40, fontWeight: 800, letterSpacing: ".18em", fontVariantNumeric: "tabular-nums" }}>
-            {code}
+    <>
+      <StaticMap center={business?.location?.point ?? null} height={150}>
+        <Link href="/deliveries" className="m-gh" aria-label="Back" style={{ position: "absolute", top: "calc(12px + env(safe-area-inset-top))", left: 12, width: 44, padding: 0, borderRadius: "50%" }}>
+          <Icon name="chevron-left" size={20} />
+        </Link>
+      </StaticMap>
+      <div className="m-over">
+        <div>
+          <b style={{ fontSize: 18 }}>{booking.state === "picked_up" ? "On the way to buyer" : "Rider coming to your shop"}</b>
+          <div className="m-hint" style={{ fontSize: 13, marginTop: 2 }}>
+            {booking.itemsSummary}
           </div>
-          <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.45 }}>
-            The buyer gives this code to the rider at the door. That's how the delivery is confirmed.
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {wa && (
-              <a href={wa} target="_blank" rel="noreferrer" style={{ ...primaryButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                Send the code to the buyer on WhatsApp
+        </div>
+        {rider && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="m-av m-av-on">{rider.name.charAt(0).toUpperCase()}</span>
+            <div className="m-t" style={{ flex: 1 }}>
+              <b style={{ display: "block", fontSize: 15 }}>{shortName(rider.name)}</b>
+              <span className="m-hint">{rider.bikeReg ?? "LyniaGo rider"}</span>
+            </div>
+            {rider.phone && (
+              <a href={`tel:${rider.phone}`} className="m-gh" aria-label={`Call ${shortName(rider.name)}`} style={{ width: 44, padding: 0, borderRadius: "50%" }}>
+                <Icon name="phone" size={18} />
               </a>
             )}
-            <button type="button" onClick={onCopy} style={ghostButtonStyle}>
-              {copied ? "Copied" : "Copy code"}
-            </button>
           </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>
-          The code was shown to whoever picked the rider. Send a new one if the buyer doesn't have it: the old code stops working.
+        )}
+        <div className="m-codecard">
+          <div style={{ flex: 1 }}>
+            <span className="m-label" style={{ letterSpacing: ".06em", color: "var(--muted)" }}>
+              BUYER’S CODE
+            </span>
+            {code ? (
+              <b className="m-num" aria-label={`Buyer's code ${code.split("").join(" ")}`}>
+                {code.replace(/(\d{3})(?=\d)/g, "$1 ")}
+              </b>
+            ) : (
+              <span className="m-hint" style={{ display: "block" }}>
+                Shown to whoever picked the rider.
+              </span>
+            )}
+          </div>
+          {wa ? (
+            <a className="m-gh" href={wa} target="_blank" rel="noreferrer">
+              Send to buyer
+            </a>
+          ) : (
+            <button type="button" className="m-gh" disabled={disabled} onClick={onNewCode}>
+              Get a new code
+            </button>
+          )}
         </div>
-      )}
-      <button type="button" onClick={onNewCode} disabled={disabled} style={{ ...ghostButtonStyle, alignSelf: "flex-start", ...disabledStyle(disabled) }}>
-        {rotating ? "Sending…" : code ? "Send a new code" : "Get a new code"}
-      </button>
-    </div>
-  );
-}
-
-function RiderCard({ rider, fare }: { rider: NonNullable<MerchantBookingResponse["rider"]>; fare: string | null }) {
-  return (
-    <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 160 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{rider.name}</div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-          {rider.bikeReg ? `${rider.bikeReg} · ` : ""}Pay {money(fare)} in cash at pickup
+        {code && (
+          <button type="button" className="m-lnk m-muted" style={{ minHeight: 32, fontSize: 13, alignSelf: "flex-start" }} disabled={disabled} onClick={onNewCode}>
+            Get a new code
+          </button>
+        )}
+        <Stepper steps={bookingSteps(booking)} />
+        {error && (
+          <div className="m-alert" role="alert">
+            {error}
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto" }}>
+          {booking.state === "coming" ? (
+            <button type="button" className="m-lnk m-red" disabled={disabled} onClick={onCancel}>
+              Cancel booking
+            </button>
+          ) : (
+            help && (
+              <a className="m-lnk" href={help} target="_blank" rel="noreferrer">
+                Help
+              </a>
+            )
+          )}
         </div>
       </div>
-      {rider.phone && (
-        <a href={`tel:${rider.phone}`} style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="phone" size={16} /> Call rider
-        </a>
-      )}
-    </div>
+    </>
   );
 }
 
-const bannerStyle: React.CSSProperties = { color: "var(--danger-ink)", background: "var(--danger-wash)", borderRadius: 10, padding: "10px 12px", fontSize: 13 };
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  padding: "0 14px",
-  borderRadius: "var(--radius-input)",
-  border: "1.5px solid var(--line)",
-  fontFamily: "inherit",
-  background: "var(--bg)",
-  color: "var(--ink)",
-};
-const backLink: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 4,
-  minHeight: "var(--target-min)",
-  color: "var(--accent-text)",
-  fontSize: 14,
-  fontWeight: 600,
-  textDecoration: "none",
-  alignSelf: "flex-start",
-};
+// ── D7 · Delivered ────────────────────────────────────────────────────────────────────────────
+function Delivered({ booking }: Ctx) {
+  const [showSteps, setShowSteps] = useState(false);
+  const steps = bookingSteps(booking);
+  const rider = shortName(booking.rider?.name);
+  return (
+    <>
+      <AppBar back="/deliveries" title="Delivery" />
+      <div className="m-bd">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--accent-wash)", borderRadius: 16, padding: 14 }}>
+          <Icon name="circle-check" size={32} color="var(--accent-text)" />
+          <div>
+            <b style={{ fontSize: 16, display: "block" }}>Delivered</b>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>Buyer gave the rider the code</span>
+          </div>
+        </div>
+        <button type="button" className="m-card" style={{ flexDirection: "row", alignItems: "center", cursor: "pointer", font: "inherit", color: "inherit", textAlign: "left" }} onClick={() => setShowSteps((v) => !v)}>
+          <Icon name="circle-check" size={20} color="var(--accent-text)" />
+          <div style={{ flex: 1 }}>
+            <b style={{ display: "block", fontSize: 15 }}>
+              {steps.length} of {steps.length} steps done
+            </b>
+            <span className="m-hint">Booked {steps[0]!.time}</span>
+          </div>
+          <Icon name={showSteps ? "chevron-up" : "chevron-right"} size={18} color="var(--muted)" />
+        </button>
+        {showSteps && <Stepper steps={steps} />}
+        <div className="m-card" style={{ padding: "0 14px", gap: 0 }}>
+          {booking.itemsSummary.split(" · ").map((line) => {
+            const m = /^(\d+)× (.+)$/.exec(line);
+            return (
+              <div key={line} className="m-li">
+                <b className="m-num" style={{ width: 28 }}>
+                  {m ? `${m[1]}×` : "1×"}
+                </b>
+                <div className="m-t">
+                  <b>{m ? m[2] : line}</b>
+                </div>
+              </div>
+            );
+          })}
+          <div className="m-li">
+            <div className="m-t">
+              <b>Fare{rider ? ` to ${rider}` : ""}</b>
+            </div>
+            <b className="m-num">{money(Number(booking.agreedFare ?? booking.proposedFare))}</b>
+          </div>
+        </div>
+        <Link href="/deliveries/new" className="m-lnk" style={{ marginTop: 8 }}>
+          Book again
+        </Link>
+      </div>
+    </>
+  );
+}
+
+// ── Not delivered · cancelled · nobody picked ─────────────────────────────────────────────────
+function Ended({ booking, disabled, busy, error, onRetry }: Ctx) {
+  const [fare, setFare] = useState(() => startFare(Number(booking.proposedFare)));
+  const help = supportWhatsAppUrl();
+  // Nobody picked in time, the business cancelled, or a rider cancelled and Send couldn't re-send it. A
+  // cancel by the LyniaGo team (a safety concern) is not offered again.
+  const canRetry =
+    booking.state === "expired" || (booking.state === "cancelled" && (booking.cancelledBy === "business" || (booking.cancelledBy === "rider" && !booking.rebroadcastedToId)));
+  const title =
+    booking.state === "not_delivered"
+      ? "Not delivered"
+      : booking.state === "expired"
+        ? "No rider picked in time"
+        : booking.cancelledBy === "rider"
+          ? "Your rider cancelled"
+          : booking.cancelledBy === "business"
+            ? "Booking cancelled"
+            : "Cancelled by the LyniaGo team";
+  return (
+    <>
+      <AppBar back="/deliveries" title="Delivery" />
+      <div className="m-bd">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--highlight-wash)", borderRadius: 16, padding: 14 }}>
+          <Icon name="circle-alert" size={32} color="var(--highlight-ink)" />
+          <div>
+            <b style={{ fontSize: 16, display: "block" }}>{title}</b>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              {booking.state === "not_delivered"
+                ? `${undeliveredText(booking.undeliveredReason)} Call the rider to get the goods back.`
+                : booking.state === "cancelled" && booking.cancelledBy === "ops"
+                  ? (booking.cancelReason ?? "")
+                  : `${booking.itemsSummary} → ${booking.dropoff.landmark}`}
+            </span>
+          </div>
+        </div>
+        {booking.state === "not_delivered" && booking.rider?.phone && (
+          <a href={`tel:${booking.rider.phone}`} className="m-gh">
+            <Icon name="phone" size={18} /> Call {shortName(booking.rider.name)}
+          </a>
+        )}
+        {booking.rebroadcastedToId && (
+          <Link href={`/deliveries/${booking.rebroadcastedToId}`} className="m-btn">
+            LyniaGo sent it out again · follow it
+          </Link>
+        )}
+        {error && (
+          <div className="m-alert" role="alert">
+            {error}
+          </div>
+        )}
+        {canRetry && (
+          <>
+            <div className="m-fld">
+              <span className="m-label">Fare you offer</span>
+              <div className="m-card m-fare">
+                <button type="button" aria-label="Offer $0.50 less" disabled={fare <= 1.5} onClick={() => setFare((f) => stepFare(f, -1))}>
+                  <Icon name="minus" size={20} />
+                </button>
+                <div>
+                  <b className="m-num">{money(fare)}</b>
+                  {booking.state === "expired" && <span>Raise it if riders didn&apos;t bite</span>}
+                </div>
+                <button type="button" aria-label="Offer $0.50 more" onClick={() => setFare((f) => stepFare(f, 1))}>
+                  <Icon name="plus" size={20} />
+                </button>
+              </div>
+            </div>
+            <button type="button" className="m-btn" disabled={disabled} onClick={() => onRetry(fare)}>
+              {busy === "retry" ? "Sending…" : `Try again · ${money(fare)}`}
+            </button>
+          </>
+        )}
+        {!canRetry && help && (
+          <a className="m-lnk" href={help} target="_blank" rel="noreferrer">
+            Message LyniaGo
+          </a>
+        )}
+      </div>
+    </>
+  );
+}

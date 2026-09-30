@@ -1,19 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import type { MerchantBookingResponse, MerchantProfileResponse } from "@lynia/shared";
-import { BookingRow } from "../../components/bookings/BookingParts";
+import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
-import { Icon } from "../../components/icons";
+import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { RetryableError } from "../../components/RetryableError";
-import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
-import { bookingsAvailable, isFinding, isLiveBooking, pollIntervalMs } from "../../lib/booking";
+import { bookingsAvailable, isFinding, pollIntervalMs } from "../../lib/booking";
+import { tracker, trackedBookings } from "../../lib/booking-view";
 import { listBookings } from "../../lib/bookings-api";
 import { primeBusiness } from "../../lib/business";
+import { formatCountdown, msUntil } from "../../lib/countdown";
 import { getMerchantProfile } from "../../lib/menu-api";
+import { useNow } from "../../lib/use-now";
 
 type LoadState =
   | { status: "loading" }
@@ -22,26 +24,30 @@ type LoadState =
   | { status: "error"; message: string };
 
 /**
- * Deliveries (merchant web upgrade L2): the business's bookings, live ones first, and the way to book a
- * rider. A shop's home; a restaurant reaches it from the bookings strip on Orders. Business-wide: every
- * team member sees every booking. Polls while anything is live (every 3 s while a rider is being found,
- * 15 s after). Undrawn, ledgered as D-44.
+ * D1 · Shop Orders home (packages/design/handoff/merchant-mobile, ledger D-48): B1's header — the
+ * business, "● Open until 18:00", the switch and the Orders · Sales · Cash overdue tiles — plus a white
+ * "Book a rider"; then "Riders you booked" as mint pill trackers ("Car battery · 3 offers / Pick a
+ * rider · 1:02" while finding; "Brake pads · Blessing M." with a progress bar once a rider has it).
+ * Shops take no customer orders yet (owner decision), so the New · Packing · Ready segments and the
+ * new-order card aren't shown. Polls while anything is live.
  */
 export default function DeliveriesPage() {
-  const { signOut } = useKitchenConnection();
+  const { signOut, actionsDisabled } = useKitchenConnection();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const business = state.status === "ready" || state.status === "unavailable" ? state.business : null;
+  const open = useOpenSwitch(business, (b) => setState((s) => (s.status === "ready" || s.status === "unavailable" ? { ...s, business: b } : s)));
 
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setState({ status: "loading" });
       try {
-        const business = await getMerchantProfile();
-        primeBusiness(business);
-        if (!bookingsAvailable(business)) {
-          setState({ status: "unavailable", business });
+        const b = await getMerchantProfile();
+        primeBusiness(b);
+        if (!bookingsAvailable(b)) {
+          setState({ status: "unavailable", business: b });
           return;
         }
-        setState({ status: "ready", business, bookings: await listBookings() });
+        setState({ status: "ready", business: b, bookings: await listBookings() });
       } catch (err) {
         if (redirectIfSessionExpired(err, signOut)) return;
         if (!quiet) setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your deliveries." });
@@ -68,92 +74,76 @@ export default function DeliveriesPage() {
     return () => clearInterval(id);
   }, [interval, load]);
 
-  const shop = state.status === "ready" || state.status === "unavailable" ? state.business.businessType === "shop" : false;
-  // A booking a rider cancelled lives on as Send's re-broadcast; show only the current one.
-  const shown = state.status === "ready" ? state.bookings.filter((b) => !b.rebroadcastedToId) : [];
-  const live = shown.filter((b) => isLiveBooking(b.state));
-  const past = shown.filter((b) => !isLiveBooking(b.state));
+  const shop = business?.businessType === "shop";
+  const shown = state.status === "ready" ? trackedBookings(state.bookings, Date.now()) : [];
 
   return (
     <Kitchen active={shop ? "deliveries" : "queue"}>
-      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 14, overflow: "auto", height: "100%" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>Deliveries</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>A LyniaGo rider takes your order to your customer.</div>
-          </div>
+      {business ? (
+        <OrdersHeader merchant={business} open={open} disabled={actionsDisabled} refreshKey={shown.length}>
           {state.status === "ready" && (
-            <Link href="/deliveries/new" style={{ ...primaryButtonStyle, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Icon name="plus" size={18} color="#fff" />
-              Book a rider
+            <Link href="/deliveries/new" className="m-hdbtn">
+              <Icon name="bike" size={20} /> Book a rider
             </Link>
           )}
-        </div>
+        </OrdersHeader>
+      ) : null}
 
-        {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your deliveries…</div>}
-
+      <div className="m-bd" style={{ paddingTop: 16 }}>
+        {state.status === "loading" && <div className="m-hint">Loading your deliveries…</div>}
         {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
-
         {state.status === "unavailable" && (
-          <div style={{ ...cardStyle, display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <Icon name="navigation" size={20} color="var(--muted)" style={{ marginTop: 2 }} />
-            <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-              <b>Booking riders is on its way.</b> You'll book LyniaGo riders for your customers from here.
-            </div>
-          </div>
+          <p className="m-sub">
+            <b>Booking riders is on its way.</b> You&apos;ll book LyniaGo riders for your customers from here.
+          </p>
         )}
 
         {state.status === "ready" && shown.length === 0 && (
-          <div style={{ ...cardStyle, textAlign: "center", padding: "28px 20px" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent-wash)", display: "grid", placeItems: "center", margin: "0 auto 12px" }}>
-              <Icon name="navigation" size={22} color="var(--accent-text)" />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, paddingTop: 32 }}>
+            <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center" }}>
+              <Icon name="bike" size={30} color="var(--muted)" />
             </div>
-            <div style={{ fontSize: 17, fontWeight: 800 }}>Book your first rider</div>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5, maxWidth: 380, marginInline: "auto" }}>
-              Tell us where the order is going and what it's worth. Riders nearby offer a fare, and you pick one.
-            </div>
-            <Link
-              href="/deliveries/new"
-              style={{ ...primaryButtonStyle, textDecoration: "none", display: "inline-block", marginTop: 16 }}
-            >
-              Book a rider
-            </Link>
+            <b style={{ fontSize: 18 }}>No riders booked yet</b>
+            <p className="m-sub">Tell us where it&apos;s going and what&apos;s in it. Riders nearby offer a fare, and you pick one.</p>
           </div>
         )}
 
-        {live.length > 0 && (
-          <section aria-label="Live deliveries" style={{ display: "grid", gap: 10 }}>
-            <div style={sectionTitle}>Live now</div>
-            {live.map((b) => (
-              <BookingRow key={b.id} booking={b} />
+        {shown.length > 0 && (
+          <section aria-label="Riders you booked" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="m-sec">Riders you booked</div>
+            {shown.map((b) => (
+              <TrackerRow key={b.id} booking={b} />
             ))}
           </section>
-        )}
-
-        {past.length > 0 && (
-          <section aria-label="Earlier deliveries" style={{ display: "grid", gap: 10 }}>
-            <div style={sectionTitle}>Earlier</div>
-            {past.map((b) => (
-              <BookingRow key={b.id} booking={b} />
-            ))}
-          </section>
-        )}
-
-        {live.some((b) => isFinding(b.state)) && (
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Open a booking to see riders' offers and pick one.</div>
-        )}
-
-        {/* A shop's home, so its way out lives here, as a restaurant's lives on Orders. */}
-        {shop && (
-          <div>
-            <button type="button" onClick={signOut} style={ghostButtonStyle}>
-              Sign out
-            </button>
-          </div>
         )}
       </div>
     </Kitchen>
   );
 }
 
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" };
+function TrackerRow({ booking }: { booking: MerchantBookingResponse }) {
+  const finding = isFinding(booking.state);
+  const now = useNow(1000, finding);
+  const t = tracker(booking);
+  const done = t.icon === "circle-check" || t.icon === "ban";
+  const left = finding && booking.expiresAt ? msUntil(booking.expiresAt, now) : null;
+  return (
+    <Link href={`/deliveries/${booking.id}`} className={`m-trk${done ? " m-done" : ""}`}>
+      <i>
+        <Icon name={t.icon} size={20} color={done ? "var(--muted)" : "var(--on-accent)"} />
+      </i>
+      <div className="m-t">
+        <b>{t.title}</b>
+        {t.sub && <span>{t.sub}</span>}
+        {t.progress !== null && (
+          <div className="m-bar" aria-label={`${t.progress} of 5 steps`}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} className={i < t.progress! ? "m-on" : undefined} />
+            ))}
+          </div>
+        )}
+      </div>
+      {left !== null && <span className="m-pl m-gold m-num" style={{ height: 26, fontSize: 13 }}>{formatCountdown(left)}</span>}
+    </Link>
+  );
+}
