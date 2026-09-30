@@ -3,6 +3,7 @@ import type { Env } from "../config/env";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "./tracking.service";
+import { ACTIVE_MEMBERSHIP_ORDER } from "../merchant/merchant-access";
 
 /** REDIS_URL unset ⇒ the no-Redis path (flush every fix), which is the dev/test default. */
 const noRedisEnv = { REDIS_URL: undefined } as Env;
@@ -61,9 +62,15 @@ describe("TrackingService.canAccessOrder", () => {
 describe("TrackingService.ownMerchantId (C5 kitchen socket queue subscribe gate)", () => {
   function merchantSvc(member: unknown, legacy: unknown = null) {
     const findFirst = vi.fn(async () => legacy);
-    const prisma = { merchantMember: { findUnique: async () => member }, merchant: { findFirst } };
-    return { svc: new TrackingService(noRedisEnv, prisma as unknown as PrismaService, fakeMetrics()), findFirst };
+    const memberFindFirst = vi.fn(async () => member);
+    const prisma = { merchantMember: { findFirst: memberFindFirst }, merchant: { findFirst } };
+    return { svc: new TrackingService(noRedisEnv, prisma as unknown as PrismaService, fakeMetrics()), findFirst, memberFindFirst };
   }
+  it("an owner with branches joins the feed of the branch they're working on (multi-branch owners)", async () => {
+    const { svc: s, memberFindFirst } = merchantSvc({ merchantId: "branch-2" });
+    expect(await s.ownMerchantId("owner-1")).toBe("branch-2");
+    expect(memberFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { profileId: "owner-1" }, orderBy: ACTIVE_MEMBERSHIP_ORDER }));
+  });
   it("returns the business the profile is a member of (owner or staff)", async () => {
     const { svc: s, findFirst } = merchantSvc({ merchantId: "m1" });
     expect(await s.ownMerchantId("staff-1")).toBe("m1");
@@ -74,6 +81,7 @@ describe("TrackingService.ownMerchantId (C5 kitchen socket queue subscribe gate)
     expect(await s.ownMerchantId("owner-1")).toBe("m2");
     expect(findFirst).toHaveBeenCalledWith({
       where: { ownerProfileId: "owner-1", members: { none: { role: "owner" } } },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
   });

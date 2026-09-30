@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, GoneException, Injectable, NotFo
 import { Prisma } from "@prisma/client";
 import type { JoinMerchantInviteRequest, MerchantProfileResponse, MyMerchantInvitesResponse } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
-import { resolveMerchantAccess } from "./merchant-access";
+import { listMemberships, lockMembershipsTx } from "./merchant-access";
 import { MerchantService, splitPersonName } from "./merchant.service";
 
 /** The audit actions the invitee's side writes. */
@@ -86,13 +86,19 @@ export class MerchantInvitesService {
       throw new ForbiddenException({ reason: "account_restricted", message: "This number can't join a business. Message LyniaGo on WhatsApp." });
     }
 
-    const current = await resolveMerchantAccess(this.prisma, profileId);
-    if (current && current.merchantId !== invite.merchantId) throw memberElsewhere(invite.merchant.name);
-    if (!current) {
+    // Staff work at one business. Only an owner opening branches is on several
+    // (docs/plans/2026-09-30-multi-branch-owners.md), and that never goes through an invite.
+    const current = await listMemberships(this.prisma, profileId);
+    const onThisTeam = current.some((m) => m.merchantId === invite.merchantId);
+    if (current.length > 0 && !onThisTeam) throw memberElsewhere(invite.merchant.name);
+    if (!onThisTeam) {
       const name = body.name.trim();
       const nameIsEmpty = profile.firstName.trim() === "" && profile.lastName.trim() === "";
       try {
         await this.prisma.$transaction(async (tx) => {
+          // Re-checked under the person's lock: a Join elsewhere in the same instant can't land them twice.
+          const now = await lockMembershipsTx(tx, profileId);
+          if (now.some((m) => m.merchantId !== invite.merchantId)) throw memberElsewhere(invite.merchant.name);
           // Taking the invite is the claim: one the owner cancelled a moment ago can't still be joined.
           const taken = await tx.merchantInvite.deleteMany({ where: { id: invite.id, phone: profile.phone } });
           if (taken.count === 0) throw new NotFoundException("Invite not found");
@@ -111,10 +117,8 @@ export class MerchantInvitesService {
           await tx.auditLog.create({ data: { actor: profileId, action: TEAM_JOIN_ACTION, target: invite.merchantId, note: invite.id } });
         });
       } catch (err) {
-        // A Join elsewhere, or a double tap, won the unique profile_id first. Re-read: whatever won is true.
+        // A double tap won the unique (person, business) row first: they're on this team, which is the ask.
         if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
-        const winner = await resolveMerchantAccess(this.prisma, profileId);
-        if (winner?.merchantId !== invite.merchantId) throw memberElsewhere(invite.merchant.name);
       }
     } else {
       // Already on this team (a second tap, or a second device): the invite has done its job.

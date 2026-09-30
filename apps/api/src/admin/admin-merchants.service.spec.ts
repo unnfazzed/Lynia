@@ -483,10 +483,13 @@ describe("AdminMerchantsService.transferOwner (merchant web upgrade L4 — suppo
           [...people.values()].find((p) => (where.phone ? p.phone === where.phone : p.id === where.id)) ?? null,
       },
       merchantMember: {
-        findUnique: async ({ where }: { where: { profileId: string } }) => members.find((m) => m.profileId === where.profileId) ?? null,
+        findUnique: async ({ where }: { where: { profileId_merchantId: { profileId: string; merchantId: string } } }) =>
+          members.find((m) => m.profileId === where.profileId_merchantId.profileId && m.merchantId === where.profileId_merchantId.merchantId) ?? null,
         findFirst: async ({ where }: { where: { merchantId: string; role: string } }) =>
           members.find((m) => m.merchantId === where.merchantId && m.role === where.role) ?? null,
-        count: async ({ where }: { where: { profileId: string } }) => members.filter((m) => m.profileId === where.profileId).length,
+        // The new owner's other businesses ({ merchantId: { not } }), or everyone a person is on.
+        count: async ({ where }: { where: { profileId: string; merchantId?: { not: string } } }) =>
+          members.filter((m) => m.profileId === where.profileId && (where.merchantId === undefined || m.merchantId !== where.merchantId.not)).length,
         update: async ({ where, data }: { where: { id: string }; data: { role: "owner" | "staff" } }) => {
           const row = members.find((m) => m.id === where.id)!;
           // The partial unique index: one owner per business.

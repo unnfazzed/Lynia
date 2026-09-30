@@ -481,8 +481,8 @@ export class PrivacyService {
     // the tx and deleted post-commit alongside the KYC/profile photos (deleteObject swallows its errors).
     const itemPhotoKeys: string[] = [];
 
-    // Merchant web upgrade L4: the business a staff member leaves by erasing, for the post-commit eviction.
-    let leftBusinessId: string | null = null;
+    // Merchant web upgrade L4: the businesses a staff member leaves by erasing, for the post-commit eviction.
+    let leftBusinessIds: string[] = [];
     await this.prisma.$transaction(async (tx) => {
       await this.assertOwnsNoBusinessTx(tx, profileId);
       // Merchant web upgrade L3: businesses keep their own riders by phone number. The number is this
@@ -491,10 +491,10 @@ export class PrivacyService {
       // L4 (Team): every invite to this number goes the same way, and so does a staff member's place on
       // a team, which holds the name the business knew them by.
       await tx.merchantInvite.deleteMany({ where: { phone: profile.phone } });
-      const membership = await tx.merchantMember.findUnique({ where: { profileId }, select: { merchantId: true } });
-      if (membership) {
+      const memberships = await tx.merchantMember.findMany({ where: { profileId, role: "staff" }, select: { merchantId: true } });
+      if (memberships.length > 0) {
         await tx.merchantMember.deleteMany({ where: { profileId, role: "staff" } });
-        leftBusinessId = membership.merchantId;
+        leftBusinessIds = memberships.map((m) => m.merchantId);
       }
       await this.anonymiseProfileTx(tx, profileId, now);
       await this.scrubPiiTx(tx, profileId, isRider, now, itemPhotoKeys);
@@ -502,7 +502,7 @@ export class PrivacyService {
 
     await this.postCommitPurge(profileId, isRider, profile, itemPhotoKeys);
     // Best effort: the erased staff member's open devices stop receiving the business's live queue now.
-    if (leftBusinessId) void this.gateway?.evictFromMerchantQueue(profileId, leftBusinessId);
+    for (const merchantId of leftBusinessIds) void this.gateway?.evictFromMerchantQueue(profileId, merchantId);
 
     this.logger.log(`Account ${profileId} erased (anonymised in place)`);
     return { erased: true };

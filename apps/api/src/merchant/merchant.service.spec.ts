@@ -21,7 +21,9 @@ const OWNER_OF_M1 = { merchantId: "m1", role: "owner", merchant: { businessType:
 
 function svc(prisma: Partial<Record<string, unknown>>, storage: Partial<Record<string, unknown>> = defaultStorageStub) {
   const p = prisma as Record<string, unknown>;
-  if (!p.merchantMember) p.merchantMember = { findUnique: async () => OWNER_OF_M1 };
+  if (!p.merchantMember) p.merchantMember = { findFirst: async () => OWNER_OF_M1 };
+  // Sign-up locks the person's profile row (multi-branch owners); a fake has nothing to lock.
+  if (!p.$executeRaw) p.$executeRaw = async () => 1;
   if (!p.$transaction) {
     p.$transaction = async (arg: unknown) =>
       typeof arg === "function" ? (arg as (tx: unknown) => unknown)(p) : arg;
@@ -50,7 +52,9 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
         update: async ({ data }: { data: unknown }) => (profileData = data),
       },
       merchantMember: {
-        findUnique: async () => (memberLookups++ === 0 ? null : { merchantId: "m-new", role: "owner", merchant: { businessType: merchantData?.businessType } }),
+        findFirst: async () => (memberLookups++ === 0 ? null : { merchantId: "m-new", role: "owner", merchant: { businessType: merchantData?.businessType } }),
+        // Under the sign-up lock: still on no business.
+        findMany: async () => [],
         create: async ({ data }: { data: Record<string, unknown> }) => (memberData = data),
       },
       merchant: {
@@ -144,10 +148,22 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     await expect(s.becomeMerchant("p1", body())).rejects.toMatchObject({ status: 409, response: { reason: "already_member" } });
   });
 
+  it("a double submit that lands between the check and the lock still opens only one business", async () => {
+    const created = vi.fn();
+    const s = svc({
+      profile: { findUnique: async () => ({ firstName: "", lastName: "", onHold: false, rider: null }) },
+      // Not on a business at the pre-check; on one by the time the lock is held.
+      merchantMember: { findFirst: async () => null, findMany: async () => [{ merchantId: "m-first", role: "owner" }], create: created },
+      merchant: { findFirst: async () => null, create: created },
+    });
+    await expect(s.becomeMerchant("p1", body())).rejects.toMatchObject({ status: 409, response: { reason: "already_member" } });
+    expect(created).not.toHaveBeenCalled();
+  });
+
   it("maps a concurrent-duplicate P2002 to the same already_member conflict", async () => {
     const s = svc({
       profile: { findUnique: async () => ({ firstName: "", lastName: "", onHold: false, rider: null }) },
-      merchantMember: { findUnique: async () => null },
+      merchantMember: { findFirst: async () => null, findMany: async () => [] },
       merchant: { findFirst: async () => null },
       $transaction: async () => {
         throw p2002();

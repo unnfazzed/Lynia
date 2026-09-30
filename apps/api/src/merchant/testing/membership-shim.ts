@@ -25,10 +25,17 @@ export function withMembershipShim<T extends Record<string, unknown>>(prisma: T)
     if (where?.members) return null; // the resolver's legacy-owner lookup
     return ownFindFirst ? ownFindFirst(args) : null;
   };
+  // The resolver reads the caller's active row with `findFirst` (multi-branch owners); the fake owns one.
+  const ownRow = async () => {
+    const row = merchant.findUnique ? await merchant.findUnique({ where: { ownerProfileId: "membership-shim" } }) : null;
+    return row ? { merchantId: row.id, role: "owner", merchant: { businessType: row.businessType ?? "restaurant" } } : null;
+  };
   p.merchantMember = {
-    findUnique: async () => {
-      const row = merchant.findUnique ? await merchant.findUnique({ where: { ownerProfileId: "membership-shim" } }) : null;
-      return row ? { merchantId: row.id, role: "owner", merchant: { businessType: row.businessType ?? "restaurant" } } : null;
+    findFirst: ownRow,
+    findUnique: ownRow,
+    findMany: async () => {
+      const row = await ownRow();
+      return row ? [row] : [];
     },
     create: async () => ({}),
   };

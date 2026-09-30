@@ -290,7 +290,7 @@ with an item review of every shop before its first switch-on. Prescription items
 sign-off (plan 2026-07-26 §6 P6).
 
 **Explicitly not in scope:** variants/sizes, stock counts, barcodes, bulk CSV import, multi-branch
-owners, Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg. (Server-side short-link
+owners (since brought in by owner decision 2026-09-30: `docs/plans/2026-09-30-multi-branch-owners.md`), Shona/Ndebele copy, printing, cash-on-delivery, a paid return leg. (Server-side short-link
 resolution was out of scope in the draft; the outside voice brought it into L2, OV-6.)
 
 ---

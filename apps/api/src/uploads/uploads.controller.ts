@@ -84,8 +84,8 @@ export class UploadsController {
   /**
    * Mint a signed PUT URL for a menu dish photo (D-31/D-32). Gated by RestaurantsEnabledGuard +
    * MerchantGuard on top of the class-level JwtAuthGuard — dormant with the rest of the vertical.
-   * Key is namespaced by the caller's own profile id (one profile = at most one Merchant row via
-   * the unique ownerProfileId), mirroring kyc-photo/pickup-photo's own-namespace convention.
+   * Key is namespaced by the caller's own profile id, mirroring kyc-photo/pickup-photo's own-namespace
+   * convention. An owner's branches share the namespace (a new branch reuses the photos it copies).
    */
   @Post("merchant-dish-photo")
   @UseGuards(RestaurantsEnabledGuard, MerchantGuard)
