@@ -163,4 +163,6 @@ jobs:
           # Same EAS environment as the preflight, so the published runtimeVersion is the one it checked.
           # EXPO_PUBLIC_API_URL is re-asserted inside, so an EAS value can never override the cutover.
           eas env:exec "$BRANCH" "EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL eas update --branch $BRANCH --message \"\$OTA_MESSAGE\" --non-interactive"
-          echo "OTA update published to branch '${{ inputs.branch }}': ${{ inputs.message }}" >> "$GITHUB_STEP_SUMMARY"
+          # The message is read from the env, never pasted into the script: a "$X" in it once failed this
+          # step AFTER the update had published (set -u), and pasted text is a script-injection hole.
+          printf "OTA update published to branch '%s': %s\n" "$BRANCH" "$OTA_MESSAGE" >> "$GITHUB_STEP_SUMMARY"
