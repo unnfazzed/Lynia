@@ -71,6 +71,14 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "food_offer" }, true)).toBe("/rider/food-offer");
   });
 
+  it("routes the auto-accept 'restaurant changed your order' push to the food tracker", () => {
+    // food-order-ops.ts sends { orderId, status, to: "customer", orderType: "merchant", kind: "food_items_edited" }.
+    const data = { orderId: "o1", status: "requested", to: "customer", orderType: "merchant", kind: "food_items_edited" };
+    expect(pushDestination(data, false)).toBe("/food/order/o1");
+    // Even on a device whose account is also a rider, `to: "customer"` keeps it on the tracker.
+    expect(pushDestination(data, true)).toBe("/food/order/o1");
+  });
+
   it("routes the 'a rider's online near you' push home so the customer can re-broadcast", () => {
     // notifyRidersAvailable carries no orderId — before this it dead-ended to null.
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");

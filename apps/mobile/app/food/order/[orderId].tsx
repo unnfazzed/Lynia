@@ -35,8 +35,9 @@ import { Button, Card, EmptyState, OfflineBanner, Screen, SkeletonList, Stepper,
 import { FoodOrderAwaitingAcceptView } from "../../../src/ui/food/FoodOrderAwaitingAcceptView";
 import { FoodOrderAwaitingPaymentView } from "../../../src/ui/food/FoodOrderAwaitingPaymentView";
 import { FoodOrderCancelledView } from "../../../src/ui/food/FoodOrderCancelledView";
+import { FoodOrderConfirmingView } from "../../../src/ui/food/FoodOrderConfirmingView";
 import { FoodOrderDeliveredView } from "../../../src/ui/food/FoodOrderDeliveredView";
-import { OrderHeader, Row } from "../../../src/ui/food/FoodOrderHelpers";
+import { ItemsEditedNotice, OrderHeader, Row } from "../../../src/ui/food/FoodOrderHelpers";
 import { FoodOrderItemApprovalView } from "../../../src/ui/food/FoodOrderItemApprovalView";
 import { FoodOrderLiveTrackerView } from "../../../src/ui/food/FoodOrderLiveTrackerView";
 import { FoodOrderPreparingView } from "../../../src/ui/food/FoodOrderPreparingView";
@@ -442,8 +443,19 @@ export default function FoodOrderScreen(): React.ReactElement {
     }
   };
 
-  const CancelFooter = canCancelFreely(order.merchantPhase) ? (
-    <Button variant="ghost" label="Cancel the order — free" onPress={() => void cancelUnpaid()} disabled={busy} />
+  // Auto-accept: the order went straight into the kitchen but the kitchen hasn't confirmed it yet —
+  // no rider is sent, and `cancelUnpaid` accepts a free cancel in exactly this state.
+  const awaitingKitchenConfirm =
+    order.autoAccepted === true && !order.kitchenConfirmedAt && order.merchantPhase === "preparing" && order.status === "requested";
+
+  const CancelFooter =
+    canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm ? (
+      <Button variant="ghost" label="Cancel the order — free" onPress={() => void cancelUnpaid()} disabled={busy} />
+    ) : null;
+
+  // The restaurant changed the order after it was placed (auto-accept kitchens edit rather than ask).
+  const itemsEditedNotice = order.itemsEditedAt ? (
+    <ItemsEditedNotice restaurantName={restaurantName} total={formatMoney(order.total ?? order.merchantGoodsTotal ?? 0)} />
   ) : null;
 
   // ── Terminal: cancelled AFTER the money had already gone out, with no refund recorded (R6·b3) ────
@@ -534,9 +546,14 @@ export default function FoodOrderScreen(): React.ReactElement {
     );
   }
 
+  // ── auto-accept, kitchen not confirmed yet: checked before the Cooking branch below ─────────────
+  if (awaitingKitchenConfirm) {
+    return <FoodOrderConfirmingView order={order} restaurantName={restaurantName} reachable={reachable} cancelFooter={CancelFooter} />;
+  }
+
   // ── preparing: extracted to FoodOrderPreparingView (RF-18) ──────────────────────────────────────
   if (order.merchantPhase === "preparing") {
-    return <FoodOrderPreparingView order={order} restaurantName={restaurantName} reachable={reachable} now={now} />;
+    return <FoodOrderPreparingView order={order} restaurantName={restaurantName} reachable={reachable} now={now} notice={itemsEditedNotice} />;
   }
 
   // ── ready_for_pickup, but a rider had ALREADY been secured and dropped it (R6·b6) ───────────────
@@ -548,7 +565,7 @@ export default function FoodOrderScreen(): React.ReactElement {
 
   // ── ready_for_pickup: extracted to FoodOrderReadyForPickupView (RF-18) ──────────────────────────
   if (order.merchantPhase === "ready_for_pickup") {
-    return <FoodOrderReadyForPickupView order={order} restaurantName={restaurantName} reachable={reachable} />;
+    return <FoodOrderReadyForPickupView order={order} restaurantName={restaurantName} reachable={reachable} notice={itemsEditedNotice} />;
   }
 
   // ── live tracker: a rider is secured (D-04) — the order rides the generic assigned→…→en_route_dropoff
@@ -574,6 +591,7 @@ export default function FoodOrderScreen(): React.ReactElement {
         cancelConfirm={cancelConfirm}
         onCancelConfirmChange={setCancelConfirm}
         onCancelActive={() => void cancelActive()}
+        notice={itemsEditedNotice}
       />
     );
   }

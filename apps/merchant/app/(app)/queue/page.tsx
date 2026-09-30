@@ -15,7 +15,9 @@ import { RetryableError } from "../../components/RetryableError";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
-import { acceptOrder, rejectOrder } from "../../lib/orders-api";
+import { alarmOrders } from "../../lib/alarm";
+import { needsKitchenConfirm } from "../../lib/order-groups";
+import { acceptOrder, confirmKitchen, rejectOrder } from "../../lib/orders-api";
 import { homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
@@ -75,12 +77,14 @@ export default function QueuePage() {
   const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
   const { orders, error: queueError, refetch } = useQueuePoll(ready);
 
-  // D-05: rings the whole time any order is unanswered, and stops the instant none are.
+  // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
+  // kitchen — and stops the instant none are. Only a ringing order takes over the screen.
   const ringing = orders.filter((o) => o.merchantPhase === "awaiting_accept");
+  const alarmCount = alarmOrders(orders).length;
   useEffect(() => {
-    if (ringing.length > 0) alarm.ring();
+    if (alarmCount > 0) alarm.ring();
     else alarm.silence();
-  }, [ringing.length, alarm]);
+  }, [alarmCount, alarm]);
 
   useEffect(() => {
     if (queueError?.status === 401) signOut();
@@ -98,6 +102,14 @@ export default function QueuePage() {
       await refetch();
     },
     [refetch],
+  );
+  const handleConfirmKitchen = useCallback(
+    async (orderId: string) => {
+      await confirmKitchen(orderId);
+      toast("Confirmed · we’ll send a rider when it’s nearly ready");
+      await refetch();
+    },
+    [refetch, toast],
   );
   const handleReject = useCallback(
     async (orderId: string, reason: Parameters<typeof rejectOrder>[1]) => {
@@ -163,8 +175,14 @@ export default function QueuePage() {
                 ]}
               />
               {segmentOrders.length === 0 && <div className="m-hint" style={{ padding: "8px 0" }}>Nothing here</div>}
-              {segmentOrders.map((o) => (o.merchantPhase === "awaiting_accept" ? <NewOrderCard key={o.id} order={o} /> : null))}
-              <Rows orders={segmentOrders.filter((o) => o.merchantPhase !== "awaiting_accept")} />
+              {segmentOrders.map((o) =>
+                o.merchantPhase === "awaiting_accept" ? (
+                  <NewOrderCard key={o.id} order={o} />
+                ) : needsKitchenConfirm(o) ? (
+                  <AutoAcceptedCard key={o.id} order={o} disabled={actionsDisabled} onConfirm={handleConfirmKitchen} />
+                ) : null,
+              )}
+              <Rows orders={segmentOrders.filter((o) => o.merchantPhase !== "awaiting_accept" && !needsKitchenConfirm(o))} />
               <OrderSections sections={sections} alongside={segment} />
             </>
           )}
@@ -195,6 +213,47 @@ function NewOrderCard({ order }: { order: MerchantOrderResponse }) {
       <Link href={`/queue/${order.id}`} className="m-btn m-sm">
         View &amp; accept
       </Link>
+    </div>
+  );
+}
+
+/** Auto-accept: the new-order card for an order LyniaGo already accepted — the kitchen confirms it is
+ *  making it, which is what lets a rider be sent. */
+function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrderResponse; disabled: boolean; onConfirm: (orderId: string) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(order.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "That didn’t work. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="m-card" style={{ border: "2px solid var(--accent)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Link href={`/queue/${order.id}`} className="m-num" style={{ fontSize: 15, fontWeight: 700, color: "inherit", textDecoration: "none" }}>
+          {orderLabel(order)}
+        </Link>
+        <span className="m-pl m-wal">Accepted for you</span>
+        <span style={{ flex: 1 }} />
+        <b className="m-num" style={{ fontSize: 15 }}>
+          {money(order.merchantGoodsTotal)}
+        </b>
+      </div>
+      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>{itemsLine(order)}</div>
+      {error && (
+        <div className="m-alert" role="alert">
+          {error}
+        </div>
+      )}
+      <button type="button" className="m-btn m-sm" disabled={disabled || busy} onClick={() => void confirm()}>
+        Got it, we’re making it
+      </button>
     </div>
   );
 }

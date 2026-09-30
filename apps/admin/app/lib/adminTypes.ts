@@ -348,6 +348,46 @@ export interface MerchantDetail extends Merchant {
    *  booking, so null before it). Holding it holds the whole business's bookings. Absent on an API that
    *  can't book riders yet. */
   bookingAccount?: { id: string; onHold: boolean } | null;
+  /** Auto-accept: new orders skip the restaurant's accept; ops confirms each by phone before a rider. */
+  autoAccept: boolean;
+  /** Auto-accept: customers see the restaurant's number (only once the restaurant agreed). */
+  showPhoneToCustomers: boolean;
+}
+
+/* ── Orders to confirm (auto-accept: GET /admin/kitchen-confirmations) ── */
+export interface KitchenConfirmationLine {
+  /** The order line's id — what `POST /admin/orders/:id/edit-items` takes as `itemId`. */
+  itemId: string;
+  name: string;
+  priceUsd: number;
+  quantity: number;
+  note: string | null;
+  /** Taken off the order (quantity 0 in an edit) — shown struck through. */
+  removed: boolean;
+}
+
+export interface KitchenConfirmationRow {
+  orderId: string;
+  placedAt: string;
+  waitingMinutes: number;
+  /** Waited past `escalateAfterMinutes` without the kitchen confirming. */
+  urgent: boolean;
+  restaurant: { id: string | null; name: string; phone: string | null };
+  customer: { name: string; phone: string | null };
+  dropoffLandmark: string | null;
+  items: KitchenConfirmationLine[];
+  goodsTotal: number;
+  deliveryFee: number;
+  total: number;
+  prepMinutes: number | null;
+  /** ISO timestamps of each "No answer" ops logged, oldest first. */
+  noAnswerCalls: string[];
+  itemsEdited: boolean;
+}
+
+export interface KitchenConfirmations {
+  orders: KitchenConfirmationRow[];
+  escalateAfterMinutes: number;
 }
 
 /* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */

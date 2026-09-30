@@ -70,6 +70,7 @@ export default async function FoodDisputesPage() {
 
       <div className="subnav">
         <a href="/merchants">merchants</a>
+        <a href="/merchants/confirm">orders to confirm</a>
         <a href="/merchants/disputes" aria-current="page">
           disputes needing support
         </a>

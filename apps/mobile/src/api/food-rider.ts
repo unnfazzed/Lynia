@@ -1,4 +1,4 @@
-import type { FoodOfferEvent, MerchantOrderResponse } from "@lynia/shared";
+import type { ConfirmCollectedRequest, FoodOfferEvent, MerchantOrderResponse } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /**
@@ -40,6 +40,14 @@ export function getFoodOrderAsRider(orderId: string): Promise<MerchantOrderRespo
 /** N-16: the 4-digit pickup code the kitchen reads out at the counter. */
 export function confirmFoodPickup(orderId: string, code: string): Promise<{ orderId: string; status: "picked_up" }> {
   return apiFetch(`/merchant/orders/${orderId}/confirm-pickup`, { method: "POST", body: { code } });
+}
+
+/** Auto-accept: the no-code pickup ("Collected") at a restaurant that skipped the accept window.
+ *  The server only takes it within RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM of the restaurant's pin —
+ *  a 409 with reason `not_at_restaurant` otherwise. */
+export function confirmFoodCollected(orderId: string, point: ConfirmCollectedRequest["point"]): Promise<{ orderId: string; status: "picked_up" }> {
+  const body: ConfirmCollectedRequest = { point };
+  return apiFetch(`/merchant/orders/${orderId}/collected`, { method: "POST", body });
 }
 
 /** R-04: the rider's "I received $X" — second half of the dual-confirm handshake, always after the

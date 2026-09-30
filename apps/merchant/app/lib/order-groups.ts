@@ -7,6 +7,9 @@ export interface QueueGroups {
   awaitingItemApproval: MerchantOrderResponse[];
   /** M2·7: paid-nothing-yet, no clock, never blocks the board. */
   awaitingPayment: MerchantOrderResponse[];
+  /** Auto-accept: created straight in "preparing" for a restaurant that takes orders by phone, and not
+   *  yet confirmed by the kitchen — no rider is sent until it is, so it is new work, not cooking. */
+  awaitingKitchenConfirm: MerchantOrderResponse[];
   preparing: MerchantOrderResponse[];
   /** Ready-for-pickup through hand-off: searching → candidate deciding → rider secured → en route. */
   ready: MerchantOrderResponse[];
@@ -32,6 +35,7 @@ export function groupQueue(orders: readonly MerchantOrderResponse[]): QueueGroup
     awaitingAccept: [],
     awaitingItemApproval: [],
     awaitingPayment: [],
+    awaitingKitchenConfirm: [],
     preparing: [],
     ready: [],
     awaitingReturn: [],
@@ -41,10 +45,17 @@ export function groupQueue(orders: readonly MerchantOrderResponse[]): QueueGroup
     else if (o.merchantPhase === "awaiting_accept") groups.awaitingAccept.push(o);
     else if (o.merchantPhase === "awaiting_item_approval") groups.awaitingItemApproval.push(o);
     else if (o.merchantPhase === "awaiting_payment") groups.awaitingPayment.push(o);
+    else if (needsKitchenConfirm(o)) groups.awaitingKitchenConfirm.push(o);
     else if (o.merchantPhase === "preparing") groups.preparing.push(o);
     else if (isReadyBucket(o)) groups.ready.push(o);
   }
   return groups;
+}
+
+/** Auto-accept: LyniaGo accepted this order for the restaurant and nobody has confirmed the kitchen is
+ *  making it yet (the restaurant here, or ops by phone). No rider is sent until then. */
+export function needsKitchenConfirm(o: Pick<MerchantOrderResponse, "autoAccepted" | "kitchenConfirmedAt" | "merchantPhase">): boolean {
+  return o.autoAccepted === true && !o.kitchenConfirmedAt && o.merchantPhase === "preparing";
 }
 
 /** D-26: the queue becomes a 3-column board at three (or more) live orders; under that it renders as

@@ -11,6 +11,7 @@ const TAB_FOR: Record<string, MerchantTab> = {
   account: "account",
   shop: "account",
   hours: "account",
+  ordering: "account",
   riders: "account",
   team: "account",
 };

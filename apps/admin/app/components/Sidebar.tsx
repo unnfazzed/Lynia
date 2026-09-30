@@ -29,6 +29,8 @@ const NAV: NavEntry[] = [
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
   { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants" },
+  // Auto-accept: the ops call list — phone each restaurant before a rider is sent.
+  { label: "Confirm orders", href: "/merchants/confirm", icon: <IconPhone />, match: "/merchants/confirm" },
   {
     label: "Food disputes",
     href: "/merchants/disputes",
@@ -53,8 +55,11 @@ function isActive(entry: NavEntry, pathname: string, kycMode: boolean): boolean 
   // Same "queue shares a route prefix with its parent directory" shape as /riders vs /kyc above: the
   // disputes queue lives at /merchants/disputes, so a plain prefix match would light BOTH "Merchants"
   // and "Food disputes" on that one page. Disambiguate the same way.
+  // The same holds for the /merchants/confirm call list.
   if (entry.match === "/merchants/disputes") return pathname.startsWith("/merchants/disputes");
-  if (entry.match === "/merchants") return pathname.startsWith("/merchants") && !pathname.startsWith("/merchants/disputes");
+  if (entry.match === "/merchants/confirm") return pathname.startsWith("/merchants/confirm");
+  if (entry.match === "/merchants")
+    return pathname.startsWith("/merchants") && !pathname.startsWith("/merchants/disputes") && !pathname.startsWith("/merchants/confirm");
   if (entry.match === "/") return pathname === "/";
   return pathname === entry.match || pathname.startsWith(`${entry.match}/`);
 }

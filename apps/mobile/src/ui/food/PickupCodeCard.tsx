@@ -36,20 +36,7 @@ export function PickupCodeCard({
   const attemptsLeft = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - attempts);
   return (
     <Card>
-      {paid ? (
-        <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent", marginBottom: tokens.space.sm }}>
-          <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.accentText }}>PAID</Text>
-          <Text style={{ fontSize: 12, color: tokens.color.accentText, marginTop: 2 }}>
-            {paidReference ? `Confirmed by the kitchen · ref ${paidReference}` : "Confirmed by the kitchen."} Collect nothing.
-          </Text>
-        </Card>
-      ) : amountDue != null ? (
-        <Card style={{ backgroundColor: tokens.color.dangerWash, borderColor: "transparent", marginBottom: tokens.space.sm }}>
-          <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.dangerInk }}>
-            NOT PAID — collect {formatMoney(amountDue)} at the door
-          </Text>
-        </Card>
-      ) : null}
+      <PickupPaymentBanner paid={paid} paidReference={paidReference} amountDue={amountDue} />
       <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Confirm pickup</Text>
       <Sub>Ask the kitchen for the 4-digit pickup code.</Sub>
       {/* Kit `pickup_confirm` — four digit boxes, mirroring the 6-box hand-off grid one hop later. */}
@@ -64,6 +51,68 @@ export function PickupCodeCard({
         </Text>
       ) : null}
       <Button label="Confirm pickup" onPress={onConfirm} loading={pending} disabled={locked || code.trim().length !== 4} />
+    </Card>
+  );
+}
+
+/** R-12's PAID / NOT-PAID banner, shared by the code entry and the auto-accept "Collected" card. */
+function PickupPaymentBanner({
+  paid,
+  paidReference,
+  amountDue,
+}: {
+  paid: boolean;
+  paidReference?: string | null;
+  amountDue: number | null;
+}): React.ReactElement | null {
+  return paid ? (
+    <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent", marginBottom: tokens.space.sm }}>
+      <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.accentText }}>PAID</Text>
+      <Text style={{ fontSize: 12, color: tokens.color.accentText, marginTop: 2 }}>
+        {paidReference ? `Confirmed by the kitchen · ref ${paidReference}` : "Confirmed by the kitchen."} Collect nothing.
+      </Text>
+    </Card>
+  ) : amountDue != null ? (
+    <Card style={{ backgroundColor: tokens.color.dangerWash, borderColor: "transparent", marginBottom: tokens.space.sm }}>
+      <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.dangerInk }}>
+        NOT PAID — collect {formatMoney(amountDue)} at the door
+      </Text>
+    </Card>
+  ) : null;
+}
+
+/**
+ * Auto-accept pickup: at a restaurant that skipped the accept window the kitchen may not be in the app
+ * to read out a code, so the rider taps "Collected" instead — accepted server-side only near the
+ * restaurant's pin. Same card shape and PAID/NOT-PAID banner as the code entry it replaces.
+ */
+export function CollectedPickupCard({
+  pending,
+  onCollected,
+  error,
+  paid,
+  paidReference,
+  amountDue,
+}: {
+  pending: boolean | "queued";
+  onCollected: () => void;
+  /** Inline failure line (too far / no location fix / server message), null when there is none. */
+  error: string | null;
+  paid: boolean;
+  paidReference?: string | null;
+  amountDue: number | null;
+}): React.ReactElement {
+  return (
+    <Card>
+      <PickupPaymentBanner paid={paid} paidReference={paidReference} amountDue={amountDue} />
+      <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Collect the food</Text>
+      <Sub>Tap Collected when the kitchen hands it over. It only works at the restaurant.</Sub>
+      {error ? (
+        <Text accessibilityRole="alert" style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger, marginBottom: tokens.space.sm, lineHeight: 18 }}>
+          {error}
+        </Text>
+      ) : null}
+      <Button label="Collected" onPress={onCollected} loading={pending} />
     </Card>
   );
 }

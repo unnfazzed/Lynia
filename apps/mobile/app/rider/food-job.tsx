@@ -7,6 +7,7 @@ import { Linking, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import {
+  confirmFoodCollected,
   confirmFoodPickup,
   confirmFoodRiderCash,
   disputeFoodCash,
@@ -43,7 +44,7 @@ import { ReturnToRestaurantCard } from "../../src/ui/rider/ReturnToRestaurantCar
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
-import { PickupCodeCard } from "../../src/ui/food/PickupCodeCard";
+import { CollectedPickupCard, PickupCodeCard } from "../../src/ui/food/PickupCodeCard";
 import { RiderCashHandshakeCard } from "../../src/ui/food/RiderCashHandshakeCard";
 import { UnreachableCustomerCard } from "../../src/ui/food/UnreachableCustomerCard";
 import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
@@ -120,7 +121,7 @@ export default function RiderFoodJob(): React.ReactElement {
         : null,
     [order?.rider?.currentLat, order?.rider?.currentLng],
   );
-  const { permissionDenied: locationDenied } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
+  const { permissionDenied: locationDenied, getLastFix } = useRiderLocationStream(order && ACTIVE.includes(order.status) ? orderId : null);
 
   // A-O9: mirrors job.tsx's `useRiderJobSocket` wiring verbatim — the room this joins
   // (`orderRoom(orderId)`) and the events it listens for (`order:status`, `job:cancelled`) are keyed off
@@ -255,6 +256,40 @@ export default function RiderFoodJob(): React.ReactElement {
       refresh();
     },
   });
+
+  // ── Auto-accept "Collected" (no pickup code) ─────────────────────────────────────────────────────
+  // The position comes from the GPS stream this screen already runs (useRiderLocationStream) — its
+  // freshest fix, else the last one the server has on file — so there's no second permission prompt.
+  const [collectedError, setCollectedError] = useState<string | null>(null);
+  const collectedM = useMutation({
+    mutationFn: (point: { lat: number; lng: number }) => confirmFoodCollected(orderId!, point),
+    onSuccess: () => {
+      haptic("success");
+      setCollectedError(null);
+      setError(null);
+      refresh();
+    },
+    onError: (e) => {
+      haptic("warning");
+      if (e instanceof ApiError && e.status === 409 && e.code === "not_at_restaurant") {
+        setCollectedError("You're not at the restaurant yet. Move closer and try again.");
+      } else {
+        setCollectedError(e instanceof ApiError ? e.message : "Couldn't confirm the pickup — try again.");
+      }
+      refresh();
+    },
+  });
+  const onCollected = (): void => {
+    // Location switched off mid-job: don't fall back to a stale server fix — say so instead.
+    const point = locationDenied ? null : (getLastFix() ?? riderPoint);
+    if (!point) {
+      haptic("warning");
+      setCollectedError("We can't find your location. Turn on location and try again.");
+      return;
+    }
+    setCollectedError(null);
+    collectedM.mutate(point);
+  };
 
   // ── Doorstep dual-confirm handshake (R-04/R-05) ────────────────────────────────────────────────
   const confirmCashM = useMutation({
@@ -839,6 +874,15 @@ export default function RiderFoodJob(): React.ReactElement {
             deliveryFee={foodOrder.deliveryFee ?? 0}
             merchantName={order.pickup.landmark || null}
             onConfirm={() => setPaidMerchant(true)}
+          />
+        ) : order.status === "en_route_pickup" && foodOrder.autoAccepted === true ? (
+          <CollectedPickupCard
+            pending={pendingOrQueued(collectedM)}
+            onCollected={onCollected}
+            error={collectedError}
+            paid={foodOrder.merchantPaymentConfirmedAt != null}
+            paidReference={foodOrder.merchantPaymentReference}
+            amountDue={cashOrder ? total : null}
           />
         ) : order.status === "en_route_pickup" ? (
           <PickupCodeCard

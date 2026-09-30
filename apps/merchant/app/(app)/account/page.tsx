@@ -19,7 +19,7 @@ type Confirm = null | "sign-out" | "leave";
 
 /**
  * C4 · Account (packages/design/handoff/merchant-mobile): the business's initials avatar, its name and
- * "Farai · Owner", then Shop front · Opening hours · Preferred riders · Team (the gold count is the
+ * "Farai · Owner", then Shop front · Opening hours · Taking orders (owner, restaurant) · Preferred riders · Team (the gold count is the
  * invites still waiting) · Help, and a red "Sign out" behind the confirm sheet. It is where the old
  * top bar's person menu, the setup banner and the side rail's Shop / Hours / Riders / Team went.
  *
@@ -88,6 +88,8 @@ export default function AccountPage() {
       <div className="m-bd" style={{ paddingTop: 6, gap: 0 }}>
         {owner && <Row href="/shop" icon="store" label="Shop front" />}
         <Row href="/hours" icon="clock" label="Opening hours" />
+        {/* Auto-accept and the customer-facing number are the owner's, and only a restaurant takes orders. */}
+        {owner && !shop && <Row href="/ordering" icon="inbox" label="Taking orders" />}
         <Row href="/riders" icon="bike" label="Preferred riders" />
         {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? String(pendingInvites) : undefined} />}
         {help && <Row href={help} external icon="phone" label="Help" />}

@@ -1,4 +1,5 @@
 import type {
+  EditMerchantOrderItemsRequest,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
   MerchantEndOfDaySummaryResponse,
@@ -112,4 +113,17 @@ export function closeOrder(orderId: string, reason: "no_cash" | "force"): Promis
 /** D-48 (merchant mobile B3): "Can't finish this order" on a cash order still cooking. */
 export function cancelPreparing(orderId: string): Promise<MerchantOrderResponse> {
   return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/cancel`, { method: "POST" });
+}
+
+// ── Auto-accept: the kitchen's confirmation and item changes ───────────────────────────────────────
+
+/** "Got it, we're making it": confirms an auto-accepted order, which is what lets a rider be sent. */
+export function confirmKitchen(orderId: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/confirm-kitchen`, { method: "POST" });
+}
+
+/** Change the items after agreeing it with the customer (before pickup): every line's new quantity, 0
+ *  removes it. A 409 (`not_editable` / `no_items_left`) carries a message to show as-is. */
+export function editOrderItems(orderId: string, body: EditMerchantOrderItemsRequest): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/edit-items`, { method: "POST", body });
 }

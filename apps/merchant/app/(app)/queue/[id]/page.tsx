@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
+import { formatPhoneDisplay, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
@@ -17,15 +17,17 @@ import { RetryableError } from "../../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
 import { formatCountdown } from "../../../lib/countdown";
-import { isNoRiderHold } from "../../../lib/order-groups";
+import { isNoRiderHold, needsKitchenConfirm } from "../../../lib/order-groups";
 import {
   cancelPreparing,
   closeOrder,
   confirmGoodsReturned,
+  confirmKitchen,
   confirmPayment,
   confirmReturnedCash,
   dispatchCancel,
   dispatchResume,
+  editOrderItems,
   getOrder,
   logCall,
   markReady,
@@ -35,13 +37,13 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, isAfterPickup, money, orderLabel, riderFirstName, steps } from "../../../lib/orders-view";
+import { detailView, isAfterPickup, itemsEditedLabel, money, orderLabel, riderFirstName, steps } from "../../../lib/orders-view";
 import { useNow } from "../../../lib/use-now";
 
 const POLL_MS = 5_000;
 
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse } | { status: "error"; message: string };
-type Confirm = null | "cancel" | "force" | "no_cash" | "not_returned" | "hold_cancel";
+type Confirm = null | "cancel" | "force" | "no_cash" | "not_returned" | "hold_cancel" | "items";
 
 /** What every order screen below needs from the page. */
 interface Ctx {
@@ -187,6 +189,16 @@ export default function OrderPage() {
       setError(null);
     };
     switch (confirm) {
+      case "items":
+        return (
+          <ChangeItemsSheet
+            order={order}
+            busy={busy}
+            error={error}
+            onSave={(lines) => void act(() => editOrderItems(order.id, { lines }), "Items changed · customer told the new total")}
+            onCancel={close}
+          />
+        );
       case "cancel":
         return (
           <ConfirmSheet
@@ -257,6 +269,7 @@ export default function OrderPage() {
 
 // ── B3 ─────────────────────────────────────────────────────────────────────────────────────────
 function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers }: Ctx) {
+  const unconfirmed = needsKitchenConfirm(order);
   const now = useNow();
   const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
@@ -268,6 +281,17 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers }: Ct
     <>
       <AppBar back="/queue" title={orderLabel(order)} right={<b className="m-num">{money(order.merchantGoodsTotal)}</b>} />
       <div className="m-bd" style={{ flex: 1 }}>
+        {unconfirmed && (
+          <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
+            <b style={{ fontSize: 15 }}>LyniaGo accepted this for you</b>
+            <span className="m-hint" style={{ fontSize: 13 }}>
+              Confirm you’re making it so we can send a rider.
+            </span>
+            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmKitchen(order.id), "Confirmed · we’ll send a rider when it’s nearly ready")}>
+              Got it, we’re making it
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 14, background: "var(--accent-wash)", borderRadius: 16, padding: 14 }}>
           <div className="m-ring" style={{ background: `conic-gradient(var(--accent) 0 ${pct}%, #cdeeda ${pct}% 100%)` }}>
             <b>{formatCountdown(leftMs)}</b>
@@ -278,6 +302,8 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers }: Ct
           </div>
         </div>
         <Lines order={order} />
+        <ItemsFooter order={order} disabled={disabled} setConfirm={setConfirm} />
+        <CustomerRow order={order} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13.5, marginTop: 4 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <Icon name="circle-check" size={18} color="var(--accent-text)" />
@@ -353,6 +379,8 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
             {money(order.merchantGoodsTotal)}
           </b>
         </div>
+        <ItemsFooter order={order} disabled={disabled} setConfirm={setConfirm} />
+        <CustomerRow order={order} />
         {error && <div className="m-alert" role="alert">{error}</div>}
         <div style={{ flex: 1 }} />
         <button
@@ -508,6 +536,142 @@ function Closed({ order }: Pick<Ctx, "order">) {
 }
 
 // ── Shared pieces ──────────────────────────────────────────────────────────────────────────────
+
+/** Lines the merchant can change: each needs its own id for the edit (older APIs don't send one). */
+function editableLines(order: MerchantOrderResponse) {
+  return order.items.filter((i): i is typeof i & { itemId: string } => !!i.itemId);
+}
+
+/** Under the items: "Items changed 12:10" once they were, and "Change items" until the rider has the food. */
+function ItemsFooter({ order, disabled, setConfirm }: Pick<Ctx, "order" | "disabled" | "setConfirm">) {
+  const edited = itemsEditedLabel(order);
+  const canChange = !isAfterPickup(order) && editableLines(order).length > 0;
+  if (!edited && !canChange) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: -4 }}>
+      {edited && <span className="m-hint m-num" style={{ flex: 1 }}>{edited}</span>}
+      {canChange && (
+        <button type="button" className="m-lnk" style={{ marginLeft: "auto", fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("items")}>
+          Change items
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The customer's number with a call button — only when the order carries one. */
+function CustomerRow({ order }: Pick<Ctx, "order">) {
+  const phone = order.customerPhone;
+  if (!phone) return null;
+  const shown = formatPhoneDisplay(phone);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="m-av">
+        <Icon name="user" size={18} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <b style={{ fontSize: 15 }}>Customer</b>
+        <div className="m-hint m-num" style={{ fontSize: 13 }}>
+          {shown}
+        </div>
+      </div>
+      <a href={`tel:${phone}`} className="m-gh" aria-label={`Call the customer on ${shown}`} style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}>
+        <Icon name="phone" size={18} />
+      </a>
+    </div>
+  );
+}
+
+/** "Change items": every line with − qty + (0 removes it); lines the kitchen didn't have show struck
+ *  at 0. Saving sends every line's quantity; a refusal (not editable any more, nothing left) shows here. */
+function ChangeItemsSheet({
+  order,
+  busy,
+  error,
+  onSave,
+  onCancel,
+}: {
+  order: MerchantOrderResponse;
+  busy: boolean;
+  error: string | null;
+  onSave: (lines: { itemId: string; quantity: number }[]) => void;
+  onCancel: () => void;
+}) {
+  const [lines, setLines] = useState(() =>
+    editableLines(order).map((i) => ({ itemId: i.itemId, name: i.name, gone: i.available === false, quantity: i.available === false ? 0 : i.quantity })),
+  );
+  const saveRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    saveRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const step = (itemId: string, by: number) =>
+    setLines((ls) => ls.map((l) => (l.itemId === itemId ? { ...l, quantity: Math.max(0, Math.min(99, l.quantity + by)) } : l)));
+
+  return (
+    <div className="m-overlay" style={{ zIndex: 70 }}>
+      <div className="m-overlay-frame">
+        <button type="button" className="m-scrim" aria-label="Keep as is" onClick={onCancel} />
+        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-items-title">
+          <div className="m-grab" />
+          <b id="m-items-title" style={{ fontSize: 18 }}>
+            Change items
+          </b>
+          <p className="m-sub">Agree it with the customer first. They’ll get the new total.</p>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {lines.map((l) => (
+              <div key={l.itemId} className="m-li" style={{ cursor: "default" }}>
+                <div className="m-t">
+                  <b style={l.gone || l.quantity === 0 ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}>{l.name}</b>
+                </div>
+                <button
+                  type="button"
+                  className="m-gh"
+                  aria-label={`One less ${l.name}`}
+                  style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}
+                  disabled={busy || l.gone || l.quantity === 0}
+                  onClick={() => step(l.itemId, -1)}
+                >
+                  <Icon name="minus" size={18} />
+                </button>
+                <b className="m-num" style={{ width: 24, textAlign: "center" }} aria-label={`${l.name} quantity`}>
+                  {l.quantity}
+                </b>
+                <button
+                  type="button"
+                  className="m-gh"
+                  aria-label={`One more ${l.name}`}
+                  style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}
+                  disabled={busy || l.gone || l.quantity >= 99}
+                  onClick={() => step(l.itemId, 1)}
+                >
+                  <Icon name="plus" size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {error && (
+            <div className="m-alert" role="alert">
+              {error}
+            </div>
+          )}
+          <button ref={saveRef} type="button" className="m-btn" disabled={busy} onClick={() => onSave(lines.map((l) => ({ itemId: l.itemId, quantity: l.quantity })))}>
+            Save changes
+          </button>
+          <button type="button" className="m-lnk" onClick={onCancel}>
+            Keep as is
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function Lines({ order }: Pick<Ctx, "order">) {
   return (
     <div className="m-card" style={{ gap: 0, padding: "4px 14px" }}>

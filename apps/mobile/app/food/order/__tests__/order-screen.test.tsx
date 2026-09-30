@@ -381,6 +381,69 @@ describe("food order screen — phase branching", () => {
     expect(has(tree, /is cooking your order/)).toBe(true);
   });
 
+  // ── Auto-accept: sent straight to the kitchen, not yet confirmed ────────────────────────────────
+  describe("auto-accept, kitchen not confirmed yet", () => {
+    const CONFIRMING = { ...BASE_ORDER, merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null };
+
+    it("shows the Confirming state (not Cooking) with the free-cancel copy and step-0 tracker", async () => {
+      mockGetFoodOrder.mockResolvedValue(CONFIRMING);
+      const tree = await render();
+      expect(has(tree, "Confirming")).toBe(true);
+      expect(has(tree, "Sent to Sadza Republic")).toBe(true);
+      expect(has(tree, "They're confirming your order. You can cancel free until they do.")).toBe(true);
+      expect(has(tree, /is cooking your order/)).toBe(false);
+      const stepper = tree.root.findAll((n) => n.props.merchantPhase === "awaiting_accept" && n.props.jobType === "food");
+      expect(stepper.length).toBeGreaterThan(0);
+    });
+
+    it("cancels free through the same unpaid-cancel flow as awaiting_accept", async () => {
+      mockGetFoodOrder.mockResolvedValue(CONFIRMING);
+      const tree = await render();
+      press(tree, "Cancel the order — free");
+      await settle();
+      expect(mockCancelUnpaid).toHaveBeenCalledWith("order-1");
+      expect(mockReplace).toHaveBeenCalledWith("/food");
+    });
+
+    it("shows no call row when the restaurant hides its number", async () => {
+      mockGetFoodOrder.mockResolvedValue({ ...CONFIRMING, restaurantPhone: null });
+      const tree = await render();
+      expect(has(tree, "Call Sadza Republic")).toBe(false);
+    });
+
+    it("shows the restaurant's number with a call action when it shares one", async () => {
+      const { Linking } = require("react-native");
+      const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+      mockGetFoodOrder.mockResolvedValue({ ...CONFIRMING, restaurantPhone: "+263771234567" });
+      const tree = await render();
+      expect(has(tree, "Call Sadza Republic")).toBe(true);
+      expect(has(tree, formatPhoneLocal("+263771234567"))).toBe(true);
+      press(tree, "Call Sadza Republic");
+      expect(openURL).toHaveBeenCalledWith("tel:+263771234567");
+      openURL.mockRestore();
+    });
+
+    it("falls through to Cooking once the kitchen confirms", async () => {
+      mockGetFoodOrder.mockResolvedValue({ ...CONFIRMING, kitchenConfirmedAt: new Date().toISOString(), kitchenConfirmedBy: "ops" });
+      const tree = await render();
+      expect(has(tree, /is cooking your order/)).toBe(true);
+      expect(has(tree, "Sent to Sadza Republic")).toBe(false);
+    });
+  });
+
+  it("tells the customer when the restaurant changed the order, with the new total", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing", total: 12.25, itemsEditedAt: new Date().toISOString() });
+    const tree = await render();
+    expect(has(tree, /is cooking your order/)).toBe(true);
+    expect(has(tree, "Sadza Republic changed your order. New total $12.25.")).toBe(true);
+  });
+
+  it("shows no changed-order notice when the items were never edited", async () => {
+    mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "preparing" });
+    const tree = await render();
+    expect(has(tree, /changed your order/)).toBe(false);
+  });
+
   // ── D3 (track) ────────────────────────────────────────────────────────────────────────────────
   it("shows the dispatch-searching card once the kitchen has marked the order ready", async () => {
     mockGetFoodOrder.mockResolvedValue({ ...BASE_ORDER, merchantPhase: "ready_for_pickup", readyAt: new Date().toISOString() });

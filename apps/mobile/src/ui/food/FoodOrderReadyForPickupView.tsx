@@ -14,16 +14,20 @@ export function FoodOrderReadyForPickupView({
   order,
   restaurantName,
   reachable,
+  notice,
 }: {
   order: ReadyForPickupOrder;
   restaurantName: string;
   reachable: boolean;
+  /** Optional strip under the header — the auto-accept "changed your order" notice. */
+  notice?: React.ReactNode;
 }): React.ReactElement {
   const onHold = order.noRiderHoldAt != null;
   return (
     <Screen>
       <OfflineBanner state={reachable ? "online" : "offline"} />
       <OrderHeader restaurantName={restaurantName} pillLabel={onHold ? "Still searching" : "Finding a rider"} pillTone="neutral" />
+      {notice}
       <View style={{ alignItems: "center", paddingVertical: tokens.space.lg }}>
         <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.md }}>
           <Icon name="bike" size={34} color={tokens.color.accentText} strokeWidth={1.75} />

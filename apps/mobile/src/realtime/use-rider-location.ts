@@ -1,6 +1,6 @@
 import { WS_EVENTS } from "@lynia/shared";
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 // This top-level import is ALSO load-bearing for its side effect: background-location-task.ts calls
@@ -40,13 +40,22 @@ import { acquireSocket, releaseSocket } from "./socket";
  * effect used to swallow with a bare `return` — no GPS streamed for the rest of the delivery, no
  * error, no signal to the job screen. The caller decides how to surface it (JOURNEY-BUGS).
  */
-export function useRiderLocationStream(orderId: string | null): { permissionDenied: boolean } {
+export function useRiderLocationStream(orderId: string | null): {
+  permissionDenied: boolean;
+  /** The freshest fix this stream has seen for the current job (foreground or background), or null
+   *  before the first one. Read on demand by actions that must prove where the rider is — e.g. the
+   *  auto-accept "Collected" pickup — so they reuse this stream's permission instead of asking again. */
+  getLastFix: () => { lat: number; lng: number } | null;
+} {
   const { session } = useAuth();
   const token = session?.accessToken;
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const lastFix = useRef<{ lat: number; lng: number } | null>(null);
+  const getLastFix = useCallback(() => lastFix.current, []);
 
   useEffect(() => {
     setPermissionDenied(false);
+    lastFix.current = null;
     if (!orderId || !token) return;
     let socket: Socket | null = null;
     let sub: Location.LocationSubscription | null = null;
@@ -79,6 +88,7 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
       const send = (fix: Fix): void => {
+        lastFix.current = { lat: fix.lat, lng: fix.lng };
         // Connected: emit live. Disconnected: hold only the freshest fix (don't emit, or Socket.IO
         // would queue the whole stale trail) and let the reconnect handler flush it.
         if (connected) socket?.emit(WS_EVENTS.riderLocation, fix);
@@ -121,5 +131,5 @@ export function useRiderLocationStream(orderId: string | null): { permissionDeni
     };
   }, [orderId, token]);
 
-  return { permissionDenied };
+  return { permissionDenied, getLastFix };
 }
