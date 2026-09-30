@@ -14,7 +14,7 @@ interface Person {
   photoUrl: string | null;
   onHold: boolean;
   rider: { kycStatus: string; accountStatus: string; onHold: boolean; isOnline?: boolean; lastHeartbeatAt?: Date | null } | null;
-  merchantMembership: { merchantId: string } | null;
+  merchantMemberships: { merchantId: string }[];
 }
 interface Row { id: string; merchantId: string; phone: string; label: string; addedByProfileId: string; createdAt: Date }
 interface Audit { actor: string; action: string; target: string; note: string | null; createdAt: Date }
@@ -33,7 +33,7 @@ function makeWorld() {
     photoUrl: null,
     onHold: false,
     rider: { kycStatus: "verified", accountStatus: "active", onHold: false },
-    merchantMembership: null,
+    merchantMemberships: [],
     ...over,
   });
 
@@ -62,7 +62,7 @@ function makeWorld() {
     },
     merchantMember: {
       count: async ({ where }: { where: { merchantId: string; profile: { phone: string } } }) =>
-        [...people.values()].filter((p) => p.phone === where.profile.phone && p.merchantMembership?.merchantId === where.merchantId).length,
+        [...people.values()].filter((p) => p.phone === where.profile.phone && p.merchantMemberships.some((m) => m.merchantId === where.merchantId)).length,
     },
     auditLog: {
       count: async ({ where }: { where: { action: string; target: string; createdAt: { gte: Date } } }) =>
@@ -101,7 +101,7 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
     w.people.set("suspended", w.person({ id: "suspended", phone: "+263771000002", rider: { kycStatus: "verified", accountStatus: "suspended", onHold: false } }));
     w.people.set("held", w.person({ id: "held", phone: "+263771000003", rider: { kycStatus: "verified", accountStatus: "active", onHold: true } }));
     w.people.set("customerHeld", w.person({ id: "customerHeld", phone: "+263771000004", onHold: true }));
-    w.people.set("team", w.person({ id: "team", phone: "+263771000005", merchantMembership: { merchantId: "m1" } }));
+    w.people.set("team", w.person({ id: "team", phone: "+263771000005", merchantMemberships: [{ merchantId: "m1" }] }));
     w.people.set("kyc", w.person({ id: "kyc", phone: "+263771000006", rider: { kycStatus: "pending", accountStatus: "active", onHold: false } }));
     w.people.set("customer", w.person({ id: "customer", phone: "+263771000007", rider: null }));
     for (const n of ["01", "02", "03", "04", "05", "06", "07", "08"]) keep(`+2637710000${n}`, `Rider ${n}`);
@@ -180,7 +180,7 @@ describe("MerchantRidersService.add (owner only; the controller's @OwnerOnly)", 
   });
 
   it("refuses someone on the business's own team (they'd deliver its own jobs)", async () => {
-    w.people.set("cook", w.person({ id: "cook", phone: "+263772223333", merchantMembership: { merchantId: "m1" } }));
+    w.people.set("cook", w.person({ id: "cook", phone: "+263772223333", merchantMemberships: [{ merchantId: "m1" }] }));
     await expect(w.svc.add(OWNER, "owner", { label: "Cook", phone: "0772223333" })).rejects.toMatchObject({ status: 409, response: { reason: "team_member" } });
     expect(w.rows).toHaveLength(0);
   });

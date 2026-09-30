@@ -371,12 +371,15 @@ export class AdminMerchantsService {
       if (next.onHold || (next.rider && next.rider.accountStatus !== "active")) {
         throw new ConflictException({ reason: "account_restricted", message: "That account is on hold or restricted. Sort that out before handing it a business." });
       }
-      const [nextMember, nextOwnsOther, currentOwner] = await Promise.all([
-        tx.merchantMember.findUnique({ where: { profileId: next.id }, select: { id: true, merchantId: true, role: true } }),
+      // A handover still goes only to someone on no other business: branches are opened by their owner
+      // (docs/plans/2026-09-30-multi-branch-owners.md), never assembled by support.
+      const [nextMember, nextElsewhere, nextOwnsOther, currentOwner] = await Promise.all([
+        tx.merchantMember.findUnique({ where: { profileId_merchantId: { profileId: next.id, merchantId: id } }, select: { id: true, role: true } }),
+        tx.merchantMember.count({ where: { profileId: next.id, merchantId: { not: id } } }),
         tx.merchant.findFirst({ where: { ownerProfileId: next.id, id: { not: id } }, select: { id: true } }),
         tx.merchantMember.findFirst({ where: { merchantId: id, role: "owner" }, select: { id: true, profileId: true } }),
       ]);
-      if ((nextMember && nextMember.merchantId !== id) || nextOwnsOther) {
+      if (nextElsewhere > 0 || nextOwnsOther) {
         throw new ConflictException({ reason: "member_elsewhere", message: "That number works at another business. They must leave it first." });
       }
       if (nextMember?.role === "owner") throw new ConflictException({ reason: "already_owner", message: "That number already owns this business." });

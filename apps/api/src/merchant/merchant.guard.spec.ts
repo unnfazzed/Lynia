@@ -13,7 +13,7 @@ class Handlers {
 function guardWith(members: Record<string, { merchantId: string; role: "owner" | "staff"; businessType: "restaurant" | "shop" }>) {
   const prisma = {
     merchantMember: {
-      findUnique: async ({ where }: { where: { profileId: string } }) => {
+      findFirst: async ({ where }: { where: { profileId: string } }) => {
         const m = members[where.profileId];
         return m ? { merchantId: m.merchantId, role: m.role, merchant: { businessType: m.businessType } } : null;
       },

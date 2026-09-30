@@ -98,7 +98,7 @@ function makeWorld() {
           // preferredRiderIds: rider accounts by phone, with their team (if any).
           return [...profiles.values()]
             .filter((p) => where.phone!.in.includes(p.phone) && p.riderStatus)
-            .map((p) => ({ id: p.id, merchantMembership: members.find((m) => m.profileId === p.id) ?? null }));
+            .map((p) => ({ id: p.id, merchantMemberships: members.filter((m) => m.profileId === p.id) }));
         }
         return where.id!.in.map((x) => profiles.get(x)).filter(Boolean);
       },

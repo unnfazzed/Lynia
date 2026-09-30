@@ -46,7 +46,7 @@ restaurant agreed. Opening hours must be set: the server enforces them.
 ## Where it lives
 
 - Schema: `merchants.auto_accept`, `merchants.show_phone_to_customers`; `orders.auto_accepted`,
-  `kitchen_confirmed_at/by`, `kitchen_escalated_at`, `ops_no_answer_at`, `items_edited_at` (migration 0059).
+  `kitchen_confirmed_at/by`, `kitchen_escalated_at`, `ops_no_answer_at`, `items_edited_at` (migration 0063).
 - Config: `RESTAURANTS_AUTO_ACCEPT` in `packages/shared/src/restaurants-order.ts`.
 - API: `FoodOrderService` (`placeOrder`, `cancelUnpaid`, `confirmKitchenAsMerchant`, `editItems`,
   `confirmCollected`, `sweepAutoAccepted`), `food-order-ops.ts` (shared confirm/edit),

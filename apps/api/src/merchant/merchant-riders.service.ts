@@ -30,7 +30,7 @@ const PERSON_SELECT = {
   photoUrl: true,
   onHold: true,
   rider: { select: { kycStatus: true, accountStatus: true, onHold: true, isOnline: true, lastHeartbeatAt: true } },
-  merchantMembership: { select: { merchantId: true } },
+  merchantMemberships: { select: { merchantId: true } },
 } satisfies Prisma.ProfileSelect;
 type Person = Prisma.ProfileGetPayload<{ select: typeof PERSON_SELECT }>;
 
@@ -48,7 +48,7 @@ export function riderStatusOf(person: Person | undefined, merchantId: string): M
   const rider = person?.rider;
   if (!person || !rider || rider.kycStatus !== "verified") return "not_on_lyniago";
   if (rider.accountStatus !== "active" || rider.onHold || person.onHold) return "unavailable";
-  if (person.merchantMembership?.merchantId === merchantId) return "unavailable";
+  if (person.merchantMemberships.some((m) => m.merchantId === merchantId)) return "unavailable";
   return "on_lyniago";
 }
 

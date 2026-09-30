@@ -8,6 +8,7 @@ import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { onlineRefusalReason } from "../riders/online-gate";
+import { ACTIVE_MEMBERSHIP_ORDER } from "../merchant/merchant-access";
 
 export interface NearbyRider {
   profileId: string;
@@ -259,10 +260,12 @@ export class TrackingService implements OnModuleDestroy {
    * the business has no owner member yet; the merchant HTTP guard is what backfills that row.
    */
   async ownMerchantId(profileId: string): Promise<string | null> {
-    const member = await this.prisma.merchantMember.findUnique({ where: { profileId }, select: { merchantId: true } });
+    // An owner with branches is on several businesses; the kitchen feed is the one they're working on.
+    const member = await this.prisma.merchantMember.findFirst({ where: { profileId }, orderBy: ACTIVE_MEMBERSHIP_ORDER, select: { merchantId: true } });
     if (member) return member.merchantId;
     const legacy = await this.prisma.merchant.findFirst({
       where: { ownerProfileId: profileId, members: { none: { role: "owner" } } },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
     return legacy?.id ?? null;

@@ -52,7 +52,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { resolveMerchantAccess } from "./merchant-access";
+import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 import { findBookingAccountId } from "./booking-account";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
@@ -215,6 +215,9 @@ export class MerchantService {
     const nameIsEmpty = profile.firstName.trim() === "" && profile.lastName.trim() === "";
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Re-checked under the person's lock: a double submit can't open two businesses (branches are
+        // opened from inside the app, docs/plans/2026-09-30-multi-branch-owners.md).
+        if ((await lockMembershipsTx(tx, profileId)).length > 0) throw alreadyMember();
         const merchant = await tx.merchant.create({
           data: {
             name: body.name,
@@ -242,8 +245,8 @@ export class MerchantService {
         if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: splitPersonName(ownerName) });
       });
     } catch (err) {
-      // The unique indexes are the real guard against a concurrent double submit (the pre-check above
-      // races it): unique owner_profile_id, unique member profile_id, one owner per business.
+      // The profile lock above is the real guard against a concurrent double submit (the pre-check
+      // races it); a unique index firing still means someone else got there first.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") throw alreadyMember();
       throw err;
     }

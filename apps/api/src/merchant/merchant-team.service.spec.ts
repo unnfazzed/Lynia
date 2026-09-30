@@ -47,7 +47,7 @@ function makeWorld() {
   const members: Member[] = [];
   const invites: Invite[] = [];
   const audit: Audit[] = [];
-  /** Set to make the next member create lose a race to a Join elsewhere (unique profile_id). */
+  /** Set to make a Join lose a race to a Join elsewhere, committed just before it takes the person's lock. */
   let raceWinner: Omit<Member, "id" | "createdAt"> | null = null;
 
   const merchantView = (merchantId: string) => {
@@ -73,25 +73,22 @@ function makeWorld() {
       findFirst: async () => null,
     },
     merchantMember: {
-      findMany: async ({ where }: { where: { merchantId: string } }) =>
+      // A business's team, or (listMemberships / the Join lock) the businesses one person is on.
+      findMany: async ({ where }: { where: { merchantId?: string; profileId?: string } }) =>
         members
-          .filter((m) => m.merchantId === where.merchantId)
+          .filter((m) => (where.merchantId === undefined || m.merchantId === where.merchantId) && (where.profileId === undefined || m.profileId === where.profileId))
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
           .map((m) => ({ ...m, profile: { phone: people.get(m.profileId)!.phone } })),
-      findUnique: async ({ where }: { where: { profileId: string } }) => {
-        const m = members.find((x) => x.profileId === where.profileId);
+      // The resolver's active-row read ({ profileId }), or one person on one team.
+      findFirst: async ({ where }: { where: { merchantId?: string; profileId: string } }) => {
+        const m = members.find((x) => x.profileId === where.profileId && (where.merchantId === undefined || x.merchantId === where.merchantId));
         return m ? { ...m, merchant: { businessType: merchants.get(m.merchantId)!.businessType } } : null;
       },
-      findFirst: async ({ where }: { where: { merchantId: string; profileId: string } }) =>
-        members.find((m) => m.merchantId === where.merchantId && m.profileId === where.profileId) ?? null,
       count: async ({ where }: { where: { merchantId: string; profile: { phone: string } } }) =>
         members.filter((m) => m.merchantId === where.merchantId && people.get(m.profileId)?.phone === where.profile.phone).length,
       create: vi.fn(async ({ data }: { data: Omit<Member, "id" | "createdAt"> }) => {
-        if (raceWinner) {
-          members.push({ ...raceWinner, id: uuid(), createdAt: new Date() });
-          raceWinner = null;
-        }
-        if (members.some((m) => m.profileId === data.profileId)) throw unique();
+        // Unique per (person, business) since multi-branch owners.
+        if (members.some((m) => m.profileId === data.profileId && m.merchantId === data.merchantId)) throw unique();
         const row = { ...data, id: uuid(), createdAt: new Date() };
         members.push(row);
         return row;
@@ -148,7 +145,14 @@ function makeWorld() {
         return data;
       }),
     },
-    $executeRaw: vi.fn(async () => 1),
+    // The Join's profile lock: a racing Join elsewhere commits just before we get it.
+    $executeRaw: vi.fn(async () => {
+      if (raceWinner) {
+        members.push({ ...raceWinner, id: uuid(), createdAt: new Date() });
+        raceWinner = null;
+      }
+      return 1;
+    }),
     $transaction: async (cb: (tx: unknown) => unknown) => cb(prisma),
   };
 

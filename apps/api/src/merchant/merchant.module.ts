@@ -9,6 +9,8 @@ import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderController } from "./food-order.controller";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantController } from "./merchant.controller";
+import { MerchantBranchesController } from "./merchant-branches.controller";
+import { MerchantBranchesService } from "./merchant-branches.service";
 import { MerchantBookingController } from "./merchant-booking.controller";
 import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
@@ -53,6 +55,9 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * L3 adds Your riders (MerchantRidersService); L4 adds Team: MerchantTeamService (the owner's side and
  * a staff member's Leave, which evicts the person's devices from the queue room through TrackingGateway)
  * and MerchantInvitesService (Join / Not me, for a caller who isn't on a business yet).
+ *
+ * Multi-branch owners (docs/plans/2026-09-30-multi-branch-owners.md) add MerchantBranchesService: list,
+ * switch and open branches. It needs nothing new: a branch is an ordinary business row.
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
@@ -65,6 +70,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
     MerchantRidersController,
     MerchantTeamController,
     MerchantInvitesController,
+    MerchantBranchesController,
   ],
   providers: [
     MerchantService,
@@ -72,6 +78,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
     MerchantRidersService,
     MerchantTeamService,
     MerchantInvitesService,
+    MerchantBranchesService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     FoodOrderService,
