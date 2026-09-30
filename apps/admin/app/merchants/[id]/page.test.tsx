@@ -6,7 +6,7 @@ import { adminFetchResult } from "../../lib/api";
 import type { MerchantDetail } from "../../lib/adminTypes";
 
 vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("../actions", () => ({ setMerchantPilot: vi.fn() }));
+vi.mock("../actions", () => ({ setMerchantPilot: vi.fn(), setMerchantOrderSettings: vi.fn() }));
 vi.mock("../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -66,5 +66,21 @@ describe("Merchant profile: holding a business's bookings (merchant web upgrade 
   it("shows nothing about bookings on an API that can't book riders yet", async () => {
     await open(detail());
     expect(screen.queryByText("Book a rider")).toBeNull();
+  });
+});
+
+describe("Merchant profile: Taking orders (auto-accept)", () => {
+  it("a restaurant shows both switches with their current state", async () => {
+    await open(detail({ businessType: "restaurant", shopKind: null, autoAccept: true, showPhoneToCustomers: false }));
+    const card = screen.getByRole("region", { name: "Taking orders" });
+    expect(card.textContent).toContain("Accept orders automatically");
+    expect(card.textContent).toContain("Show the restaurant's number to customers");
+    expect(screen.getByRole("button", { name: "Turn off…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Turn on…" })).toBeTruthy();
+  });
+
+  it("a shop has no Taking orders card (shops can't take in-app orders)", async () => {
+    await open(detail());
+    expect(screen.queryByRole("region", { name: "Taking orders" })).toBeNull();
   });
 });

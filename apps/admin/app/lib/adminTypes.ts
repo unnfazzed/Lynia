@@ -349,9 +349,9 @@ export interface MerchantDetail extends Merchant {
    *  can't book riders yet. */
   bookingAccount?: { id: string; onHold: boolean } | null;
   /** Auto-accept: new orders skip the restaurant's accept; ops confirms each by phone before a rider. */
-  autoAccept: boolean;
+  autoAccept?: boolean;
   /** Auto-accept: customers see the restaurant's number (only once the restaurant agreed). */
-  showPhoneToCustomers: boolean;
+  showPhoneToCustomers?: boolean;
 }
 
 /* ── Orders to confirm (auto-accept: GET /admin/kitchen-confirmations) ── */

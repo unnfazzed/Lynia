@@ -26,6 +26,13 @@ export const REASONS = {
     "Items not available and the customer didn't agree a change",
     "Couldn't reach the restaurant",
   ],
+  // Auto-accept: why ops changed how a restaurant takes orders.
+  merchantOrderSettings: [
+    "The restaurant takes orders by phone",
+    "The restaurant now uses the merchant app",
+    "The restaurant agreed to show its number",
+    "The restaurant asked to hide its number",
+  ],
   // KB-POD-DISPUTE Phase B — why ops is overturning an `undelivered` outcome to `delivered`.
   orderAdjudicateDelivered: [
     "Proof photo + GPS confirm the drop; recipient withheld the code",
