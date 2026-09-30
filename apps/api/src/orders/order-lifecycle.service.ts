@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -392,8 +392,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           merchant_payment_method: string | null;
           customer_cash_confirmed_at: Date | null;
           rider_cash_confirmed_at: Date | null;
+          items: unknown;
+          declared_value: Prisma.Decimal | string | number | null;
         }>
-      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -416,7 +418,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         return { ok: false as const, attemptsUsed: o.delivery_otp_attempts + 1 };
       }
       // Row is locked and validated en_route_dropoff — safe to flip directly.
-      await tx.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date() } });
+      const deliveredAt = new Date();
+      // D-48 PR 4b: a shop booking with cash on delivery (its cash line, booking-cod.ts) — the buyer has
+      // just paid the rider, so the rider now owes it back to the shop: open the same debt the restaurant
+      // cash-back uses, for the booking's declared value, in the same commit as the delivery.
+      const cod = o.order_type === "parcel" && Array.isArray(o.items) ? codAmount(o.items as { description: string }[]) : null;
+      const owed = cod === null ? null : Number(o.declared_value ?? cod) || cod;
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: "delivered", deliveredAt, ...(owed ? { debtStatus: "open", debtAmount: owed, debtOpenedAt: deliveredAt } : {}) },
+      });
       await tx.orderEvent.create({ data: { orderId, status: "delivered" } });
       return { ok: true as const };
     });

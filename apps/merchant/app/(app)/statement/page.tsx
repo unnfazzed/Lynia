@@ -125,7 +125,7 @@ export default function MoneyPage() {
 
         {ready &&
           (ready.today.overdue ?? []).map((o) => (
-            <Link key={o.orderId} href={`/queue/${o.orderId}`} className="m-overdue">
+            <Link key={o.orderId} href={o.kind === "booking" ? `/deliveries/${o.orderId}` : `/queue/${o.orderId}`} className="m-overdue">
               <Icon name="circle-alert" size={20} color="var(--highlight-ink)" />
               <div className="m-t">
                 <b className="m-num">{money(o.amount)} overdue</b>

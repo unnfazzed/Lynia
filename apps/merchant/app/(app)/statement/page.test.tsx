@@ -40,7 +40,10 @@ function today(): MerchantEndOfDaySummaryResponse {
     orders: 7,
     sales: 59.5,
     cashOverdue: 9.5,
-    overdue: [{ orderId: "a0980000-0000-4000-8000-000000000000", amount: 9.5, riderName: "Tino", dueAt: new Date(2026, 8, 30, 11, 40).toISOString() }],
+    overdue: [
+      { orderId: "a0980000-0000-4000-8000-000000000000", amount: 9.5, riderName: "Tino", dueAt: new Date(2026, 8, 30, 11, 40).toISOString() },
+      { orderId: "b0980000-0000-4000-8000-000000000000", amount: 51, riderName: "Blessing", dueAt: new Date(2026, 8, 30, 12, 10).toISOString(), kind: "booking" as const },
+    ],
     lines: [
       { orderId: "a1110000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 12, 31).toISOString(), outcome: "delivered", amount: 12 },
       { orderId: "a0900000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 10).toISOString(), outcome: "rejected", amount: 0 },
@@ -91,7 +94,9 @@ describe("C3 · Money (merchant mobile, D-48)", () => {
     expect(screen.getByText("Sales · 7 orders")).toBeTruthy();
     expect(screen.getByText("$9.50 overdue")).toBeTruthy();
     expect(screen.getByText("#A098 · Tino · due 11:40")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /overdue/ }).getAttribute("href")).toBe("/queue/a0980000-0000-4000-8000-000000000000");
+    expect(screen.getByRole("link", { name: /\$9\.50 overdue/ }).getAttribute("href")).toBe("/queue/a0980000-0000-4000-8000-000000000000");
+    // A shop booking's cash on delivery opens the booking (D-48 PR 4b).
+    expect(screen.getByRole("link", { name: /\$51\.00 overdue/ }).getAttribute("href")).toBe("/deliveries/b0980000-0000-4000-8000-000000000000");
     expect(screen.getByText("#A111 · 12:31")).toBeTruthy();
     expect(screen.getByText("Rejected")).toBeTruthy();
     expect(screen.getByText("$0.00")).toBeTruthy();

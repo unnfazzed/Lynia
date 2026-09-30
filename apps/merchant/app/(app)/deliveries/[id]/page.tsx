@@ -17,7 +17,7 @@ import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { startFare, stepFare } from "../../../lib/book-form";
 import { codeMessage, isFinding, newIdempotencyKey, pollIntervalMs, recallCode, rememberCode, undeliveredText, whatsappLink } from "../../../lib/booking";
 import { bookingSteps, fareDelta, type OfferSort, shortName, sortOffers } from "../../../lib/booking-view";
-import { cancelBooking, getBooking, pickOffer, retryBooking, rotateBookingCode } from "../../../lib/bookings-api";
+import { cancelBooking, closeBookingCash, getBooking, pickOffer, retryBooking, rotateBookingCode } from "../../../lib/bookings-api";
 import { useBusiness } from "../../../lib/business";
 import { supportWhatsAppUrl } from "../../../lib/config";
 import { formatCountdown, msUntil } from "../../../lib/countdown";
@@ -37,6 +37,9 @@ interface Ctx {
   onNewCode: () => void;
   onCancel: () => void;
   onRetry: (fare: number) => void;
+  /** D7: "I got $X" straight away; "No cash on this one" asks first. */
+  onCashReturned: () => void;
+  onNoCash: () => void;
 }
 
 /**
@@ -58,6 +61,7 @@ export default function BookingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmNoCash, setConfirmNoCash] = useState(false);
   const actingRef = useRef(false);
   const retryKey = useRef(newIdempotencyKey());
   const signOutRef = useRef(signOut);
@@ -130,6 +134,12 @@ export default function BookingPage() {
       }),
     onCancel: () => setConfirmCancel(true),
     onRetry: (fare) => void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(`/deliveries/${b.id}`)),
+    onCashReturned: () =>
+      void act("cash", () => closeBookingCash(id, "returned"), (b) => {
+        setState({ status: "ready", booking: b });
+        toast("Cash confirmed · delivery closed");
+      }),
+    onNoCash: () => setConfirmNoCash(true),
   };
 
   return (
@@ -149,6 +159,25 @@ export default function BookingPage() {
         {ctx && ctx.booking.state === "delivered" && <Delivered {...ctx} />}
         {ctx && (ctx.booking.state === "not_delivered" || ctx.booking.state === "cancelled" || ctx.booking.state === "expired") && <Ended {...ctx} />}
       </div>
+
+      {confirmNoCash && booking && (
+        <ConfirmSheet
+          title="Close without cash?"
+          body="Nothing will show as owed for this delivery."
+          confirmLabel="Close delivery"
+          danger={false}
+          busy={busy === "cash"}
+          error={error}
+          onConfirm={() =>
+            void act("cash", () => closeBookingCash(id, "no_cash"), (b) => {
+              setConfirmNoCash(false);
+              setState({ status: "ready", booking: b });
+              toast("Completed · no cash expected");
+            })
+          }
+          onCancel={() => setConfirmNoCash(false)}
+        />
+      )}
 
       {confirmCancel && booking && (
         <ConfirmSheet
@@ -352,10 +381,14 @@ function Tracking({ booking, business, disabled, error, code, onNewCode, onCance
 }
 
 // ── D7 · Delivered ────────────────────────────────────────────────────────────────────────────
-function Delivered({ booking }: Ctx) {
+function Delivered({ booking, busy, disabled, error, onCashReturned, onNoCash }: Ctx) {
+  const now = useNow(30_000);
   const [showSteps, setShowSteps] = useState(false);
   const steps = bookingSteps(booking);
+  const done = steps.filter((st) => st.state === "done").length;
   const rider = shortName(booking.rider?.name);
+  const cod = booking.cashOnDelivery ?? null;
+  const dueMin = cod?.dueAt ? Math.round((new Date(cod.dueAt).getTime() - now) / 60_000) : null;
   return (
     <>
       <AppBar back="/deliveries" title="Delivery" />
@@ -367,11 +400,38 @@ function Delivered({ booking }: Ctx) {
             <span style={{ fontSize: 13, color: "var(--muted)" }}>Buyer gave the rider the code</span>
           </div>
         </div>
+        {cod?.status === "due" && (
+          <div className="m-card" style={{ border: "2px solid var(--highlight)", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "var(--highlight-ink)" }}>CASH BACK TO YOU</span>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14 }}>{rider ?? "The rider"} is bringing</span>
+              <b className="m-num" style={{ fontSize: 24 }}>
+                {money(Number(cod.amount))}
+              </b>
+            </div>
+            {cod.dueAt && dueMin !== null && (
+              <span className="m-hint" style={dueMin < 0 ? { color: "var(--danger-ink)" } : undefined}>
+                Due by {new Date(cod.dueAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · {dueMin < 0 ? `${-dueMin} min overdue` : `${dueMin} min left`}
+              </span>
+            )}
+            {error && (
+              <div className="m-alert" role="alert">
+                {error}
+              </div>
+            )}
+            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={onCashReturned}>
+              {busy === "cash" ? "Saving…" : `I got ${money(Number(cod.amount))}`}
+            </button>
+            <button type="button" className="m-gh" disabled={disabled} onClick={onNoCash}>
+              No cash on this one · mark completed
+            </button>
+          </div>
+        )}
         <button type="button" className="m-card" style={{ flexDirection: "row", alignItems: "center", cursor: "pointer", font: "inherit", color: "inherit", textAlign: "left" }} onClick={() => setShowSteps((v) => !v)}>
           <Icon name="circle-check" size={20} color="var(--accent-text)" />
           <div style={{ flex: 1 }}>
             <b style={{ display: "block", fontSize: 15 }}>
-              {steps.length} of {steps.length} steps done
+              {done} of {steps.length} steps done
             </b>
             <span className="m-hint">Booked {steps[0]!.time}</span>
           </div>

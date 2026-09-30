@@ -1452,7 +1452,16 @@ export const MerchantEndOfDaySummaryResponse = z
     sales: z.number().optional(),
     cashOverdue: z.number().optional(),
     overdue: z
-      .array(z.object({ orderId: z.string().uuid(), amount: z.number(), riderName: z.string().nullable(), dueAt: z.string() }))
+      .array(
+        z.object({
+          orderId: z.string().uuid(),
+          amount: z.number(),
+          riderName: z.string().nullable(),
+          dueAt: z.string(),
+          /** D-48 PR 4b: a shop booking's cash on delivery (opens /deliveries/:id) rather than a food order. */
+          kind: z.enum(["order", "booking"]).optional(),
+        }),
+      )
       .optional(),
     // D-48 C3: Money's "Orders" list for today, newest first. `at` is when it ended (delivered or
     // cancelled), else when it was placed; `amount` is what it earned (0 unless delivered or still on).
@@ -1492,6 +1501,8 @@ export const CreateMerchantBookingRequest = z
     disclaimerVersion: z.string().min(1).max(40),
     /** One per form attempt, so a double tap or a timed-out retry books once. */
     idempotencyKey: z.string().uuid(),
+    /** D-48 PR 4b: the rider collects `declaredValue` from the buyer and brings it back to the shop. */
+    collectCash: z.boolean().optional(),
   })
   .strict();
 export type CreateMerchantBookingRequest = z.infer<typeof CreateMerchantBookingRequest>;
@@ -1594,6 +1605,21 @@ export const MerchantBookingResponse = z
     codeIssuedAt: z.string().nullable(),
     /** Detail only (empty in the list): pending offers while finding a rider. */
     offers: z.array(MerchantBookingOffer),
+    /**
+     * D-48 PR 4b: cash on delivery, when the booking asked for it. `awaiting_delivery` until the buyer
+     * pays at the door; `due` while the rider owes it back (`dueAt` = delivered + 30 min, overdue after);
+     * `returned` once the shop said "I got $X"; `closed` for "No cash on this one". Absent on older
+     * servers; null when the booking is delivery-only.
+     */
+    cashOnDelivery: z
+      .object({
+        amount: z.string(),
+        status: z.enum(["awaiting_delivery", "due", "returned", "closed"]),
+        dueAt: z.string().nullable(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 export type MerchantBookingResponse = z.infer<typeof MerchantBookingResponse>;
@@ -1606,6 +1632,11 @@ export const PickMerchantBookingOfferResponse = z
   })
   .strict();
 export type PickMerchantBookingOfferResponse = z.infer<typeof PickMerchantBookingOfferResponse>;
+
+/** D-48 PR 4b: `POST /merchant/bookings/:id/cash` — the shop closes a booking's cash on delivery: it
+ *  counted the cash ("I got $X"), or there's none to come ("No cash on this one"). */
+export const CloseMerchantBookingCashRequest = z.object({ outcome: z.enum(["returned", "no_cash"]) }).strict();
+export type CloseMerchantBookingCashRequest = z.infer<typeof CloseMerchantBookingCashRequest>;
 
 /** `POST /merchant/bookings/:id/code` — Send's code rotation: a new code replaces the old one. */
 export const RotateMerchantBookingCodeResponse = z.object({ deliveryCode: z.string() }).strict();

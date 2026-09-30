@@ -1,6 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import {
+  type CloseMerchantBookingCashRequest,
+  codAmount,
+  codItem,
   type CreateMerchantBookingRequest,
   type CreateOrderRequest,
   type LatLng,
@@ -12,8 +15,11 @@ import {
   PHONE_REVEAL_STATUSES,
   type PickMerchantBookingOfferResponse,
   type RetryMerchantBookingRequest,
+  RESTAURANTS_DEBT,
   type RotateMerchantBookingCodeResponse,
+  summarizeItems,
   type Waypoint,
+  withoutCodItem,
 } from "@lynia/shared";
 import { MatchingService } from "../matching/matching.service";
 import { OffersService } from "../offers/offers.service";
@@ -52,6 +58,10 @@ const BOOKING_SELECT = {
   cancelReason: true,
   rebroadcastOfId: true,
   deliveryCodeRotatedAt: true,
+  deliveredAt: true,
+  debtStatus: true,
+  debtAmount: true,
+  merchantClosedAt: true,
   rider: { select: { bikeReg: true, profile: { select: { firstName: true, lastName: true, phone: true } } } },
   merchantBooking: { select: { bookedByProfileId: true } },
   _count: { select: { offers: { where: { status: "pending" } } } },
@@ -122,11 +132,21 @@ export class MerchantBookingService {
     if (!pickup) {
       throw new ConflictException({ reason: "no_location", message: "Set your business's pin before booking a rider." });
     }
+    // D-48 PR 4b: cash on delivery rides as one more line, so every rider app shows it (booking-cod.ts).
+    const collectCash = body.collectCash === true;
+    const goods = withoutCodItem(body.items);
+    if (collectCash && (body.declaredValue <= 0 || goods.length > 9)) {
+      throw new BadRequestException({
+        reason: "bad_cash_on_delivery",
+        message: body.declaredValue <= 0 ? "Say what the buyer pays, so the rider knows what to collect." : "A cash-on-delivery booking carries up to 9 lines.",
+      });
+    }
+    const items = collectCash ? [...goods, codItem(body.declaredValue, merchant.name)] : goods;
     const accountId = await ensureBookingAccount(this.prisma, merchant);
     const created = await this.createAsBusiness(accountId, {
       pickup,
       dropoff: body.dropoff,
-      items: body.items,
+      items,
       declaredValue: body.declaredValue,
       proposedFare: body.proposedFare,
       ...(body.note ? { note: body.note } : {}),
@@ -135,7 +155,7 @@ export class MerchantBookingService {
     });
     // ON CONFLICT DO NOTHING: an idempotent replay returns Send's existing order, and its row stays (OV-8).
     await this.prisma.merchantBooking.createMany({
-      data: [{ orderId: created.id, merchantId: merchant.id, bookedByProfileId: profileId }],
+      data: [{ orderId: created.id, merchantId: merchant.id, bookedByProfileId: profileId, ...(collectCash ? { collectCash: true } : {}) }],
       skipDuplicates: true,
     });
     return this.detail(access, created.id);
@@ -222,13 +242,39 @@ export class MerchantBookingService {
     const items = (row.items as OrderItem[] | null) ?? [{ description: row.itemDesc.slice(0, 140) || "Parcel", quantity: 1 }];
     return this.create(access, profileId, {
       dropoff: row.dropoff as unknown as Waypoint,
-      items,
+      // The cash line is rebuilt by create from the flag (and today's shop name), not copied.
+      items: withoutCodItem(items),
+      ...(codAmount(items) !== null ? { collectCash: true } : {}),
       declaredValue: Number(row.declaredValue),
       proposedFare: body.proposedFare ?? Number(row.proposedFare),
       ...(row.note ? { note: row.note } : {}),
       disclaimerVersion: row.disclaimerVersion ?? "merchant-booking",
       idempotencyKey: body.idempotencyKey,
     });
+  }
+
+  /**
+   * D-48 PR 4b (D7): the shop closes a delivered booking's cash on delivery — "I got $X" (counted it)
+   * or "No cash on this one" (nothing to come). Guarded on the open debt, so two teammates tapping at
+   * once close it once and the second is told it's already closed.
+   */
+  async closeCash(access: MerchantAccess, orderId: string, body: CloseMerchantBookingCashRequest): Promise<MerchantBookingResponse> {
+    const { row } = await this.ownedBooking(access, orderId);
+    if (row.debtStatus == null && codAmount(row.items as OrderItem[] | null) === null) {
+      throw new ConflictException({ reason: "no_cash_on_delivery", message: "This booking has no cash on delivery." });
+    }
+    const now = new Date();
+    const closed = await this.prisma.order.updateMany({
+      where: { id: orderId, debtStatus: "open", merchantClosedAt: null },
+      data: body.outcome === "returned" ? { debtStatus: "settled_cash", debtSettledAt: now } : { merchantClosedAt: now, merchantCloseReason: "no_cash" },
+    });
+    if (closed.count === 0) {
+      throw new ConflictException({
+        reason: row.debtStatus == null ? "not_delivered_yet" : "already_closed",
+        message: row.debtStatus == null ? "The buyer hasn't paid yet: the cash is due once it's delivered." : "This cash is already closed.",
+      });
+    }
+    return this.detail(access, orderId);
   }
 
   /** A Google Maps short link the browser can't follow, resolved against the strict allow-list (OV-6). */
@@ -385,7 +431,7 @@ export class MerchantBookingService {
       createdAt: r.createdAt.toISOString(),
       expiresAt: r.status === "open_for_offers" ? new Date(r.createdAt.getTime() + OFFER_WINDOW_MS).toISOString() : null,
       dropoff: r.dropoff as unknown as Waypoint,
-      itemsSummary: r.itemDesc,
+      itemsSummary: goodsSummary(r),
       declaredValue: r.declaredValue.toString(),
       proposedFare: r.proposedFare.toString(),
       agreedFare: r.agreedFare?.toString() ?? null,
@@ -413,6 +459,27 @@ export class MerchantBookingService {
       rebroadcastOfId: r.rebroadcastOfId,
       codeIssuedAt: r.deliveryCodeRotatedAt?.toISOString() ?? null,
       offers: extra.offers,
+      cashOnDelivery: cashOnDeliveryOf(r),
     };
   }
+}
+
+/** The booking's own goods, without the cash-on-delivery line the riders see. */
+function goodsSummary(r: Pick<BookingRow, "items" | "itemDesc">): string {
+  const items = r.items as OrderItem[] | null;
+  if (!items || codAmount(items) === null) return r.itemDesc;
+  const goods = withoutCodItem(items);
+  return goods.length > 0 ? summarizeItems(goods) : r.itemDesc;
+}
+
+/** D-48 PR 4b: where the booking's cash on delivery stands, for D5's last step and D7's cash card. */
+function cashOnDeliveryOf(r: BookingRow): MerchantBookingResponse["cashOnDelivery"] {
+  const asked = codAmount(r.items as OrderItem[] | null);
+  if (asked === null && r.debtStatus == null) return null;
+  const amount = (r.debtAmount ?? r.declaredValue).toString();
+  const dueAt = r.deliveredAt ? new Date(r.deliveredAt.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString() : null;
+  if (r.merchantClosedAt) return { amount, status: "closed", dueAt };
+  if (r.debtStatus === "open") return { amount, status: "due", dueAt };
+  if (r.debtStatus) return { amount, status: "returned", dueAt };
+  return { amount: Number(r.declaredValue).toFixed(2), status: "awaiting_delivery", dueAt: null };
 }

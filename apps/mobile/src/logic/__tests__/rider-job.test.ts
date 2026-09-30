@@ -1,5 +1,5 @@
 import { DELIVERY_OTP_MAX_ATTEMPTS as SHARED_DELIVERY_OTP_MAX_ATTEMPTS, UndeliveredReason } from "@lynia/shared";
-import { advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../rider-job";
+import { advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, parcelCashOnDelivery, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../rider-job";
 
 describe("DELIVERY_OTP_MAX_ATTEMPTS", () => {
   it("is re-exported from @lynia/shared, not a locally-duplicated copy", () => {
@@ -159,5 +159,15 @@ describe("reconcilePendingSenderRating", () => {
     expect(
       reconcilePendingSenderRating({ pending: { orderId: "o1", score: 5 }, deliveredOrderId: null, confirmed: false }),
     ).toBe("wait");
+  });
+});
+
+describe("parcelCashOnDelivery (D-48 PR 4b)", () => {
+  it("reads a shop booking's cash line, and nothing else", () => {
+    const line = { description: "Cash on delivery: collect $51.00 from the buyer, bring it back to Mbare Auto Spares" };
+    expect(parcelCashOnDelivery({ orderType: "parcel", items: [{ description: "Brake pads" }, line] })).toBe(51);
+    expect(parcelCashOnDelivery({ orderType: "parcel", items: [{ description: "Brake pads" }] })).toBeNull();
+    expect(parcelCashOnDelivery({ orderType: "merchant", items: [line] })).toBeNull();
+    expect(parcelCashOnDelivery({ items: null })).toBeNull();
   });
 });

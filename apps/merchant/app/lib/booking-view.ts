@@ -22,7 +22,7 @@ export function trackedBookings(bookings: readonly MerchantBookingResponse[], no
 }
 
 export interface Tracker {
-  icon: "timer" | "bike" | "circle-check" | "ban";
+  icon: "timer" | "bike" | "banknote" | "circle-check" | "ban";
   title: string;
   /** Finding: "Pick a rider" / "Waiting for offers"; ended: its state. Coming / picked up draw a bar instead. */
   sub: string | null;
@@ -39,6 +39,10 @@ export function tracker(b: MerchantBookingResponse): Tracker {
   const title = rider ? `${b.itemsSummary} · ${rider}` : b.itemsSummary;
   if (b.state === "coming") return { icon: "bike", title, sub: null, progress: 2 };
   if (b.state === "picked_up") return { icon: "bike", title, sub: null, progress: 4 };
+  if (b.state === "delivered" && b.cashOnDelivery?.status === "due") {
+    // Still live for the shop: its cash is on the way back (D-48 PR 4b).
+    return { icon: "banknote", title, sub: `Delivered · cash back $${Number(b.cashOnDelivery.amount).toFixed(2)}`, progress: null };
+  }
   if (b.state === "delivered") return { icon: "circle-check", title, sub: STATE_LABEL.delivered, progress: null };
   return { icon: "ban", title, sub: STATE_LABEL[b.state], progress: null };
 }
@@ -79,10 +83,13 @@ function hm(iso: string): string {
 const BOOKING_STEPS = ["Booked", "Rider secured", "Rider at your shop", "Picked up", "On the way", "Delivered"] as const;
 
 /** D5's stepper. The API gives no time for the middle steps, so only "Booked" carries one; the current
- *  step says "live". (The drawn 7th step, "Cash back to you", arrives with cash on delivery.) */
-export function bookingSteps(b: Pick<MerchantBookingResponse, "state" | "createdAt">): Step[] {
-  const done = b.state === "coming" ? 2 : b.state === "picked_up" ? 4 : b.state === "delivered" ? 6 : 1;
-  return BOOKING_STEPS.map((label, i) => ({
+ *  step says "live". A cash-on-delivery booking has the drawn 7th step, "Cash back to you". */
+export function bookingSteps(b: Pick<MerchantBookingResponse, "state" | "createdAt" | "cashOnDelivery">): Step[] {
+  const cod = b.cashOnDelivery ?? null;
+  const labels = cod ? [...BOOKING_STEPS, "Cash back to you"] : [...BOOKING_STEPS];
+  const cashDone = cod?.status === "returned" || cod?.status === "closed";
+  const done = b.state === "coming" ? 2 : b.state === "picked_up" ? 4 : b.state === "delivered" ? (cod && !cashDone ? 6 : labels.length) : 1;
+  return labels.map((label, i) => ({
     label,
     state: i < done ? "done" : i === done ? "now" : "todo",
     time: i === 0 ? hm(b.createdAt) : i === done ? "live" : "",

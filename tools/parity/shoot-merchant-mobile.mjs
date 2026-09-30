@@ -166,8 +166,10 @@ const BOOKINGS = {
     ],
   }),
   coming: booking("b2000000-0000-4000-8000-000000000000", { state: "picked_up", status: "en_route_dropoff", itemsSummary: "Brake pads" }),
-  tracking: booking("b3000000-0000-4000-8000-000000000000", { state: "picked_up", status: "en_route_dropoff" }),
-  delivered: booking("b4000000-0000-4000-8000-000000000000", { state: "delivered", status: "delivered" }),
+  tracking: booking("b3000000-0000-4000-8000-000000000000", {
+    state: "picked_up", status: "en_route_dropoff", cashOnDelivery: { amount: "51.00", status: "awaiting_delivery", dueAt: null },
+  }),
+  delivered: booking("b4000000-0000-4000-8000-000000000000", { state: "delivered", status: "delivered", cashOnDelivery: { amount: "51.00", status: "due", dueAt: ahead(29) } }),
 };
 const SHOP_ME = { ...SHOP, hours: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: "08:00", close: "18:00" }])) };
 const SHOP_ITEMS = [
@@ -294,6 +296,7 @@ const toD3 = async (p) => {
     await p.getByRole("button", { name: "From your items" }).click();
     await p.getByRole("dialog", { name: "Your items" }).getByRole("button", { name }).click();
   }
+  await p.getByRole("switch", { name: "Buyer pays cash on delivery" }).click();
 };
 const SHOP_ROWS = [
   {
@@ -324,10 +327,10 @@ const SHOP_ROWS = [
     id: "D5",
     label: "D5 · Tracking",
     mode: "shop",
-    sub: "code shown to whoever picked; this browser didn't (no ETA, no Cash back step until cash on delivery)",
+    sub: "code shown to whoever picked; this browser didn't · no ETA · a cash-on-delivery booking (PR 4b)",
     app: { name: "D5", path: `/deliveries/${BOOKINGS.tracking.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.tracking] } },
   },
-  { id: "D7", label: "D7 · Delivered", mode: "shop", sub: "no cash card until cash on delivery (PR 4b)", app: { name: "D7", path: `/deliveries/${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
+  { id: "D7", label: "D7 · Delivered + cash back", mode: "shop", sub: "no delivered time in the booking payload", app: { name: "D7", path: `/deliveries/${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
 ];
 
 const PR1_ROWS = [
@@ -369,7 +372,7 @@ await buildSheet({
         : SET === "account"
           ? "Merchant mobile redesign · PR 3b (D-48): Hours C5, Team E2–E3, Riders E4"
           : SET === "shop"
-            ? "Merchant mobile redesign · PR 4a (D-48): the shop D1–D5, D7"
+            ? "Merchant mobile redesign · PR 4 (D-48): the shop D1–D5, D7, with cash on delivery"
         : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
   out: OUT,
   rows,

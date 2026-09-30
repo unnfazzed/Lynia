@@ -96,8 +96,11 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     const owingDebt = await this.prisma.order.findMany({
       where: {
         riderId: { in: candidateIds },
-        orderType: "merchant",
-        OR: [{ debtStatus: "open" }, { customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null }],
+        OR: [
+          { orderType: "merchant", debtStatus: "open", merchantClosedAt: null },
+          { orderType: "merchant", customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
+          { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
+        ],
       },
       select: { riderId: true },
     });

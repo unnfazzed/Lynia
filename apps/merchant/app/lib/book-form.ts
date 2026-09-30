@@ -65,15 +65,24 @@ export function validateWhere(where: Where | null, phoneDigits: string): WhereEr
   return errors;
 }
 
-export function validateWhat(lines: readonly BookLine[]): string | null {
+export function validateWhat(lines: readonly BookLine[], collectCash = false): string | null {
   if (lines.length === 0) return "Add what's going: from your items, or type one.";
-  if (lines.length > 10) return "A booking carries up to 10 lines. Split it into two.";
+  // Cash on delivery rides as one more line on the booking (packages/shared booking-cod.ts).
+  const max = collectCash ? 9 : 10;
+  if (lines.length > max) return `A booking carries up to ${max} lines. Split it into two.`;
   if (worth(lines) > DECLARED_VALUE_CAP) return VALUE_CAP_MESSAGE;
   return null;
 }
 
 /** The `POST /merchant/bookings` body. Only call once both steps validate. */
-export function toBookingRequest(where: Where, phoneDigits: string, lines: readonly BookLine[], fare: number, idempotencyKey: string): CreateMerchantBookingRequest {
+export function toBookingRequest(
+  where: Where,
+  phoneDigits: string,
+  lines: readonly BookLine[],
+  fare: number,
+  idempotencyKey: string,
+  collectCash = false,
+): CreateMerchantBookingRequest {
   return {
     dropoff: { point: where.point, landmark: where.address.trim().slice(0, 160) || "Buyer's location", contactPhone: toE164(phoneDigits) },
     items: lines.map((l) => ({ description: l.name.trim().slice(0, 140), quantity: l.qty })),
@@ -81,5 +90,6 @@ export function toBookingRequest(where: Where, phoneDigits: string, lines: reado
     proposedFare: fare,
     disclaimerVersion: SEND_DISCLAIMER_VERSION,
     idempotencyKey,
+    ...(collectCash ? { collectCash: true } : {}),
   };
 }

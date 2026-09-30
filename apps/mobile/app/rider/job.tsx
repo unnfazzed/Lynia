@@ -13,7 +13,7 @@ import {
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
 import { clearPickupPhotoDraft } from "../../src/logic/pickup-photo-draft";
-import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
+import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, parcelCashOnDelivery, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { pendingOrQueued } from "../../src/query/client";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
@@ -913,9 +913,23 @@ export default function RiderJob(): React.ReactElement {
             {/* RJM active_parcel CashStrip (rider-one-app.jsx J6) — the codegen-adopted, guardrail-locked
                 "yours vs owed to a kitchen" split (RJM.active_parcel#cash_strip → active-parcel-cash-strip.view.tsx).
                 Same live seam the app already passed CashHeldStrip; pixels unchanged (CashStrip wraps it).
-                Parcel cash is always all "yours" (owed 0 — nothing collected-and-returned). */}
-            <RiderActiveParcelCashStripView yours={Number(order.agreedFare ?? order.proposedFare)} owed={0} />
+                A parcel's fare is all "yours"; "owed" is 0 unless it's a shop booking with cash on delivery
+                (D-48 PR 4b), whose collected price rides back to the shop. */}
+            <RiderActiveParcelCashStripView yours={Number(order.agreedFare ?? order.proposedFare)} owed={parcelCashOnDelivery(order) ?? 0} />
           </View>
+        ) : null}
+
+        {/* D-48 PR 4b: a shop booking with cash on delivery — the goods' price is collected at the door
+            and taken back to the shop (the items list also carries it, for installs older than this). */}
+        {isActive && parcelCashOnDelivery(order) !== null ? (
+          <Card style={{ marginBottom: tokens.space.md, backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
+            <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.highlightInk }}>
+              Collect ${(parcelCashOnDelivery(order) ?? 0).toFixed(2)} cash from the buyer
+            </Text>
+            <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.ink, marginTop: 4, lineHeight: 18 }}>
+              It&apos;s the shop&apos;s money: take it back to the shop within 30 minutes of delivering. You take no new jobs until the shop has it.
+            </Text>
+          </Card>
         ) : null}
 
         {jobReconnecting ? (

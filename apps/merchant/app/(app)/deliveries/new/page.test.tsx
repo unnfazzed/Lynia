@@ -149,6 +149,22 @@ describe("D3 · Book · what + fare", () => {
     expect(body.dropoff).toMatchObject({ point: { lat: -17.8, lng: 31.05 }, contactPhone: "+263779982210" });
   });
 
+  it("the buyer can pay cash on delivery: the booking asks the rider to bring the worth back", async () => {
+    vi.mocked(createBooking).mockResolvedValue(merchantBooking({ id: "b2" }));
+    await openForm();
+    await toStep2();
+    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
+    type(screen.getByLabelText("What it is"), "Oil filter");
+    type(screen.getByLabelText("Price of one ($)"), "7");
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByText("Off: the buyer pays you as they do today")).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "Buyer pays cash on delivery" }));
+    expect(screen.getByText("The rider collects $7.00 and brings it back to you")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    await waitFor(() => expect(createBooking).toHaveBeenCalled());
+    expect(vi.mocked(createBooking).mock.calls[0]![0]).toMatchObject({ collectCash: true, declaredValue: 7 });
+  });
+
   it("books nothing without items, and blocks goods over $150", async () => {
     await openForm();
     await toStep2();

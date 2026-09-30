@@ -34,8 +34,14 @@ interface OrderRow {
   rebroadcastOfId: string | null;
   deliveryCodeRotatedAt: Date | null;
   idempotencyKey?: string;
+  deliveredAt?: Date | null;
+  debtStatus?: string | null;
+  debtAmount?: number | null;
+  debtSettledAt?: Date | null;
+  merchantClosedAt?: Date | null;
+  merchantCloseReason?: string | null;
 }
-interface BookingRow { orderId: string; merchantId: string; bookedByProfileId: string; pickedByProfileId: string | null; cancelledByProfileId: string | null }
+interface BookingRow { orderId: string; merchantId: string; bookedByProfileId: string; pickedByProfileId: string | null; cancelledByProfileId: string | null; collectCash?: boolean }
 
 const dec = (n: number | null) => (n == null ? null : new Prisma.Decimal(n));
 const PIN = { point: { lat: -17.8613, lng: 31.0362 }, landmark: "Mbare Musika, stall 14", contactPhone: "+263771110000" };
@@ -63,6 +69,7 @@ function makeWorld() {
       declaredValue: dec(o.declaredValue),
       proposedFare: dec(o.proposedFare),
       agreedFare: dec(o.agreedFare),
+      debtAmount: dec(o.debtAmount ?? null),
       rider: rider ? { bikeReg: "ABG 1234", profile: { firstName: rider.firstName, lastName: rider.lastName, phone: rider.phone } } : null,
       merchantBooking: b ? { bookedByProfileId: b.bookedByProfileId } : null,
       _count: { offers: offers.filter((x) => x.orderId === o.id && x.status === "pending").length },
@@ -135,6 +142,13 @@ function makeWorld() {
         const all = [...orders.values()];
         if (where.customerId) return all.filter((o) => o.customerId === where.customerId).sort((a, b) => +b.createdAt - +a.createdAt).map(materialize);
         return all.filter((o) => o.rebroadcastOfId && where.rebroadcastOfId!.in.includes(o.rebroadcastOfId)).map((o) => ({ id: o.id, rebroadcastOfId: o.rebroadcastOfId }));
+      },
+      // closeCash's guarded close: only an open, not-yet-closed debt.
+      updateMany: async ({ where, data }: { where: { id: string; debtStatus: string; merchantClosedAt: null }; data: Partial<OrderRow> }) => {
+        const o = orders.get(where.id);
+        if (!o || o.debtStatus !== where.debtStatus || o.merchantClosedAt) return { count: 0 };
+        Object.assign(o, data);
+        return { count: 1 };
       },
       findFirst: async ({ where }: { where: { rebroadcastOfId: string } }) => {
         const o = [...orders.values()].find((x) => x.rebroadcastOfId === where.rebroadcastOfId);
@@ -437,6 +451,60 @@ describe("pick, cancel, a new code, try again", () => {
       status: 409,
       response: { reason: "still_live" },
     });
+  });
+});
+
+describe("cash on delivery (D-48 PR 4b)", () => {
+  it("adds the cash line riders see, records the choice, and keeps the shop's own summary clean", async () => {
+    const booking = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
+    const [input] = w.ordersSvc.create.mock.calls[0]!;
+    expect(input.items).toEqual([
+      { description: "Brake pads (Corolla)", quantity: 1 },
+      { description: "Cash on delivery: collect $51.00 from the buyer, bring it back to Mbare Auto Spares", quantity: 1 },
+    ]);
+    expect(w.bookings.get(booking.id)).toMatchObject({ collectCash: true });
+    expect(booking.itemsSummary).toBe("Brake pads (Corolla)");
+    expect(booking.cashOnDelivery).toEqual({ amount: "51.00", status: "awaiting_delivery", dueAt: null });
+  });
+
+  it("a delivery-only booking has no cash, and a cash one needs a value and room for the line", async () => {
+    expect((await w.svc.create(OWNER, "owner", form())).cashOnDelivery).toBeNull();
+    await expect(w.svc.create(OWNER, "owner", form({ declaredValue: 0, collectCash: true, idempotencyKey: "22222222-2222-4222-8222-222222222222" }))).rejects.toMatchObject({
+      response: { reason: "bad_cash_on_delivery" },
+    });
+  });
+
+  it("once delivered the cash is due; 'I got it' settles it once, and a second tap is told it's closed", async () => {
+    const booking = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
+    const deliveredAt = new Date("2026-09-30T12:41:00.000Z");
+    Object.assign(w.orders.get(booking.id)!, { status: "delivered", deliveredAt, debtStatus: "open", debtAmount: 51 });
+    expect((await w.svc.detail(OWNER, booking.id)).cashOnDelivery).toEqual({ amount: "51", status: "due", dueAt: "2026-09-30T13:11:00.000Z" });
+    const done = await w.svc.closeCash(STAFF, booking.id, { outcome: "returned" });
+    expect(done.cashOnDelivery?.status).toBe("returned");
+    expect(w.orders.get(booking.id)!.debtStatus).toBe("settled_cash");
+    await expect(w.svc.closeCash(OWNER, booking.id, { outcome: "no_cash" })).rejects.toMatchObject({ response: { reason: "already_closed" } });
+  });
+
+  it("'No cash on this one' closes the shop's side without counting cash", async () => {
+    const booking = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
+    Object.assign(w.orders.get(booking.id)!, { status: "delivered", deliveredAt: new Date(), debtStatus: "open", debtAmount: 51 });
+    expect((await w.svc.closeCash(OWNER, booking.id, { outcome: "no_cash" })).cashOnDelivery?.status).toBe("closed");
+    expect(w.orders.get(booking.id)).toMatchObject({ debtStatus: "open", merchantCloseReason: "no_cash" });
+  });
+
+  it("before delivery, and on a delivery-only booking, there's nothing to close", async () => {
+    const cod = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
+    await expect(w.svc.closeCash(OWNER, cod.id, { outcome: "returned" })).rejects.toMatchObject({ response: { reason: "not_delivered_yet" } });
+    const plain = await w.svc.create(OWNER, "owner", form({ idempotencyKey: "33333333-3333-4333-8333-333333333333" }));
+    await expect(w.svc.closeCash(OWNER, plain.id, { outcome: "returned" })).rejects.toMatchObject({ response: { reason: "no_cash_on_delivery" } });
+  });
+
+  it("try again keeps cash on delivery, rebuilding the line rather than copying it", async () => {
+    const booking = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
+    w.orders.get(booking.id)!.status = "expired";
+    await w.svc.retry(OWNER, "owner", booking.id, { idempotencyKey: "44444444-4444-4444-8444-444444444444" });
+    const [input] = w.ordersSvc.create.mock.calls[1]!;
+    expect(input.items!.filter((i) => i.description.startsWith("Cash on delivery"))).toHaveLength(1);
   });
 });
 
