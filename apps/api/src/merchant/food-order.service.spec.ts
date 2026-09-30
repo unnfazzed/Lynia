@@ -191,10 +191,13 @@ describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", 
     }
   });
 
-  it("a cash-banned customer choosing cash is refused with the wallet copy the app shows", async () => {
+  it("a cash-banned customer choosing cash is refused, told food is cash only now and who to ask (D-48)", async () => {
     const { svc, create } = standingHarness({ onHold: false, cashBanned: true, rider: null });
     await expect(svc.placeOrder("c1", "m1", cashOrder)).rejects.toMatchObject({
-      response: { reason: "cash_banned", message: "Pay with your wallet for food orders." },
+      response: {
+        reason: "cash_banned",
+        message: "Food orders are cash on delivery, and cash is off for your account. Message LyniaGo on WhatsApp.",
+      },
       status: 403,
     });
     expect(create).not.toHaveBeenCalled();
@@ -578,7 +581,7 @@ describe("FoodOrderService.listQueue — E2/E3 board visibility", () => {
     expect(whereArg).toEqual({
       merchantId: "m1",
       orderType: "merchant",
-      OR: [{ status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] } }, { debtStatus: "open" }],
+      OR: [{ status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] } }, { debtStatus: "open", merchantClosedAt: null }],
     });
   });
 
@@ -979,3 +982,121 @@ describe("FoodOrderService payment prompt (#670)", () => {
     expect(res.paymentPromptStatus).toBe("pending");
   });
 });
+
+describe("D-48 · merchant mobile redesign: open switch, cash only, closing an order after pickup", () => {
+  const cash = { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" }, paymentMethod: "cash" as const };
+
+  function placing(merchant: Record<string, unknown>) {
+    let created: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findFirst: async () => null,
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          created = data;
+          return { ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
+        },
+      },
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" }, ...merchant }) },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    return { svc, created: () => created };
+  }
+
+  it("refuses an order while the restaurant is closed by hand, and takes one once that has passed", async () => {
+    const closed = placing({ closedUntil: new Date(Date.now() + 3_600_000) });
+    await expect(closed.svc.placeOrder("c1", "m1", cash)).rejects.toMatchObject({ response: { reason: "restaurant_closed" }, status: 409 });
+    expect(closed.created()).toBeUndefined();
+
+    const reopened = placing({ closedUntil: new Date(Date.now() - 1000) });
+    await reopened.svc.placeOrder("c1", "m1", cash);
+    expect(reopened.created()).toBeDefined();
+  });
+
+  it("makes every cash order collect-and-return — the rider brings the cash back — whatever the shop's old rule", async () => {
+    const h = placing({ cashRule: "pay_upfront" });
+    await h.svc.placeOrder("c1", "m1", cash);
+    expect(h.created()!.merchantCashRule).toBe("collect_and_return");
+  });
+
+  function closing(order: Record<string, unknown>) {
+    const updates: Record<string, unknown>[] = [];
+    const base = { id: "o1", merchantId: "m1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [], merchantClosedAt: null, ...order };
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => base,
+        update: async ({ data }: { data: Record<string, unknown> }) => {
+          updates.push(data);
+          return { ...base, ...data };
+        },
+      },
+    });
+    return { svc, updates };
+  }
+
+  it("closes the merchant's side after pickup — no cash, or mark completed — without touching the delivery", async () => {
+    const h = closing({ status: "delivered", debtStatus: "open", debtAmount: 12, deliveredAt: new Date() });
+    const res = await h.svc.closeOrder("p1", "o1", "no_cash");
+    expect(h.updates).toHaveLength(1);
+    expect(Object.keys(h.updates[0]!).sort()).toEqual(["merchantCloseReason", "merchantClosedAt"]);
+    expect(h.updates[0]!.merchantCloseReason).toBe("no_cash");
+    expect(res.merchantCloseReason).toBe("no_cash");
+    expect(res.status).toBe("delivered");
+
+    const riding = closing({ status: "en_route_dropoff", debtStatus: "open" });
+    expect((await riding.svc.closeOrder("p1", "o1", "force")).merchantCloseReason).toBe("force");
+  });
+
+  it("never closes before the rider has the food (owner decision: that would be a cancel)", async () => {
+    for (const status of ["requested", "open_for_offers", "assigned", "en_route_pickup"]) {
+      const h = closing({ status });
+      await expect(h.svc.closeOrder("p1", "o1", "force")).rejects.toMatchObject({ response: { reason: "not_picked_up" }, status: 409 });
+      expect(h.updates).toHaveLength(0);
+    }
+  });
+
+  it("is idempotent, and leaves a debt that was already settled alone", async () => {
+    const closedAt = new Date("2026-09-30T12:00:00Z");
+    const again = closing({ status: "delivered", debtStatus: "open", merchantClosedAt: closedAt, merchantCloseReason: "no_cash" });
+    expect((await again.svc.closeOrder("p1", "o1", "force")).merchantCloseReason).toBe("no_cash");
+    expect(again.updates).toHaveLength(0);
+
+    const settled = closing({ status: "delivered", debtStatus: "settled_cash" });
+    await settled.svc.closeOrder("p1", "o1", "no_cash");
+    expect(settled.updates).toHaveLength(0);
+  });
+
+  it("gives an open debt its due time — delivery plus the 30-minute return window — and the times the screens draw", async () => {
+    const deliveredAt = new Date("2026-09-30T12:31:00Z");
+    const { svc } = build({});
+    const res = await (svc as unknown as { toResponse: (o: unknown) => MerchantOrderResponseLike }).toResponse({
+      id: "o1",
+      merchantId: "m1",
+      status: "delivered",
+      merchantItems: [],
+      pickupCodeAttempts: 0,
+      noShowCallTimestamps: [],
+      debtStatus: "open",
+      deliveredAt,
+      createdAt: new Date("2026-09-30T12:04:00Z"),
+      merchantClosedAt: null,
+      merchantCloseReason: null,
+    });
+    expect(res.cashDueAt).toBe("2026-09-30T13:01:00.000Z");
+    expect(res.deliveredAt).toBe("2026-09-30T12:31:00.000Z");
+    expect(res.createdAt).toBe("2026-09-30T12:04:00.000Z");
+    expect("merchantClosedAt" in res).toBe(false);
+  });
+
+  it("a single-order read carries the step times for the tracking stepper", async () => {
+    const at = new Date("2026-09-30T12:04:00Z");
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ id: "o1", merchantId: "m1", status: "picked_up", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }) },
+      orderEvent: { findMany: async () => [{ status: "requested", createdAt: at }] },
+    });
+    expect((await svc.getQueueOrder("p1", "o1")).timeline).toEqual([{ status: "requested", at: "2026-09-30T12:04:00.000Z" }]);
+  });
+});
+
+type MerchantOrderResponseLike = Record<string, unknown> & { cashDueAt?: string; deliveredAt?: string; createdAt?: string; merchantCloseReason?: string };

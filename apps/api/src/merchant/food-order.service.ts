@@ -25,6 +25,7 @@ import {
   type PaymentPromptRail,
   type PlaceMerchantOrderRequest,
   rejectionCopy,
+  RESTAURANTS_DEBT,
   RESTAURANTS_TIMING,
   roundToCents,
   smallOrderFeeForSubtotal,
@@ -65,6 +66,9 @@ const ORDER_WITH_ITEMS_INCLUDE = {
   },
 } satisfies Prisma.OrderInclude;
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
+
+/** D-48: the statuses after the rider has the food — when the merchant may close its side. */
+const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
 
 /** E2 listQueue visibility — see the doc comment on the call site. */
 const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
@@ -169,7 +173,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       });
     }
     if (account?.cashBanned && body.paymentMethod === "cash") {
-      throw new ForbiddenException({ reason: "cash_banned", message: "Pay with your wallet for food orders." });
+      // D-48: food is cash on delivery only now, so a cash ban means no food orders — say who to ask.
+      throw new ForbiddenException({ reason: "cash_banned", message: "Food orders are cash on delivery, and cash is off for your account. Message LyniaGo on WhatsApp." });
     }
 
     if (body.idempotencyKey) {
@@ -180,9 +185,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // Shops never take food orders (plan 2026-09-29 D8) — same visibility rule as the restaurant list.
     const merchant = await this.prisma.merchant.findFirst({
       where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
-      select: { id: true, location: true, cashRule: true },
+      select: { id: true, location: true, closedUntil: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
+    // D-48: closed by hand from the merchant's Orders header.
+    if (merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) {
+      throw new ConflictException({ reason: "restaurant_closed", message: "This restaurant is closed right now." });
+    }
     const location = merchant.location as Waypoint | null;
     if (!location) throw new ConflictException("This restaurant isn't ready to take orders yet");
 
@@ -224,10 +233,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantPhase: "awaiting_accept",
           acceptDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.acceptWindowMs),
           merchantPaymentMethod: body.paymentMethod,
-          // R-03 snapshot: the merchant's cash rule AT PLACEMENT (C4), so a mid-order shop-setting
-          // change never retroactively changes an in-flight order's debt obligations. Null when the
-          // customer chose WALLET — the rule never applies.
-          merchantCashRule: body.paymentMethod === "cash" ? merchant.cashRule : null,
+          // R-03 snapshot, fixed at placement (C4). D-48: every cash food order is collect-and-return —
+          // the rider collects at the door and brings the cash back ("Cash back to you") — whatever the
+          // older per-shop rule says. Null when an installed app still sent WALLET: the rule never applies.
+          merchantCashRule: body.paymentMethod === "cash" ? "collect_and_return" : null,
           merchantGoodsTotal,
           deliveryFee,
           idempotencyKey: body.idempotencyKey ?? null,
@@ -408,7 +417,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       where: {
         merchantId,
         orderType: "merchant",
-        OR: [{ status: { in: [...QUEUE_VISIBLE_STATUSES] } }, { debtStatus: "open" }],
+        // D-48: an order the merchant closed its side of (no cash / mark completed) leaves the board.
+        OR: [{ status: { in: [...QUEUE_VISIBLE_STATUSES] } }, { debtStatus: "open", merchantClosedAt: null }],
       },
       orderBy: { createdAt: "asc" },
       include: ORDER_WITH_ITEMS_INCLUDE,
@@ -418,7 +428,38 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   async getQueueOrder(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
-    return this.toResponse(order);
+    // D-48: the tracking stepper's step times (B6/B7) — single-order reads only, never the queue poll.
+    const events = await this.prisma.orderEvent.findMany({
+      where: { orderId },
+      orderBy: { createdAt: "asc" },
+      select: { status: true, createdAt: true },
+      take: 50,
+    });
+    return { ...this.toResponse(order), timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
+  }
+
+  /**
+   * D-48 (merchant mobile B6/B7): the merchant closes its side of a food order after pickup without
+   * counting cash — "no_cash" (B7 "No cash on this one · mark completed") or "force" (B6 "Mark ride
+   * completed"). Only once the rider has the food (owner decision 2026-09-30: never before pickup, which
+   * would be a cancel). It never changes the delivery's status, the rider or the customer; it only
+   * stops the order showing as cash owed and takes it off the board. Idempotent: a second close keeps
+   * the first one's time and reason.
+   */
+  async closeOrder(profileId: string, orderId: string, reason: "no_cash" | "force"): Promise<MerchantOrderResponse> {
+    const order = await this.findOwnAsMerchant(profileId, orderId);
+    if (order.merchantClosedAt) return this.toResponse(order);
+    if (!AFTER_PICKUP_STATUSES.has(order.status)) {
+      throw new ConflictException({ reason: "not_picked_up", message: "You can close this once the rider has the food." });
+    }
+    if (order.debtStatus && order.debtStatus !== "open") return this.toResponse(order);
+    const updated = await this.prisma.order.update({
+      where: { id: order.id },
+      data: { merchantClosedAt: new Date(), merchantCloseReason: reason },
+      include: ORDER_WITH_ITEMS_INCLUDE,
+    });
+    this.notifyQueue(updated.merchantId!, updated.id);
+    return this.toResponse(updated);
   }
 
   /** C4: the assigned rider's own read view — no MerchantGuard (party-checked below), mirrors
@@ -968,6 +1009,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       refundReference: order.refundReference,
       refundAmount: order.refundAmount != null ? Number(order.refundAmount) : null,
       refundedAt: order.refundedAt?.toISOString() ?? null,
+      // D-48: the Orders screens' times and the cash-back due time.
+      // Optional in the contract; a row always has it.
+      createdAt: (order.createdAt as Date | undefined)?.toISOString(),
+      deliveredAt: order.deliveredAt?.toISOString() ?? null,
+      cashDueAt:
+        order.debtStatus === "open" && order.deliveredAt
+          ? new Date(order.deliveredAt.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString()
+          : null,
+      merchantClosedAt: order.merchantClosedAt?.toISOString() ?? null,
+      merchantCloseReason: (order.merchantCloseReason as MerchantOrderResponse["merchantCloseReason"]) ?? null,
     };
     // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
     // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
@@ -1006,6 +1057,10 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "refundReference",
   "refundAmount",
   "refundedAt",
+  "deliveredAt",
+  "cashDueAt",
+  "merchantClosedAt",
+  "merchantCloseReason",
 ] as const satisfies readonly (keyof MerchantOrderResponse)[];
 
 /** Compact one-line rendering of a food basket — "2x Sadza · 1x Chicken" — mirrors

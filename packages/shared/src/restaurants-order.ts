@@ -127,6 +127,10 @@ export const RESTAURANTS_DEBT = {
    *  stalling rider is caught at the door, not down the road. Past this (or an explicit rider
    *  dispute) the trip freezes (R-05) and support is notified. */
   handshakeWindowMs: 2 * 60 * 1000,
+  /** D-48 (merchant mobile B7): how long the rider has, after delivery, to bring the merchant's cash
+   *  back before it shows as overdue ("Due by 13:00 · 22 min left"). Shown, never chased: no penalty
+   *  or reminder hangs off it. */
+  cashReturnWindowMs: 30 * 60 * 1000,
   /** N-10: minimum wait before a rider may report a customer no-show. */
   noShowWindowMs: 8 * 60 * 1000,
   /** N-10: minimum logged calls before a no-show report is accepted. */

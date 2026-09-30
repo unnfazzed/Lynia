@@ -21,6 +21,7 @@ import type {
   RestaurantSearchDish,
   RestaurantSearchResponse,
   SetMerchantBusyModeRequest,
+  SetMerchantOpenRequest,
   UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
@@ -29,7 +30,17 @@ import type {
   UpdateMerchantProfileRequest,
   Waypoint,
 } from "@lynia/shared";
-import { haversineKm, merchantWaypoint, RESTAURANTS_COMMISSION, roundToCents, SERVICE_CORRIDOR } from "@lynia/shared";
+import {
+  addMoney,
+  effectiveMerchantHours,
+  haversineKm,
+  merchantWaypoint,
+  RESTAURANTS_COMMISSION,
+  RESTAURANTS_DEBT,
+  roundToCents,
+  SERVICE_CORRIDOR,
+  startOfNextDay,
+} from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
@@ -294,6 +305,18 @@ export class MerchantService {
   async findLocation(merchantId: string): Promise<Waypoint | null> {
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { location: true } });
     return (merchant?.location as Waypoint | null) ?? null;
+  }
+
+  /** D-48 (merchant mobile B1/B5): the Orders header's open/closed switch. Closing holds until the next
+   *  day starts (the switch starts on inside hours tomorrow) or until the merchant opens again. */
+  async setOpen(profileId: string, body: SetMerchantOpenRequest): Promise<MerchantProfileResponse> {
+    const merchant = await this.findOwnMerchantOrThrow(profileId);
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchant.id },
+      data: { closedUntil: body.open ? null : startOfNextDay(new Date()) },
+      include: { ownerProfile: { select: { phone: true } } },
+    });
+    return await this.toProfileResponse(updated, merchant);
   }
 
   async setBusyMode(profileId: string, body: SetMerchantBusyModeRequest): Promise<MerchantProfileResponse> {
@@ -613,7 +636,8 @@ export class MerchantService {
     start.setHours(0, 0, 0, 0);
     const end = endOfToday();
 
-    const [delivered, rejected, walletTaken, cashTaken, prepped] = await Promise.all([
+    const overdueBefore = new Date(Date.now() - RESTAURANTS_DEBT.cashReturnWindowMs);
+    const [delivered, rejected, walletTaken, cashTaken, prepped, placed, overdueRows] = await Promise.all([
       this.prisma.order.count({
         where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: start, lte: end } },
       }),
@@ -638,6 +662,20 @@ export class MerchantService {
         select: { readyAt: true, prepStartedAt: true },
         take: 500,
       }),
+      // D-48: today's orders that went through — accepted by the kitchen and not cancelled.
+      this.prisma.order.aggregate({
+        where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end }, prepStartedAt: { not: null }, status: { not: "cancelled" } },
+        _count: { _all: true },
+        _sum: { merchantGoodsTotal: true },
+      }),
+      // D-48: cash a rider still owes back past its due time (delivered + the return window), neither
+      // counted nor closed by the merchant. Any day's, not just today's: overdue is overdue.
+      this.prisma.order.findMany({
+        where: { merchantId, orderType: "merchant", debtStatus: "open", merchantClosedAt: null, deliveredAt: { lt: overdueBefore } },
+        select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
+        orderBy: { deliveredAt: "asc" },
+        take: 50,
+      }),
     ]);
 
     const prepMinutes = prepped
@@ -652,6 +690,15 @@ export class MerchantService {
       cashTaken: roundToCents(Number(cashTaken._sum.debtAmount ?? 0)),
       walletTaken: roundToCents(Number(walletTaken._sum.merchantGoodsTotal ?? 0)),
       averagePrepMinutes,
+      orders: placed._count._all,
+      sales: roundToCents(Number(placed._sum.merchantGoodsTotal ?? 0)),
+      cashOverdue: addMoney(0, ...overdueRows.map((o) => Number(o.debtAmount ?? 0))),
+      overdue: overdueRows.map((o) => ({
+        orderId: o.id,
+        amount: Number(o.debtAmount ?? 0),
+        riderName: o.rider?.profile.firstName || null,
+        dueAt: new Date(o.deliveredAt!.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString(),
+      })),
     };
   }
 
@@ -720,6 +767,8 @@ export class MerchantService {
       location: (merchant.location as Waypoint | null) ?? null,
       // L4: who is signed in, as the team knows them.
       ...(me.myName ? { myName: me.myName } : {}),
+      // D-48: closed by hand (only while it still holds).
+      closedUntil: merchant.closedUntil && merchant.closedUntil.getTime() > Date.now() ? merchant.closedUntil.toISOString() : null,
     };
   }
 
@@ -755,7 +804,7 @@ export class MerchantService {
   private async toListItem(
     merchant: Pick<
       MerchantWithOwner,
-      "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes"
+      "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes" | "closedUntil"
     >,
   ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
@@ -767,7 +816,9 @@ export class MerchantService {
       logoUrl,
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
-      hours: (merchant.hours as MerchantHours | null) ?? null,
+      // D-48: a merchant closed by hand is served with today's window dropped, so every client —
+      // installed apps included — reads it as closed and says when it opens next.
+      hours: effectiveMerchantHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date()),
       // Geo-point only (D-17) — see the field's doc comment in contracts.ts.
       location: location ? location.point : null,
       // #673: star rating (null while unrated — the card shows no star, never a fake "0") + the

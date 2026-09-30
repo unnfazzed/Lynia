@@ -5,6 +5,7 @@ import {
   MerchantDishRequest,
   SetDishOutOfStockRequest,
   SetMerchantBusyModeRequest,
+  SetMerchantOpenRequest,
   UpdateMerchantCashRuleRequest,
   UpdateMerchantCategoryRequest,
   UpdateMerchantDishRequest,
@@ -102,6 +103,13 @@ export class MerchantController {
     @CurrentUser() profileId: string,
   ) {
     return this.merchant.updateCashRule(profileId, body);
+  }
+
+  /** D-48: the Orders header's open/closed switch. Staff may use it, like busy mode. */
+  @Patch("open")
+  @UseGuards(MerchantGuard)
+  setOpen(@Body(new ZodBody(SetMerchantOpenRequest)) body: SetMerchantOpenRequest, @CurrentUser() profileId: string) {
+    return this.merchant.setOpen(profileId, body);
   }
 
   @Patch("busy-mode")

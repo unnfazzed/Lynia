@@ -79,3 +79,24 @@ export function nextOpenDescription(hours: MerchantHours | null, now: Date): str
   }
   return null;
 }
+
+/**
+ * The hours a customer sees (merchant mobile redesign, D-48): while a merchant is closed by hand
+ * (`closedUntil` in the future), today's window is dropped, so every client — including installed apps
+ * that only know `isMerchantOpenNow` — reads the restaurant as closed and says when it opens next. A
+ * merchant with no hours at all becomes an empty week for the same reason.
+ */
+export function effectiveMerchantHours(hours: MerchantHours | null, closedUntil: Date | null, now: Date): MerchantHours | null {
+  if (!closedUntil || closedUntil.getTime() <= now.getTime()) return hours;
+  // Stored weeks are partial in practice (a closed day is simply absent), whatever the type says.
+  const copy: Partial<MerchantHours> = { ...hours };
+  delete copy[dayKeyFor(now)];
+  return copy as MerchantHours;
+}
+
+/** When a close by hand ends on its own: the start of the next day. */
+export function startOfNextDay(now: Date): Date {
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  return next;
+}

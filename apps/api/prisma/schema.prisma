@@ -704,6 +704,9 @@ model Order {
   debtAmount              Decimal?            @map("debt_amount") @db.Decimal(10, 2)
   debtOpenedAt            DateTime?           @map("debt_opened_at")
   debtSettledAt           DateTime?           @map("debt_settled_at")
+  // D-48: the merchant closed its side after pickup without counting cash ("no_cash" | "force").
+  merchantClosedAt        DateTime?           @map("merchant_closed_at")
+  merchantCloseReason     String?             @map("merchant_close_reason")
   // N-10 customer no-show at the door: call log (mirrors paymentCallLoggedAt's shape) a rider builds
   // up before `reportNoShow` is allowed (>= RESTAURANTS_DEBT.noShowMinCalls entries, the earliest at
   // least RESTAURANTS_DEBT.noShowWindowMs ago).
@@ -965,6 +968,9 @@ model Merchant {
   // N-17 busy mode: a manual on/off the merchant flips from the kitchen board (E2/E4); a plain
   // +10min prep-time bump signal while true, no auto-expiry specified.
   busyMode       Boolean          @default(false) @map("busy_mode")
+  // D-48 (merchant mobile redesign): closed by hand from the Orders header until this time (or until
+  // the merchant opens again). Null = open by hours.
+  closedUntil    DateTime?        @map("closed_until")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
   // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
   // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).

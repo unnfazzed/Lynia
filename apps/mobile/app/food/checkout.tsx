@@ -51,7 +51,9 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   const [dropLandmark, setDropLandmark] = useState("");
   const [dropLandmarkTouched, setDropLandmarkTouched] = useState(false);
   const [dropPhone, setDropPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<MerchantPaymentMethod>("cash");
+  // D-48 (owner decision 2026-09-30): food is cash at the door only — the rider brings the merchant's
+  // cash back. The mobile-money row is gone; the API still takes WALLET from older installs.
+  const paymentMethod: MerchantPaymentMethod = "cash";
   const [busy, setBusy] = useState(false);
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
   // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
@@ -161,9 +163,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
   // design's own cart_min mock does — a small-order fee is disclosed in the note, not hidden.
   const summaryNote = [
     cart.smallOrderFee > 0 ? `Includes a ${formatMoney(cart.smallOrderFee)} small-order fee.` : null,
-    paymentMethod === "cash"
-      ? "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order."
-      : `Paid straight to ${restaurant.name}. LyniaGo never holds your money. The exact delivery fee is confirmed the moment you place this order.`,
+    "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -213,7 +213,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
         // (checkout-place-bar.view.tsx) the container composes. The CTA names how the money moves, not
         // just the figure — "pay $X cash" for CASH, "pay after they accept" for mobile money.
         <CheckoutPlaceBarView
-          label={paymentMethod === "cash" ? `Place order · pay ${formatMoney(total)} cash` : "Place order · pay after they accept"}
+          label={`Place order · pay ${formatMoney(total)} cash`}
           onPlace={() => void submit()}
           disabled={!canSubmit}
           loading={busy}
@@ -268,24 +268,9 @@ export default function FoodCheckoutScreen(): React.ReactElement {
             icon="banknote"
             title="Cash at the door"
             subtitle={`Pay the rider ${formatMoney(total)} when the food arrives`}
-            selected={paymentMethod === "cash"}
-            onPress={() => setPaymentMethod("cash")}
+            selected
+            onPress={() => {}}
           />
-          {/* Kit RC.checkout_wallet (r-customer-a.jsx:487): once mobile money is the choice the
-              subtitle becomes the provider list; unselected it states when the money moves. */}
-          <PaymentMethodRow
-            icon="wallet"
-            title="Mobile money"
-            subtitle={paymentMethod === "wallet" ? "EcoCash · InnBucks · O'mari" : "Pay the restaurant after they accept"}
-            selected={paymentMethod === "wallet"}
-            onPress={() => setPaymentMethod("wallet")}
-          >
-            {/* Kit RC.checkout_wallet (r-customer-a.jsx:491-494): clock glyph, ink copy, lead bold. */}
-            <Icon name="clock" size={15} color={tokens.color.accentText} style={{ marginTop: 1 }} />
-            <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.ink, lineHeight: 18 }}>
-              <Text style={{ fontWeight: "700" }}>You pay only after the restaurant accepts.</Text> They&apos;ll call you to confirm, then send the payment request — no deadline, the kitchen starts once it lands.
-            </Text>
-          </PaymentMethodRow>
 
           {/* RC.checkout_cash summary region (r-customer-a.jsx:456): the kit PriceMath goods/fee/km/total
               card, wrapped in the mock's `<Card style={{padding:14}}>`, now a GENERATED, guarded fragment
@@ -309,9 +294,7 @@ export default function FoodCheckoutScreen(): React.ReactElement {
               <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted, lineHeight: 17 }}>
                 {/* Kit RC.checkout_cash (r-customer-a.jsx:459): the cash consequence names the full
                     figure, not a vague "amount". */}
-                {paymentMethod === "cash"
-                  ? `Free to cancel until the rider collects your food. After that the food is cooked and paid for, and cancelling costs the full ${formatMoney(total)}.`
-                  : "Free to cancel any time before you pay — once payment is confirmed, the kitchen has started cooking."}
+                {`Free to cancel until the rider collects your food. After that the food is cooked and paid for, and cancelling costs the full ${formatMoney(total)}.`}
               </Text>
             </View>
           </Card>
