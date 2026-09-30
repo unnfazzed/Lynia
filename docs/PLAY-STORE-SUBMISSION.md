@@ -1912,6 +1912,20 @@ on delivery (#997).
 - **Fixed.** The summary line now reads the message from the step's env (`printf … "$OTA_MESSAGE"`), which
   also closes the script-injection hole a pasted input opens.
 
+**Fourth OTA — 2026-09-30 (restaurant auto-accept on vc 40).** Built from `main` at `b13df18` (#1000)
+and published to `preview` for build `1babe958` (v0.51.0 / vc 40, runtime `db601ead…`). It carries the
+customer's "Confirming" state and "changed your order" notice, and the rider's **Collected** pickup for
+auto-accept restaurants (ledger D-50).
+
+| Run | Result | Why |
+|---|---|---|
+| 36773555041 | **published** | the preflight passed with no override; Android group `fc98df08-2bc5-42d8-b887-d279e73ea6f5` (update `01a0f408-53af-7954…`) on runtime `db601ead…`; an iOS group `d20ad198…` went to runtime `87631730…`, which no installed build has |
+
+- **Delivered** to vc 40 on its next launch, applied on the one after.
+- **Needs the API.** The Collected button only appears on orders the server marks `autoAccepted`, and the
+  customer's Confirming state likewise; until the API deploy from `b13df18` (Release (Azure)) is approved
+  and live, the update changes nothing a tester sees. Safe in that order: no new field is required.
+
 ---
 
 ## 9. Pre-submission checklist
