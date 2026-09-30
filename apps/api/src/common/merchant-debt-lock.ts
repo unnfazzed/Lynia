@@ -11,7 +11,9 @@ import type { PrismaService } from "../prisma/prisma.service";
  * at merchant code itself.
  *
  * One query covers both cases: `debtStatus="open"` (settled by the merchant's returned-cash/goods
- * confirm or a non-return write-off — merchant/food-debt.service.ts) OR a handshake that has started
+ * confirm or a non-return write-off — merchant/food-debt.service.ts — and released when the merchant
+ * closes its side with nothing owed, `merchantClosedAt` set: D-48 "No cash on this one" / "Mark ride
+ * completed") OR a handshake that has started
  * but the rider hasn't confirmed yet (`customerCashConfirmedAt` set, `riderCashConfirmedAt` still
  * null) — frozen is a marked sub-case of the same condition, so it needs no separate check.
  */
@@ -19,8 +21,12 @@ export async function hasOpenMerchantObligation(prisma: PrismaService | Prisma.T
   const stuck = await prisma.order.findFirst({
     where: {
       riderId,
-      orderType: "merchant",
-      OR: [{ debtStatus: "open" }, { customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null }],
+      OR: [
+        { orderType: "merchant", debtStatus: "open", merchantClosedAt: null },
+        { orderType: "merchant", customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
+        // D-48 PR 4b: a shop booking's cash on delivery the rider still owes back.
+        { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
+      ],
     },
     select: { id: true },
   });

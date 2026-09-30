@@ -964,9 +964,11 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
 describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () => {
   /** order.aggregate serves three sums (wallet, confirmed cash, D-48 placed); order.findMany two reads
    *  (prep times, D-48 overdue cash) — told apart by what each asks for. */
-  function summaryPrisma(opts: { overdue?: unknown[]; placed?: { count: number; sum: number | null }; today?: unknown[] } = {}) {
+  function summaryPrisma(opts: { overdue?: unknown[]; placed?: { count: number; sum: number | null }; today?: unknown[]; bookingOverdue?: unknown[] } = {}) {
     return {
       merchant: { findUnique: async () => ({ id: "m1" }) },
+      // The business's booking account (D-48 PR 4b), present when a test gives it overdue booking cash.
+      profile: { findUnique: async () => (opts.bookingOverdue ? { id: "acct-1" } : null) },
       order: {
         count: async ({ where }: { where: { status: string } }) => (where.status === "delivered" ? 5 : 1),
         aggregate: async ({ where }: { where: Record<string, unknown> }) => {
@@ -975,8 +977,10 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
           return { _sum: { debtAmount: 13 } };
         },
         findMany: async ({ where }: { where: Record<string, unknown> }) =>
-          where.debtStatus === "open"
-            ? (opts.overdue ?? [])
+          where.debtStatus === "open" && where.customerId
+            ? (opts.bookingOverdue ?? [])
+            : where.debtStatus === "open"
+              ? (opts.overdue ?? [])
             : where.readyAt
               ? [
                   { readyAt: new Date("2026-07-30T10:20:00.000Z"), prepStartedAt: new Date("2026-07-30T10:00:00.000Z") },
@@ -1016,8 +1020,8 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.sales).toBe(59.5);
     expect(res.cashOverdue).toBe(13.5);
     expect(res.overdue).toEqual([
-      { orderId: "11111111-1111-4111-8111-111111111111", amount: 9.5, riderName: "Tino", dueAt: "2026-09-30T11:40:00.000Z" },
-      { orderId: "22222222-2222-4222-8222-222222222222", amount: 4, riderName: null, dueAt: "2026-09-30T11:40:00.000Z" },
+      { orderId: "11111111-1111-4111-8111-111111111111", amount: 9.5, riderName: "Tino", dueAt: "2026-09-30T11:40:00.000Z", kind: "order" },
+      { orderId: "22222222-2222-4222-8222-222222222222", amount: 4, riderName: null, dueAt: "2026-09-30T11:40:00.000Z", kind: "order" },
     ]);
     // Open, not closed by the merchant, and delivered more than the 30-minute return window ago.
     expect(overdueWhere).toMatchObject({ debtStatus: "open", merchantClosedAt: null });
@@ -1047,9 +1051,19 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     ]);
   });
 
+  it("D-48 PR 4b: a shop booking's overdue cash on delivery counts too, marked as a booking", async () => {
+    const deliveredAt = new Date("2026-09-30T11:10:00.000Z");
+    const res = await svc(
+      summaryPrisma({ bookingOverdue: [{ id: "33333333-3333-4333-8333-333333333333", debtAmount: 51, deliveredAt, rider: { profile: { firstName: "Blessing" } } }] }),
+    ).getTodaySummary("p1");
+    expect(res.cashOverdue).toBe(51);
+    expect(res.overdue).toEqual([{ orderId: "33333333-3333-4333-8333-333333333333", amount: 51, riderName: "Blessing", dueAt: "2026-09-30T11:40:00.000Z", kind: "booking" }]);
+  });
+
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
+      profile: { findUnique: async () => null },
       order: {
         count: async () => 0,
         aggregate: async () => ({ _count: { _all: 0 }, _sum: { merchantGoodsTotal: null, debtAmount: null } }),

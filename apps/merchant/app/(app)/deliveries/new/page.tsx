@@ -7,6 +7,7 @@ import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
 import { AppBar } from "../../../components/m/AppBar";
+import { Switch } from "../../../components/m/Switch";
 import { RetryableError } from "../../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import {
@@ -64,6 +65,8 @@ export default function NewBookingPage() {
   const [whereErrors, setWhereErrors] = useState<WhereErrors>({});
   const [lines, setLines] = useState<BookLine[]>([]);
   const [fare, setFare] = useState<number | null>(null);
+  // D-48 PR 4b (owner decision): cash on delivery is optional per booking.
+  const [collectCash, setCollectCash] = useState(false);
   const [whatError, setWhatError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [banner, setBanner] = useState<string | null>(null);
@@ -109,14 +112,14 @@ export default function NewBookingPage() {
 
   async function book() {
     if (submittingRef.current || !where || shownFare === null) return;
-    const problem = validateWhat(lines);
+    const problem = validateWhat(lines, collectCash);
     setWhatError(problem);
     setBanner(null);
     if (problem) return;
     submittingRef.current = true;
     setBusy(true);
     try {
-      const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current));
+      const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
       router.replace(`/deliveries/${booking.id}`);
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
@@ -216,6 +219,16 @@ export default function NewBookingPage() {
                 </b>
               </div>
 
+              <div className="m-card" style={{ flexDirection: "row", alignItems: "center", padding: "10px 14px" }}>
+                <div style={{ flex: 1 }}>
+                  <b style={{ display: "block", fontSize: 15 }}>Buyer pays cash on delivery</b>
+                  <span className="m-hint" style={{ display: "block", lineHeight: 1.35, marginTop: 2 }}>
+                    {collectCash ? `The rider collects ${money(worth(lines))} and brings it back to you` : "Off: the buyer pays you as they do today"}
+                  </span>
+                </div>
+                <Switch checked={collectCash} label="Buyer pays cash on delivery" onChange={setCollectCash} />
+              </div>
+
               {shownFare !== null && (
                 <div className="m-fld">
                   <span className="m-label">Fare you offer</span>
@@ -302,7 +315,11 @@ export default function NewBookingPage() {
                       <li key={t}>{t}</li>
                     ))}
                     <li>No prescription medicine, weapons, drugs or cash.{pharmacy ? " Over-the-counter items only." : ""}</li>
-                    <li>No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today.</li>
+                    <li>
+                      {collectCash
+                        ? "Cash on delivery: the rider collects what the goods are worth from the buyer and brings it back to you within 30 minutes. You confirm it in the app."
+                        : "No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today."}
+                    </li>
                   </ul>
                   <p className="m-hint">Booking a rider means you accept these.</p>
                   <button type="button" className="m-btn" onClick={() => setSheet(null)}>

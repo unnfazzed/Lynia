@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
   CancelMerchantBookingRequest,
+  CloseMerchantBookingCashRequest,
   CreateMerchantBookingRequest,
   type MerchantBookingResponse,
   type PickMerchantBookingOfferResponse,
@@ -86,6 +87,17 @@ export class MerchantBookingController {
   @Throttle({ limit: 10, windowSec: 60, keyPrefix: "merchant-booking-code" })
   rotateCode(@Param("id", ParseUUIDPipe) id: string, @CurrentMerchantAccess() access: MerchantAccess): Promise<RotateMerchantBookingCodeResponse> {
     return this.bookings.rotateCode(access, id);
+  }
+
+  /** D-48 PR 4b (D7): "I got $X" or "No cash on this one" on a cash-on-delivery booking. */
+  @Post(":id/cash")
+  @HttpCode(200)
+  closeCash(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(CloseMerchantBookingCashRequest)) body: CloseMerchantBookingCashRequest,
+    @CurrentMerchantAccess() access: MerchantAccess,
+  ): Promise<MerchantBookingResponse> {
+    return this.bookings.closeCash(access, id, body);
   }
 
   @Post(":id/try-again")

@@ -37,6 +37,11 @@ export function cancelBooking(bookingId: string, reason?: string): Promise<Merch
 }
 
 /** "Send a new code": the new code replaces the old one. */
+/** D-48 PR 4b (D7): "I got $X" (`returned`) or "No cash on this one" (`no_cash`). */
+export function closeBookingCash(bookingId: string, outcome: "returned" | "no_cash"): Promise<MerchantBookingResponse> {
+  return authedFetch<MerchantBookingResponse>(`/merchant/bookings/${bookingId}/cash`, { method: "POST", body: { outcome } });
+}
+
 export function rotateBookingCode(bookingId: string): Promise<RotateMerchantBookingCodeResponse> {
   return authedFetch<RotateMerchantBookingCodeResponse>(`/merchant/bookings/${bookingId}/code`, { method: "POST" });
 }

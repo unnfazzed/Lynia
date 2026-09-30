@@ -80,7 +80,8 @@ export class AdminMerchantsService {
       this.prisma.order.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids } }, _count: { _all: true } }),
       this.prisma.order.groupBy({
         by: ["merchantId"],
-        where: { merchantId: { in: ids }, debtStatus: "open" },
+        // An order the merchant closed with nothing owed (D-48 "No cash on this one") isn't open debt.
+        where: { merchantId: { in: ids }, debtStatus: "open", merchantClosedAt: null },
         _sum: { debtAmount: true },
         _count: { _all: true },
       }),
@@ -109,7 +110,7 @@ export class AdminMerchantsService {
     const DEBT_LEDGER_PAGE_SIZE = 30;
     const [orderCount, openDebt, recentOrders, ledgerRows, bookingAccount] = await Promise.all([
       this.prisma.order.count({ where: { merchantId: id } }),
-      this.prisma.order.aggregate({ where: { merchantId: id, debtStatus: "open" }, _sum: { debtAmount: true }, _count: { _all: true } }),
+      this.prisma.order.aggregate({ where: { merchantId: id, debtStatus: "open", merchantClosedAt: null }, _sum: { debtAmount: true }, _count: { _all: true } }),
       this.prisma.order.findMany({
         where: { merchantId: id },
         orderBy: { createdAt: "desc" },

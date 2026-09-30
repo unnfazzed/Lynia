@@ -2231,7 +2231,6 @@ components to the design system.
 | Where | Handoff | App now | Retires with |
 |---|---|---|---|
 | Shop front | not redrawn ("Banner, logo and tags") | the older profile editor under the new app bar | a design export that draws it |
-| D5 / D7 cash back | "Cash back to you" step, D7 cash card | not yet | PR 4b: optional cash on delivery per booking (owner decision, below) |
 | A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
 | Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
 
@@ -2316,6 +2315,34 @@ booking terms still say "No cash-on-delivery".
 | D7 hero | "Delivered 12:41" | "Delivered" | no delivered time in the booking payload |
 | Not delivered · cancelled · nobody picked | not drawn | a hero in D7's pattern, call the rider, follow a re-sent booking, "Try again" with the fare stepper | the old screen's endings, restyled |
 | Sign out on the shop home | — | removed | Account has it (C4) |
+
+### 9 · Cash on delivery for shop bookings (PR 4b)
+
+The owner's "optional per booking" (§8), built end to end:
+
+- **D3** gains a **"Buyer pays cash on delivery"** switch card under Worth (not drawn — the handoff draws
+  cash back as if every booking had it, so the choice needed a control): on, "The rider collects $51.00
+  and brings it back to you"; off, "the buyer pays you as they do today". The booking terms follow it.
+- **How it travels:** the booking carries one more line, "Cash on delivery: collect $51.00 from the
+  buyer, bring it back to <shop>" (`packages/shared/src/booking-cod.ts`). Every rider app shows a
+  booking's items, so a rider on an older install sees the cash before offering, with no forced update;
+  Send copies items on a re-broadcast and "Try again" rebuilds the line. The merchant web hides it from
+  the item list. A cash booking carries up to 9 goods lines.
+- **At delivery** (the buyer has paid at the door) the order's existing debt opens for the declared
+  value, in the same commit (`OrderLifecycleService.confirmDelivery`) — the restaurant cash-back fields,
+  due 30 minutes after delivery. A not-delivered booking owes nothing (the goods go back).
+- **D5** shows the drawn 7th step, "Cash back to you"; **D7** the drawn cash card: "I got $51.00" and
+  "No cash on this one · mark completed" (confirm, `POST /merchant/bookings/:id/cash`). **D1** keeps a
+  delivered booking mint with "Delivered · cash back $51.00" until then; **C3 Money** lists it as
+  overdue after 30 minutes, opening the booking.
+- **Rider app** (new builds): a gold "Collect $51.00 cash from the buyer" card on the job and the cash
+  strip's owed tile. The rider takes no new jobs while the shop's cash is out (the C4 soft-lock now
+  covers bookings), exactly as for restaurant cash.
+- **Fixed along the way:** closing a food order's cash with "No cash on this one" / "Mark ride
+  completed" (PR 2a) left the debt open, which kept the rider soft-locked and counted it in admin's open
+  debt. The lock, the food dispatch filter and admin's totals now ignore a debt the merchant closed.
+- **Not built:** reporting a booking's cash as not returned (the restaurant flow's "report non-return");
+  support handles it (C3's overdue row opens the booking).
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).

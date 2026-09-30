@@ -1,5 +1,6 @@
 import {
   ACTIVE_RIDE_STATUSES,
+  codAmount,
   type AdvanceStatusRequest,
   DELIVERY_OTP_MAX_ATTEMPTS,
   RIDER_CANCELLABLE_STATUSES,
@@ -141,4 +142,14 @@ export function reconcilePendingSenderRating(input: {
   if (!pending || confirmed) return "wait";
   if (deliveredOrderId !== pending.orderId) return "wait";
   return "retry";
+}
+
+/**
+ * D-48 PR 4b: a shop booking with cash on delivery — the rider collects the goods' price at the door
+ * and brings it back to the shop. The choice rides as a line in the job's items (packages/shared
+ * booking-cod.ts), which older installs show as it is; this reads it for the job screen's own card.
+ */
+export function parcelCashOnDelivery(order: { orderType?: string | null; items?: readonly { description: string }[] | null }): number | null {
+  if (order.orderType && order.orderType !== "parcel") return null;
+  return codAmount(order.items ?? null);
 }

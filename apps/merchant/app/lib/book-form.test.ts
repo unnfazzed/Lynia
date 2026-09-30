@@ -17,6 +17,15 @@ describe("D3 items and worth", () => {
     expect(worth(lines)).toBe(51);
   });
 
+  it("leaves room for the cash line when the buyer pays on delivery (D-48 PR 4b)", () => {
+    const ten = Array.from({ length: 10 }, (_, i) => ({ name: `Part ${i}`, qty: 1, unitPrice: 1 }));
+    expect(validateWhat(ten)).toBeNull();
+    expect(validateWhat(ten, true)).toBe("A booking carries up to 9 lines. Split it into two.");
+    const body = toBookingRequest({ point: HARARE, address: "12 Fife Ave" }, "779982210", ten.slice(0, 2), 3.5, "11111111-1111-4111-8111-111111111111", true);
+    expect(body.collectCash).toBe(true);
+    expect("collectCash" in toBookingRequest({ point: HARARE, address: "x" }, "779982210", ten.slice(0, 2), 3.5, "11111111-1111-4111-8111-111111111111")).toBe(false);
+  });
+
   it("needs a line, at most ten, and no more than the $150 cap", () => {
     expect(validateWhat([])).toBe("Add what's going: from your items, or type one.");
     expect(validateWhat([{ name: "Engine", qty: 1, unitPrice: 151 }])).toBe(VALUE_CAP_MESSAGE);

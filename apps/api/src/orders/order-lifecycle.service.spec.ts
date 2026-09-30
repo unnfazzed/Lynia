@@ -502,6 +502,37 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     expect(emits).toEqual([["o1", "delivered"]]);
   });
 
+  it("D-48 PR 4b: a shop booking with cash on delivery opens the rider's debt for its value, in the same commit", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const { svc } = build({
+      $queryRaw: async () =>
+        row({
+          order_type: "parcel",
+          declared_value: "51.00",
+          items: [
+            { description: "Brake pads (front)", quantity: 2 },
+            { description: "Cash on delivery: collect $51.00 from the buyer, bring it back to Mbare Auto Spares", quantity: 1 },
+          ],
+        }),
+      order: { update: async (a: { data: Record<string, unknown> }) => (updates.push(a.data), {}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    await svc.confirmDelivery("o1", "r1", "123456");
+    expect(updates[0]).toMatchObject({ status: "delivered", debtStatus: "open", debtAmount: 51 });
+    expect(updates[0]!.debtOpenedAt).toBe(updates[0]!.deliveredAt);
+  });
+
+  it("a delivery-only parcel opens no debt", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const { svc } = build({
+      $queryRaw: async () => row({ order_type: "parcel", declared_value: "51.00", items: [{ description: "Brake pads", quantity: 1 }] }),
+      order: { update: async (a: { data: Record<string, unknown> }) => (updates.push(a.data), {}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    await svc.confirmDelivery("o1", "r1", "123456");
+    expect(updates[0]).not.toHaveProperty("debtStatus");
+  });
+
   // C4/R-09 defense in depth: rotateDeliveryCode already refuses to reveal a CASH merchant order's
   // plaintext code before the handshake, so this re-checks server-side rather than trusting that alone.
   it("blocks a CASH merchant order's confirm before the R-04 handshake completes, even with a correct-looking code", async () => {

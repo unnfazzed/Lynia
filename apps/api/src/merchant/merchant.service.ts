@@ -52,6 +52,7 @@ import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveMerchantAccess } from "./merchant-access";
+import { findBookingAccountId } from "./booking-account";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
@@ -693,6 +694,18 @@ export class MerchantService {
       }),
     ]);
 
+    // D-48 PR 4b: a shop booking's cash on delivery, overdue the same way (its orders are the booking
+    // account's, not the merchant's).
+    const bookingAccountId = await findBookingAccountId(this.prisma, merchantId);
+    const bookingOverdue = bookingAccountId
+      ? await this.prisma.order.findMany({
+          where: { customerId: bookingAccountId, orderType: "parcel", debtStatus: "open", merchantClosedAt: null, deliveredAt: { lt: overdueBefore } },
+          select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
+          orderBy: { deliveredAt: "asc" },
+          take: 50,
+        })
+      : [];
+
     const prepMinutes = prepped
       .filter((o): o is { readyAt: Date; prepStartedAt: Date } => o.readyAt != null && o.prepStartedAt != null)
       .map((o) => (o.readyAt.getTime() - o.prepStartedAt.getTime()) / 60_000);
@@ -707,12 +720,16 @@ export class MerchantService {
       averagePrepMinutes,
       orders: placed._count._all,
       sales: roundToCents(Number(placed._sum.merchantGoodsTotal ?? 0)),
-      cashOverdue: addMoney(0, ...overdueRows.map((o) => Number(o.debtAmount ?? 0))),
-      overdue: overdueRows.map((o) => ({
+      cashOverdue: addMoney(0, ...[...overdueRows, ...bookingOverdue].map((o) => Number(o.debtAmount ?? 0))),
+      overdue: [
+        ...overdueRows.map((o) => ({ o, kind: "order" as const })),
+        ...bookingOverdue.map((o) => ({ o, kind: "booking" as const })),
+      ].map(({ o, kind }) => ({
         orderId: o.id,
         amount: Number(o.debtAmount ?? 0),
         riderName: o.rider?.profile.firstName || null,
         dueAt: new Date(o.deliveredAt!.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString(),
+        kind,
       })),
       lines: (todays ?? []).map((o) => {
         const outcome = moneyLineOutcome(o);

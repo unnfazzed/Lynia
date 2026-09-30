@@ -1076,6 +1076,8 @@ model MerchantBooking {
   bookedByProfileId    String   @map("booked_by_profile_id") @db.Uuid
   pickedByProfileId    String?  @map("picked_by_profile_id") @db.Uuid
   cancelledByProfileId String?  @map("cancelled_by_profile_id") @db.Uuid
+  // D-48 PR 4b: the rider collects the declared value from the buyer and brings it back (0058).
+  collectCash          Boolean? @map("collect_cash")
   createdAt            DateTime @default(now()) @map("created_at")
 
   @@index([merchantId, createdAt])

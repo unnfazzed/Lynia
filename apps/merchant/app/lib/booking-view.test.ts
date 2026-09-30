@@ -70,3 +70,22 @@ describe("D5 stepper", () => {
     expect(bookingSteps({ state: "delivered", createdAt: at }).every((s) => s.state === "done")).toBe(true);
   });
 });
+
+describe("cash on delivery (D-48 PR 4b)", () => {
+  const at = new Date(2026, 8, 30, 12, 10).toISOString();
+  it("adds the 7th step, live while the cash is due and done once it's back", () => {
+    const due = bookingSteps({ state: "delivered", createdAt: at, cashOnDelivery: { amount: "51.00", status: "due", dueAt: null } });
+    expect(due.map((s) => s.label).at(-1)).toBe("Cash back to you");
+    expect(due.at(-1)!.state).toBe("now");
+    const back = bookingSteps({ state: "delivered", createdAt: at, cashOnDelivery: { amount: "51.00", status: "returned", dueAt: null } });
+    expect(back.every((s) => s.state === "done")).toBe(true);
+    expect(bookingSteps({ state: "picked_up", createdAt: at, cashOnDelivery: { amount: "51.00", status: "awaiting_delivery", dueAt: null } })).toHaveLength(7);
+  });
+
+  it("keeps a delivered booking live on the home while its cash is on the way", () => {
+    expect(tracker(merchantBooking({ state: "delivered", itemsSummary: "Brake pads", cashOnDelivery: { amount: "51.00", status: "due", dueAt: null } }))).toMatchObject({
+      icon: "banknote",
+      sub: "Delivered · cash back $51.00",
+    });
+  });
+});
