@@ -724,7 +724,7 @@
   padding: 12px 14px;
   font-size: 13.5px;
   font-weight: 600;
-  z-index: 50;
+  z-index: 80;
   pointer-events: none;
 }
 .m-offline {
@@ -737,4 +737,103 @@
   font-size: 13.5px;
   font-weight: 600;
   flex-shrink: 0;
+}
+
+/* ── Prep ring, stepper, map (merchant mobile B3/B6) ────────────────────────────────────── */
+.m-ring {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  position: relative;
+}
+.m-ring::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.m-ring b {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+}
+.m-stp {
+  display: flex;
+  flex-direction: column;
+}
+.m-sr {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 8px;
+}
+.m-sr .m-c {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  border: 2px solid var(--line);
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.m-sr::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 22px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+.m-sr:last-child {
+  padding-bottom: 0;
+}
+.m-sr:last-child::before {
+  display: none;
+}
+.m-sr[data-state="done"] .m-c {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.m-sr[data-state="done"]::before {
+  background: var(--accent);
+}
+.m-sr[data-state="now"] .m-c {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.m-sr b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  display: block;
+  line-height: 22px;
+}
+.m-sr[data-state="done"] b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.m-sr[data-state="now"] b {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.m-sr b span {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 6px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }

@@ -48,7 +48,7 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
   const pendingRef = useRef(false);
   // LC-D##: callers unable to acquire the latch (a coalesced refetch) used to resolve immediately —
   // fine for the interval/visibility pollers, which are fire-and-forget, but wrong for a caller that
-  // needs to know the fresh data actually landed (QueueBoard's post-accept/reject refetch, awaited
+  // needs to know the fresh data actually landed (the Orders page's post-accept/reject refetch, awaited
   // so an order's Accept/Reject buttons don't re-enable before the queue reflects the mutation —
   // see NewOrderTakeover's submitAccept/submitReject). These resolvers are queued instead, and fire
   // only once the one coalesced follow-up fetch this call folds into has itself completed.

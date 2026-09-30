@@ -1,52 +1,70 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MerchantOrderResponse } from "@lynia/shared";
 import QueuePage from "./page";
+import { ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
-import { merchantProfile } from "../../testing/fixtures";
+import { setBusyMode, setOpen } from "../../lib/menu-api";
+import { acceptOrder, getTodaySummary, rejectOrder } from "../../lib/orders-api";
+import { merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
 
 vi.mock("../../lib/api-client", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api-client")>("../../lib/api-client");
   return { ...actual, getMyMerchant: vi.fn() };
 });
+vi.mock("../../lib/menu-api", () => ({ setOpen: vi.fn(), setBusyMode: vi.fn() }));
+vi.mock("../../lib/orders-api", () => ({ acceptOrder: vi.fn(async () => ({})), rejectOrder: vi.fn(async () => ({})), getTodaySummary: vi.fn() }));
+vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn() }));
 
-// One router object for the whole test run: the page's load callback depends on it, so a fresh object
-// per render would re-run the load on every render — just as a real Next router, which is stable, doesn't.
+// One router object for the whole run: the page's load callback depends on it.
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => {
   const router = { replace, push: vi.fn() };
   return { useRouter: () => router };
 });
 
+const poll = vi.hoisted(() => ({ orders: [] as MerchantOrderResponse[], refetch: vi.fn(async () => {}) }));
 vi.mock("../../lib/use-queue-poll", () => ({
-  useQueuePoll: () => ({ orders: [], loading: false, error: null, refetch: vi.fn(async () => {}) }),
+  useQueuePoll: () => ({ orders: poll.orders, loading: false, error: null, refetch: poll.refetch }),
 }));
 
+const alarm = vi.hoisted(() => ({ ring: vi.fn(), silence: vi.fn(), testRing: vi.fn() }));
 const signOut = vi.fn();
 let reachable = true;
 vi.mock("../../components/KitchenConnectionProvider", () => ({
-  useKitchenConnection: () => ({
-    alarm: { ring: vi.fn(), silence: vi.fn(), testRing: vi.fn() },
-    actionsDisabled: false,
-    reachability: { reachable, attempt: 0, unreachableSinceMs: null },
-    signOut,
-  }),
+  useKitchenConnection: () => ({ alarm, actionsDisabled: false, reachability: { reachable, attempt: 0, unreachableSinceMs: null }, signOut }),
 }));
-
 vi.mock("../../components/Kitchen", () => ({
   Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("../../components/queue/QueueBoard", () => ({
-  QueueBoard: () => <div>queue board</div>,
-}));
+const Page = () => (
+  <ToastProvider>
+    <QueuePage />
+  </ToastProvider>
+);
 
-// L2's strip on Orders is self-contained; a stand-in makes "is it there?" a one-line check.
-vi.mock("../../components/bookings/BookingsStrip", () => ({
-  BookingsStrip: () => <div>bookings strip</div>,
-}));
+// Open all day every day, so "open" doesn't depend on when the test runs.
+const ALL_DAY = { open: "00:00", close: "23:59" };
+const WEEK = { mon: ALL_DAY, tue: ALL_DAY, wed: ALL_DAY, thu: ALL_DAY, fri: ALL_DAY, sat: ALL_DAY, sun: ALL_DAY };
+const kitchen = (over = {}) => merchantProfile({ name: "Sadza Republic", hours: WEEK, pilotEnabled: true, ...over });
 
-const PIN = { point: { lat: -17.83, lng: 31.05 }, landmark: "Opposite Mbare market", contactPhone: "+263771234567" };
+beforeEach(() => {
+  poll.orders = [];
+  vi.mocked(getTodaySummary).mockResolvedValue({
+    date: "2026-09-30",
+    delivered: 6,
+    rejected: 0,
+    cashTaken: 30,
+    walletTaken: 0,
+    averagePrepMinutes: 15,
+    orders: 7,
+    sales: 59.5,
+    cashOverdue: 9.5,
+    overdue: [],
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -54,88 +72,141 @@ afterEach(() => {
   reachable = true;
 });
 
-// LC-D##: before this fix, a single dropped /merchant/me call at mount left the merchant
-// permanently stuck on this error screen — useQueuePoll(state.status === "ready") never starts,
-// so the whole order poll + alarm loop never armed, with no button anywhere to try again.
-describe("QueuePage initial-load failure has a way out (LC-D##)", () => {
-  it("shows a Retry button on a failed load, and retrying recovers to the ready state", async () => {
-    vi.mocked(getMyMerchant)
-      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
-      .mockResolvedValueOnce(merchantProfile());
-
-    render(<QueuePage />);
-    await screen.findByText("Couldn't reach the server — check the connection and try again.");
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-
-    await screen.findByText("Test Kitchen");
-    expect(getMyMerchant).toHaveBeenCalledTimes(2);
+describe("loading the Orders home", () => {
+  it("shows a Retry on a failed load, and recovers", async () => {
+    vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server.")).mockResolvedValueOnce(kitchen());
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Sadza Republic")).toBeTruthy();
   });
 
-  it("auto-retries the instant reachability recovers, without a manual tap — this is the alarm loop, so it can't wait on the merchant noticing", async () => {
+  it("retries by itself the moment the connection comes back — it's the alarm loop", async () => {
     reachable = false;
-    vi.mocked(getMyMerchant)
-      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
-      .mockResolvedValueOnce(merchantProfile());
-
-    const { rerender } = render(<QueuePage />);
-    await screen.findByText("Couldn't reach the server — check the connection and try again.");
-    expect(getMyMerchant).toHaveBeenCalledTimes(1);
-
+    vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server.")).mockResolvedValueOnce(kitchen());
+    const { rerender } = render(<Page />);
+    await screen.findByText("Couldn't reach the server.");
     reachable = true;
-    rerender(<QueuePage />);
+    rerender(<Page />);
+    expect(await screen.findByText("Sadza Republic")).toBeTruthy();
+  });
 
-    await screen.findByText("Test Kitchen");
-    expect(getMyMerchant).toHaveBeenCalledTimes(2);
+  it("sends a number that isn't on a business to the sign-up, and a shop to Deliveries", async () => {
+    vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(403, "not a member", "not_a_member"));
+    render(<Page />);
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/onboarding"));
+
+    cleanup();
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "other" }));
+    render(<Page />);
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
   });
 });
 
-// Merchant web upgrade L1: the old "this number isn't a merchant — contact support" card was a dead
-// end. A number that isn't on a business goes to the self-serve sign-up, and a shop (no customer
-// orders, so no Orders board) goes to its setup checklist.
-describe("QueuePage routes by membership (merchant web upgrade L1)", () => {
-  it("a number that isn't on a business (403 not_a_member) goes to the sign-up, not a dead end", async () => {
-    vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(403, "This number isn't on a business on LyniaGo yet.", "not_a_member"));
-
-    render(<QueuePage />);
-
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/onboarding"));
-    expect(screen.queryByText("This number isn't on a business on LyniaGo yet.")).toBeNull();
+describe("B1 · Orders home (merchant mobile, D-48)", () => {
+  it("draws the header: name, open line, switch, and the owner's Orders · Sales · Cash overdue tiles", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    render(<Page />);
+    expect(await screen.findByText("Sadza Republic")).toBeTruthy();
+    expect(screen.getByText("● Open until 23:59")).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Open for orders" }).getAttribute("aria-checked")).toBe("true");
+    expect(await screen.findByText("$59.50")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Cash overdue/ }).getAttribute("href")).toBe("/statement");
+    expect(screen.queryByText(/Book a rider/)).toBeNull();
+    expect(screen.queryByText(/alarm/i)).toBeNull();
   });
 
-  it("a shop goes to Deliveries instead of an Orders board, whatever the API serves (D-48)", async () => {
-    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
-
-    render(<QueuePage />);
-
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
-    expect(screen.queryByText("Orders")).toBeNull();
+  it("staff see no money tiles", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen({ myRole: "staff" }));
+    render(<Page />);
+    await screen.findByText("Sadza Republic");
+    expect(screen.queryByText("Sales")).toBeNull();
+    expect(getTodaySummary).not.toHaveBeenCalled();
   });
 
-  it("a shop's home is Deliveries once the API can book riders (L2)", async () => {
-    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "auto_parts", location: PIN }));
-
-    render(<QueuePage />);
-
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
+  it("with nothing on, says so", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    render(<Page />);
+    expect(await screen.findByText("No orders yet")).toBeTruthy();
   });
 
-  it("a restaurant stays on its Orders board, with no bookings strip on an API that can't book riders", async () => {
-    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile());
+  it("counts New · Cooking · Ready and lists waiting-for-rider and out-for-delivery orders below", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [
+      merchantOrder({ id: "a2220000-0000-4000-8000-000000000000", merchantPhase: "preparing" }),
+      merchantOrder({ id: "a4440000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER }),
+      merchantOrder({ id: "a1110000-0000-4000-8000-000000000000", merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }),
+    ];
+    render(<Page />);
+    const tabs = await screen.findByRole("tablist", { name: "Orders" });
+    expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual(["New0", "Cooking1", "Ready1"]);
+    expect(screen.getByText("Waiting for rider")).toBeTruthy();
+    expect(screen.getByText("Blessing M. coming to your counter")).toBeTruthy();
+    expect(screen.getByText("Out for delivery")).toBeTruthy();
+    expect(screen.getByText("#A111 · Blessing M.")).toBeTruthy();
+    expect(screen.getByText("On the way · cash back $12.00")).toBeTruthy();
 
-    render(<QueuePage />);
+    fireEvent.click(within(tabs).getByRole("tab", { name: /Cooking/ }));
+    expect(screen.getByRole("link", { name: /#A222/ }).getAttribute("href")).toBe("/queue/a2220000-0000-4000-8000-000000000000");
+  });
+});
 
-    await screen.findByText("Test Kitchen");
-    expect(replace).not.toHaveBeenCalled();
-    expect(screen.queryByText("bookings strip")).toBeNull();
+describe("B2 · a ringing order takes over, and the alarm rings until it's answered", () => {
+  it("rings, and accepting with a chip tells the customer the time", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [merchantOrder()];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
+    expect(alarm.ring).toHaveBeenCalled();
+    fireEvent.click(within(takeover).getByRole("radio", { name: "20" }));
+    fireEvent.click(within(takeover).getByRole("button", { name: "Accept · ready in 20 min" }));
+    await vi.waitFor(() => expect(acceptOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { prepMinutes: 20, unavailableDishIds: undefined }));
+    expect(await screen.findByText("Accepted · customer told 20 min")).toBeTruthy();
   });
 
-  it("a restaurant gets Book a rider on Orders once the API can book riders (L2)", async () => {
-    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ location: PIN }));
+  it("declining goes through the confirm sheet", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [merchantOrder()];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
+    expect(screen.getByText("The customer is told straight away.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Decline order" }));
+    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", "other"));
+  });
 
-    render(<QueuePage />);
+  it("goes quiet when nothing is waiting", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    render(<Page />);
+    await screen.findByText("Sadza Republic");
+    expect(alarm.silence).toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
 
-    expect(await screen.findByText("bookings strip")).toBeTruthy();
-    expect(screen.getByText("queue board")).toBeTruthy();
+describe("the open/closed switch (B1 → B5)", () => {
+  it("closing greys the header and shows B5; Open now and busy mode open again", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    const closedUntil = new Date(Date.now() + 3_600_000).toISOString();
+    vi.mocked(setOpen).mockResolvedValueOnce(kitchen({ closedUntil }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Open for orders" }));
+    expect(await screen.findByText("You’re closed")).toBeTruthy();
+    expect(setOpen).toHaveBeenCalledWith(false);
+    expect(screen.getByRole("switch", { name: "Closed" }).getAttribute("aria-checked")).toBe("false");
+
+    vi.mocked(setOpen).mockResolvedValueOnce(kitchen({ closedUntil: null }));
+    vi.mocked(setBusyMode).mockResolvedValueOnce(kitchen({ closedUntil: null, busy: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in busy mode (+10 min)" }));
+    await vi.waitFor(() => expect(setBusyMode).toHaveBeenCalledWith({ active: true }));
+    expect(setOpen).toHaveBeenLastCalledWith(true);
+    expect(await screen.findByText("Open · busy mode +10 min")).toBeTruthy();
+  });
+
+  it("outside hours the switch says to change the hours instead", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen({ hours: {} }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Closed" }));
+    expect(await screen.findByText("Outside your opening hours · change them in Account")).toBeTruthy();
+    expect(setOpen).not.toHaveBeenCalled();
   });
 });

@@ -2229,10 +2229,30 @@ components to the design system.
 
 | Where | Handoff | App now | Retires with |
 |---|---|---|---|
-| Orders, Menu, Money and the Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (B1–B7, C1–C3, C5, E2–E4) | the older screen bodies inside the new phone shell and tab bar | PR 2 and PR 3 |
+| Menu, Money and the Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (C1–C3, C5, E2–E4) | the older screen bodies inside the new phone shell and tab bar | PR 3 |
 | Shop Orders home, Book a rider, Offers, Tracking, Items | redrawn (D1–D5, D7, E1) | the older screens inside the new shell | PR 4 |
 | A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
 | Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
+
+### 5 · Orders B1–B7 (PR 2b): what the app draws differently, and why
+
+Evidence: `docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30.png` (mock left, app right, 360×720).
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| B1 New card | a "View & accept" card sits in the New segment | the card exists, but a ringing order always opens B2 over it | the alarm must be answered (B2 "Back is blocked here"); the card is what is left beneath the takeover |
+| B1 / B6 ETA pill | gold "8 min" on the out-for-delivery row and the tracking title | the row's gold pill is the **cash-back countdown** once delivered; no ETA before that | the API has no rider ETA to the customer; nothing is invented |
+| B1 cooking row sub | status line | "Cooking · ready by HH:MM" | the title already carries the items; the prep time is the only status a cooking order has |
+| B1 Waiting-for-rider sub | "Blessing M. at your counter" style | "{rider} coming to your counter" | no "arrived" signal exists before the rider types the code |
+| B3 | "Rider secured, start cooking" + "Blessing M. · ~8 min"; timeline Accepted · Rider secured · Rider at your counter | "Cooking · Ready by HH:MM · a rider is found when it's ready"; timeline Accepted · Food is ready · Rider at your counter | owner decision §3: dispatch stays at "Food is ready" |
+| B3 "Can't finish this order" | confirm, then cancel | same, via `POST /merchant/orders/:id/cancel` (cash orders while cooking); a wallet order keeps the refund path | new endpoint; wallet orders from old installs still need a refund |
+| B2 "Can't take it" | confirm sheet | same; the decline is sent with reason `other` | the handoff draws no reason picker |
+| B4 / B6 rider row | 44px call button | no call button | rider phone numbers are not exposed to merchants |
+| B4 "Hand over" | always live | enabled once the rider's code matched (status picked up) | owner decision §3: the rider types the code; handing over before that would skip the check |
+| B6 map | live rider position | OpenStreetMap tiles centred on the kitchen with its pin | no live rider location in the merchant API yet |
+| B5 offline bar | drawn inside B5 | the shell's "No connection, retrying…" bar (shown on every screen when offline) | same bar, one place |
+| B5 closed body | power icon, "You're closed", Open now, busy mode | same, plus any orders still in the kitchen listed under "In the kitchen" | closing does not cancel orders already accepted; hiding them would strand them |
+| Restaurant "Book a rider" strip | not drawn on B1 | removed | not drawn ⇒ not rendered |
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).

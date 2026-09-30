@@ -1,83 +1,86 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PREP_CHIPS_MIN, type MerchantOrderResponse, type MerchantRejectionReasonCode } from "@lynia/shared";
 import { computeAcceptPreview } from "../../lib/accept-preview";
 import { formatCountdown, msUntil } from "../../lib/countdown";
+import { money, orderLabel } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
 import { Icon } from "../icons";
-import { PayTag } from "./PayTag";
-import { RejectSheet } from "./RejectSheet";
-import { disabledStyle, primaryButtonStyle } from "./styles";
-
-function orderLabel(o: MerchantOrderResponse): string {
-  return `#${o.id.slice(0, 8).toUpperCase()}`;
-}
+import { ConfirmSheet } from "../m/ConfirmSheet";
+import { useToast } from "../m/Toast";
 
 /**
- * M1·3 NEW ORDER alarm takeover (D-05: rings until Accept/Can't-take-it) + M1·b1 two-orders-at-once
- * sequencing (D-26 adjacent) + D-23 item-level accept + D-11 reject reasons. Full-viewport by design
- * — an incoming order always demands immediate attention regardless of board/list mode.
+ * B2 · New order ringing (packages/design/handoff/merchant-mobile, ledger D-48): a full-screen green
+ * takeover. The header carries the order number and the accept countdown; the white sheet holds the
+ * lines (the customer's note under its line), the total, "Edit items" (tap a line to strike it — the
+ * customer approves the shorter order, D-23), the ready-in chips, "Accept · ready in 15 min" and
+ * "Can't take it" behind the confirm sheet. The alarm rings until one of them is answered: there is
+ * no back out of it (README "Ringing").
  */
 export function NewOrderTakeover({
   active,
-  queued,
   disabled,
   onAccept,
   onReject,
   refetch,
 }: {
   active: MerchantOrderResponse;
-  queued: readonly MerchantOrderResponse[];
+  queued?: readonly MerchantOrderResponse[];
   disabled: boolean;
   onAccept: (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => Promise<void>;
   onReject: (orderId: string, reason: MerchantRejectionReasonCode) => Promise<void>;
   refetch: () => Promise<void>;
 }) {
   const now = useNow();
+  const toast = useToast();
   const [prepMinutes, setPrepMinutes] = useState<(typeof PREP_CHIPS_MIN)[number]>(15);
   const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
-  const [showReject, setShowReject] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirmDecline, setConfirmDecline] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Synchronous double-submit guard (CF-01 class): `submitting` is React state, so two clicks in the
-  // same event-loop tick — a real fast double-tap on a kitchen tablet, not just accidental — both read
-  // it as `false` and both call onAccept/onReject before the disabled state commits. Order assignment
-  // is a sensitive lane (CLAUDE.md), so this must not silently double-accept/double-reject on a tap.
+  // Synchronous double-submit guard: two taps in one tick both read `submitting` as false. Order
+  // assignment is a sensitive lane, so a fast double-tap must never double-accept or double-reject.
   const submittingRef = useRef(false);
 
   const preview = computeAcceptPreview(active.items, unavailable);
   const remainingMs = msUntil(active.acceptDeadlineAt, now);
 
-  function toggleUnavailable(dishId: string) {
+  // Back is blocked here: the alarm must be answered (README "Ringing").
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") toast("Accept or decline to stop the alarm");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [toast]);
+
+  function toggleLine(dishId: string | null) {
+    if (!editing || !dishId) return;
+    const removing = !unavailable.has(dishId);
     setUnavailable((prev) => {
       const next = new Set(prev);
       if (next.has(dishId)) next.delete(dishId);
       else next.add(dishId);
       return next;
     });
+    toast(removing ? "Removed · the customer approves" : "Item back on the order");
   }
 
-  // C-O9 (LC-C13): a rejection here (typically a 409 — the order already resolved via a lost-
-  // response retry, or the ambient poll's own late arrival) previously left the stale Accept/
-  // Reject buttons tappable until the next ambient queue poll (≤5s) or a visibilitychange
-  // refetch quietly cleared them — self-healing, but a real, reproducible confusion window on a
-  // slow reconnect. Mirrors the success path (`withRefetch` in QueueBoard), which already awaits
-  // the refetch end-to-end before the caller sees it settle: refetch on error too, so a stale
-  // takeover clears itself (QueueBoard re-derives `active` and unmounts this component) as soon
-  // as the fresh queue snapshot lands, instead of waiting out the ambient poll.
-  async function submitAccept() {
+  // A refusal here (usually a 409: the order already resolved) refetches, so a stale takeover clears
+  // itself as soon as the fresh queue lands instead of waiting for the next poll.
+  async function run(action: () => Promise<void>, done: string, failed: string) {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      await onAccept(active.id, prepMinutes, [...unavailable]);
+      await action();
+      toast(done);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't accept the order — try again.");
-      // Best-effort self-heal (see the comment above): if this ALSO rejects, don't let it escape
-      // the handler and skip the finally below — a refetch failure here just means the stale-clear
-      // didn't happen this round; the next ambient poll (≤5s) still catches it either way.
+      setError(err instanceof Error ? err.message : failed);
+      setConfirmDecline(false);
       await refetch().catch(() => {});
     } finally {
       setSubmitting(false);
@@ -85,226 +88,135 @@ export function NewOrderTakeover({
     }
   }
 
-  async function submitReject(reason: MerchantRejectionReasonCode) {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await onReject(active.id, reason);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't reject the order — try again.");
-      setShowReject(false);
-      await refetch().catch(() => {});
-    } finally {
-      setSubmitting(false);
-      submittingRef.current = false;
-    }
-  }
+  const accept = () =>
+    run(() => onAccept(active.id, prepMinutes, [...unavailable]), `Accepted · customer told ${prepMinutes} min`, "Couldn't accept the order. Try again.");
+  const decline = () => run(() => onReject(active.id, "other"), "Declined · the customer was told", "Couldn't decline the order. Try again.");
 
-  // Kit's accept CTA spells the unit out — "Accept · 20 min" (r-merchant.jsx:252/391) — while the
-  // prep chips themselves stay "20m" (r-merchant.jsx:248).
+  const busy = disabled || submitting;
+  const keep = active.items.length - [...unavailable].filter((id) => active.items.some((i) => i.dishId === id)).length;
   const acceptLabel = preview.hasUnavailable
-    ? `Accept ${active.items.length - unavailable.size} of ${active.items.length} · ${prepMinutes} min`
-    : `Accept · ${prepMinutes} min`;
+    ? `Accept ${keep} of ${active.items.length} · ready in ${prepMinutes} min`
+    : `Accept · ready in ${prepMinutes} min`;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "var(--cta-fill)",
-        color: "#fff",
-        zIndex: 60,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "auto",
-      }}
-    >
-      {/* M1·3's alarm header (r-merchant.jsx:213-218): a darker band across the top of the takeover,
-       *  volume glyph first, 15/800 label, and the countdown at 14/700 on the right. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 22px", background: "rgba(0,0,0,.12)", flexWrap: "wrap" }}>
-        <Icon name="volume-2" size={20} color="#fff" />
-        <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: queued.length > 0 ? undefined : ".04em" }}>
-          {queued.length > 0 ? `${queued.length + 1} NEW ORDERS — answer them one at a time` : "NEW ORDER — ALARM RINGING"}
+    <div className="m-overlay" style={{ zIndex: 60 }}>
+      <div className="m-overlay-frame" style={{ background: "var(--cta-fill)", display: "flex", flexDirection: "column" }} role="alertdialog" aria-label={`New order ${orderLabel(active)}`}>
+        <div style={{ padding: "calc(10px + env(safe-area-inset-top)) 16px 14px", color: "var(--on-accent)", display: "flex", alignItems: "center", gap: 12 }}>
+          <Icon name="volume-2" size={24} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", opacity: 0.85 }}>NEW ORDER</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{orderLabel(active)}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className="m-num" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>
+              {formatCountdown(remainingMs)}
+            </div>
+            <div style={{ fontSize: 11.5, opacity: 0.85 }}>to accept</div>
+          </div>
         </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 14, fontWeight: 700 }}>{formatCountdown(remainingMs)} left to accept</div>
-      </div>
 
-      {queued.length > 0 && (
-        <div style={{ padding: "0 24px 8px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 12,
-              fontWeight: 800,
-              background: "rgba(255,255,255,.2)",
-              borderRadius: 999,
-              padding: "4px 12px",
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            background: "var(--bg)",
+            borderRadius: "20px 20px 0 0",
+            padding: "16px 16px calc(16px + env(safe-area-inset-bottom))",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          {active.items.map((item, idx) => {
+            const out = !!item.dishId && unavailable.has(item.dishId);
+            return (
+              <div key={`${item.dishId ?? "item"}-${idx}`}>
+                <button
+                  type="button"
+                  className="m-li"
+                  style={{ minHeight: 48, opacity: out ? 0.4 : 1, textDecoration: out ? "line-through" : undefined, cursor: editing ? "pointer" : "default" }}
+                  aria-pressed={editing ? out : undefined}
+                  onClick={() => toggleLine(item.dishId)}
+                >
+                  <b style={{ fontSize: 15, width: 26 }}>{item.quantity}×</b>
+                  <div className="m-t">
+                    <b>{item.name}</b>
+                  </div>
+                  <span className="m-num" style={{ fontSize: 14 }}>
+                    {money(item.priceUsd * item.quantity)}
+                  </span>
+                </button>
+                {item.note && (
+                  <div style={{ fontSize: 13, color: "var(--highlight-ink)", background: "var(--highlight-wash)", borderRadius: 10, padding: "8px 10px", margin: "8px 0 0 38px" }}>
+                    “{item.note}”
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {active.note && (
+            <div style={{ fontSize: 13, color: "var(--highlight-ink)", background: "var(--highlight-wash)", borderRadius: 10, padding: "8px 10px" }}>“{active.note}”</div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>Order total</span>
+            <b className="m-num" style={{ fontSize: 24 }}>
+              {money(preview.total)}
+            </b>
+          </div>
+          <button
+            type="button"
+            className="m-lnk"
+            style={{ minHeight: 28, justifyContent: "flex-start", fontSize: 13 }}
+            onClick={() => {
+              setEditing((e) => !e);
+              if (!editing) toast("Tap an item to remove it");
             }}
           >
-            ANSWERING NOW · 1 of {queued.length + 1}
-          </span>
-        </div>
-      )}
-
-      <div className="takeover-body">
-        <div className="takeover-main" style={{ background: "#fff", color: "var(--ink)", borderRadius: 18, padding: "clamp(14px, 4vw, 22px)", display: "flex", flexDirection: "column" }}>
-          {/* M1·3 leads the card with the order id and the PayTag at `lg` (r-merchant.jsx:221-227). */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "clamp(20px, 6.5vw, 26px)", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{orderLabel(active)}</div>
-              <div style={{ fontSize: 14, color: "var(--muted)" }}>
-                {active.paymentMethod === "wallet" ? "Pay-on-confirm" : "Collected at the door"}
-              </div>
-            </div>
-            <PayTag pay={active.paymentMethod} size="lg" />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
-            {active.items.map((item, idx) => {
-              const isOut = !!item.dishId && unavailable.has(item.dishId);
-              return (
-                <div
-                  key={`${item.dishId ?? "item"}-${idx}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 0",
-                    borderBottom: "1px solid var(--line)",
-                    opacity: isOut ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, textDecoration: isOut ? "line-through" : "none" }}>
-                      {item.quantity}x {item.name}
-                    </div>
-                    {item.note && <div style={{ fontSize: 12.5, color: "var(--accent-text)" }}>↳ {item.note}</div>}
-                  </div>
-                  <div style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>${(item.priceUsd * item.quantity).toFixed(2)}</div>
-                  {item.dishId && (
-                    <button
-                      type="button"
-                      onClick={() => toggleUnavailable(item.dishId!)}
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: isOut ? "var(--danger-ink)" : "var(--muted)",
-                        background: isOut ? "var(--danger-wash)" : "var(--surface)",
-                        border: "1px solid var(--line)",
-                        borderRadius: 999,
-                        padding: "6px 10px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {/* M2·1's own two states for this chip (r-merchant.jsx:352). */}
-                      {isOut ? "Not available" : "Don't have it"}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {active.note && (
-            <div style={{ marginTop: 12, background: "var(--highlight-wash)", border: "1px solid var(--highlight-border)", borderRadius: 12, padding: "10px 14px", fontSize: 13.5 }}>
-              {active.note}
-            </div>
-          )}
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "2px solid var(--line)" }}>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 700 }}>
-              {active.paymentMethod === "cash" ? "Food total you'll be paid in cash" : "Food total"}
-            </div>
-            <div style={{ fontSize: "clamp(30px, 9vw, 38px)", fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
-              ${preview.total.toFixed(2)}
-              {preview.hasUnavailable && (
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--muted)", marginLeft: 10 }}>down from ${preview.fullTotal.toFixed(2)}</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="takeover-rail" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {queued.length > 0 && queued[0] && (
-            <div style={{ background: "rgba(255,255,255,.14)", borderRadius: 14, padding: 14 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".04em", marginBottom: 8, opacity: 0.85 }}>NEXT IN LINE</div>
-              <div style={{ fontSize: 14, fontWeight: 800 }}>{orderLabel(queued[0])}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.85 }}>{queued[0].items.map((i) => `${i.quantity}x ${i.name}`).join(" · ")}</div>
-              {/* M1·b1 names the order you're on (r-merchant.jsx:290). */}
-              <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 8, lineHeight: 1.45 }}>
-                Its own 3-minute clock starts when you finish with {orderLabel(active)}. We never show two decisions at once.
-              </div>
-            </div>
-          )}
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.85, marginBottom: 8 }}>PREP TIME</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {PREP_CHIPS_MIN.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setPrepMinutes(m)}
-                  style={{
-                    fontSize: 13.5,
-                    fontWeight: 800,
-                    padding: "10px 14px",
-                    borderRadius: 999,
-                    border: prepMinutes === m ? "2px solid #fff" : "1px solid rgba(255,255,255,.5)",
-                    background: prepMinutes === m ? "rgba(255,255,255,.22)" : "transparent",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  {m}m
-                </button>
-              ))}
-            </div>
-          </div>
+            {editing ? "Done editing" : "Edit items"}
+          </button>
 
           <div style={{ flex: 1 }} />
 
-          {error && <div style={{ fontSize: 13, background: "rgba(0,0,0,.2)", borderRadius: 10, padding: "8px 12px" }}>{error}</div>}
-
-          <button
-            type="button"
-            onClick={submitAccept}
-            disabled={disabled || submitting}
-            style={{ ...primaryButtonStyle, background: "#fff", color: "var(--cta-fill)", fontSize: 18, padding: "22px 20px", ...disabledStyle(disabled || submitting) }}
-          >
+          {error && (
+            <div className="m-alert" role="alert">
+              {error}
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "var(--muted)" }}>READY IN (MIN)</div>
+          <div className="m-chips" style={{ gap: 6 }} role="radiogroup" aria-label="Ready in">
+            {PREP_CHIPS_MIN.map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={prepMinutes === m}
+                className={`m-chip${prepMinutes === m ? " m-on" : ""}`}
+                style={{ flex: 1, justifyContent: "center", padding: 0 }}
+                onClick={() => setPrepMinutes(m)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="m-btn" disabled={busy} onClick={() => void accept()}>
             {acceptLabel}
           </button>
-          <button
-            type="button"
-            onClick={() => setShowReject(true)}
-            disabled={disabled || submitting}
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: "#fff",
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,.6)",
-              borderRadius: 14,
-              padding: "14px 20px",
-              cursor: "pointer",
-              ...disabledStyle(disabled || submitting),
-            }}
-          >
-            Can&apos;t take it
+          <button type="button" className="m-lnk m-red" style={{ minHeight: 36 }} disabled={busy} onClick={() => setConfirmDecline(true)}>
+            Can’t take it
           </button>
-          {/* r-merchant.jsx:254 — plain, not italic, at 12.5 on a 92%-white. */}
-          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.92)", lineHeight: 1.45 }}>
-            The alarm stops the moment you tap either button — nothing else silences it.
-          </div>
         </div>
       </div>
 
-      {showReject && (
-        <RejectSheet
-          orderLabel={orderLabel(active)}
-          disabled={submitting}
-          onCancel={() => setShowReject(false)}
-          onConfirm={submitReject}
+      {confirmDecline && (
+        <ConfirmSheet
+          title="Decline this order?"
+          body="The customer is told straight away."
+          confirmLabel="Decline order"
+          busy={submitting}
+          onConfirm={() => void decline()}
+          onCancel={() => setConfirmDecline(false)}
         />
       )}
     </div>
