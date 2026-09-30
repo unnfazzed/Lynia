@@ -7,6 +7,7 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { formatPhoneLocal } from "@lynia/shared";
 
 const mockGetFoodOrder = jest.fn();
 const mockRespondToItems = jest.fn(async (..._args: unknown[]) => undefined);

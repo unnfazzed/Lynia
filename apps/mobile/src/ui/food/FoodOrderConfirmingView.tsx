@@ -34,7 +34,7 @@ export function FoodOrderConfirmingView({
         <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center", marginBottom: tokens.space.md }}>
           <Icon name="receipt" size={34} color={tokens.color.accentText} strokeWidth={1.75} />
         </View>
-        <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>Sent to {restaurantName}</Text>
+        <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink, textAlign: "center" }}>{`Sent to ${restaurantName}`}</Text>
         <Text style={{ fontSize: 13.5, color: tokens.color.muted, textAlign: "center", marginTop: 6, maxWidth: 280 }}>
           They&apos;re confirming your order. You can cancel free until they do.
         </Text>
@@ -58,7 +58,7 @@ export function FoodOrderConfirmingView({
         >
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }}>
-              Call {restaurantName}
+              {`Call ${restaurantName}`}
             </Text>
             <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatPhoneLocal(phone)}</Text>
           </View>
