@@ -1898,6 +1898,20 @@ key cannot travel by OTA (`REL-01`), so this is a store build.
   publishing is off, so it went out when approved, the same day.
 - **Confirmed.** The owner saw map tiles on vc 40, which closes MOB-MAP-03 and MOB-MAP-02.
 
+**Third OTA — 2026-09-30 (merchant redesign's app changes on vc 40).** Built from `main` at `388a892`
+and published to `preview` for build `1babe958` (v0.51.0 / vc 40, runtime `db601ead…`). It carries the
+cash-only food checkout (D-48, #991) and the rider's "Collect $X cash" card for shop bookings with cash
+on delivery (#997).
+
+| Run | Result | Why |
+|---|---|---|
+| 36710204990 | **published**, then the step failed | the preflight passed with no override (REL-04's fix held), and `eas update` published Android group `79d62480…` (update `01a0f221-57c2-78dd…`) on runtime `db601ead…`. The summary line after it then died on `X: unbound variable`: the message contained "$X", and the step pasted `${{ inputs.message }}` into the script under `set -u` |
+
+- **Delivered.** The update is on branch `preview` for runtime `db601ead…` = build 40, so a vc 40 phone
+  gets it on its next launch and runs it on the one after. The red run is cosmetic; it was not re-run.
+- **Fixed.** The summary line now reads the message from the step's env (`printf … "$OTA_MESSAGE"`), which
+  also closes the script-injection hole a pasted input opens.
+
 ---
 
 ## 9. Pre-submission checklist
