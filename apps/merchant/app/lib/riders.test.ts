@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { RIDER_SIGNUP_URL, RIDER_STATUS_LABEL, riderInviteLink, riderInviteMessage, riderTrackRecord, validateAddRider } from "./riders";
+import { RIDER_SIGNUP_URL, riderInviteLink, riderInviteMessage, riderLine, riderPill, validateAddRider } from "./riders";
 
 describe("Your riders' rules (merchant web upgrade L3)", () => {
-  it("names each status and never a reason", () => {
-    expect(RIDER_STATUS_LABEL).toEqual({
-      on_lyniago: "On LyniaGo",
-      not_on_lyniago: "Not on LyniaGo yet",
-      unavailable: "Can't take jobs right now",
-    });
+  it("pills each rider as E4 draws them, and never gives a reason", () => {
+    expect(riderPill({ status: "on_lyniago", online: true })).toEqual({ label: "Online", tone: "online" });
+    expect(riderPill({ status: "on_lyniago", online: false })).toEqual({ label: "Offline", tone: "offline" });
+    expect(riderPill({ status: "on_lyniago" })).toEqual({ label: "Offline", tone: "offline" });
+    expect(riderPill({ status: "unavailable", online: true })).toEqual({ label: "Paused", tone: "paused" });
+    expect(riderPill({ status: "not_on_lyniago" })).toBeNull();
   });
 
   it("invites a rider who isn't on LyniaGo yet from the owner's own WhatsApp, to the website's rider sign-up", () => {
@@ -17,10 +17,12 @@ describe("Your riders' rules (merchant web upgrade L3)", () => {
     expect(riderInviteLink("263772223333", "Hi")).toBe("https://wa.me/263772223333?text=Hi");
   });
 
-  it("describes the track record only once there is one", () => {
-    expect(riderTrackRecord({ jobs: 0, ratingAvg: null })).toBeNull();
-    expect(riderTrackRecord({ jobs: 1, ratingAvg: null })).toBe("1 delivery for you");
-    expect(riderTrackRecord({ jobs: 12, ratingAvg: 4.86 })).toBe("12 deliveries for you · ★ 4.9");
+  it("says their record, or why there's none, in E4's words", () => {
+    expect(riderLine({ status: "on_lyniago", jobs: 0, ratingAvg: null })).toBe("No trips yet");
+    expect(riderLine({ status: "on_lyniago", jobs: 1, ratingAvg: null })).toBe("1 trip for you");
+    expect(riderLine({ status: "on_lyniago", jobs: 12, ratingAvg: 4.86 })).toBe("12 trips for you · ★ 4.9");
+    expect(riderLine({ status: "not_on_lyniago", jobs: 0, ratingAvg: null })).toBe("Not on LyniaGo");
+    expect(riderLine({ status: "unavailable", jobs: 3, ratingAvg: 5 })).toBe("Paused by LyniaGo");
   });
 
   it("asks for a name and the number the rider signs in with", () => {

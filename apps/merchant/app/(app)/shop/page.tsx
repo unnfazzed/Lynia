@@ -1,17 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import type { MerchantCashRule, MerchantProfileResponse } from "@lynia/shared";
-import { Icon } from "../../components/icons";
+import type { MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { PhotoPicker } from "../../components/menu/PhotoPicker";
 import { RetryableError } from "../../components/RetryableError";
-import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
+import { AppBar } from "../../components/m/AppBar";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
-import { getMerchantProfile, updateCashRule, updateProfile } from "../../lib/menu-api";
+import { getMerchantProfile, updateProfile } from "../../lib/menu-api";
 import { vocabulary } from "../../lib/vocabulary";
 
 // D-32's own budget for the shop's cover banner/logo (mirrors MAX_BANNER_PHOTO_BYTES in
@@ -19,24 +18,6 @@ import { vocabulary } from "../../lib/vocabulary";
 const MAX_BANNER_PHOTO_BYTES = 250 * 1024;
 
 type LoadState = { status: "loading" } | { status: "ready"; profile: MerchantProfileResponse } | { status: "error"; message: string };
-
-// M5·4 "How riders pay you" (packages/design/explorations/restaurants/r-merchant.jsx:816-838): each
-// rule states the deal in one line, then the trade-off it carries, in the kit's own words.
-const CASH_RULES: { value: MerchantCashRule; title: string; recommended?: boolean; body: string; note: string }[] = [
-  {
-    value: "collect_and_return",
-    title: "Collect and return",
-    recommended: true,
-    body: "The rider takes the food, collects at the door, and rides your food money back — usually within 30 minutes. Every rider can take your orders, so food leaves faster.",
-    note: "The risk is yours for that window: if the cash never returns, the loss is yours and the rider is suspended and named.",
-  },
-  {
-    value: "pay_upfront",
-    title: "Pay me upfront",
-    body: "The rider hands you the food money before anything leaves the counter. No risk window at all.",
-    note: "Only riders carrying enough cash can take the job — pickups can be slower, and big orders sometimes find no rider.",
-  },
-];
 
 export default function ShopPage() {
   const { actionsDisabled, signOut } = useKitchenConnection();
@@ -104,35 +85,22 @@ export default function ShopPage() {
     }
   }
 
-  async function onChooseCashRule(value: MerchantCashRule) {
-    if (state.status !== "ready" || value === state.profile.cashRule) return;
-    setSaving(true);
-    try {
-      const profile = await updateCashRule({ cashRule: value });
-      setState({ status: "ready", profile });
-    } catch (err) {
-      if (redirectIfSessionExpired(err, signOut)) return;
-      setSaveError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   const disabled = actionsDisabled || saving;
   // A shop's own words (merchant web upgrade L2, D-44); a restaurant's are the drawn M5 copy.
   const v = state.status === "ready" ? vocabulary(state.profile.businessType, state.profile.shopKind) : vocabulary(null);
-  const isShop = state.status === "ready" && state.profile.businessType === "shop";
 
   return (
-    <Kitchen active="shop">
-      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
+    <Kitchen active="shop" tabs={false}>
+      {/* C4 → Shop front ("Banner, logo and tags"): a pushed screen off Account. Its body isn't redrawn. */}
+      <AppBar back="/account" title="Shop front" />
+      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your shop profile…</div>}
 
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
 
         {/* L4: the whole profile is the owner's (the permission table). */}
         {state.status === "ready" && state.profile.myRole === "staff" && (
-          <OwnerOnlyNotice>Only the owner changes the shop&apos;s details, its riders and its team.</OwnerOnlyNotice>
+          <OwnerOnlyNotice>Only the owner changes the shop front.</OwnerOnlyNotice>
         )}
 
         {state.status === "ready" && state.profile.myRole !== "staff" && (
@@ -297,111 +265,6 @@ export default function ShopPage() {
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>{v.bannerPhotoTip}</div>
               </div>
-            </div>
-
-            {/* How riders pay you is the rule for customers' cash orders. Shops take none yet (L1.5), so a
-             *  shop doesn't see a choice that changes nothing (D-44). */}
-            {!isShop && (
-              <div style={cardStyle}>
-                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>How riders pay you</div>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, marginBottom: 14 }}>
-                  Applies to every cash order · mobile-money orders are unaffected
-                </div>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  {CASH_RULES.map((rule) => {
-                    const on = state.profile.cashRule === rule.value;
-                    return (
-                      <button
-                        key={rule.value}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => onChooseCashRule(rule.value)}
-                        aria-pressed={on}
-                        style={{
-                          flex: 1,
-                          // Two abreast as drawn; one per line once the pair can no longer fit.
-                          minWidth: 240,
-                          textAlign: "left",
-                          padding: "16px 18px",
-                          borderRadius: 14,
-                          border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                          background: on ? "var(--accent-wash)" : "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <span
-                            style={{
-                              width: 22,
-                              height: 22,
-                              borderRadius: "50%",
-                              border: `2px solid ${on ? "var(--accent)" : "var(--line)"}`,
-                              background: on ? "var(--accent)" : "#fff",
-                              flexShrink: 0,
-                            }}
-                          />
-                          <span style={{ fontSize: 17, fontWeight: 800 }}>{rule.title}</span>
-                          {rule.recommended && (
-                            <span
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: 800,
-                                letterSpacing: ".04em",
-                                color: "var(--accent-text)",
-                                // Kit sits this pill on the selected card's accent wash; invert it when
-                                // the card itself is white so the pill never disappears into it.
-                                background: on ? "var(--bg)" : "var(--accent-wash)",
-                                borderRadius: 999,
-                                padding: "3px 10px",
-                              }}
-                            >
-                              RECOMMENDED
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 13.5, color: "var(--ink)", marginTop: 8, lineHeight: 1.55 }}>{rule.body}</div>
-                        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{rule.note}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 12, padding: "12px 14px", background: "var(--surface)", borderRadius: 12 }}>
-                  <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                    Changes apply from your next order. Riders see your rule on the offer before they accept.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* L3: a restaurant's own riders live inside Shop, so its drawn nav stays as it is (D-45). A
-             *  shop has Riders in its own nav. */}
-            {!isShop && (
-              <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                <Icon name="bike" size={22} color="var(--accent-text)" />
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontSize: 17, fontWeight: 800 }}>Your riders</div>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.45 }}>
-                    Riders you already work with are offered your orders first when they&apos;re nearby.
-                  </div>
-                </div>
-                <Link href="/riders" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                  Manage riders
-                </Link>
-              </div>
-            )}
-
-            {/* L4: Team lives inside Shop for both types, owner only (D-46). */}
-            <div style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-              <Icon name="users" size={22} color="var(--accent-text)" />
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 17, fontWeight: 800 }}>Your team</div>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.45 }}>
-                  Everyone who works with you signs in with their own phone.
-                </div>
-              </div>
-              <Link href="/team" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                Manage team
-              </Link>
             </div>
           </>
         )}

@@ -12,6 +12,7 @@
  *   node tools/parity/shoot-merchant-mobile.mjs --out docs/parity/MERCHANT-MOBILE-PR1-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set orders --out docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set menu --out docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30
+ *   node tools/parity/shoot-merchant-mobile.mjs --set account --out docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30
  */
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -27,7 +28,8 @@ const PROTO = pathToFileURL(resolve("../../packages/design/handoff/merchant-mobi
 
 const PHONE = { width: 360, height: 720 };
 const setArg = process.argv.indexOf("--set");
-/** `--set orders` shoots PR 2b's Orders screens, `--set menu` PR 3a's Menu and Money; the default is PR 1's. */
+/** `--set orders` shoots PR 2b's Orders screens, `--set menu` PR 3a's Menu and Money, `--set account` PR 3b's
+ *  Hours, Team and Riders; the default is PR 1's. */
 const SET = setArg > 0 ? process.argv[setArg + 1] : "pr1";
 
 const SESSION = { accessToken: "parity", refreshToken: "parity.refresh", expiresIn: 900, issuedAt: Date.now(), profileId: "p-parity", role: "customer" };
@@ -54,8 +56,21 @@ const INVITES = {
   invites: [{ id: "55555555-5555-4555-8555-555555555555", businessName: "Siyaso Spares", businessType: "shop", ownerName: "Farai", role: "staff", name: "Tendai", expiresAt: "2026-10-13T10:00:00.000Z" }],
 };
 const TEAM = {
-  members: [{ profileId: "11111111-1111-4111-8111-111111111111", name: "Farai Chari", phoneMasked: "+263•••••4567", role: "owner", you: true, joinedAt: "2026-09-20T10:00:00.000Z" }],
-  invites: [{ id: "33333333-3333-4333-8333-333333333333", name: "Rudo", phoneMasked: "+263•••••9034", invitePhone: "263778889034", createdAt: "2026-09-29T10:00:00.000Z", expiresAt: "2026-10-13T10:00:00.000Z" }],
+  members: [
+    { profileId: "11111111-1111-4111-8111-111111111111", name: "Farai Chari", phoneMasked: "+263•••••4567", role: "owner", you: true, joinedAt: "2026-09-20T10:00:00.000Z" },
+    { profileId: "22222222-2222-4222-8222-222222222222", name: "Tendai", phoneMasked: "+263•••••2210", role: "staff", you: false, joinedAt: "2026-09-21T10:00:00.000Z" },
+  ],
+  invites: [{ id: "33333333-3333-4333-8333-333333333333", name: "Rudo", phoneMasked: "+263•••••9034", invitePhone: "263778889034", createdAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), expiresAt: "2026-10-13T10:00:00.000Z" }],
+};
+const prefRider = (id, label, over) => ({ id, label, phoneMasked: "+263•••••0000", status: "on_lyniago", online: false, invitePhone: null, jobs: 0, ratingAvg: null, rider: null, addedAt: "2026-09-20T10:00:00.000Z", ...over });
+const RIDERS = {
+  cap: 20,
+  riders: [
+    prefRider("r1000000-0000-4000-8000-000000000000", "Big Farai", { online: true, jobs: 12, ratingAvg: 4.9 }),
+    prefRider("r2000000-0000-4000-8000-000000000000", "Blessing", {}),
+    prefRider("r3000000-0000-4000-8000-000000000000", "Nyasha (cousin)", { status: "not_on_lyniago", invitePhone: "263771000006" }),
+    prefRider("r4000000-0000-4000-8000-000000000000", "Tino", { status: "unavailable" }),
+  ],
 };
 
 // ── PR 2b: the Orders screens (B1–B7) ─────────────────────────────────────────────────────────
@@ -141,6 +156,7 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/me") return scenario.me ? json(200, scenario.me) : json(403, { reason: "not_a_member", message: "Not on a business." });
   if (path === "/merchant/invites") return json(200, scenario.invites ?? { invites: [] });
   if (path === "/merchant/team") return json(200, TEAM);
+  if (path === "/merchant/riders") return json(200, RIDERS);
   return json(200, []);
 }
 
@@ -220,6 +236,17 @@ const MENU_ROWS = [
   { id: "E1", label: "E1 · Items (shop)", mode: "shop", app: { name: "E1", path: "/menu", scenario: { me: { ...SHOP, hours: KITCHEN.hours }, menu: ITEMS } } },
 ];
 
+const ACCOUNT_ROWS = [
+  {
+    id: "C5",
+    label: "C5 · Opening hours",
+    app: { name: "C5", path: "/hours", scenario: { me: { ...KITCHEN, hours: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat"].map((d) => [d, { open: "08:00", close: "22:00" }])) } } },
+  },
+  { id: "E2", label: "E2 · Team", app: { name: "E2", path: "/team", scenario: { me: KITCHEN } } },
+  { id: "E3", label: "E3 · Person sheet", sub: "no Owner / Staff switch: the API keeps one owner per business (ledgered)", app: { name: "E3", path: "/team", scenario: { me: KITCHEN }, before: async (p) => p.getByRole("button", { name: /Tendai/ }).click() } },
+  { id: "E4", label: "E4 · Preferred riders", app: { name: "E4", path: "/riders", scenario: { me: KITCHEN } } },
+];
+
 const PR1_ROWS = [
   { id: "A1", label: "A1 · Sign in", app: { name: "A1", path: "/login", signedIn: false } },
   { id: "A2", label: "A2 · Code", app: { name: "A2", path: "/login", signedIn: false, before: toCode } },
@@ -240,7 +267,7 @@ await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
 const rows = [];
 try {
-  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : PR1_ROWS) {
+  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : SET === "account" ? ACCOUNT_ROWS : PR1_ROWS) {
     const mock = r.id ? await shootProto(browser, r.id, r.mode) : undefined;
     const app = await shootApp(browser, r.app);
     rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: 360, ...(r.id ? {} : { mockNote: "drawn by the prototype's wiring, not as a screen" }) });
@@ -256,6 +283,8 @@ await buildSheet({
       ? "Merchant mobile redesign · PR 2b (D-48): Orders B1–B7"
       : SET === "menu"
         ? "Merchant mobile redesign · PR 3a (D-48): Menu C1–C2, Money C3, Items E1"
+        : SET === "account"
+          ? "Merchant mobile redesign · PR 3b (D-48): Hours C5, Team E2–E3, Riders E4"
         : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
   out: OUT,
   rows,

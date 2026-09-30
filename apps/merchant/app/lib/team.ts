@@ -1,4 +1,4 @@
-import { type MerchantBusinessType, type MerchantMemberRole, normalizePhone } from "@lynia/shared";
+import { type MerchantMemberRole, normalizePhone } from "@lynia/shared";
 import { whatsAppLink } from "./whatsapp";
 
 /**
@@ -20,13 +20,6 @@ export function signedInLabel(name: string | undefined, role: MerchantMemberRole
   return first ? `${first} · ${ROLE_LABEL[role]}` : ROLE_LABEL[role];
 }
 
-/** What Staff do, in the Team page's opening line (the permission table's Staff column). */
-export function staffCanLine(businessType: MerchantBusinessType): string {
-  return businessType === "shop"
-    ? "Everyone signs in with their own phone. Staff book riders and mark items out of stock. Only you change prices, see money or add people."
-    : "Everyone signs in with their own phone. Staff take orders, book riders and mark dishes out of stock. Only you change prices, see money or add people.";
-}
-
 /** The message the owner sends from their own WhatsApp: whose team, and where to sign in with this number. */
 export function teamInviteMessage(name: string, businessName: string, signInUrl: string): string {
   return `Hi ${name}, I've added you to ${businessName} on LyniaGo. Sign in with this number to join: ${signInUrl}`;
@@ -36,9 +29,9 @@ export function teamInviteLink(invitePhone: string, text: string): string {
   return whatsAppLink(invitePhone, text);
 }
 
-/** The Team page's warning before a removal (design doc "Shared devices"). */
-export function removeWarning(name: string): string {
-  return `If ${name} is signed in on the counter tablet, sign it in again with someone else.`;
+/** E3's red-wash consequence box. */
+export function removeConsequence(name: string): string {
+  return `Removing ${name} signs them out now. Bookings they made stay on your record.`;
 }
 
 export interface InviteForm {
@@ -68,4 +61,27 @@ export function validateJoinName(name: string): string | null {
 export function initials(name: string): string {
   const [first = "", second = ""] = name.trim().split(/\s+/).filter(Boolean);
   return (second ? first.charAt(0) + second.charAt(0) : first.slice(0, 2)).toUpperCase();
+}
+
+function lastFour(phoneMasked: string): string {
+  return phoneMasked.replace(/\D/g, "").slice(-4);
+}
+
+/** E2's row line: "•••• 4567". */
+export function shortMasked(phoneMasked: string): string {
+  return `•••• ${lastFour(phoneMasked)}`;
+}
+
+/** E3's number: "+263 •• ••• 2210". */
+export function longMasked(phoneMasked: string): string {
+  return `+263 •• ••• ${lastFour(phoneMasked)}`;
+}
+
+/** E2's invite line: "Invited 2 days ago". */
+export function invitedAgo(createdAt: string, now: Date): string {
+  const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((start(now) - start(new Date(createdAt))) / 86_400_000);
+  if (days <= 0) return "Invited today";
+  if (days === 1) return "Invited yesterday";
+  return `Invited ${days} days ago`;
 }

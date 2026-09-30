@@ -2907,6 +2907,9 @@
         "label": {
           "type": "string"
         },
+        "online": {
+          "type": "boolean"
+        },
         "phoneMasked": {
           "type": "string"
         },
@@ -3289,6 +3292,9 @@
               },
               "label": {
                 "type": "string"
+              },
+              "online": {
+                "type": "boolean"
               },
               "phoneMasked": {
                 "type": "string"
