@@ -210,11 +210,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true },
+        select: { status: true, riderId: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
       if (order.status !== edge.from) throw new ConflictException(`Order is not ${edge.from}`);
+      // A food order is only picked up through the pickup code or the at-the-restaurant "Collected"
+      // (FoodOrderService.confirmPickup/confirmCollected) — both open the cash debt the rider owes the
+      // kitchen. This generic edge would skip that check and leave no debt behind.
+      if (to === "picked_up" && order.orderType === "merchant") {
+        throw new ConflictException({ reason: "pickup_check_required", message: "Confirm the pickup with the kitchen's code, or tap Collected at the restaurant." });
+      }
 
       const now = new Date();
       // Single typed object — undefined timestamp fields are ignored by Prisma (no union/XOR friction).

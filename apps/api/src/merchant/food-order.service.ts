@@ -14,6 +14,13 @@ import {
   addMoney,
   DELIVERY_OTP_MAX_ATTEMPTS,
   deliveryFeeForDistance,
+  type EditMerchantOrderItemsRequest,
+  effectiveMerchantHours,
+  isMerchantOpenNow,
+  type LatLng,
+  type MerchantHours,
+  nextOpenDescription,
+  RESTAURANTS_AUTO_ACCEPT,
   fromCents,
   haversineKm,
   BUSY_MODE_EXTRA_MIN,
@@ -38,6 +45,8 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
+import { confirmKitchen, editOrderItems } from "./food-order-ops";
+import { harareWallClock } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
@@ -47,7 +56,7 @@ import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, 
 // merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
 const ORDER_WITH_ITEMS_INCLUDE = {
   merchantItems: true,
-  merchant: { select: { location: true, ownerProfile: { select: { phone: true } } } },
+  merchant: { select: { location: true, showPhoneToCustomers: true, ownerProfile: { select: { phone: true } } } },
   // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
   // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
   // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
@@ -147,6 +156,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.error(`sweepPaymentReminders failed: ${(err as Error).message}`);
     }
+    try {
+      await this.sweepAutoAccepted();
+    } catch (err) {
+      this.logger.error(`sweepAutoAccepted failed: ${(err as Error).message}`);
+    }
   }
 
   // ── Customer ─────────────────────────────────────────────────────────────────────────────────────
@@ -185,12 +199,21 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // Shops never take food orders (plan 2026-09-29 D8) — same visibility rule as the restaurant list.
     const merchant = await this.prisma.merchant.findFirst({
       where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
-      select: { id: true, location: true, closedUntil: true },
+      select: { id: true, location: true, closedUntil: true, hours: true, autoAccept: true, busyMode: true, prepBaselineMinutes: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
-    // D-48: closed by hand from the merchant's Orders header.
-    if (merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) {
-      throw new ConflictException({ reason: "restaurant_closed", message: "This restaurant is closed right now." });
+    // D-48: closed by hand from the merchant's Orders header. Auto-accept safeguard 3: the weekly hours
+    // are enforced here too, in Harare time — the app's own check is advisory and an auto-accepted order
+    // at a closed kitchen would be cooked by nobody. No hours set at all reads as open (same fail-open
+    // rule as every client, packages/shared restaurant-hours.ts).
+    const nowWall = harareWallClock(new Date());
+    const hours = effectiveMerchantHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date());
+    if ((merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) || !isMerchantOpenNow(hours, nowWall)) {
+      const next = nextOpenDescription(hours, nowWall);
+      throw new ConflictException({
+        reason: "restaurant_closed",
+        message: next ? `This restaurant is closed right now. ${next}.` : "This restaurant is closed right now.",
+      });
     }
     const location = merchant.location as Waypoint | null;
     if (!location) throw new ConflictException("This restaurant isn't ready to take orders yet");
@@ -212,6 +235,20 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const deliveryFee = deliveryFeeForDistance(distanceKm);
     const agreedFare = addMoney(merchantGoodsTotal, deliveryFee);
     const itemDesc = summarizeMerchantItems(body.items.map((i) => ({ name: dishById.get(i.dishId)!.name, quantity: i.quantity })));
+    // Auto-accept: a cash order at an auto-accept restaurant skips the accept window and goes straight
+    // to cooking at the restaurant's usual prep time. No rider is sent until the kitchen is confirmed
+    // (sweepAutoAccepted). A legacy WALLET order still takes the normal accept → payment path.
+    const autoAccept = merchant.autoAccept && body.paymentMethod === "cash";
+    const now = new Date();
+    const phase = autoAccept
+      ? {
+          merchantPhase: "preparing" as const,
+          acceptDeadlineAt: null,
+          prepMinutes: (merchant.prepBaselineMinutes ?? RESTAURANTS_AUTO_ACCEPT.defaultPrepMinutes) + (merchant.busyMode ? BUSY_MODE_EXTRA_MIN : 0),
+          prepStartedAt: now,
+          autoAccepted: true,
+        }
+      : { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: new Date(now.getTime() + RESTAURANTS_TIMING.acceptWindowMs) };
 
     try {
       const created = await this.prisma.order.create({
@@ -230,8 +267,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           agreedFare,
           currency: "USD",
           status: "requested",
-          merchantPhase: "awaiting_accept",
-          acceptDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.acceptWindowMs),
+          ...phase,
           merchantPaymentMethod: body.paymentMethod,
           // R-03 snapshot, fixed at placement (C4). D-48: every cash food order is collect-and-return —
           // the rider collects at the door and brings the cash back ("Cash back to you") — whatever the
@@ -244,7 +280,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantItems: {
             create: body.items.map((i) => {
               const dish = dishById.get(i.dishId)!;
-              return { dishId: dish.id, nameSnapshot: dish.name, priceUsd: dish.priceUsd, quantity: i.quantity, note: i.note ?? null };
+              return {
+                dishId: dish.id,
+                nameSnapshot: dish.name,
+                priceUsd: dish.priceUsd,
+                quantity: i.quantity,
+                note: i.note ?? null,
+                // Auto-accepted lines are kept as ordered until the restaurant changes them by phone.
+                ...(autoAccept ? { available: true } : {}),
+              };
             }),
           },
         },
@@ -314,11 +358,19 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   async cancelUnpaid(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsCustomer(orderId, customerId);
     const cancellable = new Set(["awaiting_accept", "awaiting_item_approval", "awaiting_payment"]);
-    if (!order.merchantPhase || !cancellable.has(order.merchantPhase)) {
+    // Auto-accept: until the kitchen is confirmed, "cooking" hasn't really started — the customer may
+    // still cancel free, exactly as they could while waiting for a manual accept.
+    const unconfirmedAuto = order.autoAccepted && !order.kitchenConfirmedAt && order.merchantPhase === "preparing";
+    if (!unconfirmedAuto && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
       throw new ConflictException("This order can't be cancelled anymore — the kitchen has started");
     }
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", merchantPhase: order.merchantPhase },
+      where: {
+        id: orderId,
+        status: "requested",
+        merchantPhase: order.merchantPhase,
+        ...(unconfirmedAuto ? { kitchenConfirmedAt: null } : {}),
+      },
       data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
@@ -423,7 +475,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       orderBy: { createdAt: "asc" },
       include: ORDER_WITH_ITEMS_INCLUDE,
     });
-    return orders.map((o) => this.toResponse(o));
+    return orders.map((o) => this.forMerchant(o));
   }
 
   async getQueueOrder(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
@@ -435,7 +487,24 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       select: { status: true, createdAt: true },
       take: 50,
     });
-    return { ...this.toResponse(order), timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
+    return { ...this.forMerchant(order), timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
+  }
+
+  /** Auto-accept: "Got it, we're making it" — the restaurant confirms an auto-accepted order in the
+   *  app, which lets the rider search start. Idempotent. */
+  async confirmKitchenAsMerchant(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
+    const merchantId = await this.ownMerchantId(profileId);
+    const order = await this.findOwnAsMerchant(profileId, orderId);
+    if (!order.autoAccepted) throw new ConflictException({ reason: "not_auto_accepted", message: "This order doesn't need confirming." });
+    await confirmKitchen(this.prisma, this.gateway, orderId, "merchant", merchantId);
+    return this.forMerchant(await this.mustFindWithItems(orderId));
+  }
+
+  /** Change the items after agreeing it with the customer by phone (shared with ops, food-order-ops.ts). */
+  async editItems(profileId: string, orderId: string, body: EditMerchantOrderItemsRequest): Promise<MerchantOrderResponse> {
+    const merchantId = await this.ownMerchantId(profileId);
+    await editOrderItems(this.prisma, this.notifications, this.gateway, orderId, body, merchantId);
+    return this.forMerchant(await this.mustFindWithItems(orderId));
   }
 
   /**
@@ -641,6 +710,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         readyAt: new Date(),
         pickupCodeHash: this.tokens.hash(pickupCode),
         pickupCodeAttempts: 0,
+        // A restaurant tapping "Food is ready" plainly knows about the order: that confirms the kitchen.
+        ...(order.autoAccepted && !order.kitchenConfirmedAt ? { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: "merchant" } : {}),
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
@@ -699,19 +770,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         await tx.order.update({ where: { id: orderId }, data: { pickupCodeAttempts: { increment: 1 } } });
         return { ok: false as const, attemptsUsed: o.pickup_code_attempts + 1 };
       }
-      await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date() } });
-      await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
-      // C4/R-01: the debt opens the moment the food leaves the counter unpaid — same transaction, same
-      // row lock, so it commits atomically with the pickup itself. No-ops for anything other than a
-      // collect-and-return CASH order.
-      await this.debt.openDebtIfNeeded(tx, {
-        id: orderId,
-        merchantId: o.merchant_id,
-        riderId,
-        merchantPaymentMethod: o.merchant_payment_method,
-        merchantCashRule: o.merchant_cash_rule,
-        merchantGoodsTotal: o.merchant_goods_total,
-      });
+      await this.commitPickup(tx, orderId, riderId, o);
       return { ok: true as const, merchantId: o.merchant_id };
     });
     if (!outcome.ok) {
@@ -722,6 +781,76 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
     this.notifyQueue(outcome.merchantId, orderId);
     return { orderId, status: "picked_up" };
+  }
+
+  /**
+   * Auto-accept safeguard 2: "Collected" — the rider's no-code pickup at an auto-accept restaurant (the
+   * kitchen may not be in the app to read a code out). Accepted only when the rider's position is within
+   * RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM of the restaurant's pin, so a rider can't mark food collected
+   * from down the road. Everything else is the code path's: same guards, same debt opening, same event.
+   */
+  async confirmCollected(orderId: string, riderId: string, point: LatLng): Promise<{ orderId: string; status: "picked_up" }> {
+    const merchantId = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{
+          status: string;
+          rider_id: string | null;
+          auto_accepted: boolean;
+          merchant_id: string | null;
+          merchant_payment_method: string | null;
+          merchant_cash_rule: string | null;
+          merchant_goods_total: Prisma.Decimal | null;
+        }>
+      >`SELECT status, rider_id, auto_accepted, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const o = rows[0];
+      if (!o) throw new NotFoundException("Order not found");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
+      if (!o.auto_accepted) {
+        throw new ConflictException({ reason: "code_required", message: "Ask the kitchen for the 4-digit pickup code." });
+      }
+      const merchant = o.merchant_id ? await tx.merchant.findUnique({ where: { id: o.merchant_id }, select: { location: true } }) : null;
+      const pin = (merchant?.location as Waypoint | null)?.point;
+      if (!pin) throw new ConflictException("This restaurant has no location");
+      const distanceM = haversineKm(pin, point) * 1000;
+      if (distanceM > RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM) {
+        throw new ConflictException({
+          reason: "not_at_restaurant",
+          message: "You're not at the restaurant yet. Move closer and try again.",
+          distanceM: Math.round(distanceM),
+        });
+      }
+      await this.commitPickup(tx, orderId, riderId, o);
+      return o.merchant_id;
+    });
+    this.notifyQueue(merchantId, orderId);
+    return { orderId, status: "picked_up" };
+  }
+
+  /** The food left the counter: status, event and (C4/R-01) the debt, in the caller's transaction and
+   *  under its row lock so they commit atomically with the pickup. The debt no-ops for anything other
+   *  than a collect-and-return CASH order. */
+  private async commitPickup(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    riderId: string,
+    o: {
+      merchant_id: string | null;
+      merchant_payment_method: string | null;
+      merchant_cash_rule: string | null;
+      merchant_goods_total: Prisma.Decimal | null;
+    },
+  ): Promise<void> {
+    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date() } });
+    await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
+    await this.debt.openDebtIfNeeded(tx, {
+      id: orderId,
+      merchantId: o.merchant_id,
+      riderId,
+      merchantPaymentMethod: o.merchant_payment_method,
+      merchantCashRule: o.merchant_cash_rule,
+      merchantGoodsTotal: o.merchant_goods_total,
+    });
   }
 
   // ── Reconciler sweeps (DB-only, RESTAURANTS_TIMING.sweepIntervalMs) ─────────────────────────────────
@@ -895,6 +1024,54 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return { reminded };
   }
 
+  /**
+   * Auto-accept safeguard 1. Two jobs for auto-accepted orders still in the kitchen:
+   *  - Escalate: unconfirmed RESTAURANTS_AUTO_ACCEPT.escalateAfterMs after placement → marked urgent for
+   *    the ops call list (once). Never cancelled automatically: ops or the customer decide.
+   *  - Send a rider: once CONFIRMED, the order goes to `ready_for_pickup` (which starts dispatch)
+   *    RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs before prep time runs out, or straight away if confirmed
+   *    later than that. An unconfirmed order never reaches dispatch.
+   */
+  async sweepAutoAccepted(now: Date = new Date()): Promise<{ escalated: number; released: number }> {
+    const escalated = await this.prisma.order.updateMany({
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        autoAccepted: true,
+        kitchenConfirmedAt: null,
+        kitchenEscalatedAt: null,
+        createdAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs) },
+      },
+      data: { kitchenEscalatedAt: now },
+    });
+    if (escalated.count > 0) this.logger.warn(`auto-accept: ${escalated.count} order(s) unconfirmed — urgent on the ops call list`);
+
+    let released = 0;
+    const cooking = await this.prisma.order.findMany({
+      where: { orderType: "merchant", status: "requested", merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: { not: null } },
+      select: { id: true, merchantId: true, prepStartedAt: true, prepMinutes: true },
+      take: 200,
+    });
+    for (const o of cooking) {
+      const readyAt = (o.prepStartedAt?.getTime() ?? now.getTime()) + (o.prepMinutes ?? 0) * 60_000;
+      if (readyAt - RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs > now.getTime()) continue;
+      try {
+        const pickupCode = this.tokens.randomPickupCode();
+        const claimed = await this.prisma.order.updateMany({
+          where: { id: o.id, status: "requested", merchantPhase: "preparing", kitchenConfirmedAt: { not: null } },
+          data: { merchantPhase: "ready_for_pickup", readyAt: now, pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
+        });
+        if (claimed.count > 0) {
+          released++;
+          this.notifyQueue(o.merchantId, o.id);
+        }
+      } catch (err) {
+        this.logger.error(`sweepAutoAccepted failed for order ${o.id}: ${(err as Error).message}`);
+      }
+    }
+    return { escalated: escalated.count, released };
+  }
+
   // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────
 
   private async ownMerchantId(profileId: string): Promise<string> {
@@ -926,6 +1103,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return order;
   }
 
+  /** The restaurant's own view adds the customer's contact number, so it can call about changes
+   *  (auto-accept safeguard 5). Never on the rider's or the customer's view. */
+  private forMerchant(order: OrderWithItems): MerchantOrderResponse {
+    const dropoff = order.dropoff as Waypoint | null;
+    return { ...this.toResponse(order), customerPhone: dropoff?.contactPhone ?? null };
+  }
+
   private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
     if (!order) return;
@@ -950,6 +1134,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   private toResponse(order: OrderWithItems): MerchantOrderResponse {
     const items: MerchantOrderItemView[] = order.merchantItems.map((it) => ({
+      itemId: it.id,
       dishId: it.dishId,
       name: it.nameSnapshot,
       priceUsd: Number(it.priceUsd),
@@ -960,7 +1145,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
     const merchantLocation = order.merchant?.location as Waypoint | null;
-    const merchantPaymentPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
+    const shopPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
+    // Safeguard 5: the shop's number is only for paying it directly (legacy WALLET orders), or when the
+    // restaurant agreed to show it to its customers.
+    const merchantPaymentPhone = order.merchantPaymentMethod === "wallet" ? shopPhone : null;
+    const restaurantPhone = order.merchant?.showPhoneToCustomers ? shopPhone : null;
     const response: MerchantOrderResponse = {
       id: order.id,
       merchantId: order.merchantId!,
@@ -1040,6 +1229,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           : null,
       merchantClosedAt: order.merchantClosedAt?.toISOString() ?? null,
       merchantCloseReason: (order.merchantCloseReason as MerchantOrderResponse["merchantCloseReason"]) ?? null,
+      autoAccepted: order.autoAccepted,
+      kitchenConfirmedAt: order.kitchenConfirmedAt?.toISOString() ?? null,
+      kitchenConfirmedBy: (order.kitchenConfirmedBy as MerchantOrderResponse["kitchenConfirmedBy"]) ?? null,
+      itemsEditedAt: order.itemsEditedAt?.toISOString() ?? null,
+      restaurantPhone,
     };
     // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
     // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
@@ -1082,6 +1276,10 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "cashDueAt",
   "merchantClosedAt",
   "merchantCloseReason",
+  "kitchenConfirmedAt",
+  "kitchenConfirmedBy",
+  "itemsEditedAt",
+  "restaurantPhone",
 ] as const satisfies readonly (keyof MerchantOrderResponse)[];
 
 /** Compact one-line rendering of a food basket — "2x Sadza · 1x Chicken" — mirrors
@@ -1095,7 +1293,8 @@ function summarizeMerchantItems(items: readonly { name: string; quantity: number
  *  auto-closes on hours" — the accept-window/item-approval sweeps still bound an order's lifetime. */
 function isPastClosingTime(hours: Record<string, { open: string; close: string }> | null): boolean {
   if (!hours) return false;
-  const now = new Date();
+  // Harare wall clock: the API container runs in UTC, the hours are the shop's local times.
+  const now = harareWallClock(new Date());
   const dayKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][now.getDay()]!;
   const today = hours[dayKey];
   if (!today) return false;

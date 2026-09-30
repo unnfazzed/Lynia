@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
   CloseMerchantOrderRequest,
+  ConfirmCollectedRequest,
   ConfirmMerchantPickupRequest,
   ConfirmMerchantReturnedCashRequest,
+  EditMerchantOrderItemsRequest,
   type FoodOfferResponse,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
@@ -113,6 +115,24 @@ export class MerchantOrderController {
     return this.foodOrders.markReady(profileId, orderId);
   }
 
+  // Auto-accept: "Got it, we're making it" — confirms an auto-accepted order so a rider can be sent.
+  @Post(":orderId/confirm-kitchen")
+  @UseGuards(MerchantGuard)
+  confirmKitchen(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.confirmKitchenAsMerchant(profileId, orderId);
+  }
+
+  // Auto-accept: change the items after agreeing it with the customer by phone (before pickup).
+  @Post(":orderId/edit-items")
+  @UseGuards(MerchantGuard)
+  editItems(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(EditMerchantOrderItemsRequest)) body: EditMerchantOrderItemsRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.foodOrders.editItems(profileId, orderId, body);
+  }
+
   // N-16: re-reveals the current pickup code (markReady's own mint is hashed-then-discarded) — the
   // tablet calls this to display/redisplay the code to read out to the rider. Throttled like the
   // customer's delivery-code rotate, same rationale (F-03: rotation can't be used to reset an OTP
@@ -132,6 +152,17 @@ export class MerchantOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.confirmPickup(orderId, profileId, body.code);
+  }
+
+  // Auto-accept safeguard 2: the assigned RIDER's no-code pickup, only at the restaurant (no MerchantGuard).
+  @Post(":orderId/collected")
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "food-collected" })
+  confirmCollected(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ConfirmCollectedRequest)) body: ConfirmCollectedRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.foodOrders.confirmCollected(orderId, profileId, body.point);
   }
 
   // ── C3/C5: food dispatch — rider actions (the candidate/assigned rider, no MerchantGuard) ─────────

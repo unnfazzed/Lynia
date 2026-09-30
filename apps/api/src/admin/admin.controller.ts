@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { KycStatus, OrderStatus, OrderType, TransferMerchantOwnerRequest } from "@lynia/shared";
+import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, TransferMerchantOwnerRequest } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -10,6 +10,7 @@ import { SosService } from "../sos/sos.service";
 import { WalletService } from "../wallet/wallet.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
+import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
@@ -39,6 +40,17 @@ const ReasonRequired = z.object({
   note: z.string().max(2000).nullish(),
 });
 /** L1 go-live switch body: on/off plus an optional ops note for the audit row. */
+// Auto-accept: ops sets how a restaurant takes orders on its behalf (at least one field).
+const SetMerchantOrderSettings = z
+  .object({
+    autoAccept: z.boolean().optional(),
+    showPhoneToCustomers: z.boolean().optional(),
+    note: z.string().max(2000).nullish(),
+  })
+  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined, { message: "Nothing to change" });
+
+const OptionalNote = z.object({ note: z.string().max(2000).nullish() });
+
 const SetMerchantPilot = z
   .object({
     enabled: z.boolean(),
@@ -81,6 +93,7 @@ export class AdminController {
     private readonly settlements: SettlementsService,
     private readonly sos: SosService,
     private readonly wallet: WalletService,
+    private readonly kitchen: AdminKitchenService,
   ) {}
 
   @Get("overview")
@@ -351,6 +364,50 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.merchantsService.transferOwner(actor, id, body);
+  }
+
+  /* ── Auto-accept: the ops call list (docs/plans/2026-09-30-restaurant-auto-accept.md) ──────────── */
+
+  /** Auto-accepted orders the kitchen hasn't confirmed yet — ops phones each restaurant. Urgent first. */
+  @Get("kitchen-confirmations")
+  kitchenConfirmations() {
+    return this.kitchen.listToConfirm();
+  }
+
+  /** The restaurant confirmed on the phone: a rider may now be sent. */
+  @Post("orders/:id/kitchen-confirm")
+  confirmKitchen(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(OptionalNote)) body: z.infer<typeof OptionalNote>,
+    @AdminActor() actor: string,
+  ) {
+    return this.kitchen.confirm(actor, id, body.note);
+  }
+
+  /** Nobody answered at the restaurant: logged on the order; call again. */
+  @Post("orders/:id/kitchen-no-answer")
+  kitchenNoAnswer(@Param("id", ParseUUIDPipe) id: string, @AdminActor() actor: string) {
+    return this.kitchen.logNoAnswer(actor, id);
+  }
+
+  /** Change a food order's items as agreed by phone (before pickup). The customer is told the new total. */
+  @Post("orders/:id/edit-items")
+  editOrderItems(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(EditMerchantOrderItemsRequest)) body: EditMerchantOrderItemsRequest,
+    @AdminActor() actor: string,
+  ) {
+    return this.kitchen.editItems(actor, id, body);
+  }
+
+  /** Take orders automatically / show the restaurant's number to customers, set by ops on its behalf. */
+  @Post("merchants/:id/order-settings")
+  setMerchantOrderSettings(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(SetMerchantOrderSettings)) body: z.infer<typeof SetMerchantOrderSettings>,
+    @AdminActor() actor: string,
+  ) {
+    return this.kitchen.setOrderSettings(actor, id, body);
   }
 
   /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, plus

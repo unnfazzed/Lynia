@@ -88,6 +88,11 @@ describe("OrderLifecycleService.advance", () => {
     await expect(svc.advance("o1", "r1", "picked_up")).rejects.toThrow(/not en_route_pickup/i);
   });
 
+  it("refuses the generic picked_up edge for a food order — the pickup code or Collected must open the cash debt", async () => {
+    const { svc } = build({ order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", orderType: "merchant" }) } });
+    await expect(svc.advance("o1", "r1", "picked_up")).rejects.toMatchObject({ response: { reason: "pickup_check_required" } });
+  });
+
   it("advances assigned → confirmed, stamps the timestamp, and pushes the status", async () => {
     let data: Record<string, unknown> | undefined;
     const { svc, emits } = build({

@@ -6,6 +6,7 @@ import { WalletModule } from "../wallet/wallet.module";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
 import { AdminCustomersService } from "./admin-customers.service";
+import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
@@ -26,6 +27,7 @@ import { AdminService } from "./admin.service";
     AdminKycReviewService,
     AdminCustomersService,
     AdminMerchantsService,
+    AdminKitchenService,
     AdminAuditService,
   ],
 })
