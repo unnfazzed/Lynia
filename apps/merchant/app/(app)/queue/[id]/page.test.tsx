@@ -7,7 +7,9 @@ import { ToastProvider } from "../../../components/m/Toast";
 import {
   cancelPreparing,
   closeOrder,
+  confirmKitchen,
   confirmReturnedCash,
+  editOrderItems,
   dispatchCancel,
   dispatchResume,
   getOrder,
@@ -26,6 +28,8 @@ vi.mock("../../../lib/orders-api", () => ({
   getOrder: vi.fn(),
   markReady: vi.fn(async () => ({})),
   cancelPreparing: vi.fn(async () => ({})),
+  confirmKitchen: vi.fn(async () => ({})),
+  editOrderItems: vi.fn(async () => ({})),
   closeOrder: vi.fn(async () => ({})),
   confirmReturnedCash: vi.fn(async () => ({})),
   confirmGoodsReturned: vi.fn(async () => ({})),
@@ -175,5 +179,47 @@ describe("a ringing order", () => {
   it("is answered on the Orders home, where the alarm is", async () => {
     show(merchantOrder({ id: ID }));
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
+  });
+});
+
+describe("Auto-accept: the Cooking ticket of an order LyniaGo accepted for the restaurant", () => {
+  const LINES = [
+    { itemId: "b0000001-0000-4000-8000-000000000000", dishId: null, name: "Sadza & beef stew", priceUsd: 5, quantity: 2, note: null, available: true },
+    { itemId: "b0000002-0000-4000-8000-000000000000", dishId: null, name: "Coke", priceUsd: 1, quantity: 1, note: null, available: true },
+  ];
+  const auto = (over: Partial<MerchantOrderResponse> = {}) =>
+    merchantOrder({ ...cooking(), autoAccepted: true, kitchenConfirmedAt: null, items: LINES, customerPhone: "+263779999999", ...over });
+
+  it("asks the kitchen to confirm, which lets a rider be sent", async () => {
+    show(auto());
+    expect(await screen.findByText("LyniaGo accepted this for you")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Got it, we’re making it" }));
+    await vi.waitFor(() => expect(confirmKitchen).toHaveBeenCalledWith(ID));
+  });
+
+  it("no confirm card once the kitchen confirmed", async () => {
+    show(auto({ kitchenConfirmedAt: "2026-09-30T12:01:00Z" }));
+    expect(await screen.findByText("Cooking")).toBeTruthy();
+    expect(screen.queryByText("LyniaGo accepted this for you")).toBeNull();
+  });
+
+  it("shows the customer's number to call", async () => {
+    show(auto());
+    expect(await screen.findByRole("link", { name: /Call the customer/ })).toBeTruthy();
+  });
+
+  it("Change items sends every line's new quantity", async () => {
+    show(auto());
+    fireEvent.click(await screen.findByRole("button", { name: "Change items" }));
+    fireEvent.click(screen.getByRole("button", { name: "One less Coke" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await vi.waitFor(() =>
+      expect(editOrderItems).toHaveBeenCalledWith(ID, {
+        lines: [
+          { itemId: "b0000001-0000-4000-8000-000000000000", quantity: 2 },
+          { itemId: "b0000002-0000-4000-8000-000000000000", quantity: 0 },
+        ],
+      }),
+    );
   });
 });

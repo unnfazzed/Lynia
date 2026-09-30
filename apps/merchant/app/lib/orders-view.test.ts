@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import { merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
-import { detailView, homeSections, itemsLine, openStatus, orderLabel, rowSub, steps } from "./orders-view";
+import { detailView, homeSections, itemsEditedLabel, itemsLine, openStatus, orderLabel, rowSub, steps } from "./orders-view";
+import { alarmOrders } from "./alarm";
 
 const o = merchantOrder;
 
@@ -116,5 +117,26 @@ describe("the header's open/closed line and switch (B1/B5)", () => {
   it("a restaurant with no hours set is open, and a close that has passed doesn't count", () => {
     expect(openStatus(merchantProfile({ hours: null }), WED_NOON).open).toBe(true);
     expect(openStatus(merchantProfile({ hours, closedUntil: new Date(2026, 8, 30, 11, 0).toISOString() }), WED_NOON).open).toBe(true);
+  });
+});
+
+describe("auto-accept on the Orders home", () => {
+  const unconfirmed = o({ id: "c0000001-0000-4000-8000-000000000000", merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null });
+  const confirmed = o({ id: "c0000002-0000-4000-8000-000000000000", merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: "2026-09-30T12:00:00Z" });
+
+  it("an order waiting for the kitchen to confirm is New work, not Cooking", () => {
+    const s = homeSections([unconfirmed, confirmed]);
+    expect(s.new.map((x) => x.id.slice(0, 8))).toEqual(["c0000001"]);
+    expect(s.cooking.map((x) => x.id.slice(0, 8))).toEqual(["c0000002"]);
+    expect(rowSub(unconfirmed)).toBe("Waiting for you to confirm");
+  });
+
+  it("the alarm rings for it too, and stops once it's confirmed", () => {
+    expect(alarmOrders([unconfirmed, confirmed]).map((x) => x.id.slice(0, 8))).toEqual(["c0000001"]);
+  });
+
+  it("says when the items were changed", () => {
+    expect(itemsEditedLabel(o({ itemsEditedAt: new Date(2026, 8, 30, 12, 10).toISOString() }))).toBe("Items changed 12:10");
+    expect(itemsEditedLabel(o({}))).toBeNull();
   });
 });
