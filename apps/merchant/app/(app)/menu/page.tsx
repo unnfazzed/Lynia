@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DishOutOfStockFor, MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
+import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { CategoryEditorSheet, type CategorySave } from "../../components/menu/CategoryEditorSheet";
 import { DishEditorSheet, type DishSave } from "../../components/menu/DishEditorSheet";
 import { OosSheet } from "../../components/menu/OosSheet";
+import { Switch } from "../../components/m/Switch";
+import { useToast } from "../../components/m/Toast";
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
-import { formatMoney } from "../../lib/money-input";
-import { loadBusiness } from "../../lib/business";
-import { groupDishesByCategory, menuSummary } from "../../lib/menu-groups";
+import { loadBusiness, useBusiness } from "../../lib/business";
+import { planCategoryMove, sortedCategories } from "../../lib/menu-groups";
 import {
   clearDishOutOfStock,
   createCategory,
@@ -25,12 +26,13 @@ import {
   updateCategory,
   updateDish,
 } from "../../lib/menu-api";
-import { cardStyle, ghostButtonStyle, primaryButtonStyle } from "../../components/queue/styles";
-import { countOf, useVocabulary } from "../../lib/vocabulary";
+import { backOnLine, offLabel, searchDishes } from "../../lib/menu-view";
+import { money } from "../../lib/orders-view";
+import { useVocabulary } from "../../lib/vocabulary";
 
 type LoadState =
   | { status: "loading" }
-  // `staff` (L4): Staff mark items out of stock and back, and nothing else here (the permission table).
+  // `staff` (L4): Staff turn items off and back on, and nothing else here (the permission table).
   | { status: "ready"; categories: MerchantCategoryResponse[]; dishes: MerchantDishResponse[]; staff: boolean }
   | { status: "error"; message: string | null };
 
@@ -40,24 +42,38 @@ type Sheet =
   | { kind: "dish"; dish: MerchantDishResponse | null; defaultCategoryId?: string }
   | { kind: "oos"; dish: MerchantDishResponse };
 
+const LONG_PRESS_MS = 500;
+
+/**
+ * C1 · Menu and E1 · Items (packages/design/handoff/merchant-mobile, ledger D-48). A mint header with
+ * the title and a search; category chips with counts (selected = ink; "+ Category" in mint); 64px rows
+ * with an initial tile, name / price and a **stock switch** (off greys the row and says until when);
+ * "+ Add a dish" pinned at the bottom. Turning a dish off opens C2; turning it on is one tap.
+ *
+ * README route map: "/menu/categories becomes category chips (long-press to reorder)" — a long-pressed
+ * chip opens its category sheet, which moves it along the row, renames, hides or deletes it. Tapping a
+ * row opens the dish editor ("editor not drawn"). A shop's Items screen is this one in its own words.
+ */
 export default function MenuPage() {
   const { actionsDisabled, signOut } = useKitchenConnection();
-  // A shop's Items screen is this one in its own words (merchant web upgrade L2, D-44).
   const v = useVocabulary();
+  const business = useBusiness();
+  const toast = useToast();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [sheet, setSheet] = useState<Sheet>({ kind: "none" });
+  const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  // Synchronous double-submit guard (CF-01 class): `submitting` is React state, so two same-tick
-  // clicks both see it as `false` before either commits. createCategory/createDish are NOT
-  // idempotent — a double-tap on "Add" genuinely creates two rows, not just a wasted duplicate PUT.
+  // Synchronous double-submit guard (CF-01 class): createCategory/createDish are NOT idempotent.
   const submittingRef = useRef(false);
+  const shop = business?.businessType === "shop";
 
   const refresh = useCallback(() => {
     // The business rides along (cached, never rejects) so the list first renders in the right words.
     Promise.all([listCategories(), listDishes(), loadBusiness()])
-      .then(([categories, dishes, business]) => setState({ status: "ready", categories, dishes, staff: business?.myRole === "staff" }))
+      .then(([categories, dishes, b]) => setState({ status: "ready", categories, dishes, staff: b?.myRole === "staff" }))
       .catch((err: unknown) => {
         if (redirectIfSessionExpired(err, signOut)) return;
         setState({ status: "error", message: err instanceof ApiError ? err.message : null });
@@ -68,313 +84,173 @@ export default function MenuPage() {
     refresh();
   }, [refresh]);
 
-  async function withSheet(fn: () => Promise<void>) {
-    if (submittingRef.current) return;
+  const categories = useMemo(() => (state.status === "ready" ? sortedCategories(state.categories) : []), [state]);
+  // E1 draws an "All" chip first on a shop's Items (C1 draws none for a restaurant), chosen to start with.
+  const all = shop && selected === null;
+  const current = all ? null : (categories.find((c) => c.id === selected) ?? categories[0] ?? null);
+  const rows = useMemo(() => {
+    if (state.status !== "ready") return [];
+    if (query.trim()) return searchDishes(state.dishes, query);
+    if (all) {
+      const order = new Map(categories.map((c, i) => [c.id, i]));
+      return [...state.dishes].sort((a, b) => (order.get(a.categoryId) ?? 0) - (order.get(b.categoryId) ?? 0) || a.sortOrder - b.sortOrder);
+    }
+    return current ? state.dishes.filter((d) => d.categoryId === current.id).sort((a, b) => a.sortOrder - b.sortOrder) : [];
+  }, [state, query, current, all, categories]);
+
+  async function guarded(fn: () => Promise<void>, fallback: string, onError: (m: string) => void): Promise<boolean> {
+    if (submittingRef.current) return false;
     submittingRef.current = true;
     setSubmitting(true);
-    setSheetError(null);
+    onError("");
     try {
       await fn();
-      setSheet({ kind: "none" });
-      refresh();
+      return true;
     } catch (err) {
-      if (redirectIfSessionExpired(err, signOut)) return;
-      setSheetError(err instanceof ApiError ? err.message : "Something went wrong — try again.");
+      if (!redirectIfSessionExpired(err, signOut)) onError(err instanceof ApiError ? err.message : fallback);
+      return false;
     } finally {
       setSubmitting(false);
       submittingRef.current = false;
     }
   }
 
-  async function onSaveCategory(body: CategorySave) {
-    if (sheet.kind !== "category") return;
-    await withSheet(async () => {
-      if (sheet.category) await updateCategory(sheet.category.id, body);
-      else await createCategory(body);
-    });
+  async function withSheet(fn: () => Promise<void>, done?: string) {
+    const ok = await guarded(fn, "Something went wrong — try again.", (m) => setSheetError(m || null));
+    if (!ok) return;
+    setSheet({ kind: "none" });
+    if (done) toast(done);
+    refresh();
   }
 
-  async function onCreateStarterCategory(name: string) {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    setListError(null);
-    try {
-      await createCategory({ name });
-      refresh();
-    } catch (err) {
-      // D-D0e: this used to swallow the error entirely — a dropped connection mid-tap left the
-      // starter chip tappable again with no indication the create actually failed.
-      if (redirectIfSessionExpired(err, signOut)) return;
-      setListError(err instanceof ApiError ? err.message : "Couldn't create the category — try again.");
-    } finally {
-      setSubmitting(false);
-      submittingRef.current = false;
-    }
+  async function onStarter(name: string) {
+    if (await guarded(() => createCategory({ name }).then(() => undefined), "Couldn't create the category — try again.", (m) => setListError(m || null))) refresh();
   }
 
-  async function onDeleteCategory() {
-    if (sheet.kind !== "category" || !sheet.category) return;
-    await withSheet(() => deleteCategory((sheet as { category: MerchantCategoryResponse }).category.id).then(() => undefined));
+  async function onTurnOn(dish: MerchantDishResponse) {
+    const ok = await guarded(() => clearDishOutOfStock(dish.id).then(() => undefined), "Couldn't update stock — try again.", (m) => setListError(m || null));
+    if (!ok) return;
+    toast(`${dish.name} is back on`);
+    refresh();
   }
 
-  async function onSaveDish(body: DishSave) {
-    if (sheet.kind !== "dish") return;
-    await withSheet(async () => {
-      if (sheet.dish) await updateDish(sheet.dish.id, body);
-      else await createDish(body);
-    });
-  }
-
-  async function onDeleteDish() {
-    if (sheet.kind !== "dish" || !sheet.dish) return;
-    await withSheet(() => deleteDish((sheet as { dish: MerchantDishResponse }).dish.id).then(() => undefined));
-  }
-
-  async function onConfirmOos(forHowLong: DishOutOfStockFor) {
+  async function onTurnOff(forHowLong: DishOutOfStockFor) {
     if (sheet.kind !== "oos") return;
-    await withSheet(() => setDishOutOfStock(sheet.dish.id, forHowLong).then(() => undefined));
+    const { dish } = sheet;
+    const back = backOnLine(business, new Date()).match(/\d\d:\d\d/)?.[0];
+    await withSheet(
+      () => setDishOutOfStock(dish.id, forHowLong).then(() => undefined),
+      forHowLong === "rest_of_today" ? `${dish.name} off until ${back ?? "tomorrow"}` : `${dish.name} is off`,
+    );
   }
 
-  async function onClearOos(dishId: string) {
-    setSubmitting(true);
-    setListError(null);
-    try {
-      await clearDishOutOfStock(dishId);
-      refresh();
-    } catch (err) {
-      // LC-D04: this used to have no catch at all — a dropped connection mid-tap silently left the
-      // dish marked out of stock with no indication the "back in stock" tap failed.
-      if (redirectIfSessionExpired(err, signOut)) return;
-      setListError(err instanceof ApiError ? err.message : "Couldn't update stock — try again.");
-    } finally {
-      setSubmitting(false);
-    }
+  async function onMove(delta: -1 | 1) {
+    if (sheet.kind !== "category" || !sheet.category || state.status !== "ready") return;
+    const { patches } = planCategoryMove(state.categories, sheet.category.id, delta);
+    if (patches.length === 0) return;
+    await withSheet(async () => {
+      // Sequential: a mid-sequence failure leaves a coherent prefix, and the refetch shows it.
+      for (const patch of patches) await updateCategory(patch.id, { sortOrder: patch.sortOrder });
+    }, delta < 0 ? "Moved earlier" : "Moved later");
   }
+
+  const staff = state.status === "ready" && state.staff;
+  const disabled = actionsDisabled || submitting;
 
   return (
     <Kitchen active="catalog">
-      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 18, overflow: "auto", height: "100%" }}>
-        {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your {v.catalogLower}…</div>}
-
-        {state.status === "error" && <RetryableError message={state.message ?? `Couldn't load your ${v.catalogLower}.`} onRetry={refresh} />}
-
-        {state.status === "ready" && listError && (
-          <div style={{ background: "var(--danger-wash)", color: "var(--danger-ink)", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>
-            {listError}
-          </div>
-        )}
-
-        {state.status === "ready" && state.staff && state.categories.length === 0 && (
-          <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: "clamp(20px, 6vw, 32px)" }}>
-            <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>No {v.items} yet</div>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5 }}>The owner adds the {v.items} here. You&apos;ll mark them out of stock and back.</div>
-          </div>
-        )}
-
-        {state.status === "ready" && !state.staff && state.categories.length === 0 && (
-          <div style={{ ...cardStyle, maxWidth: 520, textAlign: "center", padding: "clamp(20px, 6vw, 32px)" }}>
-            <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 6 }}>Start with a category</div>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 }}>
-              {v.emptyCatalogHint}
-            </div>
-            {/* M4·b1 labels the starter chips before offering them (r-merchant.jsx:1097). */}
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>Common starting points:</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-              {v.starterCategories.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  disabled={actionsDisabled || submitting}
-                  onClick={() => onCreateStarterCategory(name)}
-                  style={{ ...ghostButtonStyle, opacity: actionsDisabled || submitting ? 0.5 : 1 }}
-                >
-                  + {name}
-                </button>
-              ))}
+      <div className="m-page">
+        <div className="m-hd">
+          <div className="m-hdt">
+            <div className="m-biz">
+              <b style={{ fontSize: 24 }}>{v.catalog}</b>
             </div>
           </div>
-        )}
+          {state.status === "ready" && state.categories.length > 0 && (
+            <label className="m-in m-srch">
+              <Icon name="search" size={18} color="var(--muted)" />
+              <input type="search" placeholder={`Search ${v.items}`} aria-label={`Search ${v.items}`} value={query} onChange={(e) => setQuery(e.target.value)} />
+            </label>
+          )}
+        </div>
 
-        {state.status === "ready" && state.categories.length > 0 && (
-          <>
-            <div className="kitchen-head" style={{ alignItems: "baseline", gap: 14 }}>
-              <div className="kitchen-head-title">
-                <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{v.catalog}</div>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
-                  {state.staff ? `Mark ${v.items} out of stock and back. Only the owner changes the ${v.catalogLower}.` : menuSummary(state.categories, state.dishes, v)}
+        <div className="m-bd" style={{ paddingTop: 12 }}>
+          {state.status === "loading" && <div className="m-hint">Loading your {v.catalogLower}…</div>}
+          {state.status === "error" && <RetryableError message={state.message ?? `Couldn't load your ${v.catalogLower}.`} onRetry={refresh} />}
+          {listError && (
+            <div className="m-alert" role="alert">
+              {listError}
+            </div>
+          )}
+
+          {state.status === "ready" && state.categories.length === 0 && (
+            // README route map: "`/menu` empty — not redrawn: EmptyState with the four starter-category chips".
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 10, paddingTop: 40 }}>
+              <Icon name="utensils" size={32} color="var(--muted)" />
+              <b style={{ fontSize: 17 }}>{staff ? `No ${v.items} yet` : "Start with a category"}</b>
+              <p className="m-sub">{staff ? `The owner adds the ${v.items} here. You turn them off and back on.` : v.emptyCatalogHint}</p>
+              {!staff && (
+                <div className="m-chips" style={{ flexWrap: "wrap", justifyContent: "center" }}>
+                  {v.starterCategories.map((name) => (
+                    <button key={name} type="button" className="m-chip m-g" disabled={disabled} onClick={() => void onStarter(name)}>
+                      + {name}
+                    </button>
+                  ))}
                 </div>
-              </div>
-              {/* M4·2's own screen (r-merchant.jsx:998) — reorder, show/hide, delete-when-empty and
-               *  the customer-tab preview all live there rather than crowding this list. Staff change
-               *  none of it (L4), so they see none of these. */}
-              {!state.staff && (
-                <>
-                  <Link href="/menu/categories" className="kitchen-head-action" style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-block" }}>
-                    Manage categories
-                  </Link>
-                  <button
-                    type="button"
-                    className="kitchen-head-action"
-                    disabled={actionsDisabled}
-                    onClick={() => setSheet({ kind: "category", category: null })}
-                    style={{ ...ghostButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
-                  >
-                    + New category
-                  </button>
-                  <button
-                    type="button"
-                    className="kitchen-head-action"
-                    disabled={actionsDisabled}
-                    onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: state.categories[0]?.id })}
-                    style={{ ...primaryButtonStyle, opacity: actionsDisabled ? 0.5 : 1 }}
-                  >
-                    + Add {v.anItem}
-                  </button>
-                </>
               )}
             </div>
+          )}
 
-            {groupDishesByCategory(state.categories, state.dishes).map(({ category, dishes }) => (
-              <div key={category.id} style={cardStyle}>
-                <div className="kitchen-row" style={{ gap: 10, marginBottom: 8 }}>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, opacity: category.hidden ? 0.5 : 1 }}>
-                    {category.name}
-                    {category.hidden && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginLeft: 8 }}>HIDDEN</span>}
-                  </div>
-                  <span className="kitchen-row-actions">
-                    <span style={{ fontSize: 12.5, color: "var(--muted)", flex: "1 1 auto" }}>
-                      {countOf(dishes.length, v)} ·{" "}
-                      {category.availableFrom && category.availableTo ? `${category.availableFrom} – ${category.availableTo}` : "All day"}
-                    </span>
-                    {!state.staff && (
-                      <button
-                        type="button"
-                        disabled={actionsDisabled}
-                        onClick={() => setSheet({ kind: "category", category })}
-                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1, whiteSpace: "nowrap" }}
-                      >
-                        Edit category
-                      </button>
-                    )}
-                  </span>
+          {state.status === "ready" && state.categories.length > 0 && (
+            <>
+              {!query.trim() && (
+                <div className="m-chips" role="tablist" aria-label="Categories">
+                  {shop && (
+                    <button type="button" role="tab" aria-selected={all} className={`m-chip${all ? " m-on" : ""}`} onClick={() => setSelected(null)}>
+                      All
+                    </button>
+                  )}
+                  {categories.map((c) => (
+                    <CategoryChip
+                      key={c.id}
+                      category={c}
+                      on={c.id === current?.id}
+                      onSelect={() => setSelected(c.id)}
+                      onLongPress={staff ? undefined : () => setSheet({ kind: "category", category: c })}
+                    />
+                  ))}
+                  {!staff && (
+                    <button type="button" className="m-chip m-g" disabled={actionsDisabled} onClick={() => setSheet({ kind: "category", category: null })}>
+                      <Icon name="plus" size={16} /> Category
+                    </button>
+                  )}
                 </div>
+              )}
 
-                {dishes.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 0" }}>No {v.items} yet.</div>}
-
-                {dishes.map((dish) => (
-                  <div key={dish.id} className="kitchen-row" style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
-                    <div
-                      style={{
-                        width: 44,
-                        height: 44,
-                        alignSelf: "flex-start",
-                        borderRadius: 10,
-                        background: "var(--surface)",
-                        overflow: "hidden",
-                        flexShrink: 0,
-                        opacity: dish.outOfStock ? 0.4 : 1,
-                      }}
-                    >
-                      {dish.photoUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={dish.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      )}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, opacity: dish.outOfStock ? 0.55 : 1 }}>
-                      <div style={{ fontSize: 15.5, fontWeight: 700 }}>
-                        {dish.name}
-                        {/* M4·b2's draft treatment (r-merchant.jsx:1497-1499): a bare DRAFT pill, with
-                         *  the reason spelled out on its own line underneath. */}
-                        {dish.isDraft && (
-                          <span
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: 800,
-                              color: "var(--highlight-ink)",
-                              background: "var(--highlight-wash)",
-                              borderRadius: 999,
-                              padding: "2px 9px",
-                              marginLeft: 8,
-                            }}
-                          >
-                            DRAFT
-                          </span>
-                        )}
-                        {dish.outOfStock && (
-                          <span
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: 800,
-                              color: "var(--muted)",
-                              background: "var(--surface)",
-                              borderRadius: 999,
-                              padding: "2px 9px",
-                              marginLeft: 8,
-                            }}
-                          >
-                            OUT OF STOCK
-                          </span>
-                        )}
-                      </div>
-                      {dish.description && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{dish.description}</div>}
-                      {dish.isDraft && (
-                        <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", marginTop: 2, lineHeight: 1.45 }}>
-                          Saved, but customers can&apos;t see it yet — every {v.item} needs one photo before it goes live.
-                        </div>
-                      )}
-                    </div>
-                    {/* Kit's ItemRow puts the price on the right at 16/700, tabular (r-merchant.jsx:937). */}
-                    <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>${formatMoney(dish.priceUsd)}</div>
-                    <span className="kitchen-row-actions kitchen-row-actions-fill">
-                      <button
-                        type="button"
-                        disabled={actionsDisabled || submitting}
-                        onClick={() => (dish.outOfStock ? onClearOos(dish.id) : setSheet({ kind: "oos", dish }))}
-                        style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled || submitting ? 0.5 : 1 }}
-                      >
-                        {dish.outOfStock ? "Back in stock" : "Mark out of stock"}
-                      </button>
-                      {!state.staff && (
-                        <button
-                          type="button"
-                          disabled={actionsDisabled}
-                          onClick={() => setSheet({ kind: "dish", dish })}
-                          style={{ ...ghostButtonStyle, padding: "8px 14px", opacity: actionsDisabled ? 0.5 : 1 }}
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </span>
-                  </div>
+              <div>
+                {rows.length === 0 && <div className="m-hint" style={{ padding: "12px 0" }}>{query.trim() ? `No ${v.items} match “${query.trim()}”` : `No ${v.items} here yet`}</div>}
+                {rows.map((dish) => (
+                  <DishRow
+                    key={dish.id}
+                    dish={dish}
+                    shop={shop}
+                    editable={!staff}
+                    disabled={disabled}
+                    onEdit={() => setSheet({ kind: "dish", dish })}
+                    onToggle={(on) => (on ? void onTurnOn(dish) : setSheet({ kind: "oos", dish }))}
+                  />
                 ))}
-
-                {!state.staff && (
-                  <button
-                    type="button"
-                    disabled={actionsDisabled}
-                    onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: category.id })}
-                    style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-text)", background: "none", border: "none", cursor: "pointer", padding: "10px 0 0", opacity: actionsDisabled ? 0.5 : 1 }}
-                  >
-                    + Add {v.item} here
-                  </button>
-                )}
               </div>
-            ))}
+            </>
+          )}
+        </div>
 
-            {/* M4·1's closing line (r-merchant.jsx:990). Still no drag-to-move for DISHES between
-             *  categories (a dish's category changes in its own editor); category order itself is now
-             *  real and lives on M4·2. */}
-            {!state.staff && (
-              <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "0 4px" }}>
-                Customers see these groups, in this order, as the tabs {v.onStorefront} —{" "}
-                <Link href="/menu/categories" style={{ color: "var(--accent-text)", fontWeight: 700 }}>
-                  change the order
-                </Link>
-                .
-              </div>
-            )}
-          </>
+        {state.status === "ready" && state.categories.length > 0 && !staff && (
+          <div className="m-foot">
+            <button type="button" className="m-btn" disabled={actionsDisabled} onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: current?.id ?? categories[0]?.id })}>
+              <Icon name="plus" size={20} /> Add {v.anItem}
+            </button>
+          </div>
         )}
       </div>
 
@@ -384,8 +260,15 @@ export default function MenuPage() {
           disabled={actionsDisabled}
           submitting={submitting}
           error={sheetError}
-          onSave={onSaveCategory}
-          onDelete={sheet.category ? onDeleteCategory : undefined}
+          onSave={(body: CategorySave) =>
+            void withSheet(async () => {
+              if (sheet.category) await updateCategory(sheet.category.id, body);
+              else await createCategory(body);
+            })
+          }
+          onDelete={sheet.category ? () => void withSheet(() => deleteCategory(sheet.category!.id).then(() => undefined)) : undefined}
+          onMove={(d) => void onMove(d)}
+          position={sheet.category ? { index: categories.findIndex((c) => c.id === sheet.category!.id), count: categories.length } : undefined}
           onCancel={() => setSheet({ kind: "none" })}
         />
       )}
@@ -398,8 +281,13 @@ export default function MenuPage() {
           disabled={actionsDisabled}
           submitting={submitting}
           error={sheetError}
-          onSave={onSaveDish}
-          onDelete={sheet.dish ? onDeleteDish : undefined}
+          onSave={(body: DishSave) =>
+            void withSheet(async () => {
+              if (sheet.dish) await updateDish(sheet.dish.id, body);
+              else await createDish(body);
+            })
+          }
+          onDelete={sheet.dish ? () => void withSheet(() => deleteDish(sheet.dish!.id).then(() => undefined)) : undefined}
           onCancel={() => setSheet({ kind: "none" })}
         />
       )}
@@ -407,12 +295,111 @@ export default function MenuPage() {
       {sheet.kind === "oos" && (
         <OosSheet
           dishName={sheet.dish.name}
+          backOn={backOnLine(business, new Date())}
           disabled={actionsDisabled}
           submitting={submitting}
-          onConfirm={onConfirmOos}
+          onConfirm={(f) => void onTurnOff(f)}
           onCancel={() => setSheet({ kind: "none" })}
         />
       )}
     </Kitchen>
+  );
+}
+
+/** A category chip: "Mains 3". A long press (or a right click) opens its sheet, where it reorders. */
+function CategoryChip({
+  category,
+  on,
+  onSelect,
+  onLongPress,
+}: {
+  category: MerchantCategoryResponse;
+  on: boolean;
+  onSelect: () => void;
+  onLongPress?: () => void;
+}) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fired = useRef(false);
+  const clear = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={on}
+      className={`m-chip${on ? " m-on" : ""}`}
+      style={category.hidden ? { opacity: 0.55 } : undefined}
+      onPointerDown={() => {
+        fired.current = false;
+        if (!onLongPress) return;
+        timer.current = setTimeout(() => {
+          fired.current = true;
+          onLongPress();
+        }, LONG_PRESS_MS);
+      }}
+      onPointerUp={clear}
+      onPointerLeave={clear}
+      onContextMenu={(e) => {
+        if (!onLongPress) return;
+        e.preventDefault();
+        clear();
+        if (!fired.current) onLongPress();
+        fired.current = true;
+      }}
+      onClick={() => {
+        if (fired.current) return;
+        onSelect();
+      }}
+    >
+      {category.name} <span className="m-num">{category.dishCount}</span>
+    </button>
+  );
+}
+
+function DishRow({
+  dish,
+  shop,
+  editable,
+  disabled,
+  onEdit,
+  onToggle,
+}: {
+  dish: MerchantDishResponse;
+  shop: boolean;
+  editable: boolean;
+  disabled: boolean;
+  onEdit: () => void;
+  onToggle: (on: boolean) => void;
+}) {
+  const off = offLabel(dish, new Date());
+  const body = (
+    <>
+      <div className={`m-th ${shop ? "m-tile-shop" : "m-tile-food"}`}>{dish.name.trim().charAt(0).toUpperCase()}</div>
+      <div className="m-t">
+        <b>{dish.name}</b>
+        {off ? (
+          <span className="m-gold-ink">{off}</span>
+        ) : dish.isDraft ? (
+          // Not drawn: a draft is saved but hidden until it has a photo, and the owner needs to know why.
+          <span className="m-gold-ink">Draft · add a photo to go live</span>
+        ) : (
+          <span className="m-num">{money(dish.priceUsd)}</span>
+        )}
+      </div>
+    </>
+  );
+  return (
+    <div className={`m-li m-dish${dish.outOfStock ? " m-off" : ""}`}>
+      {editable ? (
+        <button type="button" onClick={onEdit} aria-label={`Edit ${dish.name}`} style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+          {body}
+        </button>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>{body}</div>
+      )}
+      <Switch checked={!dish.outOfStock} label={`${dish.name} in stock`} disabled={disabled} onChange={onToggle} />
+    </div>
   );
 }

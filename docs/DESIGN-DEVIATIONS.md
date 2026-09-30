@@ -2229,7 +2229,7 @@ components to the design system.
 
 | Where | Handoff | App now | Retires with |
 |---|---|---|---|
-| Menu, Money and the Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (C1–C3, C5, E2–E4) | the older screen bodies inside the new phone shell and tab bar | PR 3 |
+| The Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (C5, E2–E4) | the older screen bodies inside the new phone shell | PR 3b |
 | Shop Orders home, Book a rider, Offers, Tracking, Items | redrawn (D1–D5, D7, E1) | the older screens inside the new shell | PR 4 |
 | A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
 | Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
@@ -2253,6 +2253,22 @@ Evidence: `docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30.png` (mock left, app ri
 | B5 offline bar | drawn inside B5 | the shell's "No connection, retrying…" bar (shown on every screen when offline) | same bar, one place |
 | B5 closed body | power icon, "You're closed", Open now, busy mode | same, plus any orders still in the kitchen listed under "In the kitchen" | closing does not cancel orders already accepted; hiding them would strand them |
 | Restaurant "Book a rider" strip | not drawn on B1 | removed | not drawn ⇒ not rendered |
+
+### 6 · Menu C1–C2, Money C3, Items E1 (PR 3a)
+
+Evidence: `docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30.png` (mock left, app right, 360×720).
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| C1 category order | "`/menu/categories` becomes category chips (long-press to reorder)" | the separate categories page is gone; a long press (or right click) on a chip opens its category sheet, which has **Move earlier / Move later** beside rename, hours, hide and delete | the handoff names the gesture but draws no reorder UI; this is the smallest one that keeps the order customers see as tabs editable |
+| C1 row, draft dish | not drawn | the sub-line reads "Draft · add a photo to go live" in gold | a draft is saved but hidden from customers until it has a photo; the owner needs to see why |
+| C1 off line | "Off until tomorrow" | the same, or "Off until you turn it back on" for that choice | the API now returns `outOfStockUntil` (additive), so the line says what was chosen |
+| C2 | two choices | two choices; the older "For 1 hour" is gone from the app (the API still accepts it) | not drawn ⇒ not rendered |
+| C1 dish / category editors | "editor not drawn" | the existing dish and category sheets | nothing drawn to align to |
+| C3 This week | not drawn | the same list, the last 7 days' delivered orders ("#A111 · Tue 12:31") | the segment is drawn; its content follows Today's layout |
+| C3 | Sales, overdue row, Orders | the old statement's commission, "would have been", prep-time and cooked-food-loss tiles are gone | not drawn ⇒ not rendered |
+| C3 overdue row | tap calls the rider ("Calling Tino…") | opens that order's cash-back screen (B7) | rider phone numbers are not exposed to merchants; B7 is where the cash is confirmed or reported |
+| E1 | "All" chip first | "All" first on a shop's Items only (C1 draws none for a restaurant) | as drawn per screen |
 
 **Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
 the RM registry is replaced and this entry shrinks to the sync record).

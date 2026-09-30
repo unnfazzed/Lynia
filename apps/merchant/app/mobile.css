@@ -837,3 +837,75 @@
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Pinned footer & menu rows (merchant mobile C1, C3, C5, E2, E4) ─────────────────────── */
+/* A page that fills the scroller, so a primary action can sit at the bottom of a short list. */
+.m-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.m-page > .m-bd {
+  flex: 1;
+}
+.m-foot {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 16px 12px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.m-li.m-dish {
+  min-height: 64px;
+}
+.m-li.m-off .m-t b,
+.m-li.m-off .m-th {
+  color: var(--muted);
+}
+.m-li.m-off .m-th {
+  background: var(--surface);
+}
+.m-li .m-t span.m-gold-ink {
+  color: var(--highlight-ink);
+  font-weight: 600;
+}
+.m-srch {
+  margin-top: 12px;
+  border: none;
+}
+/* On the mint header (C3) the segmented control sits on white, the chosen side mint. */
+.m-hd .m-seg {
+  background: var(--bg);
+}
+.m-hd .m-seg button[aria-selected="true"] {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  box-shadow: none;
+}
+/* C3's gold overdue row. */
+.m-overdue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: var(--highlight-wash);
+  border: 1px solid var(--highlight-border);
+  color: inherit;
+  text-decoration: none;
+}
+.m-overdue .m-t {
+  flex: 1;
+  min-width: 0;
+}
+.m-overdue .m-t b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-overdue .m-t span {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+}

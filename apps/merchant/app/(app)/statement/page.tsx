@@ -1,78 +1,73 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
+import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
+import { Segmented } from "../../components/m/Segmented";
 import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
-import { PayTag } from "../../components/queue/PayTag";
-import { cardStyle } from "../../components/queue/styles";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
-import { formatMoney } from "../../lib/money-input";
 import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
+import { money, orderLabel } from "../../lib/orders-view";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; today: MerchantEndOfDaySummaryResponse; statement: MerchantWeeklyStatementResponse }
-  // L4: a Staff member who reached the owner's statement by an old link.
+  | { status: "ready"; today: MerchantEndOfDaySummaryResponse; week: MerchantWeeklyStatementResponse }
+  // L4: a Staff member who reached the owner's money by an old link.
   | { status: "staff" }
   | { status: "error"; message: string };
 
-/** M4·9/M4·10 both hang a dated sub-line off the screen title ("Mon 21 – Sun 27 July", "Sunday 27
- *  July · closed at 21:00" — r-merchant.jsx:1211/1247). Renders the dates the payload already carries;
- *  an unparseable one is simply omitted rather than printed as "Invalid Date". */
-function formatDay(value: string, opts: Intl.DateTimeFormatOptions): string | null {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, opts);
+type Period = "today" | "week";
+
+type Line = NonNullable<MerchantEndOfDaySummaryResponse["lines"]>[number];
+
+const OUTCOME: Record<Line["outcome"], string> = {
+  delivered: "Delivered",
+  not_delivered: "Not delivered",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+  in_progress: "In progress",
+};
+
+function hm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function SectionHeading({ title, sub }: { title: string; sub?: string | null }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.01em" }}>{title}</div>
-      {sub && <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div style={{ ...cardStyle, flex: "1 1 150px" }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
+function dayHm(iso: string): string {
+  return `${new Date(iso).toLocaleDateString(undefined, { weekday: "short" })} ${hm(iso)}`;
 }
 
 /**
- * M4·5 weekly statement + M4·6 end-of-day summary (E3, N-13). Read-only — the automatic exits
- * (N-23 end-of-day close, per-order confirms) already happened elsewhere; this page just reports.
+ * C3 · Money (packages/design/handoff/merchant-mobile, ledger D-48). A mint header with Today / This
+ * week, "Sales · 7 orders" and the total; then a gold row per order whose cash is overdue ("$9.50
+ * overdue · #A098 · Tino · due 11:40", opening that order's cash-back screen), and the Orders list
+ * (#id · time / how it ended, the amount on the right). Owner-only, like the tab.
  */
-export default function StatementPage() {
+export default function MoneyPage() {
   const { signOut } = useKitchenConnection();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [period, setPeriod] = useState<Period>("today");
 
   const refresh = useCallback(() => {
     let cancelled = false;
     setState({ status: "loading" });
     const load = async (): Promise<LoadState> => {
-      // L4: the statement and end-of-day totals are the owner's (the permission table).
       if ((await loadBusiness())?.myRole === "staff") return { status: "staff" };
-      const [today, statement] = await Promise.all([getTodaySummary(), getWeeklyStatement()]);
-      return { status: "ready", today, statement };
+      const [today, week] = await Promise.all([getTodaySummary(), getWeeklyStatement()]);
+      return { status: "ready", today, week };
     };
     load()
       .then((next) => {
         if (!cancelled) setState(next);
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
-        if (redirectIfSessionExpired(err, signOut)) return;
-        setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your statement." });
+        if (cancelled || redirectIfSessionExpired(err, signOut)) return;
+        setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your money." });
       });
     return () => {
       cancelled = true;
@@ -81,94 +76,84 @@ export default function StatementPage() {
 
   useEffect(() => refresh(), [refresh]);
 
+  const ready = state.status === "ready" ? state : null;
+  const count = ready ? (period === "today" ? (ready.today.orders ?? ready.today.delivered) : ready.week.ordersDelivered) : 0;
+  const total = ready ? (period === "today" ? (ready.today.sales ?? 0) : ready.week.foodSalesTotal) : 0;
+  const lines: { id: string; title: string; sub: string; amount: number }[] = !ready
+    ? []
+    : period === "today"
+      ? (ready.today.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, sub: OUTCOME[l.outcome], amount: l.amount }))
+      : ready.week.lineItems.map((li) => ({ id: li.orderId, title: `${orderLabel({ id: li.orderId })} · ${dayHm(li.deliveredAt)}`, sub: "Delivered", amount: li.amount }));
+
   return (
     <Kitchen active="money">
-      <div className="kitchen-page" style={{ display: "flex", flexDirection: "column", gap: 24, overflow: "auto", height: "100%" }}>
-        {state.status === "loading" && <div style={{ color: "var(--muted)", fontSize: 14 }}>Loading your statement…</div>}
+      <div className="m-hd">
+        <div className="m-hdt">
+          <div className="m-biz">
+            <b style={{ fontSize: 24 }}>Money</b>
+          </div>
+        </div>
+        {state.status !== "staff" && (
+          <div style={{ marginTop: 12 }}>
+            <Segmented
+              label="Period"
+              value={period}
+              onChange={setPeriod}
+              options={[
+                { value: "today", label: "Today" },
+                { value: "week", label: "This week" },
+              ]}
+            />
+          </div>
+        )}
+        {ready && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--muted)" }}>
+              Sales · {count} {count === 1 ? "order" : "orders"}
+            </div>
+            <b className="m-num" style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-0.01em" }}>
+              {money(total)}
+            </b>
+          </div>
+        )}
+      </div>
 
+      <div className="m-bd" style={{ paddingTop: 12 }}>
+        {state.status === "loading" && <div className="m-hint">Loading…</div>}
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
+        {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the money.</OwnerOnlyNotice>}
 
-        {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the statement and the day&apos;s totals.</OwnerOnlyNotice>}
+        {ready &&
+          (ready.today.overdue ?? []).map((o) => (
+            <Link key={o.orderId} href={`/queue/${o.orderId}`} className="m-overdue">
+              <Icon name="circle-alert" size={20} color="var(--highlight-ink)" />
+              <div className="m-t">
+                <b className="m-num">{money(o.amount)} overdue</b>
+                <span className="m-num">
+                  {[orderLabel({ id: o.orderId }), o.riderName, `due ${hm(o.dueAt)}`].filter(Boolean).join(" · ")}
+                </span>
+              </div>
+              <Icon name="chevron-right" size={18} color="var(--muted)" />
+            </Link>
+          ))}
 
-        {state.status === "ready" && (
+        {ready && (
           <>
-            <section>
-              <SectionHeading
-                title="Today's summary"
-                sub={formatDay(state.today.date, { weekday: "long", day: "numeric", month: "long" })}
-              />
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                <Stat label="Delivered" value={String(state.today.delivered)} />
-                <Stat label="Cash returned to you" value={`$${formatMoney(state.today.cashTaken)}`} sub="confirmed on your count screen" />
-                <Stat label="Mobile money" value={`$${formatMoney(state.today.walletTaken)}`} />
-                <Stat label="Rejected" value={String(state.today.rejected)} />
-                <Stat label="Average prep" value={state.today.averagePrepMinutes != null ? `${Math.round(state.today.averagePrepMinutes)} min` : "—"} />
-              </div>
-            </section>
-
-            <section>
-              <SectionHeading
-                title="Weekly statement"
-                sub={(() => {
-                  const from = formatDay(state.statement.rangeStart, { weekday: "short", day: "numeric" });
-                  const to = formatDay(state.statement.rangeEnd, { weekday: "short", day: "numeric", month: "long" });
-                  return from && to ? `${from} – ${to}` : null;
-                })()}
-              />
-              <div style={{ display: "flex", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
-                <Stat label="Orders delivered" value={String(state.statement.ordersDelivered)} />
-                <Stat label="Food sales" value={`$${formatMoney(state.statement.foodSalesTotal)}`} sub="paid to you directly" />
-                <Stat
-                  label="Commission charged"
-                  value={`$${formatMoney(state.statement.commissionCharged)}`}
-                  sub={`${state.statement.commissionRatePct}% at launch`}
-                />
-                <Stat
-                  label={`Would have been (${state.statement.illustrativeRatePct}%)`}
-                  value={`$${formatMoney(state.statement.illustrativeCommission)}`}
-                  sub="shown for transparency"
-                />
-              </div>
-
-              {state.statement.cookedFoodLossTotal > 0 && (
-                <div style={{ display: "flex", gap: 10, padding: "12px 16px", background: "var(--highlight-wash)", borderRadius: 12, marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, color: "var(--highlight-ink)", lineHeight: 1.5 }}>
-                    <b>${formatMoney(state.statement.cookedFoodLossTotal)}</b> of cooked food this week couldn&apos;t find a rider (D-34) —
-                    LyniaGo covers that loss, not you.
+            <div className="m-sec">Orders</div>
+            <div>
+              {lines.length === 0 && <div className="m-hint">{period === "today" ? "No orders yet today" : "No delivered orders this week"}</div>}
+              {lines.map((l) => (
+                <Link key={l.id} href={`/queue/${l.id}`} className="m-li">
+                  <div className="m-t">
+                    <b className="m-num">{l.title}</b>
+                    <span>{l.sub}</span>
                   </div>
-                </div>
-              )}
-
-              <div style={{ ...cardStyle, padding: "4px 18px" }}>
-                {state.statement.lineItems.length === 0 && (
-                  <div style={{ padding: "16px 0", fontSize: 13.5, color: "var(--muted)" }}>No delivered orders in the last 7 days yet.</div>
-                )}
-                {state.statement.lineItems.map((li) => (
-                  <div
-                    key={li.orderId}
-                    className="kitchen-row"
-                    style={{ gap: 16, padding: "12px 0", borderBottom: "1px solid var(--line)", fontSize: 14, fontVariantNumeric: "tabular-nums" }}
-                  >
-                    <span style={{ fontWeight: 700, minWidth: 90 }}>#{li.orderId.slice(0, 8).toUpperCase()}</span>
-                    <span style={{ color: "var(--muted)", minWidth: "min(140px, 100%)" }}>{new Date(li.deliveredAt).toLocaleString()}</span>
-                    {/* The statement's own rows carry the PayTag too (r-merchant.jsx:1229). */}
-                    <span style={{ flex: 1 }}>
-                      <PayTag pay={li.paymentMethod} />
-                    </span>
-                    <span className="kitchen-row-actions">
-                      <span style={{ fontWeight: 700 }}>${formatMoney(li.amount)}</span>
-                      <span style={{ color: "var(--muted)", minWidth: 70, textAlign: "right" }}>−${formatMoney(li.commission)}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 14, padding: "12px 16px", background: "var(--surface)", borderRadius: 12 }}>
-                <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                  Commission is {state.statement.commissionRatePct}% while we grow the corridor. When a rate starts, you&apos;ll
-                  see it here for a full week before the first charge — never as a surprise deduction.
-                </div>
-              </div>
-            </section>
+                  <b className="m-num" style={{ fontSize: 16, fontWeight: 700, color: l.amount === 0 ? "var(--muted)" : undefined }}>
+                    {money(l.amount)}
+                  </b>
+                </Link>
+              ))}
+            </div>
           </>
         )}
       </div>

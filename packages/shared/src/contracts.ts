@@ -977,6 +977,9 @@ export const MerchantDishResponse = z
     photoUrl: z.string().nullable(),
     isDraft: z.boolean(),
     outOfStock: z.boolean(),
+    /** D-48 C1: when an off dish comes back on its own (ISO). Absent on older servers; null when on.
+     *  Year 9999 means "until I turn it back on". */
+    outOfStockUntil: z.string().nullable().optional(),
     sortOrder: z.number().int(),
   })
   .strict();
@@ -1450,6 +1453,19 @@ export const MerchantEndOfDaySummaryResponse = z
     cashOverdue: z.number().optional(),
     overdue: z
       .array(z.object({ orderId: z.string().uuid(), amount: z.number(), riderName: z.string().nullable(), dueAt: z.string() }))
+      .optional(),
+    // D-48 C3: Money's "Orders" list for today, newest first. `at` is when it ended (delivered or
+    // cancelled), else when it was placed; `amount` is what it earned (0 unless delivered or still on).
+    // "rejected" = never accepted (declined or missed); "cancelled" = accepted, then cancelled.
+    lines: z
+      .array(
+        z.object({
+          orderId: z.string().uuid(),
+          at: z.string(),
+          outcome: z.enum(["delivered", "not_delivered", "rejected", "cancelled", "in_progress"]),
+          amount: z.number(),
+        }),
+      )
       .optional(),
   })
   .strict();

@@ -122,6 +122,14 @@ function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date 
   return endOfToday();
 }
 
+/** D-48 C3: how one of today's orders ended, for Money's list. */
+function moneyLineOutcome(o: { status: string; prepStartedAt: Date | null }): "delivered" | "not_delivered" | "rejected" | "cancelled" | "in_progress" {
+  if (o.status === "delivered" || o.status === "completed") return "delivered";
+  if (o.status === "undelivered") return "not_delivered";
+  if (o.status === "cancelled") return o.prepStartedAt ? "cancelled" : "rejected";
+  return "in_progress";
+}
+
 @Injectable()
 export class MerchantService {
   // Read-through micro-cache for photo read-URLs (RCA 2026-08-17 §5.1) — same shape as
@@ -637,7 +645,7 @@ export class MerchantService {
     const end = endOfToday();
 
     const overdueBefore = new Date(Date.now() - RESTAURANTS_DEBT.cashReturnWindowMs);
-    const [delivered, rejected, walletTaken, cashTaken, prepped, placed, overdueRows] = await Promise.all([
+    const [delivered, rejected, walletTaken, cashTaken, prepped, placed, overdueRows, todays] = await Promise.all([
       this.prisma.order.count({
         where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: start, lte: end } },
       }),
@@ -676,6 +684,13 @@ export class MerchantService {
         orderBy: { deliveredAt: "asc" },
         take: 50,
       }),
+      // D-48 C3: today's orders for Money's list.
+      this.prisma.order.findMany({
+        where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end } },
+        select: { id: true, status: true, prepStartedAt: true, createdAt: true, deliveredAt: true, cancelledAt: true, merchantGoodsTotal: true },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
     ]);
 
     const prepMinutes = prepped
@@ -699,6 +714,16 @@ export class MerchantService {
         riderName: o.rider?.profile.firstName || null,
         dueAt: new Date(o.deliveredAt!.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString(),
       })),
+      lines: (todays ?? []).map((o) => {
+        const outcome = moneyLineOutcome(o);
+        const earns = outcome === "delivered" || outcome === "in_progress";
+        return {
+          orderId: o.id,
+          at: (o.deliveredAt ?? o.cancelledAt ?? o.createdAt).toISOString(),
+          outcome,
+          amount: earns ? roundToCents(Number(o.merchantGoodsTotal ?? 0)) : 0,
+        };
+      }),
     };
   }
 
@@ -794,6 +819,7 @@ export class MerchantService {
       photoUrl: await this.signPhoto(dish.photoUrl),
       isDraft: dish.isDraft,
       outOfStock: isOutOfStock(dish),
+      outOfStockUntil: isOutOfStock(dish) ? (dish.outOfStockUntil?.toISOString() ?? null) : null,
       sortOrder: dish.sortOrder,
     };
   }

@@ -2007,6 +2007,12 @@
         "outOfStock": {
           "type": "boolean"
         },
+        "outOfStockUntil": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "photoUrl": {
           "type": [
             "string",
@@ -2057,6 +2063,41 @@
           "maximum": 9007199254740991,
           "minimum": -9007199254740991,
           "type": "integer"
+        },
+        "lines": {
+          "items": {
+            "properties": {
+              "amount": {
+                "type": "number"
+              },
+              "at": {
+                "type": "string"
+              },
+              "orderId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "cancelled",
+                  "delivered",
+                  "in_progress",
+                  "not_delivered",
+                  "rejected"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "amount",
+              "at",
+              "orderId",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "orders": {
           "maximum": 9007199254740991,
