@@ -788,6 +788,27 @@ export const MERCHANT_SHOP_KIND_LABELS: Readonly<Record<MerchantShopKind, string
 export const MerchantMemberRole = z.enum(["owner", "staff"]);
 export type MerchantMemberRole = z.infer<typeof MerchantMemberRole>;
 
+/** A business's own location as the merchant sends it (merchant mobile redesign, ledger D-48): the point
+ *  from GPS or an address search, the address line that search or reverse-geocode gave, and the contact
+ *  phone. The landmark is optional — the redesign dropped the field. The API stores a full `Waypoint`
+ *  (see `merchantWaypoint`), so every rider-facing read still gets a non-empty landmark. */
+export const MerchantLocationInput = z
+  .object({
+    point: LatLng,
+    landmark: z.string().trim().min(1).max(160).optional(),
+    address: z.string().trim().min(1).max(200).optional(),
+    contactPhone: z.string().min(6).max(20),
+  })
+  .strict();
+export type MerchantLocationInput = z.infer<typeof MerchantLocationInput>;
+
+/** The stored `Waypoint` for a merchant location: the landmark if one was given, else the address line,
+ *  else the business's name — never empty, because riders read it at every pickup. */
+export function merchantWaypoint(input: MerchantLocationInput, businessName: string): Waypoint {
+  const landmark = (input.landmark ?? input.address ?? businessName).trim().slice(0, 160) || businessName.slice(0, 160);
+  return { point: input.point, landmark, contactPhone: input.contactPhone };
+}
+
 /** `POST /merchant/become` — self-serve sign-up (L1). Creates the Merchant and the caller's OWNER
  *  membership in one transaction; it never touches `profiles.role` (RCA 2026-08-18 C-4). The business
  *  starts dormant — go-live (`pilotEnabled`) is an ops switch, restaurants only. A second call 409s
@@ -798,19 +819,17 @@ export const BecomeMerchantRequest = z
     ownerName: z.string().trim().min(1).max(60),
     name: z.string().trim().min(1).max(120),
     businessType: MerchantBusinessType,
-    /** Required for a shop, refused for a restaurant. */
+    /** Refused for a restaurant. Optional for a shop since the mobile redesign (D-48): its "What do you
+     *  sell?" asks only restaurant or shop, and a shop without a kind is stored as `other`. */
     shopKind: MerchantShopKind.optional(),
-    /** The confirmed map pin + a landmark riders look for + the business's contact phone. */
-    location: Waypoint,
+    /** Where the business is: GPS or search, the contact phone, and optionally a landmark (D-48). */
+    location: MerchantLocationInput,
     /** The one-tap "I accept the merchant terms and privacy notice" line. */
     termsAccepted: z.literal(true),
     cashRule: MerchantCashRule.optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (v.businessType === "shop" && v.shopKind === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shopKind"], message: "Pick what kind of shop it is." });
-    }
     if (v.businessType === "restaurant" && v.shopKind !== undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shopKind"], message: "Only a shop has a kind." });
     }
@@ -1096,7 +1115,7 @@ export type MerchantPaymentMethod = z.infer<typeof MerchantPaymentMethod>;
 
 /** The shop's own pickup point (same Waypoint shape as a parcel's pickup) — required before
  *  `placeOrder` can price a trip (N-01 needs a distance). */
-export const UpdateMerchantLocationRequest = z.object({ location: Waypoint }).strict();
+export const UpdateMerchantLocationRequest = z.object({ location: MerchantLocationInput }).strict();
 export type UpdateMerchantLocationRequest = z.infer<typeof UpdateMerchantLocationRequest>;
 
 export const PlaceMerchantOrderItem = z

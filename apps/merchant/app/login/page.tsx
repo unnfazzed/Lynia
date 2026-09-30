@@ -3,274 +3,241 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
-import { Icon } from "../components/icons";
+import { AppBar } from "../components/m/AppBar";
+import { MerchantLockup } from "../components/m/Wordmark";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
 import { homePath } from "../lib/booking";
+import { API_BASE_URL } from "../lib/config";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
 import { noBusinessPath } from "../lib/team-api";
+import { formatLocalDigits, localDigits, RESEND_AFTER_S, toE164 } from "../lib/phone-input";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
-/** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). A
- *  shared counter tablet is where it bites, so the copy says what to do instead. */
+/** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). */
 const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on your own phone, or try tomorrow.";
 
-/** M0·1 — sign-in (D-05: "the sign-in button is labelled 'Sign in & start the alarm'" — the tap is the
- *  browser gesture that unlocks AudioContext for the whole page load). Restaurants and shops share it
- *  (merchant web upgrade L1), so the title is "Sign in" and the code line names the channel the code
- *  actually went by — both D-43. */
+/**
+ * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
+ * phone field with a fixed +263, "Send code" pinned at the bottom and the privacy line — the notice is
+ * accepted once, here (README A1). Then six code boxes that sign in on the sixth digit, a resend
+ * countdown and "Wrong number?". There is no alarm step (README global change 6): order alerts are
+ * always on, and the Sign in tap still unlocks the browser's audio for them, silently.
+ */
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>({ kind: "phone" });
-  const [phone, setPhone] = useState("");
+  const [digits, setDigits] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Synchronous double-submit guard: `busy` state only disables the button after React's next
-  // render, so two clicks landing in the same event-loop tick (a real double-tap gesture, not just
-  // a test race) both fire the handler before that re-render happens — the seeded merchant phone
-  // fires two live OTP sends for one tap. A ref updates immediately, closing that window.
+  // A ref, not `busy`: two taps in one tick both run the handler before React re-renders.
   const submittingRef = useRef(false);
 
-  // Focus the current step's input via a ref rather than the `autoFocus` attribute (jsx-a11y flags
-  // autoFocus as a usability hazard for screen-reader/keyboard users landing mid-page) — this only
-  // runs on the step transitions this tablet-kiosk flow itself drives, not on an arbitrary mount.
-  //
-  // Also reconciles a pre-hydration keystroke race (real on the 2G/3G links this app targets): a
-  // kitchen operator who taps the phone box and starts typing before React attaches this input's
-  // onChange listener gets those keystrokes written to the DOM (visible in the box) but never into
-  // `phone` state, since no React event fired for them — "Send code" then stays disabled forever
-  // even though the box looks filled in. Re-reading the input's actual DOM value on mount pulls any
-  // such pre-hydration text into state once, so the button's disabled check matches what's on screen.
   useEffect(() => {
     inputRef.current?.focus();
+    // Keystrokes typed before hydration land in the DOM but not in state; pull them in once.
     const domValue = inputRef.current?.value ?? "";
-    if (step.kind === "phone" && domValue !== phone) setPhone(domValue);
+    if (step.kind === "phone" && domValue && localDigits(domValue) !== digits) setDigits(localDigits(domValue));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate one-shot-per-step reconcile
   }, [step.kind]);
 
-  async function submitPhone(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  async function sendCode() {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setError(null);
     setBusy(true);
     try {
+      const phone = toE164(digits);
       const sent = await requestOtp(phone);
       setStep({ kind: "code", phone, deliveryChannel: sent.deliveryChannel });
+      setCode("");
+      setResendIn(RESEND_AFTER_S);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't send the code — try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't send the code. Try again.");
     } finally {
       setBusy(false);
       submittingRef.current = false;
     }
   }
 
-  async function submitCode(e: React.FormEvent) {
-    e.preventDefault();
-    if (step.kind !== "code") return;
-    if (submittingRef.current) return;
+  async function signIn(value: string) {
+    if (step.kind !== "code" || submittingRef.current || value.length !== 6) return;
     submittingRef.current = true;
     setError(null);
     setBusy(true);
     try {
-      await verifyOtp(step.phone, code);
-      // The submit click IS the user gesture — unlock the alarm's AudioContext now, at sign-in,
-      // exactly as D-05 specifies, before navigating into the dashboard.
+      await verifyOtp(step.phone, value);
+      // The tap (or the sixth digit) is the user gesture that lets the order alert play later.
       getAlarmController().arm();
       router.replace(await landingPath(searchParams.get("next")));
     } catch (err) {
       if (err instanceof ApiError && err.status === 429 && err.reason === "device_signup_cap") setError(DEVICE_CAP_MESSAGE);
-      else setError(err instanceof ApiError ? err.message : "That code didn't work — try again.");
-    } finally {
+      else setError(err instanceof ApiError ? err.message : "That code didn't work. Try again.");
       setBusy(false);
+    } finally {
       submittingRef.current = false;
     }
   }
 
-  return (
-    <div style={{ height: "100dvh", display: "grid", placeItems: "center", background: "var(--surface)" }}>
-      <div style={{ width: 420, maxWidth: "calc(100vw - 32px)", background: "var(--bg)", borderRadius: 16, boxShadow: "var(--shadow-card)", padding: "clamp(20px, 6vw, 28px)" }}>
-        {/* M0·1 opens with the dove + wordmark lockup above the title (r-merchant.jsx:84).
-         *  eslint-disable: a static brand SVG from /public, not a content image. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/lyniago-mark.svg" alt="" width={32} height={32} />
-          {/* The wordmark is Fredoka 600 with "Go" in --accent-700 (r-parts.jsx Wordmark, size 22) —
-           *  not the app's plain Inter run. */}
-          <span style={{ fontFamily: "var(--font-wordmark)", fontSize: 22, fontWeight: 600 }}>
-            Lynia<span style={{ color: "var(--accent-700)" }}>Go</span>
-          </span>
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Sign in</div>
+  function onCodeChange(raw: string) {
+    const next = raw.replace(/\D/g, "").slice(0, 6);
+    setCode(next);
+    if (next.length === 6) void signIn(next);
+  }
 
-        {step.kind === "phone" && (
-          <form onSubmit={submitPhone}>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 16 }}>
-              Enter your phone number. We'll send you a 6-digit code.
-            </div>
-            <input
-              ref={inputRef}
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              aria-label="Phone number"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="0771234567"
-              style={inputStyle}
-            />
-            {error && <div style={errorStyle}>{error}</div>}
-            <button type="submit" disabled={busy || phone.trim().length < 6} style={buttonStyle}>
-              {busy ? "Sending…" : "Send code"}
-            </button>
-          </form>
-        )}
+  function wrongNumber() {
+    setStep({ kind: "phone" });
+    setCode("");
+    setError(null);
+  }
 
-        {step.kind === "code" && (
-          <form onSubmit={submitCode}>
-            <div style={{ fontSize: 13.5, color: "var(--muted)", marginBottom: 16 }}>
-              {step.deliveryChannel === "whatsapp"
-                ? `Enter the code we sent to your WhatsApp on ${step.phone}.`
-                : `Enter the code we sent to ${step.phone}.`}
-            </div>
-            {/* r-merchant.jsx:87-91 — the code is six segmented boxes (52×60, radius 12), the
-             *  next-empty box carrying the accent border. A single transparent input laid over the
-             *  boxes captures typing and screen-reader focus, so the `code` state and the verify path
-             *  are unchanged — the boxes are only its view. */}
-            <div style={{ position: "relative", marginBottom: 14 }}>
-              <div style={{ display: "flex", gap: 8 }}>
-                {Array.from({ length: 6 }, (_, i) => {
-                  const active = i === Math.min(code.length, 5);
-                  return (
-                    <span
-                      key={i}
-                      style={{
-                        flex: "1 1 0",
-                        minWidth: 0,
-                        maxWidth: 52,
-                        height: 60,
-                        borderRadius: 12,
-                        border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
-                        display: "grid",
-                        placeItems: "center",
-                        fontSize: 26,
-                        fontWeight: 700,
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {code[i] ?? ""}
-                    </span>
-                  );
-                })}
-              </div>
+  if (step.kind === "phone") {
+    return (
+      <div className="m-app">
+        <form
+          className="m-bd"
+          style={{ flex: 1, padding: "40px 20px 20px", gap: 16 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendCode();
+          }}
+        >
+          <MerchantLockup />
+          <h1 className="m-h1" style={{ marginTop: 24 }}>
+            Sign in
+          </h1>
+          <div className="m-fld">
+            <label htmlFor="phone">Phone number</label>
+            <div className="m-in">
+              <b style={{ fontWeight: 600 }}>+263</b>
+              <span style={{ width: 1, height: 22, background: "var(--line)" }} />
               <input
+                id="phone"
                 ref={inputRef}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                required
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                aria-label="6-digit code"
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  margin: 0,
-                  padding: 0,
-                  border: "none",
-                  background: "transparent",
-                  color: "transparent",
-                  caretColor: "transparent",
-                  fontFamily: "inherit",
-                  cursor: "pointer",
-                }}
+                className="m-num"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel-national"
+                aria-label="Phone number"
+                placeholder="77 123 4567"
+                value={formatLocalDigits(digits)}
+                onChange={(e) => setDigits(localDigits(e.target.value))}
               />
             </div>
-            {/* r-merchant.jsx:92-95 — the alarm notice carries the volume glyph. */}
-            <div
-              style={{
-                display: "flex",
-                gap: 9,
-                padding: "11px 13px",
-                background: "var(--accent-wash)",
-                borderRadius: 12,
-                marginBottom: 4,
-                fontSize: 12.5,
-                color: "var(--ink)",
-                lineHeight: 1.45,
-              }}
-            >
-              <Icon name="volume-2" size={17} color="var(--accent-text)" style={{ marginTop: 1 }} />
-              <span>Signing in turns the order alarm on for this tablet. Keep this tab open and the volume up.</span>
+          </div>
+          {error && (
+            <div className="m-alert" role="alert">
+              {error}
             </div>
-            {error && <div style={errorStyle}>{error}</div>}
-            <button type="submit" disabled={busy || code.length !== 6} style={buttonStyle}>
-              {busy ? "Signing in…" : "Sign in & start the alarm"}
-            </button>
-          </form>
-        )}
+          )}
+          <div style={{ flex: 1 }} />
+          <button type="submit" className="m-btn" disabled={busy || digits.length < 9}>
+            {busy ? "Sending…" : "Send code"}
+          </button>
+          <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
+            By continuing you accept the{" "}
+            <a href={`${API_BASE_URL}/legal/privacy`} target="_blank" rel="noreferrer">
+              privacy notice
+            </a>
+            .
+          </p>
+        </form>
       </div>
+    );
+  }
+
+  const active = Math.min(code.length, 5);
+  return (
+    <div className="m-app">
+      <AppBar onBack={wrongNumber} />
+      <form
+        className="m-bd"
+        style={{ flex: 1, padding: "8px 20px 20px", gap: 16 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void signIn(code);
+        }}
+      >
+        <div>
+          <h1 className="m-h1">Enter the code</h1>
+          <p className="m-sub" style={{ marginTop: 8 }}>
+            Sent {step.deliveryChannel === "sms" ? "by SMS" : "on WhatsApp"} to <b style={{ color: "var(--ink)" }}>{formatE164(step.phone)}</b>
+          </p>
+        </div>
+        <div className="m-code">
+          {Array.from({ length: 6 }, (_, i) => (
+            <span key={i} className={i === active ? "m-f" : undefined}>
+              {code[i] ?? ""}
+            </span>
+          ))}
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            aria-label="6-digit code"
+            value={code}
+            onChange={(e) => onCodeChange(e.target.value)}
+          />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+          {resendIn > 0 ? (
+            <span style={{ color: "var(--muted)" }}>
+              Resend in <b className="m-num" style={{ color: "var(--ink)" }}>{`${Math.floor(resendIn / 60)}:${String(resendIn % 60).padStart(2, "0")}`}</b>
+            </span>
+          ) : (
+            <button type="button" className="m-lnk" style={{ fontSize: 13, justifyContent: "flex-start", margin: "-12px 0" }} disabled={busy} onClick={() => void sendCode()}>
+              Resend code
+            </button>
+          )}
+          <button type="button" className="m-lnk" style={{ fontSize: 13, margin: "-12px 0" }} onClick={wrongNumber}>
+            Wrong number?
+          </button>
+        </div>
+        {error && (
+          <div className="m-alert" role="alert">
+            {error}
+          </div>
+        )}
+        <div style={{ flex: 1 }} />
+        <button type="submit" className="m-btn" disabled={busy || code.length !== 6}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
     </div>
   );
 }
 
+/** "+263771234567" → "+263 77 123 4567". */
+function formatE164(phone: string): string {
+  return phone.startsWith("+263") ? `+263 ${formatLocalDigits(phone.slice(4))}` : phone;
+}
+
 /**
  * Where a fresh sign-in lands (merchant web upgrade L1). Membership is read, never the token's role: a
- * number that isn't on a business yet goes to Join when a team invited it (L4), otherwise to "Set up your
- * business", and a shop — which takes no
- * customer orders, so has no Orders board — goes to its setup checklist. Everyone else goes back to
- * what they were opening (`next`), or to Orders. If the check itself fails, fall through to the normal
- * landing, whose own load shows the error with a Retry.
+ * number that isn't on a business yet goes to Join when a team invited it (L4), otherwise to "Set up
+ * your business"; a shop goes to its Orders home. Everyone else goes back to what they were opening
+ * (`next`), or to Orders. If the check itself fails, fall through to the normal landing, whose own
+ * load shows the error with a Retry.
  */
 async function landingPath(next: string | null): Promise<string> {
-  // CWE-601 guard: `next` is an attacker-controllable query param — only ever follow it back to a
-  // genuine in-app path, never a protocol-relative URL that would leave the app.
+  // CWE-601 guard: `next` is attacker-controllable — only ever follow it back to an in-app path.
   const fallback = isSafeMerchantRedirectPath(next) ? next : "/queue";
   try {
     const merchant = await getMyMerchant();
-    // A shop's home is Deliveries (L2), or its setup checklist on an API that can't book riders yet.
     return merchant.businessType === "shop" ? homePath(merchant) : fallback;
   } catch (err) {
     return err instanceof ApiError && err.status === 403 ? await noBusinessPath() : fallback;
   }
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  padding: "0 14px",
-  borderRadius: 12,
-  border: "1.5px solid var(--line)",
-  marginBottom: 14,
-  fontFamily: "inherit",
-};
-
-// Same shape language as every other primary in the app (16/600 on a --radius-button pill).
-const buttonStyle: React.CSSProperties = {
-  width: "100%",
-  height: 52,
-  fontSize: 16,
-  fontWeight: 600,
-  color: "#fff",
-  background: "var(--cta-fill)",
-  border: "none",
-  borderRadius: "var(--radius-button)",
-  cursor: "pointer",
-};
-
-const errorStyle: React.CSSProperties = {
-  color: "var(--danger-ink)",
-  background: "var(--danger-wash)",
-  borderRadius: 10,
-  padding: "10px 12px",
-  fontSize: 13,
-  marginBottom: 14,
-};

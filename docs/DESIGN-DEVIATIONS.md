@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47.** D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48.** D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -2169,3 +2169,56 @@ app still differs. **The owner approved it on 2026-09-29 with PR #986** and its 
 
 **Retire when:** a design export draws an area on the bar or a phone-tier bar (then align to it), or the owner
 rejects a row (then the app changes).
+
+## D-48 · Merchant: the mobile redesign replaces the RM tablet mocks — APPROVED (2026-09-30)
+
+**Owner instruction, this session (2026-09-30):** *"i have redesigned the UI for the merchant web.
+optimised it for mobile since we will move from web to mobile soon. Review this and implement. These
+updated UIs are sources of truth."*
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze
+gates. The design package only *absorbs a new export* here. Nothing in it is edited to match code.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/merchant-mobile/` | The merchant mobile handoff, **verbatim**: README (route map, 28 screens A1–E4, interactions, tokens, new components), the clickable prototype, the screens canvas, `reference/proto.js` (the interaction wiring), the stepper reference, tokens and the three assets. |
+
+### 2 · Authority for the merchant app (a scope rule)
+
+For **merchant** screens the authority chain's LOOK is now this handoff, not the gallery's `RM.*`
+tablet registry: the handoff maps every RM route to its new screen (README "Route map") and says so.
+The merchant canonical viewport becomes **360×720, with the 320px check** (README "Screens": "Common
+frame: 360 × 720"). `RM.*` screens stay in the gallery until a gallery export redraws them; they are
+not aligned to. D-43 to D-47 described the tablet app and retire screen by screen as the redesign
+lands (below).
+
+### 3 · Owner decisions on what the handoff assumes (2026-09-30, asked before building)
+
+| Handoff assumes | Decision |
+|---|---|
+| Built in Expo with the RN design system | **The merchant web (Next.js), mobile-first at 360px.** It ships on the next deploy, keeps the working order logic, and can be wrapped as a native app later. |
+| "Rider secured, start cooking" — a rider found at accept | **Keep dispatch at "Food is ready".** The cooking ticket keeps the prep ring; the rider step follows "Food is ready". |
+| No payment tags; cash back on every order | **Cash only for food orders.** Wallet comes off the customer's food checkout; every food order is collect-and-return with the "Cash back to you" close. The API keeps accepting wallet from installed apps until they update. |
+| Shops receive customer orders | **Not yet.** Shops get the new shell, Book a rider, Items, Money and Account; the customer-orders part appears when shop ordering launches. |
+| No landmark field | **Landmark becomes optional in the API** for merchant locations (and later bookings). Rider-facing payloads still carry a non-empty string (the address line, else the business name), so installed rider apps keep working. |
+| Google Maps | **Google Places (New) for address search and GPS lookup, OpenStreetMap for maps.** Keyless builds fall back to "your current location". |
+| Delivery | **Four phased PRs**, each auto-merging on green: (1) handoff + shell + get-in + Account; (2) Orders, cash back and its backend; (3) Menu, Money, Hours, Team, Riders; (4) shop booking and Items. |
+
+The handoff's "Differences from the customer and rider apps" (8 open items) follow its own suggested
+resolution unless the owner says otherwise: match tracking layout, delivery-code card, stepper time
+placement and status label to the customer app; keep the merchant header and 4 tabs; add the new
+components to the design system.
+
+### 4 · Still different, while the phases land
+
+| Where | Handoff | App now | Retires with |
+|---|---|---|---|
+| Orders, Menu, Money and the Account sub-pages (Shop front, Hours, Riders, Team) | redrawn (B1–B7, C1–C3, C5, E2–E4) | the older screen bodies inside the new phone shell and tab bar | PR 2 and PR 3 |
+| Shop Orders home, Book a rider, Offers, Tracking, Items | redrawn (D1–D5, D7, E1) | the older screens inside the new shell | PR 4 |
+| A3 "What do you sell?" | Restaurant or Shop only | same; a shop is stored with kind `other` (the API's kind field stays for ops) | — (a record) |
+| Account, staff | "Staff should not see Money or Team (not drawn)" | Money and Team hidden; a staff member also gets **Leave this business**, the one action the old person menu held with no other home | a design export that draws it |
+
+**Retire when:** all four phases have merged and a gallery export carries the merchant screens (then
+the RM registry is replaced and this entry shrinks to the sync record).

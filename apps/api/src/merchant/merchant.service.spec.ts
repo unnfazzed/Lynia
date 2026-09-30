@@ -119,6 +119,23 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     expect(h.merchant()).toMatchObject({ businessType: "restaurant", shopKind: null, cashRule: "pay_upfront" });
   });
 
+  it("D-48: takes a location with no landmark, storing the address line — or the business name — as the landmark riders read", async () => {
+    const h = harness();
+    const at = { point: PIN.point, contactPhone: PIN.contactPhone };
+    await h.s.becomeMerchant("p1", body({ location: { ...at, address: "5th Street, Mbare" } }));
+    expect(h.merchant()!.location).toEqual({ ...at, landmark: "5th Street, Mbare" });
+
+    const h2 = harness();
+    await h2.s.becomeMerchant("p1", body({ location: at }));
+    expect(h2.merchant()!.location).toEqual({ ...at, landmark: "Siyaso Spares" });
+  });
+
+  it("D-48: a shop signed up without a kind (the mobile 'What do you sell?' asks only restaurant or shop) is stored as `other`", async () => {
+    const h = harness();
+    await h.s.becomeMerchant("p1", body({ shopKind: undefined }));
+    expect(h.merchant()).toMatchObject({ businessType: "shop", shopKind: "other" });
+  });
+
   it("409s already_member for a caller already on a business (a lost-response retry the web treats as success)", async () => {
     const s = svc({
       profile: { findUnique: async () => ({ firstName: "", lastName: "", onHold: false, rider: null }) },

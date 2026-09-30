@@ -29,7 +29,7 @@ import type {
   UpdateMerchantProfileRequest,
   Waypoint,
 } from "@lynia/shared";
-import { haversineKm, RESTAURANTS_COMMISSION, roundToCents, SERVICE_CORRIDOR } from "@lynia/shared";
+import { haversineKm, merchantWaypoint, RESTAURANTS_COMMISSION, roundToCents, SERVICE_CORRIDOR } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
@@ -200,8 +200,9 @@ export class MerchantService {
             ownerProfileId: profileId,
             cashRule: body.cashRule ?? "collect_and_return",
             businessType: body.businessType,
-            shopKind: body.businessType === "shop" ? (body.shopKind ?? null) : null,
-            location: body.location as Prisma.InputJsonValue,
+            // D-48: the mobile sign-up asks only restaurant or shop, so a shop without a kind is `other`.
+            shopKind: body.businessType === "shop" ? (body.shopKind ?? "other") : null,
+            location: merchantWaypoint(body.location, body.name) as Prisma.InputJsonValue,
           },
           select: { id: true },
         });
@@ -277,12 +278,13 @@ export class MerchantService {
   }
 
   /** C2: the shop's own pickup point — required before placeOrder can price a trip (N-01 needs a
-   *  distance). Same Waypoint shape as a parcel's pickup. */
+   *  distance). Stored in the same Waypoint shape as a parcel's pickup; the landmark is optional on the
+   *  way in (D-48) and `merchantWaypoint` fills it from the address line or the business name. */
   async updateLocation(profileId: string, body: UpdateMerchantLocationRequest): Promise<MerchantProfileResponse> {
     const merchant = await this.findOwnMerchantOrThrow(profileId);
     const updated = await this.prisma.merchant.update({
       where: { id: merchant.id },
-      data: { location: body.location as Prisma.InputJsonValue },
+      data: { location: merchantWaypoint(body.location, merchant.name) as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
     return await this.toProfileResponse(updated, merchant);

@@ -35,6 +35,10 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 # Optional (merchant web upgrade L2): the support WhatsApp number behind the Help item; empty hides it.
 ARG NEXT_PUBLIC_SUPPORT_WHATSAPP=""
 ENV NEXT_PUBLIC_SUPPORT_WHATSAPP=$NEXT_PUBLIC_SUPPORT_WHATSAPP
+# Optional (merchant mobile redesign, D-48): a browser Google key for Places (New) + Geocoding, behind
+# the sign-up's address search and "Use my current location" naming. Empty: search hides, GPS still works.
+ARG NEXT_PUBLIC_GOOGLE_PLACES_KEY=""
+ENV NEXT_PUBLIC_GOOGLE_PLACES_KEY=$NEXT_PUBLIC_GOOGLE_PLACES_KEY
 COPY . .
 RUN pnpm --filter @lynia/shared build \
  && pnpm --filter @lynia/merchant build

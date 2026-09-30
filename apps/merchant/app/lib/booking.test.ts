@@ -52,10 +52,10 @@ describe("bookingsAvailable (the web follows the API, whichever deploys first)",
 });
 
 describe("homePath (where a signed-in business lands)", () => {
-  it("sends a restaurant to Orders, and a shop to Deliveries once the API can book riders, else its checklist", () => {
+  it("sends a restaurant to Orders and a shop to Deliveries — there is no setup checklist any more (D-48)", () => {
     expect(homePath(merchantProfile())).toBe("/queue");
     expect(homePath(merchantProfile({ location: null }))).toBe("/queue");
-    expect(homePath(merchantProfile({ businessType: "shop" }))).toBe("/setup");
+    expect(homePath(merchantProfile({ businessType: "shop" }))).toBe("/deliveries");
     expect(homePath(merchantProfile({ businessType: "shop", location: null }))).toBe("/deliveries");
   });
 });

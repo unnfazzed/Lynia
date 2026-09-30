@@ -103,12 +103,12 @@ describe("QueuePage routes by membership (merchant web upgrade L1)", () => {
     expect(screen.queryByText("This number isn't on a business on LyniaGo yet.")).toBeNull();
   });
 
-  it("a shop goes to its setup checklist instead of an Orders board (API that can't book riders yet)", async () => {
+  it("a shop goes to Deliveries instead of an Orders board, whatever the API serves (D-48)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
 
     render(<QueuePage />);
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/setup"));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
     expect(screen.queryByText("Orders")).toBeNull();
   });
 

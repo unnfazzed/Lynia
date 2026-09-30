@@ -105,7 +105,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   The screen that forced this was `RJ photo_capture`, whose ✕ was the only exit from a full-bleed
   camera (see D-35). Sizes come from the token, never a literal: `var(--target-min)`, not `44`.
 - **Canonical viewports.** Phone registries (LJ/RC/RJ/RJM/RR) **360×720**, with the mandatory
-  **320×640** entry-phone check. Merchant tablet (RM) **1024×680**. Admin **1440×900**.
+  **320×640** entry-phone check. Admin **1440×900**. **Merchant is now a phone app too (360×720 +
+  320px):** the 2026-09-30 mobile redesign (`packages/design/handoff/merchant-mobile/`, ledger D-48)
+  replaces the RM tablet mocks (1024×680) as the merchant authority. Align merchant screens to that
+  handoff's README and prototype, not to `RM.*`.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

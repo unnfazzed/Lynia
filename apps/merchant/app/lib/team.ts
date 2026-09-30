@@ -63,3 +63,9 @@ export function validateJoinName(name: string): string | null {
   if (n.length > 60) return "Keep it under 60 letters.";
   return null;
 }
+
+/** The Account avatar's letters (merchant-mobile C4): "Sadza Republic" → "SR"; one word → its first two. */
+export function initials(name: string): string {
+  const [first = "", second = ""] = name.trim().split(/\s+/).filter(Boolean);
+  return (second ? first.charAt(0) + second.charAt(0) : first.slice(0, 2)).toUpperCase();
+}
