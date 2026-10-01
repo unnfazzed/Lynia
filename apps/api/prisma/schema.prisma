@@ -991,8 +991,9 @@ model Merchant {
   // restaurant (0064, owner decision 2026-10-01); the kitchen (in the app, or LyniaGo ops by phone)
   // confirms each order before a rider is sent.
   autoAccept     Boolean          @default(true) @map("auto_accept")
-  // The restaurant agreed to show its phone number to customers with a live order.
-  showPhoneToCustomers Boolean    @default(false) @map("show_phone_to_customers")
+  // The restaurant's number is shown to customers with a live order. On for every restaurant (0064,
+  // owner decision 2026-10-01); a restaurant can turn it off in Account → Taking orders.
+  showPhoneToCustomers Boolean    @default(true) @map("show_phone_to_customers")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
   // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
   // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).

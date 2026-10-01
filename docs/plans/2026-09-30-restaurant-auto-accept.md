@@ -15,12 +15,12 @@ time rather than make the app a condition of joining.
 **Setup.** None: **Accept orders automatically** is on for every restaurant, existing and new (migration 0064,
 owner decision 2026-10-01). A restaurant that wants the 3:00 accept window back turns it off itself (merchant app:
 Account → Taking orders), or ops do it (admin: merchant page → Taking orders). **Show our number to customers**
-is on only if the restaurant agreed. Opening hours are enforced by the server when set; a restaurant with none
+is on for every restaurant too (0064, owner decision 2026-10-01); a restaurant can turn it off. Opening hours are enforced by the server when set; a restaurant with none
 set reads as open.
 
 1. **The customer orders.** Accepted only inside the restaurant's hours (Harare time). The order goes
    straight to cooking at the restaurant's usual prep time (`prepBaselineMinutes`, else 20 min, plus 10 in
-   busy mode). The customer sees "Confirming", can cancel free, and can call the restaurant if it agreed.
+   busy mode). The customer sees "Confirming", can cancel free, and can call the restaurant.
 2. **The kitchen is confirmed.** No rider is sent until one of:
    - the restaurant taps **Got it, we're making it** (or **Food is ready**) in the merchant app;
    - ops phone the restaurant from **Orders to confirm** in the admin console and tap **Confirmed**.
@@ -43,11 +43,11 @@ set reads as open.
 | 2 | "Collected" without proof | Geofence (`RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM`, 150 m); the generic `advance(picked_up)` is refused for food orders, so no path skips the check or the debt |
 | 3 | Orders at a closed kitchen | `placeOrder` checks the weekly hours in Harare time (`harareWallClock`), not only the manual Closed switch |
 | 4 | Ops can't act for restaurants | Admin call list, confirm, no answer, edit items, order settings; an ops cancel of a food order now clears kitchen/dispatch state and notifies customer, rider and restaurant |
-| 5 | Phone numbers exposed | Customers see the restaurant's number only with `showPhoneToCustomers`; the payment number only on wallet orders; the customer's number is on the restaurant's own views only |
+| 5 | Phone numbers exposed | Customers see the restaurant's number only while `showPhoneToCustomers` is on (default on; the restaurant can turn it off), and only on the customer's own order; the payment number only on wallet orders; the customer's number is on the restaurant's own views only |
 
 ## Where it lives
 
-- Schema: `merchants.auto_accept` (default on, 0064), `merchants.show_phone_to_customers`; `orders.auto_accepted`,
+- Schema: `merchants.auto_accept` (default on, 0064), `merchants.show_phone_to_customers` (default on, 0064); `orders.auto_accepted`,
   `kitchen_confirmed_at/by`, `kitchen_escalated_at`, `ops_no_answer_at`, `items_edited_at` (migration 0063).
 - Config: `RESTAURANTS_AUTO_ACCEPT` in `packages/shared/src/restaurants-order.ts`.
 - API: `FoodOrderService` (`placeOrder`, `cancelUnpaid`, `confirmKitchenAsMerchant`, `editItems`,
