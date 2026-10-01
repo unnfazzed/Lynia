@@ -187,6 +187,34 @@ export class OffersService {
     }
   }
 
+  /**
+   * Rider v2 J10: the rider withdraws their own pending offer while the customer is still choosing. The
+   * offer is marked `declined` (it leaves the customer's list, which shows pending offers only) rather
+   * than deleted, so the one-round rule — the unique (order, rider) index — still stops a second bid.
+   * Allowed only while the order is open and the offer still pending; serialised against selectOffer
+   * by the same order-row lock makeOffer takes, so a withdraw can never race a pick.
+   */
+  async withdrawOffer(orderId: string, riderId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ status: string }>>(
+        Prisma.sql`SELECT status FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`,
+      );
+      if (locked.length === 0) throw new NotFoundException("Order not found");
+      if (locked[0].status !== "open_for_offers") throw new ConflictException("The customer has already chosen");
+      const offer = await tx.offer.findUnique({
+        where: { orderId_riderId: { orderId, riderId } },
+        select: { id: true, status: true },
+      });
+      if (!offer) throw new NotFoundException("No offer to withdraw");
+      if (offer.status !== "pending") throw new ConflictException("This offer is already closed");
+      await tx.offer.update({ where: { id: offer.id }, data: { status: "declined" } });
+      return { orderId, withdrawn: true as const };
+    }).then((res) => {
+      this.safeEmitOffersChanged(orderId);
+      return res;
+    });
+  }
+
   /** Fire-and-forget offers-changed push (§5c). The gateway is best-effort, but wrap it so a WS
    *  failure can never surface into the just-committed offer create. */
   private safeEmitOffersChanged(orderId: string): void {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import { MakeOfferRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -24,6 +24,13 @@ export class OffersController {
     @CurrentUser() riderId: string,
   ) {
     return this.offers.makeOffer({ ...body, orderId }, riderId);
+  }
+
+  /** Rider v2 J10: withdraw the caller's own pending offer (until the customer chooses). */
+  @Delete("mine")
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "offer-withdraw" })
+  withdraw(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() riderId: string) {
+    return this.offers.withdrawOffer(orderId, riderId);
   }
 
   @Get()

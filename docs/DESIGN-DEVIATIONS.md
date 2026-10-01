@@ -2700,6 +2700,31 @@ lands; D-30 (no manual refreshing anywhere) stands and the handoff draws it too.
   top-up notices. "Load older" is gone.
 - **Top up (T1–T6)**: Provider → Amount → Phone → Approve with the step bar, then Done / Failed.
 
+### 3b · What has landed (part 2)
+
+- **Jobs board (J1–J14)**: MintTop with the Conn dot and the detected place; a full-bleed map with the
+  busy zones (dashed accent circles, the busiest labelled), a job pin per card (fare pill, selected =
+  ink) and the rider's own marker; the board sheet (`OrderSheet`, peek 50% of the screen, 44% when
+  empty) holding the notifications-off row, the stale / load-failed / no-fix notices, the active-job
+  bar, YOUR OFFERS (offer sent, waiting, Withdraw → hidden at once with a 5 s Undo, then the API) above
+  NEARBY JOBS (km to pickup, asking fare, route, trip km · item, Make an offer); the empty state (J4) with
+  "Why is it quiet?" and the busy-zone pointer. Resolution toasts: not chosen, offer expired, taken. The
+  "picked you" sheet (J11) is locked and opens the job. Always online; nothing to refresh.
+- **Make an offer (O1–O4)**: its own pushed screen (`app/rider/offer/[jobId].tsx`) with the Send v2 price
+  step — route strip, "<name> is asking", a tap-to-type fare in cents (− / + $0.50, min $0.50) with the
+  usual-band bar and the well-above warning, ETA chips 5/10/15/20 (10 preselected), the one-offer notice,
+  "Send offer · $x" + "Skip this job"; a failed send keeps the rider there with Try again.
+- **Gates (G1–G14)**: one resolver (`logic/rider-gate.ts`) in the handoff's priority order, one Gate
+  component (72 disc, title, body, facts box, primary / ghost / the "Order food and send parcels" bridge
+  ghost). Every gate clears on its own when its input changes.
+- **API**: `DELETE /orders/:id/offers/mine` withdraws a pending offer while the order is still open for
+  offers (declined, with an offers-changed emit); open orders and the rider's order snapshot carry the
+  customer's first name (`customerFirstName`) for "Rudo is asking" / "Rudo picked you!".
+
+The gallery keys this replaces are recorded as SUPERSEDED deferrals in `tools/parity/codegen/adopted.mjs`
+(`RJM.board`, `RJM.board_empty`, `RJM.offer_parcel`; deferral baseline 76 → 78) and as ⏭ rows in the
+tracker. D-29 (the 8c board header) is superseded by the MintTop board.
+
 ### 4 · Still different from the handoff (part 1)
 
 | Where | Handoff | App | Why |
@@ -2713,11 +2738,15 @@ lands; D-30 (no manual refreshing anywhere) stands and the handoff draws it too.
 | Top-up number edit sheet | Not drawn | A sheet with the provider chips, the number field and "Save" | The row needs somewhere to edit; one undrawn string (`save`) |
 | Test alarm | The looping food-offer alarm | One local notification with sound + a strong haptic | The looping alarm ships with the food offer (part 2) |
 | `/dev/rider-states` | Asked for by the build plan | Not shipped | No dev-only route in the production bundle (as D-53) |
+| Busy zones on the board map (J1/J4) | Dashed zones + "Busy" + "Busiest near Avondale · 1.2 km" | Not drawn | No demand endpoint yet (`getDemandZones` returns none, `TODO(backend)`); the zones and the pointer appear the day it does |
+| Usual-band bar (O1) | Server band for the trip | A band derived on the phone from the asking fare (`fareBand`) | No fare-band endpoint |
+| Unknown sender name | "Rudo" | "The sender" (one undrawn string, `theSender`) | An order whose customer has no first name on file |
+| Force update (G15) | A gate on the board | The app-wide force-update screen, which runs before any tab mounts | Already shipped; same copy |
 
 ### 5 · Still to land (follow-up PRs, same handoff)
 
-The Jobs board (map + demand + sheet), Make an offer, the gates (G1–G15), the active job (A/B/X), the
-food offer (F1–F4), Bike & documents (S5), Help & support (S6), and the customer Home live-job bar (C5).
+The active job (A/B/X), the food offer (F1–F4), Bike & documents (S5), Help & support (S6), and the
+customer Home live-job bar (C5).
 Until each lands, its current screen stays as it is.
 
 **Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw

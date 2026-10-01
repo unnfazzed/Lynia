@@ -1889,109 +1889,31 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RJM.board — the rider job BOARD list (app/rider/(tabs)/index.tsx `RiderHome`). The FIRST
-    // region-adoption of the rider-one-app.jsx (RJM) family. The mock `board` is
-    //   S( div( AppBar "Jobs near you"·bell, OnlinePill, Pad( JOBS.map(j => <JobCard {...j}/>) ) ), {tab:"jobs"} )
-    // — an AppBar, a compact online-status pill, then ONE tagged job-card list. Only the LIST is
-    // region-adopted here (display structure, no accept-logic): the mock's `JobCard` composite is the
-    // app's own `src/ui/rider/JobCard` (imported from its OWN module, NOT the src/ui barrel, to avoid
-    // the `no-circular` depcruise violation — see emit.mjs NON_BARREL), which already mirrors the mock's
-    // TypeTag + km + Money + route-line + note + action anatomy. `JobCard` normalizes to an opaque leaf
-    // (JOBCARD), so the region reduces to MAP(JOBCARD) on both sides.
-    //
-    // WHY this needed two composition-path guardrail fixes (normalize.mjs), NOT app-logic changes:
-    //   (1) the RJM mocks return `S(<div>…</div>, opts)`, a render-helper shell; `jsxRootNode` unwraps
-    //       it to the bare `<div>` so locators walk the body, which left the mock COMPOSITION SCREEN-less
-    //       while the app roots at `<AppScreen>` (SCREEN). `mockCompositionTree` now folds the S() shell
-    //       to SCREEN (mirroring the normalized-tree path's renderHelperUnwrap), so both sides root at
-    //       SCREEN(REGION:list). (2) `RiderHome` DEFINES a helper component (ActiveJobCheckFailedBanner)
-    //       above its default export, which `findFirstRenderer` picked as "the container"; the composition
-    //       check now uses `findContainerRenderer` (prefer the default export). Both fixes touch only the
-    //       parity engine, are inert for the existing 32 (their default export already IS the first
-    //       renderer; none use the S() shell in a region), and change NO app behaviour.
-    //
-    // SENSITIVE-AREA PRESERVATION: the board list carries NO accept/agreed-price/assignment logic — a
-    // parcel card's action is `chooseOrder(o)`, which opens the OFFER-COMPOSE card (the auction seam);
-    // that handler is preserved BYTE-IDENTICAL and passed in as the row's `onAction`. The virtualized
-    // happy-path list (the `showOpenOrdersList` early-return FlatList, B-O1b) is UNTOUCHED — the region
-    // view mounts in the container's fallback/main branch (the one the composition check reduces, i.e.
-    // the LAST return), where the mock's plain `.map` is the faithful, non-nested realization (a plain
-    // map, not a FlatList, since it renders inside the main ScrollView — no nested-VirtualizedList).
+    // ── RJM.board — the rider Jobs tab (app/rider/(tabs)/index.tsx). Until 2026-10-01 its job LIST was a
+    // region-adopted view (board-list.view.tsx) generated from `rider-one-app.jsx :: board`. D-54 made the
+    // owner's Rider v2 handoff (packages/design/handoff/rider-v2/) the authority: a full-bleed map with busy
+    // zones and job pins, and a sheet of job cards (YOUR OFFERS / NEARBY JOBS) in place of the AppBar +
+    // OnlinePill + list. The generated view was deleted with the old tree; the gallery key is recorded
+    // here as a SUPERSEDED deferral until an export redraws it.
     key: "RJM.board",
     container: "apps/mobile/app/rider/(tabs)/index.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "board",
     uiImport: "../../../src/ui",
-    regions: [
+    states: [],
+    deferred: [
       {
-        region: "list",
-        locator: { map: "JobCard" },
-        componentName: "RiderBoardListView",
-        viewFile: "apps/mobile/app/rider/(tabs)/board-list.view.tsx",
-        propsParam: "{ jobs }: RiderBoardListViewProps",
-        propsType: [
-          "/** One board row's data seam — the app `JobCard`'s props verbatim, plus the stable order `id`",
-          " *  the list keys by and the `onAction` the container wires (a parcel card → the offer-compose",
-          " *  seam `chooseOrder`, preserved byte-identical). The mock's `JobCard` composite folds to the",
-          " *  app's `src/ui/rider/JobCard`, which carries the same TypeTag/route/note/action anatomy. */",
-          "export type RiderBoardJob = {",
-          "  id: string;",
-          '  jobType: "parcel" | "food";',
-          "  from: string;",
-          "  to: string;",
-          "  distanceLabel: string;",
-          "  fare: string;",
-          "  note: string;",
-          "  actionLabel: string;",
-          "  onAction: () => void;",
-          "};",
-          "export type RiderBoardListViewProps = {",
-          "  jobs: RiderBoardJob[];",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          // Swap the mock's frozen `JOBS` array for the live `jobs` prop, key each row by its stable
-          // order id (the mock keyed by array index — `ranked` reorders, so id is the correct key), and
-          // drop the now-unused index param. The `{...j}` spread stays: each `jobs` item already carries
-          // exactly the app JobCard's props (+ id/onAction), so the row is `<JobCard {...j}/>` — a JOBCARD
-          // leaf either way, structurally invisible to the diff. No structural edit; pure data seam.
-          CallExpression(path) {
-            const callee = path.node.callee;
-            if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
-            if (!(callee.object.type === "Identifier" && callee.object.name === "JOBS")) return;
-            callee.object = expr("jobs");
-            const arrow = path.node.arguments[0];
-            if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
-            const row = arrow.body.type === "JSXElement" ? arrow.body : null;
-            if (!row || row.openingElement.name.name !== "JobCard") return;
-            if (arrow.params.length >= 2) arrow.params = arrow.params.slice(0, 1);
-            row.openingElement.attributes = row.openingElement.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && a.name.name === "key"),
-            );
-            row.openingElement.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("key"), t.jsxExpressionContainer(expr("j.id"))));
-          },
-        }),
+        state: "data",
+        key: "RJM.board",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the Jobs tab is now the Rider v2 handoff's J1–J14 — MintTop, a full-bleed map (busy zones, job pins in sync with the cards, the rider's own marker) and a draggable sheet of job cards: YOUR OFFERS (offer sent, waiting, Withdraw with a 5 s Undo) above NEARBY JOBS (km to pickup, asking fare, route, Make an offer). The gallery `board` draws AppBar 'Jobs near you' + OnlinePill + a JobCard list; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 board.",
       },
     ],
   },
   {
-    // ── RJM.board_empty — the "online, nothing in range yet" empty state of the board container
-    // (app/rider/(tabs)/index.tsx `RiderHome`). DEFER-ONLY as of docs/DESIGN-DEVIATIONS.md D-30,
-    // because the app deliberately draws ONE NODE FEWER than the mock. The mock `board_empty` is
-    //   S( div( AppBar "Jobs near you", OnlinePill, Pad( Card( EmptyState icon="inbox" … · ghost "Refresh" ) ) ), {tab:"jobs"} )
-    // and this region WAS adopted as CARD(EMPTYSTATE(BUTTON)) — the BUTTON being that ghost "Refresh",
-    // wired to `openQ.refetch()`. The owner's standing 2026-08-16 instruction is that there is no manual
-    // refreshing anywhere in the app; #755 removed the eight "Refresh status" buttons under it, and this
-    // one survived that sweep only because it is labelled plain "Refresh" and lives in its own view file.
-    // With the button gone the committed view is CARD(EMPTYSTATE) while the mock still draws the BUTTON,
-    // and `snapshot.mjs` compares the RAW mock fragment against the committed view with no escape hatch
-    // for a deliberately-undrawn node (`normalize.mjs` has no skip/undrawn concept). An adopted region
-    // would therefore be permanently red, so the region is WITHDRAWN rather than the guardrail weakened:
-    // the honest record is this deferral plus the `undrawn` entry on tools/parity/expected/RJM.board_empty.json
-    // that the rendered-conformance lane reads. `board-empty.view.tsx` is hand-maintained from here and
-    // keeps the mock's Card wrapper — the structural win the region was adopted for — so only the button
-    // is lost, not the geometry. Re-adoptable the moment an export redraws `board_empty` without the
-    // Refresh button (then delete D-30), or once the codegen model can carry a ledgered undrawn node.
+    // ── RJM.board_empty — the empty Jobs board. Was deferred under D-30 (the mock's ghost "Refresh");
+    // since 2026-10-01 the Rider v2 handoff's J4 redraws the empty state inside the board sheet (inbox
+    // disc + "Nothing in range yet", the why-is-it-quiet line and the busy-zone pointer, over the map),
+    // so the gallery key is a SUPERSEDED deferral (D-54) and board-empty.view.tsx is deleted.
     key: "RJM.board_empty",
     container: "apps/mobile/app/rider/(tabs)/index.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
@@ -2002,7 +1924,7 @@ export const ADOPTED = [
         state: "board_empty",
         key: "RJM.board_empty",
         reason:
-          "the mock draws Card(EmptyState(ghost 'Refresh')) and the app draws Card(EmptyState) — one drawn node fewer, by the owner's standing 2026-08-16 instruction that there is NO manual refreshing anywhere (#755 removed the eight 'Refresh status' buttons under that instruction; this one survived only because it is labelled plain 'Refresh' and lives in its own view file). Ledgered as docs/DESIGN-DEVIATIONS.md D-30 and recorded as an `undrawn` entry on tools/parity/expected/RJM.board_empty.json. NOT expressible as an adopted region: snapshot.mjs compares the raw mock fragment to the committed view and normalize.mjs has no skip/undrawn concept, so the region would be permanently red — withdrawn rather than weakening the guardrail to fit. The mock's Card wrapper (the structural win of the original adoption) is kept in the now hand-maintained board-empty.view.tsx. Re-adoptable once an export redraws board_empty without the button, or once the codegen model can carry a ledgered undrawn node through the snapshot.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the empty board is now the Rider v2 handoff's J4 — the same map with busy zones and the sheet at 44%, holding the inbox disc, 'Nothing in range yet', the body copy, 'Why is it quiet?' and the busiest-zone pointer. The gallery `board_empty` draws AppBar + OnlinePill + Card(EmptyState(ghost 'Refresh')); the Refresh was already undrawn under D-30. Re-adoptable when a gallery export draws the v2 empty board.",
       },
     ],
   },
@@ -2137,117 +2059,22 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RJM.offer_parcel — the rider's PARCEL offer-compose card (app/rider/(tabs)/index.tsx `RiderHome`:
-    // the `selected` compose card + its Send/Skip footer). ADOPTED this pass (region `offer`). This is the
-    // AGREED-PRICE / auction seam — the rider names a fare and an ETA and `makeOffer` submits the bid — so
-    // the adoption is presentational ONLY: the mock's Card element TREE is adopted; every money/assignment
-    // handler is forwarded UNCHANGED. The mock `offer_parcel` (rider-one-app.jsx J5) is
-    //   S( div( AppBar 'Parcel job'·sub, Pad( Card(
-    //        div( TypeTag · spacer · 'Sender asking' · Money ),
-    //        Field 'Your fare (USD)', Field "You'll be there in" ) ) ),
-    //      { footer: div( Button 'Send offer', ghost 'Skip this job' ) } )
-    // The offer CARD is the region adopted here (locator {el:"Card"} → RiderOfferParcelCardView), reducing on
-    // both sides to CARD( BOX[ai:center,row](TYPETAG, BOX[flex1], TEXT, MONEY), FIELD, FIELD ). `TypeTag` is
-    // the shared tokens-only DS primitive (src/ui/rider/TypeTag) the generated view imports from its OWN
-    // module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), reused verbatim from offer_food.
-    //
-    // LIVE-vs-STATIC (owner 2026-08-11): the mock draws a routed screen (AppBar 'Parcel job' + an
-    // 'Eastgate → Avenues · 3.1 km' route sub, then the Card); the app realizes the SAME compose step as an
-    // INLINE card on the board — there is no routed offer screen; the rider taps a board row, `chooseOrder`
-    // opens the compose card in place. So the mock's Card TREE is adopted and kept in the board container;
-    // the AppBar/route sub is not realized (the inline card has no AppBar), and the footer Send/Skip pair —
-    // carried in the mock's `S(…,{footer})` opts, which the region locators do not reach (jsxRootNode unwraps
-    // S() to its body) — stays container glue in the board's ScrollView/FlatList footer, pruned from the
-    // composition (which reduces on both sides to SCREEN(REGION:offer)). This is the SAME container that
-    // already region-adopts RJM.board (list) + RJM.board_empty (empty); each composition check anchors ONLY
-    // its own region component and prunes the others, so the three stay independent on the one container
-    // (the RC.menu + RC.closed_interrupt precedent).
-    //
-    // NOT-DRAWN⇒NOT-RENDERED — and why it changes NO money logic: the pre-adoption app card drew (a) two
-    // header Text lines (route + itemDesc) and (b) a segmented "Accept $X / Offer a different price" tablist
-    // that conditionally HID the fare field. The mock draws NEITHER — it draws ONE always-visible "Your fare
-    // (USD)" field and derives accept-vs-counter from the fare VALUE, exactly as `makeOffer`'s mutationFn
-    // already does (`fareNum === Number(proposedFare) ? "accept" : "counter"`). The tablist never fed
-    // `makeOffer` (which reads the fare, not `offerMode`), so it is an IA affordance the mock retired, not an
-    // agreed-price gate; removing it is presentation-only. `offerMode` state + its bid-draft persistence are
-    // kept BYTE-IDENTICAL (still set by `chooseOrder`/draft-restore, still saved) — only the toggle that
-    // rendered it is gone, and the fare field is now always shown (seeded with the asking price by
-    // `chooseOrder`, as before, so the default one-tap "Send offer" still submits fare == asking → "accept").
-    //
-    // TWO leaf seams (structurally invisible): the header Money `v` → the sender's `proposedFare`, and the
-    // two Fields' value/onChangeText/keyboardType → the live `fare`/`eta` compose state. The fare field's
-    // mock hint ("Riders here usually get $2.96 on this distance…") names a market figure the app does NOT
-    // model, so it is wired as a container-owned `fareHint` leaf (honest copy) rather than shipping the
-    // fabricated $2.96 — the same live-vs-static leaf treatment board_empty's message used (the normalizer
-    // drops text, so the swap is invisible to the diff). The ETA field's hint ("Be honest — arriving late is
-    // what loses you the next job.") is honest and kept VERBATIM.
-    //
-    // SENSITIVE-PATH PRESERVATION (byte-identical): `offerM`/`makeOffer(selected.id, { type, offeredFare,
-    // etaMinutes })`, the accept-vs-counter type derivation, the `fare`/`eta`/`offerMode` compose state, the
-    // `canOffer` gate, `recordSentOffer` + the one-offer-per-job rule (`bidIds` filtering `ranked`), the
-    // idempotency-409 reconciliation and the closed-window handling are ALL unchanged — the container
-    // forwards the existing handlers into the new tree. The Send button keeps its exact
-    // `canOffer && offerM.mutate({ fare, fareNum, etaNum })` onPress; the ghost "Skip this job" keeps the old
-    // Cancel's `setSelected(null)` + in-flight guard (label is mock copy verbatim, handler identical).
+    // ── RJM.offer_parcel — the parcel offer compose. Until 2026-10-01 it was an INLINE card on the board
+    // (offer-parcel-card.view.tsx, region-adopted from `rider-one-app.jsx :: offer_parcel`). The Rider v2
+    // handoff's O1–O4 move it to its own pushed screen (app/rider/offer/[jobId].tsx) with the Send v2
+    // price step; the agreed-price seam (makeOffer accept/counter, the one-offer-per-job rule) moved with
+    // it and is pinned by app/rider/offer/__tests__/offer.test.tsx. SUPERSEDED deferral (D-54).
     key: "RJM.offer_parcel",
-    container: "apps/mobile/app/rider/(tabs)/index.tsx",
+    container: "apps/mobile/app/rider/offer/[jobId].tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "offer_parcel",
     uiImport: "../../../src/ui",
-    regions: [
+    states: [],
+    deferred: [
       {
-        region: "offer",
-        locator: { el: "Card" },
-        componentName: "RiderOfferParcelCardView",
-        viewFile: "apps/mobile/app/rider/(tabs)/offer-parcel-card.view.tsx",
-        propsParam: "{ proposedFare, fare, onChangeFare, fareHint, eta, onChangeEta }: RiderOfferParcelCardViewProps",
-        propsType: [
-          "export type RiderOfferParcelCardViewProps = {",
-          "  /** The sender's asking price (the mock header Money). */",
-          "  proposedFare: string | number | null | undefined;",
-          "  /** The rider's fare bid — the always-shown \"Your fare (USD)\" field (seeded with the asking price). */",
-          "  fare: string;",
-          "  onChangeFare: (v: string) => void;",
-          "  /** Honest fare hint — the mock's \"$2.96 usual\" market figure is not modelled, so the container",
-          "   *  feeds its own copy (structurally invisible; the normalizer drops text). */",
-          "  fareHint?: string;",
-          "  /** The rider's ETA-to-pickup in minutes — the \"You'll be there in\" field. */",
-          "  eta: string;",
-          "  onChangeEta: (v: string) => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            const name = path.node.name.name;
-            if (name === "Money") {
-              // The lone header Money (the "Sender asking" figure) → the live proposedFare.
-              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
-              path.node.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr("proposedFare"))));
-            }
-            if (name === "Field") {
-              const labelAttr = path.node.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "label");
-              const label = labelAttr && labelAttr.value && labelAttr.value.type === "StringLiteral" ? labelAttr.value.value : "";
-              const isFare = label === "Your fare (USD)";
-              // Drop the kit's web props (value/onChange/inputMode); on the fare field also drop the mock's
-              // fabricated-figure hint (re-wired as the honest `fareHint` leaf below). The ETA field keeps
-              // its honest mock hint verbatim.
-              path.node.attributes = path.node.attributes.filter(
-                (a) => !(a.type === "JSXAttribute" && (["value", "onChange", "inputMode"].includes(a.name.name) || (isFare && a.name.name === "hint"))),
-              );
-              if (isFare) {
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("fare"))));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangeFare"))));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("decimal-pad")));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("hint"), t.jsxExpressionContainer(expr("fareHint"))));
-              } else {
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("eta"))));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangeEta"))));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("number-pad")));
-                path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("maxLength"), t.jsxExpressionContainer(expr("3"))));
-              }
-            }
-          },
-        }),
+        state: "data",
+        key: "RJM.offer_parcel",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): Make an offer is now the Rider v2 handoff's O1–O4 — a pushed screen (route strip, '<name> is asking $x', a 56/700 tap-to-type fare with − / + $0.50 and the usual-band bar, four ETA chips, the one-offer notice, then 'Send offer · $x' + 'Skip this job'). The gallery `offer_parcel` draws an inline Card on the board with a fare field and an ETA field; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 offer screen.",
       },
     ],
   },

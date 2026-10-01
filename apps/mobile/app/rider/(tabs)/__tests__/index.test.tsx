@@ -1,17 +1,11 @@
 /**
- * B-O1b: the rider board's "Open orders" list was a plain ScrollView + `.map()` over up to 50
- * `JobCard`s — same unbounded-concurrent-mount shape B-O1 fixed for history/notifications and B-T3
- * fixed for the restaurant catalog. Converting it needed a real structural split (this screen carries
- * the whole KYC/location/online-gate ternary tree around the list, with zero prior test coverage), so
- * this pins two things: (1) the online/verified/no-gate state renders the open-orders list through a
- * single FlatList carrying the full dataset, and (2) every gated state (not yet a verified rider,
- * location denied, online-gate refusal, offline) renders NEITHER a FlatList NOR the stale `ranked`
- * data — confirming `showOpenOrdersList`'s early return can't leak the open-orders list into a screen
- * state that shouldn't show it.
+ * The rider Jobs tab (Rider v2, `packages/design/handoff/rider-v2/`, ledger D-54): a full-bleed map with
+ * a sheet of job cards, and one wall (G1–G14) in front of it whenever the rider can't take jobs. These
+ * pin the board's live wiring — cards only when the board is actually shown, the offer route, your
+ * offers / withdraw, always-online, the KYC walls' copy and action sets, and the mint header.
  */
 import renderer, { act } from "react-test-renderer";
 import { controlInteractions, type InteractionControl } from "../../../../src/testing/interactions";
-import { FlatList } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { OpenOrder, OrderSnapshot } from "../../../../src/api/orders";
@@ -24,9 +18,11 @@ const mockGetActiveOrder = jest.fn();
 const mockGetOpenOrders = jest.fn<Promise<OpenOrder[]>, unknown[]>();
 const mockUseRiderBoard = jest.fn();
 const mockSetOnline = jest.fn(async (online: boolean, _loc?: unknown) => ({ online }));
+const mockPush = jest.fn();
+const mockWithdrawOffer = jest.fn(async (orderId: string) => ({ orderId, withdrawn: true }));
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
   usePathname: () => "/rider",
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
@@ -66,7 +62,13 @@ jest.mock("../../../../src/api/orders", () => ({
   getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
   getOpenOrders: (...args: unknown[]) => mockGetOpenOrders(...args),
 }));
-jest.mock("../../../../src/api/offers", () => ({ makeOffer: jest.fn() }));
+jest.mock("../../../../src/api/offers", () => ({
+  makeOffer: jest.fn(),
+  withdrawOffer: (orderId: string) => mockWithdrawOffer(orderId),
+}));
+jest.mock("expo-notifications", () => ({
+  getPermissionsAsync: async () => ({ granted: true, status: "granted" }),
+}));
 // The 8c mint header reads the unread count for the bell's gold dot. Mock it rather than let it
 // fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability` — and so
 // react-query's PROCESS-WIDE `onlineManager` — offline, pausing every later query in this file.
@@ -93,11 +95,10 @@ jest.mock("../../../../src/net/use-feature-flags", () => ({
 }));
 
 import RiderHome from "../index";
+import { SENT_OFFERS_KEY } from "../../../../src/query/use-sent-offers";
 import { runKycVerification } from "../../../../src/kyc/verify";
-import { makeOffer } from "../../../../src/api/offers";
 import { retryKyc } from "../../../../src/api/riders";
 
-const mockMakeOffer = makeOffer as jest.MockedFunction<typeof makeOffer>;
 // The KYC launch lane: `retryKyc` hands back an opaque Didit SESSION TOKEN, and the native SDK either
 // completes, is cancelled by the rider, or fails to launch — the three outcomes the pending walls
 // resolve on. `sessionUnusable` rides alongside for the one failure a fresh session can fix (expiry).
@@ -179,6 +180,24 @@ async function settle(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+  // The board's sheet mounts once its area has a height (Rider v2 J1): give it one, as a device would.
+  if (activeTree) layoutBoard(activeTree);
+}
+
+function layoutBoard(tree: renderer.ReactTestRenderer): void {
+  const area = tree.root.findAll((n) => typeof n.type === "string" && n.props.testID === "rider-board-area");
+  if (area.length) act(() => area[0]!.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 560 } } }));
+}
+
+/**
+ * The job cards the board shows, by order id (Rider v2 J3: cards in the sheet, not a FlatList).
+ * `BoardJobCard` is memoised, which `findAllByType` cannot match, so cards are found by their props.
+ */
+function cards(tree: renderer.ReactTestRenderer): renderer.ReactTestInstance[] {
+  return tree.root.findAll((n) => typeof n.type !== "string" && n.props.job != null && typeof n.props.job.id === "string" && "item" in n.props.job, { deep: false });
+}
+function cardIds(tree: renderer.ReactTestRenderer, kind: "nearby" | "offer" = "nearby"): string[] {
+  return [...new Set(cards(tree).filter((n) => (kind === "offer" ? n.props.offer != null : n.props.offer == null)).map((n) => n.props.job.id as string))];
 }
 
 let activeTree: renderer.ReactTestRenderer | null = null;
@@ -241,8 +260,8 @@ beforeAll(async () => {
   jest.clearAllMocks();
 }, 60_000);
 
-describe("rider board (B-O1b: open-orders list must be virtualized, and only when it's actually shown)", () => {
-  it("online + verified + no gate: renders the open-orders list via a single FlatList carrying the full dataset", async () => {
+describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and only when it's actually shown)", () => {
+  it("online + verified + no gate: every open order is a card in the sheet", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     const orders = Array.from({ length: 12 }, (_, i) => openOrderFixture(`order-${i}`));
@@ -252,16 +271,12 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     await settle();
     await settle();
 
-    const lists = activeTree.root.findAllByType(FlatList);
-    expect(lists).toHaveLength(1);
-    expect(lists[0]!.props.data).toHaveLength(orders.length);
-    expect(lists[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id).sort()).toEqual(orders.map((o) => o.id).sort());
+    expect(cardIds(activeTree).sort()).toEqual(orders.map((o) => o.id).sort());
+    expect(treeText(activeTree)).toContain("12 parcels near you");
   });
 
   // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body from getOpenOrders is a truthy non-array
-  // that `?? []` used to let straight through into `.filter()`/`.map()` (the `ranked` useMemo),
-  // crashing the whole board with no error boundary — live-reproduced via the tools/parity mobile
-  // harness on the sibling home/orders queries. Sibling-swept fix here too.
+  // that `?? []` used to let straight through into `.filter()`/`.map()`, crashing the whole board.
   it("does not crash when getOpenOrders resolves a non-array body — renders an empty board, not a crash", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -271,10 +286,10 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     await expect(settle()).resolves.toBeUndefined();
     await settle();
 
-    expect(activeTree.root.findAll((n) => n.props.title === "Nothing in range yet").length).toBeGreaterThan(0);
+    expect(treeText(activeTree)).toContain("Nothing in range yet");
   });
 
-  it("not yet a verified rider (knownUnverified gate): renders no FlatList and does not leak open-order data", async () => {
+  it("not yet a verified rider (G1): renders no job cards and does not leak open-order data", async () => {
     mockGetMe.mockResolvedValue({ ...meFixture(), rider: null });
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("should-not-appear")]);
@@ -283,16 +298,12 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     await settle();
     await settle();
 
-    expect(activeTree.root.findAllByType(FlatList)).toHaveLength(0);
-    const hasSetupCopy = activeTree.root.findAll((n) => {
-      const c = n.props.children;
-      const flat = Array.isArray(c) ? c.join("") : typeof c === "string" ? c : "";
-      return flat.includes("Set up as a rider");
-    });
-    expect(hasSetupCopy.length).toBeGreaterThan(0);
+    expect(cards(activeTree)).toHaveLength(0);
+    expect(treeText(activeTree)).toContain("Earn with your bike");
+    expect(treeText(activeTree)).not.toContain("should-not-appear");
   });
 
-  it("KYC pending (gated, online may have been true server-side): renders no FlatList", async () => {
+  it("KYC pending (gated, online may have been true server-side): renders no job cards", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "manual" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("should-not-appear")]);
@@ -301,55 +312,105 @@ describe("rider board (B-O1b: open-orders list must be virtualized, and only whe
     await settle();
     await settle();
 
-    expect(activeTree.root.findAllByType(FlatList)).toHaveLength(0);
+    expect(cards(activeTree)).toHaveLength(0);
   });
 });
 
 /**
- * B-O9 (bundled into B-O2's memo pass): `ranked` used to be recomputed inline in the render body, and
- * the compose card's per-row `onAction={() => chooseOrder(o)}` was a fresh closure per row per render
- * — either alone hands FlatList a new `data`/`renderItem` reference on every board render, which
- * defeats VirtualizedList's own `CellRenderer` PureComponent bail-out (and, in turn, JobCard's B-O2
- * memo boundary) regardless of how stable the actual order data is. A keystroke in the compose card's
- * ETA field is a plain top-level useState, unrelated to the open-orders list — it must not hand
- * FlatList new `data`/`renderItem` props.
+ * Rider v2 O1: "Make an offer" opens its own screen (`/rider/offer/[jobId]`) instead of the old inline
+ * compose card, and a sent offer moves the job from NEARBY JOBS to YOUR OFFERS — the one-offer-per-job
+ * rule, now drawn. Withdraw (J10) hides it at once, offers Undo for 5 s, and only then calls the API.
  */
-describe("rider board (B-O9: ranked/renderItem must stay referentially stable across unrelated board churn)", () => {
-  it("typing in the compose card's ETA field does not change FlatList's data or renderItem identity", async () => {
+describe("rider board (Rider v2 O1/J9/J10: make an offer, your offers, withdraw)", () => {
+  it("'Make an offer' opens the offer screen for THAT job — no inline compose card", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
-    const orders = Array.from({ length: 3 }, (_, i) => openOrderFixture(`order-${i}`));
-    mockGetOpenOrders.mockResolvedValue(orders);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
 
     activeTree = renderScreen();
     await settle();
     await settle();
 
-    // Open the compose card via the first row's "Make an offer" action.
-    const actionButtons = activeTree.root.findAll(
-      (n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function",
+    const offer = activeTree.root.findAll((n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function");
+    expect(offer.length).toBeGreaterThan(0);
+    act(() => (offer[0]!.props as { onPress: () => void }).onPress());
+
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: "/rider/offer/[jobId]", params: expect.objectContaining({ jobId: "order-0" }) }),
     );
-    expect(actionButtons.length).toBeGreaterThan(0);
-    act(() => {
-      (actionButtons[0]!.props as { onPress: () => void }).onPress();
-    });
-
-    const listBefore = activeTree.root.findAllByType(FlatList)[0]!;
-    const dataBefore = listBefore.props.data;
-    const renderItemBefore = listBefore.props.renderItem;
-
-    const etaField = activeTree.root.findAll(
-      (n) => typeof n.props.onChangeText === "function" && n.props.keyboardType === "number-pad",
-    )[0];
-    expect(etaField).toBeDefined();
-    act(() => {
-      (etaField!.props as { onChangeText: (t: string) => void }).onChangeText("12");
-    });
-
-    const listAfter = activeTree.root.findAllByType(FlatList)[0]!;
-    expect(listAfter.props.data).toBe(dataBefore);
-    expect(listAfter.props.renderItem).toBe(renderItemBefore);
+    // The retired compose card's controls are nowhere on the board.
+    expect(activeTree.root.findAll((n) => n.props.label === "Send offer")).toHaveLength(0);
+    expect(activeTree.root.findAll((n) => n.props.label === "Skip this job")).toHaveLength(0);
   });
+
+  function seedOffer(order: OpenOrder) {
+    return (qc: QueryClient): void => {
+      qc.setQueryData(SENT_OFFERS_KEY, [
+        { order, fare: "5.50", etaMinutes: 10, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() },
+      ]);
+    };
+  }
+
+  it("a job the rider already offered on sits under YOUR OFFERS, never again under NEARBY JOBS", async () => {
+    const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([bid, openOrderFixture("order-1")]);
+
+    activeTree = renderScreen(seedOffer(bid));
+    await settle();
+    await settle();
+
+    expect(cardIds(activeTree, "offer")).toEqual(["order-0"]);
+    expect(cardIds(activeTree)).toEqual(["order-1"]);
+    const text = treeText(activeTree);
+    expect(text).toContain("YOUR OFFERS");
+    expect(text).toContain("NEARBY JOBS");
+  });
+
+  it("Withdraw hides the offer at once and offers Undo; Undo brings it back without calling the API", async () => {
+    const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([bid]);
+
+    activeTree = renderScreen(seedOffer(bid));
+    await settle();
+    await settle();
+
+    const withdraw = activeTree.root.findAll((n) => n.props.label === "Withdraw" && typeof n.props.onPress === "function");
+    expect(withdraw.length).toBeGreaterThan(0);
+    act(() => (withdraw[0]!.props as { onPress: () => void }).onPress());
+
+    expect(cardIds(activeTree, "offer")).toEqual([]);
+    expect(treeText(activeTree)).toContain("Offer withdrawn.");
+
+    const undo = activeTree.root.findAll((n) => n.props.action === "Undo" && typeof n.props.onAction === "function");
+    expect(undo.length).toBe(1);
+    act(() => (undo[0]!.props as { onAction: () => void }).onAction());
+
+    expect(cardIds(activeTree, "offer")).toEqual(["order-0"]);
+    await wait(5200);
+    expect(mockWithdrawOffer).not.toHaveBeenCalled();
+  }, 10000);
+
+  it("without Undo, the withdraw reaches the API after the 5 s window", async () => {
+    const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([bid]);
+
+    activeTree = renderScreen(seedOffer(bid));
+    await settle();
+    await settle();
+
+    const withdraw = activeTree.root.findAll((n) => n.props.label === "Withdraw" && typeof n.props.onPress === "function");
+    act(() => (withdraw[0]!.props as { onPress: () => void }).onPress());
+    expect(mockWithdrawOffer).not.toHaveBeenCalled();
+
+    await wait(5200);
+    expect(mockWithdrawOffer).toHaveBeenCalledWith("order-0");
+  }, 10000);
 });
 
 function activeJobFixture(): OrderSnapshot {
@@ -446,17 +507,14 @@ describe("rider board (RJM.board_empty + offline: no manual refresh, online-togg
   it("online + verified + empty board: offers NO refresh affordance (D-30)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
-    mockGetOpenOrders.mockResolvedValue([]); // empty board → RiderBoardEmptyView renders
+    mockGetOpenOrders.mockResolvedValue([]); // empty board → the sheet's J2 empty state
 
     activeTree = renderScreen();
     await settle();
     await settle();
 
     // The empty state renders...
-    const emptyText = activeTree.root
-      .findAll((n) => typeof n.props.title === "string")
-      .map((n) => n.props.title as string);
-    expect(emptyText).toContain("Nothing in range yet");
+    expect(treeText(activeTree)).toContain("Nothing in range yet");
 
     // ...and carries no Refresh button. Pinned by the exact label the sweep missed, and by the general
     // "no refresh-shaped action anywhere on the empty board".
@@ -499,100 +557,6 @@ describe("rider board (RJM.board_empty + offline: no manual refresh, online-togg
     await settle();
 
     expect(mockSetOnline.mock.calls.length).toBeLessThanOrEqual(1);
-  });
-});
-
-/**
- * RJM.offer_parcel realignment (parity task #48). The parcel offer-compose card was restructured to the
- * RJM mock's Card (TypeTag · "Sender asking" · Money, then one always-shown "Your fare (USD)" field and a
- * "You'll be there in" field), retiring the old segmented accept/counter tablist — a presentation-only
- * change. This pins that the SENSITIVE agreed-price seam survived byte-identical: (1) "Send offer" still
- * calls `makeOffer(orderId, { type, offeredFare, etaMinutes })` with the same arg shape (default one-tap =
- * the asking price → an "accept" bid); (2) the one-offer-per-job rule still removes a bid order from the
- * board so it can't be offered on twice; (3) the ghost "Skip this job" still dismisses the card WITHOUT
- * submitting an offer. A change that mis-wired the mutation, dropped the one-offer filter, or turned Skip
- * into a submit would fail here.
- */
-describe("rider board (RJM.offer_parcel: the agreed-price makeOffer seam must survive the realignment)", () => {
-  async function openComposeForFirstRow(): Promise<renderer.ReactTestRenderer> {
-    mockGetMe.mockResolvedValue(meFixture());
-    mockGetActiveOrder.mockResolvedValue(null);
-    const orders = Array.from({ length: 3 }, (_, i) => openOrderFixture(`order-${i}`));
-    mockGetOpenOrders.mockResolvedValue(orders);
-
-    const tree = renderScreen();
-    await settle();
-    await settle();
-
-    const actionButtons = tree.root.findAll(
-      (n) => n.props.label === "Make an offer" && typeof n.props.onPress === "function",
-    );
-    expect(actionButtons.length).toBeGreaterThan(0);
-    act(() => {
-      (actionButtons[0]!.props as { onPress: () => void }).onPress();
-    });
-    return tree;
-  }
-
-  it("tapping 'Send offer' calls makeOffer with the agreed-price arg shape (orderId + type/offeredFare/etaMinutes)", async () => {
-    mockMakeOffer.mockResolvedValue(undefined as never);
-    activeTree = await openComposeForFirstRow();
-
-    const send = activeTree.root.findAll(
-      (n) => n.props.label === "Send offer" && typeof n.props.onPress === "function",
-    );
-    expect(send.length).toBe(1);
-    act(() => {
-      (send[0]!.props as { onPress: () => void }).onPress();
-    });
-    await settle();
-
-    // Default one-tap = the sender's asking price ($5.00), so the bid is an "accept" of the asking price.
-    expect(mockMakeOffer).toHaveBeenCalledTimes(1);
-    expect(mockMakeOffer.mock.calls[0]![0]).toBe("order-0");
-    expect(mockMakeOffer.mock.calls[0]![1]).toEqual(
-      expect.objectContaining({ type: "accept", offeredFare: 5, etaMinutes: expect.any(Number) }),
-    );
-  });
-
-  it("the one-offer-per-job rule still removes a bid order from the board (no second offer possible)", async () => {
-    mockMakeOffer.mockResolvedValue(undefined as never);
-    activeTree = await openComposeForFirstRow();
-
-    const idsBefore = activeTree.root.findAllByType(FlatList)[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id);
-    expect(idsBefore).toContain("order-0");
-
-    const send = activeTree.root.findAll(
-      (n) => n.props.label === "Send offer" && typeof n.props.onPress === "function",
-    )[0]!;
-    act(() => {
-      (send.props as { onPress: () => void }).onPress();
-    });
-    await settle();
-
-    // Having bid on order-0, it leaves the board (bidIds filters `ranked`) — there is no row to bid on again.
-    const idsAfter = activeTree.root.findAllByType(FlatList)[0]!.props.data.map((r: { o: OpenOrder }) => r.o.id);
-    expect(idsAfter).not.toContain("order-0");
-  });
-
-  it("the ghost 'Skip this job' dismisses the compose card WITHOUT calling makeOffer", async () => {
-    mockMakeOffer.mockResolvedValue(undefined as never);
-    activeTree = await openComposeForFirstRow();
-
-    expect(activeTree.root.findAll((n) => n.props.label === "Send offer").length).toBe(1);
-
-    const skip = activeTree.root.findAll(
-      (n) => n.props.label === "Skip this job" && typeof n.props.onPress === "function",
-    );
-    expect(skip.length).toBe(1);
-    act(() => {
-      (skip[0]!.props as { onPress: () => void }).onPress();
-    });
-    await settle();
-
-    // The compose card is gone and no bid was submitted.
-    expect(activeTree.root.findAll((n) => n.props.label === "Send offer").length).toBe(0);
-    expect(mockMakeOffer).not.toHaveBeenCalled();
   });
 });
 
@@ -696,7 +660,7 @@ describe("rider board (owner 2026-08-12: a failing background active-job check m
 
     expect(failedCheckHits(activeTree)).toBe(0);
     // The board itself is unaffected — the failed background check must not swallow the job list.
-    expect(activeTree.root.findAllByType(FlatList)).toHaveLength(1);
+    expect(cardIds(activeTree)).toEqual(["order-0"]);
   });
 
   it("KYC-gated rider (the state in the photo), active-job check errors: renders no error card over the gate", async () => {
@@ -796,11 +760,9 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     expect(labelHits(activeTree, "Go to customer view")).toBe(0);
   });
 
-  // The scoping rule, from the wall that has something to press. An auto-mode rider with no server
-  // pending-state resolves to `unfinished`, whose primary — one tap — clears the wall outright. A
-  // bridge beside it would compete with the tap that actually solves the rider's problem, so the
-  // reinstatement deliberately stops short of this wall.
-  it("a wall with a real action carries no competing bridge", async () => {
+  // Rider v2 G3 (handoff gate table, ledger D-54): the unfinished wall draws its one tap that clears it
+  // AND the customer bridge beneath it — the old "no competing exit" scoping is retired with D-36.
+  it("the unfinished wall leads with its own action, the bridge beneath it", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -810,8 +772,10 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     await settle();
 
     expect(labelHits(activeTree, "Back to customer")).toBe(0);
-    expect(labelHits(activeTree, "Order food and send parcels")).toBe(0);
-    expect(labelHits(activeTree, "Finish verifying")).toBeGreaterThan(0);
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
+      .map((n) => n.props.label as string);
+    expect(labels).toEqual(["Finish verifying", "Order food and send parcels"]);
   });
 
   /**
@@ -831,10 +795,10 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
   const CUSTOMER_BRIDGE = "Order food and send parcels";
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
     ["in flight — with the vendor, only the bridge", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, [CUSTOMER_BRIDGE]],
-    ["unfinished — the rider's move, no competing exit", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying"]],
+    ["unfinished — the rider's move, the bridge beneath it", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying", CUSTOMER_BRIDGE]],
     ["manual/ops review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "manual" }, [CUSTOMER_BRIDGE]],
-    ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID"]],
-    ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again"]],
+    ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID", CUSTOMER_BRIDGE]],
+    ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again", "Message support on WhatsApp"]],
   ];
 
   it.each(WALL_ACTIONS)("%s: the wall offers exactly its own actions", async (_name, patch, expected) => {
@@ -874,7 +838,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
 
   it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
-    expect(text).toContain("Finishing verification");
+    expect(text).toContain("Your ID is under review");
     expect(text).toContain("We're checking your ID");
     expect(text).not.toContain("Finish verifying your ID");
   });
@@ -882,7 +846,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   it("unfinished: never claims the check is with the vendor — nothing was submitted", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" });
     expect(text).toContain("Finish verifying your ID");
-    expect(text).toContain("You haven't finished verifying your ID");
+    expect(text).toContain("You started the ID check but didn't finish");
     // The precise lie this split exists to remove.
     expect(text).not.toContain("We're checking your ID");
   });
@@ -927,7 +891,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     const labels = activeTree.root
       .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
       .map((n) => n.props.label as string);
-    expect(labels).toEqual(["Try again", "Contact support"]);
+    expect(labels).toEqual(["Try again", "Message support on WhatsApp"]);
   });
 
   // Closing the tab is a choice, not a fault — it must land on the resume, never on the alert state.
@@ -1207,10 +1171,11 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     expect(treeText(activeTree)).not.toContain("We couldn't open the ID check");
   });
 
-  it("manual review stays its own state, whatever the pending state says", async () => {
-    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "in_flight" });
+  // Rider v2 G2: ops review and an in-flight vendor check are ONE wall — the rider waits either way.
+  it("manual review is the under-review wall, whatever the pending state says", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "unfinished" });
     expect(text).toContain("Your ID is under review");
-    expect(text).not.toContain("We're checking your ID");
+    expect(text).not.toContain("Finish verifying your ID");
   });
 });
 
@@ -1229,8 +1194,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     activeTree = renderScreen();
     await settle();
     await settle();
-    // greetingLine breaks the phrase and the name onto two lines inside one string.
-    expect(treeText(activeTree)).toMatch(/Good (morning|afternoon|evening),\nTapiwa/);
+    expect(treeText(activeTree)).toMatch(/Good (morning|afternoon|evening),\s*Tapiwa/);
   });
 
   it("renders NO search bar — a rider has nothing to search from the board", async () => {
@@ -1302,7 +1266,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    expect(treeText(activeTree)).toMatch(/Couldn't get your location/);
+    expect(treeText(activeTree)).toContain("Jobs are matched by distance, so location must be on while you ride.");
   });
 
   it("the location-denied wall offers no shift control — there is no shift to end", async () => {
@@ -1357,11 +1321,10 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
 
     // The board ranks jobs off its own live GPS fix and the server pushes off the heartbeat
     // position — neither reads this row — so a picker here would silently fail to move the job
-    // list. The row's label says "update it", never "change location", and the sheet is absent.
+    // list. Rider v2 J1 draws the place as plain text beside the connection dot: nothing to press.
     const labels = activeTree.root
       .findAll((n) => typeof n.props.accessibilityLabel === "string")
       .map((n) => n.props.accessibilityLabel as string);
-    expect(labels.some((l) => /Your location: .*\. Update it/.test(l))).toBe(true);
     expect(labels.some((l) => /Change location/.test(l))).toBe(false);
     expect(treeText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
   });

@@ -39,6 +39,8 @@ export interface OrderSnapshot {
   // kitchen/customer address); `merchantPhase` drives the food card's two pre-dispatch progress steps;
   // `merchantPaymentMethod` drives the design's payment+total meta ("Cash at the door · $15.50").
   merchantName?: string | null;
+  /** The sender's first name, for the assigned rider only (Rider v2, ledger D-54). */
+  customerFirstName?: string | null;
   merchantPhase?: string | null;
   merchantPaymentMethod?: "cash" | "wallet" | null;
   // Which party is viewing this order — the server derives it from the same party check that gates the
@@ -153,6 +155,8 @@ export interface OpenOrder {
   proposedFare: string;
   distanceKm: number | null;
   createdAt: string;
+  /** The sender's first name ("Rudo is asking"). Absent on a live board push and on older APIs. */
+  customerFirstName?: string | null;
 }
 
 /** Open orders the rider can bid on. When the rider's location is known, the server scopes to nearby
