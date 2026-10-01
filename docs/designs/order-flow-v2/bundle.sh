@@ -12,6 +12,7 @@ OUT="${1:-${TMPDIR:-/tmp}/order-flow-v2-bundle.zip}"
 H="$REPO/packages/design/handoff"
 STAGE="$(mktemp -d)"
 B="$STAGE/order-flow-v2"
+mkdir -p "$B"
 trap 'rm -rf "$STAGE"' EXIT
 
 cp_into() { local dest="$1"; shift; mkdir -p "$B/$dest"; cp -R "$@" "$B/$dest/"; }
