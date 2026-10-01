@@ -5,6 +5,7 @@ import Constants from "expo-constants";
 // SDK 54 (expo-file-system 19) moved this path-and-promise API to the `/legacy` entry; the package
 // root is now the object API (File / Directory). Same functions, same on-disk file.
 import * as FileSystem from "expo-file-system/legacy";
+import { clearAllOrderCopies } from "../net/order-copy-store";
 
 /**
  * Disk persistence for the React Query cache — the "warm boot" layer. On a cold start over a slow or
@@ -132,5 +133,6 @@ export const queryPersister = createAsyncStoragePersister({
  * flush the cleared state would leave the previous user's data on disk for a beat too long.
  */
 export function clearPersistedQueries(): Promise<void> {
-  return Promise.resolve(queryPersister.removeClient()).catch(() => undefined);
+  // The order screen's saved copies (net/order-copy-store) are the same kind of disk cache — they go too.
+  return Promise.all([Promise.resolve(queryPersister.removeClient()).catch(() => undefined), clearAllOrderCopies()]).then(() => undefined);
 }

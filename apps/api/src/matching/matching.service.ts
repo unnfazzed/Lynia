@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { BROADCAST, broadcastRadiusAtMs, OFFER_WINDOW_MS } from "@lynia/shared";
+import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
@@ -70,7 +70,7 @@ export class MatchingService {
             offeredFare: true,
             // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
-            order: { select: { status: true, customerId: true, pickup: true } },
+            order: { select: { status: true, customerId: true, pickup: true, createdAt: true } },
             rider: {
               select: {
                 isOnline: true,
@@ -101,6 +101,13 @@ export class MatchingService {
 
         if (offer.order.status !== "open_for_offers") {
           throw new ConflictException("This order is no longer open for offers");
+        }
+        // After-send v2 choose grace: the offers already on screen stay choosable for
+        // OFFER_CHOOSE_GRACE_MS after the window ends (createdAt + OFFER_WINDOW_MS); past that the
+        // expiry job owns the order even if the status hasn't flipped yet. Also pinned in the CAS below.
+        const chooseCutoff = new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS);
+        if (offer.order.createdAt && offer.order.createdAt <= chooseCutoff) {
+          throw new ConflictException("This order is no longer open for offers — the time to choose has ended");
         }
         pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         if (offer.status !== "pending") throw new ConflictException("That offer is no longer available");
@@ -136,7 +143,7 @@ export class MatchingService {
 
         // Guarded CAS — first writer wins (ET1).
         const claimed = await tx.order.updateMany({
-          where: { id: orderId, status: "open_for_offers" },
+          where: { id: orderId, status: "open_for_offers", createdAt: { gt: chooseCutoff } },
           data: {
             status: "assigned",
             riderId: offer.riderId,
@@ -211,14 +218,35 @@ export class MatchingService {
   /**
    * Offer-window expiry. Runs the SAME guarded CAS as selection (ET1): if a customer already
    * selected, the order is no longer open_for_offers, count is 0, and this no-ops. Idempotent.
+   *
+   * After-send v2 choose grace: an order that still has PENDING offers stays open until
+   * createdAt + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS, so the customer can still pick one of them
+   * (selectOffer allows it until then; makeOffer refuses new bids from the window end). An order with
+   * no pending offer expires as soon as this runs (at the window end, the app goes straight to "No
+   * rider yet"). Both arms sit in the CAS predicate, so a deferral never races a selection. A deferred
+   * call returns `graceEndsAt` so the caller can re-run it once the grace is over.
    */
-  async expireOrder(orderId: string): Promise<{ expired: boolean }> {
+  async expireOrder(orderId: string): Promise<{ expired: boolean; graceEndsAt?: Date }> {
     const result = await this.prisma.$transaction(async (tx) => {
+      const graceCutoff = new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS);
       const res = await tx.order.updateMany({
-        where: { id: orderId, status: "open_for_offers" },
+        where: {
+          id: orderId,
+          status: "open_for_offers",
+          OR: [{ createdAt: { lte: graceCutoff } }, { offers: { none: { status: "pending" } } }],
+        },
         data: { status: "expired" },
       });
-      if (res.count === 0) return { expired: false as const, hadOffers: false };
+      if (res.count === 0) {
+        // Either it already left open_for_offers (selected / cancelled / expired → plain no-op), or it
+        // is still open with pending offers inside the grace → tell the caller when the grace ends.
+        const stillOpen = await tx.order.findFirst({
+          where: { id: orderId, status: "open_for_offers" },
+          select: { createdAt: true },
+        });
+        const graceEndsAt = stillOpen ? new Date(stillOpen.createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) : undefined;
+        return { expired: false as const, hadOffers: false, graceEndsAt };
+      }
 
       // Did the auction attract ANY bid (any status — a withdrawn/declined offer still means a rider
       // engaged)? Distinguishes "riders were here but nobody committed / you weren't picked in time"
@@ -226,7 +254,7 @@ export class MatchingService {
       const offerCount = await tx.offer.count({ where: { orderId } });
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "expired" } });
       await tx.orderEvent.create({ data: { orderId, status: "expired" } });
-      return { expired: true as const, hadOffers: offerCount > 0 };
+      return { expired: true as const, hadOffers: offerCount > 0, graceEndsAt: undefined };
     });
 
     // Post-commit, best-effort. The auction closed with no pick, so (C2) signal `bid:expired` to the
@@ -267,7 +295,7 @@ export class MatchingService {
       }
       void this.notifications.notifyOrderExpired(orderId, noSupply, result.hadOffers);
     }
-    return { expired: result.expired };
+    return result.graceEndsAt ? { expired: false, graceEndsAt: result.graceEndsAt } : { expired: result.expired };
   }
 
   /**

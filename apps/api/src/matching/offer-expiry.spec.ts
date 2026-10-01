@@ -154,6 +154,39 @@ describe("OfferExpiryService worker dispatch", () => {
   });
 });
 
+describe("OfferExpiryService.expireOrDefer — the choose grace follow-up (after-send v2)", () => {
+  function makeService(result: { expired: boolean; graceEndsAt?: Date }) {
+    const add = vi.fn().mockResolvedValue(undefined);
+    const expireOrder = vi.fn().mockResolvedValue(result);
+    const service = new OfferExpiryService({ REDIS_URL: "redis://localhost:6379" } as Env, { expireOrder } as unknown as MatchingService, {} as PrismaService);
+    (service as unknown as { queue: { add: typeof add } }).queue = { add };
+    return { service, add, expireOrder };
+  }
+
+  it("re-enqueues ONE follow-up expire just after the grace ends when expireOrder deferred (pending offers in the grace)", async () => {
+    const graceEndsAt = new Date(Date.now() + 9_000);
+    const { service, add } = makeService({ expired: false, graceEndsAt });
+    await expect(service.expireOrDefer("order-1")).resolves.toEqual({ expired: false });
+    expect(add).toHaveBeenCalledOnce();
+    const [name, data, opts] = add.mock.calls[0];
+    expect(name).toBe("expire");
+    expect(data).toEqual({ orderId: "order-1" });
+    // Its own id (the running job still owns `order-1`), and no ':' (BullMQ rejects most custom ids with one).
+    expect(opts.jobId).toBe("grace-order-1");
+    expect(opts.delay).toBeGreaterThan(9_000);
+    expect(opts.delay).toBeLessThanOrEqual(10_000);
+    expect(opts.attempts).toBe(3);
+  });
+
+  it("enqueues nothing when the order expired, or was already gone", async () => {
+    for (const result of [{ expired: true }, { expired: false }]) {
+      const { service, add } = makeService(result);
+      await service.expireOrDefer("order-1");
+      expect(add).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe("OfferExpiryService.reconcileStaleOffers", () => {
   it("expires every order still open_for_offers past the reconcile grace window, tolerating per-order failures", async () => {
     const env = { REDIS_URL: undefined } as Env;

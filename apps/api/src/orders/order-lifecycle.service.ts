@@ -33,6 +33,7 @@ import {
   PICKUP_PHOTO_STATUSES,
   POST_PICKUP_FOR_UNDELIVERED,
   QUEUE_NAME,
+  RATE_LATE_WINDOW_MS,
   RATING_WINDOW_MS,
   RECONCILE_INTERVAL_MS,
   RESENDABLE,
@@ -584,144 +585,217 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: "undelivered" };
   }
 
-  /** Customer rates the rider after delivery; this closes the order and updates the rider's score. */
+  /**
+   * Customer rates the rider after delivery; this closes the order and updates the rider's score.
+   *
+   * After-send v2 late rating: an order nobody rated was auto-closed to `completed` by
+   * {@link completeOrder} (or ops' adjudicateDelivered), and the customer may still rate it within
+   * RATE_LATE_WINDOW_MS of the delivery, once. That close already did the completion's side effects —
+   * the trip count, the clean-completion reliability recovery and the commission debit — so the late
+   * path does only what a rating adds on top: the rating row, the rider's star aggregate, a low
+   * rating's reliability penalty, and the restaurant's food score. The status stays `completed`.
+   */
   async rate(orderId: string, customerId: string, score: number, comment?: string, foodScore?: number, tags?: string[]): Promise<LifecycleResult> {
     // DS19-01: set when a low rating's reliability penalty NEWLY trips the hold below, so we can evict the
     // rider from the live-supply planes after commit — the same standing demotion markUndelivered's
     // velocity hold and cancel()'s strike limit perform (see the newlyHeld note at the rider.update below).
     let newlyHeldRiderId: string | null = null;
-    await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, merchantId: true, agreedFare: true, suggestedFare: true, orderType: true },
-      });
-      if (!order) throw new NotFoundException("Order not found");
-      if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
-      if (order.status !== "delivered") throw new ConflictException("Order is not awaiting a rating");
-
-      const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: "delivered", customerId },
-        data: { status: "completed", completedAt: new Date() },
-      });
-      if (claimed.count === 0) throw new ConflictException("Order already completed");
-
-      // WD-005: re-read agreedFare now that the CAS update above holds the row lock for the rest of
-      // this transaction — the pre-CAS read at the top of this method (order.agreedFare) isn't part of
-      // the CAS predicate, so a concurrent admin fare-adjust landing between that read and this CAS
-      // would otherwise let chargeCommission below debit commission on a fare the order no longer has.
-      // Mirrors the safe read-after-CAS ordering completeOrder() already uses for the same debit.
-      const lockedOrder = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true } });
-      const agreedFare = lockedOrder?.agreedFare ?? order.agreedFare;
-
-      // #672: `score` is the rider score (feeds rider reputation below, unchanged). `foodScore` +
-      // `tags` are the food-order feedback the delivered mock draws — persisted on the same row,
-      // deliberately NOT fed into the rider aggregate (foodScore feeds the restaurant rating, #673).
-      await tx.rating.create({
-        data: { orderId, byProfileId: customerId, score, comment: comment ?? null, foodScore: foodScore ?? null, tags: tags ?? [] },
-      });
-      await tx.orderEvent.create({ data: { orderId, status: "completed" } });
-
-      // #673: maintain the restaurant's denormalised star rating from the customer's food score, the
-      // same running-average shape the rider aggregate below uses. Food orders only, and only when a
-      // food score was given. Deliberately simpler than the rider aggregate: a restaurant rating has
-      // no reliability-hold / auto-suspend consequence, so it carries no P1-6 collusion weighting —
-      // it is a display average, not a supply gate.
-      if (order.orderType === "merchant" && order.merchantId && foodScore != null) {
-        const merchant = await tx.merchant.findUnique({
-          where: { id: order.merchantId },
-          select: { foodRatingAvg: true, foodRatingCount: true },
+    // True when this rates an already-`completed` order (the late path) — no completion push after commit.
+    let late = false;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          select: {
+            status: true,
+            customerId: true,
+            riderId: true,
+            merchantId: true,
+            agreedFare: true,
+            suggestedFare: true,
+            orderType: true,
+            deliveredAt: true,
+            completedAt: true,
+          },
         });
-        if (merchant) {
-          const foodRatingCount = merchant.foodRatingCount + 1;
-          const foodRatingAvg = (merchant.foodRatingAvg * merchant.foodRatingCount + foodScore) / foodRatingCount;
-          await tx.merchant.update({ where: { id: order.merchantId }, data: { foodRatingAvg, foodRatingCount } });
+        if (!order) throw new NotFoundException("Order not found");
+        if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
+        if (order.status !== "delivered" && order.status !== "completed") throw new ConflictException("Order is not awaiting a rating");
+        late = order.status === "completed";
+
+        let agreedFare = order.agreedFare;
+        if (late) {
+          // CAS on the observed `completed` status — a no-op write that takes the order row lock, so two
+          // late rates (or a late rate racing an admin action) serialize here. The (orderId, byProfileId)
+          // unique below is the hard guard against a second rating; the pre-check gives the plain 409.
+          const claimed = await tx.order.updateMany({
+            where: { id: orderId, status: "completed", customerId },
+            data: { updatedAt: new Date() },
+          });
+          if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+          const existing = await tx.rating.findUnique({
+            where: { orderId_byProfileId: { orderId, byProfileId: customerId } },
+            select: { id: true },
+          });
+          if (existing) throw new ConflictException("Order already rated");
+          // The delivery moment the window runs from: the `delivered` stamp, else the `delivered` event,
+          // else (an ops-adjudicated delivery records neither) the completion itself.
+          const deliveredEvent = order.deliveredAt
+            ? null
+            : await tx.orderEvent.findFirst({
+                where: { orderId, status: "delivered" },
+                orderBy: { createdAt: "desc" },
+                select: { createdAt: true },
+              });
+          const deliveredAt = order.deliveredAt ?? deliveredEvent?.createdAt ?? order.completedAt;
+          if (!deliveredAt || Date.now() - deliveredAt.getTime() > RATE_LATE_WINDOW_MS) {
+            throw new ConflictException("It's too late to rate this order");
+          }
+        } else {
+          const claimed = await tx.order.updateMany({
+            where: { id: orderId, status: "delivered", customerId },
+            data: { status: "completed", completedAt: new Date() },
+          });
+          if (claimed.count === 0) throw new ConflictException("Order already completed");
+
+          // WD-005: re-read agreedFare now that the CAS update above holds the row lock for the rest of
+          // this transaction — the pre-CAS read at the top of this method (order.agreedFare) isn't part of
+          // the CAS predicate, so a concurrent admin fare-adjust landing between that read and this CAS
+          // would otherwise let chargeCommission below debit commission on a fare the order no longer has.
+          // Mirrors the safe read-after-CAS ordering completeOrder() already uses for the same debit.
+          const lockedOrder = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true } });
+          agreedFare = lockedOrder?.agreedFare ?? order.agreedFare;
         }
-      }
 
-      if (order.riderId) {
-        await this.lockRiderRow(tx, order.riderId);
-        const rider = await tx.rider.findUnique({
-          where: { profileId: order.riderId },
-          select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true, heldReason: true },
+        // #672: `score` is the rider score (feeds rider reputation below, unchanged). `foodScore` +
+        // `tags` are the food-order feedback the delivered mock draws — persisted on the same row,
+        // deliberately NOT fed into the rider aggregate (foodScore feeds the restaurant rating, #673).
+        await tx.rating.create({
+          data: { orderId, byProfileId: customerId, score, comment: comment ?? null, foodScore: foodScore ?? null, tags: tags ?? [] },
         });
-        if (rider) {
-          // FRAUD P1-6: distinct-counterparty cap on the reputation aggregate. A colluding customer+rider
-          // pair can run repeated real (but fake-purpose) orders between two accounts and 5-star each other,
-          // inflating the rider's public star average and recovering their reliability for free — the
-          // self-bid guard only blocks rider===customer on ONE account, not two colluding accounts. So the
-          // FIRST rating a given customer gives a given rider counts toward the aggregate; a REPEAT rating
-          // from the same customer to the same rider is still recorded (audit/history + the one-per-order
-          // unique) but does NOT move ratingAvg/ratingCount. Fail-safe & asymmetric: a LOW rating (penalty)
-          // ALWAYS applies — accountability can't be dodged by being a repeat counterparty — but positive
-          // reliability RECOVERY is only granted on a distinct pair, so farmed 5-stars can't lift a held
-          // rider. (Residual: many sock-puppet customers each rating once is gated by identity-binding cost,
-          // the separate open P2-5/P2-8 items; tripsCount still reflects the real completed delivery.)
-          const priorPairRatings = await tx.rating.count({
-            where: { byProfileId: customerId, order: { riderId: order.riderId, id: { not: orderId } } },
+        // The completion event belongs to the edge that completed the order — the late path's was written
+        // by the auto-close already.
+        if (!late) await tx.orderEvent.create({ data: { orderId, status: "completed" } });
+
+        // #673: maintain the restaurant's denormalised star rating from the customer's food score, the
+        // same running-average shape the rider aggregate below uses. Food orders only, and only when a
+        // food score was given. Deliberately simpler than the rider aggregate: a restaurant rating has
+        // no reliability-hold / auto-suspend consequence, so it carries no P1-6 collusion weighting —
+        // it is a display average, not a supply gate.
+        if (order.orderType === "merchant" && order.merchantId && foodScore != null) {
+          const merchant = await tx.merchant.findUnique({
+            where: { id: order.merchantId },
+            select: { foodRatingAvg: true, foodRatingCount: true },
           });
-          // FRAUD P1-6 residual / KB-IDENTITY-BINDING (demand side): the per-pair cap above stops ONE pair
-          // farming; this stops MANY DISTINCT sock-puppet customers each rating once (cheap while identity
-          // is phone-only). Only an ESTABLISHED customer — one who has completed >= CUSTOMER_TRUST orders —
-          // moves a rider's public aggregate + reliability. `status:"completed"` was just set by the CAS
-          // above for THIS order, so exclude it to count PRIOR completions. Untrusted → the rating is still
-          // recorded (one-per-order unique + ops visibility) but carries ZERO weight in BOTH directions,
-          // which also closes the mirror Sybil-DOWNVOTE attack (fresh accounts 1-starring a rival's rider).
-          const priorCompletedByCustomer = await tx.order.count({
-            where: { customerId, status: "completed", id: { not: orderId } },
-          });
-          const customerTrusted = customerRatingCarriesWeight(priorCompletedByCustomer);
+          if (merchant) {
+            const foodRatingCount = merchant.foodRatingCount + 1;
+            const foodRatingAvg = (merchant.foodRatingAvg * merchant.foodRatingCount + foodScore) / foodRatingCount;
+            await tx.merchant.update({ where: { id: order.merchantId }, data: { foodRatingAvg, foodRatingCount } });
+          }
+        }
 
-          // Distinct-pair (P1-6) AND established-customer (trust tier) both required to move the aggregate.
-          const countsTowardAggregate = customerTrusted && priorPairRatings === 0;
-          const isPenalty = score <= RELIABILITY.LOW_RATING_AT;
-
-          const ratingCount = countsTowardAggregate ? rider.ratingCount + 1 : rider.ratingCount;
-          const ratingAvg = countsTowardAggregate
-            ? (rider.ratingAvg * rider.ratingCount + score) / ratingCount
-            : rider.ratingAvg;
-
-          // Reliability (Q2): a delivered trip rated <= LOW_RATING_AT is a penalty; any better-rated
-          // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
-          // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
-          // RH-01: applyReliabilityDelta returns the new heldReason too (spread below) so this recovery
-          // can't silently clear a velocity/fraud hold. Weighting: an UNTRUSTED customer moves reliability
-          // in NEITHER direction (no Sybil up- or down-vote of a rider's hold gate). For a trusted customer,
-          // P1-6 applies — a penalty always counts, positive recovery only on a distinct pair.
-          const reliability =
-            customerTrusted && (isPenalty || countsTowardAggregate)
-              ? applyReliabilityDelta(
-                  { ...rider, heldReason: rider.heldReason as HeldReason },
-                  isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
-                )
-              : {};
-          // DS19-01: a low rating's -lowRating penalty can push reliabilityScore below ON_HOLD_BELOW and
-          // flip onHold:true — the same standing demotion markUndelivered (velocity) and cancel() (strike
-          // limit) perform. Those paths force isOnline:false in the same write and evict the rider from the
-          // live-supply planes post-commit; this one didn't, leaving a rating-held rider isOnline:true with
-          // their board rooms + `rider:geo` entry until an admin cleared the hold or they went offline — a
-          // GEOSEARCH/board ghost inflating the admin online count. `reliability` is `{}` when the rating
-          // carried no weight, so guard with an `in` check before reading onHold; only a NEW hold demotes.
-          const newlyHeld = "onHold" in reliability && reliability.onHold === true && !rider.onHold;
-          if (newlyHeld) newlyHeldRiderId = order.riderId;
-          await tx.rider.update({
+        if (order.riderId) {
+          await this.lockRiderRow(tx, order.riderId);
+          const rider = await tx.rider.findUnique({
             where: { profileId: order.riderId },
-            data: { ratingAvg, ratingCount, tripsCount: rider.tripsCount + 1, ...reliability, ...(newlyHeld ? { isOnline: false } : {}) },
+            select: { ratingAvg: true, ratingCount: true, tripsCount: true, reliabilityScore: true, onHold: true, heldReason: true },
           });
+          if (rider) {
+            // FRAUD P1-6: distinct-counterparty cap on the reputation aggregate. A colluding customer+rider
+            // pair can run repeated real (but fake-purpose) orders between two accounts and 5-star each other,
+            // inflating the rider's public star average and recovering their reliability for free — the
+            // self-bid guard only blocks rider===customer on ONE account, not two colluding accounts. So the
+            // FIRST rating a given customer gives a given rider counts toward the aggregate; a REPEAT rating
+            // from the same customer to the same rider is still recorded (audit/history + the one-per-order
+            // unique) but does NOT move ratingAvg/ratingCount. Fail-safe & asymmetric: a LOW rating (penalty)
+            // ALWAYS applies — accountability can't be dodged by being a repeat counterparty — but positive
+            // reliability RECOVERY is only granted on a distinct pair, so farmed 5-stars can't lift a held
+            // rider. (Residual: many sock-puppet customers each rating once is gated by identity-binding cost,
+            // the separate open P2-5/P2-8 items; tripsCount still reflects the real completed delivery.)
+            const priorPairRatings = await tx.rating.count({
+              where: { byProfileId: customerId, order: { riderId: order.riderId, id: { not: orderId } } },
+            });
+            // FRAUD P1-6 residual / KB-IDENTITY-BINDING (demand side): the per-pair cap above stops ONE pair
+            // farming; this stops MANY DISTINCT sock-puppet customers each rating once (cheap while identity
+            // is phone-only). Only an ESTABLISHED customer — one who has completed >= CUSTOMER_TRUST orders —
+            // moves a rider's public aggregate + reliability. `status:"completed"` was just set by the CAS
+            // above for THIS order, so exclude it to count PRIOR completions. Untrusted → the rating is still
+            // recorded (one-per-order unique + ops visibility) but carries ZERO weight in BOTH directions,
+            // which also closes the mirror Sybil-DOWNVOTE attack (fresh accounts 1-starring a rival's rider).
+            const priorCompletedByCustomer = await tx.order.count({
+              where: { customerId, status: "completed", id: { not: orderId } },
+            });
+            const customerTrusted = customerRatingCarriesWeight(priorCompletedByCustomer);
+
+            // Distinct-pair (P1-6) AND established-customer (trust tier) both required to move the aggregate.
+            const countsTowardAggregate = customerTrusted && priorPairRatings === 0;
+            const isPenalty = score <= RELIABILITY.LOW_RATING_AT;
+
+            const ratingCount = countsTowardAggregate ? rider.ratingCount + 1 : rider.ratingCount;
+            const ratingAvg = countsTowardAggregate
+              ? (rider.ratingAvg * rider.ratingCount + score) / ratingCount
+              : rider.ratingAvg;
+
+            // Reliability (Q2): a delivered trip rated <= LOW_RATING_AT is a penalty; any better-rated
+            // completion is a clean delivery that slowly recovers the score. NOTE(Q2): weights +
+            // thresholds in packages/shared/src/policy.ts RELIABILITY. Same transaction as the rating.
+            // RH-01: applyReliabilityDelta returns the new heldReason too (spread below) so this recovery
+            // can't silently clear a velocity/fraud hold. Weighting: an UNTRUSTED customer moves reliability
+            // in NEITHER direction (no Sybil up- or down-vote of a rider's hold gate). For a trusted customer,
+            // P1-6 applies — a penalty always counts, positive recovery only on a distinct pair.
+            // Late path: the auto-close already granted this completion's recovery, so only a penalty applies
+            // (a low late rating still counts against the rider; a good one can't recover twice).
+            const reliability =
+              customerTrusted && (isPenalty || (countsTowardAggregate && !late))
+                ? applyReliabilityDelta(
+                    { ...rider, heldReason: rider.heldReason as HeldReason },
+                    isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
+                  )
+                : {};
+            // DS19-01: a low rating's -lowRating penalty can push reliabilityScore below ON_HOLD_BELOW and
+            // flip onHold:true — the same standing demotion markUndelivered (velocity) and cancel() (strike
+            // limit) perform. Those paths force isOnline:false in the same write and evict the rider from the
+            // live-supply planes post-commit; this one didn't, leaving a rating-held rider isOnline:true with
+            // their board rooms + `rider:geo` entry until an admin cleared the hold or they went offline — a
+            // GEOSEARCH/board ghost inflating the admin online count. `reliability` is `{}` when the rating
+            // carried no weight, so guard with an `in` check before reading onHold; only a NEW hold demotes.
+            const newlyHeld = "onHold" in reliability && reliability.onHold === true && !rider.onHold;
+            if (newlyHeld) newlyHeldRiderId = order.riderId;
+            await tx.rider.update({
+              where: { profileId: order.riderId },
+              data: {
+                ratingAvg,
+                ratingCount,
+                // Late path: the auto-close already counted this trip.
+                tripsCount: late ? rider.tripsCount : rider.tripsCount + 1,
+                ...reliability,
+                ...(newlyHeld ? { isOnline: false } : {}),
+              },
+            });
+          }
+          // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
+          // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
+          // re-read `agreedFare` (WD-005), not the pre-CAS snapshot. `suggestedFare` feeds the WD-012
+          // commission-basis floor.
+          // A-5 (status-keyed-query-audit): a merchant order's own commission/settlement is C4's ledger,
+          // not the Express ride-commission wallet — chargeCommission assumes a parcel fare basis
+          // (suggestedFare/agreedFare mean something different for a food order's goods+delivery total).
+          // Guarded rather than left latent: a merchant order can't reach `delivered` without C3's
+          // dispatch yet, but the branch belongs here now, not deferred to when it becomes reachable.
+          // Late path: the auto-close (or ops' adjudication) already debited it — never charge twice.
+          if (order.orderType === "parcel" && !late) {
+            await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
+          }
         }
-        // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
-        // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
-        // re-read `agreedFare` (WD-005), not the pre-CAS snapshot. `suggestedFare` feeds the WD-012
-        // commission-basis floor.
-        // A-5 (status-keyed-query-audit): a merchant order's own commission/settlement is C4's ledger,
-        // not the Express ride-commission wallet — chargeCommission assumes a parcel fare basis
-        // (suggestedFare/agreedFare mean something different for a food order's goods+delivery total).
-        // Guarded rather than left latent: a merchant order can't reach `delivered` without C3's
-        // dispatch yet, but the branch belongs here now, not deferred to when it becomes reachable.
-        if (order.orderType === "parcel") {
-          await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
-        }
+      });
+    } catch (err) {
+      // A concurrent duplicate late rate loses on the (orderId, byProfileId) unique — the same 409 as
+      // the pre-check, not a 500 (mirrors rateSender).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("Order already rated");
       }
-    });
+      throw err;
+    }
 
     // DS19-01: a rating that newly tripped the reliability hold above forced the rider offline in-tx —
     // now pull them out of BOTH live-supply planes (geo + board) through the standing-demotion funnel,
@@ -733,7 +807,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`supply eviction after rating hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
       });
     }
-    this.safeEmit(orderId, "completed");
+    if (late) {
+      // The order was already `completed` (and its push already sent by the auto-close) — just nudge open
+      // screens to refetch so the rating shows. No second "Delivery complete" push to the rider.
+      try {
+        this.gateway.emitOrderStatus(orderId, "completed");
+      } catch (err) {
+        this.logger.warn(`status emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+    } else {
+      this.safeEmit(orderId, "completed");
+    }
     return { orderId, status: "completed" };
   }
 
@@ -805,6 +889,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     let jobCancelledCollected: boolean | null = null;
     // Captured in-tx for the post-commit rebroadcast push (F-01) — the customer to point at the fresh clone.
     let customerId: string | null = null;
+    // The fare the rider-bail clone re-asks at (cloneForRebroadcast copies it verbatim), for that push's copy.
+    let rebroadcastFare: Prisma.Decimal | null = null;
     // DS13-07: captured in-tx for the post-commit board-close signal. A cancel of an `open_for_offers`
     // order otherwise only touches the order room, leaving browsing riders/bidders a dead board card until
     // a 409/countdown. When the observed status was open_for_offers we emit bid:expired to the pickup geo
@@ -826,10 +912,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, collectedAt: true, pickup: true },
+        select: { status: true, customerId: true, riderId: true, collectedAt: true, pickup: true, proposedFare: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       customerId = order.customerId;
+      rebroadcastFare = order.proposedFare;
       if (order.status === "open_for_offers") {
         cancelledWhileOpen = true;
         boardClosePickup = (order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
@@ -961,9 +1048,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // instead send the CUSTOMER a distinct notice carrying the NEW clone's id — a tap follows the
       // re-sent request. notifyProfiles is best-effort and never throws.
       if (customerId) {
+        // After-send v2 copy ("Rider cancelled (reopened)"); the fare is the clone's own asking price.
         void this.notifications.notifyProfiles([customerId], {
-          title: "Your rider had to cancel",
-          body: "We've already sent your request back out to nearby riders at the same price — tap to follow it.",
+          title: "Your rider cancelled",
+          body: rebroadcastFare != null ? `We're asking other riders at $${Number(rebroadcastFare).toFixed(2)}.` : "We're asking other riders.",
           data: { orderId: rebroadcastId, kind: "rebroadcast" },
         });
       }

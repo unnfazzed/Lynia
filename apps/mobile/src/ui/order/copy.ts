@@ -1,6 +1,6 @@
 /**
  * Every user-facing string on the customer's order screen — the After Send handoff's `A` object
- * (`packages/design/handoff/after-send/design/as-kit.jsx`, ledger D-53), verbatim. The handoff's sample
+ * (`packages/design/handoff/after-send-v2/design/as-kit.jsx`, ledger D-53 + its v2 round), verbatim. The handoff's sample
  * values (Tendai, $3.36, 6 min, 4182, ABH 4721, 09:12 …) become the small formatters below; the wording
  * around them is unchanged. Components read strings from here only — no inline literals.
  */
@@ -81,14 +81,12 @@ export const ORDER_COPY = {
   support: "Call LyniaGo support",
   supportSub: "We answer 7am–9pm",
   shareTrip: "Share my trip",
-  shareTripSub: "Send a live link to someone you trust",
+  shareTripSub: "Send trip details to someone you trust",
   report: "Report a problem",
   reportSub: "Wrong item, damage, rider behaviour",
   close: "Close",
   /* retry */
   noTookSub: "Riders nearby usually take a little more for this trip.",
-  riderCx: "Your rider had to cancel.",
-  riderCxSub: "It happens. Send again and we'll find someone new.",
   suggested: "SUGGESTED PRICE",
   sugNote: "$0.50 more than last time",
   editOrder: "Edit order",
@@ -123,20 +121,56 @@ export const ORDER_COPY = {
   cxYou: "You cancelled this order",
   cxLynia: "LyniaGo cancelled this order",
   reasonP: "Reason",
-  cxLyniaR: "We couldn't confirm the pickup. Call us if this looks wrong.",
   nothingOwed: "Nothing to pay.",
   callSupport: "Call support",
-  /* README "Interactions": the v2 toast when "+ $0.50" fails, with its retry */
-  priceFail: "Couldn't update the price. Try again.",
-  retry: "Try again",
-  /* the rider's recorded reason on "Not delivered" — the handoff draws "Recipient didn't answer" */
-  undelivered: {
+
+  /* ───── v2 additions ───── */
+  grabMore: "Show more",
+  grabLess: "Show less",
+  /* 2.1–2.4 loading & errors */
+  loading: "Opening your order…",
+  loadFail: "Couldn't open your order",
+  loadFailSub: "Check your data connection and try again.",
+  tryAgain: "Try again",
+  notFound: "We can't find this order",
+  notFoundSub: "It may be on another account, or the link is old.",
+  /* 2.5–2.11 finding / offers */
+  raiseFail: "Couldn't update the price. Try again.",
+  notifyOn: "We'll tell you when a rider's online.",
+  notifyFail: "Reminders aren't working right now. We'll keep looking until the timer ends.",
+  timeUp: "Time's up for new offers. You can still choose from these.",
+  chooseIn: "Choose in",
+  yourPriceTag: "Your price",
+  /* 2.12–2.19 tracking */
+  reportT: "Report a problem",
+  reportSub2: "Your trip keeps running. We'll reply by phone.",
+  reportType: "What happened?",
+  rp: ["Wrong item", "Damaged", "Rider behaviour", "Payment", "Other"] as const,
+  tellMore: "Tell us more",
+  tellMorePh: "What happened, and when?",
+  sendTeam: "Send to our team",
+  reportDone: "Thanks — our team will look into it",
+  reportDoneSub: "We'll call you if we need more details. Your trip keeps running.",
+  sosSent: "Our safety team has been told. They'll call you shortly.",
+  codeIssuing: "Getting your code…",
+  /* 2.20–2.23 retry / cancel */
+  stillFinding: "Still finding a rider",
+  sendFail: "Couldn't send. Check your data and try again.",
+  cancelFail: "Couldn't cancel. Your order is still active.",
+  /* 2.24–2.28 delivered / completed */
+  rateFail: "Couldn't save your rating. Try again.",
+  noTime: "Not recorded",
+  /* 2.29–2.31 not delivered / cancelled — the rider's recorded reason (nr1–nr4) and its body (nb1–nb4) */
+  nr: {
     unreachable: "Recipient didn't answer",
     refused: "Recipient refused the parcel",
     wrong_address: "The address was wrong",
     breakdown: "Bike broke down",
   } as Record<string, string>,
-  undeliveredOther: "Delivery not completed",
+  nrOther: "Delivery not completed",
+  tries1: "1 try",
+  triesN: "tries",
+  cxLyniaGeneric: "We had to stop this order. Call us if you have questions.",
 } as const;
 
 const A = ORDER_COPY;
@@ -180,7 +214,7 @@ export const orderText = {
   etaDrop: (min: number): string => `Arriving at drop-off in ${min} min`,
   /** "Tendai is at the drop-off" */
   atDrop: (name: string): string => `${name} is at the drop-off`,
-  /** "Your LyniaGo parcel is on its way with Tendai (bike ABH 4721). Give the rider this code at hand-off: 4182" */
+  /** "Your LyniaGo parcel is on its way with Tendai (bike ABH 4721). Give the rider this code at hand-off: 418290" */
   shareMsg: (name: string, plate: string | null, code: string): string =>
     `Your LyniaGo parcel is on its way with ${name}${plate ? ` (bike ${plate})` : ""}. Give the rider this code at hand-off: ${code}`,
   /** "Taken by Tendai at 09:12" */
@@ -199,7 +233,7 @@ export const orderText = {
   noTook: (price: number): string => `No rider took ${usd(price)} this time.`,
   /** "Send again at $3.86" */
   sendAgainAt: (price: number): string => `Send again at ${usd(price)}`,
-  /** "Handed over at 09:31 with code 4182." */
+  /** "Handed over at 09:31 with code 418290." */
   deliveredSub: (at: string, code: string | null): string =>
     code ? `Handed over at ${at} with code ${code}.` : `Handed over at ${at}.`,
   /** "How was Tendai?" */
@@ -233,25 +267,63 @@ export const orderText = {
   /** "4.8 · 132 trips" / "New · 3 trips" */
   rating: (avg: number | null, trips: number): string =>
     avg != null && avg > 0 ? `${avg.toFixed(1)} · ${trips} ${A.trips}` : `${A.newRider} · ${trips} ${A.trips}`,
-  /** "Recipient didn't answer · 3 tries" */
+  /** "Recipient didn't answer · 3 tries" (nr1–nr4 · tries1 / triesN) */
   undeliveredReason: (reason: string | null | undefined, tries: number | null | undefined): string => {
-    const r = (reason && A.undelivered[reason]) || A.undeliveredOther;
-    return tries != null && tries > 0 ? `${r} · ${tries} ${tries === 1 ? "try" : "tries"}` : r;
+    const r = (reason && A.nr[reason]) || A.nrOther;
+    return tries != null && tries > 0 ? `${r} · ${tries === 1 ? A.tries1 : `${tries} ${A.triesN}`}` : r;
   },
-  /** The "Share my trip" message (the share sheet's text — the trip has no public live link yet). */
-  shareTrip: (pickup: string, dropoff: string, rider: string | null, plate: string | null): string =>
-    `I'm sending a parcel with LyniaGo from ${pickup} to ${dropoff}${rider ? `. My rider is ${rider}${plate ? ` (bike ${plate})` : ""}` : ""}.`,
+  /** nb1–nb4: what to do now, per reason. */
+  undeliveredBody: (reason: string | null | undefined, name: string): string => {
+    switch (reason) {
+      case "refused":
+        return `The parcel is still with ${name}. Call to agree how to get it back.`;
+      case "wrong_address":
+        return `The parcel is still with ${name}. Call to give the right address, or agree how to get it back.`;
+      case "breakdown":
+        return `The parcel is still with ${name}. Call to agree how to get it to you.`;
+      default:
+        return `The parcel is still with ${name}. Call to agree how to get it back, or try the drop-off again.`;
+    }
+  },
+  /** "I'm sending a parcel with LyniaGo from … to …. My rider is Tendai M. (bike ABH 4721). Order ref 8F3A-91C2." */
+  shareTrip: (pickup: string, dropoff: string, rider: string | null, plate: string | null, ref: string): string =>
+    `I'm sending a parcel with LyniaGo from ${pickup} to ${dropoff}.${rider ? ` My rider is ${rider}${plate ? ` (bike ${plate})` : ""}.` : ""} Order ${ref.charAt(0).toLowerCase()}${ref.slice(1)}.`,
   /** The "Share receipt" text. */
-  receiptText: (r: { ref: string; pickup: string; dropoff: string; items: string; rider: string | null; price: number }): string =>
+  receiptText: (r: { ref: string; pickup: string; dropoff: string; items: string[]; rider: string | null; price: number }): string =>
     [
       `LyniaGo ${A.receipt} · ${r.ref}`,
       `${r.pickup} → ${r.dropoff}`,
-      r.items ? `${A.items}: ${r.items}` : null,
+      r.items.length ? `${A.items}: ${r.items.join(", ")}` : null,
       r.rider ? `${A.rider}: ${r.rider}` : null,
       `${A.price}: ${usd(r.price)} · ${A.paidCash}`,
     ]
       .filter(Boolean)
       .join("\n"),
+  /** "Tendai had to cancel." / "We're already asking other riders at $3.36." (state 13, v2) */
+  riderCx: (name: string): string => `${name} had to cancel.`,
+  riderCxSub: (price: number): string => `We're already asking other riders at ${usd(price)}.`,
+  /** "Raise to $3.86" / "Riders may reply faster at $3.86." */
+  raiseTo: (price: number): string => `Raise to ${usd(price)}`,
+  fasterAt: (price: number): string => `Riders may reply faster at ${usd(price)}.`,
+  /** "Confirming with Farai…" (2.9a) / slow variant after 5 s (2.9b) */
+  choosing: (name: string): string => `Confirming with ${name}…`,
+  choosingSlow: (name: string): string => `Still confirming with ${name}. This can take a few seconds on slow data.`,
+  /** "Tendai is heading to pickup" / "Live location and ETA show once Tendai's phone sends it." (2.12) */
+  noFix: (name: string): string => `${name} is heading to pickup`,
+  noFixSub: (name: string): string => `Live location and ETA show once ${name}'s phone sends it.`,
+  /** "Call and WhatsApp work once Tendai's number comes through." (2.15) */
+  noPhone: (name: string): string => `Call and WhatsApp work once ${name}'s number comes through.`,
+  /** "Taken by Tendai at 09:12 · Eastgate Mall, CBD" (2.16) */
+  photoBy: (name: string, at: string, place: string): string => `Taken by ${name}${at ? ` at ${at}` : ""} · ${place}`,
+  /** "Reconnecting… Showing your order as of 09:24." / "Last update 09:24" (2.4) */
+  savedCopy: (at: string): string => (at ? `Reconnecting… Showing your order as of ${at}.` : "Reconnecting…"),
+  savedAt: (at: string): string => `Last update ${at}`,
+  /** "Call 999 again" (2.18) */
+  sosAgain: (num: string): string => `Call ${num} again`,
+  /** "Rate Tendai" / "Tap a star. You can rate for 7 days." (2.25) */
+  rateLater: (name: string): string => `Rate ${name}`,
+  rateLaterSub: "Tap a star. You can rate for 7 days.",
+  /** "The rider reported the pickup was closed." etc. — an ops reason, as given. */
   /** "ETA 6 min" */
   eta: (min: number): string => `${A.eta} ${min} ${A.min}`,
 } as const;

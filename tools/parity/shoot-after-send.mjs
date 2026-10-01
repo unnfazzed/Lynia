@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /**
- * The After Send screenshot sheet (ledger D-53): each state of the customer's order screen
- * (app/order/[id].tsx rendered through react-native-web) beside the handoff's own 2× render of it
- * (packages/design/handoff/after-send/screens/*.png). The app column is driven the way a customer would:
- * taps by accessible name, from the as_* fixtures (tools/parity/mobile/fixtures/_after_send.mjs).
+ * The After Send screenshot sheet (ledger D-53, v2 round): each state of the customer's order screen
+ * (app/order/[id].tsx rendered through react-native-web) beside the v2 handoff's own drawing of it
+ * (packages/design/handoff/after-send-v2/design/After Send v2 (standalone).html, cell by cell via its
+ * `#s-<id>` anchors). The app column is driven the way a customer would: taps by accessible name, from
+ * the as_* / as2_* fixtures (tools/parity/mobile/fixtures/_after_send.mjs).
  *
- *   node tools/parity/shoot-after-send.mjs --out docs/parity/AFTER-SEND-2026-10-01
+ *   node tools/parity/shoot-after-send.mjs --out docs/parity/AFTER-SEND-V2-2026-10-01
  *
  * The native map is the react-native-maps web shim (a grey field, no markers), so the map half of each
  * frame is honest grey rather than the handoff's drawn streets, pins and rider marker.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { contextDefaults, launch } from "./lib/browser.mjs";
 import { buildSheet } from "./lib/sheet.mjs";
 import { bundleScreen } from "./mobile/bundle.mjs";
@@ -23,7 +24,7 @@ const REPO = resolve(HERE, "../..");
 const outArg = process.argv.indexOf("--out");
 const OUT = resolve(outArg > 0 ? process.argv[outArg + 1] : join(HERE, "out/after-send"));
 const SHOTS = `${OUT}-shots`;
-const MOCKS = join(REPO, "packages/design/handoff/after-send/screens");
+const MOCK = pathToFileURL(join(REPO, "packages/design/handoff/after-send-v2/design/After Send v2 (standalone).html")).href;
 const SCREEN = join(REPO, "apps/mobile/app/order/[id].tsx");
 const FIXTURES = join(HERE, "mobile/fixtures");
 
@@ -76,41 +77,87 @@ async function shootApp(browser, { name, fixture, before, phone }) {
   }
 }
 
+let mockPage = null;
+async function shootMock(browser, id, phone) {
+  if (!mockPage) {
+    const ctx = await browser.newContext(contextDefaults({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 }));
+    mockPage = await ctx.newPage();
+    await mockPage.goto(MOCK, { waitUntil: "load" });
+    await mockPage.waitForTimeout(2500);
+  }
+  // An attribute selector needs no CSS escaping for the dots in a state id ("2.1").
+  const anchor = `[id="s-${id}${phone.width < 360 ? "-320" : ""}"]`;
+  const cell = mockPage.locator(anchor).first();
+  await cell.scrollIntoViewIfNeeded();
+  await mockPage.waitForTimeout(900);
+  const handle = await cell.evaluateHandle((c, w) => [...c.querySelectorAll("div")].find((d) => Math.round(d.getBoundingClientRect().width) === w && d.getBoundingClientRect().height > 500), phone.width);
+  const el = handle.asElement();
+  if (!el) throw new Error(`no mock frame for ${anchor}`);
+  const file = join(SHOTS, `mock-${id}${phone.width < 360 ? "-320" : ""}.png`);
+  await el.screenshot({ path: file });
+  return file;
+}
+
 const P360 = { width: 360, height: 720 };
 const P320 = { width: 320, height: 640 };
 
+const wait = (ms) => async (p) => p.waitForTimeout(ms);
+
 const ROWS = [
-  { mock: "01-finding", label: "1 · Finding, just sent", app: { fixture: "as_1" } },
-  { mock: "01b-finding-cancel-confirm", label: "1b · Cancel request confirm", app: { fixture: "as_1", before: tap("Cancel request") } },
-  { mock: "02-no-riders-online", label: "2 · No riders online", app: { fixture: "as_2" } },
-  { mock: "03-offers", label: "3 · Offers", app: { fixture: "as_3" } },
-  { mock: "04-select-race", label: "4 · Select race", sub: "Choose on the first card answers 409; the list re-ranks", app: { fixture: "as_4", before: async (p) => {
+  { id: "2.1", label: "2.1 · Opening an order", app: { fixture: "as2_1" } },
+  { id: "2.2", label: "2.2 · Couldn't load", app: { fixture: "as2_2", before: wait(1500) } },
+  { id: "2.3", label: "2.3 · Not found", app: { fixture: "as2_3", before: wait(1500) } },
+  { id: "1", label: "1 · Finding, just sent", app: { fixture: "as_1" } },
+  { id: "1b", label: "1b · Cancel request confirm", app: { fixture: "as_1", before: tap("Cancel request") } },
+  { id: "2", label: "2 · No riders online", app: { fixture: "as_2" } },
+  { id: "2.8a", label: "2.8a · Notify me, confirmed", app: { fixture: "as2_8a", before: tap("Notify me when a rider's online") } },
+  { id: "2.8b", label: "2.8b · Reminders unavailable", app: { fixture: "as2_8b", before: tap("Notify me when a rider's online") } },
+  { id: "2.6", label: "2.6 · + $0.50 failed", app: { fixture: "as2_6", before: tap("Raise your price by 50 cents") } },
+  { id: "5", label: "5 · Price raised in place", app: { fixture: "as_1", before: tap("Raise your price by 50 cents") } },
+  { id: "3", label: "3 · Offers", app: { fixture: "as_3" } },
+  { id: "4", label: "4 · Select race", app: { fixture: "as_4", before: async (p) => {
     await p.getByRole("button", { name: /^Choose / }).first().click();
     await p.waitForTimeout(1200);
   } } },
-  { mock: "05-price-raised", label: "5 · Price raised in place", app: { fixture: "as_1", before: tap("Raise your price by 50 cents") } },
-  { mock: "06-matched-to-pickup", label: "6 · Matched, to pickup", app: { fixture: "as_6" } },
-  { mock: "07-picked-up-to-dropoff", label: "7 · Picked up, to drop-off", app: { fixture: "as_7" } },
-  { mock: "08-handoff-code", label: "8 · Hand-off", sub: "real codes are six digits (D-53 §4)", app: { fixture: "as_8" } },
-  { mock: "09-gps-paused", label: "9 · GPS paused", app: { fixture: "as_9" } },
-  { mock: "10a-cancel-before-pickup", label: "10a · Cancel before pickup", app: { fixture: "as_6", before: tap("Cancel order · free until pickup") } },
-  { mock: "10b-cancel-after-pickup", label: "10b · Cancel after pickup", app: { fixture: "as_7", before: tap(/^Cancel order$/) } },
-  { mock: "11-get-help", label: "11 · Get help", app: { fixture: "as_7", before: tap("Get help") } },
-  { mock: "12-retry-no-match", label: "12 · No match", app: { fixture: "as_12" } },
-  { mock: "13-retry-rider-cancelled", label: "13 · Rider cancelled", app: { fixture: "as_13" } },
-  { mock: "14a-delivered-rate", label: "14a · Delivered, rate", app: { fixture: "as_14", before: rate(4, ["On time", "Careful with parcel"]) } },
-  { mock: "14b-delivered-low-rating", label: "14b · Low rating", app: { fixture: "as_14", before: rate(2, ["Late"]) } },
-  { mock: "15-rated-undo-receipt", label: "15 · Rated, undo", app: { fixture: "as_14", before: seq(rate(4, ["On time"]), tap("Submit rating")) } },
-  { mock: "16-completed", label: "16 · Completed", app: { fixture: "as_16" } },
-  { mock: "17-not-delivered", label: "17 · Not delivered", app: { fixture: "as_17" } },
-  { mock: "18a-cancelled-by-you", label: "18a · Cancelled by you", app: { fixture: "as_18a" } },
-  { mock: "18b-cancelled-by-rider", label: "18b · Cancelled by the rider", sub: "after pickup — before pickup it is state 13", app: { fixture: "as_18b" } },
-  { mock: "18c-cancelled-by-lyniago", label: "18c · Cancelled by LyniaGo", app: { fixture: "as_18c" } },
-  { mock: "19-offline", label: "19 · Offline", app: { fixture: "as_19" } },
-  { mock: "320-03-offers", label: "3 · Offers at 320×640", app: { fixture: "as_3", phone: P320 } },
-  { mock: "320-06-matched", label: "6 · Matched at 320×640", app: { fixture: "as_6", phone: P320 } },
-  { mock: "320-08-handoff", label: "8 · Hand-off at 320×640", app: { fixture: "as_8", phone: P320 } },
-  { mock: "320-14a-rate", label: "14a · Rate at 320×640", app: { fixture: "as_14", phone: P320, before: rate(4, ["On time", "Careful with parcel"]) } },
+  { id: "2.7", label: "2.7 · Price raised while offers show", app: { fixture: "as_3", before: tap("Raise your price by 50 cents") } },
+  { id: "2.10", label: "2.10 · Timer hit 0 with offers", app: { fixture: "as2_10" } },
+  { id: "6", label: "6 · Matched, to pickup", app: { fixture: "as_6" } },
+  { id: "2.12", label: "2.12 · No GPS fix yet", app: { fixture: "as2_12" } },
+  { id: "2.14", label: "2.14 · Code being issued", app: { fixture: "as2_14" } },
+  { id: "2.15", label: "2.15 · Number not available", app: { fixture: "as2_15" } },
+  { id: "7", label: "7 · Picked up, to drop-off", app: { fixture: "as_7" } },
+  { id: "2.16", label: "2.16 · Pickup photo viewer", app: { fixture: "as_7", before: tap(/^View Pickup photo/) } },
+  { id: "8", label: "8 · Hand-off", app: { fixture: "as_8" } },
+  { id: "9", label: "9 · GPS paused", app: { fixture: "as_9" } },
+  { id: "19", label: "19 · Offline", app: { fixture: "as_19" } },
+  { id: "10a", label: "10a · Cancel before pickup", app: { fixture: "as_6", before: tap("Cancel order · free until pickup") } },
+  { id: "10b", label: "10b · Cancel after pickup", app: { fixture: "as_7", before: tap(/^Cancel order$/) } },
+  { id: "2.22c", label: "2.22c · Cancel failed", app: { fixture: "as2_22c", before: seq(tap("Cancel order · free until pickup"), tap(/^Cancel order$/), wait(800)) } },
+  { id: "11", label: "11 · Get help", app: { fixture: "as_7", before: tap("Get help") } },
+  { id: "2.17a", label: "2.17a · Report a problem", app: { fixture: "as_7", before: seq(tap("Get help"), tap(/^Report a problem/), async (p) => { await p.getByRole("checkbox", { name: "Damaged" }).first().click(); await p.waitForTimeout(400); }) } },
+  { id: "2.18", label: "2.18 · Back from the emergency call", app: { fixture: "as_7", before: seq(tap("Get help"), tap(/^Emergency\?/)) } },
+  { id: "12", label: "12 · No match", app: { fixture: "as_12" } },
+  { id: "2.21b", label: "2.21b · Send again failed", app: { fixture: "as2_21b", before: seq(tap(/^Send again at/), wait(800)) } },
+  { id: "13", label: "13 · Rider cancelled before pickup (reopened)", app: { fixture: "as_13" } },
+  { id: "14a", label: "14a · Delivered, rate", app: { fixture: "as_14", before: rate(4, ["On time", "Careful with parcel"]) } },
+  { id: "14b", label: "14b · Low rating", app: { fixture: "as_14", before: rate(2, ["Late"]) } },
+  { id: "15", label: "15 · Rated, undo", app: { fixture: "as_14", before: seq(rate(4, ["On time"]), tap("Submit rating")) } },
+  { id: "2.24", label: "2.24 · Rating didn't save", sub: "after the 10 s undo window", app: { fixture: "as2_24", before: seq(rate(4, ["On time", "Careful with parcel"]), tap("Submit rating"), wait(11500)) } },
+  { id: "2.26", label: "2.26 · Trip complete, rated", app: { fixture: "as2_26" } },
+  { id: "2.25", label: "2.25 · Trip complete, not rated", app: { fixture: "as2_25" } },
+  { id: "17", label: "17 · Not delivered", app: { fixture: "as_17" } },
+  { id: "2.29a", label: "2.29a · Refused", app: { fixture: "as2_29a" } },
+  { id: "2.29b", label: "2.29b · Wrong address", app: { fixture: "as2_29b" } },
+  { id: "2.29c", label: "2.29c · Bike broke down", app: { fixture: "as2_29c" } },
+  { id: "18a", label: "18a · Cancelled by you", app: { fixture: "as_18a" } },
+  { id: "2.30", label: "2.30 · Cancelled by you, no reason", app: { fixture: "as2_30" } },
+  { id: "18b", label: "18b · Cancelled by the rider (after pickup)", app: { fixture: "as_18b" } },
+  { id: "2.31a", label: "2.31a · LyniaGo, ops reason", app: { fixture: "as2_31a" } },
+  { id: "2.31b", label: "2.31b · LyniaGo, generic", app: { fixture: "as_18c" } },
+  { id: "3", label: "3 · Offers at 320×640", app: { fixture: "as_3", phone: P320 } },
+  { id: "6", label: "6 · Matched at 320×640", app: { fixture: "as_6", phone: P320 } },
+  { id: "8", label: "8 · Hand-off at 320×640", app: { fixture: "as_8", phone: P320 } },
+  { id: "14a", label: "14a · Rate at 320×640", app: { fixture: "as_14", phone: P320, before: rate(4, ["On time", "Careful with parcel"]) } },
 ];
 
 await mkdir(SHOTS, { recursive: true });
@@ -119,21 +166,28 @@ const browser = await launch();
 const rows = [];
 try {
   for (const r of ROWS) {
-    if (only && !only.includes(r.mock.split("-")[0]) && !only.includes(r.mock)) continue;
+    if (only && !only.includes(r.id)) continue;
     const phone = r.app.phone ?? P360;
+    const name = `${r.id}${phone.width < 360 ? "-320" : ""}-${r.app.fixture}`;
+    let mock = null;
     let app = null;
     try {
-      app = await shootApp(browser, { ...r.app, name: r.mock, phone });
+      mock = await shootMock(browser, r.id, phone);
+    } catch (e) {
+      console.log(`mock ${r.label}: ${String(e?.message || e).slice(0, 200)}`);
+    }
+    try {
+      app = await shootApp(browser, { ...r.app, name, phone });
     } catch (e) {
       console.log(`app ${r.label}: ${String(e?.message || e).slice(0, 300)}`);
     }
-    rows.push({ label: r.label, sub: r.sub, mock: join(MOCKS, `${r.mock}.png`), app, logicalW: phone.width });
+    rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: phone.width });
     console.log(`ok ${r.label}`);
   }
 } finally {
   await browser.close();
 }
 
-await buildSheet({ title: "After Send · the order screen (D-53): handoff (left) vs app (right)", out: OUT, rows });
+await buildSheet({ title: "After Send v2 · the order screen (D-53): handoff (left) vs app (right)", out: OUT, rows });
 await writeFile(`${SHOTS}/README.txt`, "Generated by tools/parity/shoot-after-send.mjs\n");
 console.log(`sheet: ${OUT}.png (+ .html); shots in ${SHOTS}`);

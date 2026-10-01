@@ -42,21 +42,30 @@ export interface OfferView {
 
 const cardBox = { borderWidth: 1, borderColor: tokens.color.line, borderRadius: tokens.radius.input, backgroundColor: tokens.color.bg } as const;
 
-/** Offer card: avatar · (Best match, name, rating, ETA) · price + Choose; an over-price strip below. */
+/**
+ * Offer card: avatar · (Best match, name, rating, ETA) · price + Choose; an over-price strip below.
+ * v2: names wrap (never truncate); "Your price" under a price equal to the customer's; while this card's
+ * Choose is in flight a confirming line sits under it (slow variant after 5 s, 2.9).
+ */
 export function OfferCard({
   offer,
   best,
   onChoose,
   choosing,
   disabled,
+  confirming,
 }: {
   offer: OfferView;
   best: boolean;
   onChoose: () => void;
   choosing: boolean;
   disabled: boolean;
+  /** The confirming line under the card while its Choose is in flight. */
+  confirming?: string | null;
 }): React.ReactElement {
-  const over = offer.price - offer.ask > 0.004;
+  const diff = offer.price - offer.ask;
+  const over = diff > 0.004;
+  const same = Math.abs(diff) <= 0.004;
   return (
     <View style={{ ...cardBox, borderWidth: best ? 2 : 1, borderColor: best ? tokens.color.accentText : tokens.color.line, padding: best ? 11 : 12, gap: 8 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
@@ -67,9 +76,7 @@ export function OfferCard({
               <Text style={{ fontSize: 11, lineHeight: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{A.bestMatch}</Text>
             </View>
           ) : null}
-          <Text numberOfLines={1} style={{ fontSize: 15, lineHeight: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-            {offer.name}
-          </Text>
+          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{offer.name}</Text>
           <RatingLine text={orderText.rating(offer.ratingAvg, offer.trips)} />
           <Row gap={4}>
             <Icon name="clock" size={13} color={tokens.color.muted} />
@@ -78,6 +85,7 @@ export function OfferCard({
         </View>
         <View style={{ alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
           <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{usd(offer.price)}</Text>
+          {same ? <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, marginTop: -6 }}>{A.yourPriceTag}</Text> : null}
           <SmBtn
             kind="fill"
             label={A.choose}
@@ -90,14 +98,23 @@ export function OfferCard({
       </View>
       {over ? (
         <View style={{ backgroundColor: tokens.color.surface, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10 }}>
-          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{orderText.over(offer.price - offer.ask, offer.price)}</Text>
+          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{orderText.over(diff, offer.price)}</Text>
         </View>
+      ) : null}
+      {confirming ? (
+        <Text accessibilityLiveRegion="polite" style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>
+          {confirming}
+        </Text>
       ) : null}
     </View>
   );
 }
 
-/** Rider card: photo, name + Verified, rating · Bike plate; Call / WhatsApp, or the masked number. */
+/**
+ * Rider card: photo, name + Verified, rating · Bike plate; Call / WhatsApp, or the masked number.
+ * v2: no plate → "Bike" only; not verified → no tag; no photo → initials; the name and plate wrap;
+ * no number yet → Call / WhatsApp disabled with a reason line (2.13, 2.15).
+ */
 export function RiderCard({
   rider,
   masked,
@@ -105,6 +122,7 @@ export function RiderCard({
   buttons = true,
   onCall,
   onWhatsApp,
+  noPhone,
 }: {
   rider: RiderView;
   masked?: boolean;
@@ -112,79 +130,111 @@ export function RiderCard({
   buttons?: boolean;
   onCall?: () => void;
   onWhatsApp?: () => void;
+  /** The rider's number hasn't come through yet. */
+  noPhone?: boolean;
 }): React.ReactElement {
+  const noop = (): void => undefined;
   return (
     <View style={{ ...cardBox, padding: 12, gap: 10 }}>
       <Row gap={12}>
         <RiderAvatar photoUrl={rider.photoUrl} initials={rider.photoUrl ? null : rider.initials} size={48} />
         <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{rider.name}</Text>
+            <Text style={{ fontSize: 16, lineHeight: 21, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, flexShrink: 1 }}>{rider.name}</Text>
             {rider.verified ? <VerifiedTag /> : null}
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", columnGap: 10, rowGap: 4, flexWrap: "wrap" }}>
             <RatingLine text={orderText.rating(rider.ratingAvg, rider.trips)} />
-            {rider.plate ? <Plate plate={rider.plate} /> : null}
+            <Plate plate={rider.plate} />
           </View>
           {masked && maskedPhone ? <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{maskedPhone}</Text> : null}
         </View>
       </Row>
-      {buttons && !masked && (onCall || onWhatsApp) ? (
+      {buttons && !masked ? (
         <View style={{ flexDirection: "row", gap: 8 }}>
-          {onCall ? <SmBtn flex={1} label={A.call} icon="phone" onPress={onCall} accessibilityLabel={`${A.call} ${rider.firstName}`} /> : null}
-          {onWhatsApp ? <SmBtn flex={1} label={A.whatsapp} icon="message-circle" onPress={onWhatsApp} accessibilityLabel={`${A.whatsapp} ${rider.firstName}`} /> : null}
+          <SmBtn flex={1} label={A.call} icon="phone" onPress={onCall ?? noop} disabled={noPhone || !onCall} accessibilityLabel={`${A.call} ${rider.firstName}`} />
+          <SmBtn flex={1} label={A.whatsapp} icon="message-circle" onPress={onWhatsApp ?? noop} disabled={noPhone || !onWhatsApp} accessibilityLabel={`${A.whatsapp} ${rider.firstName}`} />
         </View>
       ) : null}
-    </View>
-  );
-}
-
-/** Delivery code card (states 6, 7, 9, 19): label + 30/800 digits, white "Share code", the help line. */
-export function CodeCard({ code, offline, onShare, screenWidth }: { code: string; offline: boolean; onShare: () => void; screenWidth: number }): React.ReactElement {
-  // The drawn 30/800 digits fit the handoff's four-digit code; real codes are six (D-53 §4), so the size
-  // comes down until they fit beside "Share code" — never truncated. ~0.82em per digit incl. the .2em
-  // tracking; sheet padding 32, card padding 26, gap 8, the Share code button ~132.
-  const avail = screenWidth - 32 - 26 - 8 - 132;
-  const size = Math.max(20, Math.min(30, Math.floor(avail / (Math.max(1, code.length) * 0.82))));
-  return (
-    <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, paddingVertical: 12, paddingLeft: 14, paddingRight: 12, gap: 6 }}>
-      <Row gap={8}>
-        <View style={{ flex: 1, minWidth: 0 }} accessible accessibilityLabel={`${A.code}, ${code.split("").join(" ")}`}>
-          <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
-          <Text style={{ fontSize: size, lineHeight: 36, fontWeight: tokens.font.weight.extrabold, letterSpacing: Math.round(size * 0.2), color: tokens.color.ink, ...TABULAR }}>
-            {code}
-          </Text>
-        </View>
-        <SmBtn kind="white" label={A.shareCode} icon="share-2" onPress={onShare} />
-      </Row>
-      <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.ink }}>{offline ? `${A.codeOffline} ${A.codeHelp}` : A.codeHelp}</Text>
+      {buttons && !masked && noPhone ? <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, marginTop: -2 }}>{orderText.noPhone(rider.firstName)}</Text> : null}
     </View>
   );
 }
 
 /**
- * Hand-off (state 8): the code in boxes, then the hand-off line. The handoff draws four 64×80 boxes
- * (54×70 under 340px); real codes are six digits, so each box shrinks to fit the sheet (ledger D-53 §4)
- * — never wider than the drawn 64, never a scrolling row.
+ * The six-digit code as 3+3 groups ("418 290"): two text runs with a gap, never a space in the value —
+ * copy, share and the spoken label all use "418290". `maxScale` caps the system font scale.
+ */
+function CodeDigits({ code, size, gap, maxScale }: { code: string; size: number; gap: number; maxScale: number }): React.ReactElement {
+  const half = Math.ceil(code.length / 2);
+  const style = { fontSize: size, lineHeight: Math.round(size * 1.15), fontWeight: tokens.font.weight.extrabold, letterSpacing: size * 0.04, color: tokens.color.ink, ...TABULAR };
+  return (
+    <View style={{ flexDirection: "row", gap }} accessible accessibilityLabel={`${A.code}, ${code.split("").join(" ")}`}>
+      <Text maxFontSizeMultiplier={maxScale} style={style}>
+        {code.slice(0, half)}
+      </Text>
+      <Text maxFontSizeMultiplier={maxScale} style={style}>
+        {code.slice(half)}
+      </Text>
+    </View>
+  );
+}
+
+/** 2.14 — the code being issued: six grey bars in two groups. */
+function SkelDigits({ h = 28 }: { h?: number }): React.ReactElement {
+  return (
+    <View style={{ flexDirection: "row", gap: 10 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {[0, 1].map((g) => (
+        <View key={g} style={{ flexDirection: "row", gap: 4 }}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={{ width: Math.round(h * 0.62), height: h, borderRadius: 6, backgroundColor: tokens.color.bg, opacity: 0.8 }} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Delivery code card (6, 7, 9, 19, 2.4): "DELIVERY CODE" over 28/800 digits in 3+3, the white "Share
+ * code" on the same row — measured: when the digits and the button overflow the row (a large font
+ * scale), Share code drops under the digits at full width. `code` null = being issued (2.14).
+ */
+export function CodeCard({ code, offline, onShare }: { code: string | null; offline: boolean; onShare: () => void }): React.ReactElement {
+  const [rowW, setRowW] = React.useState(0);
+  const [digitsW, setDigitsW] = React.useState(0);
+  const [btnW, setBtnW] = React.useState(0);
+  // Label column + gap 8 + button must fit the row; the label is narrower than the digits.
+  const stack = rowW > 0 && digitsW > 0 && btnW > 0 && digitsW + 8 + btnW > rowW;
+  const share = <SmBtn kind="white" label={A.shareCode} icon="share-2" onPress={onShare} disabled={!code} flex={stack ? 1 : undefined} />;
+  return (
+    <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, paddingVertical: 12, paddingLeft: 14, paddingRight: 12, gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }} onLayout={(e) => setRowW(e.nativeEvent.layout.width)}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
+          <View style={{ alignSelf: "flex-start" }} onLayout={(e) => setDigitsW(e.nativeEvent.layout.width)}>
+            {code ? <CodeDigits code={code} size={28} gap={10} maxScale={1.15} /> : <SkelDigits />}
+          </View>
+        </View>
+        {stack ? null : <View onLayout={(e) => setBtnW(e.nativeEvent.layout.width)}>{share}</View>}
+      </View>
+      {stack ? <View style={{ flexDirection: "row" }}>{share}</View> : null}
+      <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.ink }}>{!code ? A.codeIssuing : offline ? `${A.codeOffline} ${A.codeHelp}` : A.codeHelp}</Text>
+    </View>
+  );
+}
+
+/**
+ * Hand-off (state 8): one white panel with a 2px accent-text border, the code at 56/800 in 3+3 (48 and
+ * a 16 gap under 340dp) — the biggest thing on the sheet; it ignores the system font scale.
  */
 export function CodeBig({ code, screenWidth }: { code: string; screenWidth: number }): React.ReactElement {
-  const n = Math.max(1, code.length);
-  const drawn = screenWidth < 340 ? 54 : 64;
-  // Sheet padding 16+16, card padding 14+14, 8px gaps.
-  const bw = Math.min(drawn, Math.floor((screenWidth - 32 - 28 - 8 * (n - 1)) / n));
-  const font = Math.min(screenWidth < 340 ? 40 : 48, Math.round(bw * 0.75));
+  const sm = screenWidth < 340;
   return (
     <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 16, paddingTop: 14, paddingHorizontal: 14, paddingBottom: 16, alignItems: "center", gap: 10 }}>
       <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
-      <View style={{ flexDirection: "row", gap: 8 }} accessible accessibilityLabel={`${A.code}, ${code.split("").join(" ")}`}>
-        {code.split("").map((d, i) => (
-          <View
-            key={i}
-            style={{ width: bw, height: bw + 16, borderRadius: 12, backgroundColor: tokens.color.bg, borderWidth: 2, borderColor: tokens.color.accentText, alignItems: "center", justifyContent: "center" }}
-          >
-            <Text style={{ fontSize: font, fontWeight: tokens.font.weight.extrabold, color: tokens.color.ink, ...TABULAR }}>{d}</Text>
-          </View>
-        ))}
+      <View style={{ alignSelf: "stretch", backgroundColor: tokens.color.bg, borderWidth: 2, borderColor: tokens.color.accentText, borderRadius: 12, paddingVertical: 8, alignItems: "center" }}>
+        <CodeDigits code={code} size={sm ? 48 : 56} gap={sm ? 16 : 20} maxScale={1} />
       </View>
       <Text style={{ fontSize: 14, lineHeight: 20, textAlign: "center", color: tokens.color.ink }}>{A.codeHand}</Text>
     </View>
@@ -252,16 +302,6 @@ export function PriceBox({ price, was, onRaise, raising }: { price: number; was:
   );
 }
 
-/** The success note under the price box (state 5): wash, CircleCheck + 13/600 accent-text. */
-export function SuccessNote({ text }: { text: string }): React.ReactElement {
-  return (
-    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, paddingVertical: 10, paddingHorizontal: 12 }}>
-      <Icon name="circle-check" size={18} color={tokens.color.accentText} />
-      <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{text}</Text>
-    </View>
-  );
-}
-
 /** The surface box with a label over a big value (retry's SUGGESTED PRICE, not-delivered's REASON). */
 export function LabelBox({ label, value, big, note }: { label: string; value: string; big?: boolean; note?: string }): React.ReactElement {
   return (
@@ -293,25 +333,29 @@ export interface ReceiptView {
   pickupAt: string;
   dropoff: string;
   dropoffAt: string;
-  items: string;
+  /** One line per item ("Documents envelope × 1"). */
+  items: string[];
   rider: string | null;
   riderPhone: string | null;
   price: number;
 }
 
-/** Receipt: header + Ref, the two stops with times, Items · Rider · Rider phone · Agreed price · Paid cash. */
+/**
+ * Receipt: header + Ref, the two stops with times, Items · Rider · Rider phone · Agreed price · Paid cash.
+ * v2 (2.27): one item per line, right-aligned; addresses wrap; a missing pickup time reads "Not recorded".
+ */
 export function Receipt({ r, onShare }: { r: ReceiptView; onShare: () => void }): React.ReactElement {
   const stop = (drop: boolean, name: string, t: string): React.ReactElement => (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 3 }}>
-      {drop ? (
-        <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: tokens.color.danger }} />
-      ) : (
-        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tokens.color.accent }} />
-      )}
-      <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
-        {name}
-      </Text>
-      {t ? <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{t}</Text> : null}
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 3 }}>
+      <View style={{ height: 18, justifyContent: "center" }}>
+        {drop ? (
+          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: tokens.color.danger }} />
+        ) : (
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tokens.color.accent }} />
+        )}
+      </View>
+      <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 18, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{name}</Text>
+      <Text style={{ fontSize: t ? 13 : 12, lineHeight: 18, color: tokens.color.muted, ...TABULAR }}>{t || A.noTime}</Text>
     </View>
   );
   return (
@@ -324,7 +368,18 @@ export function Receipt({ r, onShare }: { r: ReceiptView; onShare: () => void })
         {stop(false, r.pickup, r.pickupAt)}
         {stop(true, r.dropoff, r.dropoffAt)}
       </View>
-      {r.items ? <KV k={A.items} v={r.items} /> : null}
+      {r.items.length ? (
+        <View style={{ flexDirection: "row", gap: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: tokens.color.line }}>
+          <Text style={{ fontSize: 13, color: tokens.color.muted }}>{A.items}</Text>
+          <View style={{ flex: 1 }}>
+            {r.items.map((t, i) => (
+              <Text key={i} style={{ textAlign: "right", fontSize: 13, lineHeight: 20, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
+                {t}
+              </Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
       {r.rider ? <KV k={A.rider} v={r.rider} /> : null}
       {r.riderPhone ? <KV k={A.riderPhone} v={r.riderPhone} /> : null}
       <KV k={A.price} v={usd(r.price)} strong />

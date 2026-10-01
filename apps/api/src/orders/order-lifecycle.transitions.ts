@@ -204,7 +204,8 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     event: "expire",
     to: "expired",
     actor: "system",
-    guard: "guarded CAS status=open_for_offers (same CAS as selection, so a just-selected order no-ops); fired by the offer-window timer / reconciler",
+    guard:
+      "guarded CAS status=open_for_offers AND (no pending offer OR createdAt older than OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) — an order with pending offers stays choosable through the 15 s grace, and the timer re-runs at its end; same CAS as selection, so a just-selected order no-ops; fired by the offer-window timer / reconciler",
     sideEffect:
       "pending offers→expired; OrderEvent(expired); post-commit emitBidExpired + emitOrderStatus(expired) + notifyOrderExpired; persists expiryNoSupply when zero bids AND nobody online nearby",
     source: "matching.service.ts:expireOrder",
@@ -308,6 +309,9 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     sideEffect:
       "MONEY: chargeCommission ledger debit ONLY for orderType=parcel (A-5 type branch, this PR — a merchant order's own commission/settlement is C4's ledger, not the Express ride-commission wallet); re-reads agreedFare under the CAS row lock, WD-005; set completedAt; create Rating; OrderEvent(completed); rider tripsCount += 1 always, but ratingAvg/ratingCount + reliability recovery move ONLY when the rating counts toward the aggregate (distinct pair, FRAUD P1-6, AND established customer, customerRatingCarriesWeight); a low rating from a trusted customer always applies its penalty; post-commit supply eviction if the penalty newly holds the rider",
     source: "order-lifecycle.service.ts:rate",
+    // After-send v2: rate() also accepts a `completed`, still-unrated order within RATE_LATE_WINDOW_MS of
+    // delivery (the auto-close's late rating). That is NOT a state edge — the status stays `completed` —
+    // so it has no row here; it adds the Rating + rider aggregate (+ a low rating's penalty) only.
     // A-5: the STATE edge (delivered->completed) is Class-b shared; the money side effect is now
     // type-branched in code (this PR) rather than deferred — a merchant order can't reach `delivered`
     // without C3's dispatch yet, but the guard is cheap and belongs here, not left latent.

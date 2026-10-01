@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -574,7 +574,8 @@ describe("OrdersService.getSnapshot", () => {
   });
   const svc = (snap: unknown, storage?: StorageAdapter) =>
     new OrdersService(
-      { order: { findUnique: async () => snap } } as unknown as PrismaService,
+      // `rating`: the customer's own-rating side-read on a `completed` order (none recorded here).
+      { order: { findUnique: async () => snap }, rating: { findUnique: async () => null } } as unknown as PrismaService,
       {} as OfferExpiryService,
       noTracking,
       noNotifications,
@@ -1553,6 +1554,12 @@ describe("OrdersService.raisePrice (raise the fare in place on an open auction)"
     expect(h.updates).toHaveLength(0);
   });
 
+  it("stays closed through the choose grace — the raise gate is the window end, not window + OFFER_CHOOSE_GRACE_MS", async () => {
+    const h = harness(openRow({ createdAt: new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS / 2) }));
+    await expect(h.svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/window has closed/i);
+    expect(h.updates).toHaveLength(0);
+  });
+
   it("400s a fare that isn't strictly higher than the current one", async () => {
     await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2.5)).rejects.toThrow(/must be higher/i);
     await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2)).rejects.toThrow(/must be higher/i);
@@ -1730,5 +1737,64 @@ describe("OrdersService.getSnapshot riderCard (customer's rider identity card)",
   it("is null for the rider viewing their own job, and when no rider is assigned", async () => {
     expect((await svc(row()).getSnapshot("ord-1", "rider-1")).riderCard).toBeNull();
     expect((await svc(row({ status: "open_for_offers", riderId: null, rider: null })).getSnapshot("ord-1", "cust-1")).riderCard).toBeNull();
+  });
+});
+
+describe("OrdersService.getSnapshot rating (the customer's own rating, after-send v2)", () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: "ord-1",
+    status: "completed",
+    agreedFare: 3,
+    proposedFare: 3,
+    customerId: "cust-1",
+    riderId: "rider-1",
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    customer: { phone: "+263771111111" },
+    rider: { profileId: "rider-1", currentLat: null, currentLng: null, positionUpdatedAt: null, profile: { phone: "+263782000000", firstName: "Tendai", lastName: "Moyo" } },
+    events: [],
+    ...overrides,
+  });
+  const harness = (snap: unknown, stored: { score: number; tags: string[] } | null) => {
+    const ratingFindUnique = vi.fn(async () => stored);
+    const svc = new OrdersService(
+      { order: { findUnique: async () => snap }, rating: { findUnique: ratingFindUnique } } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+    return { svc, ratingFindUnique };
+  };
+
+  it("gives the customer their own { score, tags } on a completed order, read by (order, customer)", async () => {
+    const { svc, ratingFindUnique } = harness(row(), { score: 4, tags: ["on_time", "careful"] });
+    const snap = await svc.getSnapshot("ord-1", "cust-1");
+    expect(snap.rating).toEqual({ score: 4, tags: ["on_time", "careful"] });
+    // The customer→rider direction only — never the rider's "rate the sender" row.
+    expect(ratingFindUnique).toHaveBeenCalledWith({
+      where: { orderId_byProfileId: { orderId: "ord-1", byProfileId: "cust-1" } },
+      select: { score: true, tags: true },
+    });
+  });
+
+  it("is null for a completed order the customer never rated (still rateable late)", async () => {
+    const { svc } = harness(row(), null);
+    expect((await svc.getSnapshot("ord-1", "cust-1")).rating).toBeNull();
+  });
+
+  it("is null for the rider viewer, without reading the rating", async () => {
+    const { svc, ratingFindUnique } = harness(row(), { score: 2, tags: ["late"] });
+    expect((await svc.getSnapshot("ord-1", "rider-1")).rating).toBeNull();
+    expect(ratingFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("is null, without a read, on a live or delivered order (no rating can exist yet)", async () => {
+    for (const status of ["en_route_dropoff", "delivered"]) {
+      const { svc, ratingFindUnique } = harness(row({ status }), { score: 5, tags: [] });
+      expect((await svc.getSnapshot("ord-1", "cust-1")).rating).toBeNull();
+      expect(ratingFindUnique).not.toHaveBeenCalled();
+    }
   });
 });

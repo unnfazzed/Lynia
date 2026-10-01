@@ -69,6 +69,7 @@ jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
 }));
 jest.mock("../../../src/ui/order/OrderMap", () => ({
   OrderMap: () => null,
+  BlankMap: () => null,
 }));
 
 import OrderScreen from "../[id]";
@@ -133,6 +134,12 @@ function textHits(tree: renderer.ReactTestRenderer, needle: string): number {
 
 const CODE_LABEL = "DELIVERY CODE";
 
+/** The code renders as two 3-digit groups (After Send v2); its spoken label carries every digit. */
+function codeShown(tree: renderer.ReactTestRenderer, code: string): boolean {
+  const spoken = `${CODE_LABEL}, ${code.split("").join(" ")}`;
+  return tree.root.findAll((n) => n.props.accessibilityLabel === spoken).length > 0;
+}
+
 beforeEach(() => {
   releaseCodeRead = null;
   rejectCodeRead = null;
@@ -170,7 +177,7 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(textHits(tree, "482913")).toBeGreaterThan(0);
+    expect(codeShown(tree, "482913")).toBe(true);
     expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
   });
 
@@ -186,7 +193,7 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     await settle();
 
     expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
-    expect(textHits(tree, "553201")).toBeGreaterThan(0);
+    expect(codeShown(tree, "553201")).toBe(true);
   });
 
   it("falls back to issuing a fresh code when the keychain read REJECTS — a gate that never opens would leave no code", async () => {
@@ -205,6 +212,6 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     await settle();
 
     expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
-    expect(textHits(tree, "553201")).toBeGreaterThan(0);
+    expect(codeShown(tree, "553201")).toBe(true);
   });
 });

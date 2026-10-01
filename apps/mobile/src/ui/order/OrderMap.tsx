@@ -200,3 +200,13 @@ export const OrderMap = React.memo(function OrderMap(props: {
     </View>
   );
 });
+
+/** The map with no pins — while an order is opening or failed to load (v2 2.1–2.3). */
+export function BlankMap(): React.ReactElement {
+  return (
+    <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <MapView style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false} />
+    </View>
+  );
+}
+

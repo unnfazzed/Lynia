@@ -2,37 +2,37 @@ import { OFFER_WINDOW_MS, type RatingTag, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, BackHandler, Linking, Share, useWindowDimensions, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, BackHandler, Linking, PixelRatio, Share, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer } from "../../src/api/offers";
-import { raiseSos } from "../../src/api/safety";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { raiseIssue, raiseSos } from "../../src/api/safety";
 import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
 import { liveEta } from "../../src/logic/eta";
-import type { LastActive } from "../../src/logic/last-active";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
-import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
+import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
 import { orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry } from "../../src/logic/order-tracking";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
-import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
+import { clearLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
+import { clearOrderCopy, loadOrderCopy, type OrderCopy, saveOrderCopy } from "../../src/net/order-copy-store";
 import { useReachability } from "../../src/net/use-reachability";
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { haptic, SkeletonList, useActionErrorEffect, useDial } from "../../src/ui";
+import { haptic, useActionErrorEffect, useDial } from "../../src/ui";
 import { type OfferView, type ReceiptView, type RiderView } from "../../src/ui/order/cards";
-import { hhmm, initials, maskPhone, ORDER_COPY as A, orderText, riderShortName, usd } from "../../src/ui/order/copy";
-import { CtaButton, H2, Muted, OrderToast } from "../../src/ui/order/kit";
-import { OrderMap, type MapFrame } from "../../src/ui/order/OrderMap";
+import { hhmm, initials, maskPhone, ORDER_COPY as A, orderText, riderShortName } from "../../src/ui/order/copy";
+import { CtaBar, CtaButton, OrderToast } from "../../src/ui/order/kit";
+import { BlankMap, type MapFrame, OrderMap } from "../../src/ui/order/OrderMap";
 import { OrderSheet, type OrderSheetHandle } from "../../src/ui/order/OrderSheet";
-import { HelpPanel, OrderHeader, PhotoViewer, ReconnectBanner } from "../../src/ui/order/panels";
+import { HelpPanel, OrderHeader, PhotoViewer, ReconnectBanner, ReportPanel } from "../../src/ui/order/panels";
 import {
   CancelBar,
   CancelledSheet,
@@ -42,12 +42,16 @@ import {
   FindingBar,
   FindingSheet,
   HandoffSheet,
+  LoadErrorSheet,
   NotDeliveredSheet,
   OffersSheet,
   OneButtonBar,
+  OpeningSheet,
   RateBar,
   RatedSheet,
   RateSheet,
+  ReopenedBar,
+  ReopenedSheet,
   RetryBar,
   RetrySheet,
   type TrackActions,
@@ -55,22 +59,23 @@ import {
   type TrackVM,
   TwoButtonBar,
 } from "../../src/ui/order/stages";
-import { TripIssueSheet } from "../../src/ui/safety";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
+import { uuidV4FromSeed } from "../../src/util";
 
 /**
- * The customer's order screen — the After Send handoff (`packages/design/handoff/after-send/`, ledger
- * D-53). ONE screen for the whole order: a full-bleed map under the Send flow's header, and a bottom
- * sheet whose content follows the order's stage (finding → offers → to pickup → to drop-off → hand-off
- * → delivered / completed, plus no match, rider cancelled, not delivered, cancelled, GPS paused and
- * offline). Stages never push screens, so Back never walks through old stages: it closes a panel,
- * collapses a full sheet, then leaves for Home.
+ * The customer's order screen — the After Send handoff (`packages/design/handoff/after-send-v2/`, ledger
+ * D-53 and its v2 round). ONE screen for the whole order: a full-bleed map under the Send flow's header,
+ * and a bottom sheet whose content follows the order's stage (finding → offers → to pickup → to drop-off
+ * → hand-off → delivered / completed, plus no match, rider cancelled, not delivered, cancelled, GPS
+ * paused, offline, opening and load errors). Stages never push screens, so Back never walks through old
+ * stages: it closes a panel, collapses a full sheet, then leaves.
  *
- * The data plumbing is unchanged from the screen this replaces: the snapshot is subscribed through the
- * telemetry-stripped shell (GPS ticks only reach the map + stage via `selectRiderTelemetry`), the order
- * socket streams status / offers / positions with a socket-gated poll fallback, the handover code is
- * restored from SecureStore and reconciled against server rotations, a select 409 is reconciled before
- * the "just taken" toast, and a rating armed before an app kill is re-sent on the next start (BH-06).
+ * The data plumbing: the snapshot is subscribed through the telemetry-stripped shell (GPS ticks reach
+ * the map + stage via `selectRiderTelemetry`), the order socket streams status / offers / positions with
+ * a socket-gated poll fallback, the handover code is restored from SecureStore and reconciled against
+ * server rotations, a select 409 is reconciled before the "just taken" toast, and a rating armed before
+ * an app kill is re-sent on the next start (BH-06). The last snapshot is kept on disk so an offline cold
+ * start shows a saved copy (2.4).
  */
 
 const ACTIVE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
@@ -78,16 +83,27 @@ const ACTIVE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up",
 const CANCELLED_GRACE_MS = 20_000;
 const NOTE_MS = 4_000;
 const RATE_UNDO_S = 10;
+/** After the offer window, offers already on screen stay choosable this long (v2 2.10). */
+const CHOOSE_GRACE_MS = 15_000;
+/** "Still confirming…" after this long (2.9b). */
+const CHOOSE_SLOW_MS = 5_000;
+/** A completed order can still be rated for 7 days after delivery (2.25). */
+const RATE_LATE_MS = 7 * 24 * 60 * 60 * 1000;
 // The parcel rating tags, index-aligned with the copy's `tg` / `tn` labels.
 const PARCEL_TAGS: readonly RatingTag[] = ["on_time", "careful", "friendly", "communication"];
 const PARCEL_TAGS_LOW: readonly RatingTag[] = ["late", "damaged", "rude", "hard_to_reach"];
+// The report types, index-aligned with the copy's `rp` labels.
+const REPORT_TYPES = ["wrong_item", "damaged", "rider_conduct", "payment_dispute", "other"] as const;
 
 type Panel = null | "cancelRequest" | "cancel" | "help" | "photo" | "report";
 type Toast = { text: string; icon?: "circle-alert" | "circle-check"; action?: string; actionIcon?: "refresh-cw" | "undo-2"; onAction?: () => void; ttl?: number };
 
 export default function OrderScreen(): React.ReactElement {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, riderCx } = useLocalSearchParams<{ id: string; riderCx?: string }>();
   const orderId = typeof id === "string" ? id : "";
+  // Set when this auction is the re-broadcast opened because the customer's rider cancelled before
+  // pickup (state 13): the cancelled rider's first name.
+  const reopenedFrom = typeof riderCx === "string" && riderCx.trim() ? riderCx.trim() : null;
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
@@ -101,12 +117,13 @@ export default function OrderScreen(): React.ReactElement {
   const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
   const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
   const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
-  const [lastKnown, setLastKnown] = useState<LastActive | null>(null);
+  const [savedCopy, setSavedCopy] = useState<OrderCopy | null>(null);
 
   // ── screen state ──
   const [panel, setPanel] = useState<Panel>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [choosingId, setChoosingId] = useState<string | null>(null);
+  const [chooseSlow, setChooseSlow] = useState(false);
   const [prevPrice, setPrevPrice] = useState<number | null>(null);
   const [priceNote, setPriceNote] = useState(false);
   const [cancelReason, setCancelReason] = useState<number | null>(null);
@@ -115,6 +132,7 @@ export default function OrderScreen(): React.ReactElement {
   const [rated, setRated] = useState<{ stars: number; tags: RatingTag[] } | null>(null);
   const [skipped, setSkipped] = useState(false);
   const [undoLeft, setUndoLeft] = useState(0);
+  const [sosSent, setSosSent] = useState(false);
   const [ctaH, setCtaH] = useState(0);
   const [areaH, setAreaH] = useState(0);
   const [sheetVisible, setSheetVisible] = useState(0);
@@ -142,11 +160,12 @@ export default function OrderScreen(): React.ReactElement {
   useEffect(() => {
     let alive = true;
     setRiderIdentity(null);
+    setSavedCopy(null);
     void loadRiderIdentity(orderId).then((i) => {
       if (alive && i) setRiderIdentity(i);
     });
-    void loadLastActiveOrder(orderId).then((la) => {
-      if (alive) setLastKnown(la);
+    void loadOrderCopy(orderId).then((c) => {
+      if (alive) setSavedCopy(c);
     });
     return () => {
       alive = false;
@@ -179,14 +198,21 @@ export default function OrderScreen(): React.ReactElement {
   const status = orderQ.data?.status;
   const isActive = status !== undefined && ACTIVE.has(status);
 
+  // Persist the last-known order once per status transition: the bounded summary (other screens'
+  // offline restore) and the full saved copy (this screen's 2.4). Both go when the order ends.
   const persistedStatus = useRef<string | null>(null);
   useEffect(() => {
     const d = orderQ.data;
     if (!d || d.status === persistedStatus.current) return;
     persistedStatus.current = d.status;
     const raw = qc.getQueryData<OrderSnapshot>(orderKey(orderId)) ?? d;
-    if (ACTIVE.has(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(raw);
-    else void clearLastActiveOrder(d.id);
+    if (ACTIVE.has(d.status) || d.status === "open_for_offers") {
+      void saveLastActiveOrder(raw);
+      void saveOrderCopy(raw);
+    } else {
+      void clearLastActiveOrder(d.id);
+      void clearOrderCopy(d.id);
+    }
   }, [orderQ.data, qc, orderId]);
 
   // 07-14 / KB-DELIVERY-CODE-ROTATION-SIGNAL: drop a local code the server has since rotated.
@@ -223,13 +249,13 @@ export default function OrderScreen(): React.ReactElement {
     return () => clearTimeout(t);
   }, [status]);
   const socketExpected = isActive || status === "delivered" || status === "open_for_offers" || (status === "cancelled" && !cancelledExpired);
-  // A rider bail no longer teleports to the re-broadcast auction: this screen shows "Rider cancelled"
-  // with the one-tap retry (state 13), whose "Send again" re-prices and opens that same auction.
-  const { connected } = useOrderSocket(
-    socketExpected ? orderId : null,
-    () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
-    () => setNowMs(Date.now()),
+  // The rider's first name, for following a rider-bail re-broadcast into state 13.
+  const riderFirstRef = useRef<string>(A.rider);
+  const followReopened = useCallback(
+    (newOrderId: string) => router.replace(`/order/${newOrderId}?riderCx=${encodeURIComponent(riderFirstRef.current)}`),
+    [router],
   );
+  const { connected } = useOrderSocket(socketExpected ? orderId : null, followReopened, () => setNowMs(Date.now()));
   const wasConnected = useRef(false);
   if (connected) wasConnected.current = true;
   socketConnectedRef.current = connected;
@@ -278,6 +304,7 @@ export default function OrderScreen(): React.ReactElement {
     setPanel(null);
     setPrevPrice(null);
     setPriceNote(false);
+    setSosSent(false);
   }, [orderId]);
 
   // ── toasts ──
@@ -334,6 +361,14 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: offersKey(orderId) });
     },
   });
+  // 2.9b: "Still confirming…" after 5 s.
+  useEffect(() => {
+    setChooseSlow(false);
+    if (!choosingId) return;
+    const t = setTimeout(() => setChooseSlow(true), CHOOSE_SLOW_MS);
+    return () => clearTimeout(t);
+  }, [choosingId]);
+
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
     onSuccess: (res) => {
@@ -343,23 +378,18 @@ export default function OrderScreen(): React.ReactElement {
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });
+  // "+ $0.50" (and state 13's "Raise to $X"): the new price shows only once the server confirms (2.5);
+  // a failure leaves the price as it was and offers "Try again" (2.6).
   const raiseM = useMutation({
     mutationFn: (to: number) => raiseOrderPrice(orderId, to),
-    onMutate: async (to) => {
-      await qc.cancelQueries({ queryKey: orderKey(orderId) });
-      const prev = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
-      const from = Number(prev?.proposedFare ?? 0);
-      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, proposedFare: to.toFixed(2) } : o));
+    onSuccess: (res, to) => {
+      const from = Number(qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.proposedFare ?? 0);
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, proposedFare: res.proposedFare ?? to.toFixed(2) } : o));
       setPrevPrice((p) => p ?? from);
       setPriceNote(true);
-      return { prev };
+      AccessibilityInfo.announceForAccessibility(orderText.raised(to));
     },
-    onError: (_e, to, ctx) => {
-      if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
-      setPriceNote(false);
-      setPrevPrice(null);
-      showToast({ text: A.priceFail, action: A.retry, actionIcon: "refresh-cw", onAction: () => raiseM.mutate(to), ttl: 0 });
-    },
+    onError: (_e, to) => showToast({ text: A.raiseFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => raiseM.mutate(to), ttl: 0 }),
     onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
   });
   useEffect(() => {
@@ -390,6 +420,13 @@ export default function OrderScreen(): React.ReactElement {
       void clearPendingRating();
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] });
+    },
+    // 2.24: back to the rate form with the stars and tags kept, and "Try again".
+    onError: (_e, r) => {
+      setRated(null);
+      setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
+      void clearPendingRating();
+      showToast({ text: A.rateFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => rateM.mutate(r), ttl: 0 });
     },
   });
   // BH-06: re-send a rating an app kill dropped mid-undo window (only a marker recovered from storage).
@@ -437,6 +474,7 @@ export default function OrderScreen(): React.ReactElement {
     if (armedRating.current) rateMutate(armedRating.current);
   }, [rateMutate]);
 
+  // Cancel (1b, 10a/b): a failure keeps the panel open with "Try again" (2.22).
   const cancelM = useMutation({
     mutationFn: (reason: string | undefined) => cancelOrder(orderId, reason ? { reason } : {}),
     onSuccess: () => {
@@ -445,6 +483,7 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] });
     },
+    onError: (_e, reason) => showToast({ text: A.cancelFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => cancelM.mutate(reason), ttl: 0 }),
   });
   const notifyM = useMutation({
     mutationFn: () => {
@@ -453,6 +492,7 @@ export default function OrderScreen(): React.ReactElement {
       return notifyWhenRiderOnline(pickup, orderId);
     },
   });
+  // State 12's one-tap "Send again at $X" (2.21: in flight / failed).
   const resendM = useMutation({
     mutationFn: (price: number) => resendOrder(orderId, price),
     onSuccess: (res) => {
@@ -460,10 +500,12 @@ export default function OrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["history"] });
       router.replace(`/order/${res.id}`);
     },
+    onError: (_e, price) => showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => resendM.mutate(price), ttl: 0 }),
   });
 
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
-  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error ?? resendM.error);
+  // The failures with their own "Try again" toast (raise, cancel, rate, resend) don't speak twice.
+  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? null);
   useEffect(() => {
     selectM.reset();
     rotateM.reset();
@@ -474,11 +516,13 @@ export default function OrderScreen(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset stale mutation errors on a real status change.
   }, [status]);
 
-  // ── stage ──
-  const order = orderQ.data;
+  // ── which order is on screen: the live one, or the saved copy on an offline cold start (2.4) ──
+  const loadErrorKind = !orderQ.data && orderQ.isError ? orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined) : null;
+  const saved = loadErrorKind === "transient" && savedCopy != null ? savedCopy : null;
+  const order: OrderSnapshot | undefined = orderQ.data ?? (saved ? selectOrderShell(saved.order) : undefined);
   const isRiderViewer = order?.viewerRole === "rider";
-  const riderPoint = telemetry && telemetry.lat != null && telemetry.lng != null ? { lat: telemetry.lat, lng: telemetry.lng } : null;
-  const { stage, gpsPaused, offline } = order
+  const riderPoint = !saved && telemetry && telemetry.lat != null && telemetry.lng != null ? { lat: telemetry.lat, lng: telemetry.lng } : null;
+  const { stage, gpsPaused, offline, noFix } = order
     ? resolveStage({
         status: order.status,
         offerCount: offers.length,
@@ -489,8 +533,9 @@ export default function OrderScreen(): React.ReactElement {
         dropoff: order.dropoff.point,
         online,
         nowMs,
+        reopened: reopenedFrom != null,
       })
-    : { stage: "finding" as OrderStage, gpsPaused: false, offline: !online };
+    : { stage: "finding" as OrderStage, gpsPaused: false, offline: !online, noFix: false };
   const live = isLiveStage(stage);
   // Re-evaluate the 60s GPS-paused rule even when no new fix arrives.
   useEffect(() => {
@@ -499,17 +544,39 @@ export default function OrderScreen(): React.ReactElement {
     return () => clearInterval(iv);
   }, [live]);
   useClaimOfflineBanner(true);
-  const showBanner = offline || (live && frozen);
+
+  // 2.10: when the window closes with offers on screen they stay choosable for 15 s.
+  const windowEnd = order?.expiresAt ? Date.parse(order.expiresAt) : NaN;
+  useEffect(() => {
+    if (stage !== "offers" || !Number.isFinite(windowEnd)) return;
+    const now = Date.now();
+    if (now < windowEnd) {
+      const t = setTimeout(() => setNowMs(Date.now()), windowEnd - now + 50);
+      return () => clearTimeout(t);
+    }
+    if (now < windowEnd + CHOOSE_GRACE_MS) {
+      const iv = setInterval(() => setNowMs(Date.now()), 1000);
+      return () => clearInterval(iv);
+    }
+    return undefined;
+  }, [stage, windowEnd, nowMs]);
+  const graceLeftMs = stage === "offers" && Number.isFinite(windowEnd) && nowMs >= windowEnd ? Math.max(0, windowEnd + CHOOSE_GRACE_MS - nowMs) : null;
+
+  // A rider who cancels before pickup: the server has already re-broadcast the order at the same price —
+  // follow it, and show it as state 13 there (a finding state with the reason).
+  useEffect(() => {
+    if (stage === "retryRiderCancelled" && order?.rebroadcastedToId && !isRiderViewer && !saved) followReopened(order.rebroadcastedToId);
+  }, [stage, order?.rebroadcastedToId, isRiderViewer, saved, followReopened]);
 
   // A live order with no local handover code (a dropped select response, a rotation while killed):
-  // issue a fresh one once so the code card is never empty — the old "Re-issue" button is gone.
+  // issue a fresh one once; the card shows "Getting your code…" meanwhile (2.14). No "Re-issue" button.
   const rotatedOnce = useRef(false);
   const rotate = rotateM.mutate;
   useEffect(() => {
-    if (!live || isRiderViewer || !codeRestored || deliveryCode || rotatedOnce.current || !online) return;
+    if (!live || isRiderViewer || saved || !codeRestored || deliveryCode || rotatedOnce.current || !online) return;
     rotatedOnce.current = true;
     rotate();
-  }, [live, isRiderViewer, codeRestored, deliveryCode, online, rotate]);
+  }, [live, isRiderViewer, saved, codeRestored, deliveryCode, online, rotate]);
 
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);
@@ -532,39 +599,75 @@ export default function OrderScreen(): React.ReactElement {
     }, [onBack]),
   );
 
-  if (orderQ.isLoading) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-        <OrderHeader title="" help={false} onBack={leave} onHelp={() => undefined} />
-        <View style={{ padding: 16 }}>
-          <SkeletonList />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // ── layout shared by every state ──
+  const area = areaH || Math.max(0, height - 80);
+  const fontScale = PixelRatio.getFontScale();
+  const frame = (p: {
+    title: string;
+    help?: boolean;
+    map: React.ReactNode;
+    banner?: string | null;
+    content: React.ReactNode;
+    bar: React.ReactNode;
+    floor: number;
+    fallbackShare: number;
+    contentKey: string;
+    toast?: Toast | null;
+    overlays?: React.ReactNode;
+  }): React.ReactElement => (
+    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <OrderHeader title={p.title} help={!!p.help} onBack={() => onBack()} onHelp={() => setPanel("help")} />
+      <View style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
+        {p.map}
+        {p.banner ? (
+          <View style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 21 }}>
+            <ReconnectBanner text={p.banner} />
+          </View>
+        ) : null}
+        {area > 0 ? (
+          <OrderSheet
+            ref={sheetRef}
+            areaHeight={area}
+            fallbackShare={p.fallbackShare}
+            floor={p.floor}
+            bottomInset={p.bar ? ctaH : 0}
+            contentKey={p.contentKey}
+            reduceMotion={reduceMotion}
+            onVisibleHeight={setSheetVisible}
+          >
+            {p.content}
+          </OrderSheet>
+        ) : null}
+        {p.bar ? (
+          <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 25 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
+            {p.bar}
+          </View>
+        ) : null}
+        {p.toast ? (
+          <View style={{ position: "absolute", left: 12, right: 12, bottom: (p.bar ? ctaH : 0) + 10, zIndex: 35 }}>
+            <OrderToast text={p.toast.text} icon={p.toast.icon} action={p.toast.action} actionIcon={p.toast.actionIcon} onAction={p.toast.onAction} />
+          </View>
+        ) : null}
+      </View>
+      {p.overlays}
+    </SafeAreaView>
+  );
+
+  // 2.1 · 2.2 · 2.3 — opening / couldn't load / not found.
   if (!order) {
-    const kind = orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined);
-    const known = kind === "transient" && lastKnown != null && lastKnown.id === orderId ? lastKnown : null;
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-        <OrderHeader title="" help={false} onBack={leave} onHelp={() => undefined} />
-        {known ? <ReconnectBanner lastUpdate="" /> : null}
-        <View style={{ padding: 16, gap: 12 }}>
-          {known ? (
-            <>
-              <H2>{`${known.pickupLandmark || "Pickup"} → ${known.dropoffLandmark || "Drop-off"}`}</H2>
-              <Muted>{usd(Number(known.fare))}</Muted>
-            </>
-          ) : (
-            <H2>{kind === "not_found" ? "Order not found" : kind === "forbidden" ? "This order isn't available to you" : "Couldn't load this order"}</H2>
-          )}
-          {kind === "transient" ? (
-            <CtaButton label={A.retry} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
-          ) : null}
-          <CtaButton ghost label={A.home} onPress={() => goHomeClearingStack(router)} />
-        </View>
-      </SafeAreaView>
+    if (orderQ.isLoading || !loadErrorKind) {
+      return frame({ title: "", map: <BlankMap />, content: <OpeningSheet />, bar: null, floor: 0, fallbackShare: 0.34, contentKey: "opening" });
+    }
+    const gone = loadErrorKind !== "transient";
+    const bar = gone ? (
+      <OneButtonBar label={A.home} icon="home" onPress={() => goHomeClearingStack(router)} />
+    ) : (
+      <CtaBar>
+        <CtaButton label={A.tryAgain} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
+        <CtaButton ghost label={A.home} onPress={() => goHomeClearingStack(router)} />
+      </CtaBar>
     );
+    return frame({ title: "", map: <BlankMap />, content: <LoadErrorSheet gone={gone} />, bar, floor: 0, fallbackShare: 0.36, contentKey: gone ? "gone" : "fail" });
   }
 
   // ── view model ──
@@ -595,25 +698,26 @@ export default function OrderScreen(): React.ReactElement {
         }
       : null;
   const riderFirst = rider?.firstName ?? A.rider;
+  riderFirstRef.current = riderFirst;
   const phone = order.counterpartyPhone;
   const masked = phoneMasked(stage);
   const eventAt = (s: string): string | null => order.events?.find((e) => e.status === s)?.createdAt ?? null;
   const pickedUpAt = eventAt("picked_up");
   const deliveredAt = eventAt("delivered");
   const toPickup = stage === "toPickup";
-  const eta = live ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
-  const itemsText = order.items && order.items.length ? order.items.map((i) => `${i.description} × ${i.quantity}`).join(", ") : "";
+  const eta = live && !saved ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
   const receipt: ReceiptView = {
     ref: orderText.ref(order.id),
     pickup: order.pickup.landmark,
     pickupAt: hhmm(pickedUpAt),
     dropoff: order.dropoff.landmark,
     dropoffAt: hhmm(deliveredAt),
-    items: itemsText,
+    items: (order.items ?? []).map((i) => `${i.description} × ${i.quantity}`),
     rider: rider ? orderText.riderLine(rider.name, rider.plate) : null,
     riderPhone: phone || masked ? maskPhone(phone) : null,
     price,
   };
+  const ratedStars = rated?.stars ?? order.rating?.score ?? null;
 
   const offerViews: OfferView[] = ranked.map(({ offer: o }) => ({
     id: o.id,
@@ -627,12 +731,13 @@ export default function OrderScreen(): React.ReactElement {
     ask,
   }));
   const bestId = ranked.find((r) => r.recommended)?.offer.id ?? ranked[0]?.offer.id ?? null;
+  const nextPrice = Math.round((ask + 0.5) * 100) / 100;
 
   // ── actions ──
   const raise = (): void => {
     if (raiseM.isPending) return;
     setToast(null);
-    raiseM.mutate(Math.round((ask + 0.5) * 100) / 100);
+    raiseM.mutate(nextPrice);
   };
   const choose = (offerId: string): void => {
     setToast(null);
@@ -654,11 +759,13 @@ export default function OrderScreen(): React.ReactElement {
     }
     selectM.mutate(offerId);
   };
-  // Get help → Emergency: dial at once, and alert the safety team (the old SOS control's job) with the
-  // last-known fix, best-effort — never delaying the call.
+  // Get help → Emergency: dial at once, and alert the safety team with the last-known fix, best-effort —
+  // never delaying the call. The sheet then carries "Our safety team has been told" (2.18).
   const emergency = (): void => {
     haptic("alert");
     dial(SOS_POLICY.emergencyNumber);
+    setSosSent(true);
+    setPanel(null);
     void Location.getForegroundPermissionsAsync()
       .then((p) => (p.status === Location.PermissionStatus.GRANTED ? Location.getLastKnownPositionAsync() : null))
       .then((pos) => raiseSos(orderId, pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : {}))
@@ -677,33 +784,32 @@ export default function OrderScreen(): React.ReactElement {
     const origin = riderPoint ?? (toPickup ? target : order.pickup.point);
     void Linking.openURL(mapsDirectionsUrl(origin, target)).catch(() => undefined);
   };
-  const editOrder = (): void =>
+  const sendFlow = (fare: string | number): void =>
     router.push({
       pathname: "/send",
       params: buildRebroadcastParams({
         pickup: order.pickup,
         dropoff: order.dropoff,
         items: order.items,
-        proposedFare: suggestedRetryPrice(price),
+        proposedFare: fare,
         note: order.note,
         createdAt: order.events?.[0]?.createdAt ?? null,
       }),
     });
-  const sendAgainFlow = (): void =>
-    router.push({
-      pathname: "/send",
-      params: buildRebroadcastParams({
-        pickup: order.pickup,
-        dropoff: order.dropoff,
-        items: order.items,
-        proposedFare: order.proposedFare,
-        note: order.note,
-        createdAt: order.events?.[0]?.createdAt ?? null,
-      }),
-    });
+  const report = async (typeIndex: number, text: string): Promise<boolean> => {
+    const type = REPORT_TYPES[typeIndex] ?? "other";
+    // The form's text is optional; the case still needs a description — the picked type stands in.
+    const description = text || A.rp[typeIndex] || A.rp[4];
+    try {
+      await raiseIssue(orderId, { type, description, idempotencyKey: uuidV4FromSeed(`${orderId}|${type}|${description}`) });
+      return true;
+    } catch {
+      showToast({ text: A.sendFail });
+      return false;
+    }
+  };
   const submitRating = (): void => {
-    const low = stars <= 2;
-    const keys = low ? PARCEL_TAGS_LOW : PARCEL_TAGS;
+    const keys = stars <= 2 ? PARCEL_TAGS_LOW : PARCEL_TAGS;
     const r = { score: stars, tags: tagIdx.map((i) => keys[i]).filter((t): t is RatingTag => t != null) };
     armedRating.current = r;
     ratingFromStorage.current = false;
@@ -736,15 +842,16 @@ export default function OrderScreen(): React.ReactElement {
   const toggleTag = (i: number): void => setTagIdx((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]));
 
   // ── per-stage title, map, sheet, CTA ──
-  const cancelPanel = panel === "cancel" && live;
+  const cancelPanel = panel === "cancel" && live && !saved;
   const afterPickup = order.status === "picked_up" || order.status === "en_route_dropoff";
   const title = cancelPanel ? A[stageTitleKey(afterPickup ? "toDropoff" : "toPickup")] : A[stageTitleKey(stage)];
   const help = showsHelp(stage) && !isRiderViewer;
-  const frame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" ? "riderDrop" : "route";
+  const mapFrame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" ? "riderDrop" : "route";
   const dim = cancelPanel || stage === "retryNoMatch" || stage === "retryRiderCancelled" || stage === "cancelled";
-  const showRider = live || stage === "undelivered" || stage === "delivered";
+  const showRider = !saved && (live || stage === "undelivered" || stage === "delivered");
   const riderLabel = gpsPaused || offline ? orderText.lastSeen(minutesSince(telemetry?.updatedAt, nowMs)) : riderFirst;
   const suggested = suggestedRetryPrice(price);
+  const savedAtText = saved ? hhmm(saved.at) : null;
 
   const trackVM: TrackVM = {
     status: order.status,
@@ -754,11 +861,16 @@ export default function OrderScreen(): React.ReactElement {
     step: stepIndex(order.status),
     gpsPaused,
     offline,
+    noFix,
+    savedAt: savedAtText,
     rider,
-    code: isRiderViewer ? null : deliveryCode,
+    riderFirst,
+    code: deliveryCode,
+    showCode: !isRiderViewer && codeRestored && (deliveryCode != null || rotateM.isPending || (saved == null && rotatedOnce.current && !rotateM.isError)),
     photo: order.pickupPhotoUrl ? { url: order.pickupPhotoUrl, sub: orderText.photoSub(riderFirst, hhmm(pickedUpAt)) } : null,
-    canCall: !!phone,
-    canWhatsApp: !!phone,
+    hasPhone: !!phone,
+    sosSent,
+    emergencyNumber: SOS_POLICY.emergencyNumber,
   };
   const trackA: TrackActions = {
     onCall: () => dial(phone),
@@ -770,15 +882,25 @@ export default function OrderScreen(): React.ReactElement {
       setCancelReason(null);
       setPanel("cancel");
     },
+    onEmergency: () => dial(SOS_POLICY.emergencyNumber),
   };
+  const cancelling = pendingOrQueued(cancelM) !== false;
+  const findingBar = (
+    <FindingBar
+      confirming={panel === "cancelRequest"}
+      onAsk={() => setPanel("cancelRequest")}
+      onYes={() => cancelM.mutate(undefined)}
+      onKeep={() => setPanel(null)}
+      cancelling={cancelling}
+      disabled={choosingId != null}
+    />
+  );
 
   let content: React.ReactNode = null;
   let bar: React.ReactNode = null;
-  let mapShare = stageMapShare(stage);
   if (cancelPanel) {
     content = <CancelSheet afterPickup={afterPickup} riderFirst={riderFirst} reason={cancelReason} onReason={(i) => setCancelReason((c) => (c === i ? null : i))} />;
-    bar = <CancelBar afterPickup={afterPickup} onKeep={() => setPanel(null)} onCancel={() => cancelM.mutate(cancelReasonText(cancelReason))} cancelling={pendingOrQueued(cancelM) !== false} />;
-    mapShare = stageMapShare("toPickup");
+    bar = <CancelBar afterPickup={afterPickup} onKeep={() => setPanel(null)} onCancel={() => cancelM.mutate(cancelReasonText(cancelReason))} cancelling={cancelling} />;
   } else if (stage === "finding" || stage === "noRiders") {
     content = (
       <FindingSheet
@@ -796,20 +918,16 @@ export default function OrderScreen(): React.ReactElement {
         notify={{
           onPress: () => notifyM.mutate(),
           loading: notifyM.isPending,
-          state: notifyM.isSuccess ? (notifyM.data?.queued ? "queued" : "unavailable") : "idle",
+          state: notifyM.isSuccess ? (notifyM.data?.queued ? "queued" : "unavailable") : notifyM.isError ? "unavailable" : "idle",
         }}
       />
     );
-    bar = isRiderViewer ? null : (
-      <FindingBar
-        confirming={panel === "cancelRequest"}
-        onAsk={() => setPanel("cancelRequest")}
-        onYes={() => cancelM.mutate(undefined)}
-        onKeep={() => setPanel(null)}
-        cancelling={pendingOrQueued(cancelM) !== false}
-      />
-    );
+    bar = isRiderViewer ? null : findingBar;
+  } else if (stage === "reopened") {
+    content = <ReopenedSheet riderFirst={reopenedFrom ?? A.rider} price={ask} next={nextPrice} expiresAt={order.expiresAt} windowMs={OFFER_WINDOW_MS} frozen={frozen} onZero={() => void orderQ.refetch()} />;
+    bar = panel === "cancelRequest" ? findingBar : <ReopenedBar next={nextPrice} onRaise={raise} raising={raiseM.isPending} onCancel={() => setPanel("cancelRequest")} />;
   } else if (stage === "offers") {
+    const chooser = choosingId ? offerViews.find((o) => o.id === choosingId)?.name ?? A.rider : null;
     content = (
       <OffersSheet
         offers={offerViews}
@@ -818,32 +936,28 @@ export default function OrderScreen(): React.ReactElement {
         frozen={frozen}
         onZero={() => void orderQ.refetch()}
         price={ask}
+        was={prevPrice}
         onRaise={raise}
         raising={raiseM.isPending}
         raisedNote={priceNote}
         choosingId={choosingId}
+        confirming={chooser ? (chooseSlow ? orderText.choosingSlow(chooser) : orderText.choosing(chooser)) : null}
         onChoose={choose}
+        graceLeftMs={graceLeftMs}
       />
     );
-    bar = (
-      <FindingBar
-        confirming={panel === "cancelRequest"}
-        onAsk={() => setPanel("cancelRequest")}
-        onYes={() => cancelM.mutate(undefined)}
-        onKeep={() => setPanel(null)}
-        cancelling={pendingOrQueued(cancelM) !== false}
-      />
-    );
+    bar = findingBar;
   } else if (stage === "toPickup" || stage === "toDropoff") {
-    content = <TrackSheet vm={trackVM} a={trackA} screenWidth={width} />;
+    content = <TrackSheet vm={trackVM} a={trackA} />;
+    bar = saved ? <OneButtonBar label={A.tryAgain} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} /> : null;
   } else if (stage === "handoff") {
-    content = <HandoffSheet vm={trackVM} a={trackA} riderFirst={riderFirst} screenWidth={width} />;
+    content = <HandoffSheet vm={trackVM} a={trackA} screenWidth={width} />;
     bar = trackVM.code ? <OneButtonBar label={A.shareCode} icon="share-2" onPress={shareCode} /> : null;
   } else if (stage === "retryNoMatch" || stage === "retryRiderCancelled") {
-    content = <RetrySheet riderCancelled={stage === "retryRiderCancelled"} lastPrice={price} suggested={suggested} />;
-    bar = isRiderViewer ? null : <RetryBar suggested={suggested} onSend={() => resendM.mutate(suggested)} onEdit={editOrder} sending={pendingOrQueued(resendM) !== false} />;
+    content = <RetrySheet riderFirst={stage === "retryRiderCancelled" ? riderFirst : null} lastPrice={price} suggested={suggested} />;
+    bar = isRiderViewer ? null : <RetryBar suggested={suggested} onSend={() => resendM.mutate(suggested)} onEdit={() => sendFlow(suggested)} sending={pendingOrQueued(resendM) !== false} />;
   } else if (stage === "delivered") {
-    const showRate = !isRiderViewer && !rated && !skipped;
+    const showRate = !isRiderViewer && !rated && !skipped && !order.rating;
     content = showRate ? (
       <RateSheet
         deliveredSub={orderText.deliveredSub(hhmm(deliveredAt), deliveryCode)}
@@ -858,101 +972,103 @@ export default function OrderScreen(): React.ReactElement {
         onShareReceipt={() => share(orderText.receiptText(receipt))}
       />
     ) : (
-      <RatedSheet riderFirst={riderFirst} stars={rated?.stars ?? null} receipt={receipt} onShareReceipt={() => share(orderText.receiptText(receipt))} />
+      <RatedSheet riderFirst={riderFirst} stars={ratedStars} receipt={receipt} onShareReceipt={() => share(orderText.receiptText(receipt))} />
     );
     bar = showRate ? <RateBar onSkip={() => setSkipped(true)} onSubmit={submitRating} canSubmit={stars > 0} /> : <OneButtonBar label={A.home} onPress={() => goHomeClearingStack(router)} />;
   } else if (stage === "completed") {
+    // 2.25: not rated yet and delivered within 7 days (the server says it still takes a rating).
+    const deliveredMs = deliveredAt ? Date.parse(deliveredAt) : NaN;
+    const canRateLater = !isRiderViewer && order.rating === null && !rated && !skipped && Number.isFinite(deliveredMs) && nowMs - deliveredMs < RATE_LATE_MS;
     content = (
       <CompletedSheet
         deliveredAt={deliveredAt}
         riderFirst={riderFirst}
-        stars={rated?.stars ?? null}
+        stars={ratedStars}
+        rateLater={canRateLater ? { riderPhoto: rider?.photoUrl ?? null, riderInitials: rider?.initials ?? "", stars, onStars, tags: tagIdx, onTag: toggleTag } : null}
         receipt={receipt}
         onShareReceipt={() => share(orderText.receiptText(receipt))}
         onHelp={() => setPanel("report")}
       />
     );
-    bar = isRiderViewer ? null : <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={sendAgainFlow} />;
+    bar = isRiderViewer ? null : canRateLater && stars > 0 ? <RateBar onSkip={() => setSkipped(true)} onSubmit={submitRating} canSubmit /> : <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={() => sendFlow(order.proposedFare)} />;
   } else if (stage === "undelivered") {
-    content = <NotDeliveredSheet riderFirst={riderFirst} reason={orderText.undeliveredReason(order.undeliveredReason, order.undeliveredAttempts)} rider={rider} />;
+    content = (
+      <NotDeliveredSheet
+        riderFirst={riderFirst}
+        reason={orderText.undeliveredReason(order.undeliveredReason, order.undeliveredAttempts)}
+        body={orderText.undeliveredBody(order.undeliveredReason, riderFirst)}
+        rider={rider}
+      />
+    );
     bar = isRiderViewer ? null : (
-      <TwoButtonBar primary={{ label: A.callRider, icon: "phone", onPress: () => dial(phone) }} secondary={{ label: A.sendAgain, icon: "refresh-cw", onPress: sendAgainFlow }} />
+      <TwoButtonBar primary={{ label: A.callRider, icon: "phone", onPress: () => dial(phone) }} secondary={{ label: A.sendAgain, icon: "refresh-cw", onPress: () => sendFlow(order.proposedFare) }} />
     );
   } else {
     const by = order.cancelledBy;
-    const headline = by === "customer" ? A.cxYou : by === "rider" ? orderText.cxRider(riderFirst) : A.cxLynia;
     const lynia = by !== "customer" && by !== "rider";
-    content = <CancelledSheet headline={headline} reason={order.cancelReason ?? (lynia ? A.cxLyniaR : null)} nothingOwed={!lynia} />;
-    bar = isRiderViewer
-      ? null
-      : lynia
-        ? <TwoButtonBar primary={{ label: A.sendAgain, icon: "refresh-cw", onPress: sendAgainFlow }} secondary={{ label: A.callSupport, icon: "phone", onPress: () => dial(SOS_POLICY.safetyLine) }} />
-        : <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={sendAgainFlow} />;
+    const headline = by === "customer" ? A.cxYou : by === "rider" ? orderText.cxRider(riderFirst) : A.cxLynia;
+    content = <CancelledSheet headline={headline} reason={order.cancelReason ?? null} extra={lynia ? A.cxLyniaGeneric : null} nothingOwed={!lynia} />;
+    bar = isRiderViewer ? null : lynia ? (
+      <TwoButtonBar primary={{ label: A.sendAgain, icon: "refresh-cw", onPress: () => sendFlow(order.proposedFare) }} secondary={{ label: A.callSupport, icon: "phone", onPress: () => dial(SOS_POLICY.safetyLine) }} />
+    ) : (
+      <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={() => sendFlow(order.proposedFare)} />
+    );
   }
+  // An offline cold start keeps the stage's sheet but its one action is "Try again" (2.4).
+  if (saved && !live) bar = <OneButtonBar label={A.tryAgain} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />;
 
-  // Before the first layout pass, size the sheet off the window (header 53 + system bars ≈ 80).
-  const area = areaH || Math.max(0, height - 80);
-  const lastUpdate = hhmm(telemetry?.updatedAt ?? (orderQ.dataUpdatedAt ? new Date(orderQ.dataUpdatedAt).toISOString() : null));
+  const banner = saved
+    ? orderText.savedCopy(savedAtText ?? "")
+    : offline || (live && frozen)
+      ? orderText.offline(hhmm(telemetry?.updatedAt ?? (orderQ.dataUpdatedAt ? new Date(orderQ.dataUpdatedAt).toISOString() : null)))
+      : null;
   const undoToast: Toast | null =
     rated && undoLeft > 0 ? { text: orderText.rated(riderFirst, rated.stars), icon: "circle-check", action: orderText.undo(undoLeft), actionIcon: "undo-2", onAction: undoRating, ttl: 0 } : null;
-  const shownToast = undoToast ?? toast;
+  const peekStage: OrderStage = cancelPanel ? "toPickup" : stage;
 
-  return (
-    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      <OrderHeader title={title} help={help} onBack={() => onBack()} onHelp={() => setPanel("help")} />
-      <View style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
-        <OrderMap
-          pickup={order.pickup.point}
-          dropoff={order.dropoff.point}
-          rider={riderPoint}
-          riderLabel={riderLabel}
-          riderPaused={gpsPaused || offline}
-          showRider={showRider}
-          toPickupLine={toPickup}
-          rings={stage === "finding"}
-          dim={dim}
-          frame={frame}
-          padBottom={sheetVisible || Math.round(area * (1 - mapShare))}
-          reduceMotion={reduceMotion}
-        />
-        {showBanner ? (
-          <View style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 21 }}>
-            <ReconnectBanner lastUpdate={lastUpdate} />
-          </View>
-        ) : null}
-        {area > 0 ? (
-          <OrderSheet
-            ref={sheetRef}
-            areaHeight={area}
-            mapShare={mapShare}
-            bottomInset={bar ? ctaH : 0}
-            contentKey={`${stage}|${cancelPanel ? "c" : ""}|${rated ? "r" : ""}|${skipped ? "s" : ""}`}
-            reduceMotion={reduceMotion}
-            onVisibleHeight={setSheetVisible}
-          >
-            {content}
-          </OrderSheet>
-        ) : null}
-        {bar ? (
-          <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 25 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
-            {bar}
-          </View>
-        ) : null}
-        {shownToast ? (
-          <View style={{ position: "absolute", left: 12, right: 12, bottom: (bar ? ctaH : 0) + 10, zIndex: 35 }}>
-            <OrderToast text={shownToast.text} icon={shownToast.icon} action={shownToast.action} actionIcon={shownToast.actionIcon} onAction={shownToast.onAction} />
-          </View>
-        ) : null}
-      </View>
-      <HelpPanel
-        visible={panel === "help"}
-        onClose={() => setPanel(null)}
-        onEmergency={emergency}
-        onShareTrip={() => share(orderText.shareTrip(order.pickup.landmark, order.dropoff.landmark, rider?.name ?? null, rider?.plate ?? null))}
-        onReport={() => setPanel("report")}
+  return frame({
+    title,
+    help,
+    map: (
+      <OrderMap
+        pickup={order.pickup.point}
+        dropoff={order.dropoff.point}
+        rider={riderPoint}
+        riderLabel={riderLabel}
+        riderPaused={gpsPaused || offline}
+        showRider={showRider}
+        toPickupLine={toPickup}
+        rings={stage === "finding" || stage === "reopened"}
+        dim={dim}
+        frame={mapFrame}
+        padBottom={sheetVisible || Math.round(area * (1 - stageMapShare(peekStage)))}
+        reduceMotion={reduceMotion}
       />
-      <TripIssueSheet orderId={orderId} visible={panel === "report"} onClose={() => setPanel(null)} />
-      <PhotoViewer url={order.pickupPhotoUrl ?? null} visible={panel === "photo"} onClose={() => setPanel(null)} />
-    </SafeAreaView>
-  );
+    ),
+    banner,
+    content,
+    bar,
+    floor: stagePeekFloor(peekStage, height, fontScale),
+    fallbackShare: stageMapShare(peekStage),
+    contentKey: `${stage}|${cancelPanel ? "c" : ""}|${rated ? "r" : ""}|${skipped ? "s" : ""}|${noFix ? "n" : ""}|${saved ? "v" : ""}`,
+    toast: undoToast ?? toast,
+    overlays: (
+      <>
+        <HelpPanel
+          visible={panel === "help"}
+          onClose={() => setPanel(null)}
+          onEmergency={emergency}
+          onShareTrip={() => share(orderText.shareTrip(order.pickup.landmark, order.dropoff.landmark, rider?.name ?? null, rider?.plate ?? null, orderText.ref(order.id)))}
+          onReport={() => setPanel("report")}
+        />
+        <ReportPanel visible={panel === "report"} onClose={() => setPanel(null)} onSend={report} />
+        <PhotoViewer
+          url={order.pickupPhotoUrl ?? null}
+          caption={orderText.photoBy(riderFirst, hhmm(pickedUpAt), order.pickup.landmark)}
+          visible={panel === "photo"}
+          onClose={() => setPanel(null)}
+        />
+      </>
+    ),
+  });
 }

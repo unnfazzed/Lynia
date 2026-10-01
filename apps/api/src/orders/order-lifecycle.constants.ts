@@ -50,6 +50,9 @@ export const CANCEL_STRIKE_LIMIT = 3;
 /** How long after delivery a customer has to rate before the order auto-closes (so completion
  *  metrics never stall on an un-rated order — D6a / T3). Pilot value; tune on real behaviour. */
 export const RATING_WINDOW_MS = 6 * 60 * 60 * 1000;
+/** After-send v2: how long after delivery a customer may still rate an order the auto-close (above)
+ *  completed unrated. One late rating per order; OrderLifecycleService.rate's late path. */
+export const RATE_LATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** How often the DB reconciler sweeps for orphaned delivered orders (Redis-independent backstop). */
 export const RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
 export const QUEUE_NAME = "rating-autoclose";

@@ -46,6 +46,7 @@ jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
 }));
 jest.mock("../../../src/ui/order/OrderMap", () => ({
   OrderMap: () => null,
+  BlankMap: () => null,
 }));
 
 import OrderScreen from "../[id]";
