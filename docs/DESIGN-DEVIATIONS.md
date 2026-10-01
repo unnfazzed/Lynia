@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53.** D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54.** D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -350,6 +350,8 @@ own back affordance); align to whatever it draws.
 
 ## D-15 · Customer account cluster adopts the RIDER account grammar — APPROVED (2026-08-16)
 
+> **RETIRED by D-54 (2026-10-01).** The Rider v2 handoff redraws both Account tabs and Settings; this entry is kept as history only.
+
 **In effect.** The two Account screens were built from two different mocks a design generation apart,
 and looked it. The rider tab is `RJM.account` (`rider-one-app.jsx :: account`, the current one-app
 language): `AppBar` → identity card (48px avatar disc · name 15.5/700 · one identity line 12.5 muted ·
@@ -400,6 +402,8 @@ are permissions, privacy and sign-out. No new icon was invented for this work.
 
 ## D-16 · RJM.account "Switch to customer" sixth row — APPROVED (2026-08-16)
 
+> **RETIRED by D-54 (2026-10-01).** The Rider v2 handoff redraws both Account tabs and Settings; this entry is kept as history only.
+
 **In effect.** The kit's `RJM.account` (`explorations/journey/rider-one-app.jsx`, `account`) draws an
 identity Card and **five** settings rows: Bike & documents · Job history · Money · Notifications ·
 Help & support. The app draws a **sixth**: `["shopping-bag", "Switch to customer", "Order food and send
@@ -435,6 +439,8 @@ inline Card. Pinned by `app/rider/(tabs)/__tests__/account.test.tsx`.
 ---
 
 ## D-17 · Rider top-up back row says "Money", not the kit's "Wallet" — APPROVED (2026-08-16)
+
+> **RETIRED by D-54 (2026-10-01).** Rider v2 redraws Top up with the After Send header ("‹ Back") and a step bar; this entry is kept as history only.
 
 **In effect, and small.** `rider-screens-wallet.jsx:111` draws a back row above the Top-up heading: a
 13px/600 `--muted` label with a 17px chevron 2px to its left, 12px below the row. The **intended**
@@ -599,6 +605,8 @@ rendered-conformance assertion on this screen to update in the meantime.
 ---
 
 ## D-22 · Account tabs are role-separated; both carry a Settings row — APPROVED (2026-08-16)
+
+> **RETIRED by D-54 (2026-10-01).** The Rider v2 handoff redraws both Account tabs and Settings; this entry is kept as history only.
 
 **In effect.** D-15 made the two Account screens look alike. It did not make them mean different
 things, and by sharing the row set it actually spread each role's entries onto the other's screen.
@@ -772,6 +780,8 @@ Then re-run the guardrails: `structure-snapshot` proves the regenerated view sti
 
 ## D-25 · Settings adopts the Account-tab card design; permissions move inside the card — APPROVED (2026-08-16)
 
+> **RETIRED by D-54 (2026-10-01).** The Rider v2 handoff redraws both Account tabs and Settings; this entry is kept as history only.
+
 > **Amended by D-26 (2026-08-17).** The "no dead taps" half below resolved the `Coming soon` problem by
 > routing **Edit profile** and the **identity card** into `/profile`. The owner has since chosen the
 > other resolution: *"Remove the edit profile for now.. Don't even put coming soon. Also when I click
@@ -855,6 +865,8 @@ JSONs. Language/Payment becoming drawn screens would retire only that half.
 ---
 
 ## D-26 · Settings drops the mock's "Edit profile" row; the identity card opens nothing — APPROVED (2026-08-17)
+
+> **RETIRED by D-54 (2026-10-01).** The Rider v2 handoff redraws both Account tabs and Settings; this entry is kept as history only.
 
 **In effect.** Owner instruction (2026-08-17): *"On profile.. Remove the edit profile for now.. Don't
 even put coming soon. Also when I click the profile under accounts it must not be clickable to display
@@ -2628,4 +2640,86 @@ Evidence: `docs/parity/AFTER-SEND-V2-2026-10-01.png` (v2 handoff left, app right
 
 **Upstream asks (v2):** export the gallery with the v2 ids; settle 2.33 against home-8c; confirm
 "Nothing to pay" for LyniaGo cancels; confirm the 999 number and support hours with ops.
+
+---
+
+## D-54 · Rider v2: the rider app, both Account tabs and Settings follow the rider-v2 handoff — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner briefed Claude Design on the rider side (the
+brief asked for the rider app in the new Send / After Send style, plus a joint Account redesign with a
+visible Customer | Rider switch and Settings separated by role), answered its clarifying questions
+(switch = a toggle at the top of Account; Settings = one screen, sectioned; always-online stays; all four
+priorities — map + demand on the board, earnings first on Money, a simpler active job, standing
+visible; rider-only settings = job alerts, navigation app, top-up number, bike & documents; design both
+food states; histories split by side), then uploaded the result (`Lynia_Design_System_-_rideer_side.zip`,
+`design_handoff_rider_v2`) with *"here is the design . please proceed with implementation"*. The
+handoff's `BRIEF.md` records the decisions and says they are final.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/rider-v2/` | The handoff, **verbatim** except its `tokens/` copies (left out: they are older copies of `packages/design/tokens/*.css`, which stays the one token source): `BRIEF.md` (the decisions, final, and four open questions), `README.md` (the spec: global rules, components, every state J1–S6, state management, motion), `PROMPT.md` (the brief Claude Design was given), `CLAUDE-CODE-PROMPT.md` (the phased build plan) and `design/` (the standalone HTML with every state, `rv-kit.jsx` with the `R` copy object, `rv-board.jsx`, `rv-job.jsx`, `rv-money.jsx`, `rv-account.jsx`, and the After Send / Send v2 kits it builds on). |
+
+### 2 · Authority (a scope rule)
+
+The LOOK for `app/rider/**`, `app/wallet/top-up.tsx`, `app/settings/index.tsx`, `app/history/index.tsx`
+and BOTH Account tabs (`app/(tabs)/account.tsx`, `app/rider/(tabs)/account.tsx`) is now this handoff.
+The gallery `RJM` / `RJ` rider screens it lists as replaced, and the gallery `LJ` Account/Settings
+screens, stay until an export redraws them and are **not aligned to**. This retires **D-15, D-16, D-17,
+D-22, D-25 and D-26** (the Account/Settings harmonisation, the switch row, the "Money" back label, the
+role-separated rows, the settings card and the inert identity card): the handoff draws all of those
+decisions anew. D-29 (the rider board's 8c header) is superseded by the board's MintTop when the board
+lands; D-30 (no manual refreshing anywhere) stands and the handoff draws it too.
+
+### 3 · What has landed (part 1, this PR)
+
+- **Shared rider kit** (`src/ui/rider/kit.tsx`, `copy.ts` = the handoff's `R`, verbatim, with the sample
+  values as formatters): MintTop (one-line 22/700 greeting, 18 under 340dp; Conn; sun/moon hidden under
+  340dp; 44px bell), RCard / RRow, Seg + RoleToggle (48px, selected = `--cta-fill`), IdentityCard,
+  Standing, MSheet, LRow, Chips, CashSplit / CashLine, BecomeCard, RStepBar, PushHeader, CentreState.
+  After Send / Send v2 parts are reused (SmBtn, CtaButton, CtaBar, IconDisc, OrderHeader, Notice,
+  Countdown). Twelve Lucide glyphs added to the icon subset.
+- **Tab bar** (both sides): the active icon sits in a 52×26 `--accent-wash` pill; labels 12; Home uses
+  the House glyph and Money the Wallet glyph, as drawn.
+- **Rider Account (C1–C5)**: tappable identity card → `/profile?side=rider`; Customer | Rider toggle;
+  the standing card (real strikes from `/auth/me`); Job history · Notifications · Help & support ·
+  Settings. Customer → the C4 confirm (goes offline: that is what stops dispatch — the "active side" is
+  the rider's online flag) or, with a job running, C5 (stays online, "Back to my job").
+- **Customer Account (C6–C11)**: the sibling; the toggle for riders, the Become-a-rider card
+  (start / in progress / under review / failed) for everyone else; Trip history · Notifications ·
+  Help & support · Settings. iPhone builds stay customer-only (D-41).
+- **Settings (S1–S4)**: YOUR ACCOUNT → CUSTOMER → RIDER (riders only) → Sign out / Delete account last.
+  Job alerts with Test ping / Test alarm (local notifications) and, when off, the danger box + Open phone
+  settings; Location with the rider consequence; Navigation app (Google Maps | Waze, on the phone);
+  Top-up number (provider + number, on the phone, prefilled into Top up); Bike & documents.
+- **Job history / Trip history (C12/C13)**: one route, split by `?side=`; the rider list shows the fare
+  (or "No fare") and a this-week summary; day groups.
+- **Money (M1–M12)**: earnings first (Today | This week, the week strip), the balance card's five states,
+  cash held, one history list (fares merged with commission and top-ups), infinite scroll; the pending
+  top-up notices. "Load older" is gone.
+- **Top up (T1–T6)**: Provider → Amount → Phone → Approve with the step bar, then Done / Failed.
+
+### 4 · Still different from the handoff (part 1)
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Acceptance % and "oldest strike clears on" (Standing) | "92%", "clears on 19 Oct" | "—", and the sentence ends before "Your oldest strike…" | No endpoint serves either yet (`src/api/rider-v2.ts`, `TODO(backend)`) |
+| Earnings, cash YOURS | Server figures | Derived on the phone from the rider's delivered jobs (`logic/rider-earnings.ts`): a delivered job's agreed fare, by the order's creation time | No earnings aggregate by day exists; `/orders/history` is capped at 50 rows |
+| Undelivered job in Job history | "+$1.50" | "No fare" | An undelivered parcel was not paid for at the door |
+| "You cancelled · strike" row | Drawn | "Cancelled" | The history row doesn't say who cancelled |
+| Food filter chips | Drawn | Shown only with food dispatch on, as the handoff says for J3/M4 | — |
+| BecomeCard "in progress" | "2 of 3 steps done. Next: your bike photo." + a 66% bar | "You started the ID check but didn't finish. It takes about 3 minutes." (the handoff's own `gUnfinishedB`), no bar | The app doesn't know which step the rider stopped at |
+| Top-up number edit sheet | Not drawn | A sheet with the provider chips, the number field and "Save" | The row needs somewhere to edit; one undrawn string (`save`) |
+| Test alarm | The looping food-offer alarm | One local notification with sound + a strong haptic | The looping alarm ships with the food offer (part 2) |
+| `/dev/rider-states` | Asked for by the build plan | Not shipped | No dev-only route in the production bundle (as D-53) |
+
+### 5 · Still to land (follow-up PRs, same handoff)
+
+The Jobs board (map + demand + sheet), Make an offer, the gates (G1–G15), the active job (A/B/X), the
+food offer (F1–F4), Bike & documents (S5), Help & support (S6), and the customer Home live-job bar (C5).
+Until each lands, its current screen stays as it is.
+
+**Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
+limit; auto-opening the "picked you" sheet.
 

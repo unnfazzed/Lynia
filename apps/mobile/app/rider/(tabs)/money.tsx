@@ -1,101 +1,37 @@
-import { type WalletEntry } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { ActivityIndicator, type NativeScrollEvent, type NativeSyntheticEvent, ScrollView, Text, View } from "react-native";
 import { getFoodOrderAsRider } from "../../../src/api/food-rider";
 import { getActiveOrder } from "../../../src/api/orders";
 import { getTopup } from "../../../src/api/wallet";
 import { clearPendingTopup, loadPendingTopup } from "../../../src/auth/session";
-import { fmtDateTime } from "../../../src/logic/format-time";
-import { formatMoney } from "../../../src/logic/money";
+import { buildMoneyFeed, filterMoneyFeed, type MoneyItem, oldestHistoryAt } from "../../../src/logic/money-feed";
+import { groupByDay, type ServiceFilter, summarise } from "../../../src/logic/rider-earnings";
 import { reconcilePendingTopup } from "../../../src/logic/topup";
+import { useNow } from "../../../src/logic/use-now";
+import { useFeatureFlags } from "../../../src/net/use-feature-flags";
+import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
-import { filterLedgerEntries, type LedgerFilter } from "../../../src/logic/wallet-ledger";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, Button, Card, EmptyState, Heading, Icon, SkeletonRows, Tappable } from "../../../src/ui";
-import { CashHeldStrip } from "../../../src/ui/rider/CashHeldStrip";
-
-/** One ledger receipt. A debit renders in ink (never red text on white); a credit in the text-green.
- *  Commission debits show the checkable math the server stored ("10% of $3.00"). */
-function LedgerRow({ entry }: { entry: WalletEntry }): React.ReactElement {
-  const credit = entry.amount >= 0;
-  const amountColor = credit ? tokens.color.accentText : tokens.color.ink;
-  const sign = credit ? "+" : "−";
-  // Every commission row today is provably parcel-sourced (see wallet-ledger.ts) — the icon says so
-  // honestly rather than guessing; non-commission rows (top-up/grace/adjustment) get a neutral mark.
-  const iconName = entry.type !== "commission" ? "banknote" : "package";
-  return (
-    <View
-      accessibilityLabel={`${entry.title}, ${entry.meta}, ${credit ? "credit" : "debit"} ${formatMoney(Math.abs(entry.amount))}, ${fmtDateTime(entry.createdAt)}`}
-      style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, paddingVertical: tokens.space.sm }}
-    >
-      <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-        <Icon name={iconName} size={16} color={tokens.color.muted} />
-      </View>
-      <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
-        <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
-          {entry.title}
-        </Text>
-        <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }} numberOfLines={1}>
-          {entry.meta ? `${entry.meta} · ` : ""}
-          {fmtDateTime(entry.createdAt)}
-        </Text>
-      </View>
-      <Text style={{ fontSize: 16, fontWeight: "700", color: amountColor, fontVariant: ["tabular-nums"] }}>
-        {sign}
-        {formatMoney(Math.abs(entry.amount))}
-      </Text>
-    </View>
-  );
-}
-
-const LEDGER_FILTERS: { id: LedgerFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "parcel", label: "Parcels" },
-  { id: "food", label: "Food" },
-];
-
-function FilterChips({ value, onChange }: { value: LedgerFilter; onChange: (f: LedgerFilter) => void }): React.ReactElement {
-  return (
-    <View style={{ flexDirection: "row", gap: 6, marginBottom: tokens.space.sm }}>
-      {LEDGER_FILTERS.map((f) => {
-        const on = f.id === value;
-        return (
-          <Tappable
-            key={f.id}
-            onPress={() => onChange(f.id)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-            style={{
-              paddingVertical: 7,
-              paddingHorizontal: 12,
-              borderRadius: tokens.radius.pill,
-              backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
-              borderWidth: 1,
-              borderColor: on ? tokens.color.accent : tokens.color.line,
-            }}
-          >
-            <Text style={{ fontSize: 12.5, fontWeight: "700", color: on ? tokens.color.accentText : tokens.color.muted }}>{f.label}</Text>
-          </Tappable>
-        );
-      })}
-    </View>
-  );
-}
+import { AppScreen, Icon, SkeletonRows } from "../../../src/ui";
+import { IconDisc, SmBtn } from "../../../src/ui/order/kit";
+import { Notice } from "../../../src/ui/send/kit";
+import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
+import { CashLine, CashSplit, Chips, LRow, MintTop, RCard, RLabel, Seg } from "../../../src/ui/rider/kit";
+import { useTabTop } from "../../../src/query/use-tab-top";
+import type { IconName } from "../../../src/ui";
 
 /**
- * UX-2026-07-16: recovery surface for `session.ts`'s durable `PendingTopup` marker — an app kill during
- * top-up.tsx's "wait" step previously lost all UI state with no way to tell whether the top-up landed.
- * On mount, resolve any marker against the server's own `getTopup` and clear it once the outcome is
- * known; a still-pending intent keeps the marker so this runs again next time the Money tab is opened.
+ * Recovery for `session.ts`'s durable `PendingTopup` marker (UX-2026-07-16): an app kill during the
+ * top-up wait lost all UI state. On mount, resolve any marker against the server and clear it once
+ * the outcome is known; a still-pending intent keeps the marker so this runs again next time.
  */
-type PendingTopupBanner = { kind: "succeeded"; amount: number } | { kind: "pending" } | { kind: "terminal" };
-function usePendingTopupReconciliation(): PendingTopupBanner | null {
+type PendingTopupNotice = { kind: "succeeded"; amount: number } | { kind: "pending"; provider: string } | { kind: "terminal" };
+function usePendingTopupReconciliation(): PendingTopupNotice | null {
   const qc = useQueryClient();
-  const [banner, setBanner] = React.useState<PendingTopupBanner | null>(null);
-
+  const [notice, setNotice] = React.useState<PendingTopupNotice | null>(null);
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -109,12 +45,12 @@ function usePendingTopupReconciliation(): PendingTopupBanner | null {
           void qc.invalidateQueries({ queryKey: walletKey });
           void qc.invalidateQueries({ queryKey: walletLedgerKey });
           void clearPendingTopup();
-          setBanner({ kind: "succeeded", amount: topup.amount });
+          setNotice({ kind: "succeeded", amount: topup.amount });
         } else if (outcome === "terminal") {
           void clearPendingTopup();
-          setBanner({ kind: "terminal" });
+          setNotice({ kind: "terminal" });
         } else {
-          setBanner({ kind: "pending" });
+          setNotice({ kind: "pending", provider: topup.rail === "innbucks" ? "InnBucks" : topup.rail === "omari" ? "O'mari" : "EcoCash" });
         }
       } catch {
         /* transient — the marker stays, so this retries next time the Money tab mounts */
@@ -124,39 +60,66 @@ function usePendingTopupReconciliation(): PendingTopupBanner | null {
       cancelled = true;
     };
   }, [qc]);
+  return notice;
+}
 
-  return banner;
+function itemIcon(i: MoneyItem): IconName {
+  if (i.kind === "fare") return i.service === "food" ? "utensils" : "package";
+  if (i.kind === "commission") return "wallet";
+  if (i.kind === "topup") return "plus";
+  return "banknote";
+}
+
+function itemTitle(i: MoneyItem): string {
+  if (i.kind === "fare") return `${i.service === "food" ? R.lFood : R.lParcel} · ${i.title}`;
+  if (i.kind === "commission" && i.ratePct != null) return `${R.lComm} · ${i.ratePct}%`;
+  return i.title;
+}
+
+function itemMeta(i: MoneyItem): string {
+  const t = hhmm(i.at);
+  if (i.kind === "fare") return RF.lMeta(R.lFare, t);
+  return RF.lMeta(i.amount < 0 ? R.fromBalance : R.toBalance, t);
+}
+
+/** Bars for the week strip: today's bar is accent with a 700 label, the rest accent-wash. */
+function WeekBars({ byDay, todayIdx }: { byDay: number[]; todayIdx: number }): React.ReactElement {
+  const max = Math.max(1, ...byDay);
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6, height: 56 }} accessible accessibilityLabel={byDay.map((v, i) => `${"MTWTFSS"[i]} ${usd(v)}`).join(", ")}>
+      {byDay.map((v, i) => (
+        <View key={i} style={{ flex: 1, alignItems: "center", gap: 3 }}>
+          <View style={{ width: "100%", height: Math.max(2, (v / max) * 40), borderRadius: 4, backgroundColor: i === todayIdx ? tokens.color.accent : tokens.color.accentWash }} />
+          <Text style={{ fontSize: 11, color: i === todayIdx ? tokens.color.ink : tokens.color.muted, fontWeight: i === todayIdx ? tokens.font.weight.bold : tokens.font.weight.regular }}>{"MTWTFSS"[i]}</Text>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 /**
- * Money tab (plan §5 B3): `app/wallet/*` + `app/earnings/*` merged into one screen — balance +
- * commission, the "yours" vs "owed to a kitchen" cash-held split (RIDER-ONE-APP-PLAN.md decision 6,
- * always zero here — see `CashHeldStrip`'s doc comment), one earnings ledger filterable Parcel /
- * Food, and the top-up CTA. The standalone `/wallet` and `/earnings` screens are retired outright
- * (gallery-map.js: "RJ wallet — replaced by the merged Money tab", "RJ earnings — retired"); the old
- * "record of work done" lifetime total is retired with them (decision 1, weekly-settlement model
- * gone) rather than ported — the ledger below is the record now.
+ * Money tab (Rider v2 M1–M12, ledger D-54): earnings first (Today | This week, 40/700 total, job
+ * counts, the week strip), then the commission balance with Top up inline, then the cash the rider is
+ * holding, then one history list — fares merged with commission and top-ups, grouped by day, filterable
+ * by service (chips hidden with food dispatch off), loading older wallet entries as the rider scrolls.
+ * No pull-to-refresh and no "Load older" button: focus and app-resume re-read on their own (D-30).
  */
 export default function RiderMoneyTabScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const top = useTabTop();
+  const now = useNow();
+  const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const { config } = useWalletConfig();
-  const { wallet, isLoading, isFetching, isError, refetch } = useWallet();
-  const {
-    entries: allEntries,
-    isLoading: ledgerLoading,
-    hasMore: hasMoreLedger,
-    isLoadingMore: ledgerLoadingMore,
-    loadMore: loadMoreLedger,
-  } = useWalletLedger();
-  const pendingTopupBanner = usePendingTopupReconciliation();
-  const [filter, setFilter] = React.useState<LedgerFilter>("all");
+  const { wallet, isLoading, isError } = useWallet();
+  const { entries, isLoading: ledgerLoading, hasMore, isLoadingMore, loadMore } = useWalletLedger();
+  const { rows: history } = useHistoryFeed();
+  const pending = usePendingTopupReconciliation();
+  const [range, setRange] = useState<"today" | "week">("today");
+  const [filter, setFilter] = useState<ServiceFilter>("all");
 
-  // D5: "owed to a kitchen" — one job at a time (§7 open Q1), so this is just the single active food
-  // job's own open debt, not a separate aggregate endpoint. Shares the ["activeJob"] cache key with the
-  // board/job screens (no extra round-trip if either already warmed it).
-  const activeJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder });
-  const activeJob = activeJobQ.data ?? null;
+  // "Owed to a kitchen" — one job at a time, so it's the single active food job's open debt.
+  const activeJob = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder }).data ?? null;
   const foodDebtQ = useQuery({
     queryKey: ["foodOrderAsRider", activeJob?.id],
     queryFn: () => getFoodOrderAsRider(activeJob!.id),
@@ -164,183 +127,172 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   });
   const owed = activeJob?.orderType === "merchant" && foodDebtQ.data?.debtStatus === "open" ? (foodDebtQ.data.debtAmount ?? 0) : 0;
 
-  // Same reasoning the old wallet screen used: a support-credit is the rider's only working top-up
-  // path at launch, so refetch on every focus rather than trusting the global refetchOnWindowFocus:false.
-  // Starts FALSE, not true: the rider tab navigator does not set `unmountOnBlur`, so this screen stays
-  // mounted once visited, and a preloaded-but-never-focused mount would otherwise sit at `focused:true`
-  // forever — `useFocusEffect`'s cleanup only runs after a focus, so no blur would ever correct it.
-  // Mounting focused costs nothing to start false: the focus effect below runs immediately in that
-  // case, and it does the re-read itself.
-  const [focused, setFocused] = React.useState(false);
+  // Re-read on focus and on app resume (no manual refresh, D-30); a failed read retries every 20s
+  // while the tab is focused. The tab navigator keeps this screen mounted, so both are focus-gated.
+  const [focused, setFocused] = useState(false);
+  const reread = React.useCallback(() => {
+    void qc.invalidateQueries({ queryKey: walletKey });
+    void qc.invalidateQueries({ queryKey: walletLedgerKey });
+  }, [qc]);
   useFocusEffect(
     React.useCallback(() => {
       setFocused(true);
-      void qc.invalidateQueries({ queryKey: walletKey });
-      void qc.invalidateQueries({ queryKey: walletLedgerKey });
+      reread();
       return () => setFocused(false);
-    }, [qc]),
+    }, [reread]),
   );
-
-  // This screen used to carry a pull-to-refresh; it is gone by owner instruction (no manual refreshing
-  // anywhere — DESIGN-DEVIATIONS D-30), so the recovery it provided has to happen without being asked
-  // for. Two inputs replace it, neither of them a gesture:
-  //   * an app-foreground re-read, which is what catches a support-credit that landed while the phone
-  //     was in a pocket — the exact case the gesture existed for (the same input that replaced the
-  //     rider board's "Refresh status" buttons in #755);
-  //   * a 20s re-read while the tab is focused AND the last read FAILED, so a stale balance self-heals
-  //     while the rider is looking at it instead of waiting for them to leave the tab and come back.
-  //     Gated on `isError` on purpose: a healthy balance already refreshes on focus/foreground, and
-  //     polling it on a metered link would buy nothing.
-  //
-  // BOTH are gated on `focused`, for the same reason. The tab navigator keeps blurred screens MOUNTED
-  // (no `unmountOnBlur`), so an ungated foreground subscription here would spend two wallet round trips
-  // on every app activation for a rider who is sitting on the Jobs tab and cannot see this screen —
-  // the metered-link waste the `isError` gate above exists to avoid. Re-focusing the tab re-reads
-  // anyway, so nothing is missed by staying quiet while blurred.
-  useForegroundRefetch(() => {
-    void qc.invalidateQueries({ queryKey: walletKey });
-    void qc.invalidateQueries({ queryKey: walletLedgerKey });
-  }, focused);
+  useForegroundRefetch(reread, focused);
   React.useEffect(() => {
     if (!focused || !isError) return;
-    const t = setInterval(() => {
-      void qc.invalidateQueries({ queryKey: walletKey });
-      void qc.invalidateQueries({ queryKey: walletLedgerKey });
-    }, 20_000);
+    const t = setInterval(reread, 20_000);
     return () => clearInterval(t);
-  }, [focused, isError, qc]);
+  }, [focused, isError, reread]);
+
+  const rows = useMemo(() => history ?? [], [history]);
+  const earned = summarise(rows, range, now);
+  const today = range === "today" ? earned : summarise(rows, "today", now);
+  const feed = useMemo(() => {
+    const all = buildMoneyFeed(rows, entries);
+    // Fares older than the history we hold would misplace among older wallet pages; cut them there.
+    const cut = rows.length >= 50 ? oldestHistoryAt(rows) : null;
+    return filterMoneyFeed(cut ? all.filter((i) => i.kind !== "fare" || i.at >= cut) : all, foodOn ? filter : "all");
+  }, [rows, entries, filter, foodOn]);
+  const groups = groupByDay(feed, (i) => i.at, now, R.todayH, R.yesterday);
 
   const floor = config?.floor ?? 2;
+  const rate = config?.ratePct ?? 0;
   const balance = wallet?.balance ?? 0;
-  const entries = filterLedgerEntries(allEntries, filter);
-  const belowFloor = balance < floor;
-  const gettingLow = !belowFloor && balance < floor + 1;
-  const negative = balance < 0;
-  const firstOpen = allEntries.length === 1 && allEntries[0]!.type === "grace";
+  const owes = balance < 0;
+  const belowFloor = !owes && balance < floor;
+  const low = !owes && !belowFloor && balance < floor + 1;
+  const danger = owes || belowFloor;
+  const balanceText = owes ? R.owesB : belowFloor ? RF.floorB(floor) : low ? R.lowB : rate > 0 ? RF.balanceB(rate, floor) : R.balanceB0;
 
-  // RJM M1 healthy state is an accent-BORDERED white card (Card accent), not a solid-green fill: a
-  // muted uppercase "COMMISSION BALANCE" eyebrow, the balance in ink, and the commission line + Top up
-  // living inside it. The low/negative states (not drawn by M1 — RJM.gate_topup is the empty gate) keep
-  // the dangerWash treatment so a real money block still reads as danger.
-  // The accent hero and the dangerWash low/negative hero both sit on light fills, so ink + muted read
-  // in either — the difference is the card's fill/border (accent vs dangerWash), set on the Card below.
-  const heroBad = negative || belowFloor;
-  const heroTextColor = tokens.color.ink;
-  const heroSubColor = tokens.color.muted;
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    if (hasMore && !isLoadingMore && layoutMeasurement.height + contentOffset.y >= contentSize.height - 240) loadMore();
+  };
+
+  const noJobs = earned.jobs === 0;
 
   return (
-    <AppScreen>
-      <View style={{ flex: 1, paddingHorizontal: tokens.space.screen }}>
-        <Heading>Money</Heading>
+    <AppScreen banner={<MintTop {...top} />}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={200}>
+        {pending ? (
+          pending.kind === "succeeded" ? (
+            <Notice tone="wash" icon="circle-check" text={RF.pendingOk(pending.amount)} />
+          ) : pending.kind === "pending" ? (
+            <Notice icon="hourglass" text={RF.pendingWait(pending.provider)} />
+          ) : (
+            <Notice icon="circle-alert" text={RF.pendingFail} />
+          )
+        ) : null}
 
-        {isLoading ? (
-          <SkeletonRows count={4} />
-        ) : isError && wallet == null ? (
-          <EmptyState icon="wifi-off" title="Couldn't load your balance" message="Check your connection and try again.">
-            <Button label="Retry" onPress={refetch} loading={isFetching} />
-          </EmptyState>
-        ) : (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {isError && wallet != null ? (
-              <Text style={{ fontSize: 12, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                Couldn&apos;t refresh just now — showing your last known balance. It&apos;ll update by itself.
-              </Text>
-            ) : null}
-            {pendingTopupBanner ? (
-              <Card
-                style={{
-                  backgroundColor: pendingTopupBanner.kind === "terminal" ? tokens.color.dangerWash : tokens.color.highlightWash,
-                  borderColor: pendingTopupBanner.kind === "terminal" ? tokens.color.dangerWash : tokens.color.highlightBorder,
-                }}
-              >
-                <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.ink }}>
-                  {pendingTopupBanner.kind === "succeeded"
-                    ? `Added ${formatMoney(pendingTopupBanner.amount)}`
-                    : pendingTopupBanner.kind === "pending"
-                      ? "A top-up is still waiting for approval"
-                      : "Your last top-up didn't go through"}
-                </Text>
-                <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>
-                  {pendingTopupBanner.kind === "succeeded"
-                    ? "It landed while the app was closed — your balance below is up to date."
-                    : pendingTopupBanner.kind === "pending"
-                      ? "Check your phone for the payment prompt, or start a new one from Top up."
-                      : "No money moved — you can start a fresh top-up whenever you're ready."}
-                </Text>
-              </Card>
-            ) : null}
-
-            {/* Balance hero (RJM M1): accent-bordered white card, uppercase muted eyebrow, ink
-                balance, the commission line + Top up inside it. Low/negative keeps the dangerWash. */}
-            <Card accent={!heroBad} style={heroBad ? { backgroundColor: tokens.color.dangerWash, borderColor: tokens.color.dangerWash } : undefined}>
-              <Text style={{ color: heroSubColor, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 }}>
-                {firstOpen ? "GRACE CREDIT · BALANCE" : "COMMISSION BALANCE"}
-              </Text>
-              <Text style={{ color: heroTextColor, fontSize: 28, fontWeight: "700", marginTop: 2, fontVariant: ["tabular-nums"] }}>
-                {formatMoney(balance)}
-              </Text>
-              {negative ? (
-                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>You owe this — your next top-up clears it first.</Text>
-              ) : belowFloor ? (
-                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>Below the ${floor.toFixed(2)} floor — top up to keep riding.</Text>
-              ) : gettingLow ? (
-                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>Getting low — top up soon so you don&apos;t get blocked.</Text>
-              ) : (
-                <Text style={{ color: heroSubColor, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
-                  {config && config.ratePct > 0
-                    ? `${config.ratePct}% comes off this balance when a job closes — parcels and food, same rate. Run it to zero and you can't go online.`
-                    : "No commission comes off yet — you keep the full agreed fare. When that changes, the same small per-job commission comes off this balance for parcels and food alike."}
-                </Text>
-              )}
-              <Button label="Top up" onPress={() => router.push("/wallet/top-up")} />
-            </Card>
-
-            {/* Cash held — RIDER-ONE-APP-PLAN.md decision 6. "owed" is now live (D5) — the single
-                active food job's own open debt. "yours" stays 0 here: the active-job screen is where a
-                specific job's kept fare shows; this tab's "yours" has no single job to point at once
-                more than a parcel and a food job could theoretically both contribute (not modeled). */}
-            <View style={{ marginTop: tokens.space.md }}>
-              <CashHeldStrip yours={0} owed={owed} />
-            </View>
-
-            {/* Ledger — filter chips then bare hairline-divided rows (RJM M1: no "History" label, no
-                card wrapper; the rows sit directly on the page). */}
-            <View style={{ marginTop: tokens.space.lg }}>
-              <FilterChips value={filter} onChange={setFilter} />
-              {ledgerLoading ? (
-                <SkeletonRows count={3} />
-              ) : entries.length === 0 ? (
-                <EmptyState
-                  icon="banknote"
-                  title={filter === "food" ? "No food deliveries yet" : "Nothing here yet"}
-                  message={
-                    filter === "food"
-                      ? "Food commission isn't live yet — once it is, food jobs will show up here next to their delivery."
-                      : filter === "parcel"
-                        ? "Your parcel history starts with your next ride — every deduction shows up here next to the delivery it came from."
-                        : "Your commission history starts with your next ride — every deduction shows up here next to the delivery it came from."
-                  }
-                />
-              ) : (
-                entries.map((e) => (
-                  <View key={e.id} style={{ borderBottomWidth: 1, borderBottomColor: tokens.color.line }}>
-                    <LedgerRow entry={e} />
-                  </View>
-                ))
-              )}
-              {/* LC-B-SIB-2: the server caps every page at 25 entries; before this, `nextCursor` was
-                  never read, so older deductions vanished with no signal anything was missing. */}
-              {!ledgerLoading && hasMoreLedger ? (
-                <View style={{ marginTop: tokens.space.sm }}>
-                  <Button label="Load older" variant="ghost" onPress={loadMoreLedger} loading={ledgerLoadingMore} />
+        <RCard style={{ padding: 14, gap: 10 }}>
+          <RLabel>{R.earnings}</RLabel>
+          <Seg
+            opts={[
+              { id: "today", label: R.today },
+              { id: "week", label: R.week },
+            ]}
+            value={range}
+            onChange={setRange}
+            accessibilityLabel={R.earnings}
+          />
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <Text style={{ fontSize: 40, lineHeight: 46, fontWeight: tokens.font.weight.bold, letterSpacing: -0.8, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{usd(earned.total)}</Text>
+            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{RF.jobs(earned.jobs)}</Text>
+          </View>
+          {noJobs || !foodOn ? null : (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {(
+                [
+                  [RF.parcelsN(earned.parcels), "package"],
+                  [RF.foodN(earned.food), "utensils"],
+                ] as const
+              ).map(([l, ic]) => (
+                <View key={ic} style={{ flex: 1, minHeight: 36, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, backgroundColor: tokens.color.surface, borderRadius: 10 }}>
+                  <Icon name={ic} size={15} color={tokens.color.muted} />
+                  <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{l}</Text>
                 </View>
-              ) : null}
+              ))}
             </View>
+          )}
+          {range === "week" ? <WeekBars byDay={earned.byDay} todayIdx={(now.getDay() + 6) % 7} /> : null}
+          <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{noJobs ? R.emptyMoneyB : R.earnHint}</Text>
+        </RCard>
 
-            <View style={{ height: tokens.space.xxl }} />
-          </ScrollView>
+        <View
+          style={{
+            borderRadius: 16,
+            padding: 14,
+            gap: 8,
+            backgroundColor: danger ? tokens.color.dangerWash : tokens.color.bg,
+            borderWidth: danger ? 0 : 1,
+            borderColor: low ? tokens.color.danger : tokens.color.line,
+          }}
+        >
+          <RLabel color={danger ? tokens.color.dangerInk : tokens.color.muted}>{R.balanceL}</RLabel>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            {isLoading ? (
+              <View style={{ flex: 1 }}>
+                <ActivityIndicator color={tokens.color.muted} />
+              </View>
+            ) : (
+              <Text style={{ flex: 1, fontSize: 28, fontWeight: tokens.font.weight.bold, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontVariant: ["tabular-nums"] }}>{usd(balance)}</Text>
+            )}
+            <SmBtn kind="fill" icon="plus" label={R.topUp} onPress={() => router.push("/wallet/top-up")} />
+          </View>
+          <Text style={{ fontSize: 13, lineHeight: 19, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontWeight: danger || low ? tokens.font.weight.semibold : tokens.font.weight.regular }}>{balanceText}</Text>
+        </View>
+
+        {noJobs && owed === 0 ? null : foodOn ? (
+          <CashSplit title={R.cashNow} yours={today.total} owed={owed} />
+        ) : (
+          <CashLine text={RF.cashOnly(today.total)} />
         )}
-      </View>
+
+        <RLabel style={{ marginTop: 4 }}>{R.history}</RLabel>
+        {foodOn && feed.length > 0 ? (
+          <Chips
+            list={[
+              { id: "all", label: R.all },
+              { id: "parcel", label: R.parcels },
+              { id: "food", label: R.foodF },
+            ]}
+            value={filter}
+            onChange={setFilter}
+          />
+        ) : null}
+        {ledgerLoading ? (
+          <SkeletonRows count={3} />
+        ) : feed.length === 0 ? (
+          <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingVertical: 8 }}>
+            <IconDisc name="receipt" size={44} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.emptyMoneyT}</Text>
+              <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{R.emptyMoneyB}</Text>
+            </View>
+          </View>
+        ) : (
+          <View>
+            {groups.map((g) => (
+              <View key={g.label}>
+                <RLabel style={{ fontSize: 11, marginTop: 4, marginBottom: 2 }}>{g.label}</RLabel>
+                {g.items.map((i, idx) => (
+                  <LRow key={i.id} first={idx === 0} icon={itemIcon(i)} title={itemTitle(i)} meta={itemMeta(i)} amount={i.amount} />
+                ))}
+              </View>
+            ))}
+            {hasMore ? (
+              <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, paddingVertical: 10 }}>
+                <ActivityIndicator size={12} color={tokens.color.muted} />
+                <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.loadsMore}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+      </ScrollView>
     </AppScreen>
   );
 }

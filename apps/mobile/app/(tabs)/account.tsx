@@ -1,127 +1,79 @@
-import { formatPhoneLocal } from "@lynia/shared";
+import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { useAuth } from "../../src/auth/auth-context";
-import { notificationsRowSub, useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
-import { AppBar, Button, Card, Screen, SkeletonList } from "../../src/ui";
-import { AccountIdentityCard, AccountRowList, type AccountRow } from "../../src/ui/account/AccountRows";
+import { becomeStateFor } from "../../src/logic/become-state";
+import { useHomeLocation } from "../../src/logic/home-location";
+import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { riderModeAvailable } from "../../src/rider-mode";
+import { AppScreen, SkeletonList } from "../../src/ui";
+import { Notice } from "../../src/ui/send/kit";
+import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
+import { BecomeCard, IdentityCard, MintTop, RCard, RoleToggle, RRow } from "../../src/ui/rider/kit";
+import { useTabTop } from "../../src/query/use-tab-top";
 
 /**
- * Account tab — the CUSTOMER's hub, and only the customer's. Structurally harmonised with the rider
- * Account tab (`docs/DESIGN-DEVIATIONS.md` D-15); role-separated from it by D-22.
- *
- * D-22 (owner instruction 2026-08-16, "let's have a clear separation of what shows up under account
- * for a rider and customer") is what governs the ROW SET here. The two tabs are now mirror images:
- * each lists that side's destinations, then the same three-row tail — Help & support · Settings ·
- * one bridge row to the other side. Nothing about the other role leaks in.
- *
- * What that removed from this screen, and why none of it is a lost feature:
- *  - "Trip history" → the Orders tab already absorbed `/history`'s content wholesale (see
- *    `app/(tabs)/orders.tsx`'s header: "absorbs app/history's content directly instead of bridging
- *    out to it"), so the row was a second door onto a screen one tab away.
- *  - "Send a parcel" → a TASK, not an account destination. Every other row on either Account tab is
- *    somewhere you go about your account; the composer is reached from Home and from the Orders
- *    empty state, which is where a booking action belongs.
- *  - "Bike & documents" → rider-only maintenance. It lives on the rider Account tab and on `/profile`
- *    for a rider; drawing it here put it in three places and put rider state on the customer's hub.
- *  - the KYC pill in the identity card's trailing slot → verification is a RIDER fact. D-15 originally
- *    filled that slot with it "when relevant"; D-22 supersedes that half of D-15, because "relevant"
- *    only ever meant "this person is also a rider", which is exactly the bleed being removed.
- *
- * The bridge row is the counterpart of the rider tab's "Switch to customer" (D-16): one row, two
- * states — "Switch to rider" for someone who already is one, "Become a rider" for someone who isn't.
- *
- * **The identity card is INERT** (owner instruction 2026-08-17: *"when I click the profile under
- * accounts it must not be clickable to display another window for both rider and customer sides"* —
- * `docs/DESIGN-DEVIATIONS.md` D-26). It used to open `/profile?side=customer`; `AccountIdentityCard`
- * no longer accepts a handler at all, so this tab and the rider one are inert by construction rather
- * than by each remembering not to pass one. Settings is the row that leads onward.
- *
- * The BODY GEOMETRY is mirrored from the generated rider view (owner instruction 2026-08-16, from a
- * photo of both tabs: "the customer options tab does not have same margins as the rider options cards
- * .. align the customer cards so they have the same dimensions and design as the rider cards" —
- * `docs/DESIGN-DEVIATIONS.md` D-24). D-15 harmonised what a row LOOKS like and D-22 settled WHICH rows
- * each side gets, but both left the two screens inset differently: the rider's generated view nests
- * the mock's `Pad` inside `Screen`'s own 16px edge padding, so its cards sit 32px in, while this
- * screen put its cards straight into `Screen` at 16px. Same rows, two different card widths. Both now
- * draw `Screen scroll` → `Pad` → cards, so the cards are one width on both tabs.
+ * Customer Account (Rider v2 C6–C11, ledger D-54) — the rider Account's sibling: mint top card with the
+ * deliver-to street, a tappable identity card, then either the **Customer | Rider** toggle (Customer
+ * selected) for someone who rides, or the Become-a-rider card for someone who doesn't yet — then
+ * Trip history · Notifications · Help & support · Settings. iPhone builds are customer-only (D-41), so
+ * neither the toggle nor the card is drawn there.
  */
 export default function AccountTabScreen(): React.ReactElement {
   const router = useRouter();
-  const { session } = useAuth();
+  const top = useTabTop();
+  const location = useHomeLocation();
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const me = meQ.data;
-  const isRider = (me?.role ?? session?.role) === "rider";
-
-  // STREAMLINE-01: drives the Notifications row's "N new" prefix (docs/DESIGN-DEVIATIONS.md D-27).
   const unreadCount = useNotificationsUnreadCount();
 
-  const name = me ? `${me.firstName} ${me.lastName}`.trim() || "Your account" : "Your account";
-  // The facts that identify THIS account on the customer side, one line, muted — the customer
-  // analogue of the rider's "★ 4.9 · 312 jobs · verified".
-  const identityLine = [me?.phone ? formatPhoneLocal(me.phone) : "", "Customer"].filter(Boolean).join(" · ");
-
-  const rows: AccountRow[] = [
-    { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },
-    { icon: "phone", label: "Help & support", sub: "Call the safety line", onPress: () => router.push("/help") },
-    // `shield` rather than a settings/cog glyph: the design kit's 38-icon subset has none, and this
-    // row's contents ARE permissions, privacy and sign-out — so the shield is honest, not a stand-in.
-    { icon: "shield", label: "Settings", sub: "Permissions, privacy and sign out", onPress: () => router.push("/settings") },
-    // MOB-BOOT-02-SIB-3 (crash-fuzz 2026-08-23, MOB-BOOT-02 class — "a screen rendering a decision it has
-    // not yet made"): while `me` is still loading OR failed to load, `isRider` falls back to the
-    // stale/absent `session?.role`, which can read "customer" for an account that is actually a
-    // verified rider — live-reproduced via the tools/parity mobile harness as a ~1.5-2s flash of
-    // "Become a rider" on a rider's own account before it flips to "Switch to rider". Gated on
-    // `meQ.isSuccess` specifically (not just `!meQ.isLoading`, caught in review): an ERRORED fetch is
-    // just as unresolved as a loading one, and `session?.role` is exactly as unreliable a guess either
-    // way. The rider-side sibling (`app/rider/(tabs)/account.tsx`) avoids this class entirely by
-    // early-returning a full-screen skeleton while loading; this screen's other rows carry no role
-    // guess, so only this one row withholds itself until the real role is known, rather than gating
-    // the whole list.
-    // Rider mode doesn't exist on the customer-only iPhone app (src/rider-mode.ts, D-41).
-    ...(meQ.isSuccess && riderModeAvailable()
-      ? [
-          {
-            icon: "bike" as const,
-            label: isRider ? "Switch to rider" : "Become a rider",
-            sub: isRider ? "Jobs, money and your bike" : "Earn by delivering parcels and food",
-            onPress: () => router.push(isRider ? "/rider" : "/rider/become"),
-          },
-        ]
-      : []),
-  ];
+  const name = me ? `${me.firstName} ${me.lastName}`.trim() || R.tabAccount : R.tabAccount;
+  // Withheld until `me` resolves: guessing the role from a stale session flashed "Become a rider" on a
+  // rider's own account (MOB-BOOT-02-SIB-3).
+  const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me) : null;
+  const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
 
   return (
-    // `scroll` — the whole body, not a ScrollView around the rows alone, so the tab still reaches its
-    // last row on the mandatory 320×640 entry phone once a long name wraps. The rider view earns the
-    // same scaffold from the codegen, so the two screens scroll identically (D-24).
-    <Screen scroll>
-      <AppBar title="Account" back={false} />
-
-      {/* The mock's `Pad` — the SECOND 16px inset, copied from the generated rider view
-          (`app/rider/(tabs)/account.view.tsx`, its `Pad`→View). This is what makes the two tabs' cards
-          the same width; see D-24 and the header comment. */}
-      <View style={{ padding: tokens.space.screen, minHeight: "100%", paddingTop: 0 }}>
-        {meQ.isLoading ? (
-          <SkeletonList count={1} />
-        ) : meQ.isError ? (
-          <Card>
-            <Text style={{ fontSize: 14, color: tokens.color.ink }}>Couldn&apos;t load your details.</Text>
-            <Button label="Retry" variant="ghost" onPress={() => void meQ.refetch()} />
-          </Card>
-        ) : (
-          // Inert — no handler, and since D-26 the card takes none. Everything it used to open is
-          // reached through the Settings row below.
-          <AccountIdentityCard name={name} line={identityLine} />
-        )}
-
-        <AccountRowList rows={rows} />
-      </View>
-    </Screen>
+    <AppScreen banner={<MintTop {...top} customer loc={location.label} />}>
+      {meQ.isLoading ? (
+        <View style={{ padding: tokens.space.screen }}>
+          <SkeletonList count={2} />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
+          <IdentityCard
+            name={name}
+            line={me?.phone ? formatPhoneDisplay(me.phone) : ""}
+            photoUrl={me?.photoUrl}
+            onPress={() => router.push("/profile?side=customer")}
+          />
+          {become === "toggle" ? (
+            <>
+              <RoleToggle side="customer" onChange={(s) => (s === "rider" ? router.replace("/rider") : undefined)} />
+              {me?.rider?.kycStatus === "verified" && (me.rider.tripsCount ?? 0) === 0 ? (
+                <Notice tone="wash" icon="circle-check" text={`${R.kycOkT}. ${R.kycOkB}`} />
+              ) : (
+                <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, textAlign: "center", marginTop: -4 }}>{R.switchHint}</Text>
+              )}
+            </>
+          ) : become ? (
+            <BecomeCard
+              state={become}
+              failBody={RF.kycFailB(left)}
+              onAction={() => router.push(become === "none" ? "/rider/become" : "/rider")}
+            />
+          ) : null}
+          <RCard>
+            <RRow first icon="receipt" label={R.rTripHist} sub={R.rTripHistS} onPress={() => router.push("/history?side=customer")} />
+            <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
+            <RRow icon="message-circle" label={R.rHelp} sub={R.rHelpS} onPress={() => router.push("/help")} />
+            <RRow icon="settings" label={R.rSettings} sub={R.rSettingsC} onPress={() => router.push("/settings?side=customer")} />
+          </RCard>
+        </ScrollView>
+      )}
+    </AppScreen>
   );
 }

@@ -116,6 +116,11 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 - **The order screen follows its own handoff.** `app/order/[id].tsx` aligns to `packages/design/handoff/after-send-v2/`
   (ledger D-53 and its v2 round, owner 2026-10-01; `after-send/` is the v1 record): one screen, a full-bleed map and a sheet that follows the order's stage. The
   gallery's `LJ` auction / tracking / delivered / cancelled / undelivered screens are superseded and not aligned to.
+- **The rider app follows its own handoff (`handoff/rider-v2/`).** `app/rider/**`, `app/wallet/top-up.tsx`,
+  BOTH Account tabs, `app/settings/index.tsx` and `app/history/index.tsx` align to
+  `packages/design/handoff/rider-v2/` (ledger D-54, owner 2026-10-01; it retires D-15/16/17/22/25/26). The
+  gallery `RJM`/`RJ` rider screens and the `LJ` Account/Settings screens it replaces are superseded and not
+  aligned to. Strings come from `src/ui/rider/copy.ts` (the handoff's `R`, verbatim).
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

@@ -1,74 +1,85 @@
 /**
- * B-O1: history was a ScrollView + `.map()` over the full (server-capped 50-row) trip history,
- * mounting every row concurrently regardless of how many are actually on-screen — the same
- * render-cost shape B-T3/LC-B07 already fixed for the (uncapped) restaurant catalog. Pins the
- * structural fix (FlatList, so only what's on-screen is mounted) so a future "just add a row here"
- * edit can't quietly revert to an unbounded ScrollView.
+ * Job history / Trip history (Rider v2 C12/C13, ledger D-54). Pins the split by side — the rider sees
+ * only jobs they carried (with the fare, or "No fare"), the customer only orders they placed — and that
+ * the list stays virtualized (B-O1: a ScrollView + `.map()` over 50 rows mounted every row at once).
  */
 import renderer, { act } from "react-test-renderer";
-import { FlatList } from "react-native";
+import { SectionList } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { OrderHistoryRow } from "../../../src/api/orders";
 
-const mockRows: OrderHistoryRow[] = Array.from({ length: 40 }, (_, i) => ({
-  id: `o-${i}`,
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
+const now = new Date();
+const row = (i: number, role: "customer" | "rider", status: OrderHistoryRow["status"] = "delivered"): OrderHistoryRow => ({
+  id: `${role}-${i}`,
   orderType: "parcel",
   merchantName: null,
-  role: "customer",
+  role,
   pickup: { point: { lat: 0, lng: 0 }, landmark: `Pickup ${i}` },
   dropoff: { point: { lat: 0, lng: 0 }, landmark: `Drop ${i}` },
   itemDesc: "Documents",
   note: null,
-  proposedFare: "5.00",
-  agreedFare: "5.00",
-  status: "delivered",
-  createdAt: new Date().toISOString(),
+  proposedFare: "3.00",
+  agreedFare: "3.20",
+  status,
+  createdAt: now.toISOString(),
   rating: null,
   counterpartyName: null,
-}));
+});
+const mockRows = [...Array.from({ length: 30 }, (_, i) => row(i, "customer")), row(1, "rider"), row(2, "rider", "cancelled")];
 
-const mockUseHistoryFeed = jest.fn();
-
+let mockSide = "rider";
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
+  useLocalSearchParams: () => ({ side: mockSide }),
 }));
 jest.mock("../../../src/query/use-history-feed", () => ({
-  useHistoryFeed: () => mockUseHistoryFeed(),
+  useHistoryFeed: () => ({ rows: mockRows, showingStale: false, isFetching: false, isError: false, hasLiveData: true, refetch: jest.fn() }),
 }));
 
 import HistoryScreen from "../index";
 
-describe("HistoryScreen (B-O1: capped-but-still-multi-row list must be virtualized, not ScrollView+map)", () => {
-  beforeEach(() => {
-    mockUseHistoryFeed.mockReturnValue({
-      rows: mockRows,
-      showingStale: false,
-      isFetching: false,
-      isError: false,
-      hasLiveData: true,
-      refetch: jest.fn(),
-    });
+const trees: renderer.ReactTestRenderer[] = [];
+afterEach(() => {
+  while (trees.length) {
+    const t = trees.pop()!;
+    act(() => t.unmount());
+  }
+});
+const text = (t: renderer.ReactTestRenderer): string =>
+  t.root.findAll((n) => typeof n.props.children === "string").map((n) => n.props.children as string).join("\n");
+
+function render(): renderer.ReactTestRenderer {
+  let tree!: renderer.ReactTestRenderer;
+  act(() => {
+    tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <HistoryScreen />
+      </SafeAreaProvider>,
+    );
+  });
+  trees.push(tree);
+  return tree;
+}
+const ids = (t: renderer.ReactTestRenderer): string[] =>
+  (t.root.findByType(SectionList).props.sections as { data: OrderHistoryRow[] }[]).flatMap((s) => s.data.map((r) => r.id));
+
+describe("history split by side", () => {
+  it("rider: only the jobs they carried, with the week summary and 'No fare' on a cancelled job", () => {
+    mockSide = "rider";
+    const t = render();
+    expect(ids(t)).toEqual(["rider-1", "rider-2"]);
+    const s = text(t);
+    expect(s).toContain("Job history");
+    expect(s).toContain("This week · 1 job · $3.20 earned");
+    expect(s).toContain("No fare");
   });
 
-  it("renders trips via FlatList, not an unvirtualized ScrollView", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<HistoryScreen />);
-    });
-
-    // findByType (singular) throws unless exactly one match exists — the regression this pins is a
-    // screen-level `.map()` handing FlatList's full backing array to it as JSX children instead.
-    const list = tree.root.findByType(FlatList);
-    expect(list.props.data).toHaveLength(mockRows.length);
-  });
-
-  it("still hands every trip to the list (virtualization must not drop data)", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<HistoryScreen />);
-    });
-    const list = tree.root.findByType(FlatList);
-    expect(list.props.data.map((r: OrderHistoryRow) => r.id)).toEqual(mockRows.map((r) => r.id));
-    const first = mockRows[0]!;
-    expect(list.props.keyExtractor(first)).toBe(first.id);
+  it("customer: only the orders they placed, virtualized", () => {
+    mockSide = "customer";
+    const t = render();
+    expect(ids(t)).toHaveLength(30);
+    expect(ids(t).every((id) => id.startsWith("customer-"))).toBe(true);
+    expect(text(t)).toContain("Trip history");
   });
 });

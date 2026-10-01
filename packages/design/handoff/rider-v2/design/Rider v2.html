@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyniaGo — Rider v2</title>
+<link rel="stylesheet" href="../../../styles.css">
+<style>
+html,body{margin:0}html{scroll-behavior:smooth}
+body{background:#eceff1;font-family:var(--font-sans);color:var(--ink)}
+a{color:var(--accent-text)}a:hover{color:var(--ink)}
+.nav{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:4px;align-items:center;padding:6px 16px;overflow-x:auto;scrollbar-width:none}
+.nav b{font-size:14px;margin-right:10px;white-space:nowrap}
+.nav a{height:36px;display:flex;align-items:center;padding:0 12px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;color:var(--muted);white-space:nowrap}
+.nav a:hover{background:var(--surface);color:var(--ink)}.nav a.on{background:var(--accent-wash);color:var(--accent-text)}
+main{padding:28px 24px 80px}section{scroll-margin-top:64px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:48px 0 6px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:760px;line-height:1.5}
+.grid{display:flex;flex-wrap:wrap;gap:36px 28px;align-items:flex-start;margin-top:16px}
+.cell{display:flex;flex-direction:column;gap:8px;scroll-margin-top:64px}
+.lab{font:600 13px/1.35 var(--font-sans);max-width:360px}.lab span{color:var(--muted);font-weight:400}
+.lab em{display:block;font-style:normal;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px;text-wrap:pretty}
+.badge{display:inline-flex;min-width:26px;height:20px;padding:0 6px;border-radius:999px;background:var(--ink);color:#fff;font-size:11px;align-items:center;justify-content:center;margin-right:6px;box-sizing:border-box}
+.flag{display:inline-flex;height:18px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.04em;align-items:center;margin-right:6px;vertical-align:1px;background:var(--accent-wash);color:var(--accent-text)}
+.proto{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:16px}
+.rail{width:280px;background:var(--bg);border-radius:12px;padding:8px;max-height:760px;overflow:auto;box-sizing:border-box}
+.rail h4{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:10px 8px 4px}
+.rail button{all:unset;box-sizing:border-box;display:flex;gap:8px;align-items:center;width:100%;min-height:36px;padding:4px 8px;border-radius:8px;font-size:13px;cursor:pointer}
+.rail button:hover{background:var(--surface)}.rail button.on{background:var(--accent-wash);color:var(--accent-text);font-weight:700}
+.rail button .badge{background:var(--surface);color:var(--muted);flex:none}.rail button.on .badge{background:var(--accent-text);color:#fff}
+.pctl{display:flex;flex-direction:column;gap:10px;align-items:center}
+.pbtns{display:flex;gap:8px;align-items:center}
+.pbtns button{all:unset;cursor:pointer;height:40px;padding:0 16px;border-radius:999px;background:var(--bg);font-size:13px;font-weight:700;color:var(--accent-text);box-shadow:0 0 0 1px var(--line)}
+.pbtns button:hover{background:var(--accent-wash)}.pbtns span{font-size:13px;color:var(--muted);min-width:120px;text-align:center}
+.card{max-width:860px;font-size:14px;line-height:1.55;background:var(--bg);border-radius:12px;padding:20px 24px;margin-top:16px}
+.card h3{font-size:14px;margin:16px 0 6px}.card h3:first-child{margin-top:0}.card ul{margin:0;padding-left:18px}
+.card table{border-collapse:collapse;width:100%;font-size:13px}.card td,.card th{border-top:1px solid var(--line);padding:7px 8px 7px 0;vertical-align:top;text-align:left}.card td:first-child{font-weight:600}
+.copy{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:1400px;margin-top:16px}
+.copy div{background:var(--bg);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.5}.copy b{display:block;margin-bottom:6px}.copy ul{margin:0;padding-left:16px}
+.sc2-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sc2r .8s linear infinite;box-sizing:border-box}
+.as-spin{display:inline-block;flex:none;border-radius:50%;border:2.5px solid;animation:sc2r .8s linear infinite;box-sizing:border-box}
+.sc2-caret{display:inline-block;width:2px;height:18px;background:var(--accent-text);vertical-align:-3px;margin-left:1px}
+@keyframes sc2r{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.as-spin,.sc2-spin{animation-duration:2.4s}}
+.lynia-tabular{font-variant-numeric:tabular-nums}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../../assets/lynia-icons.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00b14f"/><text x="50" y="62" font-size="28" font-family="sans-serif" font-weight="700" fill="#fff" text-anchor="middle">R2</text></svg></template>
+<div id="rv-root"></div>
+<script type="text/babel" src="sc2-kit.jsx"></script>
+<script type="text/babel" src="as-kit.jsx"></script>
+<script type="text/babel" src="rv-kit.jsx"></script>
+<script type="text/babel" src="rv-board.jsx"></script>
+<script type="text/babel" src="rv-job.jsx"></script>
+<script type="text/babel" src="rv-money.jsx"></script>
+<script type="text/babel" src="rv-account.jsx"></script>
+<script type="text/babel">
+const G = [["jobs", "1 · Jobs board"], ["offer", "Make an offer"], ["gates", "Gates"], ["food", "Food offer"], ["parcel", "2 · Active job · parcel"], ["foodjob", "Active job · food"], ["except", "Exceptions"], ["money", "3 · Money"], ["topup", "Top up"], ["account", "4 · Account & switch"], ["settings", "Settings & sub-screens"]];
+/* [id, group, title, note, replaces, render(W,H), small?] */
+const ST = [
+  ["J1", "jobs", "Board · parcels + food", "Map with job pins + busy zone; nearest card highlighted with its pin", "RJM board", (W, H) => <Board W={W} H={H} />, 1],
+  ["J2", "jobs", "Board · sheet full", "Drag up; map keeps 16 px", "", (W, H) => <Board W={W} H={H} mode="full" />],
+  ["J3", "jobs", "Board · parcels only", "Food dispatch off: no food line, copy says parcels", "RJM board_food_off", (W, H) => <Board W={W} H={H} mode="foodOff" />],
+  ["J4", "jobs", "Board · empty", "Says why it's quiet and where it's busier", "RJM board_empty", (W, H) => <Board W={W} H={H} mode="empty" />, 1],
+  ["J5", "jobs", "Board · empty, parcels only", "", "RJM board_empty_food_off", (W, H) => <Board W={W} H={H} mode="emptyFoodOff" />],
+  ["J6", "jobs", "Reconnecting", "Top card shows Reconnecting; list dims; no button", "RJ offline", (W, H) => <Board W={W} H={H} mode="stale" />],
+  ["J7", "jobs", "Couldn't load", "Retries itself; skeletons", "RJ generic_error", (W, H) => <Board W={W} H={H} mode="loadFail" />],
+  ["J8", "jobs", "Notifications off", "Strong warn, never a block", "", (W, H) => <Board W={W} H={H} mode="notifOff" />],
+  ["J9", "jobs", "Your offers", "Waiting card with Withdraw (new)", "RJ offer_sent", (W, H) => <Board W={W} H={H} mode="offers" />],
+  ["J10", "jobs", "Offer withdrawn", "Undo for 5 s", "", (W, H) => <Board W={W} H={H} mode="withdrawn" />],
+  ["J11", "jobs", "A customer picked you", "Modal over the board", "RJ picked", (W, H) => <Board W={W} H={H} mode="picked" />, 1],
+  ["J12", "jobs", "Not chosen", "", "RJ not_chosen", (W, H) => <Board W={W} H={H} mode="notChosen" />],
+  ["J13", "jobs", "Taken first", "Card and pin leave", "RJ missed_order", (W, H) => <Board W={W} H={H} mode="taken" />],
+  ["J14", "jobs", "Offer expired", "", "RJ bid_expired", (W, H) => <Board W={W} H={H} mode="bidExpired" />],
+
+  ["O1", "offer", "Make an offer", "Send v2 price step + ETA chips + route strip", "RJM offer_parcel", (W, H) => <Offer W={W} H={H} />, 1],
+  ["O2", "offer", "Fare well above usual", "Warn hint, not a block", "", (W, H) => <Offer W={W} H={H} mode="over" />],
+  ["O3", "offer", "Sending", "", "", (W, H) => <Offer W={W} H={H} mode="sending" />],
+  ["O4", "offer", "Send failed", "", "", (W, H) => <Offer W={W} H={H} mode="fail" />],
+
+  ["G1", "gates", "Not a rider", "", "", (W, H) => <GateScreen W={W} H={H} g="notRider" />],
+  ["G2", "gates", "KYC under review", "", "RJ kyc_pending", (W, H) => <GateScreen W={W} H={H} g="pending" />],
+  ["G3", "gates", "KYC unfinished", "", "RJ kyc_unfinished", (W, H) => <GateScreen W={W} H={H} g="unfinished" />],
+  ["G4", "gates", "KYC failed", "Says what went wrong + tries left", "RJ kyc_failed", (W, H) => <GateScreen W={W} H={H} g="failed" />, 1],
+  ["G5", "gates", "KYC failed twice", "Support only", "RJ gate_kyc_locked", (W, H) => <GateScreen W={W} H={H} g="failed2" />],
+  ["G6", "gates", "ID expired", "", "RJ kyc_expired", (W, H) => <GateScreen W={W} H={H} g="expired" />],
+  ["G7", "gates", "Can't open ID check", "", "RJ kyc_cant_start", (W, H) => <GateScreen W={W} H={H} g="cantOpen" />],
+  ["G8", "gates", "No GPS", "", "RJ no_gps", (W, H) => <GateScreen W={W} H={H} g="gps" />],
+  ["G9", "gates", "Out of area", "", "RJ gate_out_of_area", (W, H) => <GateScreen W={W} H={H} g="area" />],
+  ["G10", "gates", "Cooldown", "When it clears, to the minute", "RJ gate_cooldown", (W, H) => <GateScreen W={W} H={H} g="cooldown" />, 1],
+  ["G11", "gates", "On hold", "", "RJ on_hold", (W, H) => <GateScreen W={W} H={H} g="hold" />],
+  ["G12", "gates", "Suspended", "", "", (W, H) => <GateScreen W={W} H={H} g="suspended" />],
+  ["G13", "gates", "Banned", "", "RJ gate_banned", (W, H) => <GateScreen W={W} H={H} g="banned" />],
+  ["G14", "gates", "Balance too low", "Exact amount to top up", "RJM gate_topup", (W, H) => <GateScreen W={W} H={H} g="topup" />, 1],
+  ["G15", "gates", "Force update", "No tab bar", "RJ force_update", (W, H) => <GateScreen W={W} H={H} g="update" />],
+
+  ["F1", "food", "Food offer", "60 s countdown pill", "RJM offer_food", (W, H) => <FoodOffer W={W} H={H} />, 1],
+  ["F2", "food", "Food offer · pay kitchen upfront", "", "", (W, H) => <FoodOffer W={W} H={H} mode="upfront" />],
+  ["F3", "food", "Food offer · 8 s left", "", "", (W, H) => <FoodOffer W={W} H={H} mode="low" />],
+  ["F4", "food", "Food offer expired", "", "", (W, H) => <FoodOffer W={W} H={H} mode="expired" />],
+
+  ["A1", "parcel", "Heading to pickup", "One stop, one action; dotted line to pickup", "RJM active_parcel · RJ job_assigned · job_pickup", (W, H) => <ParcelJob W={W} H={H} />, 1],
+  ["A2", "parcel", "At pickup · check items", "Hint says what's missing", "RJ job_verify", (W, H) => <ParcelJob W={W} H={H} stage="verify" />],
+  ["A3", "parcel", "Pickup photo · camera", "", "RJM pickup_photo", (W, H) => <PickupPhoto W={W} H={H} />],
+  ["A4", "parcel", "Pickup photo · preview", "", "RJM pickup_photo_preview", (W, H) => <PickupPhoto W={W} H={H} mode="preview" />],
+  ["A5", "parcel", "Pickup photo · saving", "", "RJ photo_uploading", (W, H) => <PickupPhoto W={W} H={H} mode="uploading" />],
+  ["A6", "parcel", "Ready to collect", "Photo saved (uploads later if offline)", "RJ job_collect · RJM pickup_photo_failed", (W, H) => <ParcelJob W={W} H={H} stage="verifyDone" />],
+  ["A7", "parcel", "Heading to drop-off", "", "RJ job_dropoff", (W, H) => <ParcelJob W={W} H={H} stage="toDrop" />, 1],
+  ["A8", "parcel", "Delivery code", "", "RJM handoff · RJ job_handoff", (W, H) => <CodeEntry W={W} H={H} />, 1],
+  ["A9", "parcel", "Wrong code", "", "RJ handoff_wrong", (W, H) => <CodeEntry W={W} H={H} mode="wrong" />],
+  ["A10", "parcel", "Wrong code · last try", "", "", (W, H) => <CodeEntry W={W} H={H} mode="last" />],
+  ["A11", "parcel", "Code locked", "Clear re-send path", "", (W, H) => <CodeEntry W={W} H={H} mode="locked" />],
+  ["A12", "parcel", "Code offline", "Works without data", "", (W, H) => <CodeEntry W={W} H={H} mode="offline" />],
+  ["A13", "parcel", "Delivered + rate sender", "Earnings first", "RJ job_delivered", (W, H) => <Done W={W} H={H} />, 1],
+
+  ["B1", "foodjob", "Heading to the kitchen", "", "RJM active_food", (W, H) => <FoodJob W={W} H={H} />],
+  ["B2", "foodjob", "At the kitchen · pay upfront", "", "", (W, H) => <FoodJob W={W} H={H} stage="atKitchen" />],
+  ["B3", "foodjob", "Heading to the customer", "Cash split always on screen", "", (W, H) => <FoodJob W={W} H={H} stage="toCustomer" />, 1],
+  ["B4", "foodjob", "Delivery code · food", "", "", (W, H) => <CodeEntry W={W} H={H} food />],
+  ["B5", "foodjob", "Return cash to kitchen", "", "", (W, H) => <FoodJob W={W} H={H} stage="returnCash" />],
+  ["B6", "foodjob", "Food delivered", "", "", (W, H) => <Done W={W} H={H} food />],
+
+  ["X1", "except", "Problem with this job? · after pickup", "The single exit; Help pill opens it too", "RJ job_help · sos_idle", (W, H) => <ProblemSheet W={W} H={H} />, 1],
+  ["X2", "except", "Problem · before pickup", "Cancel lives here only", "", (W, H) => <ProblemSheet W={W} H={H} pickup />],
+  ["X3", "except", "Can't reach the customer", "10-min wait before undelivered", "", (W, H) => <CantReach W={W} H={H} />],
+  ["X4", "except", "Can't deliver · reason", "", "RJ undelivered", (W, H) => <Undelivered W={W} H={H} />],
+  ["X5", "except", "Marked undelivered", "", "", (W, H) => <Terminal W={W} H={H} icon="Package" title={R.undelDoneT} body={R.undelDoneB} note={R.undelNoStrike} primary={<GBtn label={R.callRudo} icon="Phone" />} ghost={<GBtn ghost label={R.nextJobs} />} />],
+  ["X6", "except", "Cancel job · strike warning", "", "RJ job_bail", (W, H) => <CancelSheet W={W} H={H} />],
+  ["X7", "except", "Cancel job · one strike from pause", "", "RJM strikes_final", (W, H) => <CancelSheet W={W} H={H} final />, 1],
+  ["X8", "except", "Drop food job", "", "", (W, H) => <CancelSheet W={W} H={H} food />],
+  ["X9", "except", "Customer cancelled", "", "RJ job_cancelled", (W, H) => <Terminal W={W} H={H} icon="X" title={R.custCxT} body={R.custCxB} note={R.custCxNoStrike} primary={<GBtn label={R.nextJobs} />} ghost={<GBtn ghost label={R.callRudo} icon="Phone" />} />],
+  ["X10", "except", "Connection lost", "", "RJ job_offline", (W, H) => <ParcelJob W={W} H={H} stage="offline" />],
+  ["X11", "except", "Offline for minutes", "Escalates; still says it's safe", "", (W, H) => <ParcelJob W={W} H={H} stage="offlineLong" />],
+  ["X12", "except", "Job restored", "After an app restart", "", (W, H) => <ParcelJob W={W} H={H} stage="restored" />],
+  ["X13", "except", "SOS confirm", "", "RJ sos_confirm", (W, H) => <SosConfirm W={W} H={H} />],
+  ["X14", "except", "Help requested", "", "RJ job_help_sent", (W, H) => <ParcelJob W={W} H={H} stage="helpSent" />],
+
+  ["M1", "money", "Money · today", "Earnings hero, balance second", "RJM money", (W, H) => <Money W={W} H={H} />, 1],
+  ["M2", "money", "Money · this week", "", "", (W, H) => <Money W={W} H={H} mode="week" />],
+  ["M3", "money", "Money · scrolled", "History loads as you scroll", "", (W, H) => <Money W={W} H={H} offset={330} />],
+  ["M4", "money", "Money · parcels only", "", "", (W, H) => <Money W={W} H={H} mode="foodOff" />],
+  ["M5", "money", "Balance getting low", "", "RJ wallet_low", (W, H) => <Money W={W} H={H} mode="low" />],
+  ["M6", "money", "Below the floor", "", "", (W, H) => <Money W={W} H={H} mode="floor" />, 1],
+  ["M7", "money", "Owes commission", "", "", (W, H) => <Money W={W} H={H} mode="owes" />],
+  ["M8", "money", "Commission at 0%", "", "", (W, H) => <Money W={W} H={H} mode="zero" />],
+  ["M9", "money", "First day, empty", "", "", (W, H) => <Money W={W} H={H} mode="empty" />],
+  ["M10", "money", "Top-up went through while closed", "", "", (W, H) => <Money W={W} H={H} mode="pendingOk" />],
+  ["M11", "money", "Top-up still waiting", "", "", (W, H) => <Money W={W} H={H} mode="pendingWait" />],
+  ["M12", "money", "Top-up didn't go through", "", "", (W, H) => <Money W={W} H={H} mode="pendingFail" />],
+
+  ["T1", "topup", "Top up · provider", "Send v2 step bar", "", (W, H) => <TopUp W={W} H={H} />],
+  ["T2", "topup", "Top up · amount", "", "RJ topup_amount", (W, H) => <TopUp W={W} H={H} step="amount" />, 1],
+  ["T3", "topup", "Top up · phone", "Prefilled from Settings", "", (W, H) => <TopUp W={W} H={H} step="phone" />],
+  ["T4", "topup", "Approve on phone", "", "RJ topup_wait", (W, H) => <TopUp W={W} H={H} step="wait" />],
+  ["T5", "topup", "Top-up done", "", "RJ topup_success", (W, H) => <TopUp W={W} H={H} step="ok" />],
+  ["T6", "topup", "Top-up declined / timed out", "", "RJ topup_declined", (W, H) => <TopUp W={W} H={H} step="fail" />],
+
+  ["C1", "account", "Rider Account", "Toggle under identity; standing card", "RJM account · RJM strikes", (W, H) => <RiderAccount W={W} H={H} />, 1],
+  ["C2", "account", "Rider Account · scrolled", "", "", (W, H) => <RiderAccount W={W} H={H} offset={180} />],
+  ["C3", "account", "Rider Account · one strike from pause", "", "RJM strikes_final", (W, H) => <RiderAccount W={W} H={H} risk offset={120} />],
+  ["C4", "account", "Switch confirm · can take jobs", "", "", (W, H) => <SwitchSheet W={W} H={H} />, 1],
+  ["C5", "account", "Switch confirm · active job", "", "", (W, H) => <SwitchSheet W={W} H={H} active />],
+  ["C6", "account", "Customer Account · customer + rider", "Sibling of C1", "", (W, H) => <CustomerAccount W={W} H={H} />, 1],
+  ["C7", "account", "Customer Account · become a rider", "Customer-only user", "", (W, H) => <CustomerAccount W={W} H={H} state="none" />],
+  ["C8", "account", "Become a rider · in progress", "", "", (W, H) => <CustomerAccount W={W} H={H} state="progress" />],
+  ["C9", "account", "Become a rider · under review", "", "", (W, H) => <CustomerAccount W={W} H={H} state="review" />],
+  ["C10", "account", "Become a rider · failed", "", "", (W, H) => <CustomerAccount W={W} H={H} state="failed" />],
+  ["C11", "account", "Become a rider · verified", "Toggle appears", "RJ kyc_verified", (W, H) => <CustomerAccount W={W} H={H} state="verified" />],
+  ["C12", "account", "Job history (rider)", "Jobs carried, with fare", "RJ history", (W, H) => <JobHistory W={W} H={H} />],
+  ["C13", "account", "Trip history (customer)", "Orders placed only", "", (W, H) => <TripHistory W={W} H={H} />],
+
+  ["S1", "settings", "Settings · rider (top)", "", "RJ settings", (W, H) => <Settings W={W} H={H} />, 1],
+  ["S2", "settings", "Settings · rider section", "", "", (W, H) => <Settings W={W} H={H} offset={400} />],
+  ["S3", "settings", "Settings · alerts + location off", "Rider consequences", "", (W, H) => <Settings W={W} H={H} offset={430} off />],
+  ["S4", "settings", "Settings · customer only", "No Rider section", "", (W, H) => <Settings W={W} H={H} who="customer" />, 1],
+  ["S5", "settings", "Bike & documents", "Moved into Settings", "RJ bike_docs", (W, H) => <BikeDocs W={W} H={H} />],
+  ["S6", "settings", "Help & support", "", "RJ help", (W, H) => <HelpScreen W={W} H={H} />],
+];
+const SMALL = ST.filter(s => s[6]);
+
+function scanCopy(el) {
+  const nodes = new Set(); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) { const v = w.currentNode.nodeValue.trim(); if (v) nodes.add(v); }
+  const all = el.textContent;
+  return Object.keys(R).filter(k => nodes.has(R[k]) || (R[k].length >= 12 && all.includes(R[k])));
+}
+function Lazy({ W, H, children }) {
+  const ref = React.useRef(null); const [on, setOn] = React.useState(false);
+  React.useEffect(() => { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { setOn(true); io.disconnect(); } }, { rootMargin: "800px 0px" }); io.observe(ref.current); return () => io.disconnect(); }, []);
+  return <div ref={ref} style={{ width: W, minHeight: on ? 0 : H }}>{on ? children : <div style={{ width: W, height: H, borderRadius: 18, background: "var(--surface)" }}></div>}</div>;
+}
+function Cell({ s, W, H, suffix = "" }) {
+  return <div className="cell" id={`s-${s[0]}${suffix}`} data-screen-label={`${s[0]} ${s[2]}${suffix}`}>
+    <div className="lab" style={{ maxWidth: Math.max(W, 300) }}><span className="badge">{s[0]}</span>{s[2]}{suffix ? <span> · 320 × 640</span> : null}{s[3] ? <em>{s[3]}</em> : null}{s[4] ? <em>Replaces {s[4]}</em> : null}</div>
+    <Lazy W={W} H={H}>{s[5](W, H)}</Lazy>
+  </div>;
+}
+function Proto() {
+  const [i, setI] = React.useState(() => Math.min(+(localStorage.getItem("rv2-proto-idx") || 0), ST.length - 1));
+  const [sm, setSm] = React.useState(false);
+  const go = (n) => setI((n + ST.length) % ST.length);
+  React.useEffect(() => { localStorage.setItem("rv2-proto-idx", i); }, [i]);
+  React.useEffect(() => { const k = (e) => { if (e.key === "ArrowRight") go(i + 1); if (e.key === "ArrowLeft") go(i - 1); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [i]);
+  const s = ST[i];
+  return <div className="proto">
+    <div className="rail">{G.map(([g, gl]) => <div key={g}><h4>{gl}</h4>{ST.map((x, j) => x[1] === g ? <button key={x[0]} className={j === i ? "on" : ""} onClick={() => setI(j)}><span className="badge">{x[0]}</span>{x[2]}</button> : null)}</div>)}</div>
+    <div className="pctl">
+      <div onClick={() => go(i + 1)} style={{ cursor: "pointer" }} key={s[0] + sm}>{sm ? s[5](320, 640) : s[5](360, 720)}</div>
+      <div className="pbtns"><button onClick={() => go(i - 1)}>‹ Previous</button><span>{i + 1} of {ST.length} · ← → keys</span><button onClick={() => go(i + 1)}>Next ›</button><button onClick={() => setSm(!sm)}>{sm ? "360 × 720" : "320 × 640"}</button></div>
+      <div className="lab" style={{ textAlign: "center" }}><span className="badge">{s[0]}</span>{s[2]}<em>{s[3]}</em></div>
+    </div>
+  </div>;
+}
+function Nav() {
+  const ids = [["proto", "Prototype"], ...G, ["small", "320 × 640"], ["inventory", "Keep / retire"], ["copy", "Copy"]];
+  const [on, setOn] = React.useState("proto");
+  React.useEffect(() => { const f = () => { let cur = ids[0][0]; for (const [id] of ids) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top < 120) cur = id; } setOn(cur); }; window.addEventListener("scroll", f, { passive: true }); f(); return () => window.removeEventListener("scroll", f); }, []);
+  return <nav className="nav"><b>Rider v2</b>{ids.map(([id, l]) => <a key={id} href={"#" + id} className={on === id ? "on" : ""}>{l}</a>)}</nav>;
+}
+function CopyList() {
+  const [copy, setCopy] = React.useState(null), [go, setGo] = React.useState(false);
+  React.useEffect(() => { if (!go) return; const t = setTimeout(() => {
+    const box = document.createElement("div"); box.style.cssText = "position:absolute;left:-9999px;top:0"; document.body.appendChild(box);
+    const out = {}; for (const s of ST) { const r = ReactDOM.createRoot(box); ReactDOM.flushSync(() => r.render(s[5](360, 720))); out[s[0]] = scanCopy(box); r.unmount(); }
+    box.remove(); setCopy(out); }, 50); return () => clearTimeout(t); }, [go]);
+  if (!copy) return <div className="pbtns" style={{ marginTop: 12 }}><button onClick={() => setGo(true)}>{go ? "Collecting copy…" : "Show copy per state"}</button></div>;
+  return <div className="copy">{ST.map(s => <div key={s[0]}><b>{s[0]} · {s[2]}</b><ul>{((copy && copy[s[0]]) || []).map(k => <li key={k}><code style={{ color: "var(--muted)" }}>{k}</code> {R[k]}</li>)}</ul></div>)}</div>;
+}
+const INV = [
+  ["Keep (restyle header/CTA only)", "RJ splash, onboard, login, otp, role_select, perm_loc, perm_notif · RJ kyc_intro, kyc_form, photo_capture, photo_preview, photo_uploading, photo_failed · notifications inbox (shared) · RJ report, report_done, sos_contacts"],
+  ["Redesign", "RJM board, board_empty, board_food_off, board_empty_food_off (J1–J5) · RJM offer_parcel (O1) · RJM offer_food (F1) · RJM active_parcel, active_food (A1, B1) · RJM money (M1) · RJM account (C1) · RJ settings (S1) · RJ bike_docs (S5) · RJ history (C12) · RJ help (S6) · every gate (G1–G15)"],
+  ["Merge", "RJ job_assigned + job_pickup → A1 · RJ job_collect + RJM pickup_photo_failed → A6 · RJM handoff + RJ job_handoff → A8 · RJ wallet_low → M5 · RJM gate_topup → G14 · RJ kyc_pending/unfinished/verified also appear as Account cards C8–C11 · five ghost exits → X1"],
+  ["New", "J8 notifications off · J9–J10 withdraw · O2 over-fare · F2–F3 · A10–A12 · B2, B5, B6 · X3, X7, X11, X12 · M2, M7–M12 · T1, T3 · C3–C11, C13 · S2–S4"],
+  ["Retire", "RJM offline (always online) · the 'Money' Account row · 'Load older' button · 'Retry' on load error · RJ wallet, RJ earnings, RJ home_launcher (already retired) · separate KYC 'Bike & documents' Account row (moved to Settings)"],
+];
+function Page() {
+  const q = new URLSearchParams(location.search), only = q.get("only");
+  if (only) { const ids = only.split(","), w = q.get("w") === "320"; return <div style={{ display: "flex", flexWrap: "wrap", gap: 20, padding: 20, alignItems: "flex-start", zoom: +(q.get("z") || 1) }}>{ST.filter(s => ids.includes(s[0])).map(s => <div key={s[0]} id={"shot-" + s[0]}>{w ? s[5](320, 640) : s[5](360, 720)}</div>)}</div>; }
+  return <>
+    <Nav />
+    <main>
+      <h1>LyniaGo Rider v2</h1>
+      <p className="sub">The rider side, redrawn in the Send v2 / After Send kit: map-first board with demand, a one-action active job that mirrors the customer's After Send, earnings-first Money, and sibling Customer/Rider Account tabs with a visible role switch. {ST.length} states at 360 × 720; key states again at 320 × 640.</p>
+      <section id="proto"><h2>Prototype</h2><p className="sub">Click the phone or press ← →. The last button flips the frame to 320 × 640.</p><Proto /></section>
+      {G.map(([g, gl]) => <section key={g} id={g}><h2>{gl}</h2><div className="grid">{ST.filter(s => s[1] === g).map(s => <Cell key={s[0]} s={s} W={360} H={720} />)}</div></section>)}
+      <section id="small"><h2>320 × 640</h2><div className="grid">{SMALL.map(s => <Cell key={s[0]} s={s} W={320} H={640} suffix="-320" />)}</div></section>
+      <section id="inventory"><h2>Current screens: keep, redesign, merge, retire</h2><div className="card"><table><tbody>{INV.map(([k, v]) => <tr key={k}><td style={{ width: 200 }}>{k}</td><td>{v}</td></tr>)}</tbody></table></div></section>
+      <section id="copy"><h2>Final copy per state</h2><p className="sub">Keys from the <code>R</code> object in <code>rv-kit.jsx</code>. Names, prices, places and times are sample data.</p><CopyList /></section>
+    </main>
+  </>;
+}
+ReactDOM.createRoot(document.getElementById("rv-root")).render(<Page />);
+</script>
+</body>
+</html>
