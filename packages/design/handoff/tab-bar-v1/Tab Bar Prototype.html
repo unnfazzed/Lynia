@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LyniaGo tab bar v1 — prototype</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--font-sans);background:var(--surface);color:var(--ink)}a{color:var(--accent-text)}a:hover{color:var(--ink)}*{box-sizing:border-box}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="load-tabbar.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const SCREENS = {
+  home: ["Home", "Service tiles, live order card, nearby restaurants"],
+  orders: ["Orders", "Active and past orders"],
+  jobs: ["Jobs", "PARCEL / FOOD job board"],
+  money: ["Money", "Balance, top-up, payouts, ledger"],
+  acct: ["Account", "Profile, verification, help"],
+};
+const BADGE_OPTS = {
+  home: [["none"]],
+  orders: [["none"], ["live", { kind: "live", n: 1 }], ["live ×3", { kind: "live", n: 3 }]],
+  acct: [["none"], ["dot", { kind: "dot" }]],
+  jobs: [["none"], ["3", { kind: "count", n: 3 }], ["12 → 9+", { kind: "count", n: 12 }]],
+  money: [["none"], ["warn", { kind: "warn" }]],
+};
+const protoUi = {
+  wrap: { display: "flex", gap: 32, padding: 32, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap", minHeight: "100vh" },
+  panel: { width: 300, background: "var(--bg)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16, boxShadow: "var(--shadow-card)" },
+  h: { fontSize: 12, lineHeight: "16px", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em", margin: 0 },
+  seg: { display: "flex", gap: 4, background: "var(--surface)", borderRadius: 999, padding: 4 },
+};
+function Seg({ value, options, onChange }) {
+  return <div style={protoUi.seg}>{options.map(([v, l]) => <button key={String(v)} onClick={() => onChange(v)} style={{ flex: 1, border: 0, borderRadius: 999, minHeight: 36, padding: "0 8px", font: "inherit", fontSize: 13, fontWeight: value === v ? 700 : 600, cursor: "pointer", background: value === v ? "var(--bg)" : "transparent", color: value === v ? "var(--ink)" : "var(--muted)", boxShadow: value === v ? "var(--shadow-card)" : "none" }}>{l}</button>)}</div>;
+}
+function Row({ label, children }) { return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}><p style={protoUi.h}>{label}</p>{children}</div>; }
+
+function Proto({ TB }) {
+  const { TabBar, TAB_BAR_SPACE } = TB;
+  const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem("tb1:" + k)); return v ?? d; } catch (e) { return d; } };
+  const [s, setS] = React.useState(() => ({ role: load("role", "customer"), w: load("w", 360), nav: load("nav", "gesture"), cta: load("cta", false), kb: load("kb", false), rm: load("rm", false), gs: load("gs", "illustrated"), active: load("active", { customer: "home", rider: "jobs" }), badge: load("badge", { orders: 1, acct: 0, jobs: 1, money: 1 }) }));
+  const set = (k, v) => setS((p) => { localStorage.setItem("tb1:" + k, JSON.stringify(v)); return { ...p, [k]: v }; });
+  const [toast, setToast] = React.useState(null);
+  const scrollRef = React.useRef(null);
+  const h = s.w === 360 ? 720 : 640;
+  const inset = s.nav === "gesture" ? 24 : 0;
+  const ids = s.role === "rider" ? ["jobs", "money", "acct"] : ["home", "orders", "acct"];
+  const active = s.active[s.role];
+  const badges = {};
+  ids.forEach((id) => { const o = BADGE_OPTS[id][s.badge[id] || 0]; if (o && o[1]) badges[id] = o[1]; });
+  const [title, sub] = SCREENS[active];
+  const ctaLabel = s.role === "rider" ? "Top up $5.00" : "Place order · $15.50";
+  const showBar = !s.kb;
+  const dockH = s.cta && showBar ? 12 + 52 + 12 + TAB_BAR_SPACE + inset : 0;
+  const pad = showBar ? (s.cta ? dockH : TAB_BAR_SPACE + inset) + 16 : 16;
+  const flash = (t) => { setToast(t); clearTimeout(window.__tbt); window.__tbt = setTimeout(() => setToast(null), 1400); };
+  return (
+    <div style={protoUi.wrap}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ width: s.w, height: h + (s.nav === "buttons" ? 48 : 0), borderRadius: 24, overflow: "hidden", background: "var(--ink)", boxShadow: "var(--shadow-card)", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "relative", height: h, background: "var(--bg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ height: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", fontSize: 12, fontWeight: 600 }}><span>9:41</span><span>4G · 82%</span></div>
+            <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: `8px 16px ${pad}px`, display: "flex", flexDirection: "column", gap: 12, scrollbarWidth: "none" }}>
+              <div style={{ fontSize: 24, lineHeight: "32px", fontWeight: 700 }}>{title}</div>
+              <div style={{ fontSize: 14, color: "var(--muted)", marginTop: -8 }}>{sub}</div>
+              {s.kb ? <div style={{ height: 52, flexShrink: 0, borderRadius: 12, border: "2px solid var(--accent-text)", display: "flex", alignItems: "center", padding: "0 16px", fontSize: 16, color: "var(--muted)" }}>Search…</div> : null}
+              {Array.from({ length: 9 }).map((_, i) => <div key={i} style={{ height: i === 0 ? 120 : 72, borderRadius: 16, background: "var(--surface)", flexShrink: 0, display: "flex", alignItems: "center", padding: "0 16px", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "var(--muted)" }}>{i === 0 ? "screen content" : "row " + i}</div>)}
+            </div>
+            {s.cta && showBar ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: dockH, background: "var(--bg)", boxShadow: "var(--shadow-sheet)", padding: "12px 16px 0", zIndex: 19 }}><button style={{ width: "100%", height: 52, border: 0, borderRadius: 999, background: "var(--cta-fill)", color: "var(--on-accent)", font: "inherit", fontSize: 16, fontWeight: 700 }}>{ctaLabel}</button></div> : null}
+            <TabBar role={s.role} active={active} badges={badges} inset={inset} hidden={!showBar} reduceMotion={s.rm} glyphStyle={s.gs}
+              onTab={(id) => { set("active", { ...s.active, [s.role]: id }); if (id === "jobs" && badges.jobs && badges.jobs.kind === "count") set("badge", { ...s.badge, jobs: 0 }); }}
+              onReselect={() => { scrollRef.current && scrollRef.current.scrollTo({ top: 0, behavior: s.rm ? "auto" : "smooth" }); flash("Re-tap → scroll to top"); }} />
+            {s.nav === "gesture" ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 30, pointerEvents: "none" }}><span style={{ width: 108, height: 4, borderRadius: 999, background: "var(--ink)" }} /></div> : null}
+            {s.kb ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 260, background: "var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "var(--muted)", zIndex: 25 }}>soft keyboard — tab bar hidden</div> : null}
+            {toast ? <div style={{ position: "absolute", left: "50%", top: 40, transform: "translateX(-50%)", background: "var(--ink)", color: "var(--on-accent)", fontSize: 12, fontWeight: 600, padding: "8px 12px", borderRadius: 999, zIndex: 40, whiteSpace: "nowrap" }}>{toast}</div> : null}
+          </div>
+          {s.nav === "buttons" ? <div style={{ height: 48, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-around", fontFamily: "ui-monospace, monospace", fontSize: 10, color: "var(--line)" }}><span>◁</span><span>○</span><span>□</span></div> : null}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", fontFamily: "ui-monospace, monospace" }}>{s.w}×{h} · inset {inset} · content pad {pad}px</div>
+      </div>
+      <div style={protoUi.panel}>
+        <Row label="Glyphs"><Seg value={s.gs} onChange={(v) => set("gs", v)} options={[["illustrated", "3D illustrated"], ["solid", "Solid vector"]]} /></Row>
+        <Row label="Role"><Seg value={s.role} onChange={(v) => set("role", v)} options={[["customer", "Customer"], ["rider", "Rider"]]} /></Row>
+        <Row label="Width"><Seg value={s.w} onChange={(v) => set("w", v)} options={[[360, "360"], [320, "320"]]} /></Row>
+        <Row label="System nav"><Seg value={s.nav} onChange={(v) => set("nav", v)} options={[["gesture", "Gesture · 24"], ["buttons", "3-button · 0"]]} /></Row>
+        <Row label="Badges">{ids.filter((id) => BADGE_OPTS[id].length > 1).map((id) => <div key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 64, fontSize: 13, fontWeight: 600 }}>{SCREENS[id][0]}</span><div style={{ flex: 1 }}><Seg value={s.badge[id] || 0} onChange={(v) => set("badge", { ...s.badge, [id]: v })} options={BADGE_OPTS[id].map((o, i) => [i, o[0]])} /></div></div>)}</Row>
+        <Row label="Context"><Seg value={s.cta} onChange={(v) => set("cta", v)} options={[[false, "No CTA"], [true, "CTA bar above"]]} /><Seg value={s.kb} onChange={(v) => set("kb", v)} options={[[false, "Keyboard closed"], [true, "Keyboard open"]]} /><Seg value={s.rm} onChange={(v) => set("rm", v)} options={[[false, "Motion on"], [true, "Reduce motion"]]} /></Row>
+        <p style={{ margin: 0, fontSize: 12, lineHeight: "16px", color: "var(--muted)" }}>Tap a tab to switch. Tap the active tab to scroll to top. Tab / arrow keys show the focus ring. Spec: <a href="README.md">README.md</a> · <a href="Board.html">Board</a></p>
+      </div>
+    </div>
+  );
+}
+window.TBReady.then((TB) => ReactDOM.createRoot(document.getElementById("root")).render(<Proto TB={TB} />));
+</script>
+</body>
+</html>

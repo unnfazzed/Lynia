@@ -15,7 +15,7 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, Icon, SkeletonRows } from "../../../src/ui";
+import { AppScreen, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
 import { IconDisc, SmBtn } from "../../../src/ui/order/kit";
 import { Notice } from "../../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
@@ -106,6 +106,7 @@ function WeekBars({ byDay, todayIdx }: { byDay: number[]; todayIdx: number }): R
  */
 export default function RiderMoneyTabScreen(): React.ReactElement {
   const router = useRouter();
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("money");
   const qc = useQueryClient();
   const top = useTabTop();
   const now = useNow();
@@ -177,7 +178,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
 
   return (
     <AppScreen banner={<MintTop {...top} />}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={200}>
+      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad, gap: 12 }} showsVerticalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={200}>
         {pending ? (
           pending.kind === "succeeded" ? (
             <Notice tone="wash" icon="circle-check" text={RF.pendingOk(pending.amount)} />

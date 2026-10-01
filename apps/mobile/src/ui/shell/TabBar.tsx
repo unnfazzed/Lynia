@@ -1,91 +1,422 @@
 import { tokens } from "@lynia/shared/tokens";
-import { Tappable } from "../Tappable";
-import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Icon, type IconName } from "../Icon";
+import Svg, { Circle, Path, Polygon, Rect } from "react-native-svg";
+import { haptic } from "../haptics";
+import { Tappable } from "../Tappable";
+import { useReduceMotion } from "../useReduceMotion";
 
-export type AppTab = { id: string; icon: IconName; label: string };
+/*
+ * Tab bar v1 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
+ * `components/shell/TabBar.jsx` (the handoff's source of truth): geometry, art, badge logic and the
+ * screen-reader strings come from there verbatim. Change a value here only together with the handoff.
+ */
+
+/** The pill itself. */
+export const TAB_BAR_H = 60;
+/** Side + bottom float margin. */
+export const TAB_BAR_GAP = 12;
+/** `TAB_BAR_H + TAB_BAR_GAP` — the bar's reserve above the safe-area inset. Content pads by this + inset + 16. */
+export const TAB_BAR_SPACE = 72;
+
+export type TabArt = "home" | "orders" | "account" | "jobs" | "money";
+
+/** `id` doubles as the route segment name (see the `(tabs)` layouts), so a press needs no lookup table. */
+export type AppTab = { id: string; glyph: TabArt; label: string };
+
+/** dot = attention (gold, Account/KYC) · count = new items (Jobs) · live = active orders (Orders) · warn = action needed (Money). */
+export type TabBadge = { kind: "dot" } | { kind: "count"; n: number } | { kind: "live"; n?: number } | { kind: "warn" };
 
 /**
- * Root tab bar — the app root, NOT a product switcher (`packages/design/components/shell/
- * TabBar.jsx`). Services live on Home as tiles, so a new vertical adds a tile, never a tab. `id`
- * doubles as the `app/(tabs)/<id>.tsx` route segment name (see `app/(tabs)/_layout.tsx`), so a tab
- * press needs no id→route lookup table.
+ * Root tab bar — the app root, NOT a product switcher. Services live on Home as tiles, so a new
+ * vertical adds a tile, never a tab.
  */
 export const APP_TABS: AppTab[] = [
-  { id: "home", icon: "house", label: "Home" },
-  { id: "orders", icon: "receipt", label: "Orders" },
-  { id: "account", icon: "user", label: "Account" },
+  { id: "home", glyph: "home", label: "Home" },
+  { id: "orders", glyph: "orders", label: "Orders" },
+  { id: "account", glyph: "account", label: "Account" },
 ];
 
 /**
- * Rider root tab bar (plan §5 Lane B1) — `Jobs | Money | Account`, mirroring the customer shell's
- * `APP_TABS` one tab bar down. Lives at `app/rider/(tabs)/`, nested under the existing `/rider`
- * boot segment rather than the app root, so `id: "index"` (the board) keeps every existing
- * `"/rider"` call site working with zero string changes — same trick A1 used for `"/home"`.
+ * Rider root tabs — `Jobs | Money | Account`, nested under `/rider`. `id: "index"` (the board) keeps
+ * every existing `"/rider"` call site working with zero string changes.
  */
 export const RIDER_TABS: AppTab[] = [
-  { id: "index", icon: "bike", label: "Jobs" },
-  { id: "money", icon: "wallet", label: "Money" },
-  { id: "account", icon: "user", label: "Account" },
+  { id: "index", glyph: "jobs", label: "Jobs" },
+  { id: "money", glyph: "money", label: "Money" },
+  { id: "account", glyph: "account", label: "Account" },
 ];
 
+// ── Art ─────────────────────────────────────────────────────────────────────────────────────────
+
+type Part = [tag: "path" | "rect" | "circle" | "polygon", tone: string, attrs: Record<string, string | number>];
+
+/* Faux-3D illustrations, 32 grid. Tones: L light/top, M mid/front, D dark/side, G gold, C coral, N mint,
+   S sky, W white. The Orders bag handle is a 2-unit round-capped stroke. */
+const ILLUS: Record<TabArt, Part[]> = {
+  home: [
+    ["polygon", "D", { points: "18,15 26,11 26,23 18,27" }],
+    ["rect", "M", { x: 5, y: 15, width: 13, height: 12 }],
+    ["polygon", "C", { points: "11.5,6.5 19.5,2.5 27,11.5 19,15.5" }],
+    ["polygon", "L", { points: "3.5,16 11.5,6.5 19.5,16" }],
+    ["rect", "G", { x: 9.5, y: 20, width: 4, height: 7, rx: 1 }],
+    ["polygon", "S", { points: "20.5,17.5 23.5,16 23.5,19.5 20.5,21" }],
+  ],
+  orders: [
+    ["path", "G", { d: "M10 12V8.5a3.5 3.5 0 0 1 7 0V12", stroke: "G" }],
+    ["polygon", "L", { points: "6,12 12,9 26,9 20,12" }],
+    ["polygon", "D", { points: "20,12 26,9 26,25 20,28" }],
+    ["rect", "M", { x: 6, y: 12, width: 14, height: 16 }],
+    ["rect", "W", { x: 8.5, y: 16.5, width: 9, height: 7, rx: 1 }],
+    ["rect", "C", { x: 10, y: 18.5, width: 6, height: 1.5, rx: 0.75 }],
+    ["rect", "S", { x: 10, y: 21, width: 4, height: 1.5, rx: 0.75 }],
+  ],
+  account: [
+    ["path", "M", { d: "M5 28c0-6 4.9-10 11-10s11 4 11 10Z" }],
+    ["path", "D", { d: "M16 18c6.1 0 11 4 11 10H16Z" }],
+    ["path", "N", { d: "M13 18.4 16 22l3-3.6A11 11 0 0 0 16 18a11 11 0 0 0-3 .4Z" }],
+    ["circle", "L", { cx: 16, cy: 10.5, r: 6 }],
+    ["path", "M", { d: "M16 4.5a6 6 0 0 1 0 12a7.5 7.5 0 0 0 0-12Z" }],
+  ],
+  jobs: [
+    ["rect", "S", { x: 1, y: 15, width: 3.5, height: 1.5, rx: 0.75 }],
+    ["rect", "N", { x: 0.5, y: 19, width: 4, height: 1.5, rx: 0.75 }],
+    ["polygon", "L", { points: "6,11 16,7 26,11 16,15" }],
+    ["polygon", "M", { points: "6,11 16,15 16,28 6,23.5" }],
+    ["polygon", "D", { points: "16,15 26,11 26,23.5 16,28" }],
+    ["polygon", "G", { points: "10.5,8.8 20.5,12.8 20.5,17 18,18 18,13.8 8,9.8" }],
+  ],
+  money: [
+    ["circle", "G", { cx: 24.5, cy: 8.5, r: 4.5 }],
+    ["circle", "C", { cx: 24.5, cy: 8.5, r: 2, opacity: 0.55 }],
+    ["polygon", "N", { points: "6.5,13 19.5,7 22,12 9,18" }],
+    ["rect", "M", { x: 3.5, y: 12, width: 22, height: 16, rx: 3 }],
+    ["rect", "L", { x: 3.5, y: 12, width: 22, height: 3.5, rx: 1.75 }],
+    ["rect", "D", { x: 17, y: 17.5, width: 10.5, height: 6.5, rx: 3.25 }],
+    ["circle", "G", { cx: 21, cy: 20.75, r: 1.5 }],
+  ],
+};
+
+const c = tokens.color;
+const ILLUS_ON: Record<string, string> = { L: c.illusLight, M: c.illusMid, D: c.illusDark, G: c.illusGold, C: c.illusCoral, N: c.illusMint, S: c.illusSky, W: c.bg };
+const ILLUS_IDLE: Record<string, string> = { L: c.illusIdleLight, M: c.illusIdleMid, D: c.illusIdleDark, G: c.illusIdleLight, C: c.illusIdleMid, N: c.illusIdleLight, S: c.illusIdleLight, W: c.bg };
+
+/** Illustrated variant: the active pill takes the matching Home tile tint, ringed in its ink. */
+export const TAB_TINT: Record<TabArt, [fill: string, ring: string]> = {
+  home: [c.tileMint, c.accentIllus],
+  orders: [c.tilePeach, c.coralInk],
+  account: [c.tileLilac, c.riderAccent],
+  jobs: [c.tileMint, c.accentIllus],
+  money: [c.tileSun, c.sunInk],
+};
+
+const SVG_TAG = { path: Path, rect: Rect, circle: Circle, polygon: Polygon } as const;
+
+/** Faux-3D tab illustration (32 grid). Full colour when active, the neutral set when idle. */
+export const TabIllus = React.memo(function TabIllus({ name, idle = false, size = 28 }: { name: TabArt; idle?: boolean; size?: number }): React.ReactElement {
+  const pal = idle ? ILLUS_IDLE : ILLUS_ON;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 32 32" style={styles.overhang}>
+      {ILLUS[name].map(([tag, tone, a], i) => {
+        const El = SVG_TAG[tag] as React.ComponentType<Record<string, unknown>>;
+        const { stroke, ...rest } = a;
+        return stroke ? (
+          <El key={i} {...rest} fill="none" stroke={pal[String(stroke)]} strokeWidth={2} strokeLinecap="round" />
+        ) : (
+          <El key={i} {...rest} fill={pal[tone]} />
+        );
+      })}
+    </Svg>
+  );
+});
+
+/* The handoff's solid-vector fallback (`glyphStyle="solid"`, GLYPHS / TabGlyph) is deliberately NOT
+   ported: the handoff says to build it only if asked, and it would ship unused bytes over metered data
+   (the bundle-size budget, docs/APP-SIZE.md). Its drawings stay in the kit's TabBar.jsx (ledger D-56). */
+
+// ── Badges + screen-reader strings ──────────────────────────────────────────────────────────────
+
+/** `{Label}, tab, {i} of {n}[, {badge}]` — the handoff's final strings. */
+export function tabA11yLabel(tab: AppTab, i: number, n: number, b?: TabBadge | null): string {
+  return [tab.label, `tab, ${i + 1} of ${n}`, srBadge(tab.glyph, b)].filter(Boolean).join(", ");
+}
+
+function srBadge(glyph: TabArt, b?: TabBadge | null): string {
+  if (!b) return "";
+  const n = "n" in b && b.n != null ? b.n : 1;
+  if (b.kind === "live") return n === 1 ? "1 active order" : `${n} active orders`;
+  if (b.kind === "warn") return glyph === "money" ? "top-up needed" : "action needed";
+  if (b.kind === "dot") return "action needed";
+  return glyph === "jobs" ? (n === 1 ? "1 new job" : `${n} new jobs`) : `${n} new`;
+}
+
+/** Counts above 9 render "9+". */
+export function badgeCount(n: number): string {
+  return n > 9 ? "9+" : String(n);
+}
+
+const POP_EASE = Easing.bezier(0.2, 0, 0, 1);
+const SPRING_EASE = Easing.bezier(0.34, 1.36, 0.64, 1);
+
+/** Anchored to the cell (left edge at cell centre + 4, dot + 6), overlapping the art's top-right corner. */
+function Badge({ b, centre, animate }: { b: TabBadge; centre: number; animate: boolean }): React.ReactElement {
+  const pop = useRef(new Animated.Value(animate ? 0 : 1)).current;
+  useEffect(() => {
+    if (!animate) return;
+    Animated.timing(pop, { toValue: 1, duration: 160, easing: POP_EASE, useNativeDriver: true }).start();
+  }, [animate, pop]);
+  const scale = pop.interpolate({ inputRange: [0, 0.65, 1], outputRange: [0.4, 1.15, 1] });
+  const anim = { transform: [{ scale }] };
+  if (b.kind === "dot") return <Animated.View pointerEvents="none" style={[styles.badge, styles.dot, { left: centre + 6 }, anim]} />;
+  if (b.kind === "warn") {
+    return (
+      <Animated.View pointerEvents="none" style={[styles.badge, styles.box, styles.warn, { left: centre + 4 }, anim]}>
+        <Text style={[styles.badgeText, { color: c.ink }]}>!</Text>
+      </Animated.View>
+    );
+  }
+  const label = badgeCount(b.n ?? 1);
+  if (b.kind === "live") {
+    return (
+      <Animated.View pointerEvents="none" style={[styles.badge, styles.box, styles.live, { left: centre + 4 }, anim]}>
+        <View style={styles.liveDot} />
+        <Text style={[styles.badgeText, { color: c.onAccent }]}>{label}</Text>
+      </Animated.View>
+    );
+  }
+  return (
+    <Animated.View pointerEvents="none" style={[styles.badge, styles.box, styles.count, { left: centre + 4 }, anim]}>
+      <Text style={[styles.badgeText, { color: c.onAccent }]}>{label}</Text>
+    </Animated.View>
+  );
+}
+
+// ── Cell ────────────────────────────────────────────────────────────────────────────────────────
+
+function Cell({
+  tab,
+  index,
+  count,
+  on,
+  badge,
+  width,
+  reduceMotion,
+  mounted,
+  onPress,
+}: {
+  tab: AppTab;
+  index: number;
+  count: number;
+  on: boolean;
+  badge?: TabBadge | null;
+  width: number;
+  reduceMotion: boolean;
+  mounted: boolean;
+  onPress: () => void;
+}): React.ReactElement {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const press = useRef(new Animated.Value(1)).current;
+  // Activation pop for the illustration: 0 → 1 drives 0.86 → 1.16 (−4) → 1.08 (−2). Starts at rest.
+  const pop = useRef(new Animated.Value(1)).current;
+  const wasOn = useRef(on);
+  useEffect(() => {
+    if (on && !wasOn.current && mounted && !reduceMotion) {
+      pop.setValue(0);
+      Animated.timing(pop, { toValue: 1, duration: 200, easing: POP_EASE, useNativeDriver: true }).start();
+    } else {
+      pop.setValue(1);
+    }
+    wasOn.current = on;
+  }, [on, mounted, reduceMotion, pop]);
+
+  const setDown = (down: boolean): void => {
+    setPressed(down);
+    if (reduceMotion) return;
+    Animated.timing(press, { toValue: down ? 0.94 : 1, duration: down ? 100 : 160, easing: down ? Easing.out(Easing.ease) : SPRING_EASE, useNativeDriver: true }).start();
+  };
+
+  // Active art rests raised (−2, 1.08) and pops on activation; idle art sits flat.
+  const artTransform = on
+    ? [
+        { translateY: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, -4, -2] }) },
+        { scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.86, 1.16, 1.08] }) },
+      ]
+    : [];
+  // Re-key on kind/count so a change re-pops; never on first mount.
+  const badgeKey = badge ? `${badge.kind}${"n" in badge ? (badge.n ?? "") : ""}` : "none";
+
+  return (
+    <Tappable
+      onPress={onPress}
+      onPressIn={() => setDown(true)}
+      onPressOut={() => setDown(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="tab"
+      accessibilityLabel={tabA11yLabel(tab, index, count, badge)}
+      accessibilityState={{ selected: on }}
+      style={styles.cell}
+    >
+      <Animated.View style={[styles.cellInner, { gap: 2, transform: [{ scale: press }] }, pressed && !on ? styles.pressFill : null, focused ? styles.focus : null]}>
+        <Animated.View style={{ transform: artTransform }}>
+          <TabIllus name={tab.glyph} idle={!on} />
+        </Animated.View>
+        <Text numberOfLines={1} style={on ? styles.labelOn : styles.labelOff}>
+          {tab.label}
+        </Text>
+      </Animated.View>
+      {badge && width > 0 ? <Badge key={badgeKey} b={badge} centre={width / 2} animate={mounted && !reduceMotion} /> : null}
+    </Tappable>
+  );
+}
+
+// ── Bar ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bottom tab bar — a floating pill, three tabs. Customer: Home · Orders · Account. Rider: Jobs · Money ·
+ * Account. Absolutely positioned 12 from the sides and 12 + the safe-area inset from the bottom, so the
+ * screen content scrolls behind it; tab roots pad by `useTabBarSpace() + 16` (see `TabBarSpace`).
+ */
 export function TabBar({
   active,
   tabs = APP_TABS,
+  badges = {},
   onTab,
+  onReselect,
+  hidden = false,
+  reduceMotion: reduceMotionProp,
 }: {
   active?: string;
   tabs?: AppTab[];
+  badges?: Partial<Record<string, TabBadge | null>>;
   onTab?: (id: string) => void;
-}): React.ReactElement {
+  onReselect?: (id: string) => void;
+  hidden?: boolean;
+  reduceMotion?: boolean;
+}): React.ReactElement | null {
   const insets = useSafeAreaInsets();
+  const osReduce = useReduceMotion();
+  const reduceMotion = reduceMotionProp ?? osReduce;
+  const n = tabs.length;
+  const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
+  const cur = tabs[idx]!;
+
+  const [barW, setBarW] = useState(0);
+  const cellW = barW > 0 ? (barW - 8) / n : 0;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // One shared indicator: translateX slides (native driver); the tint + ring cross-fade (JS driver,
+  // on a nested view — the two drivers can't share a node).
+  const slide = useRef(new Animated.Value(idx)).current;
+  const fade = useRef(new Animated.Value(1)).current;
+  const tint = useRef<{ from: [string, string]; to: [string, string] }>({ from: TAB_TINT[cur.glyph], to: TAB_TINT[cur.glyph] });
+  const lastIdx = useRef(idx);
+  if (lastIdx.current !== idx) {
+    const prev = tabs[lastIdx.current];
+    tint.current = { from: prev ? TAB_TINT[prev.glyph] : TAB_TINT[cur.glyph], to: TAB_TINT[cur.glyph] };
+  }
+  useEffect(() => {
+    if (lastIdx.current === idx) return;
+    lastIdx.current = idx;
+    if (reduceMotion) {
+      slide.setValue(idx);
+      fade.setValue(1);
+      return;
+    }
+    fade.setValue(0);
+    Animated.timing(slide, { toValue: idx, duration: 200, easing: SPRING_EASE, useNativeDriver: true }).start();
+    Animated.timing(fade, { toValue: 1, duration: 160, easing: Easing.linear, useNativeDriver: false }).start();
+  }, [idx, reduceMotion, slide, fade]);
+
+  if (hidden) return null;
+
+  const tap = (t: AppTab): void => {
+    if (t.id === cur.id) {
+      onReselect?.(t.id);
+      return;
+    }
+    haptic("tap");
+    onTab?.(t.id);
+  };
+
+  const indicatorFill = {
+    backgroundColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[0], tint.current.to[0]] }),
+    borderWidth: 2,
+    borderColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[1], tint.current.to[1]] }),
+  };
+
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 4) }]}>
-      {tabs.map((t) => {
-        const on = t.id === active;
-        return (
-          <Tappable
-            key={t.id}
-            onPress={() => onTab?.(t.id)}
-            accessibilityRole="button"
-            accessibilityLabel={t.label}
-            accessibilityState={{ selected: on }}
-            style={styles.tab}
-          >
-            {/* Rider v2 (ledger D-54): the active tab's icon sits in a 52×26 accent-wash pill. */}
-            <View style={on ? styles.pillOn : styles.pill}>
-              <Icon name={t.icon} size={20} color={on ? tokens.color.accentText : tokens.color.muted} />
-            </View>
-            <Text style={on ? styles.labelOn : styles.labelOff}>{t.label}</Text>
-          </Tappable>
-        );
-      })}
+    <View
+      accessibilityRole="tablist"
+      accessibilityLabel="Main"
+      onLayout={(e: LayoutChangeEvent) => setBarW(e.nativeEvent.layout.width)}
+      style={[styles.bar, { bottom: TAB_BAR_GAP + insets.bottom }]}
+    >
+      {cellW > 0 ? (
+        <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]}>
+          <Animated.View style={[styles.indicatorFill, indicatorFill]} />
+        </Animated.View>
+      ) : null}
+      {tabs.map((t, i) => (
+        <Cell
+          key={t.id}
+          tab={t}
+          index={i}
+          count={n}
+          on={t.id === cur.id}
+          badge={badges[t.id] ?? null}
+          width={cellW}
+          reduceMotion={reduceMotion}
+          mounted={mounted}
+          onPress={() => tap(t)}
+        />
+      ))}
     </View>
   );
 }
 
 /**
- * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2). The tab bar is on
- * screen for the whole session and re-renders with every route change, and a style object literal in
- * JSX is a NEW object each time — so React Native's shallow prop diff sees a change on every node and
- * re-sends props across the bridge even when the rendered result is identical. `StyleSheet.create`
- * returns the same frozen objects for the life of the process, so an unchanged tab now diffs to
- * nothing. The two label variants are separate entries rather than one style plus an inline override
- * for the same reason: the override literal would reintroduce the fresh object it exists to avoid.
- * Only the safe-area pad stays inline — it is genuinely dynamic.
+ * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
+ * for the whole session and re-renders on every route change, so its static styles are created once.
+ * The 1px `line` edge is a real border (RN has no inset ring), so the padding is 3 — the cells and the
+ * indicator still sit 4 in from the outer edge, exactly as the handoff draws them.
  */
 const styles = StyleSheet.create({
   bar: {
+    position: "absolute",
+    left: TAB_BAR_GAP,
+    right: TAB_BAR_GAP,
+    height: TAB_BAR_H,
+    padding: 3,
     flexDirection: "row",
-    backgroundColor: tokens.color.bg,
-    borderTopWidth: 1,
-    borderTopColor: tokens.color.line,
+    backgroundColor: c.bg,
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    borderColor: c.line,
+    zIndex: 20,
+    ...tokens.shadow.float,
   },
-  tab: { flex: 1, minHeight: 60, alignItems: "center", justifyContent: "center", gap: 3, paddingVertical: 4 },
-  pill: { width: 52, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  pillOn: { width: 52, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accentWash },
-  labelOn: { fontSize: 12, fontWeight: "700", color: tokens.color.accentText },
-  labelOff: { fontSize: 12, fontWeight: "600", color: tokens.color.muted },
+  indicator: { position: "absolute", top: 3, left: 3, height: 52 },
+  indicatorFill: { flex: 1, borderRadius: tokens.radius.pill },
+  cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
+  cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },
+  pressFill: { backgroundColor: c.surface },
+  // Focus (keyboard / D-pad only — Android never focuses a Pressable in touch mode): a 2px ink ring.
+  // Drawn on the cell's inner pill rather than 2px outside it: the bar's border + padding leave no
+  // room for an outside ring in RN, which has no box-shadow spread.
+  focus: { borderWidth: 2, borderColor: c.ink },
+  overhang: { overflow: "visible" },
+  labelOn: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold, color: c.ink },
+  labelOff: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.semibold, color: c.muted },
+  badge: { position: "absolute", borderWidth: 2, borderColor: c.bg, borderRadius: tokens.radius.pill, transformOrigin: "0% 100%", ...tokens.shadow.badge },
+  dot: { top: 4, width: 12, height: 12, backgroundColor: c.highlight },
+  box: { top: 0, height: 20, minWidth: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 4 },
+  count: { backgroundColor: c.cta },
+  warn: { width: 20, paddingHorizontal: 0, backgroundColor: c.highlight },
+  live: { paddingLeft: 5, paddingRight: 6, backgroundColor: c.liveBar },
+  liveDot: { width: 6, height: 6, borderRadius: tokens.radius.pill, backgroundColor: c.illusGold },
+  badgeText: { fontSize: 12, lineHeight: 16, fontWeight: tokens.font.weight.bold, fontVariant: ["tabular-nums"] },
 });

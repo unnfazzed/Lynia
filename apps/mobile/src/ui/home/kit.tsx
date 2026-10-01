@@ -7,6 +7,7 @@ import { TrustTrackingArt } from "../art/TrustTrackingArt";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
 import { Icon, type IconName } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
+import { useTabBarSpace } from "../shell/TabShell";
 import { Tappable } from "../Tappable";
 import { H } from "./copy";
 
@@ -407,7 +408,7 @@ export function RailSkeleton(): React.ReactElement {
 
 // ── Live-order bar ─────────────────────────────────────────────────────────────────────────────
 
-/** H1 — the one floating live-order bar, 12px from the sides and above the tab bar. */
+/** H1 — the one floating live-order bar, 12px from the sides and 12 above the floating tab bar (tab bar v1). */
 export function LiveOrderBar({
   icon,
   title,
@@ -428,6 +429,8 @@ export function LiveOrderBar({
   etaMinutes: number | null;
   onPress: () => void;
 }): React.ReactElement {
+  // The tab bar floats (tab bar v1, D-56) and takes no layout space, so the bar clears its reserve.
+  const tabSpace = useTabBarSpace();
   return (
     <Tappable
       onPress={onPress}
@@ -438,7 +441,7 @@ export function LiveOrderBar({
         position: "absolute",
         left: 12,
         right: 12,
-        bottom: 12,
+        bottom: tabSpace + 12,
         borderRadius: 18,
         backgroundColor: tokens.color.forest,
         paddingTop: 10,

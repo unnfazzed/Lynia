@@ -17,7 +17,7 @@ import { useNotificationsUnreadCount } from "../../src/query/use-notifications-u
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { enqueueBoot } from "../../src/telemetry/rum";
-import { statusPillLabel } from "../../src/ui";
+import { statusPillLabel, useTabRoot } from "../../src/ui";
 import { StatusBar } from "expo-status-bar";
 import { H } from "../../src/ui/home/copy";
 import {
@@ -176,6 +176,7 @@ const RAIL_MIN = 2;
  */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("home");
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   usePrewarmRoutes(HOME_PREWARM);
@@ -274,8 +275,10 @@ export default function LauncherHomeScreen(): React.ReactElement {
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <StatusBar style="dark" />
       <ScrollView
+        ref={scrollRef}
         style={{ backgroundColor: tokens.color.bg }}
-        contentContainerStyle={{ paddingBottom: bar ? 96 : 24 }}
+        // The floating tab bar's reserve (+16), plus the live-order bar above it (≈60 + its 12 gap).
+        contentContainerStyle={{ paddingBottom: bottomPad + (bar ? 72 : 0) }}
         showsVerticalScrollIndicator={false}
       >
         <HomeTop

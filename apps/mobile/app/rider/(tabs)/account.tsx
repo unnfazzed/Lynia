@@ -9,7 +9,7 @@ import { getActiveOrder } from "../../../src/api/orders";
 import { setOnline } from "../../../src/api/riders";
 import { getRiderStanding } from "../../../src/api/rider-v2";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
-import { AppScreen, SkeletonList } from "../../../src/ui";
+import { AppScreen, SkeletonList, useTabRoot } from "../../../src/ui";
 import { CtaButton } from "../../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../../src/ui/rider/copy";
 import { IdentityCard, MintTop, MSheet, RCard, RoleToggle, RRow, Standing } from "../../../src/ui/rider/kit";
@@ -28,6 +28,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
  */
 export default function RiderAccountTabScreen(): React.ReactElement {
   const router = useRouter();
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("account");
   const top = useTabTop();
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const me = meQ.data;
@@ -61,7 +62,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
           <SkeletonList count={2} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad, gap: 12 }} showsVerticalScrollIndicator={false}>
           <IdentityCard
             name={name}
             line={RF.ratingLine(rating, rider?.tripsCount ?? 0)}

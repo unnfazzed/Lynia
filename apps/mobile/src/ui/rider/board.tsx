@@ -5,6 +5,7 @@ import MapView, { Circle, type LatLng, Marker, Polyline, type Region } from "rea
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { CtaBar, CtaButton, IconDisc, SmBtn } from "../order/kit";
+import { useTabBarSpace } from "../shell/TabShell";
 import { Dot, Sq } from "../send/kit";
 import { km, RIDER_COPY as R, RF, usd } from "./copy";
 import { RLabel, TABULAR } from "./kit";
@@ -319,7 +320,8 @@ export interface GateAction {
 /**
  * The blocking state (G1–G14): a 72px disc, 22/700 title, 15/22 body, an optional facts box (label 13 +
  * value 15/700, right-aligned; danger = danger-wash + danger-ink), then a CTA bar with the primary, the
- * ghost and the "⇄ Order food and send parcels" bridge. Sits between the mint top card and the tab bar.
+ * ghost and the "⇄ Order food and send parcels" bridge. On the Jobs tab the CTA bar is the tab bar v1 dock
+ * (CTA → 12 → floating bar → 12 + inset); with no CTA the body clears the bar's reserve itself.
  */
 export function Gate({
   icon,
@@ -343,9 +345,10 @@ export function Gate({
   bridge?: (() => void) | null;
 }): React.ReactElement {
   const hasBar = !!(primary || ghost || bridge);
+  const tabSpace = useTabBarSpace();
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingBottom: hasBar ? 0 : tabSpace }}>
         <IconDisc name={icon} tone={tone} size={72} />
         <Text accessibilityRole="header" style={{ fontSize: 22, lineHeight: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
           {title}
@@ -363,7 +366,7 @@ export function Gate({
         ) : null}
       </View>
       {hasBar ? (
-        <CtaBar>
+        <CtaBar dock={tabSpace}>
           {primary ? <CtaButton label={primary.label} icon={primary.icon} onPress={primary.onPress} loading={primary.loading} /> : null}
           {ghost ? <CtaButton ghost label={ghost.label} icon={ghost.icon} onPress={ghost.onPress} loading={ghost.loading} /> : null}
           {bridge ? <CtaButton ghost label={R.customerBridge} icon="arrow-left-right" onPress={bridge} /> : null}

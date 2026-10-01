@@ -121,6 +121,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   `packages/design/handoff/rider-v2/` (ledger D-54, owner 2026-10-01; it retires D-15/16/17/22/25/26). The
   gallery `RJM`/`RJ` rider screens and the `LJ` Account/Settings screens it replaces are superseded and not
   aligned to. Strings come from `src/ui/rider/copy.ts` (the handoff's `R`, verbatim).
+- **The tab bar follows its own handoff (`handoff/tab-bar-v1/`).** Both sides' bottom bar
+  (`src/ui/shell/TabBar.tsx`, the `(tabs)` layouts) aligns to `packages/design/handoff/tab-bar-v1/`
+  (ledger D-56, owner 2026-10-01): a floating illustrated pill, a 72 + inset reserve that tab roots pad by
+  (`useTabRoot`), typed badges. It supersedes rider-v2's `### TabBar` section and the old kit bar.
 - **Home and both onboardings follow their own handoff (`handoff/calm-mint-v2-2026-10/`).** `app/(tabs)/home.tsx`
   (H1–H6), customer onboarding (C1–C5) and the rider's first run (R1–R3) align to
   `packages/design/handoff/calm-mint-v2-2026-10/` (ledger D-55, owner 2026-10-01; it retires D-28). The gallery
