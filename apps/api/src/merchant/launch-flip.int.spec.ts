@@ -182,7 +182,9 @@ async function makeKitchen(cashRule: "collect_and_return" | "pay_upfront" = "col
     select: { id: true },
   });
   const merchant = await prisma.merchant.create({
-    data: { name: "Mama's Kitchen", ownerProfileId: owner.id, cashRule, pilotEnabled: true, location: KITCHEN },
+    // autoAccept:false — this file proves the manual 3:00 accept path; auto-accept (on by default since
+    // migration 0064) has its own suite, food-order.auto-accept.spec.ts.
+    data: { name: "Mama's Kitchen", ownerProfileId: owner.id, cashRule, pilotEnabled: true, location: KITCHEN, autoAccept: false },
     select: { id: true },
   });
   const category = await prisma.merchantCategory.create({
