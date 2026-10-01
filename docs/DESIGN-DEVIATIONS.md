@@ -2759,6 +2759,18 @@ The gallery keys this replaces are SUPERSEDED deferrals in `tools/parity/codegen
 (`RJM.active_parcel`, `RJM.active_food`, `RJM.handoff`, `RJM.offer_food`; their generated CashStrip and
 offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the tracker.
 
+### 3d · What has landed (part 4)
+
+- **Bike & documents (S5)**, from Settings → RIDER: National ID · Rider photo · Bike (the plate), each
+  "Verified" while the rider's check holds; "Changed bikes? Re-verify with the new plate." and the ghost
+  "Re-verify my bike", which asks support on WhatsApp with the plate written out (no self-edit endpoint).
+- **Help & support (S6)**, rider side (`app/rider/help.tsx`, from the rider Account): Message us on
+  WhatsApp · Call LyniaGo support · the 24-hour safety line · COMMON QUESTIONS, each question opening
+  WhatsApp with the question written out. The customer Account keeps the gallery's adopted Help hub
+  (`LJ.help`).
+- **Customer Home live-job bar (C5)**: a verified rider who switched to the customer side mid-job sees
+  "Job in progress · <stage>" on Home, which returns to the job.
+
 ### 4 · Still different from the handoff (part 1)
 
 | Where | Handoff | App | Why |
@@ -2788,11 +2800,16 @@ offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the t
 | Get help from LyniaGo (X14) | Toast "Our team will call you within 5 minutes" | Opens a support case for the order, then the toast | The case is what tells the team to call |
 | Food-offer alarm | A looping sound, full screen over the lock screen | A strong haptic repeated every 4 s while the offer is live | No alarm sound or full-screen intent ships yet; the offer still arrives as the `food_offer` push and on the board |
 | Post-trip "Report" / "Get help" on the done page | Not drawn | Removed (the Problem sheet holds both during the job) | Not drawn ⇒ not rendered |
+| Document dates (S5) | "Verified · expires 12 Mar 2028", "Verified · Aug 2026", "Honda CG125 · ABH 4721" | "Verified" and the plate only | KYC stores no document expiry, verification date or bike model (`TODO(backend)`) |
+| Licence disc row + renewal box (S5) | Licence disc "60 days" + "Your licence disc expires in 60 days…" + Update photo | Not rendered | No licence-disc record exists (`TODO(backend)`); the row appears the day one does |
+| Support phone (S6) | "+263 242 700 100 · 7am–9pm" | The safety line's number, the only staffed line configured | No separate support number is configured |
+| Common questions (S6) | Three rows | Each opens WhatsApp with the question | There are no help articles to open |
+| Live-job bar position (C5) | Not drawn (described in the switch rules) | A filled 44 SmBtn above the service tiles, the same bar the Jobs board draws | The handoff names the bar and its copy but draws no Home frame |
 
-### 5 · Still to land (follow-up PRs, same handoff)
+### 5 · Still to land
 
-Bike & documents (S5), Help & support (S6), and the customer Home live-job bar (C5).
-Until each lands, its current screen stays as it is.
+Nothing from this handoff remains to build; the rows in §4 marked `TODO(backend)` fill in as their data
+arrives, and the open questions below stand.
 
 **Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
 limit; auto-opening the "picked you" sheet.

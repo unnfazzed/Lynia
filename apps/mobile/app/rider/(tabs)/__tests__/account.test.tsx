@@ -110,7 +110,7 @@ describe("rider Account (Rider v2 C1)", () => {
     press(tree, "Job history");
     press(tree, "Settings");
     press(tree, "Help & support");
-    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=rider", "/settings?side=rider", "/help"]);
+    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=rider", "/settings?side=rider", "/rider/help"]);
   });
 
   it("opens the profile from the identity card (no longer inert)", async () => {
