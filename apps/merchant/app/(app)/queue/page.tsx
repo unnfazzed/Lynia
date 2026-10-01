@@ -8,10 +8,12 @@ import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Segmented } from "../../components/m/Segmented";
+import { NotLiveHome } from "../../components/branches/NotLiveHome";
 import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
 import { NewOrderTakeover } from "../../components/queue/NewOrderTakeover";
 import { RetryableError } from "../../components/RetryableError";
+import { showNotLiveHome, useBranches } from "../../lib/branches";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
@@ -76,6 +78,7 @@ export default function QueuePage() {
   const ready = state.status === "ready";
   const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
   const { orders, error: queueError, refetch } = useQueuePoll(ready);
+  const branches = useBranches(ready && state.merchant.myRole === "owner");
 
   // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
   // kitchen — and stops the instant none are. Only a ringing order takes over the screen.
@@ -129,15 +132,19 @@ export default function QueuePage() {
     );
   }
 
-  const closed = open.status.closedByHand;
   const segmentOrders = sections[segment];
   const nothing = orders.length === 0;
+  // Branches (ledger D-51): a branch not switched on yet, with nothing in its queue, is "Almost ready".
+  const notLive = nothing && showNotLiveHome(state.merchant, branches.length);
+  const closed = open.status.closedByHand && !notLive;
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
       <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length} />
 
-      {closed ? (
+      {notLive ? (
+        <NotLiveHome businessType={state.merchant.businessType} />
+      ) : closed ? (
         <div className="m-bd" style={{ alignItems: "center", textAlign: "center", gap: 10, paddingTop: 48 }}>
           <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center" }}>
             <Icon name="power" size={30} color="var(--muted)" />

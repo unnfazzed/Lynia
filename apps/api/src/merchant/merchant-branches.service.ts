@@ -76,7 +76,7 @@ export class MerchantBranchesService {
       throw new ForbiddenException({ reason: "on_hold", message: "This account is on hold. Message LyniaGo on WhatsApp to sort it out." });
     }
     if (haversineKm(body.location.point, { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng }) > SERVICE_CORRIDOR.radiusKm) {
-      throw new BadRequestException({ reason: "outside_service_area", message: "That pin is outside the area LyniaGo covers for now." });
+      throw new BadRequestException({ reason: "outside_service_area", message: "That address is outside the area LyniaGo covers for now." });
     }
 
     const name = body.name.trim();
