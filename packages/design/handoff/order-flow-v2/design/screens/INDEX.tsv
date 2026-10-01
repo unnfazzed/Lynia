@@ -1,0 +1,141 @@
+R1	Review · restaurant
+R1·full	Review · restaurant
+R1·320	Review · restaurant
+R1·fs	Review · restaurant
+R2a	Review · shop
+R2b	Review · pharmacy
+R3a	Editing the address
+R3b	Address out of area
+R4	Under the $4.00 minimum
+R5a	Schedule sheet
+R5b	Review · scheduled
+R5c	Closed venue · order for when they open
+R6a	Changed since the cart
+R6b	Venue just closed
+R7a	Placing
+R7b	Couldn’t place
+R7c	Offline
+R8a	Prescription block · empty
+R8b	Prescription block · added
+R9a	Empty cart
+R9b	No location yet
+T1	Sending
+T2	Confirming
+T3	Waiting for accept
+T4	Cooking
+T4·320	Cooking
+T4·fs	Cooking
+T5a	Packing · shop
+T5b	Packing · pharmacy
+T5c	Prescription check
+T6	Rider heading to the venue
+T7	Rider collecting
+T8	Collected
+T8b	Pickup-photo viewer
+T9	On the way
+T9·320	On the way
+T9·fs	On the way
+T11a	Finding a rider is slow
+T11b	Rider dropped
+T12a	No location fix
+T12b	Rider GPS paused
+T13a	Scheduled
+T13b	Scheduled → started
+T14a	Loading
+T14b	Couldn’t load
+T14c	Not found
+T14d	Offline · saved copy
+T15a	Cancel · free
+T15b	Cancel · after collection
+T15c	Cancelling
+T15d	Couldn’t cancel
+T16a	Get help
+T16b	Report a problem
+U2a	One swap that raises the total
+U2·320	One swap
+U2·fs	One swap
+U2b	Three lines, answered
+U3	No answer in time
+U4a	Mid-prep change
+U4b	Reduce-only change
+U5	Everything out of stock
+P1	At your door · pay
+P1·320	At your door
+P1·fs	At your door
+P1s	At your door · pharmacy
+P1b	Waiting for the rider
+P2	Code revealed
+P2·320	Code revealed
+P2b	Share code
+P3a	Ring lapsed
+P3b	Cash disagreement
+D1	Delivered · rate + receipt
+D1·full	Delivered
+D1·320	Delivered
+D1·fs	Delivered
+D1b	Rated
+D2a	Completed later · rated
+D2b	Completed later · not rated
+D3a	Cancelled by you
+D3b	Venue couldn’t take it
+D3c	Kitchen didn’t confirm in 1 h
+D3d	No rider found
+D3e	Cancelled by LyniaGo
+D3f	Cancelled after pickup
+D4	Not delivered
+D5a	Prescription declined · rest continues
+D5b	Prescription declined · cancelled
+M1a	Ringing · restaurant
+U1a	Ringing · shop · proposer
+U1b	Swap picker
+M1c	Scheduled order rings at start
+M2	Waiting for the customer
+M3a	Cooking ticket
+M3b	Packing ticket · pharmacy
+M4	Hand-over
+M4b	Hand-over · waiting for photo
+M4·320	Hand-over
+M4·fs	Hand-over
+M5	Tracking
+M5b	Tracking · door photo
+M6a	Cash back
+M6b	Goods back
+M7a	Scheduled list
+M7b	Scheduled ticket
+M8a	Prescription check
+M8b	Decline a prescription
+RD1a	Offer · SHOP
+RD1b	Offer · PHARMACY
+RD1c	Offer · scheduled
+RD1d	Offer · Rx order
+RD2a	At the venue · pickup code
+RD2b	Sealed-bag tick + photo
+RD2c	Photo taken
+RD2d	Photo queued offline
+RD3	Rx stop card
+RD4a	At the door · collect cash
+RD4b	Delivery code
+RD4c	Can’t use the code
+RD4d	Door photo
+T7	Customer · rider collecting
+RD2a	Rider · pickup code
+M4b	Merchant · code matched, waiting for photo
+RD2b	Rider · sealed bag photo
+M4	Merchant · Hand over
+T8	Customer · collected
+P1	Customer · ① done, pay
+RD4a	Rider · collect cash
+P1b	Customer · waiting for rider
+P2	Customer · code shows
+RD4b	Rider · types the code
+M6a	Merchant · delivered, cash back
+D1	Customer · delivered
+RD4c	Rider · why
+RD4d	Rider · photo + who
+P5	Customer · door photo
+M5b	Merchant · door photo
+G1	Home live-order bar
+G2	Orders tab · Now cards
+G3a	Push · customer
+G3b	Push · merchant
+G3c	Push · rider
