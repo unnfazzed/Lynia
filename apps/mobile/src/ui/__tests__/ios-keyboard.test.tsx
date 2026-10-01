@@ -7,14 +7,14 @@
  * - iOS number and phone pads have no return key, so `DismissKeyboardArea` closes the keyboard on a tap
  *   that nothing inside it took.
  */
-import type { RestaurantMenuDish } from "@lynia/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, Text } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import renderer, { act } from "react-test-renderer";
 import { DismissKeyboardArea } from "../DismissKeyboardArea";
 import { CartNoteSheet } from "../food/CartNoteSheet";
-import { ItemSheet } from "../food/ItemSheet";
+import { ItemSheet } from "../browse/sheets";
 import { GetHelpControl } from "../safety";
 
 jest.mock("../../api/safety", () => ({ raiseIssue: jest.fn(), raiseSos: jest.fn(), reportUser: jest.fn() }));
@@ -35,11 +35,16 @@ function withPlatform(os: "android" | "ios", fn: () => void): void {
   }
 }
 
-const dish = { id: "d1", name: "Sadza and beef stew", priceUsd: 5, description: null, photoUrl: null } as unknown as RestaurantMenuDish;
+const item = { id: "d1", name: "Sadza and beef stew", priceUsd: 5, description: null, photoUrl: null, unavailable: false, outOfStock: false };
 
 /** Each sheet, rendered open. The get-help sheet opens from its ghost button, as on the order screen. */
 const SHEETS: [string, () => renderer.ReactTestRenderer][] = [
-  ["item sheet", () => mount(<ItemSheet dish={dish} onAdd={() => undefined} onClose={() => undefined} />)],
+  ["item sheet", () =>
+      mount(
+        <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } }}>
+          <ItemSheet item={item} service="food" closedAt={null} remindOn={false} remindBusy={false} onRemind={() => undefined} onAdd={() => undefined} onClose={() => undefined} />
+        </SafeAreaProvider>,
+      )],
   ["cart note sheet", () => mount(<CartNoteSheet dishName="Sadza and beef stew" orderNote="" onSave={() => undefined} onClose={() => undefined} />)],
   [
     "get-help sheet",

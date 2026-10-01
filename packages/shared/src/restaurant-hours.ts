@@ -81,6 +81,32 @@ export function nextOpenDescription(hours: MerchantHours | null, now: Date): str
 }
 
 /**
+ * Browse v2 (D-57): today's closing time while open ("22:00" for "Open until 22:00"). Null when the
+ * merchant is closed now, or has no hours (open by default, so there is no time to promise).
+ */
+export function closingTimeToday(hours: MerchantHours | null, now: Date): string | null {
+  if (!hours || !isMerchantOpenNow(hours, now)) return null;
+  return windowFor(hours, now)?.close ?? null;
+}
+
+/**
+ * Browse v2 (D-57): when a closed merchant next opens, structured so the screen picks its own words
+ * ("Opens 10:00" / "Opens tomorrow 09:00"). `dayOffset` is 0 for later today, 1 for tomorrow and so
+ * on; `day` names that weekday. Null when open now or nothing is scheduled in the coming week.
+ */
+export function nextOpening(hours: MerchantHours | null, now: Date): { time: string; dayOffset: number; day: string } | null {
+  if (!hours || isMerchantOpenNow(hours, now)) return null;
+  const today = windowFor(hours, now);
+  if (today && minutesOfDay(now) < parseHHMM(today.open)) return { time: today.open, dayOffset: 0, day: DAY_LABEL[dayKeyFor(now)] };
+  for (let step = 1; step <= 7; step++) {
+    const key = DAY_ORDER[(now.getDay() + step) % 7] as DayKey;
+    const window = hours[key];
+    if (window) return { time: window.open, dayOffset: step, day: DAY_LABEL[key] };
+  }
+  return null;
+}
+
+/**
  * The hours a customer sees (merchant mobile redesign, D-48): while a merchant is closed by hand
  * (`closedUntil` in the future), today's window is dropped, so every client — including installed apps
  * that only know `isMerchantOpenNow` — reads the restaurant as closed and says when it opens next. A

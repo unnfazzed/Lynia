@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantHours } from "./contracts";
-import { effectiveMerchantHours, isMerchantOpenNow, minutesUntilClose, nextOpenDescription, startOfNextDay } from "./restaurant-hours";
+import { closingTimeToday, effectiveMerchantHours, isMerchantOpenNow, minutesUntilClose, nextOpenDescription, nextOpening, startOfNextDay } from "./restaurant-hours";
 
 // Wednesday 2026-07-29 (matches the plan's "today"); getDay() === 3.
 const WED_NOON = new Date(2026, 6, 29, 12, 0);
@@ -92,5 +92,24 @@ describe("effectiveMerchantHours — closed by hand (merchant mobile B5, D-48)",
 
   it("a close by hand ends at the start of the next day", () => {
     expect(startOfNextDay(WED_NOON)).toEqual(new Date(2026, 6, 30, 0, 0));
+  });
+});
+
+describe("closingTimeToday / nextOpening (Browse v2, D-57)", () => {
+  // 2026-10-01 is a Thursday.
+  const week = { mon: { open: "08:00", close: "22:00" }, thu: { open: "10:00", close: "21:30" }, fri: { open: "09:00", close: "22:00" } } as MerchantHours;
+  const at = (hhmm: string, day = "2026-10-01"): Date => new Date(`${day}T${hhmm}:00`);
+
+  it("names today's close while open, nothing while closed or with no hours", () => {
+    expect(closingTimeToday(week, at("12:00"))).toBe("21:30");
+    expect(closingTimeToday(week, at("22:00"))).toBeNull();
+    expect(closingTimeToday(null, at("12:00"))).toBeNull();
+  });
+
+  it("finds the next opening later today, tomorrow, or later in the week", () => {
+    expect(nextOpening(week, at("07:00"))).toEqual({ time: "10:00", dayOffset: 0, day: "Thursday" });
+    expect(nextOpening(week, at("23:00"))).toEqual({ time: "09:00", dayOffset: 1, day: "Friday" });
+    expect(nextOpening(week, at("23:00", "2026-10-02"))).toEqual({ time: "08:00", dayOffset: 3, day: "Monday" });
+    expect(nextOpening(week, at("12:00"))).toBeNull();
   });
 });

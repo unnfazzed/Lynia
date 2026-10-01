@@ -3026,3 +3026,93 @@ the old bar; those drawings are superseded wherever they show it.
 Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
 shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.
+
+## D-57 · Browse v2: the Restaurants list and storefront follow the browse-v2 handoff (Shops and Pharmacy next) — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner briefed Claude Design with
+`docs/designs/browse-v2/PROMPT.md` ("design the page for view restaurants and view shops and
+pharmacies … ideally they should be similar except maybe from your discretion"), uploaded the result
+(`Lynia_Design_System.zip`, `handoff/browse-v2-2026-10`) and said *"Lets proceed with implementation"*.
+The brief's proposed decisions went to Claude Design as final and its `BRIEF.md` records the outcome:
+
+1. One template, three skins: list → storefront → item sheet → cart bar is the same for Restaurants,
+   Shops and Pharmacy; only the sticker/tint, the categories, the storefront body, the note label, the
+   time word and Pharmacy's over-the-counter notice change.
+2. Pharmacy is its own page (Shops locked to kind = pharmacy), not a Shops chip.
+3. One Sort button (the cuisine / shop type is a dropdown inside the Sort sheet) and one "Free delivery"
+   button. No "Open now" filter: closed venues form a "Closed now" group at the end.
+4. One scrolling storefront under sticky scroll-spy tabs; + adds one with no sheet; adding from another
+   venue asks "Start a new cart?" before anything is cleared.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/browse-v2/` | The handoff, **verbatim**: `README.md` (B1–B14, S1–S13, I1–I3, X1–X4, the component spec with the §4b round-2 values, NEEDS BACKEND, retires), `BRIEF.md`, `CLAUDE-CODE-PROMPT.md` (the work order), `PROMPT.md` (our brief), `Browse v2 - all screens.html` + `browse-kit.js` / `browse-screens.js` (the pixel reference; `?screen=B1` renders one screen at 360px), `code/copy.ts` (`B`) and `code/tokens.ts`, `screens/` (58 PNGs at 2×), `assets/` (fonts, the v2 service stickers, the Lucide subset, sample food photos) and `round1/` (history). No token files change: the handoff uses Calm Mint v2's tokens only. |
+
+### 2 · Authority (a scope rule)
+
+The LOOK for `app/food/index.tsx` (the restaurants list) and `app/food/[id].tsx` (the storefront, its
+item sheet, the new-cart sheet, the just-closed modal and the in-venue search) is now this handoff. The
+Shops and Pharmacy routes and the Home / service search (`X1–X4`, `app/food/search.tsx`) align to it as
+those parts land. The gallery `RC list`, `RC list_loading`, `RC list_error`, `RC list_empty`,
+`RC menu`, `RC menu_closed` and `RC closed_interrupt` stay in the gallery until an export redraws them
+and are **not aligned to** (each is a SUPERSEDED deferral in `tools/parity/codegen/adopted.mjs`; the
+generated `food-list.*.view.tsx`, `menu-*.view.tsx` and `closed-interrupt.view.tsx` were deleted).
+`RC search` stays the target for `app/food/search.tsx` until the search part lands. Cart and checkout
+(`RC cart*`, `RC checkout*`) are out of scope and unchanged. The Calm Mint v2 notify-me sheet (D-55)
+now uses this handoff's drawn Pharmacy and Restaurants copy (`B.svc.*.off`) in place of the two strings
+D-55 had to write for it.
+
+### 3 · What has landed (part 1: Restaurants)
+
+- **Kit** (`src/ui/browse/kit.tsx`, `store.tsx`, `sheets.tsx`; `copy.ts` = the handoff's `B`,
+  verbatim; view model in `src/logic/browse.ts`): the mint list header with the shared address control,
+  the collapsed white bar, the Sort / Free delivery bar, the Sort sheet (category dropdown + radio rows,
+  distance sorts greyed without a location), full cards and compact rows, the "Closed now" group, the
+  no-location card, empty / error / offline / skeleton states; the storefront cover, logo, title, open
+  line, info strip, closing and closed strips with Remind me, sticky tabs, section headings with the
+  time-window chip, the Popular rail, dish rows with the + inside the photo, the stepper (a bin at one),
+  the item sheet, the new-cart sheet, the just-closed modal, the forest cart bar with the small-order
+  hint, and the ink toast.
+- **List (B1, B5–B12, B14):** open venues by the chosen sort, then the closed group; the first two are
+  full cards; the header scrolls away and the compact bar + Sort bar stick; pages load 20 at a time
+  with "Loading more…" and the end-of-list line; B13 shows the dimmed header under the notify-me sheet
+  when the service is switched off.
+- **Storefront (S1–S13, I1–I3):** one scroll with scroll-spy tabs; a closed kitchen keeps prices and
+  photos but has no + anywhere and its item sheet is read-only with "Opens at HH:MM"; the in-venue
+  search (S12) runs over the menu already loaded.
+- **API (additive, optional, an installed app ignores both):** `RestaurantMenuResponse.popularDishIds`
+  (a kitchen's most-ordered dishes over 30 days: three delivered orders or more, at most six, none
+  under two) and `availableFrom` / `availableTo` on each menu category (D-29's windows, which the
+  customer read API never sent). Shared helpers `closingTimeToday` / `nextOpening`.
+- **Evidence:** `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` (handoff left, app right: B1, B1·320,
+  B5a, B7, B8, B11, S1, S5, S8a, I1a, I3), shot by `tools/parity/shoot-browse-v2.mjs` from the `bv2_*`
+  fixtures with the handoff's own sample venues and photos.
+
+### 4 · Still different from the handoff (part 1)
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Closed / out-of-stock photos | Grayscale at 50% opacity | 50% opacity over the surface tint, no grayscale | The app runs React Native's old architecture (`newArchEnabled: false`), which has no `filter` style. |
+| "Fastest" sort | Drawn, tagged NEEDS BACKEND | Not shown | No live prep/queue signal exists; the work order (CLAUDE-CODE-PROMPT §5) says hide it until it does. |
+| "Recommended" sort | A ranking | Nearest open first | No ranking exists yet (README §7); the work order names nearest-open as the fallback. |
+| "Free delivery" pill and tag | Shown when a venue funds delivery | Never shown | No merchant-funded `freeDelivery` flag exists yet (README §7); the work order says show it only when one does. |
+| Words the mock draws outside `B` | "Cuisine" / "Shop type" (Sort sheet), "(optional)" (note label), "Popular" (storefront tab), "1 place" (B3a), "in Harare" (B7), "07:00 tomorrow" (S10's runtime value) | The same words | They are drawn in `browse-screens.js` rather than in `B`, so they are the mock's copy; "in Harare" is read off `B.list.summaryNoLoc`. |
+| "Closes in 15 min · order by {t}" | Sample value 17:45 for an 18:00 close | The close time | Orders are refused at close, so the close time is the honest last-order time; the sample value is static data. |
+| Popular rail | Always drawn for restaurants | Shown only with two or more dishes that three or more delivered orders picked in 30 days | A thin rail would claim popularity the kitchen has no history for. |
+| Info strip without a location | Four cells | Rating cell only | No km, time or fee without a location (README §3 "honest data"); the strip keeps the cells it can stand behind. |
+| "Busy · +10 min" | In `B.store.busy`, not drawn on a frame (open question) | Not shown | Not drawn ⇒ not rendered. |
+| Shops, Pharmacy, Home search | B2–B4, S3/S4, I1b/I1c, X1–X4 | Still the D-55 notify-me sheet / the old search | Part 2 (needs the customer shop list + catalogue APIs and `SHOPS_ENABLED` / `PHARMACY_ENABLED`) and part 3. |
+
+### 5 · Still to land (follow-up PRs, same handoff)
+
+- **Part 2 — Shops and Pharmacy:** the customer shop list API with `kind`, the shop catalogue read API,
+  the two flags, `app/shops/*` and `app/pharmacy/*` on the same components (item grid, item rows, the
+  OTC notice), and the Home tiles opening them.
+- **Part 3 — Search:** `X1–X4` (Home search across services with the "Send a parcel" row; in-service
+  PLACES + DISHES/ITEMS), replacing `app/food/search.tsx` and the `RC search` target.
+- **Backend (README §7):** the free-delivery flag, a Recommended ranking, a live prep signal for Fastest.
+
+Open questions (`BRIEF.md`): a 16:9 cover upload for merchants; promoting the Fashion / Auto parts
+inks to tokens (they already are: `--kind-fashion-ink`, `--kind-auto-ink`); real shop photos; busy mode.

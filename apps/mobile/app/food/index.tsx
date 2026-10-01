@@ -1,312 +1,294 @@
-import type { RestaurantListItem } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, ScrollView, Text, View } from "react-native";
-import { applyFoodListView, deliverToLabel, deliverySummary, etaRange, restaurantMeta, type FoodListSort } from "../../src/logic/food-list";
+import { FlatList, Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { anyFreeDelivery, browseCategories, browseList, browseRange, DEFAULT_FILTERS, restaurantVenue, type BrowseFilters, type VenueView } from "../../src/logic/browse";
+import { deliverToLabel } from "../../src/logic/food-list";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNow } from "../../src/logic/use-now";
+import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useReachable } from "../../src/net/use-reachable";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
-import { AppBar, Button, Card, EmptyState, Icon, Screen, Tappable } from "../../src/ui";
-import { RestaurantRow } from "../../src/ui/food/RestaurantRow";
+import { B, fmt } from "../../src/ui/browse/copy";
+import {
+  BrowseButton,
+  BrowseEmpty,
+  ClosedGroupHeader,
+  CompactBar,
+  FilterBar,
+  ListHeader,
+  ListHeading,
+  ListSkeleton,
+  NARROW_MAX,
+  NoLocationCard,
+  OfflineNote,
+  RowSkeletons,
+  ServiceEmpty,
+  VenueCardFull,
+  VenueRow,
+} from "../../src/ui/browse/kit";
+import { sortLabel, SortSheet } from "../../src/ui/browse/sheets";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a
 // cycle) — the same direct import the customer home takes for the same reason.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
-import { FoodListErrorView } from "./food-list.error.view";
-import { FoodListLoadingView } from "./food-list.loading.view";
+import { ServiceSoonSheet } from "../../src/ui/home/ServiceSoonSheet";
 
-/** R1·1..R1·5 restaurant list — five states (default / loading / empty / error / offline). */
+/**
+ * Restaurants list — Browse v2 B1, B5–B12, B14 (`packages/design/handoff/browse-v2`, ledger D-57).
+ * The mint header scrolls away; once it has, the white compact bar and the Sort / Free delivery bar
+ * stick on top. Open venues by the chosen sort, then the "Closed now" group (closed venues are never
+ * hidden). The first two results are full cards, the rest compact rows.
+ */
+type Entry = { key: string; kind: "full" | "row"; v: VenueView } | { key: string; kind: "closed" };
+
+/** The first N results are full cards (BRIEF §6). */
+const FULL_CARDS = 2;
+
 export default function RestaurantListScreen(): React.ReactElement {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
-  const [openOnly, setOpenOnly] = useState(false);
-  // The other three drawn pills (RC.list draws four; the app shipped one). `sort` is single-valued
-  // because Nearest and Top rated are two answers to the same question — a list has one order.
-  const [cheapFee, setCheapFee] = useState(false);
-  const [sort, setSort] = useState<FoodListSort>(null);
-  // The deliver-to is the customer's LIVE location, the same value (and the same persisted slot) the
-  // home header shows — not the "Harare" this screen used to hardcode. `home-location.ts` exists
-  // precisely to kill that string; this screen was left behind when the home adopted it.
   const location = useHomeLocation();
-  const [locationOpen, setLocationOpen] = useState(false);
-  // LC-B06: was `useMemo(() => new Date(), [feed.restaurants])` — useRestaurantListFeed's default
-  // structural sharing keeps the same `restaurants` reference across a no-change refetch, so `now`
-  // stayed pinned at first render for practical purposes; a stale-open restaurant kept passing the
-  // "Open now" filter after it actually closed.
   const now = useNow();
+  const reachable = useReachable();
+  const { width } = useWindowDimensions();
+  const narrow = width < NARROW_MAX;
 
-  // B-O10: a filter runs over whatever pages have loaded so far — with pagination in place, that's
-  // no longer necessarily the whole catalog. Auto-drain the rest while any pill is active so it never
-  // silently under-reports (mirrors search.tsx's identical need below).
-  //
-  // The SORTS drain for the same reason the filters do: "Nearest" over page 1 is not the nearest, it
-  // is the nearest of the first page — a wrong answer that looks like a right one. Idle (no pill) is
-  // unchanged: the list pages lazily on scroll as before.
-  const narrowing = openOnly || cheapFee || sort !== null;
+  const [filters, setFilters] = useState<BrowseFilters>(DEFAULT_FILTERS);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [locationSearch, setLocationSearch] = useState(false);
+  const [headerH, setHeaderH] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const noAddress = location.source === "none" && !location.locating;
+  const hasLocation = location.point != null;
+  const area = location.area ?? location.label;
+
+  // A distance sort chosen while a fix existed falls back to Recommended once it's gone (B5b).
+  useEffect(() => {
+    if (!hasLocation && (filters.sort === "nearest" || filters.sort === "lowest_fee")) setFilters((f) => ({ ...f, sort: "recommended" }));
+  }, [hasLocation, filters.sort]);
+
+  // A filter runs over the pages loaded so far; drain the rest while one is set so the list never
+  // under-reports (B-O10). The idle list keeps paging lazily on scroll.
+  const narrowing = filters.category != null || filters.free || filters.sort !== "recommended";
   useEffect(() => {
     if (narrowing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
   }, [narrowing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
-  // Derived view state. These MUST sit above the state-dependent early returns below: a hook after
-  // them runs on the data frame but not on the loading/error frame, so the hook COUNT changes between
-  // renders and React tears the screen down mid-transition ("Rendered more hooks than during the
-  // previous render") — a blank screen on the ordinary cold-load → data path. `feed.restaurants` is
-  // already resolved here, so nothing is lost by computing them early.
-  const all = feed.restaurants ?? [];
-  const visible = useMemo(
-    () => applyFoodListView(all, now, location.point, { openOnly, cheapFee, sort }),
-    [all, now, location.point, openOnly, cheapFee, sort],
+  const venues = useMemo(() => (feed.restaurants ?? []).map((r) => restaurantVenue(r, location.point, now)), [feed.restaurants, location.point, now]);
+  const categories = useMemo(() => browseCategories(venues), [venues]);
+  const list = useMemo(() => browseList(venues, filters), [venues, filters]);
+  const showFree = anyFreeDelivery(venues);
+  const total = list.open.length + list.closed.length;
+  const range = browseRange(list.open);
+
+  const entries = useMemo<Entry[]>(() => {
+    const out: Entry[] = [];
+    const all = [...list.open, ...list.closed];
+    all.forEach((v, i) => {
+      if (i === list.open.length && list.closed.length > 0) out.push({ key: "closed-header", kind: "closed" });
+      out.push({ key: v.id, kind: i < FULL_CARDS && v.open ? "full" : "row", v });
+    });
+    return out;
+  }, [list]);
+
+  const stale = feed.showingStale && (feed.isError || !reachable);
+  useClaimOfflineBanner(stale);
+
+  const openLocation = (search: boolean): void => {
+    setLocationSearch(search);
+    setLocationOpen(true);
+  };
+  const back = (): void => router.back();
+  const search = (): void => router.push("/food/search");
+
+  const header = (
+    <ListHeader
+      service="food"
+      narrow={narrow}
+      // The list picks the corridor to browse, so the street is qualified by its suburb (B1:
+      // "12 Lanark Rd, Belgravia"), unlike Home's bare street.
+      address={deliverToLabel(location.label, location.area)}
+      noAddress={noAddress}
+      onBack={back}
+      onAddress={() => openLocation(false)}
+      onSearch={search}
+    />
   );
-  // "5 places deliver to Belgravia · 25–45 min" — the mock's results summary, over what is ACTUALLY
-  // on screen (post-filter), so the count never contradicts the rows beneath it.
-  const summary = useMemo(
-    () => deliverySummary(visible.length, location.area, etaRange(visible.map((r) => restaurantMeta(r, location.point)))),
-    [visible, location.area, location.point],
+  const filterBar = (
+    <FilterBar
+      sortLabel={sortLabel(filters.sort)}
+      category={filters.category}
+      sortActive={filters.sort !== "recommended"}
+      showFree={showFree}
+      free={filters.free}
+      onSort={() => setSortOpen(true)}
+      onFree={() => setFilters((f) => ({ ...f, free: !f.free }))}
+    />
   );
-  // Nearest and Under $2 fee are both functions of distance, so neither can answer without a fix.
-  // They render drawn-but-disabled rather than silently no-opping; the deliver-to row directly above
-  // is the fix, and the a11y hint says so.
-  const canRank = location.point != null;
-  // RC.list draws the street QUALIFIED BY ITS SUBURB ("12 Lanark Rd, Belgravia") — this screen picks
-  // the corridor to browse, so the area is load-bearing here in a way it isn't on the home header.
-  const deliverTo = deliverToLabel(location.label, location.area);
-
-  // Reachable only from a live server `false` (the kill switch actually pulled) — NOT a boot state.
-  // `useFeatureFlags` defaults `restaurantsEnabled` true because the vertical is launched, so this
-  // screen never renders as a cold-start frame ahead of the flags fetch (MOB-BOOT-02).
-  if (!restaurantsEnabled) {
-    return (
-      <Screen>
-        <AppBar onBack={() => router.back()} />
-        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon." />
-      </Screen>
-    );
-  }
-
-  // R1·2 list_loading — cold load: fetching with NO data yet (not even a stale copy). The mock draws a
-  // full-screen content skeleton (its own Screen), so replace the whole screen — matching RC.list_loading
-  // by construction (structural-snapshot guardrail). This is composition, not a rewrite: the state LOGIC
-  // (when loading shows) is unchanged; only its look moves to the generated view. Once any data (stale or
-  // fresh) exists the header + list render below exactly as before.
-  if (feed.isFetching && !(feed.restaurants && feed.restaurants.length > 0)) {
-    return <FoodListLoadingView />;
-  }
-
-  // R1·4 list_error — cold offline/fetch failure: the fetch settled in error with NO data to show (not
-  // even a stale copy). The mock draws a full-screen offline state (`<Screen banner={<Banner offline/>}>`
-  // → AppBar → Card → EmptyState with a Try-again), so replace the whole screen — matching RC.list_error
-  // by construction (structural-snapshot guardrail). Composition, not a rewrite: the retry is still
-  // feed.refetch and the state LOGIC is unchanged; only its look moves to the generated view. A stale
-  // copy (showingStale) keeps the list + inline retry below instead — that is a different, honest state.
-  if (feed.isError && !(feed.restaurants && feed.restaurants.length > 0)) {
-    return <FoodListErrorView onBack={() => router.back()} onRetry={feed.refetch} loading={feed.isFetching} />;
-  }
-
-  return (
-    <Screen>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <Tappable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={{ padding: 4 }}>
-          <View style={{ transform: [{ rotate: "180deg" }] }}>
-            <Icon name="chevron-right" size={20} color={tokens.color.ink} />
-          </View>
-        </Tappable>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>FOOD · DELIVER TO</Text>
-          {/* The mock draws the address with a chevron-down beside it (r-customer-a.jsx:98) — a
-              picker, which the app never rendered. Tapping opens the SAME sheet the home's address
-              row opens, and a pick there persists to the shared slot, so the two screens can never
-              disagree about where the customer is. */}
-          <Tappable
-            onPress={() => setLocationOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel={`Deliver to ${deliverTo}. Change location`}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-          >
-            <Text style={{ flexShrink: 1, fontSize: 15, fontWeight: "700", color: tokens.color.ink }} numberOfLines={1}>
-              {deliverTo}
-            </Text>
-            <Icon name="chevron-down" size={15} color={tokens.color.muted} />
-          </Tappable>
-        </View>
-        <Tappable
-          onPress={() => router.push("/food/search")}
-          accessibilityRole="button"
-          accessibilityLabel="Search restaurants"
-          style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}
-        >
-          <Icon name="search" size={18} color={tokens.color.ink} />
-        </Tappable>
-      </View>
-
-      {/* All four drawn pills (RC.list). The mock lays them out in one clipped row at 360px; a phone
-          has to be able to REACH the fourth, so the drawn row scrolls horizontally rather than
-          cutting "Top rated" off — the live behaviour derived inside the mock's structure. */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6, paddingRight: 16 }}
-        style={{ flexGrow: 0, marginBottom: 4 }}
-      >
-        <FilterPill label="Open now" a11yLabel="Open now filter" selected={openOnly} onPress={() => setOpenOnly((v) => !v)} />
-        <FilterPill
-          label="Nearest"
-          a11yLabel="Sort by nearest"
-          selected={sort === "nearest"}
-          disabled={!canRank}
-          hint="Set your location to sort by distance"
-          onPress={() => setSort((v) => (v === "nearest" ? null : "nearest"))}
-        />
-        <FilterPill
-          label="Under $2 fee"
-          a11yLabel="Under $2 delivery fee filter"
-          selected={cheapFee}
-          disabled={!canRank}
-          hint="Set your location to estimate delivery fees"
-          onPress={() => setCheapFee((v) => !v)}
-        />
-        <FilterPill
-          label="Top rated"
-          a11yLabel="Sort by top rated"
-          selected={sort === "top_rated"}
-          onPress={() => setSort((v) => (v === "top_rated" ? null : "top_rated"))}
-        />
-      </ScrollView>
-
-      {visible.length > 0 ? (
-        <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 6, marginBottom: 8 }}>{summary}</Text>
-      ) : null}
-
-      {feed.showingStale ? (
-        <View style={{ marginBottom: tokens.space.sm }}>
-          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted }}>
-            Showing what we had{feed.staleSavedAt ? ` at ${new Date(feed.staleSavedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : ""}.
-          </Text>
-          {feed.isError ? <Button label="Retry" variant="ghost" onPress={feed.refetch} loading={feed.isFetching} /> : null}
-        </View>
-      ) : null}
-
-      {feed.restaurants && feed.restaurants.length > 0 ? (
-        visible.length > 0 ? (
-          // B-T3: was ScrollView + .map over the whole list — GET /restaurants has no server-side cap
-          // (unlike history/board/notifications, all server-capped at 30-50), so this is the one list in
-          // the app whose backing collection grows unbounded with merchant onboarding. FlatList windows
-          // the concurrently-mounted/decoded RestaurantRow images to what's on-screen regardless of catalog
-          // size, bounding the memory cost independent of the still-uncapped query.
-          // B-O10: the query itself is now cursor-paginated too — scrolling near the end requests the
-          // next page instead of the old single unbounded fetch.
-          <FlatList
-            data={visible}
-            keyExtractor={(r) => r.id}
-            renderItem={({ item, index }: { item: RestaurantListItem; index: number }) => (
-              // Kit RestRow (r-parts.jsx:353): only the first row of the list renders as the hero card.
-              <RestaurantRow r={item} now={now} customerPoint={location.point} hero={index === 0} onPress={() => router.push(`/food/${item.id}`)} />
-            )}
-            showsVerticalScrollIndicator={false}
-            onEndReached={() => {
-              if (feed.hasMore && !feed.isLoadingMore) feed.loadMore();
-            }}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={
-              feed.isLoadingMore ? (
-                <View style={{ paddingVertical: tokens.space.md }}>
-                  <ActivityIndicator color={tokens.color.accent} />
-                </View>
-              ) : (
-                <View style={{ height: tokens.space.xxl }} />
-              )
-            }
-          />
-        ) : (
-          // Kit R1·3 `list_empty` (r-customer-a.jsx:130): the empty state sits inside a Card (the
-          // owner-decided empty-state wrapper), not bare on the page.
-          //
-          // Which emptiness this is matters: with four pills, "no kitchens are OPEN" is only true when
-          // Open-now is the sole reason nothing showed. Otherwise the list is empty because of the
-          // filters the customer set, and the way out is to clear THOSE — telling them to show closed
-          // kitchens would be a dead end that doesn't refill the list.
-          <Card style={{ paddingTop: 10, paddingRight: 16, paddingBottom: 18, paddingLeft: 16, marginTop: 40 }}>
-            {openOnly && !cheapFee && sort === null ? (
-              <EmptyState icon="utensils" title="No kitchens are open right now" message="Try again later, or see everything including closed kitchens.">
-                <Button label="Show closed kitchens too" onPress={() => setOpenOnly(false)} />
-              </EmptyState>
-            ) : (
-              <EmptyState icon="utensils" title="Nothing matches those filters" message="Try widening them to see more kitchens.">
-                <Button
-                  label="Clear filters"
-                  onPress={() => {
-                    setOpenOnly(false);
-                    setCheapFee(false);
-                    setSort(null);
-                  }}
-                />
-              </EmptyState>
-            )}
-          </Card>
-        )
-      ) : (
-        // No restaurants to show and it isn't an error (the cold error state is the full-screen
-        // FoodListErrorView early-return above) — a successful-but-empty corridor, or the rare settled
-        // idle state. Either way there is genuinely nothing here yet.
-        <EmptyState icon="utensils" title="No restaurants deliver here yet" message="We're onboarding kitchens in your area — check back soon." />
-      )}
-
+  const sheets = (
+    <>
+      <SortSheet
+        visible={sortOpen}
+        service="food"
+        sort={filters.sort}
+        category={filters.category}
+        categories={categories}
+        hasLocation={hasLocation}
+        onSort={(s) => setFilters((f) => ({ ...f, sort: s }))}
+        onCategory={(c) => setFilters((f) => ({ ...f, category: c }))}
+        onClose={() => setSortOpen(false)}
+      />
       <LocationSheet
         visible={locationOpen}
         denied={location.denied}
+        currentLabel={location.label}
+        focusSearch={locationSearch}
         onClose={() => setLocationOpen(false)}
         onUseCurrentLocation={location.useCurrentLocation}
         onPick={location.setManualPlace}
       />
-    </Screen>
+    </>
   );
-}
 
-/**
- * One drawn pill from the RC.list header row. Four instances, one shape — the mock draws them
- * identically and distinguishes them only by label and selected state, so they are one component
- * rather than four copies of the same style block.
- *
- * `disabled` is for a pill whose ANSWER doesn't exist yet (distance, with no customer fix). It dims
- * rather than disappearing: the mock draws four pills, so four pills render ("not drawn ⇒ not
- * rendered" cuts the other way too — drawn means drawn), and the hint tells a screen-reader user the
- * one thing that makes it work.
- */
-function FilterPill({
-  label,
-  a11yLabel,
-  selected,
-  onPress,
-  disabled = false,
-  hint,
-}: {
-  label: string;
-  a11yLabel: string;
-  selected: boolean;
-  onPress: () => void;
-  disabled?: boolean;
-  hint?: string;
-}): React.ReactElement {
+  // B13 — the service is switched off (a deep link arrived anyway): the header, dimmed, under the
+  // notify-me sheet. Closing it goes back to Home. Reachable only from a live server `false`:
+  // `restaurantsEnabled` fails open, so this is never a cold-start frame (MOB-BOOT-02).
+  if (!restaurantsEnabled) {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <View style={{ opacity: 0.55 }} pointerEvents="none">
+          {header}
+        </View>
+        <ServiceSoonSheet visible service="food" onClose={() => router.replace("/(tabs)/home")} />
+      </View>
+    );
+  }
+
+  const hasData = feed.restaurants != null && feed.restaurants.length > 0;
+
+  // B8 — first load: the real header, skeleton body.
+  if (!hasData && feed.isFetching) {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        {header}
+        <ListSkeleton />
+        {sheets}
+      </View>
+    );
+  }
+
+  // B10b / B11 — the first load failed with nothing saved. Offline says so; otherwise "Couldn't load".
+  if (!hasData && feed.isError) {
+    const offline = !reachable;
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        {header}
+        <BrowseEmpty
+          icon={offline ? "wifi-off" : "circle-alert"}
+          title={offline ? B.list.offNone.t : B.svc.food.err}
+          body={offline ? B.list.offNone.s : B.list.errS}
+        >
+          <BrowseButton label={B.list.retry} variant="ghost" onPress={feed.refetch} />
+        </BrowseEmpty>
+        {sheets}
+      </View>
+    );
+  }
+
+  // B9 — a successful load with nothing in this corridor.
+  if (!hasData) {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        {header}
+        <ServiceEmpty service="food" area={area} onChangeAddress={() => openLocation(true)} onSendParcel={() => router.push("/send")} />
+        {sheets}
+      </View>
+    );
+  }
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
+    const next = headerH > 0 && e.nativeEvent.contentOffset.y >= headerH;
+    if (next !== collapsed) setCollapsed(next);
+  };
+
+  // The count: "6 places" ("1 place" is drawn on B3a). Without a location there is no time range,
+  // so the right-hand side reads "in Harare" — the tail of `summaryNoLoc`.
+  const count = total === 1 ? "1 place" : fmt(B.list.count, { n: total });
+  const right = hasLocation ? (range ? fmt(B.list.range, { a: range.a, b: range.b }) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
+  const filterWords = [filters.category, filters.free ? B.list.free : null].filter(Boolean).join(" + ");
+
   return (
-    <Tappable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ selected, disabled }}
-      accessibilityLabel={a11yLabel}
-      accessibilityHint={disabled ? hint : undefined}
-      style={{
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: tokens.radius.pill,
-        borderWidth: 1,
-        borderColor: selected ? tokens.color.accent : tokens.color.line,
-        backgroundColor: selected ? tokens.color.accentWash : tokens.color.bg,
-        opacity: disabled ? 0.45 : 1,
-      }}
-    >
-      <Text style={{ fontSize: 12.5, fontWeight: "700", color: selected ? tokens.color.accentText : tokens.color.muted }}>{label}</Text>
-    </Tappable>
+    <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <FlatList
+        data={entries}
+        keyExtractor={(e) => e.key}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <View>
+            <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>{header}</View>
+            {stale ? (
+              <OfflineNote
+                text={fmt(B.list.offline, {
+                  t: feed.staleSavedAt ? new Date(feed.staleSavedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }) : "",
+                })}
+              />
+            ) : null}
+            {filterBar}
+            {total > 0 ? <ListHeading count={count} range={right} /> : null}
+            {!hasLocation && total > 0 ? <NoLocationCard onUseLocation={() => void location.useCurrentLocation()} /> : null}
+            {total === 0 ? (
+              // B6 — the filters leave nothing; the way out is to clear them.
+              <BrowseEmpty icon="search" title={B.list.noMatch.t} body={fmt(B.list.noMatch.s, { f: filterWords, area })}>
+                <BrowseButton label={B.list.noMatch.clear} variant="ghost" onPress={() => setFilters(DEFAULT_FILTERS)} />
+              </BrowseEmpty>
+            ) : null}
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={{ paddingHorizontal: 16 }}>
+            {item.kind === "closed" ? (
+              <ClosedGroupHeader />
+            ) : item.kind === "full" ? (
+              <VenueCardFull v={item.v} onPress={() => router.push(`/food/${item.v.id}`)} />
+            ) : (
+              <VenueRow v={item.v} onPress={() => router.push(`/food/${item.v.id}`)} />
+            )}
+          </View>
+        )}
+        onEndReached={() => {
+          if (feed.hasMore && !feed.isLoadingMore) feed.loadMore();
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          feed.isLoadingMore ? (
+            // B12a — loading more: two skeleton rows and "Loading more…".
+            <View style={{ paddingHorizontal: 16 }}>
+              <RowSkeletons count={2} />
+              <Text style={{ textAlign: "center", padding: 4, fontSize: 12.5, color: tokens.color.muted }}>{B.list.more}</Text>
+            </View>
+          ) : total > 0 && !feed.hasMore ? (
+            // B12b — the end of the list.
+            <Text style={{ textAlign: "center", paddingVertical: 24, paddingHorizontal: 32, fontSize: 13, color: tokens.color.muted }}>
+              {fmt(B.svc.food.end, { n: total, area })}
+            </Text>
+          ) : (
+            <View style={{ height: 24 }} />
+          )
+        }
+      />
+      {collapsed ? (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, backgroundColor: tokens.color.bg }}>
+          <CompactBar title={B.svc.food.title} onBack={back} onSearch={search} searchLabel={B.svc.food.search} />
+          {filterBar}
+        </View>
+      ) : null}
+      {sheets}
+    </View>
   );
 }

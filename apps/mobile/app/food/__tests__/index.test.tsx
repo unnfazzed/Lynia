@@ -1,5 +1,6 @@
 /**
- * B-T3: `GET /restaurants` has no server-side cap (unlike history/board/notifications, all capped
+ * Restaurants list — Browse v2 (packages/design/handoff/browse-v2, ledger D-57): B1, B7, B8, B9,
+ * B11, B12, the Sort sheet and the closed group. Also B-T3: `GET /restaurants` has no server-side cap (unlike history/board/notifications, all capped
  * 30-50 rows) — this screen used to render the whole result through a plain ScrollView + `.map()`,
  * mounting every restaurant's cover-photo Image concurrently regardless of catalog size, a real
  * OOM-trajectory shape on a 1-2GB Go-class device as merchant onboarding grows the corridor's
@@ -8,13 +9,13 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { renderSync } from "../../../src/testing/render-sync";
-import { ActivityIndicator, FlatList, Text } from "react-native";
-import { Banner, EmptyState, Skeleton } from "../../../src/ui";
+import { FlatList, Text } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { LocationSheet } from "../../../src/ui/home/LocationSheet";
 
-// The adopted RC.list_loading view renders <Skeleton/>, whose Animated pulse is an infinite loop, and
-// the screen's useNow() runs a 60s interval — both would fire after Jest teardown on the real clock.
-// Fake timers keep every scheduled callback off the real clock (same pattern as auction-clock.test).
+const TEST_METRICS = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+
+// The screen's useNow() runs a 60s interval, which would fire after Jest teardown on the real clock.
 jest.useFakeTimers();
 
 const mockRestaurants = Array.from({ length: 40 }, (_, i) => ({
@@ -22,10 +23,13 @@ const mockRestaurants = Array.from({ length: 40 }, (_, i) => ({
   name: `Restaurant ${i}`,
   coverPhotoUrl: null,
   logoUrl: null,
-  cuisineTags: [],
-  priceLevel: null,
-  hours: null,
-  location: null,
+  cuisineTags: i % 2 ? ["Chicken"] : ["Zimbabwean", "Grills"],
+  priceLevel: 2,
+  hours: null as null | Record<string, { open: string; close: string }>,
+  location: { lat: -17.8 + i / 1000, lng: 31.05 },
+  ratingAvg: i === 0 ? null : 4.5,
+  ratingCount: i === 0 ? 0 : 10 + i,
+  prepBaselineMinutes: 20,
 }));
 
 jest.mock("expo-router", () => ({
@@ -85,7 +89,10 @@ const resetFeedStub = () => {
   mockFeedStub.isFetching = false;
   mockFeedStub.isError = false;
   mockFeedStub.hasLiveData = true;
+  mockFeedStub.hasMore = false;
+  mockFeedStub.isLoadingMore = false;
   mockFeedStub.refetch.mockClear();
+  mockFeedStub.loadMore.mockClear();
 };
 jest.mock("../../../src/query/use-restaurants", () => ({
   useRestaurantListFeed: () => mockFeedStub,
@@ -93,323 +100,155 @@ jest.mock("../../../src/query/use-restaurants", () => ({
 
 import RestaurantListScreen from "../index";
 
-describe("RestaurantListScreen (B-T3: unbounded catalog must be virtualized, not ScrollView+map)", () => {
-  it("renders the restaurant list via FlatList, not an unvirtualized ScrollView", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
+function mount(): renderer.ReactTestRenderer {
+  let tree!: renderer.ReactTestRenderer;
+  act(() => {
+    tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <RestaurantListScreen />
+      </SafeAreaProvider>,
+    );
+  });
+  return tree;
+}
+function texts(tree: renderer.ReactTestRenderer): string[] {
+  return tree.root.findAllByType(Text).map((t) => [t.props.children].flat(Infinity).filter((c) => typeof c === "string" || typeof c === "number").join(""));
+}
+function renderRow(tree: renderer.ReactTestRenderer, index: number): renderer.ReactTestRenderer {
+  const list = tree.root.findByType(FlatList);
+  return renderSync(<SafeAreaProvider initialMetrics={TEST_METRICS}>{list.props.renderItem({ item: list.props.data[index], index })}</SafeAreaProvider>);
+}
 
-    // FlatList's own internal ScrollView is expected (that's how virtualization scrolls) — the
-    // regression this pins is a screen-level `.map()` handing FlatList's full backing array to it
-    // instead of rendering every row directly as JSX children, which findByType would fail below.
-    // findByType (singular) throws unless exactly one match exists, which is the assertion itself.
+beforeEach(() => {
+  resetFeedStub();
+  resetLocation();
+  for (const r of mockRestaurants) r.hours = null;
+});
+
+describe("RestaurantListScreen — B1 data", () => {
+  it("virtualises the catalogue through one FlatList (B-T3) and keys rows by id", () => {
+    const tree = mount();
     const list = tree.root.findByType(FlatList);
     expect(list.props.data).toHaveLength(mockRestaurants.length);
+    expect(list.props.keyExtractor(list.props.data[0])).toBe(list.props.data[0].key);
   });
 
-  it("still renders every restaurant's row content (virtualization must not drop data)", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    const list = tree.root.findByType(FlatList);
-    // FlatList renders lazily under react-test-renderer too (VirtualizedList windows by default),
-    // so assert the full backing dataset was handed to it rather than requiring every row painted.
-    expect(list.props.data.map((r: { id: string }) => r.id)).toEqual(mockRestaurants.map((r) => r.id));
-    const first = mockRestaurants[0]!;
-    expect(list.props.keyExtractor(first)).toBe(first.id);
-  });
-});
-
-describe("RestaurantListScreen (RC.list_loading: cold load renders the adopted skeleton view, not the list)", () => {
-  // The generated loading view renders <Skeleton/>, whose Animated pulse is an infinite loop — unmount
-  // every tree so the timer's cleanup fires and no animation leaks past Jest teardown.
-  let tree: renderer.ReactTestRenderer | null = null;
-  afterEach(() => {
-    if (tree) act(() => tree!.unmount());
-    tree = null;
-    // Restore the shared stub to its data state for the rest of the suite.
-    mockFeedStub.restaurants = mockRestaurants;
-    mockFeedStub.isFetching = false;
+  it("draws the first two results as full cards and the rest as compact rows, nearest first", () => {
+    const tree = mount();
+    const data = tree.root.findByType(FlatList).props.data as Array<{ kind: string; v?: { id: string } }>;
+    expect(data.slice(0, 3).map((e) => e.kind)).toEqual(["full", "full", "row"]);
+    // Recommended falls back to nearest-open (no ranking yet, README §7): r-0 is the closest.
+    expect(data[0]!.v!.id).toBe("r-0");
   });
 
-  it("renders FoodListLoadingView's content skeletons and no FlatList on a cold load (no data yet)", () => {
-    mockFeedStub.restaurants = null;
-    mockFeedStub.isFetching = true;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    // The generated RC.list_loading view is a full-screen content skeleton — Skeletons present…
-    expect(tree!.root.findAllByType(Skeleton).length).toBeGreaterThan(0);
-    // …and the data-state FlatList must NOT mount (findAllByType returns [] rather than throwing).
-    expect(tree!.root.findAllByType(FlatList)).toHaveLength(0);
+  it("puts closed venues in a 'Closed now' group at the end instead of hiding them", () => {
+    const closedAllWeek = {};
+    mockRestaurants[0]!.hours = closedAllWeek;
+    mockRestaurants[1]!.hours = closedAllWeek;
+    const tree = mount();
+    const data = tree.root.findByType(FlatList).props.data as Array<{ kind: string; v?: { id: string } }>;
+    expect(data).toHaveLength(mockRestaurants.length + 1);
+    const at = data.findIndex((e) => e.kind === "closed");
+    expect(at).toBe(mockRestaurants.length - 2);
+    expect(data.slice(at + 1).map((e) => e.v!.id)).toEqual(["r-0", "r-1"]);
+    expect(texts(renderRow(tree, at))).toContain("Closed now");
   });
 
-  it("does NOT show the cold skeleton once a stale copy exists (header + list render instead)", () => {
-    // showingStale means feed.restaurants is the stale copy — data exists, so loading must not take over.
-    mockFeedStub.restaurants = mockRestaurants;
-    mockFeedStub.isFetching = true;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    expect(tree!.root.findByType(FlatList).props.data).toHaveLength(mockRestaurants.length);
+  it("shows an unrated venue as 'New', never a zero star", () => {
+    const tree = mount();
+    expect(texts(renderRow(tree, 0))).toContain("New");
+  });
+
+  it("heads the list with the count and the time range, under the address the home shares", () => {
+    const tree = mount();
+    const all = texts(tree);
+    expect(all).toContain("22 Bingley Drive, Belgravia");
+    expect(all).toContain("40 places");
+    expect(all.some((t) => /^\d+–\d+ min$/.test(t))).toBe(true);
+    expect(all).toContain("Sort: Recommended");
+  });
+
+  it("opens the same location sheet the home header opens", () => {
+    const tree = mount();
+    const control = tree.root.findAll((n) => typeof n.props.onPress === "function" && (n.props.accessibilityLabel ?? "").startsWith("DELIVERING TO"))[0]!;
+    act(() => control.props.onPress());
+    expect(tree.root.findByType(LocationSheet).props.visible).toBe(true);
   });
 });
 
-describe("RestaurantListScreen (RC.list_error: cold fetch failure renders the adopted offline view)", () => {
-  let tree: renderer.ReactTestRenderer | null = null;
-  afterEach(() => {
-    if (tree) act(() => tree!.unmount());
-    tree = null;
-    resetFeedStub();
+describe("RestaurantListScreen — B7 no location", () => {
+  it("shows the mint card and no fee, time or distance", () => {
+    mockLocation.point = null;
+    const tree = mount();
+    const all = texts(tree);
+    expect(all).toContain("Where should we deliver?");
+    expect(all).toContain("in Harare");
+    const row = texts(renderRow(tree, 3));
+    expect(row.some((t) => /km|delivery|min/.test(t))).toBe(false);
+  });
+});
+
+describe("RestaurantListScreen — first load, failure, empty", () => {
+  it("B8: the real header over a skeleton, no list", () => {
+    mockFeedStub.restaurants = null;
+    mockFeedStub.isFetching = true;
+    const tree = mount();
+    expect(tree.root.findAllByType(FlatList)).toHaveLength(0);
+    expect(texts(tree)).toContain("Restaurants");
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Loading").length).toBeGreaterThan(0);
   });
 
-  it("renders FoodListErrorView (offline Banner + retry EmptyState) and no FlatList on a cold error", () => {
-    // Cold error: the fetch settled in error with NO data (not even a stale copy).
+  it("B11: couldn't load, with ↻ Try again calling refetch", () => {
     mockFeedStub.restaurants = null;
     mockFeedStub.isError = true;
-    mockFeedStub.isFetching = false;
-    mockFeedStub.hasLiveData = false;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    // The adopted RC.list_error view draws the mock's offline Banner slot + the retry EmptyState…
-    expect(tree!.root.findAllByType(Banner).length).toBeGreaterThan(0);
-    expect(tree!.root.findAllByType(EmptyState).length).toBeGreaterThan(0);
-    // …and the data-state FlatList must NOT mount.
-    expect(tree!.root.findAllByType(FlatList)).toHaveLength(0);
-  });
-
-  it("preserves retry behavior — the EmptyState's Try again button calls feed.refetch", () => {
-    mockFeedStub.restaurants = null;
-    mockFeedStub.isError = true;
-    mockFeedStub.isFetching = false;
-    mockFeedStub.hasLiveData = false;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    act(() => {
-      tree!.root.findByProps({ label: "Try again" }).props.onPress();
-    });
+    const tree = mount();
+    expect(texts(tree)).toContain("Couldn’t load restaurants");
+    const retry = tree.root.findAll((n) => n.props.accessibilityLabel === "↻ Try again" && typeof n.props.onPress === "function")[0]!;
+    act(() => retry.props.onPress());
     expect(mockFeedStub.refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT show the cold error view when a stale copy exists (list + inline retry render instead)", () => {
-    // showingStale means feed.restaurants is the stale copy — data exists, so the error screen must not
-    // take over; the honest 'showing what we had' path keeps the list.
-    mockFeedStub.restaurants = mockRestaurants;
-    mockFeedStub.showingStale = true;
-    mockFeedStub.isError = true;
-    mockFeedStub.hasLiveData = false;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    expect(tree!.root.findByType(FlatList).props.data).toHaveLength(mockRestaurants.length);
-    expect(tree!.root.findAllByType(Banner)).toHaveLength(0);
+  it("B9: a successful load with nothing in the corridor names the area", () => {
+    mockFeedStub.restaurants = [];
+    const tree = mount();
+    expect(texts(tree)).toContain("No restaurants deliver to Belgravia yet");
   });
 });
 
-describe("RestaurantListScreen (B-O10: GET /restaurants is now cursor-paginated)", () => {
-  beforeEach(() => {
-    mockFeedStub.hasMore = false;
-    mockFeedStub.isLoadingMore = false;
-    mockFeedStub.loadMore.mockClear();
-  });
-
-  it("requests the next page when the list scrolls near the end and more pages exist", () => {
+describe("RestaurantListScreen — paging", () => {
+  it("requests the next page near the end while more exist, and not after", () => {
     mockFeedStub.hasMore = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    act(() => {
-      tree.root.findByType(FlatList).props.onEndReached();
-    });
+    let tree = mount();
+    act(() => tree.root.findByType(FlatList).props.onEndReached());
     expect(mockFeedStub.loadMore).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not request another page once the catalog is exhausted", () => {
     mockFeedStub.hasMore = false;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    act(() => {
-      tree.root.findByType(FlatList).props.onEndReached();
-    });
+    mockFeedStub.loadMore.mockClear();
+    tree = mount();
+    act(() => tree.root.findByType(FlatList).props.onEndReached());
     expect(mockFeedStub.loadMore).not.toHaveBeenCalled();
   });
 
-  it("shows a footer spinner while the next page is in flight", () => {
+  it("B12: 'Loading more…' while a page is in flight, then the end-of-list line", () => {
     mockFeedStub.hasMore = true;
     mockFeedStub.isLoadingMore = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    const footer = tree.root.findByType(FlatList).props.ListFooterComponent;
-    expect(renderSync(footer).root.findByType(ActivityIndicator)).toBeTruthy();
-  });
-
-  it('auto-drains remaining pages once "Open now" is toggled on, so the filter never under-reports', () => {
-    mockFeedStub.hasMore = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    expect(mockFeedStub.loadMore).not.toHaveBeenCalled(); // not filtering yet — no reason to drain
-    act(() => {
-      tree.root.findByProps({ accessibilityLabel: "Open now filter" }).props.onPress();
-    });
-    expect(mockFeedStub.loadMore).toHaveBeenCalled();
+    let tree = mount();
+    expect(texts(renderSync(<SafeAreaProvider initialMetrics={TEST_METRICS}>{tree.root.findByType(FlatList).props.ListFooterComponent}</SafeAreaProvider>))).toContain("Loading more…");
+    mockFeedStub.hasMore = false;
+    mockFeedStub.isLoadingMore = false;
+    tree = mount();
+    expect(texts(renderSync(<SafeAreaProvider initialMetrics={TEST_METRICS}>{tree.root.findByType(FlatList).props.ListFooterComponent}</SafeAreaProvider>))).toContain("That’s all 40 restaurants delivering to Belgravia.");
   });
 });
 
-/**
- * RC.list header parity (`r-customer-a.jsx:89`). The mock draws a PRECISE street address under the
- * "FOOD · DELIVER TO" overline with a chevron-down picker beside it, four filter/sort pills, and a
- * results summary naming the suburb. The app drew a hardcoded "Harare", no chevron, one pill and no
- * summary — the same hardcode `home-location.ts` was written to kill on the home header.
- *
- * These pin the wiring, not the pixels: that the address comes from the live location rather than a
- * literal, that every drawn pill exists and is honest about whether it can answer, and that the
- * summary describes what is actually on screen.
- */
-describe("RestaurantListScreen (RC.list header: live deliver-to, four pills, results summary)", () => {
-  beforeEach(() => {
-    resetFeedStub();
-    resetLocation();
-    mockFeedStub.hasMore = false;
-    mockFeedStub.isLoadingMore = false;
-    mockFeedStub.loadMore.mockClear();
-  });
-
-  const allText = (tree: renderer.ReactTestRenderer): string =>
-    tree.root
-      .findAllByType(Text)
-      .map((n) => (Array.isArray(n.props.children) ? n.props.children.join("") : String(n.props.children ?? "")))
-      .join("\n");
-
-  it("draws the customer's live address, never the hardcoded 'Harare'", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    const text = allText(tree);
-    expect(text).toContain("FOOD · DELIVER TO");
-    expect(text).toContain("22 Bingley Drive, Belgravia"); // street qualified by suburb, as RC.list draws it
-    // The regression this whole change exists to prevent.
-    expect(text).not.toContain("Harare");
-  });
-
-  it("opens the same location sheet the home header opens when the deliver-to is tapped", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    expect(tree.root.findByType(LocationSheet).props.visible).toBe(false);
-    // Async act: opening the sheet kicks off its saved-places load, which must settle inside act().
-    await act(async () => {
-      tree.root.findAllByProps({ accessibilityLabel: "Deliver to 22 Bingley Drive, Belgravia. Change location" })[0]!.props.onPress();
-    });
-    expect(tree.root.findByType(LocationSheet).props.visible).toBe(true);
-    // A pick writes through the shared slot, so home and food can never disagree about the address.
-    expect(tree.root.findByType(LocationSheet).props.onPick).toBe(mockLocation.setManualPlace);
-  });
-
-  it("renders all four pills the mock draws, not just 'Open now'", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    const text = allText(tree);
-    for (const label of ["Open now", "Nearest", "Under $2 fee", "Top rated"]) expect(text).toContain(label);
-  });
-
-  it("summarises the results and names the suburb the customer is in", () => {
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    // 40 stub restaurants, none carrying a location — so the count lands and the ETA clause is
-    // dropped rather than invented.
-    expect(allText(tree)).toContain("40 places deliver to Belgravia");
-  });
-
-  it("disables the distance-dependent pills (and drops the suburb) when there is no fix", () => {
+describe("RestaurantListScreen — B5 Sort sheet", () => {
+  it("greys out the distance sorts without a location", () => {
     mockLocation.point = null;
-    mockLocation.area = null;
-    mockLocation.label = "Set your location";
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    const stateOf = (label: string) => tree.root.findAllByProps({ accessibilityLabel: label })[0]!.props.accessibilityState;
-    expect(stateOf("Sort by nearest").disabled).toBe(true);
-    expect(stateOf("Under $2 delivery fee filter").disabled).toBe(true);
-    // Rating needs no geometry, and Open now reads `hours` — both still work.
-    expect(stateOf("Sort by top rated").disabled).toBe(false);
-    expect(stateOf("Open now filter").disabled).toBe(false);
-    expect(allText(tree)).toContain("40 places deliver here");
-  });
-
-  /**
-   * REGRESSION (caught by the parity render lane, not by these tests): the header's derived state
-   * lives in `useMemo`s, and they were originally written BELOW the screen's three state-dependent
-   * early returns (flag-off / cold-loading / cold-error). A hook after an early return runs on the
-   * data frame but not on the loading frame, so React saw the hook COUNT grow between renders and
-   * tore the whole screen down — "Rendered more hooks than during the previous render", i.e. a BLANK
-   * screen on the completely ordinary cold-load → data transition every user hits on app open.
-   *
-   * Every other test here renders ONE fixed state, which is exactly why none of them caught it. This
-   * one drives the transition.
-   */
-  it("survives the cold-load → data transition (hooks must not be declared after an early return)", () => {
-    mockFeedStub.restaurants = null;
-    mockFeedStub.isFetching = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    // Cold frame: the adopted skeleton, no header yet.
-    expect(tree.root.findAllByType(FlatList)).toHaveLength(0);
-
-    // Data lands — the SAME mounted component now takes the full render path.
-    mockFeedStub.restaurants = mockRestaurants;
-    mockFeedStub.isFetching = false;
-    act(() => {
-      tree.update(<RestaurantListScreen />);
-    });
-    expect(tree.root.findAllByType(FlatList)).toHaveLength(1);
-    expect(allText(tree)).toContain("22 Bingley Drive");
-  });
-
-  it("survives the cold-error → data transition too", () => {
-    mockFeedStub.restaurants = null;
-    mockFeedStub.isError = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    mockFeedStub.restaurants = mockRestaurants;
-    mockFeedStub.isError = false;
-    act(() => {
-      tree.update(<RestaurantListScreen />);
-    });
-    expect(allText(tree)).toContain("FOOD · DELIVER TO");
-  });
-
-  it("drains remaining pages for a SORT too — 'Nearest' over page one is not the nearest", () => {
-    mockFeedStub.hasMore = true;
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(<RestaurantListScreen />);
-    });
-    expect(mockFeedStub.loadMore).not.toHaveBeenCalled();
-    act(() => {
-      tree.root.findAllByProps({ accessibilityLabel: "Sort by nearest" })[0]!.props.onPress();
-    });
-    expect(mockFeedStub.loadMore).toHaveBeenCalled();
+    const tree = mount();
+    const sort = tree.root.findAll((n) => n.props.accessibilityLabel === "Sort: Recommended" && typeof n.props.onPress === "function")[0]!;
+    act(() => sort.props.onPress());
+    const disabled = tree.root.findAll((n) => n.props.accessibilityRole === "radio" && n.props.accessibilityState?.disabled === true && typeof n.props.onPress === "function");
+    const names = new Set(disabled.map((n) => n.findAllByType(Text)[0]!.props.children as string));
+    expect([...names]).toEqual(["Nearest", "Lowest delivery fee"]);
+    expect(disabled.every((n) => n.props.accessibilityHint === "Set your location to use this")).toBe(true);
   });
 });
