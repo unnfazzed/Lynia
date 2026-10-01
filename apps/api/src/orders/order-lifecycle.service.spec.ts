@@ -1556,3 +1556,159 @@ describe("OrderLifecycleService RH-01 — a velocity/fraud hold survives a recov
     expect(riderData).toMatchObject({ onHold: true, heldReason: "velocity" });
   });
 });
+
+describe("OrderLifecycleService.rate — parcel feedback tags", () => {
+  it("persists the parcel chip vocabulary verbatim on a parcel order's rating row", async () => {
+    let ratingData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", orderType: "parcel", customerId: "c1", riderId: "r1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      rating: {
+        create: async (args: { data: Record<string, unknown> }) => { ratingData = args.data; return {}; },
+        count: async () => 0,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async () => ({}),
+      },
+    });
+    await svc.rate("o1", "c1", 5, undefined, undefined, ["careful", "on_time"]);
+    expect(ratingData).toMatchObject({ score: 5, foodScore: null, tags: ["careful", "on_time"] });
+  });
+});
+
+describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
+  const source = (overrides: Record<string, unknown> = {}) => ({
+    customerId: "c1",
+    status: "expired",
+    orderType: "parcel",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    ...overrides,
+  });
+  const cloneSource = {
+    customerId: "c1",
+    orderType: "parcel",
+    pickup: {},
+    dropoff: {},
+    itemDesc: "Documents",
+    items: null,
+    note: null,
+    itemPhotoUrl: null,
+    declaredValue: 10,
+    size: null,
+    distanceKm: 1.5,
+    suggestedFare: "2.40",
+    proposedFare: "2.50",
+    currency: "USD",
+    disclaimerVersion: null,
+    disclaimerAcceptedAt: null,
+  };
+  const createdAt = new Date("2026-10-01T10:00:00Z");
+
+  /** Harness: `existing` = an already-open clone of the source (or null); spies on every write. */
+  function harness(opts: { src?: Record<string, unknown> | null; existing?: { id: string; createdAt: Date } | null; casCount?: number } = {}) {
+    let reads = 0;
+    const created: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    const locks: unknown[] = [];
+    const h = build({
+      order: {
+        // First read = the guard read in resend(); later reads = cloneForRebroadcast's source read.
+        findUnique: async () => (reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource),
+        findFirst: async () => opts.existing ?? null,
+        updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: opts.casCount ?? 1 }; },
+        create: async (args: { data: Record<string, unknown> }) => { created.push(args.data); return { id: "clone-new", createdAt }; },
+      },
+      $executeRaw: async (...args: unknown[]) => { locks.push(args); return 1; },
+    });
+    const gate = vi.fn(async () => {});
+    const announcePriceChange = vi.fn(async () => {});
+    Object.assign(h.orders, { assertCustomerMayBroadcast: gate, announcePriceChange });
+    return { ...h, created, updates, locks, gate, announcePriceChange };
+  }
+
+  it("404s a missing order and 403s another customer's", async () => {
+    await expect(harness({ src: null }).svc.resend("o1", "c1", 5)).rejects.toThrow(/not found/i);
+    await expect(harness().svc.resend("o1", "someone-else", 5)).rejects.toThrow(/not your order/i);
+  });
+
+  it("409s a live order and a merchant order — only finished parcel orders can be resent", async () => {
+    await expect(harness({ src: source({ status: "open_for_offers" }) }).svc.resend("o1", "c1", 5)).rejects.toThrow(/can't be sent again/i);
+    await expect(harness({ src: source({ status: "en_route_dropoff" }) }).svc.resend("o1", "c1", 5)).rejects.toThrow(/can't be sent again/i);
+    await expect(harness({ src: source({ orderType: "merchant", status: "cancelled" }) }).svc.resend("o1", "c1", 5)).rejects.toThrow(
+      /can't be sent again/i,
+    );
+  });
+
+  it("applies create()'s customer gates and writes nothing when they refuse", async () => {
+    const h = harness();
+    h.gate.mockRejectedValueOnce(Object.assign(new Error("Your account is on hold."), { status: 403 }));
+    await expect(h.svc.resend("o1", "c1", 5)).rejects.toThrow(/on hold/i);
+    expect(h.gate).toHaveBeenCalledWith("c1");
+    expect(h.created).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+  });
+
+  it("rejects a source whose waypoints now fall outside the service corridor", async () => {
+    const far = { point: { lat: 0, lng: 0 }, landmark: "Nowhere" };
+    const h = harness({ src: source({ dropoff: far }) });
+    await expect(h.svc.resend("o1", "c1", 5)).rejects.toThrow(/outside our service area/i);
+    expect(h.created).toHaveLength(0);
+  });
+
+  it.each(["expired", "cancelled", "undelivered"])("clones a %s order at the NEW fare (suggested anchor kept) and announces it post-commit", async (status) => {
+    const h = harness({ src: source({ status }) });
+    const res = await h.svc.resend("o1", "c1", 4.25);
+    expect(res).toEqual({
+      id: "clone-new",
+      status: "open_for_offers",
+      proposedFare: "4.25",
+      expiresAt: new Date(createdAt.getTime() + 90_000).toISOString(),
+    });
+    expect(h.created).toHaveLength(1);
+    expect(String(h.created[0].proposedFare)).toBe("4.25");
+    expect(h.created[0]).toMatchObject({ customerId: "c1", status: "open_for_offers", rebroadcastOfId: "o1", suggestedFare: "2.40" });
+    // The source row is locked for the check-then-create so a double-tap can't clone twice.
+    expect(h.locks).toHaveLength(1);
+    expect(h.orders.announceOpenOrder).toHaveBeenCalledWith("clone-new");
+    expect(h.rebroadcasts).toEqual([["o1", "clone-new"]]);
+    expect(h.announcePriceChange).not.toHaveBeenCalled();
+  });
+
+  it("re-prices an already-open clone (rider-bail clone / double-tap) via a CAS on open_for_offers instead of cloning again", async () => {
+    const existingAt = new Date("2026-10-01T09:59:30Z");
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt } });
+    const res = await h.svc.resend("o1", "c1", 6);
+    expect(res).toEqual({
+      id: "clone-old",
+      status: "open_for_offers",
+      proposedFare: "6",
+      // The existing clone's window is NOT reset — expiresAt stays anchored on its own createdAt.
+      expiresAt: new Date(existingAt.getTime() + 90_000).toISOString(),
+    });
+    expect(h.created).toHaveLength(0);
+    expect(h.updates).toHaveLength(1);
+    expect(h.updates[0]).toMatchObject({ where: { id: "clone-old", status: "open_for_offers", customerId: "c1" } });
+    expect(String((h.updates[0].data as { proposedFare: unknown }).proposedFare)).toBe("6");
+    expect(h.updates[0].data).not.toHaveProperty("createdAt");
+    expect(h.announcePriceChange).toHaveBeenCalledWith("clone-old");
+    expect(h.orders.announceOpenOrder).not.toHaveBeenCalled();
+  });
+
+  it("409s when the open clone's CAS loses (it was picked/cancelled under us)", async () => {
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt }, casCount: 0 });
+    await expect(h.svc.resend("o1", "c1", 6)).rejects.toThrow(/order changed/i);
+    expect(h.announcePriceChange).not.toHaveBeenCalled();
+  });
+
+  it("a post-commit announce failure never fails the committed resend", async () => {
+    const h = harness();
+    h.orders.announceOpenOrder.mockRejectedValueOnce(new Error("redis down"));
+    await expect(h.svc.resend("o1", "c1", 5)).resolves.toMatchObject({ id: "clone-new" });
+    await new Promise<void>((r) => setTimeout(r, 0));
+  });
+});

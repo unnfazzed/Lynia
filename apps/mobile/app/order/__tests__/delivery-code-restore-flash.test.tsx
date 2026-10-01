@@ -12,6 +12,9 @@
  *
  * The fix adds a `codeRestored` sentinel and renders neither card until the read settles. These tests
  * hold the SecureStore read open so that window can be asserted on; the first fails pre-fix.
+ *
+ * After Send (ledger D-53) removed the "Re-issue" button: once the read confirms no code is held, the
+ * screen issues a fresh one by itself, once, so the delivery code card is never empty.
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -36,6 +39,7 @@ const mockGetItemAsync = jest.fn(async (key: string) => {
 });
 
 jest.mock("expo-router", () => ({
+  useFocusEffect: () => undefined,
   useLocalSearchParams: () => ({ id: "order-1" }),
   useRouter: () => ({ replace: jest.fn(), push: jest.fn(), back: jest.fn() }),
 }));
@@ -50,6 +54,8 @@ jest.mock("../../../src/api/orders", () => ({
   notifyWhenRiderOnline: jest.fn(),
   rateOrder: jest.fn(),
   rotateDeliveryCode: (...args: unknown[]) => mockRotateDeliveryCode(...args),
+  raiseOrderPrice: jest.fn(),
+  resendOrder: jest.fn(),
 }));
 jest.mock("../../../src/api/offers", () => ({
   listOffers: async () => [],
@@ -61,8 +67,8 @@ jest.mock("../../../src/realtime/use-order-socket", () => ({
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
   useForegroundRefetch: () => undefined,
 }));
-jest.mock("../../../src/ui/order/LiveTrackingCard", () => ({
-  LiveTrackingCard: () => null,
+jest.mock("../../../src/ui/order/OrderMap", () => ({
+  OrderMap: () => null,
 }));
 
 import OrderScreen from "../[id]";
@@ -125,7 +131,7 @@ function textHits(tree: renderer.ReactTestRenderer, needle: string): number {
   return tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes(needle)).length;
 }
 
-const MISSING_CODE_COPY = "hand-off code isn't showing";
+const CODE_LABEL = "DELIVERY CODE";
 
 beforeEach(() => {
   releaseCodeRead = null;
@@ -148,14 +154,14 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
 
     const tree = await render();
 
-    // The restore is deliberately still pending. Pre-fix this rendered the re-issue prompt, telling a
-    // customer who holds a perfectly good code that it is missing.
-    expect(textHits(tree, MISSING_CODE_COPY)).toBe(0);
-    // And it must not have silently re-issued one either.
+    // The restore is deliberately still pending: no code card yet (After Send, D-53, draws no
+    // "missing code" state — the card shows only real digits).
+    expect(textHits(tree, CODE_LABEL)).toBe(0);
+    // And it must not have re-issued one either — the customer may hold a perfectly good code.
     expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
   });
 
-  it("shows the restored digits once the read lands — never the re-issue prompt", async () => {
+  it("shows the restored digits once the read lands — and never re-issues", async () => {
     mockGetOrder.mockResolvedValue(assignedOrder());
 
     const tree = await render();
@@ -165,22 +171,25 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     });
 
     expect(textHits(tree, "482913")).toBeGreaterThan(0);
-    expect(textHits(tree, MISSING_CODE_COPY)).toBe(0);
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
   });
 
-  it("still prompts a re-issue when the read confirms no code is held — the fix delays the prompt, it doesn't remove it", async () => {
+  it("issues a fresh code once when the read confirms none is held — the code card is never left empty", async () => {
     mockGetOrder.mockResolvedValue(assignedOrder());
 
     const tree = await render();
+    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
     await act(async () => {
       releaseCodeRead?.(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    await settle();
 
-    expect(textHits(tree, MISSING_CODE_COPY)).toBeGreaterThan(0);
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(textHits(tree, "553201")).toBeGreaterThan(0);
   });
 
-  it("falls back to the re-issue prompt when the keychain read REJECTS — a gate that never opens would hide the only recovery", async () => {
+  it("falls back to issuing a fresh code when the keychain read REJECTS — a gate that never opens would leave no code", async () => {
     // The risk the `codeRestored` gate introduces: if the restore never settles, the card never
     // renders at all, which is strictly worse than the false "isn't showing" it replaced — the
     // customer would have no code AND no way to ask for one. `loadDeliveryCode` swallows native
@@ -188,12 +197,14 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     mockGetOrder.mockResolvedValue(assignedOrder());
 
     const tree = await render();
+    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
     await act(async () => {
       rejectCodeRead?.(new Error("keychain unavailable"));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    await settle();
 
-    expect(textHits(tree, MISSING_CODE_COPY)).toBeGreaterThan(0);
-    expect(tree.root.findAll((n) => n.props.label === "Re-issue delivery code" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(textHits(tree, "553201")).toBeGreaterThan(0);
   });
 });

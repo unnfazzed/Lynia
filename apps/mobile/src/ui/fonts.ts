@@ -111,8 +111,8 @@ export function interFamily(weight?: string | number | null): string {
  *    renders the wrapper. The component MODULES cannot be patched instead: Metro compiles their
  *    `export default` to a getter-only, non-configurable property (verified in the SDK 54 bundle).
  *
- * NOT covered on React Native 0.81: `Animated.Text`, which wraps the Text module directly. Its one
- * user (AuctionClock) sets its Inter family explicitly, and fonts.test.tsx fails if another appears.
+ * NOT covered on React Native 0.81: `Animated.Text`, which wraps the Text module directly. Nothing
+ * uses it today, and fonts.test.tsx fails if something starts to without setting its Inter family.
  *
  * Latent nested-`<Text>` caveat: a child span without an explicit `fontFamily` gets
  * `Inter_400Regular` injected instead of inheriting the parent span's weight. Today only Brand.tsx

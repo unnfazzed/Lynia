@@ -113,6 +113,9 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   (ledger D-52, owner 2026-10-01): four steps, inline address editing, no landmarks, no declared value, no
   disclaimer. The gallery's `LJ` composer screens (`home_empty`/`home_pins`/`home_expanded`, `addr_*`,
   `disclaimer`, `on_hold`) are superseded and not aligned to until an export redraws them.
+- **The order screen follows its own handoff.** `app/order/[id].tsx` aligns to `packages/design/handoff/after-send/`
+  (ledger D-53, owner 2026-10-01): one screen, a full-bleed map and a sheet that follows the order's stage. The
+  gallery's `LJ` auction / tracking / delivered / cancelled / undelivered screens are superseded and not aligned to.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

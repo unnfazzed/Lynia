@@ -268,14 +268,9 @@ describe("paths the patch cannot reach on React Native 0.81", () => {
   const users = (pattern: RegExp): string[] =>
     sources.filter((file) => pattern.test(readFileSync(file, "utf8"))).map((file) => relative(MOBILE_ROOT, file));
 
-  it("Animated.Text wraps the Text module directly, so its one user sets the Inter family itself", () => {
-    expect(users(/<Animated\.Text\b|createAnimatedComponent\(\s*Text(Input)?\b/)).toEqual([
-      "src/ui/order/AuctionClock.tsx",
-    ]);
-    const clock = readFileSync(join(MOBILE_ROOT, "src/ui/order/AuctionClock.tsx"), "utf8");
-    const animated = clock.slice(clock.indexOf("<Animated.Text"), clock.indexOf("</Animated.Text>"));
-    expect(animated).toMatch(/fontFamily: interFamily\(/);
-    expect(animated).not.toMatch(/fontWeight:/); // an explicit family plus fontWeight double-bolds on Android
+  it("Animated.Text wraps the Text module directly, so nothing may use it without setting the Inter family", () => {
+    // Its one user (the old auction countdown) went with the After Send redesign (D-53).
+    expect(users(/<Animated\.Text\b|createAnimatedComponent\(\s*Text(Input)?\b/)).toEqual([]);
   });
 
   it("nothing imports the Text or TextInput module past the patched index", () => {

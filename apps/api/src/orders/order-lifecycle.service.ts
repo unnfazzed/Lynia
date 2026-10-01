@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -35,9 +35,11 @@ import {
   QUEUE_NAME,
   RATING_WINDOW_MS,
   RECONCILE_INTERVAL_MS,
+  RESENDABLE,
   RIDER_CANCELLABLE,
 } from "./order-lifecycle.constants";
-import { OrdersService } from "./orders.service";
+import { assertWithinServiceCorridor, OrdersService } from "./orders.service";
+import { pickupPoint } from "./waypoints";
 import { PrismaService } from "../prisma/prisma.service";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
@@ -908,7 +910,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
         // post-pickup, so it's never collected here) — clone the job back onto the board as a NEW
         // open order in the SAME transaction. The old row stays terminal; never reopened.
-        rebroadcastId = await this.cloneForRebroadcast(tx, orderId);
+        rebroadcastId = (await this.cloneForRebroadcast(tx, orderId)).id;
       } else if (isCustomer && order.riderId) {
         // C3: a rider was already working this job — signal them the customer pulled out.
         jobCancelledCollected = collected;
@@ -992,13 +994,96 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Clone an order's broadcast params into a NEW `open_for_offers` row inside the caller's transaction
-   * (F-01 rider-cancel auto re-broadcast). `rebroadcastOfId` back-links to the order it replaced so the
-   * lineage is traceable; the append-only OrderEvent timeline of the old order stays clean (it's just
-   * `cancelled`). Returns the new order's id for the post-commit board announce. Same-price: proposed/
-   * suggested fares are copied verbatim.
+   * One-tap resend of a finished parcel order (expired / cancelled / undelivered) at a new fare — the
+   * redesigned order screen's terminal CTA. Customer-only, behind the SAME customer gates `create`
+   * applies (OrdersService.assertCustomerMayBroadcast: on hold, banned/suspended rider account) plus the
+   * service-corridor check on the stored waypoints.
+   *
+   * Idempotent per source: if an `open_for_offers` clone of this order already exists (the F-01
+   * rider-bail auto clone, or an earlier resend / double-tap), that clone is re-priced in place (CAS on
+   * open_for_offers; its window is NOT reset) instead of opening a second live auction. Otherwise a
+   * fresh clone is created via {@link cloneForRebroadcast} with the fare overridden. The source row is
+   * locked `FOR UPDATE` for the check-then-create, so two concurrent resends serialize and the loser
+   * re-prices the winner's clone rather than cloning twice.
    */
-  private async cloneForRebroadcast(tx: Prisma.TransactionClient, sourceOrderId: string): Promise<string> {
+  async resend(
+    orderId: string,
+    customerId: string,
+    proposedFare: number,
+  ): Promise<{ id: string; status: "open_for_offers"; proposedFare: string; expiresAt: string | null }> {
+    const source = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true, status: true, orderType: true, pickup: true, dropoff: true },
+    });
+    if (!source) throw new NotFoundException("Order not found");
+    if (source.customerId !== customerId) throw new ForbiddenException("Not your order");
+    if (source.orderType !== "parcel" || !RESENDABLE.has(source.status)) {
+      throw new ConflictException("This order can't be sent again.");
+    }
+    await this.orders.assertCustomerMayBroadcast(customerId);
+    // Q1: same coverage rule create() enforces — the corridor may have changed since the original went out.
+    const pickup = pickupPoint(source.pickup);
+    const dropoff = pickupPoint(source.dropoff);
+    if (pickup && dropoff) assertWithinServiceCorridor(pickup, dropoff);
+
+    const fare = new Prisma.Decimal(proposedFare);
+    const { clone, created } = await this.prisma.$transaction(async (tx) => {
+      // Serialize resends of the same source (and the rider-bail clone, whose cancel tx holds this row).
+      await tx.$executeRaw`SELECT 1 FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const existing = await tx.order.findFirst({
+        where: { rebroadcastOfId: orderId, status: "open_for_offers" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, createdAt: true },
+      });
+      if (existing) {
+        const claimed = await tx.order.updateMany({
+          where: { id: existing.id, status: "open_for_offers", customerId },
+          data: { proposedFare: fare },
+        });
+        if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+        return { clone: existing, created: false };
+      }
+      return { clone: await this.cloneForRebroadcast(tx, orderId, { proposedFare: fare }), created: true };
+    });
+
+    // Post-commit, best-effort — mirrors the rider-bail rebroadcast (cancel) for a fresh clone, and the
+    // in-place raise for a re-priced one. Neither can fail the committed resend.
+    if (created) {
+      try {
+        this.gateway.emitOrderRebroadcast(orderId, clone.id);
+      } catch (err) {
+        this.logger.warn(`rebroadcast emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+      void this.orders.announceOpenOrder(clone.id).catch((err) => {
+        this.logger.error(`announceOpenOrder failed for order ${clone.id}: ${(err as Error).message}`);
+      });
+    } else {
+      void this.orders.announcePriceChange(clone.id).catch((err) => {
+        this.logger.error(`announcePriceChange failed for order ${clone.id}: ${(err as Error).message}`);
+      });
+    }
+    return {
+      id: clone.id,
+      status: "open_for_offers",
+      proposedFare: fare.toString(),
+      // Same derivation as the create response / snapshot (createdAt + OFFER_WINDOW_MS).
+      expiresAt: clone.createdAt ? new Date(clone.createdAt.getTime() + OFFER_WINDOW_MS).toISOString() : null,
+    };
+  }
+
+  /**
+   * Clone an order's broadcast params into a NEW `open_for_offers` row inside the caller's transaction
+   * (F-01 rider-cancel auto re-broadcast, and the customer's one-tap {@link resend}). `rebroadcastOfId`
+   * back-links to the order it replaced so the lineage is traceable; the append-only OrderEvent timeline
+   * of the old order stays clean. Returns the new order's id + createdAt (the window anchor) for the
+   * post-commit board announce. Same-price by default: proposed/suggested fares are copied verbatim
+   * unless `overrides.proposedFare` is given (resend at a new price; suggestedFare stays the anchor).
+   */
+  private async cloneForRebroadcast(
+    tx: Prisma.TransactionClient,
+    sourceOrderId: string,
+    overrides?: { proposedFare?: Prisma.Decimal },
+  ): Promise<{ id: string; createdAt: Date }> {
     const src = await tx.order.findUnique({
       where: { id: sourceOrderId },
       select: {
@@ -1043,7 +1128,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         size: src.size,
         distanceKm: src.distanceKm,
         suggestedFare: src.suggestedFare,
-        proposedFare: src.proposedFare,
+        proposedFare: overrides?.proposedFare ?? src.proposedFare,
         currency: src.currency,
         // Same customer + same terms → carry the disclaimer consent forward (A1-8); a re-broadcast
         // isn't a fresh order the customer restarts, so it shouldn't drop their recorded consent.
@@ -1053,9 +1138,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         rebroadcastOfId: sourceOrderId,
         events: { create: { status: "open_for_offers" } },
       },
-      select: { id: true },
+      select: { id: true, createdAt: true },
     });
-    return clone.id;
+    return clone;
   }
 
   /** Auto-close a delivered-but-unrated order so completion metrics don't stall (T3). Idempotent. */

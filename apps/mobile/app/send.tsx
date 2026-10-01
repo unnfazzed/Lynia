@@ -433,7 +433,8 @@ export default function SendScreen(): React.ReactElement {
         ridersNearby: order.ridersNearby ?? null,
       });
       setIdempotencyNonce(randomUuidV4());
-      router.push(`/order/${order.id}`);
+      // Replace, not push (After Send handoff, D-53): Back from a live order must never land on Review.
+      router.replace(`/order/${order.id}`);
     } catch (e) {
       if (e instanceof ApiError && isAccountOnHold(e)) {
         setHeldFromBroadcast(true);

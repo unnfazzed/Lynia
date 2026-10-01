@@ -58,15 +58,30 @@ export const PARITY_STATUS = {
   }, // Address search down
   "LJ.map_failed": { status: "PENDING" }, // Map didn't load
   "LJ.loc_off": { status: "PENDING" }, // Location off · composer
-  "LJ.auction_finding": { status: "PENDING" }, // Auction · finding
-  "LJ.auction_live": { status: "PENDING" }, // Auction · offers live
-  "LJ.auction_counter": { status: "PENDING" }, // Counter-offer review
+  "LJ.auction_finding": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Auction · finding
+  "LJ.auction_live": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Auction · offers live
+  "LJ.auction_counter": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Counter-offer review
   "LJ.delivered_rate": {
     status: "PENDING",
-    reason: "CONTROL-DEVIATION — structure adopts; the mock's static 'Submit rating' footer button clashes with the app's shipped tap-to-arm + 4s-undo rating (BH-06). Honest-keep the app model or ledger the one control; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
   }, // Delivered · rate the rider
-  "LJ.completed": { status: "PENDING" }, // Completed
-  "LJ.rate_undo": { status: "PENDING" }, // Rating sent · undo
+  "LJ.completed": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Completed
+  "LJ.rate_undo": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Rating sent · undo
   "LJ.phone_masked": { status: "PENDING" }, // Order ended · numbers masked
   "LJ.sos_idle": { status: "PENDING" }, // SOS · live-trip control
   "LJ.sos_confirm": { status: "PENDING" }, // SOS · confirm
@@ -76,15 +91,42 @@ export const PARITY_STATUS = {
   "LJ.report_done": { status: "PENDING" }, // Report sent
   "LJ.trip_help": { status: "PENDING" }, // Get help with this order
   "LJ.trip_help_sent": { status: "PENDING" }, // Issue logged
-  "LJ.no_riders": { status: "PENDING" }, // No riders online
-  "LJ.select_race": { status: "PENDING" }, // Rider just taken
-  "LJ.auction_expired": { status: "PENDING" }, // Auction expired
-  "LJ.rider_cancelled": { status: "PENDING" }, // Rider cancelled
-  "LJ.track_paused": { status: "PENDING" }, // Live paused
-  "LJ.cancel": { status: "PENDING" }, // Cancel · reason
-  "LJ.cancelled": { status: "PENDING" }, // Cancelled
-  "LJ.undelivered": { status: "PENDING" }, // Not delivered
-  "LJ.track_dark": { status: "PENDING" }, // Rider went dark
+  "LJ.no_riders": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // No riders online
+  "LJ.select_race": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Rider just taken
+  "LJ.auction_expired": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Auction expired
+  "LJ.rider_cancelled": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Rider cancelled
+  "LJ.track_paused": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Live paused
+  "LJ.cancel": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Cancel · reason
+  "LJ.cancelled": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Cancelled
+  "LJ.undelivered": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Not delivered
+  "LJ.track_dark": {
+    status: "PENDING",
+    reason: 'SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-53 (owner, 2026-10-01): the after-send handoff (packages/design/handoff/after-send/) redraws the whole customer order screen as one map + stage sheet; the gallery\'s separate LJ order screens are not aligned to. Evidence: docs/parity/AFTER-SEND-2026-10-01.png.',
+  }, // Rider went dark
   "LJ.offline": { status: "PENDING" }, // Offline banner
   "LJ.on_hold": { status: "PENDING" }, // Account on hold
   "LJ.no_gps": { status: "PENDING" }, // Location off / no GPS

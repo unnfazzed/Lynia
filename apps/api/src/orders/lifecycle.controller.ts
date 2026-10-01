@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest, ResendOrderRequest } from "@lynia/shared";
 import { z } from "zod";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -115,6 +115,19 @@ export class LifecycleController {
   @Throttle({ limit: 10, windowSec: 60, keyPrefix: "delivery-code-rotate" })
   rotate(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() customerId: string) {
     return this.lifecycle.rotateDeliveryCode(orderId, customerId);
+  }
+
+  /** Customer one-tap resends a finished (expired / cancelled / undelivered) parcel order at a new fare.
+   *  Re-prices an already-open re-broadcast clone instead of opening a second auction (idempotent on a
+   *  double-tap). Throttled like order create — a fresh clone fans out to nearby riders. */
+  @Post("resend")
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "order-resend" })
+  resend(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ResendOrderRequest)) body: ResendOrderRequest,
+    @CurrentUser() customerId: string,
+  ) {
+    return this.lifecycle.resend(orderId, customerId, body.proposedFare);
   }
 
   /** Either party cancels an in-flight order (a rider cancel is a no-show strike). */

@@ -66,6 +66,19 @@ export interface OrderSnapshot {
   // photo was added, on old orders, and on an older API — optional everywhere, purely additive.
   pickupPhotoUrl?: string | null;
   rider: { profileId: string; currentLat: number | null; currentLng: number | null; updatedAt: string | null } | null;
+  // The assigned rider's public card for the CUSTOMER viewer (After Send, ledger D-53): name, photo,
+  // rating, plate (their vehicle info) and the KYC Verified flag. Null for a rider viewer / no rider, and
+  // absent on an older API — the order screen then falls back to the identity cached from the offer.
+  riderCard?: {
+    firstName: string;
+    lastName: string;
+    photoUrl: string | null;
+    ratingAvg: number;
+    ratingCount: number;
+    tripsCount: number;
+    plate: string | null;
+    verified: boolean;
+  } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
   /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */
@@ -231,6 +244,23 @@ export function rateSender(orderId: string, body: RateSenderRequest): Promise<{ 
 
 export function rotateDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {
   return apiFetch(`/orders/${orderId}/delivery-code/rotate`, { method: "POST" });
+}
+
+/** Raise the price of an open order in place (+ $0.50): the offer window keeps running, riders are re-pinged. */
+export function raiseOrderPrice(orderId: string, proposedFare: number): Promise<{ orderId: string; proposedFare: string }> {
+  return apiFetch(`/orders/${orderId}/price`, { method: "POST", body: { proposedFare } });
+}
+
+/**
+ * One-tap retry from a closed order (no match / rider cancelled): re-posts the same route, items, note
+ * and phones at `proposedFare` server-side and returns the open order to follow (an already-open
+ * re-broadcast of this order is re-priced and returned rather than duplicated).
+ */
+export function resendOrder(
+  orderId: string,
+  proposedFare: number,
+): Promise<{ id: string; status: "open_for_offers"; proposedFare: string; expiresAt: string | null }> {
+  return apiFetch(`/orders/${orderId}/resend`, { method: "POST", body: { proposedFare } });
 }
 
 export function cancelOrder(

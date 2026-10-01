@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 // so a barrel import (`import { X } from "lucide-react-native"`) drags every glyph's bytecode into
 // the Hermes bundle — the file's old "stays lean" claim was simply wrong and cost ~1MB. Import each
 // glyph from its own module file instead: the CJS per-icon path resolves via Metro's `.js`
-// sourceExt, so only these 44 files (plus the shared createLucideIcon helper they all require) land
+// sourceExt, so only these 50 files (plus the shared createLucideIcon helper they all require) land
 // in the bundle. The paths sit outside the package's `exports` map, so since Expo SDK 53 turned
 // Metro's `exports` resolution on, an export prints one "not listed in the exports" warning per
 // glyph and falls back to file resolution: expected noise, same files. The kebab-case file names
@@ -60,6 +60,11 @@ import User from "lucide-react-native/dist/cjs/icons/user";
 import Volume2 from "lucide-react-native/dist/cjs/icons/volume-2";
 import Wallet from "lucide-react-native/dist/cjs/icons/wallet";
 import WifiOff from "lucide-react-native/dist/cjs/icons/wifi-off";
+import Camera from "lucide-react-native/dist/cjs/icons/camera";
+import MessageCircle from "lucide-react-native/dist/cjs/icons/message-circle";
+import Share2 from "lucide-react-native/dist/cjs/icons/share-2";
+import ShieldCheck from "lucide-react-native/dist/cjs/icons/shield-check";
+import Undo2 from "lucide-react-native/dist/cjs/icons/undo-2";
 import X from "lucide-react-native/dist/cjs/icons/x";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
@@ -122,6 +127,13 @@ const ICONS = {
   power: Power,
   timer: Timer,
   "volume-2": Volume2,
+  // The After Send order screen (ledger D-53): Call / WhatsApp, the Verified tag, Share code / receipt /
+  // trip, the pickup-photo View button and the rating Undo.
+  camera: Camera,
+  "message-circle": MessageCircle,
+  "share-2": Share2,
+  "shield-check": ShieldCheck,
+  "undo-2": Undo2,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
@@ -132,16 +144,20 @@ export function Icon({
   size = tokens.icon.size,
   color = tokens.color.ink,
   strokeWidth = tokens.icon.stroke,
+  fill,
   style,
 }: {
   name: IconName;
   size?: number;
   color?: string;
   strokeWidth?: number;
+  /** A solid fill (filled rating stars); outline-only when omitted. */
+  fill?: string;
   // Passthrough for transforms the kit relies on (e.g. a rotated chevron standing in for a back arrow)
   // and any positioning a call site needs on the glyph itself.
   style?: StyleProp<ViewStyle>;
 }): React.ReactElement {
   const Glyph = ICONS[name] ?? CircleAlert;
-  return <Glyph size={size} color={color} strokeWidth={strokeWidth} style={style} />;
+  // `fill` only when given: an explicit `fill={undefined}` would override lucide's default `fill="none"`.
+  return fill ? <Glyph size={size} color={color} strokeWidth={strokeWidth} fill={fill} style={style} /> : <Glyph size={size} color={color} strokeWidth={strokeWidth} style={style} />;
 }

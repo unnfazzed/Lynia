@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
@@ -31,7 +31,7 @@ const CORRIDOR_CENTRE: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_
  * for both waypoints via {@link haversineKm}. Throws a clear 4xx so the customer sees "outside our
  * service area" rather than a silent failure downstream.
  */
-function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
+export function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
   for (const [label, point] of [["pickup", pickup], ["drop-off", dropoff]] as const) {
     if (haversineKm(point, CORRIDOR_CENTRE) > SERVICE_CORRIDOR.radiusKm) {
       throw new BadRequestException(`That ${label} is outside our service area.`);
@@ -163,13 +163,18 @@ export class OrdersService {
     return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
   }
 
-  /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
-  async create(input: CreateOrderRequest, customerId: string) {
-    // S·2: a held customer can't broadcast. Checked first — before the corridor gate and any write —
-    // and thrown in the same { reason, message } shape the rider online-gate uses, so the app's
-    // ApiError.code pipeline routes it straight to the "account on hold" screen (gates.ts).
-    // Read the caller's hold flag AND (if they're a rider) their account standing in one query, so the
-    // gate below is a single round-trip on the hot create path.
+  /**
+   * The customer-side broadcast gates, shared by {@link create} and the one-tap resend
+   * (OrderLifecycleService.resend) so a held / banned / suspended account can't reopen an auction
+   * through either door.
+   *
+   * S·2: a held customer can't broadcast. Checked first — before the corridor gate and any write —
+   * and thrown in the same { reason, message } shape the rider online-gate uses, so the app's
+   * ApiError.code pipeline routes it straight to the "account on hold" screen (gates.ts).
+   * Read the caller's hold flag AND (if they're a rider) their account standing in one query, so the
+   * gate is a single round-trip on the hot create path.
+   */
+  async assertCustomerMayBroadcast(customerId: string): Promise<void> {
     const account = await this.prisma.profile.findUnique({
       where: { id: customerId },
       select: { onHold: true, rider: { select: { accountStatus: true } } },
@@ -191,6 +196,11 @@ export class OrdersService {
         message: "Your account is not in good standing.",
       });
     }
+  }
+
+  /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
+  async create(input: CreateOrderRequest, customerId: string) {
+    await this.assertCustomerMayBroadcast(customerId);
 
     // Idempotent replay (BUG-HUNT): a client-generated key lets a timeout+retry or a double-tap on
     // "Broadcast" return the SAME order instead of opening a second live auction — and double-pushing
@@ -353,6 +363,9 @@ export class OrdersService {
     pickup: Prisma.JsonValue,
     dropoff: Prisma.JsonValue,
     meta: { itemDesc: string; suggestedFare: string; proposedFare: string; distanceKm: number | null; createdAt: string },
+    // DS17-01: a MID-window re-announce (a price raise) passes the order's remaining life so the FCM
+    // push can't outlive the auction. Omitted on create/announce → notifyNewBroadcast's default TTL.
+    ttlSeconds?: number,
   ): Promise<void> {
     try {
       const pt = pickupPoint(pickup);
@@ -385,7 +398,9 @@ export class OrdersService {
       const claimed = (await this.tracking.claimBroadcastRecipients(orderId, ids)) ?? ids;
       if (claimed.length === 0) return;
       // best-effort, never throws, un-awaited.
-      void this.notifications.notifyNewBroadcast(orderId, claimed, { pickup: pt.landmark, fare: meta.proposedFare });
+      const info = { pickup: pt.landmark, fare: meta.proposedFare };
+      if (ttlSeconds === undefined) void this.notifications.notifyNewBroadcast(orderId, claimed, info);
+      else void this.notifications.notifyNewBroadcast(orderId, claimed, info, ttlSeconds);
     } catch {
       /* best-effort: a broadcast-push failure never affects the created order */
     }
@@ -463,6 +478,104 @@ export class OrdersService {
       distanceKm: order.distanceKm,
       createdAt: order.createdAt.toISOString(),
     });
+  }
+
+  /**
+   * Customer raises their own fare in place on a still-open parcel auction (the redesigned order
+   * screen's "raise price"). Only `proposedFare` moves: createdAt — and therefore expiresAt and the
+   * scheduled expiry job — is untouched, so the countdown never resets. Strictly upward only; offers
+   * already placed stand at the rider's own bid.
+   *
+   * CAS-guarded like every other order transition: the update is predicated on the order still being
+   * open, still this customer's, still inside the window, and the stored fare still below the new one —
+   * so a raise racing a select/expiry/cancel (or a second, lower raise) loses with a 409 instead of
+   * landing on a closed order or regressing the fare.
+   */
+  async raisePrice(orderId: string, customerId: string, proposedFare: number): Promise<{ orderId: string; proposedFare: string }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true, status: true, orderType: true, proposedFare: true, createdAt: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
+    // A merchant order is never an auction (its rider is C3's dispatch decision), so it has no fare to raise.
+    if (order.status !== "open_for_offers" || order.orderType !== "parcel") {
+      throw new ConflictException("This order is no longer open for offers");
+    }
+    // The window is derived exactly like the snapshot's expiresAt (createdAt + OFFER_WINDOW_MS). Past it
+    // the expiry job / reconciler owns the order even if the status hasn't flipped yet.
+    const windowOpenSince = new Date(Date.now() - OFFER_WINDOW_MS);
+    if (order.createdAt <= windowOpenSince) throw new ConflictException("The offer window has closed");
+    const fare = new Prisma.Decimal(proposedFare);
+    if (fare.lte(order.proposedFare)) {
+      throw new BadRequestException("Your new price must be higher than your current price.");
+    }
+
+    const claimed = await this.prisma.order.updateMany({
+      where: {
+        id: orderId,
+        status: "open_for_offers",
+        customerId,
+        createdAt: { gt: windowOpenSince },
+        proposedFare: { lt: fare },
+      },
+      data: { proposedFare: fare },
+    });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+
+    // Post-commit, best-effort: refresh watchers + re-ping riders at the new fare. Never fails the raise.
+    void this.announcePriceChange(orderId).catch((err) => {
+      this.logger.error(`announcePriceChange failed for order ${orderId}: ${(err as Error).message}`);
+    });
+    return { orderId, proposedFare: fare.toString() };
+  }
+
+  /**
+   * Post-commit fan-out after an open order's fare changed in place (raisePrice, and the resend path
+   * when it re-prices an already-open clone). Best-effort throughout:
+   *  - `order:status` to the order room — the customer's tracking client refetches its snapshot on it
+   *    (signal-only; the status itself is unchanged), so a second device sees the new fare at once.
+   *  - the create-time board + FCM path ({@link broadcastToNearbyRiders}) at the NEW fare, with the FCM
+   *    TTL sized to the order's remaining window (DS17-01). The per-order sent set means only riders not
+   *    already pinged for this order get a push (no re-spam on repeated raises); the board card is
+   *    re-emitted for riders who don't have it yet, and riders who do pick the fare up on their poll.
+   */
+  async announcePriceChange(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        suggestedFare: true,
+        proposedFare: true,
+        distanceKm: true,
+        createdAt: true,
+      },
+    });
+    if (!order || order.status !== "open_for_offers") return;
+    try {
+      this.gateway.emitOrderStatus(order.id, order.status);
+    } catch (err) {
+      this.logger.warn(`status emit failed for order ${order.id}: ${(err as Error).message}`);
+    }
+    const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
+    if (remainingMs <= 0) return;
+    await this.broadcastToNearbyRiders(
+      order.id,
+      order.pickup,
+      order.dropoff,
+      {
+        itemDesc: order.itemDesc,
+        suggestedFare: order.suggestedFare.toString(),
+        proposedFare: order.proposedFare.toString(),
+        distanceKm: order.distanceKm,
+        createdAt: order.createdAt.toISOString(),
+      },
+      Math.max(1, Math.ceil(remainingMs / 1000)),
+    );
   }
 
   /** Fire-and-forget board push, scoped to the pickup's geo cell. Wrapped so a WS failure can never
@@ -766,7 +879,14 @@ export class OrdersService {
             currentLat: true,
             currentLng: true,
             positionUpdatedAt: true,
-            profile: { select: { phone: true } },
+            // riderCard (customer viewer only, below) — the same public rider profile the offers list
+            // serves (offers.service listForOrder), plus the bike plate + verified badge.
+            ratingAvg: true,
+            ratingCount: true,
+            tripsCount: true,
+            vehicleInfo: true,
+            kycStatus: true,
+            profile: { select: { phone: true, firstName: true, lastName: true, photoUrl: true } },
           },
         },
         // Wave-2 payload trim: every OrderEvent writer in the codebase creates {orderId, status} only
@@ -807,6 +927,24 @@ export class OrdersService {
     // the API (polled every 15s per live order + refetched on every WS event) — so they run in
     // PARALLEL rather than as a sequential await chain. Each slot resolves null when its status gate
     // is off; behavior per slot is unchanged from the sequential version it replaces.
+    // The assigned rider's identity card for the CUSTOMER's order screen (name, photo, rating, trips,
+    // plate, verified). Null for the rider viewing their own job and when no rider is assigned. Public
+    // profile fields only — the rider's phone stays behind the counterpartyPhone reveal window above.
+    // photoUrl is the profile photo served as-is, exactly like the offers list (never the KYC object key).
+    const riderCard =
+      isCustomer && !isRider && order.rider
+        ? {
+            firstName: order.rider.profile.firstName ?? "",
+            lastName: order.rider.profile.lastName ?? "",
+            photoUrl: order.rider.profile.photoUrl ?? null,
+            ratingAvg: Number(order.rider.ratingAvg ?? 0),
+            ratingCount: order.rider.ratingCount ?? 0,
+            tripsCount: order.rider.tripsCount ?? 0,
+            plate: order.rider.vehicleInfo?.trim() || null,
+            verified: order.rider.kycStatus === "verified",
+          }
+        : null;
+
     const storage = this.storage; // consts (not `this.`/`order.` members) so the closures below narrow
     const pickupPhotoKey = order.pickupPhotoKey;
     const [rider, ridersNearby, rebroadcastedToId, hadOffers, pickupPhotoUrl] = await Promise.all([
@@ -834,10 +972,11 @@ export class OrdersService {
       // NEW clone's id so the customer's cancelled terminal can offer a "follow your re-sent request" link.
       // Forward link only — the clone back-links via `rebroadcastOfId`; nothing on the original points at
       // the clone, so resolve it on demand. Scoped to `cancelled` so it's a single extra read on a terminal
-      // status, never on the hot live-tracking path.
+      // status, never on the hot live-tracking path. Newest first: a one-tap resend (OrderLifecycleService
+      // .resend) can add a second clone of the same source once the first one closed.
       order.status === "cancelled"
         ? this.prisma.order
-            .findFirst({ where: { rebroadcastOfId: order.id }, select: { id: true } })
+            .findFirst({ where: { rebroadcastOfId: order.id }, orderBy: { createdAt: "desc" }, select: { id: true } })
             .then((clone) => clone?.id ?? null)
         : null,
 
@@ -949,6 +1088,7 @@ export class OrdersService {
       // cold start. Null on every non-expired status. See the `hadOffers` computation above.
       hadOffers,
       rider,
+      riderCard,
       // A-O5: deduped to one row per status (earliest occurrence) — see {@link dedupeEventsByStatus}.
       events: dedupeEventsByStatus(order.events),
       counterpartyPhone,
