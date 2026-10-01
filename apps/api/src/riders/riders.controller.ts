@@ -12,7 +12,14 @@ const CompleteProfile = z.object({
   idNumber: z.string().min(4).max(40),
 });
 const BecomeRider = z.object({
-  bikeReg: z.string().min(3).max(20),
+  // Optional since Calm Mint v2 (D-55): a rider needs only the ID check to start; the plate is added
+  // later. Absent or blank stores null. An older client that still sends it is unaffected.
+  bikeReg: z
+    .string()
+    .trim()
+    .max(20)
+    .optional()
+    .refine((v) => !v || v.length >= 3, "Bike registration must be at least 3 characters"),
   // The storage key returned by POST /uploads/kyc-photo (not a URL anymore — read URLs are minted on
   // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
   photoUrl: z.string().min(1).max(256),

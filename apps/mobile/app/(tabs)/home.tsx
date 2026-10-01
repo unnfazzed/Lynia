@@ -2,13 +2,13 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { InteractionManager, Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { InteractionManager, Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { getActiveCustomerOrders, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
 import { ACTIVE } from "../../src/logic/rider-job";
-import { greetingFor, greetingLine } from "../../src/logic/greeting";
+import { greetingFor } from "../../src/logic/greeting";
 import { useHomeLocation } from "../../src/logic/home-location";
-import { liveOrderPillModel, popularNearYou, riderShortName } from "../../src/logic/home-feed";
+import { liveBarModel, popularNearYou } from "../../src/logic/home-feed";
 import { loadRiderIdentity } from "../../src/logic/rider-identity";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
@@ -17,24 +17,27 @@ import { useNotificationsUnreadCount } from "../../src/query/use-notifications-u
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { enqueueBoot } from "../../src/telemetry/rum";
+import { statusPillLabel } from "../../src/ui";
+import { StatusBar } from "expo-status-bar";
+import { H } from "../../src/ui/home/copy";
 import {
-  AppScreen,
-  getServiceTiles,
-  HomeAddressRow,
-  HomeHeader,
-  LiveOrderCard,
-  RestaurantCard,
-  ServiceTiles,
-  SkeletonRows,
-  statusPillLabel,
-  Tappable } from "../../src/ui";
+  HomeTop,
+  LiveOrderBar,
+  NARROW_MAX,
+  NoLocationCard,
+  RailSkeleton,
+  ServiceGrid,
+  VenueCard,
+  VenueRail,
+  type ServiceId,
+} from "../../src/ui/home/kit";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
 import { SmBtn } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
-import { ServiceSoonSheet } from "../../src/ui/home/ServiceSoonSheet";
+import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
@@ -110,15 +113,15 @@ function MapsSdkPrewarm(): React.ReactElement | null {
 }
 
 /**
- * The rider's display name per live order, for the tracker pill's "Tendai M. · on the way".
+ * The rider's first name per live order, for the live bar's "Tendai is on the way" (Calm Mint v2 H1).
  *
  * The active-orders snapshot carries the rider's `profileId` and GPS but NOT their name, so the only
  * place the app knows it is the on-device identity cache the tracking screen writes
  * (`logic/rider-identity.ts`). That is a SINGLE slot keyed by one order id, so at most one running
- * job resolves to a name and the rest fall back to service copy — which `liveOrderPillModel` handles.
+ * job resolves to a name and the rest fall back to the order's status — which `liveBarModel` handles.
  * Best-effort and read-only; a store failure just means no name.
  */
-function useRiderNames(orders: OrderSnapshot[]): Record<string, string | null> {
+function useRiderFirstNames(orders: OrderSnapshot[]): Record<string, string | null> {
   const [names, setNames] = useState<Record<string, string | null>>({});
   useEffect(() => {
     let alive = true;
@@ -126,8 +129,8 @@ function useRiderNames(orders: OrderSnapshot[]): Record<string, string | null> {
       if (o.id in names) continue;
       void loadRiderIdentity(o.id)
         .then((identity) => {
-          const name = identity ? riderShortName(identity.firstName, identity.lastName) : null;
-          if (alive) setNames((prev) => (o.id in prev ? prev : { ...prev, [o.id]: name }));
+          const first = identity?.firstName?.trim() || null;
+          if (alive) setNames((prev) => (o.id in prev ? prev : { ...prev, [o.id]: first }));
         })
         .catch(() => {
           if (alive) setNames((prev) => (o.id in prev ? prev : { ...prev, [o.id]: null }));
@@ -156,13 +159,29 @@ function useBootHomePaintMark(): void {
   }, []);
 }
 
+/** "Popular restaurants" carries up to this many cards; the rail scrolls (2.2 show at 360px). */
+const RAIL_LIMIT = 8;
+/** README §2 rules: a rail with fewer than this many items is hidden. */
+const RAIL_MIN = 2;
+
+/**
+ * The customer Home — Calm Mint v2 (`packages/design/handoff/calm-mint-v2-2026-10`, H1–H6; ledger
+ * docs/DESIGN-DEVIATIONS.md D-55, which replaces the 8c home): the address-first mint header, four
+ * service tiles, "Popular restaurants" and "Popular shops" rails, and ONE floating live-order bar.
+ *
+ * Data the handoff marks NEEDS BACKEND renders nothing until it exists (its work order §8): the
+ * "Free delivery" tag (no venue flag yet) and the shops rail (no customer shop list yet). Shops and
+ * Pharmacy are drawn live with no SOON chip; until their verticals exist their tiles open the
+ * notify-me sheet the handoff draws for Shops, so no tile is ever inert (D-55).
+ */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
-  const services = getServiceTiles(restaurantsEnabled);
   usePrewarmRoutes(HOME_PREWARM);
   useBootHomePaintMark();
+  const { width } = useWindowDimensions();
+  const narrow = width < NARROW_MAX;
 
   // ── Header state: greeting (device clock), name (["me"]), unread bell dot, detected location ──
   const now = useNow();
@@ -171,19 +190,17 @@ export default function LauncherHomeScreen(): React.ReactElement {
   // across launches, so on a normal boot the greeting name is already in cache and this costs no
   // request (react-query's 30s staleTime + per-key dedupe with send.tsx / profile).
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const firstName = (meQ.data?.firstName ?? "").trim().split(/\s+/)[0] || null;
   const unreadCount = useNotificationsUnreadCount();
   const location = useHomeLocation();
+  const noAddress = location.source === "none" && !location.locating;
   const [locationOpen, setLocationOpen] = useState(false);
-  const [soonOpen, setSoonOpen] = useState(false);
+  const [locationSearch, setLocationSearch] = useState(false);
+  const [soon, setSoon] = useState<SoonService | null>(null);
 
-  // Live-orders read, mirroring the old single-order query's rules: gated to poll only while this
-  // screen is the visible route (PERF20-01's rule), refreshed on focus + app foreground so a status
-  // change that happened elsewhere/backgrounded isn't stale on return. Now the LIST endpoint —
-  // 8c draws one tracker pill per running job (food and parcels alike), so the single most-recent
-  // row `mine/active-order` serves (kept for send.tsx's restore banner) is not enough.
-  // A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries` — a customer
-  // lingering on/returning to Home shouldn't pay a round trip for data `useBootstrap` (or the last
-  // 30s poll) already seeded fresh; a genuinely stale entry still refetches immediately.
+  // Live-orders read: polled only while this screen is the visible route (PERF20-01's rule),
+  // refreshed on focus + app foreground so a status change that happened elsewhere isn't stale on
+  // return. A-O15: focus/foreground use `invalidateIfStale`, not a raw `invalidateQueries`.
   const [homeFocused, setHomeFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
@@ -203,25 +220,20 @@ export default function LauncherHomeScreen(): React.ReactElement {
   // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array that `?? []` lets
   // straight through into `.map()` below (CF-04 — confirmed live; same query as orders.tsx).
   const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
-  const riderNames = useRiderNames(activeOrders);
+  const riderNames = useRiderFirstNames(activeOrders);
   // No failed-check banner here (owner instruction 2026-08-12): a background poll the customer never
-  // triggered must not raise an error card over a working screen. A failed check simply shows no live
-  // pill, and the 30s poll + refetchOnReconnect restore it the moment the link heals.
-  // Only seed orderKey(id) while THIS screen is the visible route. When home is blurred beneath
-  // /order/[id] (the customer is looking at the live tracking screen), use-order-socket.ts owns that
-  // same cache entry and merges live position/status pushes into it with an anti-rollback guard
-  // (lastPositionRef/reconcileAfterRefetch) — a raw full-object setQueryData from here, triggered by
-  // an unrelated foreground/focus refetch of activeOrdersQ, would blindly replace that entry and could
-  // roll the rider's pin backward on the map. Gating on homeFocused means this write only ever seeds
-  // the cache for a subsequent navigation TO /order/[id], never clobbers it while already there.
-  // Parcels only: the food tracker reads its own `MerchantOrderResponse`-shaped cache (use-food-order),
-  // which this generic snapshot must not be written into.
+  // triggered must not raise an error card over a working screen. A failed check simply shows no bar.
+  // Only seed orderKey(id) while THIS screen is the visible route: when home is blurred beneath
+  // /order/[id], use-order-socket.ts owns that cache entry and merges live pushes into it with an
+  // anti-rollback guard, so a raw setQueryData from here could roll the rider's pin backward.
+  // Parcels only: the food tracker reads its own `MerchantOrderResponse`-shaped cache.
   useEffect(() => {
     if (!homeFocused) return;
     for (const o of activeOrders) {
       if (o.orderType !== "merchant") qc.setQueryData<OrderSnapshot>(orderKey(o.id), o);
     }
   }, [homeFocused, activeOrders, qc]);
+  const bar = liveBarModel(activeOrders, statusPillLabel, (id) => riderNames[id] ?? null);
 
   // ── Rider v2 C5 (ledger D-54): a rider who switched to the customer side mid-job keeps the job — Home
   // carries a live-job bar that returns to it. Only read for a verified rider; nothing renders otherwise.
@@ -236,122 +248,106 @@ export default function LauncherHomeScreen(): React.ReactElement {
       : R.tToDrop
     : null;
 
-  // ── "Popular near you" (8c §4) — the nearest open venues from the same feed /food browses ──
-  // Renders nothing with the flag off: the Restaurants tile is degraded to SOON, so a grid with
-  // nowhere honest to link would be a dead end. A genuinely empty result renders nothing too — the
-  // full browse screen owns that empty state, and a home grid has no room to explain it.
+  // ── "Popular restaurants" — the nearest open venues from the same feed /food browses ──
+  // NEEDS BACKEND (handoff §5): a real popularity ranking; until then "popular" is nearest-open.
   const feed = useRestaurantListFeed(restaurantsEnabled);
-  // Two columns inside 16px gutters with a 10px gap — measured rather than expressed as a
-  // percentage so a lone odd card stays a half-width card instead of stretching across the row.
-  const { width: viewportWidth } = useWindowDimensions();
-  const venueCardWidth = Math.max(120, Math.floor((viewportWidth - 16 * 2 - 10) / 2));
   const venues = useMemo(
-    () => popularNearYou(feed.restaurants ?? [], now, location.point),
-    [feed.restaurants, now, location.point],
+    () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT) : []),
+    [restaurantsEnabled, feed.restaurants, now, location.point],
   );
+  const firstLoad = restaurantsEnabled && feed.restaurants == null && feed.isFetching;
+  const showRestaurants = venues.length >= RAIL_MIN;
 
-  const onService = (id: string): void => {
-    if (id === "express") router.push("/send");
+  const onTile = (id: ServiceId): void => {
+    if (id === "send") router.push("/send");
     else if (id === "food" && restaurantsEnabled) router.push("/food");
-    // Pharmacy — and Restaurants while the kill switch is off — open the notify-me sheet. A SOON
-    // tile is never inert (8c §2).
-    else setSoonOpen(true);
+    else setSoon(id === "food" ? "food" : id);
+  };
+  const openLocation = (search: boolean): void => {
+    setLocationSearch(search);
+    setLocationOpen(true);
   };
 
   return (
-    <AppScreen
-      bg={tokens.color.accentWash}
-      banner={
-        <HomeHeader
-          greeting={greetingLine(greeting.phrase, meQ.data?.firstName)}
-          evening={greeting.evening}
-          unread={unreadCount > 0}
-          subRow={<HomeAddressRow address={location.label} onPress={() => setLocationOpen(true)} />}
-          search={{ placeholder: "Search food, or send a parcel", onPress: () => router.push("/food/search") }}
-          onBell={() => router.push("/notifications")}
-        />
-      }
-    >
+    // A plain root, not AppScreen: the mint header owns the top inset itself (it paints behind the
+    // status bar, README §2.2), so no SafeAreaView may add a second one above it.
+    <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <StatusBar style="dark" />
       <ScrollView
         style={{ backgroundColor: tokens.color.bg }}
-        contentContainerStyle={{ paddingBottom: tokens.space.xl }}
+        contentContainerStyle={{ paddingBottom: bar ? 96 : 24 }}
         showsVerticalScrollIndicator={false}
       >
+        <HomeTop
+          narrow={narrow}
+          address={location.label}
+          noAddress={noAddress}
+          phrase={greeting.phrase}
+          firstName={firstName}
+          unread={unreadCount > 0}
+          onAddress={() => openLocation(false)}
+          onBell={() => router.push("/notifications")}
+          onSearch={() => router.push("/food/search")}
+        />
         {riderJob && riderJobStage ? (
+          // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
           <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
             <SmBtn kind="fill" icon="package" label={RF.swJobBar(riderJobStage)} onPress={() => router.push(riderJob.orderType === "merchant" ? "/rider/food-job" : "/rider/job")} />
           </View>
         ) : null}
-        <ServiceTiles services={services} onService={onService} />
-        {activeOrdersQ.isLoading ? (
-          // Genuine first load — a skeleton beats a blank gap between the tiles and the venues grid,
-          // mirroring the Orders tab's own loading rule.
-          <View style={{ paddingHorizontal: tokens.space.screen, paddingTop: tokens.space.md }}>
-            <SkeletonRows count={1} />
-          </View>
-        ) : (
-          // One pill per running job, newest first — a food order and a parcel running side by side
-          // each keep their own pill. Nothing renders when nothing is running (8c §3).
-          activeOrders.map((o) => {
-            const pill = liveOrderPillModel(o, statusPillLabel(o.status), riderNames[o.id] ?? null);
-            return (
-              <LiveOrderCard
-                key={o.id}
-                icon={pill.icon}
-                title={pill.title}
-                step={pill.step}
-                steps={pill.steps}
-                etaMinutes={pill.etaMinutes}
-                onPress={() => router.push(pill.route)}
-              />
-            );
-          })
-        )}
-        {venues.length > 0 ? (
+        <ServiceGrid narrow={narrow} onTile={onTile} />
+        {noAddress ? (
+          <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+        ) : firstLoad ? (
           <View>
-            <View style={{ flexDirection: "row", alignItems: "baseline", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
-              {/* `lineHeight` is Inter's own 16 x 1.21 — without it RN's default line box is 2px shorter
-                  than the reference's and the whole section header sits 2px short. */}
-              <Text style={{ flex: 1, fontSize: 16, lineHeight: 19.36, fontWeight: "700", color: tokens.color.ink }}>Popular near you</Text>
-              <Tappable onPress={() => router.push("/food")} accessibilityRole="button" accessibilityLabel="See all restaurants">
-                <Text style={{ fontSize: 12.5, fontWeight: "700", color: tokens.color.accentText }}>See all →</Text>
-              </Tappable>
-            </View>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 16 }}>
-              {venues.map((v) => (
-                <RestaurantCard
-                  key={v.id}
-                  name={v.name}
-                  photoUrl={v.photoUrl}
-                  rating={v.rating}
-                  etaMinutes={v.etaMinutes}
-                  deliveryFee={v.deliveryFee}
-                  closed={v.closed}
-                  width={venueCardWidth}
-                  onPress={() => router.push(`/food/${v.id}`)}
-                />
-              ))}
-            </View>
+            <RailSkeleton />
+            <RailSkeleton />
           </View>
-        ) : null}
+        ) : showRestaurants ? (
+          <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
+            {venues.map((v) => (
+              <VenueCard
+                key={v.id}
+                name={v.name}
+                photoUrl={v.photoUrl}
+                rating={v.rating}
+                etaMinutes={v.etaMinutes}
+                deliveryFee={v.deliveryFee}
+                closed={v.closed}
+                onPress={() => router.push(`/food/${v.id}`)}
+              />
+            ))}
+          </VenueRail>
+        ) : (
+          // README §2 rules: both rails empty → the H6 card, titled "Nothing delivers here yet".
+          <NoLocationCard title={H.nothingHere} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+        )}
       </ScrollView>
+      {bar ? (
+        <LiveOrderBar
+          icon={bar.icon}
+          title={bar.title}
+          sub={bar.sub}
+          more={bar.more}
+          step={bar.step}
+          steps={bar.steps}
+          etaMinutes={bar.etaMinutes}
+          onPress={() => router.push(bar.route as never)}
+        />
+      ) : null}
       {/* D3: throwaway 1×1 map that pays the Android Maps SDK's first-in-process init during launcher
           idle, then unmounts — see MapsSdkPrewarm's header. Renders null off-Android and after warm. */}
       <MapsSdkPrewarm />
       <LocationSheet
         visible={locationOpen}
         denied={location.denied}
+        currentLabel={location.label}
+        focusSearch={locationSearch}
         onClose={() => setLocationOpen(false)}
         onUseCurrentLocation={location.useCurrentLocation}
         onPick={location.setManualPlace}
       />
-      <ServiceSoonSheet
-        visible={soonOpen}
-        serviceId="pharm"
-        title="Pharmacy"
-        body="Prescriptions and over-the-counter essentials, delivered by the same riders. We're signing up pharmacies now — we'll let you know the moment it's live."
-        onClose={() => setSoonOpen(false)}
-      />
-    </AppScreen>
+      <ServiceSoonSheet visible={soon != null} service={soon ?? "shops"} onClose={() => setSoon(null)} />
+    </View>
   );
 }

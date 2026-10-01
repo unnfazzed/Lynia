@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
+import { askNotificationsInContext } from "../src/push/ask-in-context";
 import type { ResolvedPlace } from "../src/api/places";
 import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { landmarkFromAddress } from "../src/logic/geocode";
@@ -417,6 +418,8 @@ export default function SendScreen(): React.ReactElement {
       haptic("tap");
       void rememberRecipient({ name: "", phone: recipientPhone.trim() });
       void saveMyPickupPhone(senderPhone.trim());
+      // D-55: notifications are asked for here, after the order goes out, not on a priming screen.
+      void askNotificationsInContext();
       // Seed the order cache so the auction paints at once ("Finding riders near you…").
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
         id: order.id,

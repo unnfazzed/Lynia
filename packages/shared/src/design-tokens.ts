@@ -41,13 +41,14 @@ export const color = {
   cta: "#00812F",
   ctaPressed: "#006B27",
 
-  /** 'Recommended' offer marker only (gold, sparing) — borders/stars, never text (use highlightInk). */
-  highlight: "#F2B705",
+  /** Gold, sparing — ETA chip, unread dot, header circle, star fill; never text (use highlightInk /
+   *  highlightChipInk). Calm Mint v2 (D-55) moved it to the website yellow; it was #F2B705. */
+  highlight: "#FFD23F",
   /** Tints for the earnings-disclaimer / highlight card. Text on the wash uses highlightInk. */
   highlightWash: "#FFFCF2",
   highlightInk: "#6B5600",
   /** 40%-alpha gold border for highlight cards (mirrors --highlight-border). */
-  highlightBorder: "#F2B70566",
+  highlightBorder: "#FFD23F66",
   /** Ink ON a solid `highlight` gold chip — the home 8c SOON and ETA chips. Not `highlightInk`,
    *  which is gold TEXT on the pale `highlightWash` (mirrors --highlight-chip-ink). */
   highlightChipInk: "#3D3100",
@@ -64,6 +65,37 @@ export const color = {
   tileSendBlob: "#CDEEDA",
   tileFoodBlob: "#FBD9BD",
   tilePharmacyBlob: "#C5E9DF",
+
+  /**
+   * Calm Mint v2 (`packages/design/handoff/calm-mint-v2-2026-10`, ledger D-55): the customer home,
+   * customer onboarding and rider onboarding. Mirrors the `--forest` … `--kind-auto-ink` block in
+   * packages/design/tokens/colors.css.
+   */
+  /** The floating live-order bar, and its secondary text. */
+  forest: "#063B22",
+  onForestMuted: "#BFE6CD",
+  /** Star outline; the fill is `highlight`. */
+  starStroke: "#C99500",
+  /** "Free delivery" tag fill (white text, 7.9:1). */
+  free: "#4B2FBF",
+  /** Decorative circles only — never text. */
+  coral: "#FF6B4A",
+  sky: "#3EC1F3",
+  /** Service tile fills: Send · Restaurants · Shops · Pharmacy. */
+  tileSend: "#CDEEDA",
+  tileFood: "#FFD9CC",
+  tileShops: "#DDD5FF",
+  tilePharmacy: "#C5E9DF",
+  /** The rider intro's hero panel. */
+  riderWash: "#ECE8FF",
+  /** The pale gold "Checking" pill (text: highlightChipInk). */
+  highlightChipWash: "#FFF6D6",
+  /** Shop-kind tints for a card with no photo, and their inks. */
+  kindButchery: "#FFE7E0",
+  kindFashion: "#FFE4F2",
+  kindAuto: "#E3F6FE",
+  kindFashionInk: "#8A1F5C",
+  kindAutoInk: "#0B5A7A",
 
   danger: "#C0392B",
   /** Danger tint (mirrors --danger-wash) — 'bad' status pills, warn bars, danger hover states. */

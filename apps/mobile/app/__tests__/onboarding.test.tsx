@@ -1,33 +1,28 @@
 /**
- * Joint-launch copy on the first-install carousel (journey 0·2, design screens.jsx `ONBOARD`): with
- * `restaurantsEnabled` on, the three slides are Food ("Food from kitchens near you"), Send
- * ("Name your price to send"), then the shared promise ("One app, one code"); with the flag off, the
- * pre-joint-launch parcels-only slides render instead — the §1 escape hatch
- * (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md) must leave no pre-auth food mention
- * while the vertical is dark. Both sets are the same length, so a flags fetch resolving mid-carousel
- * can never strand the slide index.
+ * C1 · Welcome (Calm Mint v2, packages/design/handoff/calm-mint-v2-2026-10; ledger D-55): the first
+ * screen of a new install, replacing the intro carousel. "Continue with your number" goes to the phone
+ * screen; "Want to earn? Ride with LyniaGo" goes there with a rider intent — and is not drawn at all on
+ * the customer-only iPhone app (D-41). Both mark onboarding seen.
  */
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
-let mockFlags = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false };
-jest.mock("../../src/net/use-feature-flags", () => ({
-  useFeatureFlags: () => mockFlags,
-}));
+const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
 }));
+const mockSaveSeen = jest.fn(async () => undefined);
 jest.mock("../../src/auth/session", () => ({
-  saveOnboardingSeen: jest.fn(async () => undefined),
+  saveOnboardingSeen: () => mockSaveSeen(),
 }));
+jest.mock("../../src/rider-mode", () => ({ riderModeAvailable: jest.fn(() => true) }));
 
 import { riderModeAvailable } from "../../src/rider-mode";
-import { stylesDirectlyInSafeArea } from "../../src/testing/safe-area-fill";
 import OnboardingScreen from "../onboarding";
 
-function renderOnboarding(): renderer.ReactTestRenderer {
+function renderWelcome(): renderer.ReactTestRenderer {
   let tree!: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(
@@ -41,124 +36,42 @@ function renderOnboarding(): renderer.ReactTestRenderer {
 
 const rendered = (tree: renderer.ReactTestRenderer): string => JSON.stringify(tree.toJSON());
 
-/** Fire the onPress of the nearest pressable ancestor of the Text rendering `label`. */
-function press(tree: renderer.ReactTestRenderer, label: string): void {
-  const matches = tree.root.findAll((n) => n.props?.children === label);
-  let node = matches[matches.length - 1] ?? null;
-  while (node && typeof node.props?.onPress !== "function") node = node.parent;
-  if (!node) throw new Error(`No pressable ancestor found for "${label}"`);
-  const onPress = node.props.onPress as () => void;
-  act(() => onPress());
+function pressLabel(tree: renderer.ReactTestRenderer, label: string): void {
+  const node = tree.root.find((n) => n.props?.accessibilityLabel === label && typeof n.props?.onPress === "function");
+  act(() => (node.props.onPress as () => void)());
 }
 
-describe("onboarding carousel slides follow restaurantsEnabled", () => {
-  it("flag on: Food slide first, then Send, then the one-app promise", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: true };
-    const tree = renderOnboarding();
-    expect(rendered(tree)).toContain("Food from kitchens near you");
-    press(tree, "Next");
-    expect(rendered(tree)).toContain("Name your price to send");
-    press(tree, "Next");
-    const last = rendered(tree);
-    expect(last).toContain("One app, one code");
-    expect(last).toContain("More services soon.");
-    expect(last).toContain("Get started");
-  });
+afterEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(riderModeAvailable).mockReturnValue(true);
+});
 
-  // The flag-off set is drawn by its own mock (screens-shipped.jsx `OnboardFlagOff`, LJ.onboard_flag_off):
-  // TWO dots, opening on the banknote "Name your price to send" slide with its copy verbatim.
-  it("flag off: the mock's two parcels-only slides render, with no food mention on either", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: false };
-    const tree = renderOnboarding();
-    const slides: string[] = [rendered(tree)];
-    expect(slides[0]).toContain("Name your price to send");
-    expect(slides[0]).toContain("Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.");
-    // Two slides ⇒ the first is not the last, so it still reads "Next".
-    expect(slides[0]).toContain("Next");
-    press(tree, "Next");
-    slides.push(rendered(tree));
-    expect(slides[1]).toContain("Earn as a rider");
-    expect(slides[1]).toContain("Get started");
-    for (const slide of slides) {
-      expect(slide).not.toContain("kitchens");
-      expect(slide).not.toContain("restaurants");
+describe("C1 · Welcome", () => {
+  it("draws the handoff's copy verbatim", () => {
+    const out = rendered(renderWelcome());
+    for (const s of ["Parcels and food", "across town.", "Cash or mobile money", "A code at the door, every delivery", "Live tracking to your gate", "Continue with your number", "Ride with LyniaGo"]) {
+      expect(out).toContain(s);
     }
+    // The carousel is gone.
+    expect(out).not.toContain("Skip");
+    expect(out).not.toContain("Get started");
   });
 
-  // Each slide is its own gallery screen; the parity lane mounts one directly through `initialSlide`.
-  it("initialSlide opens the carousel on that slide (LJ.onboard_send / LJ.onboard_shared)", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: true };
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(
-        <SafeAreaProvider initialMetrics={TEST_METRICS}>
-          <OnboardingScreen initialSlide={1} />
-        </SafeAreaProvider>,
-      );
-    });
-    expect(rendered(tree)).toContain("Name your price to send");
-    act(() => {
-      tree = renderer.create(
-        <SafeAreaProvider initialMetrics={TEST_METRICS}>
-          <OnboardingScreen initialSlide={2} />
-        </SafeAreaProvider>,
-      );
-    });
-    const last = rendered(tree);
-    expect(last).toContain("One app, one code");
-    expect(last).toContain("Get started");
+  it("'Continue with your number' marks onboarding seen and opens the phone screen", () => {
+    const tree = renderWelcome();
+    pressLabel(tree, "Continue with your number");
+    expect(mockSaveSeen).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/phone");
   });
 
-  // A flags fetch resolving mid-carousel shrinks the set from 3 to 2: the index must clamp into it
-  // rather than stranding past the end.
-  it("clamps a stranded index when the slide set shrinks under it", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: false };
-    let tree!: renderer.ReactTestRenderer;
-    act(() => {
-      tree = renderer.create(
-        <SafeAreaProvider initialMetrics={TEST_METRICS}>
-          <OnboardingScreen initialSlide={2} />
-        </SafeAreaProvider>,
-      );
-    });
-    const out = rendered(tree);
-    expect(out).toContain("Earn as a rider");
-    expect(out).toContain("Get started");
+  it("'Ride with LyniaGo' carries a rider intent into sign-in", () => {
+    const tree = renderWelcome();
+    pressLabel(tree, "Want to earn? Ride with LyniaGo");
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/phone", params: { intent: "rider" } });
   });
-});
 
-// SDK54-09: the emulator smoke (2026-09-28) caught Next / Get started running off the bottom of the
-// screen on Android 10, 13 and 16, because the minHeight:100% view sat straight inside the insets.
-describe("the carousel fits between the safe-area insets", () => {
-  it("puts an unpadded flex:1 View between the SafeAreaView and the view", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: true };
-    expect(stylesDirectlyInSafeArea(renderOnboarding())).toEqual([{ flex: 1 }]);
-  });
-});
-
-// D-41: the iPhone app ships customer-only. The launched (food-on) deck has no rider slide, so it is
-// untouched; the food-off deck drops its closing "Earn as a rider" slide there.
-describe("onboarding on the customer-only iPhone app (D-41)", () => {
-  beforeEach(() => {
+  it("draws no rider link on the customer-only iPhone app (D-41)", () => {
     jest.mocked(riderModeAvailable).mockReturnValue(false);
-  });
-
-  it("flag off: one slide, no rider pitch, and it goes straight to Get started", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: false };
-    const out = rendered(renderOnboarding());
-    expect(out).toContain("Name your price to send");
-    expect(out).toContain("Get started");
-    expect(out).not.toContain("Earn as a rider");
-  });
-
-  it("flag on: the launched three-slide deck is unchanged", () => {
-    mockFlags = { ...mockFlags, restaurantsEnabled: true };
-    const tree = renderOnboarding();
-    expect(rendered(tree)).toContain("Food from kitchens near you");
-    press(tree, "Next");
-    expect(rendered(tree)).toContain("Name your price to send");
-    press(tree, "Next");
-    expect(rendered(tree)).toContain("One app, one code");
-    expect(rendered(tree)).not.toContain("Earn as a rider");
+    expect(rendered(renderWelcome())).not.toContain("Ride with LyniaGo");
   });
 });

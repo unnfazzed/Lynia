@@ -18,6 +18,7 @@ import Bell from "lucide-react-native/dist/cjs/icons/bell";
 import Bike from "lucide-react-native/dist/cjs/icons/bike";
 import Check from "lucide-react-native/dist/cjs/icons/check";
 import ChevronDown from "lucide-react-native/dist/cjs/icons/chevron-down";
+import ChevronLeft from "lucide-react-native/dist/cjs/icons/chevron-left";
 import ChevronRight from "lucide-react-native/dist/cjs/icons/chevron-right";
 import ChevronUp from "lucide-react-native/dist/cjs/icons/chevron-up";
 import CircleAlert from "lucide-react-native/dist/cjs/icons/circle-alert";
@@ -101,6 +102,7 @@ const ICONS = {
   "map-pin": MapPin,
   phone: Phone,
   clock: Clock, // ETA
+  "chevron-left": ChevronLeft, // Calm Mint v2 onboarding Back (D-55)
   "chevron-right": ChevronRight,
   "chevron-down": ChevronDown,
   "chevron-up": ChevronUp,

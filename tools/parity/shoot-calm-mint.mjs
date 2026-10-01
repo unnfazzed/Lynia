@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+/**
+ * The Calm Mint v2 screenshot sheet (ledger D-55): each landed screen of the calm-mint-v2 handoff
+ * (packages/design/handoff/calm-mint-v2-2026-10/Calm Mint v2 - all screens.html?screen=<ID>) beside
+ * the app screen rendered through react-native-web from the parity fixtures.
+ *
+ *   node tools/parity/shoot-calm-mint.mjs --out docs/parity/CALM-MINT-V2-HOME-2026-10-01
+ */
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { contextDefaults, launch } from "./lib/browser.mjs";
+import { buildSheet } from "./lib/sheet.mjs";
+import { bundleScreen } from "./mobile/bundle.mjs";
+import { interFontCss } from "./mobile/fonts.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, "../..");
+const outArg = process.argv.indexOf("--out");
+const OUT = resolve(outArg > 0 ? process.argv[outArg + 1] : join(HERE, "out/calm-mint"));
+const SHOTS = `${OUT}-shots`;
+const MOCK = pathToFileURL(join(REPO, "packages/design/handoff/calm-mint-v2-2026-10/Calm Mint v2 - all screens.html")).href;
+const FIXTURES = join(HERE, "mobile/fixtures");
+const app = (p) => join(REPO, "apps/mobile/app", p);
+
+function harnessHtml(js, fontCss, vp) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+${fontCss}
+html,body{margin:0;padding:0;background:#fff;}
+#root{width:${vp.width}px;height:${vp.height}px;overflow:hidden;display:flex;flex-direction:column;
+  font-family:"Inter",-apple-system,"Segoe UI",Roboto,sans-serif;}
+#root>*{flex:1 1 auto;min-height:0;}
+</style></head><body><div id="root"></div><script>${js}</script></body></html>`;
+}
+
+async function shootApp(browser, { name, component, fixture, vp, before }) {
+  const ctx = await browser.newContext(contextDefaults({ viewport: vp, deviceScaleFactor: 2 }));
+  const page = await ctx.newPage();
+  try {
+    const js = await bundleScreen({ component, fixture: join(FIXTURES, `${fixture}.mjs`) });
+    await page.setContent(harnessHtml(js, await interFontCss(), vp), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__PARITY_READY === true || typeof window.__PARITY_ERROR === "string", { timeout: 20000 });
+    const err = await page.evaluate(() => window.__PARITY_ERROR || null);
+    if (err) throw new Error(err);
+    await page.evaluate(() => (document.fonts ? document.fonts.ready : null));
+    await page.waitForTimeout(1200);
+    if (before) await before(page);
+    await page.waitForTimeout(500);
+    const file = join(SHOTS, `app-${name}.png`);
+    await (await page.$("#root")).screenshot({ path: file });
+    return file;
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function shootMock(browser, id, vp) {
+  const ctx = await browser.newContext(contextDefaults({ viewport: vp, deviceScaleFactor: 2 }));
+  const page = await ctx.newPage();
+  try {
+    await page.goto(`${MOCK}?screen=${id}`, { waitUntil: "load" });
+    await page.waitForTimeout(1200);
+    const file = join(SHOTS, `mock-${id}.png`);
+    await (await page.$(".ph")).screenshot({ path: file });
+    return file;
+  } finally {
+    await ctx.close();
+  }
+}
+
+const PHONE = { width: 360, height: 720 };
+const NARROW = { width: 320, height: 640 };
+const tap = (name) => async (p) => {
+  await p.getByRole("button", { name }).first().click();
+  await p.waitForTimeout(700);
+};
+
+const typePhone = (digits, submit = false) => async (p) => {
+  await p.getByLabel("Phone number, +263").fill(digits);
+  if (submit) await p.getByRole("button", { name: "Send code" }).click();
+  await p.waitForTimeout(400);
+};
+const typeCode = (code) => async (p) => {
+  await p.getByLabel("6-digit code").fill(code);
+  await p.getByLabel("6-digit code").focus();
+  await p.waitForTimeout(300);
+};
+const names = (first, last) => async (p) => {
+  await p.getByLabel("First name").fill(first);
+  await p.getByLabel("Surname").fill(last);
+  await p.locator("body").click({ position: { x: 5, y: 700 } });
+  await p.waitForTimeout(300);
+};
+
+const ROWS = [
+  { id: "H1", label: "H1 · Home, with the live bar", vp: PHONE, app: { name: "H1", component: app("(tabs)/home.tsx"), fixture: "food_home" } },
+  { id: "H3", label: "H3 · Home at 320×640", vp: NARROW, app: { name: "H3", component: app("(tabs)/home.tsx"), fixture: "food_home" } },
+  { id: "H5", label: "H5 · Location sheet", vp: PHONE, app: { name: "H5", component: app("(tabs)/home.tsx"), fixture: "food_home", before: tap(/DELIVERING TO/) } },
+  { id: "H6", label: "H6 · No address yet", vp: PHONE, app: { name: "H6", component: app("(tabs)/home.tsx"), fixture: "cm2_home_noloc" } },
+  { id: "C1", label: "C1 · Welcome", vp: PHONE, app: { name: "C1", component: app("onboarding.tsx"), fixture: "onboard_food" } },
+  { id: "C2", label: "C2 · Phone", vp: PHONE, app: { name: "C2", component: app("phone.tsx"), fixture: "auth_phone", before: typePhone("772451180") } },
+  { id: "C3", label: "C3 · Phone, invalid", vp: PHONE, app: { name: "C3", component: app("phone.tsx"), fixture: "auth_phone", before: typePhone("77245118", true) } },
+  { id: "C4", label: "C4 · Code", vp: PHONE, app: { name: "C4", component: app("verify.tsx"), fixture: "cm2_code", before: typeCode("4182") } },
+  { id: "C5", label: "C5 · Name", vp: PHONE, app: { name: "C5", component: app("profile/setup.tsx"), fixture: "auth_register", before: names("Chipo", "Marufu") } },
+  { id: "R1", label: "R1 · Why ride", vp: PHONE, app: { name: "R1", component: app("rider/become.tsx"), fixture: "rider_kyc_intro" } },
+  { id: "R2", label: "R2 · ID pending", vp: PHONE, app: { name: "R2", component: app("rider/(tabs)/index.tsx"), fixture: "rv2_gate_pending" } },
+  { id: "R3", label: "R3 · Verified", vp: PHONE, app: { name: "R3", component: app("rider/(tabs)/index.tsx"), fixture: "cm2_rider_verified" } },
+];
+
+await mkdir(SHOTS, { recursive: true });
+const browser = await launch();
+const rows = [];
+try {
+  for (const r of ROWS) {
+    const mock = await shootMock(browser, r.id, r.vp);
+    let appShot = null;
+    let note = null;
+    try {
+      appShot = await shootApp(browser, { ...r.app, vp: r.vp });
+    } catch (e) {
+      note = String(e.message || e).slice(0, 200);
+    }
+    rows.push({ label: r.label, mock, app: appShot, appNote: note || undefined, logicalW: r.vp.width });
+    console.log(`${r.id}: ${appShot ? "ok" : `app failed — ${note}`}`);
+  }
+} finally {
+  await browser.close();
+}
+await buildSheet({ title: "Calm Mint v2 · Home, customer + rider onboarding (D-55): handoff (left) vs app (right)", out: OUT, rows });
+await writeFile(`${SHOTS}/README.txt`, "Generated by tools/parity/shoot-calm-mint.mjs\n");
+console.log(`sheet: ${OUT}.png (+ .html); shots in ${SHOTS}`);

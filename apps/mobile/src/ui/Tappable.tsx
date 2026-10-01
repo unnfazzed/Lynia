@@ -35,14 +35,14 @@ import { noteTouch } from "../telemetry/tap-signal";
  * PIXEL PARITY (CLAUDE.md). This changes nothing about the RESTING frame — a ripple is transient
  * platform chrome drawn over the view during the touch, not drawn geometry — so the gallery
  * comparison and the parity render lane are unaffected. Controls whose mocks DO draw a press state
- * (`Button`'s `cta → ctaPressed`, `ServiceTiles`' scale 0.97) keep their own drawn treatment and are
+ * (`Button`'s `cta → ctaPressed`) keep their own drawn treatment and are
  * deliberately NOT ported onto this primitive.
  */
 
 /**
  * Ripple colours, derived from existing tokens rather than introduced as new design values — the
  * same "token + alpha suffix" construction the design system itself uses for `--highlight-border`
- * (`#F2B70566` = `highlight` at 40%). Nothing here is a value `packages/design/tokens/*.css`
+ * (`#FFD23F66` = `highlight` at 40%). Nothing here is a value `packages/design/tokens/*.css`
  * defines, so the token-conformance guardrail is untouched.
  */
 export const RIPPLE_INK = `${tokens.color.ink}14`; // ink @ 8% — rows/cards/tiles on a light surface

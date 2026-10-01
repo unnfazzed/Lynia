@@ -323,8 +323,10 @@ describe("rendered conformance — coverage ledger", () => {
     expect(problems).toEqual([]);
   });
 
-  it("asserts at least the launcher home plus five more wired screens", () => {
-    expect(COVERED).toContain("RC.home");
+  // RC.home was the first screen this lane asserted. Since D-55 (2026-10-01) it follows the Calm Mint
+  // v2 handoff, not the gallery's home-8c mock, so it sits in the pending ledger as a SUPERSEDED
+  // target until an export redraws it; the floor on asserted screens stays.
+  it("asserts at least six wired screens", () => {
     expect(COVERED.length).toBeGreaterThanOrEqual(6);
   });
 

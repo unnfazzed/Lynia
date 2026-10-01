@@ -105,23 +105,23 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⬜ | C1·1 | `LJ splash` | Splash | | |
-| 👁 | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
-| ⬜ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | | |
-| ⬜ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | | |
-| 👁 | C1·5 | `LJ login` | Phone login | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
-| 👁 | C1·6 | `LJ otp` | SMS OTP | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
-| ✅ | C1·7 | `LJ role_select` | Choose your role | codegen-adopted (Foundation-F.e — template-literal border + conditional shadow-spread idioms); `app/role.view.tsx` ≡ mock, guardrails green | |
-| 👁 | C1·8 | `LJ register` | Profile registration | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
+| ⏭ | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·5 | `LJ login` | Phone login | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C2/C3 Phone (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·6 | `LJ otp` | SMS OTP | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·7 | `LJ role_select` | Choose your role | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·8 | `LJ register` | Profile registration | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C5 Name (no national ID) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | 👁 | C1·9 | `LJ perm_loc` | Permission · location | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
 | ⬜ | C1·10 | `LJ perm_notif` | Permission · notifications | | |
-| ⬜ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | | |
-| ✅ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | codegen-adopted (Foundation-F.e); `app/role-flag-off.view.tsx` ≡ mock (Dove+Wordmark mark + verbatim food-safe copy), guardrails green | |
+| ⏭ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 
 ### C2 · Home & orders
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ✅ | C2·1 | `RC home` | Home · service tiles  [BOTH] | **home 8c redesign (2026-08-17)** — the screen is rebuilt to `packages/design/handoff/home-8c` (mint header + detected current location + sticker tiles + one tracker pill + the 2×2 venue grid), the pre-8c green-header `AppHome` body is retired, and the structural-snapshot regions + `tools/parity/expected/RC.home.json` are re-anchored on the new mock. Earlier: food browse cluster align (`docs/parity/PHASE4-browse.md`); one live card per running job | guardrails: token-conformance · screen-inventory · reverse-drift freeze · structure snapshot · rendered conformance, all green |
+| ⏭ | C2·1 | `RC home` | Home · service tiles  [BOTH] | **Calm Mint v2 (2026-10-01, D-55)** — rebuilt to `packages/design/handoff/calm-mint-v2-2026-10` H1–H6: address-first mint header, four service tiles, the Popular restaurants rail (Popular shops + Free delivery tag wait on backend), one floating live-order bar; the location and notify-me sheets as drawn. The gallery home-8c target is SUPERSEDED (structure-snapshot deferral + rendered-conformance pending). Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png`. Earlier: home 8c (2026-08-17) | guardrails: token-conformance · screen-inventory · reverse-drift freeze, green; structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | 👁 | C2·2 | `RC orders` | Orders · all services  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`); every live order now pins (not just the newest), food rows titled by restaurant | compact accent live-order card replaces the stepper LiveOrderCard per the mock |
 | ⬜ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | | |
 | ⬜ | C2·4 | `LJ home_flag_off` | Home · Food tile soon  [BOTH] | | |
@@ -259,9 +259,9 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C10·28 | `LJ cancelled` | Cancelled  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C10·29 | `LJ undelivered` | Not delivered  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C10·30 | `LJ track_dark` | Rider went dark  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
-| ⬜ | C10·31 | `LJ otp_cooldown` | OTP · resend cooldown | | |
-| ⬜ | C10·32 | `LJ otp_resent` | OTP · code re-sent | | |
-| ⬜ | C10·33 | `LJ otp_locked` | OTP · expired / locked | | |
+| ⏭ | C10·31 | `LJ otp_cooldown` | OTP · resend cooldown | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (Resend in m:ss) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C10·32 | `LJ otp_resent` | OTP · code re-sent | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (resend restarts the countdown) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
+| ⏭ | C10·33 | `LJ otp_locked` | OTP · expired / locked | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (That code has expired · Send a new code) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⬜ | C10·34 | `LJ offline` | Offline banner | | |
 | ⏭ | C10·35 | `LJ on_hold` | Account on hold | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = handoff state 17 | |
 | ⬜ | C10·36 | `LJ force_update` | Force update | | |
@@ -291,15 +291,15 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | R2·1 | `RJ kyc_intro` | Become a rider | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | `become.tsx` realizes the `kyc_form` beat (name/ID + bike/photo + Didit reassurance cards); the `kyc_intro` empty-state itself is realized upstream on the rider board — intro-mock vs form-app is an inherent beat difference (deviation) |
-| ⬜ | R2·2 | `RJ kyc_form` | KYC form + consent | | |
+| ⏭ | R2·1 | `RJ kyc_intro` | Become a rider | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 Why ride. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
+| ⏭ | R2·2 | `RJ kyc_form` | KYC form + consent | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 → rider photo step (no bike reg). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 | ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
 | ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
-| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G2 (Your ID is under review) | |
+| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R2 Rider setup while the automated check runs; manual review keeps the D-54 wall. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 | ⏭ | R2·7 | `RJ kyc_unfinished` | Verification not finished | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G3 (Finish verifying) | |
 | ⏭ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G7 (We couldn't open the ID check) | |
-| ⬜ | R2·9 | `RJ kyc_verified` | Verified | | |
+| ⏭ | R2·9 | `RJ kyc_verified` | Verified | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R3 You're verified (new riders, once). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 
 > **Two rows here are newer than the export.** `kyc_unfinished` and `kyc_cant_start` (#841) were
 > drawn in-repo rather than exported — see `docs/DESIGN-DEVIATIONS.md` D-35 and its upstream-sync
