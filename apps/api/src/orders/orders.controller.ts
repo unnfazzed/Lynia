@@ -1,5 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { AcceptDisclaimerRequest, CreateOrderRequest, NotifyWhenAvailableRequest } from "@lynia/shared";
+import { AcceptDisclaimerRequest, CreateOrderRequest, NotifyWhenAvailableRequest, RaisePriceRequest } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
@@ -111,6 +111,19 @@ export class OrdersController {
   @Get("earnings/summary")
   earningsSummary(@CurrentUser() riderId: string) {
     return this.orders.earningsSummary(riderId);
+  }
+
+  /** Customer raises their fare in place on a still-open auction (strictly upward; the offer-window
+   *  countdown is NOT reset). Ownership + status + window are enforced in the service. Throttled — each
+   *  raise re-announces to nearby riders. */
+  @Post(":orderId/price")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "order-raise-price" })
+  raisePrice(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(RaisePriceRequest)) body: RaisePriceRequest,
+    @CurrentUser() customerId: string,
+  ) {
+    return this.orders.raisePrice(orderId, customerId, body.proposedFare);
   }
 
   @Get(":orderId")

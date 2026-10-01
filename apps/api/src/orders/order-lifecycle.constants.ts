@@ -39,6 +39,9 @@ export const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup",
  *  evidence either while disputing or right after. Optional, never gates a status. Typed as the Prisma
  *  enum because the CAS `where` reuses it verbatim. */
 export const DELIVERY_PROOF_STATUSES: readonly OrderStatus[] = ["en_route_dropoff", "undelivered"];
+/** Terminal parcel statuses the customer may one-tap resend from at a new fare (OrderLifecycleService
+ *  .resend): the auction closed unpicked, the job was cancelled, or the hand-off failed. */
+export const RESENDABLE = new Set<string>(["expired", "cancelled", "undelivered"]);
 /** Repeated rider cancels earn a cooldown that blocks going online (T4 no-show penalty). */
 export const CANCEL_STRIKE_LIMIT = 3;
 // DS20-03: the cooldown duration is the shared RIDER_STRIKE_COOLDOWN_MS (policy.ts) — the same value

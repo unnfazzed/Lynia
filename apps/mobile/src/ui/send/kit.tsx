@@ -364,11 +364,14 @@ export function SendField({
 export function Notice({
   icon = "circle-alert",
   text,
+  lead,
   tone = "calm",
   style,
 }: {
   icon?: IconName;
   text: string;
+  /** A bold first sentence before `text` (the order screen's no-riders notice, D-53). */
+  lead?: string;
   tone?: "calm" | "warn" | "wash";
   style?: ViewStyle;
 }): React.ReactElement {
@@ -391,7 +394,10 @@ export function Notice({
       }}
     >
       <Icon name={icon} size={18} color={warn ? tokens.color.danger : tokens.color.muted} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: tokens.color.ink }}>{text}</Text>
+      <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: tokens.color.ink }}>
+        {lead ? <Text style={{ fontWeight: tokens.font.weight.bold }}>{lead} </Text> : null}
+        {text}
+      </Text>
     </View>
   );
 }

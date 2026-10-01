@@ -157,6 +157,18 @@ export type NotifyWhenAvailableRequest = z.infer<typeof NotifyWhenAvailableReque
 export const FoodRatingTag = z.enum(["hot_food", "on_time", "polite", "right_order"]);
 export type FoodRatingTag = z.infer<typeof FoodRatingTag>;
 
+/** The parcel delivered/rate feedback chips (the redesigned customer order screen): four positive and
+ *  four negative. Same controlled-vocabulary rule as {@link FoodRatingTag}. `on_time` deliberately
+ *  shares its wire value with the food set — it means the same thing on both. */
+export const ParcelRatingTag = z.enum(["on_time", "careful", "friendly", "communication", "late", "damaged", "rude", "hard_to_reach"]);
+export type ParcelRatingTag = z.infer<typeof ParcelRatingTag>;
+
+/** Every rating chip `RateRequest.tags` accepts: the food set plus the parcel set (`on_time` once). One
+ *  flat enum rather than a z.union so the wire contract is a pure enum WIDENING of the food-only list
+ *  (the contract-snapshot gate reads new enum values as additive; a union would read as a retype). */
+export const RatingTag = z.enum([...FoodRatingTag.options, ...ParcelRatingTag.exclude(["on_time"]).options]);
+export type RatingTag = z.infer<typeof RatingTag>;
+
 /** Customer rates the rider after delivery; this also closes the order (`completed`). For a food
  *  order the same call also carries the food score + feedback tags the delivered mock draws (#672);
  *  both are OPTIONAL so the parcel path (single rider score) is unchanged and an old client keeps
@@ -166,7 +178,9 @@ export const RateRequest = z.object({
   score: z.number().int().min(1).max(5),
   comment: z.string().max(500).optional(),
   foodScore: z.number().int().min(1).max(5).optional(),
-  tags: z.array(FoodRatingTag).max(8).optional(),
+  // Either vocabulary: food chips on a merchant order, parcel chips on a parcel order. Persisted as-is
+  // (ratings.tags is text[]); RatingTag keeps both sets controlled without a per-orderType schema.
+  tags: z.array(RatingTag).max(8).optional(),
 });
 export type RateRequest = z.infer<typeof RateRequest>;
 
@@ -177,6 +191,21 @@ export const RateSenderRequest = z.object({
   comment: z.string().max(500).optional(),
 });
 export type RateSenderRequest = z.infer<typeof RateSenderRequest>;
+
+/** Customer raises their own fare in place on a still-open auction (POST /orders/:orderId/price). Same
+ *  money bounds as CreateOrderRequest.proposedFare; the server also requires it to be strictly higher
+ *  than the current fare. The offer window is NOT reset — the countdown keeps running. */
+export const RaisePriceRequest = z.object({
+  proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+});
+export type RaisePriceRequest = z.infer<typeof RaisePriceRequest>;
+
+/** One-tap resend of a finished (expired / cancelled / undelivered) parcel order at a new fare
+ *  (POST /orders/:orderId/resend). Re-uses an already-open re-broadcast clone when one exists. */
+export const ResendOrderRequest = z.object({
+  proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+});
+export type ResendOrderRequest = z.infer<typeof ResendOrderRequest>;
 
 /** Either party cancels an in-flight order. A rider-initiated cancel counts as a no-show strike. */
 export const CancelRequest = z.object({

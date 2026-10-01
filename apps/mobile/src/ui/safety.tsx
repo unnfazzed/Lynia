@@ -140,8 +140,11 @@ function DoneState({ message, onClose }: { message: string; onClose: () => void 
 }
 
 // ── 1. Get help with this trip ────────────────────────────────────────────────
-export function GetHelpControl({ orderId }: { orderId: string }): React.ReactElement {
-  const [open, setOpen] = useState(false);
+/**
+ * The trip issue form as a controlled sheet — the order screen's Help panel opens it from "Report a
+ * problem" (ledger D-53); `GetHelpControl` below wraps it with its own entry button.
+ */
+export function TripIssueSheet({ orderId, visible, onClose }: { orderId: string; visible: boolean; onClose: () => void }): React.ReactElement {
   const [type, setType] = useState<IssueType | null>(null);
   const [desc, setDesc] = useState("");
   const [done, setDone] = useState(false);
@@ -163,7 +166,7 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
   useActionErrorEffect(m.error);
 
   function close(): void {
-    setOpen(false);
+    onClose();
     // Reset after the dismiss animation so the form doesn't visibly clear under the user.
     setTimeout(() => {
       setDone(false);
@@ -175,36 +178,43 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
   }
 
   return (
+    <Sheet visible={visible} onClose={close} title="Get help with this trip">
+      {done ? (
+        <DoneState message="Thanks — our team will look into it and follow up if we need more." onClose={close} />
+      ) : (
+        <>
+          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.md }}>
+            Tell us what went wrong and we&apos;ll take a look. This opens a support case for this trip.
+          </Text>
+          <Text style={{ fontSize: tokens.font.size.label, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, marginBottom: 6 }}>
+            What&apos;s the problem?
+          </Text>
+          <OptionChips options={ISSUE_TYPE_OPTIONS} value={type} onChange={setType} />
+          <Field
+            label="Tell us more"
+            value={desc}
+            onChangeText={setDesc}
+            placeholder="Add any detail that helps us understand what happened"
+            maxLength={ISSUE_DESCRIPTION_MAX}
+          />
+          <Button
+            label="Send to our team"
+            onPress={() => m.mutate()}
+            loading={pendingOrQueued(m)}
+            disabled={!canSubmitIssue(type, desc)}
+          />
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+export function GetHelpControl({ orderId }: { orderId: string }): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  return (
     <>
       <Button label="Get help with this trip" variant="ghost" onPress={() => setOpen(true)} />
-      <Sheet visible={open} onClose={close} title="Get help with this trip">
-        {done ? (
-          <DoneState message="Thanks — our team will look into it and follow up if we need more." onClose={close} />
-        ) : (
-          <>
-            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.md }}>
-              Tell us what went wrong and we&apos;ll take a look. This opens a support case for this trip.
-            </Text>
-            <Text style={{ fontSize: tokens.font.size.label, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, marginBottom: 6 }}>
-              What&apos;s the problem?
-            </Text>
-            <OptionChips options={ISSUE_TYPE_OPTIONS} value={type} onChange={setType} />
-            <Field
-              label="Tell us more"
-              value={desc}
-              onChangeText={setDesc}
-              placeholder="Add any detail that helps us understand what happened"
-              maxLength={ISSUE_DESCRIPTION_MAX}
-            />
-            <Button
-              label="Send to our team"
-              onPress={() => m.mutate()}
-              loading={pendingOrQueued(m)}
-              disabled={!canSubmitIssue(type, desc)}
-            />
-          </>
-        )}
-      </Sheet>
+      <TripIssueSheet orderId={orderId} visible={open} onClose={() => setOpen(false)} />
     </>
   );
 }

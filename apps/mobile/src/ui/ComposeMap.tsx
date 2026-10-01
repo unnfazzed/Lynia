@@ -73,7 +73,7 @@ export type ActiveSlot = "pickup" | "drop";
  * (radius 3), each with a 3px white ring and the card shadow, and an optional white pill label under it.
  * Pickup = green dot, drop-off = red square is the app-wide visual language.
  */
-function PinView({ kind, label }: { kind: ActiveSlot; label: string | null }): React.ReactElement {
+export function PinView({ kind, label }: { kind: ActiveSlot; label: string | null }): React.ReactElement {
   const pickup = kind === "pickup";
   return (
     <View style={{ alignItems: "center", gap: 3, padding: 4 }}>

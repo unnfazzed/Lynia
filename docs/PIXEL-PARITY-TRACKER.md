@@ -157,9 +157,9 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | 👁 | C4·3 | `RC checkout_cash` | Checkout · CASH  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | header → shared AppBar; cash-consequence names the full total. Live address-entry block stands in for the mock's static summary row |
 | 👁 | C4·4 | `RC checkout_wallet` | Checkout · WALLET  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | wallet-selected subtitle → provider list; verbatim note copy, ink type, lead bold |
 | ⬜ | C4·5 | `RC placing` | Placing  [FOOD] | | |
-| ⬜ | C4·6 | `LJ auction_finding` | Auction · finding  [PARCEL] | | |
-| ⬜ | C4·7 | `LJ auction_live` | Auction · offers live  [PARCEL] | | |
-| ⬜ | C4·8 | `LJ auction_counter` | Counter-offer review  [PARCEL] | | |
+| ⏭ | C4·6 | `LJ auction_finding` | Auction · finding  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C4·7 | `LJ auction_live` | Auction · offers live  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C4·8 | `LJ auction_counter` | Counter-offer review  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 
 ### C5 · The kitchen confirms
 
@@ -180,8 +180,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | | |
 | ⬜ | C6·2 | `RC track_secured` | Rider secured  [FOOD] | | |
 | 👁 | C6·3 | `RC track_way` | On the way  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | map-bg+sheet + RiderCard are honest deviations (gray-map stub, no rider identity in food API) — see doc. UIP-05 (`docs/KNOWN_BUGS.md`, 2026-08-23): the status timeline + "Follow route in Google Maps" row the mock never draws on this screen are now removed (food + `en_route_dropoff` only). PARTIALLY open still: the mock's full-bleed map + bottom-sheet layout vs. the app's AppBar + contained map box + linear scroll is unchanged — deferred as a dedicated restructure (touches `LiveTrackingCard`, shared with the parcel tracker) |
-| 👁 | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
-| 👁 | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | parcel tracking cluster align (`docs/parity/PHASE3-tracking.md`, `tools/parity/out/phase3_tracking.png`) | |
+| ⏭ | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 
 ### C7 · Hand-off & close
 
@@ -191,9 +191,9 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | C7·2 | `RC handoff_wait` | Waiting for rider confirm  [FOOD] | | |
 | ⬜ | C7·3 | `RC handoff_code` | Both confirmed · code  [FOOD] | | |
 | 👁 | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | single rider rating vs mock's food+rider+chips is an honest deviation (API carries one score) — see doc |
-| ⬜ | C7·5 | `LJ delivered_rate` | Delivered · rate the rider  [PARCEL] | | |
-| ⬜ | C7·6 | `LJ completed` | Completed  [PARCEL] | | |
-| ⬜ | C7·7 | `LJ rate_undo` | Rating sent · undo  [PARCEL] | | |
+| ⏭ | C7·5 | `LJ delivered_rate` | Delivered · rate the rider  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C7·6 | `LJ completed` | Completed  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C7·7 | `LJ rate_undo` | Rating sent · undo  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 
 ### C8 · Account & support
 
@@ -250,15 +250,15 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | C10·19 | `RC handoff_dispute` | Rider didn't confirm  [FOOD] | | |
 | ⬜ | C10·20 | `RC failed_noshow` | No-show · returned  [FOOD] | | |
 | ⛔ | C10·21 | `RC resume` | App resumed mid-order  [FOOD] | | |
-| ⬜ | C10·22 | `LJ no_riders` | No riders online  [PARCEL] | | |
-| ⬜ | C10·23 | `LJ select_race` | Rider just taken  [PARCEL] | | |
-| ⬜ | C10·24 | `LJ auction_expired` | Auction expired  [PARCEL] | | |
-| ⬜ | C10·25 | `LJ rider_cancelled` | Rider cancelled  [PARCEL] | | |
-| ⬜ | C10·26 | `LJ track_paused` | Live paused  [PARCEL] | | |
-| ⬜ | C10·27 | `LJ cancel` | Cancel · reason  [PARCEL] | | |
-| ⬜ | C10·28 | `LJ cancelled` | Cancelled  [PARCEL] | | |
-| ⬜ | C10·29 | `LJ undelivered` | Not delivered  [PARCEL] | | |
-| ⬜ | C10·30 | `LJ track_dark` | Rider went dark  [PARCEL] | | |
+| ⏭ | C10·22 | `LJ no_riders` | No riders online  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·23 | `LJ select_race` | Rider just taken  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·24 | `LJ auction_expired` | Auction expired  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·25 | `LJ rider_cancelled` | Rider cancelled  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·26 | `LJ track_paused` | Live paused  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·27 | `LJ cancel` | Cancel · reason  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·28 | `LJ cancelled` | Cancelled  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·29 | `LJ undelivered` | Not delivered  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
+| ⏭ | C10·30 | `LJ track_dark` | Rider went dark  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⬜ | C10·31 | `LJ otp_cooldown` | OTP · resend cooldown | | |
 | ⬜ | C10·32 | `LJ otp_resent` | OTP · code re-sent | | |
 | ⬜ | C10·33 | `LJ otp_locked` | OTP · expired / locked | | |

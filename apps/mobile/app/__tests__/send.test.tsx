@@ -599,7 +599,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     expect(body.proposedFare).toBe(3.36);
     expect(body.disclaimerVersion).toBeUndefined();
     expect(typeof body.idempotencyKey).toBe("string");
-    expect(mockPush).toHaveBeenCalledWith("/order/o-1");
+    expect(mockReplace).toHaveBeenCalledWith("/order/o-1");
     expect(has(t, "Agree & broadcast")).toBe(false);
   });
 
@@ -616,7 +616,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     expect(mockCreateOrder).toHaveBeenCalledTimes(2);
     // Same order, same idempotency key — a retry can't open a second auction.
     expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
-    expect(mockPush).toHaveBeenCalledWith("/order/o-2");
+    expect(mockReplace).toHaveBeenCalledWith("/order/o-2");
   });
 
   it("returns to step 1 with the out-of-area notice when the server refuses the route", async () => {

@@ -20,6 +20,7 @@ const mockListOffers = jest.fn<Promise<OfferRow[]>, [string]>();
 const mockSelectOffer = jest.fn();
 
 jest.mock("expo-router", () => ({
+  useFocusEffect: () => undefined,
   useLocalSearchParams: () => ({ id: "order-1" }),
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
 }));
@@ -34,6 +35,8 @@ jest.mock("../../../src/api/orders", () => ({
   notifyWhenRiderOnline: jest.fn(),
   rateOrder: jest.fn(),
   rotateDeliveryCode: jest.fn(),
+  raiseOrderPrice: jest.fn(),
+  resendOrder: jest.fn(),
 }));
 jest.mock("../../../src/api/offers", () => ({
   listOffers: (...args: [string]) => mockListOffers(...args),
@@ -46,9 +49,9 @@ jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
   useForegroundRefetch: () => undefined,
 }));
 // react-native-maps can't mount in this test environment — same precedent as job.test.tsx's
-// JobDetailsCard stub / order-screen.test.tsx's LiveTrackingCard stub.
-jest.mock("../../../src/ui/order/LiveTrackingCard", () => ({
-  LiveTrackingCard: () => null,
+// JobDetailsCard stub.
+jest.mock("../../../src/ui/order/OrderMap", () => ({
+  OrderMap: () => null,
 }));
 
 import OrderScreen from "../[id]";
@@ -112,7 +115,7 @@ async function render(): Promise<renderer.ReactTestRenderer> {
 }
 
 function press(tree: renderer.ReactTestRenderer, label: string): void {
-  const node = tree.root.findAll((n) => n.props.label === label && typeof n.props.onPress === "function")[0];
+  const node = tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith(label) && typeof n.props.onPress === "function")[0];
   if (!node) throw new Error(`no button labelled "${label}"`);
   act(() => node.props.onPress());
 }
@@ -149,11 +152,11 @@ describe("selectOffer 409 reconciliation (LC-C08)", () => {
     mockSelectOffer.mockRejectedValue(new ApiError(409, "That offer is no longer available"));
 
     const tree = await render();
-    press(tree, "Choose this rider");
+    press(tree, "Choose Tapiwa M.");
     await settle();
     await settle(); // the reconciliation getOrder() call + onSettled's invalidate both resolve async
 
-    expect(has(tree, "That rider was just taken — choose another.")).toBe(false);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
   });
 
   it("shows the 'just taken' notice when a fresh getOrder confirms the auction is still open — the tapped rider genuinely became unavailable", async () => {
@@ -173,10 +176,10 @@ describe("selectOffer 409 reconciliation (LC-C08)", () => {
     mockSelectOffer.mockRejectedValue(new ApiError(409, "Rider just became unavailable, pick another"));
 
     const tree = await render();
-    press(tree, "Choose this rider");
+    press(tree, "Choose Tapiwa M.");
     await settle();
     await settle();
 
-    expect(has(tree, "That rider was just taken — choose another.")).toBe(true);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ const mockGetOrder = jest.fn<Promise<OrderSnapshot>, [string]>();
 const mockListOffers = jest.fn();
 
 jest.mock("expo-router", () => ({
+  useFocusEffect: () => undefined,
   useLocalSearchParams: () => ({ id: "order-1" }),
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
 }));
@@ -30,6 +31,8 @@ jest.mock("../../../src/api/orders", () => ({
   notifyWhenRiderOnline: jest.fn(),
   rateOrder: jest.fn(),
   rotateDeliveryCode: jest.fn(),
+  raiseOrderPrice: jest.fn(),
+  resendOrder: jest.fn(),
 }));
 jest.mock("../../../src/api/offers", () => ({
   listOffers: (...args: unknown[]) => mockListOffers(...args),
@@ -41,8 +44,8 @@ jest.mock("../../../src/realtime/use-order-socket", () => ({
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
   useForegroundRefetch: () => undefined,
 }));
-jest.mock("../../../src/ui/order/LiveTrackingCard", () => ({
-  LiveTrackingCard: () => null,
+jest.mock("../../../src/ui/order/OrderMap", () => ({
+  OrderMap: () => null,
 }));
 
 import OrderScreen from "../[id]";
@@ -108,8 +111,8 @@ describe("order/[id].tsx — malformed offers response (CF-04)", () => {
     await expect(render()).resolves.toBeTruthy();
     // The screen stayed mounted and rendered the open-auction empty-offers state, not a blank
     // crashed tree.
-    expect(activeTree!.root.findAll((n) => n.props.children === "No offers yet — riders nearby have been pinged. Hang tight.").length).toBeGreaterThan(0);
-    expect(activeTree!.root.findAll((n) => n.props.label === "Choose this rider").length).toBe(0);
+    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as riders reply.").length).toBeGreaterThan(0);
+    expect(activeTree!.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Choose ")).length).toBe(0);
   });
 
   it("does not throw when listOffers resolves null", async () => {
@@ -117,6 +120,6 @@ describe("order/[id].tsx — malformed offers response (CF-04)", () => {
     mockListOffers.mockResolvedValue(null as unknown);
 
     await expect(render()).resolves.toBeTruthy();
-    expect(activeTree!.root.findAll((n) => n.props.children === "No offers yet — riders nearby have been pinged. Hang tight.").length).toBeGreaterThan(0);
+    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as riders reply.").length).toBeGreaterThan(0);
   });
 });

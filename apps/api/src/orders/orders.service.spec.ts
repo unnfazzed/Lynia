@@ -1507,3 +1507,228 @@ describe("OrdersService.requestNotifyWhenAvailable (2·b1 notify-me)", () => {
     expect(addNotifyRequest).toHaveBeenCalledWith("cust-1", -17.8, 31.0, undefined);
   });
 });
+
+describe("OrdersService.raisePrice (raise the fare in place on an open auction)", () => {
+  const now = Date.now();
+  const openRow = (overrides: Record<string, unknown> = {}) => ({
+    customerId: "cust-1",
+    status: "open_for_offers",
+    orderType: "parcel",
+    proposedFare: new Prisma.Decimal("2.50"),
+    createdAt: new Date(now - 30_000),
+    ...overrides,
+  });
+  function harness(row: unknown, casCount = 1) {
+    const updates: Array<Record<string, unknown>> = [];
+    const gateway = { emitOrderStatus: vi.fn(), emitBoardNewOrder: vi.fn() };
+    const prisma = {
+      order: {
+        findUnique: vi.fn(async () => row),
+        updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: casCount }; },
+      },
+    };
+    const svc = new OrdersService(
+      prisma as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      gateway as unknown as TrackingGateway,
+    );
+    return { svc, updates, gateway, prisma };
+  }
+
+  it("404s a missing order and 403s another customer's", async () => {
+    await expect(harness(null).svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/order not found/i);
+    await expect(harness(openRow()).svc.raisePrice("ord-1", "stranger", 3)).rejects.toThrow(/not your order/i);
+  });
+
+  it("409s once the order is no longer open, or for a merchant order", async () => {
+    await expect(harness(openRow({ status: "assigned" })).svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/no longer open/i);
+    await expect(harness(openRow({ orderType: "merchant" })).svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/no longer open/i);
+  });
+
+  it("409s once the offer window (createdAt + OFFER_WINDOW_MS) has closed, even before expiry flips the status", async () => {
+    const h = harness(openRow({ createdAt: new Date(Date.now() - OFFER_WINDOW_MS - 1_000) }));
+    await expect(h.svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/window has closed/i);
+    expect(h.updates).toHaveLength(0);
+  });
+
+  it("400s a fare that isn't strictly higher than the current one", async () => {
+    await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2.5)).rejects.toThrow(/must be higher/i);
+    await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2)).rejects.toThrow(/must be higher/i);
+  });
+
+  it("CAS-updates ONLY proposedFare (never createdAt — the countdown keeps running) and returns the new fare", async () => {
+    const h = harness(openRow());
+    await expect(h.svc.raisePrice("ord-1", "cust-1", 3.75)).resolves.toEqual({ orderId: "ord-1", proposedFare: "3.75" });
+    expect(h.updates).toHaveLength(1);
+    const { where, data } = h.updates[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
+    expect(where).toMatchObject({ id: "ord-1", status: "open_for_offers", customerId: "cust-1" });
+    // Window + monotonic guards ride the same CAS so a racing expiry or a lower concurrent raise loses.
+    expect(where.createdAt).toHaveProperty("gt");
+    expect(String((where.proposedFare as { lt: unknown }).lt)).toBe("3.75");
+    expect(Object.keys(data)).toEqual(["proposedFare"]);
+    expect(String(data.proposedFare)).toBe("3.75");
+  });
+
+  it("409s when the CAS loses (picked / cancelled / expired / out-raised in between)", async () => {
+    await expect(harness(openRow(), 0).svc.raisePrice("ord-1", "cust-1", 3)).rejects.toThrow(/order changed/i);
+  });
+
+  it("post-commit: signals the order room so the customer's snapshot refetches", async () => {
+    const h = harness(openRow());
+    // The announce re-reads the order (now at the new fare) — serve a full row for that read.
+    h.prisma.order.findUnique.mockResolvedValueOnce(openRow()).mockResolvedValue({
+      ...openRow({ proposedFare: new Prisma.Decimal("3.75") }),
+      id: "ord-1",
+      pickup: orderInput.pickup,
+      dropoff: orderInput.dropoff,
+      itemDesc: "Documents",
+      suggestedFare: new Prisma.Decimal("2.40"),
+      distanceKm: 1.5,
+    });
+    await h.svc.raisePrice("ord-1", "cust-1", 3.75);
+    await flush();
+    expect(h.gateway.emitOrderStatus).toHaveBeenCalledWith("ord-1", "open_for_offers");
+  });
+});
+
+describe("OrdersService.announcePriceChange", () => {
+  const order = (overrides: Record<string, unknown> = {}) => ({
+    id: "0a1b2c3d-0000-4000-8000-000000000001",
+    status: "open_for_offers",
+    pickup: orderInput.pickup,
+    dropoff: orderInput.dropoff,
+    itemDesc: "Documents",
+    suggestedFare: new Prisma.Decimal("2.40"),
+    proposedFare: new Prisma.Decimal("3.75"),
+    distanceKm: 1.5,
+    createdAt: new Date(Date.now() - 30_000),
+    ...overrides,
+  });
+  function harness(row: unknown) {
+    const gateway = { emitOrderStatus: vi.fn(), emitBoardNewOrder: vi.fn() };
+    const notifyNewBroadcast = vi.fn(async () => {});
+    const tracking = {
+      nearbyRiders: async () => [{ profileId: "r1" }, { profileId: "r2" }],
+      // r1 was already pinged for this order — only r2 is newly claimed.
+      claimBroadcastRecipients: async () => ["r2"],
+    } as unknown as TrackingService;
+    const svc = new OrdersService(
+      { order: { findUnique: async () => row } } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      tracking,
+      { notifyNewBroadcast } as unknown as NotificationsService,
+      gateway as unknown as TrackingGateway,
+    );
+    return { svc, gateway, notifyNewBroadcast };
+  }
+
+  it("re-emits the board card at the new fare and pings not-yet-pinged riders with the REMAINING-window TTL", async () => {
+    const h = harness(order());
+    await h.svc.announcePriceChange("0a1b2c3d-0000-4000-8000-000000000001");
+    await flush();
+    expect(h.gateway.emitOrderStatus).toHaveBeenCalledWith("0a1b2c3d-0000-4000-8000-000000000001", "open_for_offers");
+    expect(h.gateway.emitBoardNewOrder).toHaveBeenCalledTimes(1);
+    const boardEvent = h.gateway.emitBoardNewOrder.mock.calls[0][0] as { proposedFare: string };
+    expect(boardEvent.proposedFare).toBe("3.75");
+    expect(h.notifyNewBroadcast).toHaveBeenCalledTimes(1);
+    const [id, ids, info, ttl] = h.notifyNewBroadcast.mock.calls[0] as unknown as [string, string[], { fare: string }, number];
+    expect(id).toBe("0a1b2c3d-0000-4000-8000-000000000001");
+    expect(ids).toEqual(["r2"]);
+    expect(info.fare).toBe("3.75");
+    // ~60s left of a 90s window — never the flat full-window default.
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(60);
+  });
+
+  it("no-ops on an order that is no longer open, and skips the push once the window has elapsed", async () => {
+    const closed = harness(order({ status: "assigned" }));
+    await closed.svc.announcePriceChange("x");
+    expect(closed.gateway.emitOrderStatus).not.toHaveBeenCalled();
+    expect(closed.notifyNewBroadcast).not.toHaveBeenCalled();
+
+    const late = harness(order({ createdAt: new Date(Date.now() - OFFER_WINDOW_MS - 1_000) }));
+    await late.svc.announcePriceChange("x");
+    expect(late.notifyNewBroadcast).not.toHaveBeenCalled();
+    expect(late.gateway.emitBoardNewOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("OrdersService.getSnapshot riderCard (customer's rider identity card)", () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: "ord-1",
+    status: "en_route_pickup",
+    agreedFare: null,
+    proposedFare: 2.5,
+    customerId: "cust-1",
+    riderId: "rider-1",
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    customer: { phone: "+263771111111" },
+    rider: {
+      profileId: "rider-1",
+      currentLat: null,
+      currentLng: null,
+      positionUpdatedAt: null,
+      ratingAvg: 4.8,
+      ratingCount: 120,
+      tripsCount: 342,
+      vehicleInfo: "  ABC 1234  ",
+      kycStatus: "verified",
+      profile: { phone: "+263782000000", firstName: "Tendai", lastName: "Moyo", photoUrl: "https://cdn.example/p.jpg" },
+    },
+    events: [],
+    ...overrides,
+  });
+  let lastSelect: Record<string, unknown> | undefined;
+  const svc = (snap: unknown) =>
+    new OrdersService(
+      {
+        order: {
+          findUnique: async (args: { select: Record<string, unknown> }) => {
+            lastSelect = args.select;
+            return snap;
+          },
+        },
+      } as unknown as PrismaService,
+      {} as OfferExpiryService,
+      noTracking,
+      noNotifications,
+      noGateway,
+    );
+
+  it("gives the customer the rider's public card — name, photo, rating, trips, trimmed plate, verified — and no phone", async () => {
+    const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
+    expect(snap.riderCard).toEqual({
+      firstName: "Tendai",
+      lastName: "Moyo",
+      photoUrl: "https://cdn.example/p.jpg",
+      ratingAvg: 4.8,
+      ratingCount: 120,
+      tripsCount: 342,
+      plate: "ABC 1234",
+      verified: true,
+    });
+    expect(snap.riderCard).not.toHaveProperty("phone");
+    // The existing rider-position field is untouched.
+    expect(snap.rider).toMatchObject({ profileId: "rider-1" });
+    // Sourced from the PROFILE photo (as the offers list is), never the rider's KYC object key.
+    const riderSelect = (lastSelect!.rider as { select: Record<string, unknown> }).select;
+    expect(riderSelect).not.toHaveProperty("photoUrl");
+  });
+
+  it("null plate for an empty/whitespace vehicleInfo, null photo, and verified only for kycStatus verified", async () => {
+    const r = row().rider;
+    const snap = await svc(
+      row({ rider: { ...r, vehicleInfo: "   ", kycStatus: "expired", profile: { ...r.profile, photoUrl: null } } }),
+    ).getSnapshot("ord-1", "cust-1");
+    expect(snap.riderCard).toMatchObject({ plate: null, photoUrl: null, verified: false });
+  });
+
+  it("is null for the rider viewing their own job, and when no rider is assigned", async () => {
+    expect((await svc(row()).getSnapshot("ord-1", "rider-1")).riderCard).toBeNull();
+    expect((await svc(row({ status: "open_for_offers", riderId: null, rider: null })).getSnapshot("ord-1", "cust-1")).riderCard).toBeNull();
+  });
+});

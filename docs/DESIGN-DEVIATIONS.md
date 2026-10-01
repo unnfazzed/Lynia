@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52.** D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53.** D-53 is the customer order screen redesign (2026-10-01): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -2507,3 +2507,75 @@ Evidence: `docs/parity/SEND-COMPOSE-V2-2026-10-01.png` (handoff left, app right,
 
 **Upstream ask:** redraw the gallery's `LJ` composer screens (and `LJ.on_hold`) from this handoff, so the
 gallery and the shipped flow agree again.
+
+## D-53 · After Send: one order screen replaces the gallery's auction, tracking and end screens — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner uploaded the Claude Design handoff for the
+screens after "Send to riders" (`design_handoff_after_send`) with *"implement this . taking off from last
+session for send screen redesign"*. The handoff's `BRIEF.md` records the owner's product decisions and
+says they are final.
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze
+gates. The design package only *absorbs a new export* here. Nothing in it is edited to match code.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/after-send/` | The handoff, **verbatim**: `BRIEF.md` (the decisions, final), `README.md` (tokens, anatomy, components, the 24 states, interactions, navigation, state), `CLAUDE-CODE-PROMPT.md`, `design/` (the standalone HTML of every state, `as-kit.jsx` with the `A` copy object, `as-screens.jsx`, `sc2-kit.jsx`) and `screens/` (2× PNGs of every state, plus the 320×640 re-checks). |
+
+### 2 · Authority for the customer order screen (a scope rule)
+
+For `app/order/[id].tsx` (customer view) the authority chain's LOOK is now this handoff. The gallery's
+order screens stay until an export redraws them, and they are **not aligned to**: `LJ.auction_finding`,
+`LJ.auction_live`, `LJ.auction_counter`, `LJ.no_riders`, `LJ.select_race`, `LJ.auction_expired`,
+`LJ.rider_cancelled`, `LJ.track_active`, `LJ.track_code`, `LJ.track_paused`, `LJ.track_dark`,
+`LJ.cancel`, `LJ.cancelled`, `LJ.undelivered`, `LJ.delivered_rate`, `LJ.rate_undo`, `LJ.completed`
+(SUPERSEDED reasons in `tools/parity/parity-status.mjs` and `tools/parity/rendered-conformance.pending.json`;
+⏭ rows in `docs/PIXEL-PARITY-TRACKER.md`). The `[BOTH]` safety screens (`LJ.sos_*`, `LJ.report*`,
+`LJ.trip_help*`, `LJ.phone_masked`) also serve the rider job screen and are left as they were.
+
+### 3 · What changed
+
+- **App — one screen** (`app/order/[id].tsx`, `src/ui/order/{copy,kit,cards,stages,panels,OrderMap,OrderSheet}.tsx`,
+  `src/logic/order-stage.ts`): the Send header (Back · per-stage title · red Help on live trips), a
+  full-bleed map (green dot / red square / 5px route, the new ink rider marker with name pill, paused
+  "Last seen" variant, the dotted line to pickup, the finding rings), and a sheet with the per-stage peek
+  heights and a full snap. Every string comes from `copy.ts` (the handoff's `A`, verbatim). States 1–19
+  as drawn; Back closes a panel, then collapses a full sheet, then leaves (Android back too).
+- **"Send to riders" replaces into the order** (`app/send.tsx`), so Back never lands on Review.
+- **Removed:** the order-id title and status pill, the vertical timeline, sort chips, the full-width
+  "Choose this rider", the counter card with Decline, the map box with Expand / Recenter, the
+  "Re-issue delivery code" button, the separate expired / no-riders / rider-cancelled screens, "Raise
+  price & send again" opening a new order, the separate rating card, the gold pin, the "You're matched"
+  / "Delivered!" toasts and the SOS pill (its job moved into Get help's Emergency row, which still
+  alerts the safety team). Deleted: `AuctionClock`, `CounterOfferCard`, `PickupPhoto`, `ReceiptCard`.
+- **API (the handoff's "Needs backend"):** `POST /orders/:id/price` raises an open order's price in
+  place (the window keeps running, riders are re-pinged); `POST /orders/:id/resend` is the one-tap
+  retry (re-prices an already-open re-broadcast of the order, else clones it at the new price);
+  parcel rating tags (`ParcelRatingTag`); the snapshot's `riderCard` (name, photo, rating, plate =
+  vehicle info, Verified = KYC verified) for the customer.
+- **Root offline strip** stands down while the order screen draws its own ink banner (state 19).
+
+### 4 · Still different from the handoff
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Delivery code | 4 digits ("4182"); hand-off boxes 64×80 (54×70 < 340px), card digits 30/800 | The real code is **6 digits**; the hand-off boxes shrink to fit the sheet (≈43px at 360, 36px at 320) and the card digits come down to fit beside "Share code" — never truncated | The code length is a server security property; the drawn sizes don't fit six |
+| Code missing on a live order | Not drawn (the "Re-issue" button is removed) | The screen issues a fresh code once, by itself, so the card is never empty | A code card with no code would strand the hand-off |
+| Rider cancels before pickup | State 13 retry | The server still opens a re-broadcast at the same price at once; the screen stays on state 13 instead of jumping to it, and "Send again at $X" re-prices and opens that auction | No second auction for one parcel |
+| "Send again" on completed / not delivered / cancelled | Not specified | Opens the Send flow prefilled (D-52's Send again) | Only the retry stages are one-tap |
+| Grabber | "Drag or tap the grabber" in a 16px row | Drag only (and screen-reader expand / collapse); not a tap target | A 16px tap target is below `--target-min` (CLAUDE.md D2) — **upstream**: draw the grabber row ≥ 44px or drop "tap" |
+| "3 riders have seen it" | `seenCount` | The live count of online riders near the pickup (`ridersNearby`) | No per-order seen count exists yet |
+| ETA per leg | Live ETA | Straight-line distance at 22 km/h × 1.3 road factor (`logic/eta.ts`), from the last fix | No routing engine |
+| Share my trip | A live link | A text message with the route and the rider | No public trip link exists yet |
+| Raised fare on riders' boards | — | Riders who already hold the card see the new fare on their next poll | No WS event updates a board card's fare yet |
+| "You rated Tendai ★★★★" on Trip complete | Drawn | Shown only in the session that rated | The snapshot does not carry the rating yet |
+| Map | Drawn streets | The real map (grey in the parity render) | — |
+| `/dev/order-states` route | Asked for by the prompt | Not shipped; `tools/parity/shoot-after-send.mjs` renders the states from fixtures instead | No dev-only route in the production bundle |
+
+Evidence: `docs/parity/AFTER-SEND-2026-10-01.png` (handoff left, app right, every state at 360×720 and
+the four 320×640 re-checks), produced by `tools/parity/shoot-after-send.mjs`.
+
+**Upstream asks:** redraw the gallery's `LJ` order screens from this handoff; draw the delivery code at
+six digits; make the grabber row clear `--target-min` or drop "tap the grabber".

@@ -220,11 +220,13 @@ const PENDING_RATING_KEY = "lynia.pendingRating";
 export interface PendingRating {
   orderId: string;
   score: number;
+  /** The quick tags picked with the stars (the order screen's rating, ledger D-53). */
+  tags?: string[];
 }
 
-export async function savePendingRating(orderId: string, score: number): Promise<void> {
+export async function savePendingRating(orderId: string, score: number, tags?: string[]): Promise<void> {
   try {
-    await SecureStore.setItemAsync(PENDING_RATING_KEY, JSON.stringify({ orderId, score }));
+    await SecureStore.setItemAsync(PENDING_RATING_KEY, JSON.stringify(tags && tags.length ? { orderId, score, tags } : { orderId, score }));
   } catch {
     /* best-effort */
   }
@@ -235,7 +237,9 @@ export async function loadPendingRating(): Promise<PendingRating | null> {
     if (!raw) return null;
     const v = JSON.parse(raw) as unknown;
     if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && typeof (v as { score?: unknown }).score === "number") {
-      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score };
+      const tags = (v as { tags?: unknown }).tags;
+      const okTags = Array.isArray(tags) && tags.every((t) => typeof t === "string") ? (tags as string[]) : undefined;
+      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score, ...(okTags ? { tags: okTags } : {}) };
     }
     return null;
   } catch {
@@ -321,7 +325,9 @@ export async function loadSenderRatingPending(): Promise<PendingSenderRating | n
     if (!raw) return null;
     const v = JSON.parse(raw) as unknown;
     if (v && typeof v === "object" && typeof (v as { orderId?: unknown }).orderId === "string" && typeof (v as { score?: unknown }).score === "number") {
-      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score };
+      const tags = (v as { tags?: unknown }).tags;
+      const okTags = Array.isArray(tags) && tags.every((t) => typeof t === "string") ? (tags as string[]) : undefined;
+      return { orderId: (v as { orderId: string }).orderId, score: (v as { score: number }).score, ...(okTags ? { tags: okTags } : {}) };
     }
     return null;
   } catch {

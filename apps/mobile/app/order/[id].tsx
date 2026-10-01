@@ -1,138 +1,136 @@
-import { ACTIVE_RIDE_STATUSES, CUSTOMER_CANCELLABLE_STATUSES, formatPhoneLocal, OFFER_WINDOW_MS } from "@lynia/shared";
+import { OFFER_WINDOW_MS, type RatingTag, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, ScrollView, Text, View } from "react-native";
+import { AccessibilityInfo, BackHandler, Linking, Share, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 import { ApiError } from "../../src/api/client";
-import { isPendingCounter, noRidersOnline, shouldShowOffersError } from "../../src/logic/journey";
-import { formatMoney } from "../../src/logic/money";
+import { listOffers, selectOffer } from "../../src/api/offers";
+import { raiseSos } from "../../src/api/safety";
+import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
+import { liveEta } from "../../src/logic/eta";
+import type { LastActive } from "../../src/logic/last-active";
+import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { SORT_MODES, type SortMode, UNDELIVERED_REASON_LABEL } from "../../src/logic/order-labels";
 import { orderOffers } from "../../src/logic/order-offers";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, shouldCancelBeforeRebroadcast } from "../../src/logic/order-tracking";
-import { listOffers, selectOffer, type OfferRow } from "../../src/api/offers";
-import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../src/api/orders";
-import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
+import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
+import { orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry } from "../../src/logic/order-tracking";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
-import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveOrder, loadLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
+import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
+import { useReachability } from "../../src/net/use-reachability";
 import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
-import { AppBar, Button, Card, Celebrate, EmptyState, Field, haptic, Heading, Icon, OfflineBanner, orderStatusTone, RiderMini, Screen, SkeletonCard, SkeletonList, StatusPill, Sub, useActionErrorEffect, useDial, useToast, Tappable } from "../../src/ui";
-import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
-import { AuctionClock } from "../../src/ui/order/AuctionClock";
-import { BidEntrance, CounterOfferCard } from "../../src/ui/order/CounterOfferCard";
-import { LiveTrackingCard } from "../../src/ui/order/LiveTrackingCard";
-import { PickupPhoto } from "../../src/ui/order/PickupPhoto";
-import { ReceiptCard } from "../../src/ui/order/ReceiptCard";
-import { RatingCard } from "../../src/ui/order/RatingCard";
+import { haptic, SkeletonList, useActionErrorEffect, useDial } from "../../src/ui";
+import { type OfferView, type ReceiptView, type RiderView } from "../../src/ui/order/cards";
+import { hhmm, initials, maskPhone, ORDER_COPY as A, orderText, riderShortName, usd } from "../../src/ui/order/copy";
+import { CtaButton, H2, Muted, OrderToast } from "../../src/ui/order/kit";
+import { OrderMap, type MapFrame } from "../../src/ui/order/OrderMap";
+import { OrderSheet, type OrderSheetHandle } from "../../src/ui/order/OrderSheet";
+import { HelpPanel, OrderHeader, PhotoViewer, ReconnectBanner } from "../../src/ui/order/panels";
+import {
+  CancelBar,
+  CancelledSheet,
+  cancelReasonText,
+  CancelSheet,
+  CompletedSheet,
+  FindingBar,
+  FindingSheet,
+  HandoffSheet,
+  NotDeliveredSheet,
+  OffersSheet,
+  OneButtonBar,
+  RateBar,
+  RatedSheet,
+  RateSheet,
+  RetryBar,
+  RetrySheet,
+  type TrackActions,
+  TrackSheet,
+  type TrackVM,
+  TwoButtonBar,
+} from "../../src/ui/order/stages";
+import { TripIssueSheet } from "../../src/ui/safety";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
-import { riderModeAvailable } from "../../src/rider-mode";
 
-const CUSTOMER_CANCELLABLE = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES);
-const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
-// Post-pickup cancels (parcel already on the bike) get a hand-back warning before we confirm — the
-// customer keeps the right to cancel anytime (INTERFACE-AUDIT C3) but must understand they'll arrange
-// getting the parcel back directly with the rider.
-const POST_PICKUP_CANCEL = new Set<string>(["picked_up", "en_route_dropoff"]);
-// Statuses where a rider is already MATCHED (everything the customer can cancel except the auction
-// itself) — a cancel here is costly enough (it strands/frees a matched rider) that an accidental tap
-// gets a confirm first. `open_for_offers` deliberately stays one-tap: there's no rider to strand and a
-// mis-tap just reopens the compose flow. POST_PICKUP_CANCEL is the subset that ALSO warns the parcel is
-// already on the bike.
-const MATCHED_CANCEL = new Set<string>(CUSTOMER_CANCELLABLE_STATUSES.filter((s) => s !== "open_for_offers"));
-// C2: after a rider bail the order flips to `cancelled` and the server pushes `order:rebroadcast` on the
-// (now dead) order's room to move the customer to the fresh auction. Hold the socket open for this grace
-// window past `cancelled` so that push can still land — bounded, so a genuinely terminal cancel doesn't
-// keep the socket alive forever.
+/**
+ * The customer's order screen — the After Send handoff (`packages/design/handoff/after-send/`, ledger
+ * D-53). ONE screen for the whole order: a full-bleed map under the Send flow's header, and a bottom
+ * sheet whose content follows the order's stage (finding → offers → to pickup → to drop-off → hand-off
+ * → delivered / completed, plus no match, rider cancelled, not delivered, cancelled, GPS paused and
+ * offline). Stages never push screens, so Back never walks through old stages: it closes a panel,
+ * collapses a full sheet, then leaves for Home.
+ *
+ * The data plumbing is unchanged from the screen this replaces: the snapshot is subscribed through the
+ * telemetry-stripped shell (GPS ticks only reach the map + stage via `selectRiderTelemetry`), the order
+ * socket streams status / offers / positions with a socket-gated poll fallback, the handover code is
+ * restored from SecureStore and reconciled against server rotations, a select 409 is reconciled before
+ * the "just taken" toast, and a rating armed before an app kill is re-sent on the next start (BH-06).
+ */
+
+const ACTIVE = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
+// C2: keep the socket through `cancelled` briefly so a rider-bail `order:rebroadcast` can still land.
 const CANCELLED_GRACE_MS = 20_000;
+const NOTE_MS = 4_000;
+const RATE_UNDO_S = 10;
+// The parcel rating tags, index-aligned with the copy's `tg` / `tn` labels.
+const PARCEL_TAGS: readonly RatingTag[] = ["on_time", "careful", "friendly", "communication"];
+const PARCEL_TAGS_LOW: readonly RatingTag[] = ["late", "damaged", "rude", "hard_to_reach"];
+
+type Panel = null | "cancelRequest" | "cancel" | "help" | "photo" | "report";
+type Toast = { text: string; icon?: "circle-alert" | "circle-check"; action?: string; actionIcon?: "refresh-cw" | "undo-2"; onAction?: () => void; ttl?: number };
 
 export default function OrderScreen(): React.ReactElement {
-  const { id, rebroadcast: rebroadcastParam, fare: rebroadcastFare } = useLocalSearchParams<{ id: string; rebroadcast?: string; fare?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const orderId = typeof id === "string" ? id : "";
-  // 3·b0: this auction was auto-created because the assigned rider bailed. The `rebroadcast=1` flag
-  // (carried on the teleport from the dead order) tells us to reassure the customer with a "your rider
-  // had to cancel — same price, no need to start over" card until the first fresh bid arrives.
-  const [showRebroadcast, setShowRebroadcast] = useState(rebroadcastParam === "1");
   const qc = useQueryClient();
   const router = useRouter();
   const reduceMotion = useReduceMotion();
-  const toast = useToast();
   const dial = useDial();
-  const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
-  // Whether the SecureStore restore below has SETTLED — distinct from "there is no code". Without it
-  // `deliveryCode === null` conflates "not read yet" with "none held", and the C7 branch treats the
-  // first as the second: a customer who DOES hold a code gets the alarming "your hand-off code isn't
-  // showing" card with its primary re-issue CTA for the length of the keychain read, then a swap to
-  // the real digits. Not hypothetical — home.tsx pre-seeds `orderKey(id)`, so tapping the live-order
-  // card mounts this screen with `order` already present and skips the loading skeleton entirely.
-  const [codeRestored, setCodeRestored] = useState(false);
-  // The highest server-side delivery-code attempt count seen while THIS local code has been current. A
-  // rotation (re-issue) resets the server counter to 0, so a later snapshot whose count has dropped below
-  // this reveals the local code is stale — see reconcileDeliveryCode. null until loaded / no code held.
-  const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
-  // KB-DELIVERY-CODE-ROTATION-SIGNAL: the server `codeRotatedAt` timestamp last CONFIRMED to match THIS
-  // local code. The PRIMARY rotation signal — a snapshot whose timestamp differs proves the code was
-  // re-issued (see reconcileDeliveryCode), reliable even across an app-kill mid re-issue. null until
-  // loaded / no baseline yet (re-baselined off the first snapshot after a fresh issue).
-  const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
-  // The chosen rider's public identity (name/photo/rating), cached at selection so the tracking card can
-  // show a face — the assigned-order snapshot only carries profileId + GPS, not the profile.
-  const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
-  const [sortMode, setSortMode] = useState<SortMode>("best");
-  // A rolled-back optimistic select is a race outcome, not a user error — shown muted, not red.
-  const [selectNotice, setSelectNotice] = useState<string | null>(null);
-  // A bare spinner on the single highest-stakes tap in this journey reads as "frozen" on a slow link —
-  // mirrors the rider-side "Still sending — hang on" treatment (offerSlow in rider/index.tsx).
-  const [selectSlow, setSelectSlow] = useState(false);
-  // Which offer is mid-select, so only ITS button spins (the rest just disable) — set in onPress,
-  // cleared when the mutation settles.
-  const [selectingId, setSelectingId] = useState<string | null>(null);
-  // Counter-offers the customer has DECLINED (F-07): decline is client-side dismissal only — the bid
-  // stays live server-side, so we just drop the prominent Accept/Decline treatment and the offer
-  // reverts to a normal choosable bid at the countered price. One round, no counter-back.
-  const [declinedCounterIds, setDeclinedCounterIds] = useState<Set<string>>(() => new Set());
-  // Post-pickup cancel confirmation gate (the hand-back warning).
-  const [cancelConfirm, setCancelConfirm] = useState(false);
-  // The kit's cancel step captures an optional reason; the server (CancelRequest) and the cancelled
-  // terminal (which already renders order.cancelReason) both supported it, but the client never sent one.
-  const [cancelReason, setCancelReason] = useState("");
-  // Fix 2: bumped when the server pushes a rider-presence-stale WS event. LiveTrackingCard computes
-  // staleness from a render-time `Date.now()` snapshot and otherwise only re-renders on a new GPS tick —
-  // so once ticks STOP (the exact trigger), nothing re-evaluates it. Threading this counter in forces
-  // the memoized card to re-render and re-run isRiderTrackingStale the moment the "rider went dark"
-  // event lands.
-  const [staleTick, setStaleTick] = useState(0);
-  // LC-C08b (found while regression-testing C-O6): this used to be declared below, AFTER the
-  // orderQ.isLoading / !orderQ.data early returns — a genuine Rules-of-Hooks violation, not just a
-  // lint nit. The FIRST render of a genuinely cold mount (no pre-seeded orderKey(id) cache entry —
-  // real paths: a Trip History tap, a push-notification deep link, the rider-bail auto-redirect at
-  // :250, the rebroadcastedToId "follow your re-sent request" button at :1029, the Orders tab list)
-  // returns early from the loading-skeleton branch BEFORE this hook was ever reached; the very next
-  // render, once the fetch resolves, proceeds past both guards and calls it — a hook COUNT that
-  // grows between two renders of the SAME component instance, which React treats as a hard error
-  // ("Rendered more hooks than during the previous render"), not a soft warning, crashing the order
-  // screen on that transition. Hoisted here so it's called unconditionally on every render, matching
-  // every other top-level useState in this component.
-  const [rebroadcasting, setRebroadcasting] = useState(false);
+  const online = useReachability();
+  const { width, height } = useWindowDimensions();
 
-  // Recover a previously-issued handover code across remount/relaunch (server keeps only the hash), along
-  // with its attempt high-water mark so a rotation that happened while the app was killed can be detected.
+  // ── handover code (restored from SecureStore, reconciled against server rotations) ──
+  const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  const [codeRestored, setCodeRestored] = useState(false);
+  const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
+  const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
+  const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
+  const [lastKnown, setLastKnown] = useState<LastActive | null>(null);
+
+  // ── screen state ──
+  const [panel, setPanel] = useState<Panel>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [choosingId, setChoosingId] = useState<string | null>(null);
+  const [prevPrice, setPrevPrice] = useState<number | null>(null);
+  const [priceNote, setPriceNote] = useState(false);
+  const [cancelReason, setCancelReason] = useState<number | null>(null);
+  const [stars, setStars] = useState(0);
+  const [tagIdx, setTagIdx] = useState<number[]>([]);
+  const [rated, setRated] = useState<{ stars: number; tags: RatingTag[] } | null>(null);
+  const [skipped, setSkipped] = useState(false);
+  const [undoLeft, setUndoLeft] = useState(0);
+  const [ctaH, setCtaH] = useState(0);
+  const [areaH, setAreaH] = useState(0);
+  const [sheetVisible, setSheetVisible] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const sheetRef = useRef<OrderSheetHandle>(null);
+
   useEffect(() => {
     let alive = true;
-    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId), loadDeliveryCodeRotatedAt(orderId)]).then(([c, hw, rotAt]) => {
-      if (!alive) return;
-      if (c) setDeliveryCode(c);
-      setCodeAttemptsSeen(hw);
-      setCodeRotatedAtSeen(rotAt);
-      setCodeRestored(true);
-    })
-      // The loaders all swallow their own native failures, so this is belt-and-braces: `codeRestored`
-      // gates the code card, and stranding it false would hide the re-issue escape hatch entirely.
-      // Settling it on rejection degrades to "no code held", which the C7 branch can recover from.
+    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId), loadDeliveryCodeRotatedAt(orderId)])
+      .then(([c, hw, rotAt]) => {
+        if (!alive) return;
+        if (c) setDeliveryCode(c);
+        setCodeAttemptsSeen(hw);
+        setCodeRotatedAtSeen(rotAt);
+        setCodeRestored(true);
+      })
       .catch(() => {
         if (alive) setCodeRestored(true);
       });
@@ -141,24 +139,12 @@ export default function OrderScreen(): React.ReactElement {
     };
   }, [orderId]);
 
-  // Recover the chosen rider's cached identity across remount/relaunch (it's only stored for the order it
-  // belongs to, so a stale other-order identity never paints here).
   useEffect(() => {
     let alive = true;
-    setRiderIdentity(null); // drop any prior order's identity when the id changes (rider-bail rebroadcast)
+    setRiderIdentity(null);
     void loadRiderIdentity(orderId).then((i) => {
       if (alive && i) setRiderIdentity(i);
     });
-    return () => {
-      alive = false;
-    };
-  }, [orderId]);
-
-  // Load the last-known summary for this order (persisted below) so an OFFLINE COLD START can show it
-  // instead of a bare "couldn't load" — only ever rendered in the fetch-error branch, never over live data.
-  const [lastKnown, setLastKnown] = useState<LastActive | null>(null);
-  useEffect(() => {
-    let alive = true;
     void loadLastActiveOrder(orderId).then((la) => {
       if (alive) setLastKnown(la);
     });
@@ -167,66 +153,43 @@ export default function OrderScreen(): React.ReactElement {
     };
   }, [orderId]);
 
-  // Mirrors rider/job.tsx's jobPollFallback: while the order socket is connected, its `orderStatus`/
-  // `offersChanged` handlers already invalidate this exact query live — polling on top of that burns a
-  // redundant round-trip every 15s on metered data for the entire length of an auction or a delivery.
-  // A ref (not state) so this reads the LATEST connection state inside refetchInterval's closure
-  // without needing useOrderSocket declared before this query (its `expected` flag depends on the
-  // order's own status, which this query is what fetches — a ref sidesteps that ordering cycle).
+  // ── the order (shell) + rider telemetry ──
   const socketConnectedRef = useRef(false);
   const orderQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: orderId !== "",
-    // PERF: subscribe through the telemetry-stripped shell so a WS "position" push (which rewrites
-    // rider.currentLat/lng/updatedAt in the cache every ~10s for a whole delivery) leaves this
-    // component's selected data referentially unchanged — structural sharing hands back the previous
-    // reference and this ~900-line screen doesn't re-render. The extracted LiveTrackingCard holds its
-    // own observer on the SAME key with the complementary telemetry slice, so GPS ticks repaint only
-    // the tracking card. Mutations/socket handlers read+write the RAW cache (getQueryData/
-    // setQueryData), which `select` never touches — the position-race guard in use-order-socket and
-    // the optimistic select flip are unaffected.
     select: selectOrderShell,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      // During the auction, poll every 15s REGARDLESS of socket health: `ridersNearby` is recomputed
-      // server-side per fetch and no WS event fires when the nearby-rider count changes, so a
-      // socket-connected gate would freeze the "no riders online nearby" empty state (and its inverse)
-      // for the whole ~90s window. Mirrors the offers-list query, which polls unconditionally here.
+      // The auction polls regardless of socket health: `ridersNearby` only refreshes on a fetch.
       if (s === "open_for_offers") return 15_000;
-      // For the active-delivery states WS pushes genuinely drive everything, so polling is only a slow
-      // self-heal if the socket drops.
       if (socketConnectedRef.current) return false;
-      if (s !== undefined && ACTIVE.includes(s)) return 15_000;
+      if (s !== undefined && ACTIVE.has(s)) return 5_000;
       return false;
     },
   });
+  const telemetry = useQuery({
+    queryKey: orderKey(orderId),
+    queryFn: () => getOrder(orderId),
+    enabled: orderId !== "",
+    select: selectRiderTelemetry,
+    refetchOnMount: false,
+  }).data;
   const status = orderQ.data?.status;
-  const isActive = status !== undefined && ACTIVE.includes(status);
+  const isActive = status !== undefined && ACTIVE.has(status);
 
-  // Persist a tiny last-known summary for offline cold-start recovery — ONCE per status transition (not
-  // on every GPS tick, which would hammer SecureStore). Cleared on a terminal status so a finished order
-  // never resurfaces as a stale "last known" card next time we're offline.
   const persistedStatus = useRef<string | null>(null);
   useEffect(() => {
     const d = orderQ.data;
     if (!d || d.status === persistedStatus.current) return;
     persistedStatus.current = d.status;
-    // Persist from the RAW cache entry, not `d`: this screen subscribes through the telemetry-stripped
-    // shell (selectOrderShell above), but the saved summary keeps the rider's last fix (toLastActive
-    // projects it), so saving the shell would silently null the persisted position.
     const raw = qc.getQueryData<OrderSnapshot>(orderKey(orderId)) ?? d;
-    if (ACTIVE.includes(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(raw);
+    if (ACTIVE.has(d.status) || d.status === "open_for_offers") void saveLastActiveOrder(raw);
     else void clearLastActiveOrder(d.id);
   }, [orderQ.data, qc, orderId]);
 
-  // 07-14: catch a delivery-code rotation that happened while the app was killed mid re-issue. The server
-  // never re-sends the plaintext code, so a stale local code would keep the "code is showing" card up and
-  // the customer would confidently relay a DEAD code — burning the rider's attempts toward a fresh lockout.
-  // deliveryOtpAttempts is monotonic while a code is current (resets to 0 only on a rotation), so a drop
-  // below the high-water mark means our code was re-issued: clear it so the "code isn't showing — re-issue"
-  // path takes over, exactly the no-code-yet UI. When attempts climb (a rider failing against OUR code), we
-  // advance the high-water so the drop is measured against the right baseline across a kill.
+  // 07-14 / KB-DELIVERY-CODE-ROTATION-SIGNAL: drop a local code the server has since rotated.
   useEffect(() => {
     const decision = reconcileDeliveryCode({
       hasLocalCode: deliveryCode != null,
@@ -244,19 +207,12 @@ export default function OrderScreen(): React.ReactElement {
       setCodeAttemptsSeen(decision.attempts);
       void saveDeliveryCodeAttempts(orderId, decision.attempts);
     } else if (decision.action === "sync-rotation-ts") {
-      // First confirmed sighting of the rotation stamp for the code we hold — adopt it as the baseline so a
-      // LATER change (a rotation, incl. one that lands while the app is killed) becomes detectable.
       setCodeRotatedAtSeen(decision.codeRotatedAt);
       void saveDeliveryCodeRotatedAt(orderId, decision.codeRotatedAt);
     }
   }, [orderQ.data?.deliveryOtpAttempts, orderQ.data?.codeRotatedAt, deliveryCode, codeAttemptsSeen, codeRotatedAtSeen, orderId]);
 
-  // C2: keep the socket subscribed through `cancelled` for a bounded grace window so a rider-bail
-  // `order:rebroadcast` can still arrive and navigate the customer to the fresh auction (below).
-  // `cancelledExpired` starts false and is only flipped true by the timer AFTER we've been cancelled
-  // for the grace window — so entering `cancelled` keeps `socketExpected` true on the SAME render (no
-  // one-render disconnect that could miss the push), and a genuinely terminal cancel still tears the
-  // socket down once the window lapses.
+  // ── socket ──
   const [cancelledExpired, setCancelledExpired] = useState(false);
   useEffect(() => {
     if (status !== "cancelled") {
@@ -266,220 +222,154 @@ export default function OrderScreen(): React.ReactElement {
     const t = setTimeout(() => setCancelledExpired(true), CANCELLED_GRACE_MS);
     return () => clearTimeout(t);
   }, [status]);
-
-  // Open the socket during the AUCTION too (not just once active): `offers:changed` streams new
-  // bids in, and `order:status` reflects the assignment. Expose connection state for the UI.
-  const socketExpected =
-    isActive || status === "delivered" || status === "open_for_offers" || (status === "cancelled" && !cancelledExpired);
-  // F-01: on a rider bail the server re-broadcasts a NEW order and pushes `order:rebroadcast` here;
-  // move the customer to the fresh auction (replace, so the dead cancelled order isn't in the stack).
-  const { connected } = useOrderSocket(socketExpected ? orderId : null, (newOrderId) => {
-    // The assigned rider bailed and we auto-re-broadcast at the same price — without a word the customer
-    // just gets teleported to a "finding riders" screen. Carry a `rebroadcast` flag (+ the agreed fare)
-    // so the fresh auction opens with the 3·b0 reassurance card instead of a bare, unexplained restart.
-    const snap = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
-    const carriedFare = snap?.agreedFare ?? snap?.proposedFare ?? "";
-    const query = carriedFare ? `?rebroadcast=1&fare=${encodeURIComponent(carriedFare)}` : "?rebroadcast=1";
-    router.replace(`/order/${newOrderId}${query}`);
-  }, () => {
-    // Fix 2: the rider's app went dark past the escalation threshold. Bump a counter so the memoized
-    // LiveTrackingCard re-renders and re-evaluates staleness NOW (GPS ticks have stopped, so it would
-    // otherwise never re-check on its own until the next tick that will never come).
-    setStaleTick((n) => n + 1);
-  });
-  // "Reconnecting" only reads truthfully after we've been live once — the initial connect window
-  // would otherwise flash the banner on every mount.
-  const wasConnected = React.useRef(false);
+  const socketExpected = isActive || status === "delivered" || status === "open_for_offers" || (status === "cancelled" && !cancelledExpired);
+  // A rider bail no longer teleports to the re-broadcast auction: this screen shows "Rider cancelled"
+  // with the one-tap retry (state 13), whose "Send again" re-prices and opens that same auction.
+  const { connected } = useOrderSocket(
+    socketExpected ? orderId : null,
+    () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+    () => setNowMs(Date.now()),
+  );
+  const wasConnected = useRef(false);
   if (connected) wasConnected.current = true;
-  const connectionState: "live" | "reconnecting" = connected ? "live" : "reconnecting";
-  // Keep the poll-gate ref (declared above orderQ) in sync every render.
   socketConnectedRef.current = connected;
+  const frozen = wasConnected.current && !connected;
 
   const offersQ = useQuery({
     queryKey: offersKey(orderId),
     queryFn: () => listOffers(orderId),
     enabled: status === "open_for_offers",
-    // The `offers:changed` WS signal invalidates this instantly; poll is the 15s fallback.
     refetchInterval: status === "open_for_offers" ? 15_000 : false,
   });
-
-  // Warm-resume: refetch the order (and, mid-auction, the offer list) the moment the app returns to
-  // foreground. Without this, a status change, a new/withdrawn bid, or an acceptance that arrived
-  // while backgrounded serves a stale cache for up to the 15s poll — the socket usually beats that,
-  // but a reconnect can lag behind the OS reporting the app foregrounded. Mirrors rider/job.tsx's
-  // warm-resume for the rider side.
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: orderKey(orderId) });
     if (status === "open_for_offers") void qc.invalidateQueries({ queryKey: offersKey(orderId) });
   });
+  const offers = useMemo(() => (Array.isArray(offersQ.data) ? offersQ.data : []), [offersQ.data]);
 
-  // Array.isArray, not raw `.data`: a malformed 200 body is a truthy non-array, and `.find()`/`.map()`
-  // below would throw on it (CF-04 sibling — sensitive lane, so every offersQ.data read goes through
-  // this one guarded array rather than patching each call site separately).
-  const offers = Array.isArray(offersQ.data) ? offersQ.data : [];
-
-  // Announce a newly-arrived bid for screen-reader users — the streaming list updates silently.
-  const liveBidCount = offers.length;
+  // Announce a newly-arrived bid (not the ones already there on open).
   const prevBidCount = useRef(0);
-  // Seed the baseline on the FIRST settled offers load, so opening an auction that already has bids
-  // doesn't buzz/announce them as if they just arrived (0→N on mount). Only genuine later increases fire.
   const bidsSeeded = useRef(false);
   useEffect(() => {
     if (status !== "open_for_offers" || !offersQ.isSuccess) return;
     if (!bidsSeeded.current) {
       bidsSeeded.current = true;
-      prevBidCount.current = liveBidCount;
+      prevBidCount.current = offers.length;
       return;
     }
-    if (liveBidCount > prevBidCount.current) {
-      // A single attention buzz so a new bid registers even with the phone in a pocket / screen dark.
+    if (offers.length > prevBidCount.current) {
       haptic("notify");
-      AccessibilityInfo.announceForAccessibility(
-        liveBidCount === 1 ? "A rider is bidding on your order" : `${liveBidCount} riders bidding`,
-      );
+      AccessibilityInfo.announceForAccessibility(orderText.offers(offers.length));
     }
-    prevBidCount.current = liveBidCount;
-  }, [liveBidCount, status, offersQ.isSuccess]);
+    prevBidCount.current = offers.length;
+  }, [offers.length, status, offersQ.isSuccess]);
 
-  // 3·b0: the reassurance card gives way to the live auction the moment a fresh rider bids — from there
-  // the customer is choosing again, and the "no need to start over" message has done its job.
-  useEffect(() => {
-    if (liveBidCount > 0) setShowRebroadcast(false);
-  }, [liveBidCount]);
-
-  // Warm success cue at the two moments that land emotionally: a rider is assigned (the auction paid
-  // off) and the parcel is delivered. Fires only on a real transition, never on mount or a re-render.
+  // A success cue at the two moments that land: matched, and delivered.
   const prevStatus = useRef<string | undefined>(undefined);
   useEffect(() => {
     const prev = prevStatus.current;
-    if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) {
-      haptic("success");
-      // Name the transition — the offer list collapses into the tracking view, so a toast confirms what
-      // just happened rather than leaving the change of layout unexplained. `delivered` used to get only
-      // the silent haptic above, leaving the anxiety-peak "did it arrive?" moment with no on-screen
-      // confirmation until the rating card's header quietly appeared underneath.
-      if (status === "assigned") toast.show("You're matched — tracking your rider now.", "success");
-      if (status === "delivered") toast.show("Delivered! Let your rider know how it went.", "success");
-    }
+    if (status && prev && status !== prev && (status === "assigned" || status === "delivered")) haptic("success");
     prevStatus.current = status;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on status transition only; toast is stable.
   }, [status]);
-
-  // --- Auction countdown ---
-  // PERF20-02: the 1s ticker lives INSIDE <AuctionClock/> (src/ui/order/AuctionClock.tsx) so each
-  // tick re-renders that one row, not this whole screen — a screen-level remainingMs state used to
-  // re-render every bid card once a second for the length of the auction (the anti-pattern the rider
-  // board already fixed via SentOfferCard's internal ticker). This screen hears only threshold
-  // crossings: `urgent` (last 20s — drives the pre-dead-end "Raise price & send again" affordance)
-  // and the zero-crossing refetch nudge. Freeze semantics are the child's, unchanged: hold the last
-  // value while the socket is down after having been live.
-  const expiresAt = orderQ.data?.expiresAt ?? null;
-  // Only freeze once the socket has genuinely dropped AFTER being live — same gate as the
-  // "reconnecting" banner. Freezing on the pre-first-connect window (plain !connected) would leave the
-  // countdown static with no indication on a slow link until the WS finally connects.
-  const frozen = wasConnected.current && !connected;
-  const [urgent, setUrgent] = useState(false);
-  // JOURNEY-BUGS: at 0:00 the screen used to just sit on "Finding riders…" for up to the 15s poll
-  // interval before the status transition (expired / a late bid landing) showed up. The clock fires
-  // this once at the threshold instead of waiting out the poll.
-  const refetchAtZero = useCallback(() => void orderQ.refetch(), [orderQ.refetch]);
-
   useEffect(() => {
-    // A rider bail navigates to a NEW order id on the SAME screen instance (expo-router reuses it on a
-    // param change), so reset the transition trackers — otherwise the new auction's bids don't buzz
-    // until they exceed the previous order's stale count, and a status cue could carry over. (The
-    // clock's own fired-once thresholds reset via its `key={orderId}` remount.)
     prevBidCount.current = 0;
     bidsSeeded.current = false;
     prevStatus.current = undefined;
+    setPanel(null);
+    setPrevPrice(null);
+    setPriceNote(false);
   }, [orderId]);
 
-  // Order the offers for display (D-d): best-match blends price + rating + ETA and marks the top pick;
-  // the other modes are plain single-key sorts. Selection is unaffected — the customer still chooses.
-  // Offer ordering (roadmap 3.5): the pure ranking/sort logic now lives in src/logic/order-offers
-  // (unit-tested there); the screen just memoizes it over the current offers + sort mode.
-  const orderedOffers = useMemo(() => orderOffers(offers, sortMode), [offers, sortMode]);
+  // ── toasts ──
+  const showToast = useCallback((t: Toast) => {
+    setToast(t);
+    AccessibilityInfo.announceForAccessibility(t.text);
+  }, []);
+  useEffect(() => {
+    if (!toast || toast.ttl === 0) return;
+    const t = setTimeout(() => setToast(null), toast.ttl ?? NOTE_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  const showSelectRaceNotice = (): void => {
-    setSelectNotice("That rider was just taken — choose another.");
-    AccessibilityInfo.announceForAccessibility("That rider was just taken — choose another.");
+  // ── mutations ──
+  const ranked = useMemo(() => orderOffers(offers, "best"), [offers]);
+  const offerName = (offerId: string): string => {
+    const o = offers.find((x) => x.id === offerId);
+    return o ? riderShortName(o.rider.profile.firstName, o.rider.profile.lastName) : A.rider;
   };
+  const showTaken = (offerId: string): void => showToast({ text: orderText.taken(offerName(offerId)) });
+
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
-    // Partial optimism: flip to `assigned` so the offer list collapses the instant they tap — the
-    // delivery code paints in onSuccess (it isn't in the cache). cancelQueries first so the poll
-    // can't clobber the optimistic write; rollback + a muted notice if the rider was just taken.
     onMutate: async (offerId) => {
-      setSelectNotice(null);
       await qc.cancelQueries({ queryKey: orderKey(orderId) });
       const prev = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
-      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: "assigned" } : o));
-      // LC-C08: captured here (mutate-time), not re-derived in onError — by the time a 409 comes back
-      // the offers list may already have been invalidated/cleared out from under the tapped offer.
       const selectedRiderId = offers.find((o) => o.id === offerId)?.rider.profileId ?? null;
-      return { prev, selectedRiderId };
+      return { prev, selectedRiderId, offerId };
     },
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
-      setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
-      setCodeRotatedAtSeen(null); // and clear the rotation-ts baseline — re-adopted off the next snapshot
+      setCodeAttemptsSeen(0);
+      setCodeRotatedAtSeen(null);
       void saveDeliveryCode(orderId, res.deliveryCode);
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: "assigned", agreedFare: res.agreedFare } : o));
     },
-    onError: (e, _v, ctx) => {
+    onError: (e, offerId, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
       if (!(e instanceof ApiError) || e.status !== 409) return;
-      // LC-C08: a 409 here can mean a genuine race-loss OR a lost-response retry landing after the
-      // customer's OWN pick already committed server-side (onSettled's invalidate below self-heals the
-      // STATE either way, but showing "that rider was just taken" on a pick that actually succeeded is a
-      // misleading flash on a slow reconnect). Reconcile via a direct getOrder, mirroring the rider-side
-      // advanceM/deliverM 409-reconciliation pattern — only surface the notice once the fresh snapshot
-      // confirms this WASN'T our own pick landing.
+      // LC-C08: a 409 can be our own pick landing after a lost response — confirm before saying "taken".
       if (ctx?.selectedRiderId == null) {
-        showSelectRaceNotice();
+        showTaken(offerId);
         return;
       }
       void getOrder(orderId)
         .then((fresh) => {
-          if (!selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) {
-            showSelectRaceNotice();
-          }
+          if (!selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) showTaken(offerId);
         })
-        .catch(showSelectRaceNotice);
+        .catch(() => showTaken(offerId));
     },
     onSettled: () => {
-      setSelectingId(null);
+      setChoosingId(null);
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+      void qc.invalidateQueries({ queryKey: offersKey(orderId) });
     },
   });
-  useEffect(() => {
-    if (!selectM.isPending) {
-      setSelectSlow(false);
-      return;
-    }
-    const t = setTimeout(() => setSelectSlow(true), 4500);
-    return () => clearTimeout(t);
-  }, [selectM.isPending]);
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
     onSuccess: (res) => {
       setDeliveryCode(res.deliveryCode);
-      setCodeAttemptsSeen(0); // a fresh code ⇒ server attempts reset to 0; rebaseline the high-water
-      setCodeRotatedAtSeen(null); // and clear the rotation-ts baseline — re-adopted off the next snapshot
+      setCodeAttemptsSeen(0);
+      setCodeRotatedAtSeen(null);
       void saveDeliveryCode(orderId, res.deliveryCode);
     },
   });
-  // Identity-stable (v5's `mutate` is stable) so it never busts LiveTrackingCard's memo — and it
-  // swallows the press event a bare `onPress={rotateM.mutate}` would pass as mutation variables.
-  const reissueCode = useCallback(() => rotateM.mutate(), [rotateM.mutate]);
-  // BH-06: a durable "rating still pending for order X" marker — loaded once on mount so a cold
-  // start after an app-kill mid-undo-window can re-send a rating that never reached the server. The
-  // guard ref stops the reconcile effect below from firing an overlapping retry.
+  const raiseM = useMutation({
+    mutationFn: (to: number) => raiseOrderPrice(orderId, to),
+    onMutate: async (to) => {
+      await qc.cancelQueries({ queryKey: orderKey(orderId) });
+      const prev = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+      const from = Number(prev?.proposedFare ?? 0);
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, proposedFare: to.toFixed(2) } : o));
+      setPrevPrice((p) => p ?? from);
+      setPriceNote(true);
+      return { prev };
+    },
+    onError: (_e, to, ctx) => {
+      if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
+      setPriceNote(false);
+      setPrevPrice(null);
+      showToast({ text: A.priceFail, action: A.retry, actionIcon: "refresh-cw", onAction: () => raiseM.mutate(to), ttl: 0 });
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
+  });
+  useEffect(() => {
+    if (!priceNote) return;
+    const t = setTimeout(() => setPriceNote(false), NOTE_MS);
+    return () => clearTimeout(t);
+  }, [priceNote, orderQ.data?.proposedFare]);
+
   const [pendingRating, setPendingRating] = useState<PendingRating | null>(null);
   const ratingRetryInFlight = useRef(false);
-  // Only a marker RECOVERED FROM STORAGE on cold start may be auto-submitted by the reconcile effect
-  // below. A marker armed LIVE this session (onArm) is committed solely by RatingCard's own 4s timer /
-  // unmount flush — auto-submitting it here would fire the rating the instant a star is tapped, making
-  // the "Undo" window a lie and committing an accidental tap irreversibly (rating is terminal server-side).
   const ratingFromStorage = useRef(false);
   useEffect(() => {
     let alive = true;
@@ -494,18 +384,15 @@ export default function OrderScreen(): React.ReactElement {
     };
   }, []);
   const rateM = useMutation({
-    mutationFn: (value: number) => rateOrder(orderId, { score: value }),
+    mutationFn: (r: { score: number; tags: RatingTag[] }) => rateOrder(orderId, { score: r.score, ...(r.tags.length ? { tags: r.tags } : {}) }),
     onSuccess: () => {
       setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
       void clearPendingRating();
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
-      void qc.invalidateQueries({ queryKey: ["history"] }); // the just-rated trip now shows its ★ in history
+      void qc.invalidateQueries({ queryKey: ["history"] });
     },
   });
-  // Re-send (or retire) a pending rating against the live snapshot. Fires only while the marker's order
-  // is still `delivered` with no rating recorded yet; clears once the rating lands (this retry or a
-  // concurrent session) or a different order becomes active. Re-runs on every snapshot refresh, so a
-  // rating dropped by an app kill self-heals on the next cold start / foreground without a manual retry.
+  // BH-06: re-send a rating an app kill dropped mid-undo window (only a marker recovered from storage).
   useEffect(() => {
     const snap = orderQ.data;
     const decision = reconcilePendingRating({ pending: pendingRating, order: snap ? { id: snap.id, status: snap.status } : null });
@@ -516,8 +403,9 @@ export default function OrderScreen(): React.ReactElement {
     }
     if (decision !== "retry" || !pendingRating || ratingRetryInFlight.current || !ratingFromStorage.current) return;
     ratingRetryInFlight.current = true;
-    const { orderId: pid, score } = pendingRating;
-    void rateOrder(pid, { score })
+    const { orderId: pid, score, tags } = pendingRating;
+    const okTags = (tags ?? []).filter((t): t is RatingTag => (PARCEL_TAGS as readonly string[]).includes(t) || (PARCEL_TAGS_LOW as readonly string[]).includes(t));
+    void rateOrder(pid, { score, ...(okTags.length ? { tags: okTags } : {}) })
       .then(() => {
         setPendingRating((cur) => (cur?.orderId === pid ? null : cur));
         void clearPendingRating();
@@ -530,128 +418,225 @@ export default function OrderScreen(): React.ReactElement {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- qc is stable; orderQ.data read fresh each run.
   }, [orderQ.data, pendingRating]);
+
+  // The rating's 10s undo window. The rating commits when it lapses — or on leaving the screen.
+  const undoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const armedRating = useRef<{ score: number; tags: RatingTag[] } | null>(null);
+  const rateMutate = rateM.mutate;
+  const commitRating = useCallback(() => {
+    if (undoTimer.current) clearInterval(undoTimer.current);
+    undoTimer.current = null;
+    const r = armedRating.current;
+    armedRating.current = null;
+    setUndoLeft(0);
+    setToast(null);
+    if (r) rateMutate(r);
+  }, [rateMutate]);
+  useEffect(() => () => {
+    if (undoTimer.current) clearInterval(undoTimer.current);
+    if (armedRating.current) rateMutate(armedRating.current);
+  }, [rateMutate]);
+
   const cancelM = useMutation({
-    // Pass the customer's reason through when the confirm card collected one; an empty field sends
-    // nothing (a blank string is not a reason).
-    mutationFn: (reason: string | undefined) => cancelOrder(orderId, reason && reason.trim() ? { reason: reason.trim() } : {}),
+    mutationFn: (reason: string | undefined) => cancelOrder(orderId, reason ? { reason } : {}),
     onSuccess: () => {
-      setCancelReason("");
+      setPanel(null);
+      setCancelReason(null);
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
-      void qc.invalidateQueries({ queryKey: ["history"] }); // the Trips list must reflect the cancel, not the stale live status
+      void qc.invalidateQueries({ queryKey: ["history"] });
     },
   });
-  // 2·b1: "notify me when a rider's online" — registers a waiting-list entry keyed to the pickup so the
-  // server pushes when a rider comes online nearby. Reads the pickup from the live snapshot at call time.
   const notifyM = useMutation({
     mutationFn: () => {
       const pickup = qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.pickup.point;
       if (!pickup) throw new Error("No pickup on this order yet.");
-      // KB-NOTIFY-ORDERID: pass this order too so, if it's still open when a rider comes online, the
-      // push says "riders are being pinged on your live request" and its tap lands back on this auction.
       return notifyWhenRiderOnline(pickup, orderId);
     },
   });
+  const resendM = useMutation({
+    mutationFn: (price: number) => resendOrder(orderId, price),
+    onSuccess: (res) => {
+      haptic("tap");
+      void qc.invalidateQueries({ queryKey: ["history"] });
+      router.replace(`/order/${res.id}`);
+    },
+  });
 
-  // Action errors from any of the five mutations speak ONCE as an auto-dismissing toast (owner
-  // instruction 2026-08-12) instead of the old red line camped at the bottom of the tracker. Declared
-  // here, above every early return, because it's a hook — the old `<ErrorText>` was plain JSX and
-  // could live down in the render body; this cannot. Keyed on the Error OBJECT, so a retry that fails
-  // with identical copy still speaks. A select 409 (rider raced away) is excluded: it has its own
-  // muted "just taken" notice, and toasting it too would say the same thing twice in two voices.
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
-  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error);
-
-  // A mutation error (e.g. "the network is slow, try again" after a select/rotate/rate/cancel/notify
-  // timeout) can be stale the instant the status actually changes underneath it — the request often
-  // DID succeed server-side; the refetch just landed after the client gave up waiting. Without this, the
-  // red banner sits glued to the bottom of an already-correct tracking screen with no way to clear it
-  // short of leaving the order (07-11 finding: "Choose this rider" timeout leaves a permanent false error).
+  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? rateM.error ?? cancelM.error ?? notifyM.error ?? resendM.error);
   useEffect(() => {
     selectM.reset();
     rotateM.reset();
     rateM.reset();
     cancelM.reset();
     notifyM.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset stale mutation errors on any real status transition; mutation refs are stable.
+    resendM.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset stale mutation errors on a real status change.
   }, [status]);
+
+  // ── stage ──
+  const order = orderQ.data;
+  const isRiderViewer = order?.viewerRole === "rider";
+  const riderPoint = telemetry && telemetry.lat != null && telemetry.lng != null ? { lat: telemetry.lat, lng: telemetry.lng } : null;
+  const { stage, gpsPaused, offline } = order
+    ? resolveStage({
+        status: order.status,
+        offerCount: offers.length,
+        ridersNearby: order.ridersNearby,
+        cancelledBy: order.cancelledBy,
+        events: order.events ?? [],
+        rider: riderPoint ? { ...riderPoint, at: telemetry?.updatedAt ?? null } : null,
+        dropoff: order.dropoff.point,
+        online,
+        nowMs,
+      })
+    : { stage: "finding" as OrderStage, gpsPaused: false, offline: !online };
+  const live = isLiveStage(stage);
+  // Re-evaluate the 60s GPS-paused rule even when no new fix arrives.
+  useEffect(() => {
+    if (!live) return;
+    const iv = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(iv);
+  }, [live]);
+  useClaimOfflineBanner(true);
+  const showBanner = offline || (live && frozen);
+
+  // A live order with no local handover code (a dropped select response, a rotation while killed):
+  // issue a fresh one once so the code card is never empty — the old "Re-issue" button is gone.
+  const rotatedOnce = useRef(false);
+  const rotate = rotateM.mutate;
+  useEffect(() => {
+    if (!live || isRiderViewer || !codeRestored || deliveryCode || rotatedOnce.current || !online) return;
+    rotatedOnce.current = true;
+    rotate();
+  }, [live, isRiderViewer, codeRestored, deliveryCode, online, rotate]);
+
+  // ── Back: close a panel → collapse a full sheet → leave ──
+  const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);
+  const onBack = useCallback((): boolean => {
+    if (panel) {
+      setPanel(null);
+      return true;
+    }
+    if (sheetRef.current?.isFull()) {
+      sheetRef.current.collapse();
+      return true;
+    }
+    leave();
+    return true;
+  }, [panel, leave]);
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
+      return () => sub.remove();
+    }, [onBack]),
+  );
 
   if (orderQ.isLoading) {
     return (
-      <Screen>
-        <SkeletonList />
-      </Screen>
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <OrderHeader title="" help={false} onBack={leave} onHelp={() => undefined} />
+        <View style={{ padding: 16 }}>
+          <SkeletonList />
+        </View>
+      </SafeAreaView>
     );
   }
-  if (!orderQ.data) {
-    // Only a real 404 is "not found"; a 403 is also permanent (party-only gate) but distinct; a
-    // transient fetch error gets a retry, not a dead-end.
-    const errorKind = orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined);
-    const notFound = errorKind === "not_found";
-    const forbidden = errorKind === "forbidden";
-    // Offline cold-start: the fetch failed but we have this order's last-known summary. Show it (the
-    // root offline banner already explains why it's stale) instead of a bare error — the live query
-    // takes over the moment we reconnect. Never shown for a 404/403: neither is "offline".
-    const showLastKnown = !notFound && !forbidden && lastKnown != null && lastKnown.id === orderId;
-    if (showLastKnown) {
-      return (
-        <Screen>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-              <Heading>Order {lastKnown.id.slice(0, 8)}</Heading>
-              <View style={{ flex: 1 }} />
-              <StatusPill status={lastKnown.status} tone={orderStatusTone(lastKnown.status)} />
-            </View>
-            <Card>
-              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
-                Fare {formatMoney(lastKnown.fare)}
-              </Text>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
-                {lastKnown.pickupLandmark || "Pickup"} → {lastKnown.dropoffLandmark || "Drop-off"}
-              </Text>
-              <View style={{ height: tokens.space.sm }} />
-              <Sub>Showing your last saved update — we&apos;ll refresh the moment you&apos;re back online.</Sub>
-            </Card>
-            <Button label="Retry now" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
-            <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
-          </ScrollView>
-        </Screen>
-      );
-    }
+  if (!order) {
+    const kind = orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined);
+    const known = kind === "transient" && lastKnown != null && lastKnown.id === orderId ? lastKnown : null;
     return (
-      <Screen>
-        <Heading>{notFound ? "Order not found" : forbidden ? "This order isn't available to you" : "Couldn't load this order"}</Heading>
-        {notFound || forbidden ? null : <Button label="Retry" onPress={() => void orderQ.refetch()} />}
-        <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
-      </Screen>
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <OrderHeader title="" help={false} onBack={leave} onHelp={() => undefined} />
+        {known ? <ReconnectBanner lastUpdate="" /> : null}
+        <View style={{ padding: 16, gap: 12 }}>
+          {known ? (
+            <>
+              <H2>{`${known.pickupLandmark || "Pickup"} → ${known.dropoffLandmark || "Drop-off"}`}</H2>
+              <Muted>{usd(Number(known.fare))}</Muted>
+            </>
+          ) : (
+            <H2>{kind === "not_found" ? "Order not found" : kind === "forbidden" ? "This order isn't available to you" : "Couldn't load this order"}</H2>
+          )}
+          {kind === "transient" ? (
+            <CtaButton label={A.retry} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
+          ) : null}
+          <CtaButton ghost label={A.home} onPress={() => goHomeClearingStack(router)} />
+        </View>
+      </SafeAreaView>
     );
   }
 
-  const order = orderQ.data;
-  // Fix 1: is a RIDER viewing their own trip (vs. the customer)? Absent viewerRole (older API) defaults
-  // to the historical customer view. Gates customer-voiced/customer-gated UI below (rating card, the
-  // cancel-blame line, the counterparty-phone label) so a rider sees role-correct copy.
-  const isRiderViewer = order.viewerRole === "rider";
-  const fare = order.agreedFare ?? order.proposedFare;
-  const bidCount = orderedOffers.length;
-  // 2·b1: the server said there are no online riders nearby and no bid has landed — an honest "nobody
-  // to ping right now" state, distinct from the calm "riders pinged, hang tight" wait. Non-terminal:
-  // while open_for_offers the snapshot polls every 15s UNCONDITIONALLY (no WS event carries a
-  // ridersNearby change, so the poll — not the socket — is what refreshes this count), and any landing
-  // bid clears it.
-  const noRiders = noRidersOnline(order.ridersNearby, bidCount, order.status === "open_for_offers");
-
-  // Counter-offer (F-07): a `counter` bid ABOVE the customer's ask surfaces as Accept/Decline. A
-  // declined one reverts to a normal choosable bid (its Accept treatment removed), so it drops out of
-  // `isActiveCounter`. Never auto-charge above ask — Accept selects at the shown counter price.
+  // ── view model ──
+  const price = Number(order.agreedFare ?? order.proposedFare);
   const ask = Number(order.proposedFare);
-  const isActiveCounter = (o: OfferRow): boolean =>
-    isPendingCounter(o.type, Number(o.offeredFare), ask, declinedCounterIds.has(o.id));
-  const hasActiveCounter = orderedOffers.some(({ offer }) => isActiveCounter(offer));
-  const chooseOffer = (offerId: string): void => {
-    setSelectNotice(null); // a new attempt clears the stale "just taken" notice
-    setSelectingId(offerId);
-    // Cache the chosen rider's public identity so the tracking card can show their face + name (the
-    // assigned-order snapshot won't carry it). Best-effort; the tracker degrades to no identity card.
+  const card = order.riderCard ?? null;
+  const rider: RiderView | null = card
+    ? {
+        name: riderShortName(card.firstName, card.lastName),
+        firstName: card.firstName || A.rider,
+        initials: initials(card.firstName, card.lastName),
+        photoUrl: card.photoUrl,
+        ratingAvg: card.ratingCount > 0 ? card.ratingAvg : null,
+        trips: card.tripsCount,
+        plate: card.plate,
+        verified: card.verified,
+      }
+    : riderIdentity
+      ? {
+          name: riderShortName(riderIdentity.firstName, riderIdentity.lastName),
+          firstName: riderIdentity.firstName || A.rider,
+          initials: initials(riderIdentity.firstName, riderIdentity.lastName),
+          photoUrl: riderIdentity.photoUrl,
+          ratingAvg: riderIdentity.ratingCount > 0 ? Number(riderIdentity.ratingAvg) : null,
+          trips: riderIdentity.tripsCount,
+          plate: null,
+          verified: false,
+        }
+      : null;
+  const riderFirst = rider?.firstName ?? A.rider;
+  const phone = order.counterpartyPhone;
+  const masked = phoneMasked(stage);
+  const eventAt = (s: string): string | null => order.events?.find((e) => e.status === s)?.createdAt ?? null;
+  const pickedUpAt = eventAt("picked_up");
+  const deliveredAt = eventAt("delivered");
+  const toPickup = stage === "toPickup";
+  const eta = live ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
+  const itemsText = order.items && order.items.length ? order.items.map((i) => `${i.description} × ${i.quantity}`).join(", ") : "";
+  const receipt: ReceiptView = {
+    ref: orderText.ref(order.id),
+    pickup: order.pickup.landmark,
+    pickupAt: hhmm(pickedUpAt),
+    dropoff: order.dropoff.landmark,
+    dropoffAt: hhmm(deliveredAt),
+    items: itemsText,
+    rider: rider ? orderText.riderLine(rider.name, rider.plate) : null,
+    riderPhone: phone || masked ? maskPhone(phone) : null,
+    price,
+  };
+
+  const offerViews: OfferView[] = ranked.map(({ offer: o }) => ({
+    id: o.id,
+    name: riderShortName(o.rider.profile.firstName, o.rider.profile.lastName),
+    initials: initials(o.rider.profile.firstName, o.rider.profile.lastName),
+    photoUrl: o.rider.profile.photoUrl,
+    ratingAvg: o.rider.ratingCount > 0 ? Number(o.rider.ratingAvg) : null,
+    trips: o.rider.tripsCount,
+    etaMinutes: o.etaMinutes,
+    price: Number(o.offeredFare),
+    ask,
+  }));
+  const bestId = ranked.find((r) => r.recommended)?.offer.id ?? ranked[0]?.offer.id ?? null;
+
+  // ── actions ──
+  const raise = (): void => {
+    if (raiseM.isPending) return;
+    setToast(null);
+    raiseM.mutate(Math.round((ask + 0.5) * 100) / 100);
+  };
+  const choose = (offerId: string): void => {
+    setToast(null);
+    setChoosingId(offerId);
     const chosen = offers.find((o) => o.id === offerId);
     if (chosen) {
       const identity: RiderIdentity = {
@@ -660,9 +645,6 @@ export default function OrderScreen(): React.ReactElement {
         firstName: chosen.rider.profile.firstName,
         lastName: chosen.rider.profile.lastName,
         photoUrl: chosen.rider.profile.photoUrl,
-        // BH-24: OfferRow.rider.ratingAvg is declared `string` but the API actually sends a raw JSON
-        // number (a Prisma Float, unlike the Decimal `offeredFare` the server .toString()s) — coerce
-        // explicitly so what's persisted genuinely matches RiderIdentity's `string` field.
         ratingAvg: String(chosen.rider.ratingAvg),
         ratingCount: chosen.rider.ratingCount,
         tripsCount: chosen.rider.tripsCount,
@@ -672,32 +654,43 @@ export default function OrderScreen(): React.ReactElement {
     }
     selectM.mutate(offerId);
   };
-
-  // C5: the re-broadcast / "send another request" CTAs used to `router.replace("/home")`, dumping the
-  // customer on a BLANK compose form and losing the whole order. Instead carry THIS order's route,
-  // landmarks, line-items and price into the compose flow so send.tsx prefills them (params are strings,
-  // so items ride as JSON). The customer lands on a filled form and just nudges the price and re-sends.
-  // (rebroadcasting/setRebroadcasting hoisted above the orderQ.isLoading/!orderQ.data early returns — LC-C08b.)
-  const rebroadcast = async (): Promise<void> => {
-    // BH-10: two of this callback's call sites ("Raise price & send again", offered while the auction
-    // is still `open_for_offers` — the last-20s urgent nudge and the "no riders online" empty state)
-    // fire while the ORIGINAL order is still live. Every other call site (expired/cancelled/undelivered)
-    // is already terminal — nothing to cancel. Without this, submitting the prefilled form opened a
-    // SECOND live auction for the same parcel while the first stayed open, biddable, and selectable —
-    // risking two riders dispatched for one physical parcel. Best-effort: even a 409 (e.g. a rider was
-    // just chosen underneath us) or a network failure still lets the customer proceed to compose,
-    // rather than stranding them on a button that does nothing.
-    if (shouldCancelBeforeRebroadcast(order.status)) {
-      setRebroadcasting(true);
-      try {
-        await cancelOrder(orderId);
-      } catch {
-        /* best-effort — proceed to compose regardless */
-      } finally {
-        setRebroadcasting(false);
-      }
-    }
-    router.replace({
+  // Get help → Emergency: dial at once, and alert the safety team (the old SOS control's job) with the
+  // last-known fix, best-effort — never delaying the call.
+  const emergency = (): void => {
+    haptic("alert");
+    dial(SOS_POLICY.emergencyNumber);
+    void Location.getForegroundPermissionsAsync()
+      .then((p) => (p.status === Location.PermissionStatus.GRANTED ? Location.getLastKnownPositionAsync() : null))
+      .then((pos) => raiseSos(orderId, pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : {}))
+      .catch(() => raiseSos(orderId).catch(() => undefined));
+  };
+  const share = (message: string): void => void Share.share({ message }).catch(() => undefined);
+  const shareCode = (): void => {
+    if (deliveryCode) share(orderText.shareMsg(riderFirst, rider?.plate ?? null, deliveryCode));
+  };
+  const whatsapp = (): void => {
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (digits) void Linking.openURL(`https://wa.me/${digits}`).catch(() => undefined);
+  };
+  const openMaps = (): void => {
+    const target = toPickup ? order.pickup.point : order.dropoff.point;
+    const origin = riderPoint ?? (toPickup ? target : order.pickup.point);
+    void Linking.openURL(mapsDirectionsUrl(origin, target)).catch(() => undefined);
+  };
+  const editOrder = (): void =>
+    router.push({
+      pathname: "/send",
+      params: buildRebroadcastParams({
+        pickup: order.pickup,
+        dropoff: order.dropoff,
+        items: order.items,
+        proposedFare: suggestedRetryPrice(price),
+        note: order.note,
+        createdAt: order.events?.[0]?.createdAt ?? null,
+      }),
+    });
+  const sendAgainFlow = (): void =>
+    router.push({
       pathname: "/send",
       params: buildRebroadcastParams({
         pickup: order.pickup,
@@ -708,545 +701,258 @@ export default function OrderScreen(): React.ReactElement {
         createdAt: order.events?.[0]?.createdAt ?? null,
       }),
     });
+  const submitRating = (): void => {
+    const low = stars <= 2;
+    const keys = low ? PARCEL_TAGS_LOW : PARCEL_TAGS;
+    const r = { score: stars, tags: tagIdx.map((i) => keys[i]).filter((t): t is RatingTag => t != null) };
+    armedRating.current = r;
+    ratingFromStorage.current = false;
+    setPendingRating({ orderId, score: r.score, tags: r.tags });
+    void savePendingRating(orderId, r.score, r.tags);
+    setRated({ stars: r.score, tags: r.tags });
+    setUndoLeft(RATE_UNDO_S);
+    let left = RATE_UNDO_S;
+    if (undoTimer.current) clearInterval(undoTimer.current);
+    undoTimer.current = setInterval(() => {
+      left -= 1;
+      setUndoLeft(left);
+      if (left <= 0) commitRating();
+    }, 1000);
+  };
+  const undoRating = (): void => {
+    if (undoTimer.current) clearInterval(undoTimer.current);
+    undoTimer.current = null;
+    armedRating.current = null;
+    setUndoLeft(0);
+    setRated(null);
+    setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
+    void clearPendingRating();
+  };
+  const onStars = (n: number): void => {
+    // Crossing the ≤2 line swaps the tag set, so the old picks no longer mean anything.
+    if ((n <= 2) !== (stars <= 2) && stars > 0) setTagIdx([]);
+    setStars(n);
+  };
+  const toggleTag = (i: number): void => setTagIdx((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]));
+
+  // ── per-stage title, map, sheet, CTA ──
+  const cancelPanel = panel === "cancel" && live;
+  const afterPickup = order.status === "picked_up" || order.status === "en_route_dropoff";
+  const title = cancelPanel ? A[stageTitleKey(afterPickup ? "toDropoff" : "toPickup")] : A[stageTitleKey(stage)];
+  const help = showsHelp(stage) && !isRiderViewer;
+  const frame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" ? "riderDrop" : "route";
+  const dim = cancelPanel || stage === "retryNoMatch" || stage === "retryRiderCancelled" || stage === "cancelled";
+  const showRider = live || stage === "undelivered" || stage === "delivered";
+  const riderLabel = gpsPaused || offline ? orderText.lastSeen(minutesSince(telemetry?.updatedAt, nowMs)) : riderFirst;
+  const suggested = suggestedRetryPrice(price);
+
+  const trackVM: TrackVM = {
+    status: order.status,
+    toPickup,
+    etaMinutes: eta?.minutes ?? null,
+    stopName: toPickup ? order.pickup.landmark : order.dropoff.landmark,
+    step: stepIndex(order.status),
+    gpsPaused,
+    offline,
+    rider,
+    code: isRiderViewer ? null : deliveryCode,
+    photo: order.pickupPhotoUrl ? { url: order.pickupPhotoUrl, sub: orderText.photoSub(riderFirst, hhmm(pickedUpAt)) } : null,
+    canCall: !!phone,
+    canWhatsApp: !!phone,
+  };
+  const trackA: TrackActions = {
+    onCall: () => dial(phone),
+    onWhatsApp: whatsapp,
+    onShareCode: shareCode,
+    onMaps: openMaps,
+    onViewPhoto: () => setPanel("photo"),
+    onCancel: () => {
+      setCancelReason(null);
+      setPanel("cancel");
+    },
   };
 
+  let content: React.ReactNode = null;
+  let bar: React.ReactNode = null;
+  let mapShare = stageMapShare(stage);
+  if (cancelPanel) {
+    content = <CancelSheet afterPickup={afterPickup} riderFirst={riderFirst} reason={cancelReason} onReason={(i) => setCancelReason((c) => (c === i ? null : i))} />;
+    bar = <CancelBar afterPickup={afterPickup} onKeep={() => setPanel(null)} onCancel={() => cancelM.mutate(cancelReasonText(cancelReason))} cancelling={pendingOrQueued(cancelM) !== false} />;
+    mapShare = stageMapShare("toPickup");
+  } else if (stage === "finding" || stage === "noRiders") {
+    content = (
+      <FindingSheet
+        noRiders={stage === "noRiders"}
+        expiresAt={order.expiresAt}
+        windowMs={OFFER_WINDOW_MS}
+        frozen={frozen}
+        onZero={() => void orderQ.refetch()}
+        ridersNearby={order.ridersNearby ?? null}
+        price={ask}
+        was={prevPrice}
+        raisedNote={priceNote}
+        onRaise={raise}
+        raising={raiseM.isPending}
+        notify={{
+          onPress: () => notifyM.mutate(),
+          loading: notifyM.isPending,
+          state: notifyM.isSuccess ? (notifyM.data?.queued ? "queued" : "unavailable") : "idle",
+        }}
+      />
+    );
+    bar = isRiderViewer ? null : (
+      <FindingBar
+        confirming={panel === "cancelRequest"}
+        onAsk={() => setPanel("cancelRequest")}
+        onYes={() => cancelM.mutate(undefined)}
+        onKeep={() => setPanel(null)}
+        cancelling={pendingOrQueued(cancelM) !== false}
+      />
+    );
+  } else if (stage === "offers") {
+    content = (
+      <OffersSheet
+        offers={offerViews}
+        bestId={bestId}
+        expiresAt={order.expiresAt}
+        frozen={frozen}
+        onZero={() => void orderQ.refetch()}
+        price={ask}
+        onRaise={raise}
+        raising={raiseM.isPending}
+        raisedNote={priceNote}
+        choosingId={choosingId}
+        onChoose={choose}
+      />
+    );
+    bar = (
+      <FindingBar
+        confirming={panel === "cancelRequest"}
+        onAsk={() => setPanel("cancelRequest")}
+        onYes={() => cancelM.mutate(undefined)}
+        onKeep={() => setPanel(null)}
+        cancelling={pendingOrQueued(cancelM) !== false}
+      />
+    );
+  } else if (stage === "toPickup" || stage === "toDropoff") {
+    content = <TrackSheet vm={trackVM} a={trackA} screenWidth={width} />;
+  } else if (stage === "handoff") {
+    content = <HandoffSheet vm={trackVM} a={trackA} riderFirst={riderFirst} screenWidth={width} />;
+    bar = trackVM.code ? <OneButtonBar label={A.shareCode} icon="share-2" onPress={shareCode} /> : null;
+  } else if (stage === "retryNoMatch" || stage === "retryRiderCancelled") {
+    content = <RetrySheet riderCancelled={stage === "retryRiderCancelled"} lastPrice={price} suggested={suggested} />;
+    bar = isRiderViewer ? null : <RetryBar suggested={suggested} onSend={() => resendM.mutate(suggested)} onEdit={editOrder} sending={pendingOrQueued(resendM) !== false} />;
+  } else if (stage === "delivered") {
+    const showRate = !isRiderViewer && !rated && !skipped;
+    content = showRate ? (
+      <RateSheet
+        deliveredSub={orderText.deliveredSub(hhmm(deliveredAt), deliveryCode)}
+        riderFirst={riderFirst}
+        riderPhoto={rider?.photoUrl ?? null}
+        riderInitials={rider?.initials ?? ""}
+        stars={stars}
+        onStars={onStars}
+        tags={tagIdx}
+        onTag={toggleTag}
+        receipt={receipt}
+        onShareReceipt={() => share(orderText.receiptText(receipt))}
+      />
+    ) : (
+      <RatedSheet riderFirst={riderFirst} stars={rated?.stars ?? null} receipt={receipt} onShareReceipt={() => share(orderText.receiptText(receipt))} />
+    );
+    bar = showRate ? <RateBar onSkip={() => setSkipped(true)} onSubmit={submitRating} canSubmit={stars > 0} /> : <OneButtonBar label={A.home} onPress={() => goHomeClearingStack(router)} />;
+  } else if (stage === "completed") {
+    content = (
+      <CompletedSheet
+        deliveredAt={deliveredAt}
+        riderFirst={riderFirst}
+        stars={rated?.stars ?? null}
+        receipt={receipt}
+        onShareReceipt={() => share(orderText.receiptText(receipt))}
+        onHelp={() => setPanel("report")}
+      />
+    );
+    bar = isRiderViewer ? null : <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={sendAgainFlow} />;
+  } else if (stage === "undelivered") {
+    content = <NotDeliveredSheet riderFirst={riderFirst} reason={orderText.undeliveredReason(order.undeliveredReason, order.undeliveredAttempts)} rider={rider} />;
+    bar = isRiderViewer ? null : (
+      <TwoButtonBar primary={{ label: A.callRider, icon: "phone", onPress: () => dial(phone) }} secondary={{ label: A.sendAgain, icon: "refresh-cw", onPress: sendAgainFlow }} />
+    );
+  } else {
+    const by = order.cancelledBy;
+    const headline = by === "customer" ? A.cxYou : by === "rider" ? orderText.cxRider(riderFirst) : A.cxLynia;
+    const lynia = by !== "customer" && by !== "rider";
+    content = <CancelledSheet headline={headline} reason={order.cancelReason ?? (lynia ? A.cxLyniaR : null)} nothingOwed={!lynia} />;
+    bar = isRiderViewer
+      ? null
+      : lynia
+        ? <TwoButtonBar primary={{ label: A.sendAgain, icon: "refresh-cw", onPress: sendAgainFlow }} secondary={{ label: A.callSupport, icon: "phone", onPress: () => dial(SOS_POLICY.safetyLine) }} />
+        : <OneButtonBar label={A.sendAgain} icon="refresh-cw" onPress={sendAgainFlow} />;
+  }
+
+  // Before the first layout pass, size the sheet off the window (header 53 + system bars ≈ 80).
+  const area = areaH || Math.max(0, height - 80);
+  const lastUpdate = hhmm(telemetry?.updatedAt ?? (orderQ.dataUpdatedAt ? new Date(orderQ.dataUpdatedAt).toISOString() : null));
+  const undoToast: Toast | null =
+    rated && undoLeft > 0 ? { text: orderText.rated(riderFirst, rated.stars), icon: "circle-check", action: orderText.undo(undoLeft), actionIcon: "undo-2", onAction: undoRating, ttl: 0 } : null;
+  const shownToast = undoToast ?? toast;
+
   return (
-    <Screen>
-      {/* A dropped socket surfaces as the standard top banner, not an inline strip in the card. */}
-      {socketExpected && wasConnected.current && connectionState === "reconnecting" ? <OfflineBanner state="reconnecting" /> : null}
-      {/* Ledger D-19: back-only chrome above the in-body heading the mock draws. "Back home" exists at
-          the very bottom of this screen (below the code card, the auction cards, cancel-confirm, help
-          and report), so on a live order the exit was a long scroll away — and the error branches put
-          the same button near the top, which made the worst case the NORMAL case. Title-less, since
-          `LJ.track_active` draws its own "Order 8f3a91c2" heading and a bar title would duplicate it. */}
-      <AppBar onBack={() => (router.canGoBack() ? router.back() : goHomeClearingStack(router))} />
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-          <Heading>Order {order.id.slice(0, 8)}</Heading>
-          <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} tone={orderStatusTone(order.status)} />
-        </View>
-
-        {/* Hand-off code — only while the trip is live/deliverable (C6). On a terminal order
-            (cancelled / undelivered / delivered / completed) the code is meaningless and, above
-            "This order is cancelled." / "Parcel not delivered", actively misleading. Fix 1: the code
-            is the CUSTOMER's (it verifies the rider at hand-off), stored only in customer-local storage.
-            A rider viewer never has one, so the re-issue prompt would only ever invite a 403 — hide the
-            whole block for them. */}
-        {isActive && !isRiderViewer ? (
-          deliveryCode ? (
-            <Card accent>
-              <Text style={{ fontSize: 14, color: tokens.color.muted }}>Give this code to the recipient — the rider enters it at hand-off:</Text>
-              <Text style={{ fontSize: 28, fontWeight: "700", letterSpacing: 6, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>{deliveryCode}</Text>
-              {/* Kit LJ.track_code (screens.jsx:290): the re-issue affordance lives INSIDE the accent
-                  code card, directly under the digits — not as a separate button lower down the screen.
-                  Moved here from LiveTrackingCard so the code and its re-issue read as one unit. */}
-              <Button label="Re-issue delivery code" variant="ghost" onPress={() => rotateM.mutate()} loading={pendingOrQueued(rotateM)} />
-            </Card>
-          ) : !codeRestored ? null : ( // keychain read still in flight — say nothing rather than assert the code is missing
-            // C7: assigned-or-later with no local code (e.g. a dropped select response). Don't show
-            // nothing — prompt a re-issue via the existing rotate mutation instead of leaving the
-            // customer with no code and no explanation.
-            <Card accent>
-              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                Your hand-off code isn&apos;t showing — tap to re-issue so you can give it to the recipient at hand-off.
-              </Text>
-              <Button label="Re-issue delivery code" onPress={() => rotateM.mutate()} loading={pendingOrQueued(rotateM)} />
-            </Card>
-          )
-        ) : null}
-
-        {order.status === "open_for_offers" ? (
-          <View>
-            {/* 3·b0: rider-bail reassurance. Shown only when this auction was auto-created by a bail
-                (the `rebroadcast` flag) and no fresh bid has landed yet — explains the sudden restart
-                and that the price is unchanged, so the customer doesn't think they lost their order. */}
-            {showRebroadcast ? (
-              <Card style={{ borderColor: tokens.color.line }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.xs }}>
-                  {/* Kit RiderCancelled header (screens.jsx:558): the glyph sits in a 34px surface
-                      circle, so the card leads with a mark rather than a loose icon. */}
-                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-                    <Icon name="bike" size={18} color={tokens.color.muted} />
-                  </View>
-                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>Your rider had to cancel</Text>
-                </View>
-                <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 19 }}>
-                  Sometimes a rider can&apos;t make it. We&apos;re finding you another rider at the same
-                  price{rebroadcastFare ? <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}> — {formatMoney(rebroadcastFare)}</Text> : null}. No need to start over.
-                </Text>
-              </Card>
-            ) : null}
-            {/* Live header + right-aligned 1s countdown, extracted (PERF20-02) so the tick re-renders
-                only that row. Keyed by orderId: a rider-bail rebroadcast remounts it, resetting the
-                fired-once SR thresholds + zero-refetch for the new auction. */}
-            <AuctionClock
-              key={orderId}
-              expiresAt={expiresAt}
-              frozen={frozen}
-              reduceMotion={reduceMotion}
-              reconnecting={connectionState === "reconnecting"}
-              bidCount={bidCount}
-              noRiders={noRiders}
-              onUrgentChange={setUrgent}
-              onZero={refetchAtZero}
-            />
-            {urgent ? (
-              // Pre-surface the recovery affordance BEFORE the dead-end — same destination as the
-              // expired state's "Send another request". Ghost so it doesn't compete with "Choose".
-              <Button label="Raise price & send again" variant="ghost" onPress={() => void rebroadcast()} loading={rebroadcasting} />
-            ) : null}
-            {orderedOffers.length > 1 ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-                {SORT_MODES.map((m) => {
-                  const on = sortMode === m.key;
-                  return (
-                    <Tappable tone="icon"
-                      key={m.key}
-                      onPress={() => setSortMode(m.key)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: on }}
-                      hitSlop={6}
-                      style={{
-                        minHeight: tokens.touchTargetMin,
-                        justifyContent: "center",
-                        paddingHorizontal: tokens.space.lg,
-                        borderRadius: tokens.radius.pill,
-                        borderWidth: 1,
-                        // Selected = mint wash + green text (DS chip state) — the CTA fill stays
-                        // reserved for the screen's one primary action.
-                        borderColor: on ? tokens.color.accentText : tokens.color.line,
-                        backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: on ? tokens.color.accentText : tokens.color.muted }}>{m.label}</Text>
-                    </Tappable>
-                  );
-                })}
-              </View>
-            ) : null}
-            {orderedOffers.map(({ offer: o, recommended }, idx) => {
-              if (isActiveCounter(o)) {
-                return (
-                  <BidEntrance key={o.id} animate={!reduceMotion}>
-                    <CounterOfferCard
-                      offer={o}
-                      ask={ask}
-                      onAccept={() => chooseOffer(o.id)}
-                      onDecline={() => setDeclinedCounterIds((prev) => new Set(prev).add(o.id))}
-                      loading={selectingId === o.id ? pendingOrQueued(selectM) : false}
-                      disabled={selectM.isPending}
-                      slow={selectingId === o.id && selectSlow}
-                    />
-                  </BidEntrance>
-                );
-              }
-              // One primary CTA on the list: the recommended card (or the first, if none is marked).
-              // While a counter Accept is on screen it owns the one primary — normal bids go ghost.
-              const primaryPick = !hasActiveCounter && (recommended || (!orderedOffers.some((x) => x.recommended) && idx === 0));
-              return (
-                <BidEntrance key={o.id} animate={!reduceMotion}>
-                  <Card style={recommended ? { borderColor: tokens.color.highlight } : undefined}>
-                    {recommended ? (
-                      <Text style={{ fontSize: tokens.font.size.micro, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk, letterSpacing: 0.5, marginBottom: 3 }}>
-                        ★ RECOMMENDED
-                      </Text>
-                    ) : null}
-                    {/* Face-first: the rider's photo (or an initials monogram) anchors the bid the way
-                        inDrive/Uber front the person, not a row of text. */}
-                    <RiderMini
-                      profileId={o.rider.profileId}
-                      firstName={o.rider.profile.firstName}
-                      lastName={o.rider.profile.lastName}
-                      photoUrl={o.rider.profile.photoUrl}
-                      ratingAvg={o.rider.ratingAvg}
-                      ratingCount={o.rider.ratingCount}
-                      tripsCount={o.rider.tripsCount}
-                      etaMinutes={o.etaMinutes}
-                    />
-                    <Text style={{ fontSize: tokens.font.size.price, fontWeight: tokens.font.weight.bold, marginVertical: 4, fontVariant: ["tabular-nums"] }}>{formatMoney(o.offeredFare)}</Text>
-                    <Button
-                      label={selectingId === o.id && selectSlow ? "Still choosing — hang on" : "Choose this rider"}
-                      variant={primaryPick ? "primary" : "ghost"}
-                      onPress={() => chooseOffer(o.id)}
-                      loading={selectingId === o.id ? pendingOrQueued(selectM) : false}
-                      disabled={selectM.isPending}
-                    />
-                  </Card>
-                </BidEntrance>
-              );
-            })}
-            {selectNotice ? (
-              <Text accessibilityLiveRegion="polite" style={{ color: tokens.color.muted, fontSize: 14, marginTop: tokens.space.xs }}>
-                {selectNotice}
-              </Text>
-            ) : null}
-            {orderedOffers.length === 0 ? (
-              shouldShowOffersError(offersQ.isError, orderedOffers.length, order.status === "open_for_offers") ? (
-                // Honest error: the offers fetch failed and there's nothing to show — don't paint the
-                // calm "finding riders" working state over a dead fetch. Mirrors the rider board's
-                // `openQ.isError` branch (wifi-off EmptyState + a Retry that refetches).
-                <EmptyState icon="wifi-off" title="Couldn't load offers" message="Check your connection and try again.">
-                  <Button label="Retry" onPress={() => void offersQ.refetch()} loading={offersQ.isFetching} />
-                </EmptyState>
-              ) : noRiders ? (
-                // 2·b1: honest supply-empty. No online riders were nearby to ping — so the calm
-                // "riders were pinged, hang tight" copy would be a lie. Non-terminal: the auction keeps
-                // running (the header still counts down), the poll self-heals if a rider comes online,
-                // and the nudge widens interest. "Notify me" registers a waiting-list entry so the
-                // customer gets a push the moment a rider comes online near their pickup.
-                <View style={{ marginTop: tokens.space.sm }}>
-                  <EmptyState
-                    icon="bike"
-                    title="No riders online nearby right now"
-                    message="Nobody's online near you this minute. We'll keep looking while the window's open — a rider may come on any moment. You can also nudge the price to widen interest."
-                  >
-                    {notifyM.isSuccess && notifyM.data?.queued ? (
-                      <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600", textAlign: "center" }}>
-                        We&apos;ll ping you when a rider&apos;s online near your pickup.
-                      </Text>
-                    ) : notifyM.isSuccess && !notifyM.data?.queued ? (
-                      // The server accepted the request but couldn't queue a reminder (e.g. no waiting-list
-                      // store). Be honest rather than silently re-render the plain button and invite an
-                      // endless retry loop that can never register.
-                      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center" }}>
-                        We can&apos;t take reminders right now — check back in a bit, or raise the price to widen interest.
-                      </Text>
-                    ) : (
-                      <Button
-                        label="Notify me when a rider's online"
-                        variant="ghost"
-                        onPress={() => notifyM.mutate()}
-                        loading={pendingOrQueued(notifyM)}
-                      />
-                    )}
-                    <Button label="Raise price & send again" variant="ghost" onPress={() => void rebroadcast()} loading={rebroadcasting} />
-                  </EmptyState>
-                </View>
-              ) : (
-                // Live-but-empty: a "working" state (pulsing placeholder) distinct from the expired
-                // dead-end, so streaming-into-empty reads as "finding", not "broken".
-                <View style={{ marginTop: tokens.space.sm }}>
-                  <SkeletonCard />
-                  <Sub>No offers yet — riders nearby have been pinged. Hang tight.</Sub>
-                </View>
-              )
-            ) : null}
+    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <OrderHeader title={title} help={help} onBack={() => onBack()} onHelp={() => setPanel("help")} />
+      <View style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
+        <OrderMap
+          pickup={order.pickup.point}
+          dropoff={order.dropoff.point}
+          rider={riderPoint}
+          riderLabel={riderLabel}
+          riderPaused={gpsPaused || offline}
+          showRider={showRider}
+          toPickupLine={toPickup}
+          rings={stage === "finding"}
+          dim={dim}
+          frame={frame}
+          padBottom={sheetVisible || Math.round(area * (1 - mapShare))}
+          reduceMotion={reduceMotion}
+        />
+        {showBanner ? (
+          <View style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 21 }}>
+            <ReconnectBanner lastUpdate={lastUpdate} />
           </View>
         ) : null}
-
-        {isActive || order.status === "delivered" || order.status === "completed" ? (
-          // The whole live section (ETA headline, map, hint, phone row, stepper) lives in a memoized
-          // child with its own telemetry subscription — a GPS tick re-renders it and ONLY it (this
-          // screen's `select: selectOrderShell` above never sees the position change). Every prop here
-          // is referentially stable across ticks: the snapshot fields come off the shell (structural
-          // sharing preserves them between status changes), riderIdentity is state, and reissueCode is
-          // the stable callback above.
-          <LiveTrackingCard
-            orderId={orderId}
-            status={order.status}
-            isActive={isActive}
-            fare={fare}
-            pickup={order.pickup.point}
-            dropoff={order.dropoff.point}
-            events={order.events}
-            counterpartyPhone={order.counterpartyPhone}
-            viewerRole={order.viewerRole}
-            riderIdentity={riderIdentity}
-            connectionState={connectionState}
-            onReissueCode={reissueCode}
-            reissuing={pendingOrQueued(rotateM)}
-            staleTick={staleTick}
-          />
+        {area > 0 ? (
+          <OrderSheet
+            ref={sheetRef}
+            areaHeight={area}
+            mapShare={mapShare}
+            bottomInset={bar ? ctaH : 0}
+            contentKey={`${stage}|${cancelPanel ? "c" : ""}|${rated ? "r" : ""}|${skipped ? "s" : ""}`}
+            reduceMotion={reduceMotion}
+            onVisibleHeight={setSheetVisible}
+          >
+            {content}
+          </OrderSheet>
         ) : null}
-
-        {/* §5c collection reassurance: the rider's photo of the parcel, taken at pickup. Self-hides
-            when no photo was attached, so no status gating needed. */}
-        <PickupPhoto url={order.pickupPhotoUrl} />
-
-        {/* SOS on a live trip (R-16/F-13) — a deliberate danger control, highest value at the cash
-            hand-off. Only while the trip is genuinely active. */}
-        {isActive ? <SosControl orderId={orderId} /> : null}
-
-        {/* Fix 1: rating is customer→rider and customer-gated server-side (rate() 403s a rider), so the
-            card is hidden for a rider viewing their own delivered trip. */}
-        {order.status === "delivered" && !isRiderViewer ? (
-          <RatingCard
-            saving={pendingOrQueued(rateM)}
-            onRate={(n) => rateM.mutate(n)}
-            onArm={(n) => {
-              // Armed live this session — RatingCard's own timer/unmount is the sole committer; keep
-              // the reconcile effect from firing it immediately and skipping the undo window.
-              ratingFromStorage.current = false;
-              setPendingRating({ orderId, score: n });
-              void savePendingRating(orderId, n);
-            }}
-            onUndo={() => {
-              setPendingRating((cur) => (cur?.orderId === orderId ? null : cur));
-              void clearPendingRating();
-            }}
-          />
+        {bar ? (
+          <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 25 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
+            {bar}
+          </View>
         ) : null}
-
-        {order.status === "completed" ? (
-          <>
-            <Card>
-              <Celebrate />
-              <Text style={{ fontSize: 16, fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered &amp; completed. Thank you!</Text>
-            </Card>
-            <ReceiptCard
-              orderId={order.id}
-              pickupLandmark={order.pickup.landmark}
-              dropoffLandmark={order.dropoff.landmark}
-              fare={fare}
-              riderName={riderIdentity ? `${riderIdentity.firstName} ${riderIdentity.lastName}`.trim() : null}
-              completedAt={
-                order.events?.find((e) => e.status === "completed")?.createdAt ??
-                order.events?.find((e) => e.status === "delivered")?.createdAt ??
-                null
-              }
-            />
-          </>
+        {shownToast ? (
+          <View style={{ position: "absolute", left: 12, right: 12, bottom: (bar ? ctaH : 0) + 10, zIndex: 35 }}>
+            <OrderToast text={shownToast.text} icon={shownToast.icon} action={shownToast.action} actionIcon={shownToast.actionIcon} onAction={shownToast.onAction} />
+          </View>
         ) : null}
-        {order.status === "expired"
-          ? // Pick the honest expired-terminal copy. The live `bidCount` (offers-list query) reflects
-            // riders who bid THIS session, but it's empty on a COLD start into an already-expired order —
-            // that query only fetches `pending` offers, gone post-expiry. So a customer who watched bids
-            // arrive, force-killed the app, and reopened would wrongly be told "no riders took this price".
-            // The server's `hadOffers` (a durable count of offer rows) recovers the truth on that cold path;
-            // either signal wins, keeping the live case identical while fixing the cold-start lie.
-            (() => {
-              switch (expiredTerminalKind({ bidCount, hadOffers: order.hadOffers, expiryNoSupply: order.expiryNoSupply })) {
-                case "had-offers":
-                  return (
-                    <EmptyState icon="bike" title="Your choosing window closed" message="Riders did offer, but the window ended before you picked. Send again and they'll likely bid again at the same price.">
-                      <Button label="Send another request" onPress={() => void rebroadcast()} />
-                    </EmptyState>
-                  );
-                case "no-supply":
-                  // UX-2026-07-12 #11: the window closed with zero bids AND nobody online near the pickup,
-                  // so "nudge the price up" is wrong advice — the price was never the problem. Say so honestly.
-                  return (
-                    <EmptyState
-                      icon="bike"
-                      title="No riders were online nearby"
-                      message="Nobody was online near your pickup when the window closed — try sending again in a bit."
-                    >
-                      <Button label="Send another request" onPress={() => void rebroadcast()} />
-                    </EmptyState>
-                  );
-                default:
-                  // Kit `auction_expired` (screens.jsx:246-247): the window's length is part of the
-                  // explanation, and the CTA names what it actually does — nudge the price and re-broadcast.
-                  return (
-                    <EmptyState
-                      icon="bike"
-                      title="No riders took this price yet"
-                      message={`Your ${OFFER_WINDOW_MS / 1000}-second window closed with no offer. Nudging the price up usually gets a rider fast.`}
-                    >
-                      <Button label="Nudge price & re-broadcast" onPress={() => void rebroadcast()} />
-                    </EmptyState>
-                  );
-              }
-            })()
-          : null}
-        {order.status === "cancelled" ? (
-          <Card>
-            {/* Kit cancelled terminal (screens.jsx:345-348): a danger `circle-alert` glyph leads the
-                headline row, and the reason line is labelled rather than left a bare orphan. */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}>
-              <Icon name="circle-alert" size={18} color={tokens.color.danger} />
-              <Text style={{ flex: 1, fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-              {/* Fix 1: the blame line is written from the viewer's perspective. For the customer view a
-                  rider cancel is "your rider"; for a rider viewing their own trip a customer cancel is
-                  "your customer", and either side's own cancel reads as "you". Neither party is
-                  `cancelledBy` for an ops/admin cancel (it stays null) — say so explicitly rather than
-                  falling back to a vague "This order is cancelled.", matching the rider's own
-                  CancelledHandback terminal (UX-2026-07-15) so the same event reads the same way on
-                  both surfaces a rider can see it from. */}
-              {isRiderViewer
-                ? order.cancelledBy === "customer"
-                  ? "Your customer cancelled this delivery."
-                  : order.cancelledBy === "rider"
-                    ? "You cancelled this delivery."
-                    : "LyniaGo cancelled this delivery."
-                : order.cancelledBy === "rider"
-                  ? "Your rider cancelled this delivery."
-                  : order.cancelledBy === "customer"
-                    ? "You cancelled this order."
-                    : "LyniaGo cancelled this delivery."}
-              </Text>
-            </View>
-            {order.cancelReason ? (
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: tokens.space.sm }}>Reason: {order.cancelReason}</Text>
-            ) : null}
-            {/* F-01: the rider bailed but the job was auto re-sent to other riders at the same price.
-                Point the customer forward to the fresh auction instead of dead-ending on the cancel.
-                Fix 1e: a rider viewer is never a party to the customer's rebroadcast clone (tapping it
-                403s), so the forward link is customer-only. */}
-            {!isRiderViewer && order.rebroadcastedToId ? (
-              <View style={{ marginTop: tokens.space.sm }}>
-                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                  We&apos;ve re-sent this request to other riders at the same price — no need to start over.
-                </Text>
-                <Button
-                  label="Follow the new request"
-                  onPress={() => {
-                    const carried = fare ? `?rebroadcast=1&fare=${encodeURIComponent(fare)}` : "?rebroadcast=1";
-                    router.replace(`/order/${order.rebroadcastedToId}${carried}`);
-                  }}
-                />
-              </View>
-            ) : null}
-            {/* Fix 4: a plain cancelled terminal with no auto-rebroadcast clone to follow still deserves a
-                recovery path — the same prefilled-recompose CTA the expired/undelivered terminals use.
-                Customer-only (Fix 1e: a rider shouldn't be invited to re-send someone else's parcel). The
-                framing softens when the customer cancelled it themselves ("changed your mind?") vs. when
-                the rider/admin cancelled it ("send another request"). */}
-            {!isRiderViewer && !order.rebroadcastedToId ? (
-              <View style={{ marginTop: tokens.space.sm }}>
-                {order.cancelledBy === "customer" ? (
-                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                    Changed your mind? You can send it again at the same price.
-                  </Text>
-                ) : null}
-                <Button label={order.cancelledBy === "customer" ? "Send it again" : "Send another request"} onPress={() => void rebroadcast()} />
-              </View>
-            ) : null}
-          </Card>
-        ) : null}
-
-        {/* Undeliverable terminal (F-02 / C6): the rider couldn't complete the hand-off. Reason +
-            attempt count are shown verbatim; the call-rider action stays (phone is still revealed for
-            `undelivered`, PHONE_REVEAL_STATUSES). Own-risk — no Lynia return obligation. */}
-        {order.status === "undelivered" ? (
-          <>
-            <Card>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
-                  <Icon name="circle-alert" size={18} color={tokens.color.danger} />
-                </View>
-                <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>Parcel not delivered</Text>
-              </View>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                Your rider couldn&apos;t complete this delivery. The parcel is still with your rider.
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
-                <Icon name="circle-alert" size={15} color={tokens.color.muted} />
-                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.ink, lineHeight: 18 }}>
-                  <Text style={{ fontWeight: tokens.font.weight.bold }}>Reason recorded by your rider: </Text>
-                  {UNDELIVERED_REASON_LABEL[order.undeliveredReason ?? ""] ?? "delivery not completed"}
-                  {order.undeliveredAttempts != null ? ` · ${order.undeliveredAttempts} attempt${order.undeliveredAttempts === 1 ? "" : "s"}` : ""}
-                </Text>
-              </View>
-              <View style={{ flexDirection: "row", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, marginBottom: tokens.space.sm }}>
-                <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
-                <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-                  Sending is at your own risk — arrange the parcel directly with your rider. LyniaGo isn&apos;t liable for non-delivery.
-                </Text>
-              </View>
-              {order.counterpartyPhone ? (
-                <Tappable
-                  onPress={() => dial(order.counterpartyPhone)}
-                  accessibilityRole="button"
-                  accessibilityLabel={isRiderViewer ? "Call sender" : "Call rider"}
-                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm }}
-                >
-                  <Icon name="phone" size={16} color={tokens.color.accentText} />
-                  <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                    {isRiderViewer ? "Call sender" : "Call rider"}{order.counterpartyPhone ? ` · ${formatPhoneLocal(order.counterpartyPhone)}` : ""}
-                  </Text>
-                </Tappable>
-              ) : null}
-            </Card>
-            {/* Fix 1e: recompose is the customer re-sending THEIR parcel — a rider viewer is never the
-                party to do that (and rebroadcast() prefills the customer's route/price), so hide it. */}
-            {!isRiderViewer ? <Button label="Send a new request" onPress={() => void rebroadcast()} /> : null}
-          </>
-        ) : null}
-
-        {/* Cancel-anytime (C3). Fix 1: this is a CUSTOMER control — the server resolves the caller's
-            party server-side and a rider tapping "cancel" takes the full bail penalty (strike +
-            reliability hit + possible cooldown) with none of the rider screen's BailSheet warning. So
-            for a rider viewer we HIDE cancel entirely and instead point them to their own job screen
-            (which has the proper bail flow); the customer keeps cancel. */}
-        {isRiderViewer ? (
-          isActive && riderModeAvailable() ? (
-            <Button label="Open your job" variant="ghost" onPress={() => router.push("/rider/job")} />
-          ) : null
-        ) : CUSTOMER_CANCELLABLE.has(order.status) ? (
-          // Fix 4: a cancel with a rider already matched (MATCHED_CANCEL) gets a confirm — an accidental
-          // tap at `assigned`/`en_route_pickup` used to cancel instantly, just like the post-pickup case
-          // now does. Post-pickup ALSO warns the parcel is on the bike; the auction (`open_for_offers`)
-          // stays one-tap (no rider to strand).
-          cancelConfirm && MATCHED_CANCEL.has(order.status) ? (
-            <Card style={{ borderColor: tokens.color.danger }}>
-              {POST_PICKUP_CANCEL.has(order.status) ? (
-                <>
-                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel after pickup?</Text>
-                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                    Your rider already has the parcel. If you cancel now, you&apos;ll arrange getting it back directly with them — LyniaGo can&apos;t recover it, and an agreed fare isn&apos;t refunded.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginBottom: tokens.space.xs }}>Cancel this delivery?</Text>
-                  <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginBottom: tokens.space.sm }}>
-                    Your rider is on their way to collect. Cancelling now lets them go — you can send a fresh request any time.
-                  </Text>
-                </>
-              )}
-              <Field
-                label="Reason (optional)"
-                value={cancelReason}
-                onChangeText={setCancelReason}
-                placeholder="e.g. sending it another way"
-                maxLength={280}
-              />
-              <Button label="Yes, cancel this order" onPress={() => { setCancelConfirm(false); cancelM.mutate(cancelReason); }} loading={pendingOrQueued(cancelM)} />
-              <Button label="Keep my order" variant="ghost" onPress={() => setCancelConfirm(false)} />
-            </Card>
-          ) : (
-            <Button
-              label="Cancel order"
-              variant="ghost"
-              onPress={() => {
-                if (MATCHED_CANCEL.has(order.status)) setCancelConfirm(true);
-                // The one-tap auction cancel (no rider to strand) has no reason form.
-                else cancelM.mutate(undefined);
-              }}
-              loading={pendingOrQueued(cancelM)}
-            />
-          )
-        ) : null}
-        {/* Order-level support — replaces the generic-help dead-end for an active or completed trip.
-            Also available during the auction wait (open_for_offers/expired): the server-side `raise()`
-            already accepts a report at any status, but the control was previously hidden during the
-            single most anxious stretch of the journey — "is anyone going to take my price?" — forcing
-            a worried customer off this screen and into the generic Help flow with no orderId context. */}
-        {isActive ||
-        order.status === "open_for_offers" ||
-        order.status === "expired" ||
-        order.status === "delivered" ||
-        order.status === "completed" ||
-        order.status === "undelivered" ||
-        order.status === "cancelled" ? (
-          // Fix 4: `cancelled` now keeps a support entry point too — a cancel (rider bail, dispute, a
-          // mis-tap the customer wants reversed) is exactly a moment someone needs help, and this was
-          // the one terminal that dead-ended with no orderId-scoped help.
-          <GetHelpControl orderId={orderId} />
-        ) : null}
-        {/* Report / block after a trip. Terminal states only. Fix 1: the counterparty noun follows the
-            viewer — a rider reports the "sender", a customer reports the "rider" (mirrors rider/job.tsx).
-            And if no rider was ever assigned (e.g. a cancel during the auction, `order.rider == null`)
-            there's no counterparty to report — hide the control rather than show one whose submit always
-            409s server-side. */}
-        {(order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || order.status === "cancelled") && order.rider != null ? (
-          <ReportControl orderId={orderId} counterpartyNoun={isRiderViewer ? "sender" : "rider"} />
-        ) : null}
-        <Button label="Back home" variant="ghost" onPress={() => goHomeClearingStack(router)} />
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
-    </Screen>
+      </View>
+      <HelpPanel
+        visible={panel === "help"}
+        onClose={() => setPanel(null)}
+        onEmergency={emergency}
+        onShareTrip={() => share(orderText.shareTrip(order.pickup.landmark, order.dropoff.landmark, rider?.name ?? null, rider?.plate ?? null))}
+        onReport={() => setPanel("report")}
+      />
+      <TripIssueSheet orderId={orderId} visible={panel === "report"} onClose={() => setPanel(null)} />
+      <PhotoViewer url={order.pickupPhotoUrl ?? null} visible={panel === "photo"} onClose={() => setPanel(null)} />
+    </SafeAreaView>
   );
 }

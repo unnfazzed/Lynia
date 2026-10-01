@@ -10,13 +10,9 @@ export const UNDELIVERED_REASON_LABEL: Record<string, string> = {
   breakdown: "rider breakdown",
 };
 
+// The order screen draws no sort chips any more (After Send, D-53) — it always uses "best"; the other
+// single-key sorts stay for callers and tests of `orderOffers`.
 export type SortMode = "best" | "cheapest" | "fastest" | "rated";
-export const SORT_MODES: { key: SortMode; label: string }[] = [
-  { key: "best", label: "Best match" },
-  { key: "cheapest", label: "Cheapest" },
-  { key: "fastest", label: "Fastest" },
-  { key: "rated", label: "Top rated" },
-];
 
 /** mm:ss for the auction timer. */
 export function formatClock(ms: number): string {

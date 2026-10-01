@@ -12,6 +12,7 @@ import { SessionGate } from "../src/auth/session-gate";
 import { BootPhaseProvider, useBootPhase } from "../src/boot/boot-phase";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
+import { useOfflineBannerClaimed } from "../src/net/offline-banner-owner";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient, wireFocusManager } from "../src/query/client";
@@ -114,7 +115,9 @@ function BootstrapSync(): null {
 function ConnectivityBanner(): React.ReactElement | null {
   const reachable = useReachability();
   const insets = useSafeAreaInsets();
-  if (reachable) return null;
+  // A screen that draws its own offline banner (the order screen, D-53) holds a claim; don't double up.
+  const claimed = useOfflineBannerClaimed();
+  if (reachable || claimed) return null;
   return (
     <View style={{ paddingTop: insets.top, backgroundColor: tokens.color.ink }}>
       <OfflineBanner state="offline" />
