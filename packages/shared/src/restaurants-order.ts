@@ -101,29 +101,26 @@ export function rejectionCopy(reason: string): string {
  * through food-dispatch.service.ts.
  */
 export const RESTAURANTS_DISPATCH = {
-  /** N-08: how long a single candidate rider has to accept before the next attempt fires. */
+  /** N-08: how long one offer round holds before the next round fires. */
   offerWindowMs: 60 * 1000,
-  /** N-07: "~6 sequential 60s offers" — six ticks total (whether or not each finds a candidate) is
-   *  the NO_RIDER cap, ≈6:00 end to end. */
+  /** N-07: six 60s rounds total (whether or not each finds a rider) is the NO_RIDER cap, about 6:00
+   *  end to end. */
   maxAttempts: 6,
-  /** Widening search radius (meters) per attempt (1-indexed via {@link dispatchRadiusForAttempt}).
-   *  Starts tighter than Express's own base broadcast radius (a food order wants the CLOSEST rider
-   *  first, not the widest audience) and widens faster than the cap is reached, so a genuinely
-   *  sparse area still gets a shot at every attempt. */
-  radiusStepsM: [1500, 2500, 3500, 4500, 6000, 8000],
+  /** How far from the kitchen a rider can be offered the job (meters). */
+  radiusM: 8000,
+  /** Owner decision 2026-10-01 (ledger D-54): the first round offers the job to this many of the best
+   *  nearby riders at once (the restaurant's own riders first, then the nearest); every later round
+   *  offers it to everyone eligible. The first rider to accept gets it. */
+  firstRoundSize: 10,
   /** How often the DB reconciler ticks pending dispatches — same cadence as RESTAURANTS_TIMING's
    *  pre-dispatch sweep, for the same "sub-minute precision, not BullMQ infra" reasoning. */
   sweepIntervalMs: 20 * 1000,
 } as const;
 
-/** Widening radius (meters) for the given 1-indexed dispatch attempt, clamped to the last step for
- *  any attempt beyond the configured schedule (defensive; maxAttempts already bounds real callers). */
-export function dispatchRadiusForAttempt(attempt: number): number {
-  const steps = RESTAURANTS_DISPATCH.radiusStepsM;
-  const i = Math.min(Math.max(1, Math.trunc(attempt)), steps.length) - 1;
-  // i is clamped into [0, steps.length - 1] above, so the index is always in range —
-  // noUncheckedIndexedAccess still types it as possibly-undefined, hence the assertion.
-  return steps[i]!;
+/** How many riders a dispatch round offers the job to: the best {@link RESTAURANTS_DISPATCH.firstRoundSize}
+ *  on the first round, everyone eligible (null) after. */
+export function dispatchRoundSize(attempt: number): number | null {
+  return attempt <= 1 ? RESTAURANTS_DISPATCH.firstRoundSize : null;
 }
 
 /**

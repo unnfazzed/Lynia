@@ -72,9 +72,12 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** A strategy that finds nobody — for the paths that never reach it. */
+const NONE: DispatchStrategy = { pickCandidates: async () => [] };
+
 describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merchant web upgrade L3)", () => {
   function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }) {
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "mine", distanceM: 900, preferred: true })) };
+    const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "mine", distanceM: 900, preferred: true }]) };
     const { svc } = build(
       {
         order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: vi.fn(async () => ({ count: 1 })) },
@@ -88,7 +91,7 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merch
           ],
         },
         orderEvent: { create: async () => ({}) },
-        foodDispatchAttempt: { create: vi.fn(async () => ({})) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})) },
       },
       strategy,
     );
@@ -98,7 +101,7 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merch
   it("hands the strategy the restaurant's riders, matched by phone, never its own team", async () => {
     const { svc, strategy } = world({ findMany: async () => [{ phone: "+263771230000" }, { phone: "+263771239999" }] });
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidate).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
   });
 
   it("carries on nearest-first when the lookup fails", async () => {
@@ -108,46 +111,57 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merch
       },
     });
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidate).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
   });
 });
 
-describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
-  it("offers the nearest candidate on the first attempt and logs a FoodDispatchAttempt row", async () => {
-    const attemptCreate = vi.fn(async () => ({}));
+const one = (riderId: string, distanceM = 800) => [{ riderId, distanceM }];
+const pick = (list: Array<{ riderId: string; distanceM: number; preferred?: boolean }>): DispatchStrategy => ({ pickCandidates: vi.fn(async () => list) });
+
+describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best 10, then everyone)", () => {
+  function world(over: Record<string, unknown> = {}, strategy = pick(one("r1"))) {
+    const attemptUpsert = vi.fn(async () => ({}));
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "r1", distanceM: 800 })) };
-    const { svc, gateway } = build(
+    const built = build(
       {
-        order: {
-          findMany: async () => [{ id: orderId }],
-          findUnique: async () => baseOrder(),
-          updateMany: orderUpdateMany,
-        },
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
         merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
         orderEvent: { create: async () => ({}) },
-        foodDispatchAttempt: { create: attemptCreate },
+        foodDispatchAttempt: { upsert: attemptUpsert, findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+        ...over,
       },
       strategy,
     );
+    return { ...built, attemptUpsert, orderUpdateMany, strategy };
+  }
 
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 1, held: 0 });
+  it("offers the first round to the best 10 at once: one row, one push and one alarm each", async () => {
+    const riders = Array.from({ length: 10 }, (_, i) => ({ riderId: `r${i}`, distanceM: 100 * (i + 1) }));
+    const { svc, gateway, attemptUpsert, orderUpdateMany, strategy } = world({}, pick(riders));
+
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, radiusM: 8000, excludeRiderIds: [] }));
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: orderId, status: "requested", dispatchAttempt: 0, noRiderHoldAt: null }),
-        data: expect.objectContaining({ status: "open_for_offers", dispatchOfferedRiderId: "r1", dispatchAttempt: 1 }),
+        data: expect.objectContaining({ status: "open_for_offers", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: expect.any(Date), dispatchAttempt: 1 }),
       }),
     );
-    expect(attemptCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ orderId, riderId: "r1", attemptNumber: 1, radiusM: 1500 }) }),
+    expect(attemptUpsert).toHaveBeenCalledTimes(10);
+    expect(attemptUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orderId_riderId: { orderId, riderId: "r0" } },
+        create: expect.objectContaining({ orderId, riderId: "r0", attemptNumber: 1, radiusM: 8000 }),
+        update: expect.objectContaining({ attemptNumber: 1, outcome: "pending", respondedAt: null }),
+      }),
     );
-    expect(notified).toEqual([expect.objectContaining({ profileIds: ["r1"] })]);
+    expect(notified).toEqual([expect.objectContaining({ profileIds: riders.map((r) => r.riderId) })]);
+    expect(gateway.emitFoodOffer).toHaveBeenCalledTimes(10);
     expect(gateway.emitOrderStatus).not.toHaveBeenCalled(); // no realtime push on an offer, only on rider-secured
-    // C5 rider offer alarm channel: the WS twin of the push above, redacted like the parcel board
-    // (point + landmark only — contactPhone must never cross the wire to an un-accepted rider).
+    // C5 rider offer alarm channel, redacted like the parcel board (point + landmark only —
+    // contactPhone must never cross the wire to an un-accepted rider).
     expect(gateway.emitFoodOffer).toHaveBeenCalledWith(
-      "r1",
+      "r3",
       expect.objectContaining({
         orderId,
         merchantId: MERCHANT_ID,
@@ -164,217 +178,191 @@ describe("FoodDispatchService.sweepSearch — N-08 auto-offer", () => {
     expect(offerPayload.dropoff.contactPhone).toBeUndefined();
   });
 
-  it("parks for the next poll (dispatch_search self-loop) when no candidate is found, without touching the cap", async () => {
-    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const strategy: DispatchStrategy = { pickCandidate: async () => null };
-    const { svc } = build(
-      {
-        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
-      },
-      strategy,
-    );
+  it("offers every later round to everyone eligible (no cap), passing riders who passed as excluded", async () => {
+    const { svc, strategy, attemptUpsert } = world({
+      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 1, dispatchExcludedRiderIds: ["passed"] }), updateMany: async () => ({ count: 1 }) },
+    });
+    await svc.sweepSearch();
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: null, excludeRiderIds: ["passed"] }));
+    expect(attemptUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ attemptNumber: 2, outcome: "pending" }) }));
+  });
 
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 0, held: 0 });
+  it("parks for the next poll (dispatch_search self-loop) when nobody is found, without touching the cap", async () => {
+    const { svc, orderUpdateMany } = world({}, pick([]));
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ dispatchAttempt: 1, dispatchNextCheckAt: expect.any(Date) }) }),
     );
   });
 
-  it("widens the radius per attempt (dispatchRadiusForAttempt)", async () => {
-    const attemptCreate = vi.fn(async () => ({}));
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "r1", distanceM: 2000 })) };
-    const { svc } = build(
-      {
-        order: {
-          findMany: async () => [{ id: orderId }],
-          findUnique: async () => baseOrder({ dispatchAttempt: 2 }), // about to make attempt 3
-          updateMany: async () => ({ count: 1 }),
-        },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
-        orderEvent: { create: async () => ({}) },
-        foodDispatchAttempt: { create: attemptCreate },
-      },
-      strategy,
-    );
-    await svc.sweepSearch();
-    expect(strategy.pickCandidate).toHaveBeenCalledWith(expect.objectContaining({ radiusM: 3500 }));
-    expect(attemptCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ attemptNumber: 3, radiusM: 3500 }) }));
-  });
-
-  it("N-07: enters the D-34 merchant hold once the NO_RIDER cap (6 attempts) is exhausted, and pushes a C5 queue-changed signal", async () => {
+  it("N-07: enters the D-34 merchant hold once the NO_RIDER cap (6 rounds) is exhausted, and pushes a C5 queue-changed signal", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => null) };
+    const strategy = pick([]);
     const { svc, gateway } = build(
       { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: orderUpdateMany } },
       strategy,
     );
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 0, held: 1 });
-    expect(strategy.pickCandidate).not.toHaveBeenCalled();
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 1 });
+    expect(strategy.pickCandidates).not.toHaveBeenCalled();
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ noRiderHoldAt: expect.any(Date), dispatchNextCheckAt: null }) }),
     );
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
   });
 
-  // LM-02 (order-assignment audit, concurrency cell): the read-time re-check above (line 168) only
-  // catches a race that lands BEFORE tick's own read. A second tick — another overlapping sweep pass,
-  // or this same order being dropped/held between the read and the write — can still land in the
-  // window between that read and the offer CAS itself. The CAS's own `claimed.count === 0` branch was
-  // reachable in the "no candidate" park-for-next-poll case only via manual trace, never exercised by
-  // a test; pin that a lost CAS race here also degrades to "skipped" without logging a phantom
-  // FoodDispatchAttempt or pushing a notification for an offer that was never actually placed.
-  it("skips (no attempt log, no push) when the offer-write CAS itself loses a race after picking a candidate", async () => {
-    const attemptCreate = vi.fn(async () => ({}));
-    const orderUpdateMany = vi.fn(async () => ({ count: 0 }));
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn(async () => ({ riderId: "r1", distanceM: 800 })) };
-    const { svc, gateway } = build(
-      {
-        order: {
-          findMany: async () => [{ id: orderId }],
-          findUnique: async () => baseOrder(),
-          updateMany: orderUpdateMany,
-        },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
-        orderEvent: { create: async () => ({}) },
-        foodDispatchAttempt: { create: attemptCreate },
-      },
-      strategy,
-    );
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 0, held: 0 });
-    expect(attemptCreate).not.toHaveBeenCalled();
+  // LM-02: a second tick can land between tick's read and the offer CAS. A lost CAS degrades to
+  // "skipped" without writing a phantom offer row or pushing an alarm for a round that never opened.
+  it("skips (no rows, no push) when the round-opening CAS itself loses a race", async () => {
+    const { svc, gateway, attemptUpsert } = world({
+      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: async () => ({ count: 0 }) },
+    });
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(attemptUpsert).not.toHaveBeenCalled();
     expect(notified).toEqual([]);
     expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
   });
 
-  // Same lost-CAS race, but on the "no candidate found" self-loop write (line 204-213) — pin that it
-  // also degrades cleanly to "skipped" rather than reporting a phantom "searching" outcome.
-  it("skips (not 'searching') when the no-candidate park-for-next-poll CAS loses a race", async () => {
-    const orderUpdateMany = vi.fn(async () => ({ count: 0 }));
-    const strategy: DispatchStrategy = { pickCandidate: async () => null };
-    const { svc } = build(
-      {
-        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
-      },
-      strategy,
+  it("skips (not 'searching') when the nobody-found park CAS loses a race", async () => {
+    const { svc } = world(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: async () => ({ count: 0 }) } },
+      pick([]),
     );
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 0, held: 0 });
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+  });
+
+  it("closes the round again (no push) when the offer rows can't be written — nobody could accept it", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc, gateway } = world({
+      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
+      foodDispatchAttempt: {
+        upsert: async () => {
+          throw new Error("connection reset");
+        },
+        findMany: async () => [],
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(orderUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: "open_for_offers" }), data: expect.objectContaining({ status: "requested" }) }),
+    );
+    expect(notified).toEqual([]);
+    expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
   });
 
   it("skips an order that raced to hold/assigned since the sweep's own read (defensive re-check)", async () => {
-    const strategy: DispatchStrategy = { pickCandidate: vi.fn() };
+    const strategy = pick([]);
     const { svc } = build(
       { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ noRiderHoldAt: new Date() }) } },
       strategy,
     );
-    const result = await svc.sweepSearch();
-    expect(result).toEqual({ offered: 0, held: 0 });
-    expect(strategy.pickCandidate).not.toHaveBeenCalled();
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(strategy.pickCandidates).not.toHaveBeenCalled();
   });
 });
 
-describe("FoodDispatchService.sweepExpiredOffers — N-08 60s window", () => {
-  it("releases a stale offer back to requested, excludes the rider, marks the attempt expired", async () => {
+describe("FoodDispatchService.sweepExpiredOffers — N-08 60s round", () => {
+  it("closes a stale round back to requested, expires every pending row and closes each alarm — without excluding anyone", async () => {
+    const roundEnd = new Date(Date.now() - 1000);
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const attemptUpdateMany = vi.fn(async () => ({ count: 2 }));
+    const { svc, gateway } = build(
+      {
+        order: { findMany: async () => [{ id: orderId, dispatchOfferExpiresAt: roundEnd }], updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findMany: async () => [{ riderId: "r1" }, { riderId: "r2" }], updateMany: attemptUpdateMany },
+      },
+      NONE,
+    );
+    expect(await svc.sweepExpiredOffers()).toEqual({ expired: 1 });
+    expect(orderUpdateMany).toHaveBeenCalledWith({
+      where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: roundEnd },
+      data: { status: "requested", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: null, dispatchNextCheckAt: expect.any(Date) },
+    });
+    expect(attemptUpdateMany).toHaveBeenCalledWith({
+      where: { orderId, outcome: "pending" },
+      data: expect.objectContaining({ outcome: "expired" }),
+    });
+    // C5: the ONLY signal a still-ringing rider gets besides their next poll.
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
+  });
+
+  it("does nothing when the round was already accepted or closed (lost CAS)", async () => {
+    const attemptUpdateMany = vi.fn(async () => ({ count: 0 }));
+    const { svc, gateway } = build(
+      {
+        order: { findMany: async () => [{ id: orderId, dispatchOfferExpiresAt: new Date(Date.now() - 1000) }], updateMany: async () => ({ count: 0 }) },
+        foodDispatchAttempt: { findMany: async () => [{ riderId: "r1" }], updateMany: attemptUpdateMany },
+      },
+      NONE,
+    );
+    expect(await svc.sweepExpiredOffers()).toEqual({ expired: 0 });
+    expect(attemptUpdateMany).not.toHaveBeenCalled();
+    expect(gateway.emitFoodOfferClosed).not.toHaveBeenCalled();
+  });
+});
+
+const roundEnd = new Date(Date.now() + 30_000);
+const liveOrder = { status: "open_for_offers", merchantId: MERCHANT_ID, dispatchOfferExpiresAt: roundEnd, dispatchExcludedRiderIds: [] as string[] };
+const pendingRow = { outcome: "pending", expiresAt: roundEnd };
+
+describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to accept wins", () => {
+  it("assigns the rider, mints a delivery code, clears merchantPhase + dispatch fields, tells the round's other riders, pushes rider-secured", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const attemptUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc, gateway } = build(
       {
-        order: {
-          findMany: async () => [{ id: orderId, dispatchOfferedRiderId: "r1" }],
-          findUnique: async () => ({ dispatchExcludedRiderIds: [] }),
-          updateMany: orderUpdateMany,
-        },
-        foodDispatchAttempt: { updateMany: attemptUpdateMany },
-      },
-      { pickCandidate: async () => null },
-    );
-    const result = await svc.sweepExpiredOffers();
-    expect(result).toEqual({ expired: 1 });
-    // C5: the ONLY signal an expired offer's rider gets besides their next poll — the sweep-driven
-    // path (unlike a self-triggered decline), so this is the case this channel exists for.
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
-    expect(orderUpdateMany).toHaveBeenCalledWith({
-      where: { id: orderId, status: "open_for_offers", dispatchOfferedRiderId: "r1" },
-      data: expect.objectContaining({
-        status: "requested",
-        dispatchOfferedRiderId: null,
-        dispatchExcludedRiderIds: ["r1"],
-        dispatchNextCheckAt: expect.any(Date),
-      }),
-    });
-    expect(attemptUpdateMany).toHaveBeenCalledWith({
-      where: { orderId, riderId: "r1", outcome: "pending" },
-      data: expect.objectContaining({ outcome: "expired" }),
-    });
-  });
-
-  it("never re-adds a rider already in the excluded list (idempotent)", async () => {
-    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const { svc } = build(
-      {
-        order: {
-          findMany: async () => [{ id: orderId, dispatchOfferedRiderId: "r1" }],
-          findUnique: async () => ({ dispatchExcludedRiderIds: ["r1"] }),
-          updateMany: orderUpdateMany,
-        },
-        foodDispatchAttempt: { updateMany: async () => ({ count: 1 }) },
-      },
-      { pickCandidate: async () => null },
-    );
-    await svc.sweepExpiredOffers();
-    expect(orderUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dispatchExcludedRiderIds: ["r1"] }) }));
-  });
-});
-
-describe("FoodDispatchService.acceptDispatch — D-04 rider secured", () => {
-  const liveOffer = {
-    status: "open_for_offers",
-    dispatchOfferedRiderId: "r1",
-    dispatchOfferExpiresAt: new Date(Date.now() + 30_000),
-    merchantId: MERCHANT_ID,
-  };
-
-  it("assigns the candidate, mints a delivery code, clears merchantPhase + dispatch fields, pushes rider-secured (order room + C5 merchant queue)", async () => {
-    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const { svc, gateway } = build(
-      {
-        order: {
-          findFirst: async () => liveOffer,
-          updateMany: orderUpdateMany,
-          findUnique: async () => ({ customerId: "cust-1" }),
-        },
-        foodDispatchAttempt: { updateMany: async () => ({ count: 1 }) },
+        order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany, findUnique: async () => ({ customerId: "cust-1" }) },
+        foodDispatchAttempt: { findUnique: async () => pendingRow, findMany: async () => [{ riderId: "r2" }, { riderId: "r3" }], updateMany: attemptUpdateMany },
         orderEvent: { create: async () => ({}) },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
-    const res = await svc.acceptDispatch(orderId, "r1");
-    expect(res).toEqual({ orderId, status: "assigned" });
+    expect(await svc.acceptDispatch(orderId, "r1")).toEqual({ orderId, status: "assigned" });
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: orderId, status: "open_for_offers", dispatchOfferedRiderId: "r1" },
-        data: expect.objectContaining({ status: "assigned", riderId: "r1", merchantPhase: null, dispatchOfferedRiderId: null }),
+        where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: roundEnd },
+        data: expect.objectContaining({ status: "assigned", riderId: "r1", merchantPhase: null, dispatchOfferExpiresAt: null }),
       }),
     );
+    expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { orderId, riderId: "r1", outcome: "pending" }, data: expect.objectContaining({ outcome: "accepted" }) });
+    expect(attemptUpdateMany).toHaveBeenCalledWith({
+      where: { orderId, outcome: "pending", riderId: { not: "r1" } },
+      data: expect.objectContaining({ outcome: "expired" }),
+    });
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r3", orderId);
+    expect(gateway.emitFoodOfferClosed).not.toHaveBeenCalledWith("r1", orderId);
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith(orderId, "assigned");
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
   });
 
-  it("403s a caller who isn't the candidate rider", async () => {
-    const { svc } = build({ order: { findFirst: async () => liveOffer } }, { pickCandidate: async () => null });
+  it("409s the second rider to accept: the first already took it (lost CAS)", async () => {
+    const { svc } = build(
+      { order: { findFirst: async () => liveOrder, updateMany: async () => ({ count: 0 }) }, foodDispatchAttempt: { findUnique: async () => pendingRow } },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r2")).rejects.toThrow(/no longer live/i);
+  });
+
+  it("403s a rider this order was never offered to", async () => {
+    const { svc } = build({ order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => null } }, NONE);
     await expect(svc.acceptDispatch(orderId, "someone-else")).rejects.toThrow(/isn't yours/i);
   });
 
-  it("409s when the offer already expired", async () => {
+  it("409s a rider whose offer is no longer pending (their round closed, or they passed)", async () => {
     const { svc } = build(
-      { order: { findFirst: async () => ({ ...liveOffer, dispatchOfferExpiresAt: new Date(Date.now() - 1000) }) } },
-      { pickCandidate: async () => null },
+      { order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => ({ ...pendingRow, outcome: "expired" }) } },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toThrow(/no longer live/i);
+  });
+
+  it("409s when the offer already ran out", async () => {
+    const { svc } = build(
+      { order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => ({ ...pendingRow, expiresAt: new Date(Date.now() - 1000) }) } },
+      NONE,
     );
     await expect(svc.acceptDispatch(orderId, "r1")).rejects.toThrow(/just expired/i);
   });
@@ -382,38 +370,55 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured", () => {
   it("409s (not 500) on the one_active_ride race — the rider got assigned to another job first", async () => {
     const p2002 = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const { svc } = build(
-      { order: { findFirst: async () => liveOffer, updateMany: async () => { throw p2002; } } },
-      { pickCandidate: async () => null },
+      {
+        order: {
+          findFirst: async () => liveOrder,
+          updateMany: async () => {
+            throw p2002;
+          },
+        },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+      },
+      NONE,
     );
     await expect(svc.acceptDispatch(orderId, "r1")).rejects.toThrow(/another active job/i);
   });
 });
 
-describe("FoodDispatchService.declineDispatch", () => {
-  it("frees the offer immediately (the rider's own \"can't take it\")", async () => {
+describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
+  function world(stillDeciding: number) {
+    const orderUpdate = vi.fn(async () => ({}));
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const { svc, gateway } = build(
+    const attemptUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const built = build(
       {
-        order: {
-          findFirst: async () => ({ status: "open_for_offers", dispatchOfferedRiderId: "r1" }),
-          findUnique: async () => ({ dispatchExcludedRiderIds: [] }),
-          updateMany: orderUpdateMany,
-        },
-        foodDispatchAttempt: { updateMany: async () => ({ count: 1 }) },
+        order: { findFirst: async () => liveOrder, update: orderUpdate, updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findUnique: async () => pendingRow, updateMany: attemptUpdateMany, count: async () => stillDeciding, findMany: async () => [] },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
-    const res = await svc.declineDispatch(orderId, "r1");
-    expect(res).toEqual({ orderId, declined: true });
-    expect(orderUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "requested" }) }));
+    return { ...built, orderUpdate, orderUpdateMany, attemptUpdateMany };
+  }
+
+  it("marks the rider's row declined and never offers them this order again; the round stays live for the others", async () => {
+    const { svc, gateway, orderUpdate, orderUpdateMany, attemptUpdateMany } = world(3);
+    expect(await svc.declineDispatch(orderId, "r1")).toEqual({ orderId, declined: true });
+    expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { orderId, riderId: "r1", outcome: "pending" }, data: expect.objectContaining({ outcome: "declined" }) });
+    expect(orderUpdate).toHaveBeenCalledWith({ where: { id: orderId }, data: { dispatchExcludedRiderIds: { push: "r1" } } });
+    expect(orderUpdateMany).not.toHaveBeenCalled();
     expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 
-  it("403s a caller who doesn't hold the offer", async () => {
-    const { svc } = build(
-      { order: { findFirst: async () => ({ status: "open_for_offers", dispatchOfferedRiderId: "r1" }) } },
-      { pickCandidate: async () => null },
+  it("closes the round at once when the last rider still deciding passes", async () => {
+    const { svc, orderUpdateMany } = world(0);
+    await svc.declineDispatch(orderId, "r1");
+    expect(orderUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: roundEnd }, data: expect.objectContaining({ status: "requested" }) }),
     );
+  });
+
+  it("403s a rider this order was never offered to", async () => {
+    const { svc } = build({ order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => null } }, NONE);
     await expect(svc.declineDispatch(orderId, "r2")).rejects.toThrow(/isn't yours/i);
   });
 });
@@ -435,7 +440,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
           update: riderUpdate,
         },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
     const res = await svc.dropDispatch(orderId, "r1");
     expect(res).toEqual({ orderId, status: "requested" });
@@ -470,7 +475,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
           update: riderUpdate,
         },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
     await svc.dropDispatch(orderId, "r1");
     expect(riderUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cancelStrikes: 0, isOnline: false }) }));
@@ -478,7 +483,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
   });
 
   it("rejects a drop after pickup (D-33 no drop after pickup)", async () => {
-    const { svc } = build({ order: { findFirst: async () => ({ status: "picked_up" } as never) } }, { pickCandidate: async () => null });
+    const { svc } = build({ order: { findFirst: async () => ({ status: "picked_up" } as never) } }, NONE);
     await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/already with you/i);
   });
 
@@ -497,7 +502,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
         },
         rider: { findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 100, onHold: false, heldReason: null, cooldownUntil: null }), update: riderUpdate },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
     await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/order changed, retry/i);
     expect(riderUpdate).not.toHaveBeenCalled();
@@ -505,21 +510,23 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
 });
 
 describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel (poll/reconnect fallback)", () => {
-  const liveOfferRow = {
-    id: orderId,
-    merchantId: MERCHANT_ID,
-    pickup: PICKUP,
-    dropoff: DROPOFF,
-    itemDesc: "2x Sadza & stew",
-    merchantGoodsTotal: 12.5,
-    deliveryFee: 2.5,
-    distanceKm: 3.1,
-    dispatchOfferExpiresAt: new Date(Date.now() + 30_000),
+  const liveRow = {
+    expiresAt: new Date(Date.now() + 30_000),
+    order: {
+      id: orderId,
+      merchantId: MERCHANT_ID,
+      pickup: PICKUP,
+      dropoff: DROPOFF,
+      itemDesc: "2x Sadza & stew",
+      merchantGoodsTotal: 12.5,
+      deliveryFee: 2.5,
+      distanceKm: 3.1,
+    },
   };
 
-  it("returns the redacted live offer for the rider holding it", async () => {
-    const findFirst = vi.fn(async () => liveOfferRow);
-    const { svc } = build({ order: { findFirst } }, { pickCandidate: async () => null });
+  it("returns the rider's own live offer, redacted, soonest to run out first", async () => {
+    const findFirst = vi.fn(async () => liveRow);
+    const { svc } = build({ foodDispatchAttempt: { findFirst } }, NONE);
     const offer = await svc.getOfferForRider("r1");
     expect(offer).toEqual(
       expect.objectContaining({
@@ -531,6 +538,7 @@ describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel 
         merchantGoodsTotal: 12.5,
         deliveryFee: 2.5,
         distanceKm: 3.1,
+        expiresAt: liveRow.expiresAt.toISOString(),
       }),
     );
     // Never contactPhone on the wire — same guarantee as the WS push (D-17/board redaction).
@@ -538,13 +546,14 @@ describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel 
     expect((offer as { dropoff: Record<string, unknown> }).dropoff.contactPhone).toBeUndefined();
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ orderType: "merchant", status: "open_for_offers", dispatchOfferedRiderId: "r1" }),
+        where: expect.objectContaining({ riderId: "r1", outcome: "pending", order: { orderType: "merchant", status: "open_for_offers" } }),
+        orderBy: { expiresAt: "asc" },
       }),
     );
   });
 
   it("returns null when this rider holds no live offer", async () => {
-    const { svc } = build({ order: { findFirst: async () => null } }, { pickCandidate: async () => null });
+    const { svc } = build({ foodDispatchAttempt: { findFirst: async () => null } }, NONE);
     await expect(svc.getOfferForRider("r1")).resolves.toBeNull();
   });
 });
@@ -554,7 +563,7 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const { svc } = build(
       { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany } },
-      { pickCandidate: async () => null },
+      NONE,
     );
     const res = await svc.resumeSearch("owner-1", orderId);
     expect(res).toEqual({ orderId, resumed: true });
@@ -566,7 +575,7 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
   it("resumeSearch 409s when the order isn't actually on hold", async () => {
     const { svc } = build(
       { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany: async () => ({ count: 0 }) } },
-      { pickCandidate: async () => null },
+      NONE,
     );
     await expect(svc.resumeSearch("owner-1", orderId)).rejects.toThrow(/waiting on a rider decision/i);
   });
@@ -579,7 +588,7 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
         order: { updateMany, findUnique: async () => ({ customerId: "cust-1" }) },
         orderEvent: { create: async () => ({}) },
       },
-      { pickCandidate: async () => null },
+      NONE,
     );
     const res = await svc.cancelFromHold("owner-1", orderId);
     expect(res).toEqual({ orderId, status: "cancelled" });

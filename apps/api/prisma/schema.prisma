@@ -1279,6 +1279,7 @@ model FoodDispatchAttempt {
 
   @@unique([orderId, riderId])
   @@index([orderId])
+  @@index([riderId, outcome, expiresAt])
   @@map("food_dispatch_attempts")
 }
 

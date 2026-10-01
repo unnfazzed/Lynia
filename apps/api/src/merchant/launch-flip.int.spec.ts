@@ -16,9 +16,9 @@
  * a service's control flow. "The debt ledger nets to exactly zero" (plan §7 launch gate) is a claim
  * about two rows in `merchant_debt_ledger` summing to 0.00 in NUMERIC(10,2). "A merchant order never
  * leaks into an Express query" is a claim about the `order_type` predicates C1/C2 added to real SQL,
- * including the raw PostGIS board query no mocked `$queryRaw` can reach. "The parcel-bid vs food-offer
- * soft-lock holds" is a claim about `common/food-dispatch-lock.ts` running inside the real
- * bid-acceptance transaction. Mocks would restate the implementation; only a live DB can falsify it.
+ * including the raw PostGIS board query no mocked `$queryRaw` can reach. "The first rider to accept a
+ * food round gets it" is a claim about the round CAS and the one-active-ride index racing in the real
+ * DB. Mocks would restate the implementation; only a live DB can falsify it.
  *
  * Convention (mirrors orders/order-lifecycle.int.spec.ts): esbuild drops DI metadata, so every service
  * is hand-wired — never through Nest — and `onModuleInit()` is NEVER called on any of them, because
@@ -30,7 +30,6 @@ import { RESTAURANTS_DISPATCH } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { StubPaymentRail } from "../adapters/payments/stub-payment-rail";
 import { TokenService } from "../auth/token.service";
-import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import type { Env } from "../config/env";
 import { MatchingService } from "../matching/matching.service";
@@ -498,47 +497,74 @@ describe("X2 · flags ON — NO_RIDER holds only after the attempt cap", () => {
     expect(await dispatch.sweepSearch()).toEqual({ offered: 1, held: 0 });
     const offered = await orderRow(orderId);
     expect(offered.status).toBe("open_for_offers");
-    expect(offered.dispatchOfferedRiderId).toBe(rider);
+    expect((await dispatch.getOfferForRider(rider))?.orderId).toBe(orderId);
   });
 });
 
-// ── Leg 4: race test — parcel bid vs live food offer (C3 / Q7), and the C4 debt lock ──────────────
-describe("X2 · flags ON — parcel-bid vs food-offer soft-lock", () => {
-  it("C3: a live food offer blocks a NEW parcel bid and freezes an EXISTING one until it resolves", async () => {
+// ── Leg 4: race test — a food round goes to several riders, and the C4 debt lock ──────────────────
+describe("X2 · flags ON — food rounds vs parcel bids", () => {
+  it("rounds: every rider rings at once, the first to accept wins, and a ringing offer never blocks a parcel", async () => {
     const kitchen = await makeKitchen();
     const foodCustomer = await makeCustomer();
     const parcelCustomer = await makeCustomer();
-    const rider = await makeRider();
+    const a = await makeRider();
+    const b = await makeRider();
+    const c = await makeRider();
     const { orderId: foodOrderId } = await cashOrderReadyForDispatch(kitchen, foodCustomer);
 
-    // The rider bids on a parcel BEFORE any food offer exists — allowed, nothing to block yet.
-    const parcelId = await makeParcelOrder(parcelCustomer);
-    const bid = await offersOff.makeOffer({ orderId: parcelId, type: "accept", offeredFare: 2.5, etaMinutes: 6 }, rider);
-    expect(await hasLiveFoodDispatchOffer(prisma, rider)).toBe(false);
-
-    // Now dispatch hands them a live 60s food offer.
-    nearbyRiders = [{ profileId: rider, distanceM: 300 }];
+    // One round, three riders, all ringing for the same order (owner 2026-10-01: the best 10 first).
+    nearbyRiders = [
+      { profileId: a, distanceM: 300 },
+      { profileId: b, distanceM: 500 },
+      { profileId: c, distanceM: 700 },
+    ];
     expect(await dispatch.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(await hasLiveFoodDispatchOffer(prisma, rider)).toBe(true);
+    for (const r of [a, b, c]) expect((await dispatch.getOfferForRider(r))?.orderId).toBe(foodOrderId);
 
-    // (a) A brand-new parcel bid is refused at creation, so the customer's board never even shows a
-    //     bid it couldn't select.
-    const otherParcel = await makeParcelOrder(parcelCustomer);
-    await expect(offersOff.makeOffer({ orderId: otherParcel, type: "accept", offeredFare: 2.5, etaMinutes: 6 }, rider)).rejects.toThrow(
-      /food pickup offer waiting/i,
-    );
-    // (b) The bid placed BEFORE the food offer is still sitting pending — selecting it must fail too,
-    //     inside the real bid-acceptance transaction (this is the leg a unit spec can only simulate).
-    await expect(matchingOff.selectOffer(parcelId, bid.id, parcelCustomer)).rejects.toThrow(/pick another/i);
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: parcelId }, select: { status: true } })).status).toBe("open_for_offers");
+    // A ringing food offer doesn't take a rider off the parcel market: `a` bids and is picked.
+    const parcelId = await makeParcelOrder(parcelCustomer);
+    const bid = await offersOff.makeOffer({ orderId: parcelId, type: "accept", offeredFare: 2.5, etaMinutes: 6 }, a);
+    expect((await matchingOff.selectOffer(parcelId, bid.id, parcelCustomer)).status).toBe("assigned");
+    // ...so `a` can't also take the food — the one-active-ride index decides, in the real DB.
+    await expect(dispatch.acceptDispatch(foodOrderId, a)).rejects.toThrow(/another active job/i);
 
-    // The lock is scoped to the LIVE window, not to the rider forever: declining the food offer frees
-    // them, and the same pending bid becomes selectable again.
-    await dispatch.declineDispatch(foodOrderId, rider);
-    expect(await hasLiveFoodDispatchOffer(prisma, rider)).toBe(false);
-    const selected = await matchingOff.selectOffer(parcelId, bid.id, parcelCustomer);
-    expect(selected.status).toBe("assigned");
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: foodOrderId }, select: { status: true } })).status).toBe("requested");
+    // `c` passes: never offered this order again, and the round stays live for `b`.
+    await dispatch.declineDispatch(foodOrderId, c);
+    expect(await dispatch.getOfferForRider(c)).toBeNull();
+    expect((await orderRow(foodOrderId)).status).toBe("open_for_offers");
+
+    // `b` accepts first and gets it; the round is over for everyone else.
+    await dispatch.acceptDispatch(foodOrderId, b);
+    const won = await orderRow(foodOrderId);
+    expect(won.status).toBe("assigned");
+    expect(won.riderId).toBe(b);
+    expect(await dispatch.getOfferForRider(a)).toBeNull();
+    const rows = await prisma.foodDispatchAttempt.findMany({ where: { orderId: foodOrderId }, select: { riderId: true, outcome: true } });
+    expect(Object.fromEntries(rows.map((r) => [r.riderId, r.outcome]))).toEqual({ [a]: "expired", [b]: "accepted", [c]: "declined" });
+  });
+
+  it("a rider who let a round run out is offered the next one; a rider who passed is not", async () => {
+    const kitchen = await makeKitchen();
+    const foodCustomer = await makeCustomer();
+    const slow = await makeRider();
+    const passed = await makeRider();
+    const { orderId } = await cashOrderReadyForDispatch(kitchen, foodCustomer);
+
+    nearbyRiders = [
+      { profileId: slow, distanceM: 300 },
+      { profileId: passed, distanceM: 500 },
+    ];
+    expect(await dispatch.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    await dispatch.declineDispatch(orderId, passed);
+    // Run the round out.
+    await prisma.order.update({ where: { id: orderId }, data: { dispatchOfferExpiresAt: new Date(Date.now() - 1000) } });
+    await prisma.foodDispatchAttempt.updateMany({ where: { orderId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect(await dispatch.sweepExpiredOffers()).toEqual({ expired: 1 });
+    expect((await orderRow(orderId)).status).toBe("requested");
+
+    expect(await dispatch.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect((await dispatch.getOfferForRider(slow))?.orderId).toBe(orderId);
+    expect(await dispatch.getOfferForRider(passed)).toBeNull();
   });
 
   it("C4: an open collect-and-return debt blocks the rider from any new job until the cash is back", async () => {
@@ -562,10 +588,10 @@ describe("X2 · flags ON — parcel-bid vs food-offer soft-lock", () => {
     // Same rider is also invisible to the FOOD dispatcher — the strategy's own batched mirror of the
     // soft-lock — so a second kitchen can't hand them another job either.
     const secondKitchen = await makeKitchen();
-    const { orderId: secondFoodId } = await cashOrderReadyForDispatch(secondKitchen, foodCustomer);
+    await cashOrderReadyForDispatch(secondKitchen, foodCustomer);
     nearbyRiders = [{ profileId: rider, distanceM: 200 }];
     expect(await dispatch.sweepSearch()).toEqual({ offered: 0, held: 0 });
-    expect((await orderRow(secondFoodId)).dispatchOfferedRiderId).toBeNull();
+    expect(await dispatch.getOfferForRider(rider)).toBeNull();
 
     // Finish the trip and hand the cash back — only THEN does the market reopen.
     await lifecycleOn.advance(foodOrderId, rider, "en_route_dropoff");
