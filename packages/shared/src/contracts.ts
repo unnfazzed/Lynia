@@ -1371,6 +1371,8 @@ export const MerchantRejectionReasonCode = z.enum([
   // C3/D-13: the NO_RIDER apology — the reconciler's own cap-exhausted exit, or the merchant's
   // explicit "cancel" choice from the D-34 hold screen.
   "no_rider",
+  // Auto-accept: the kitchen was never confirmed (RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs).
+  "kitchen_unconfirmed",
   "other",
 ]);
 export type MerchantRejectionReasonCode = z.infer<typeof MerchantRejectionReasonCode>;

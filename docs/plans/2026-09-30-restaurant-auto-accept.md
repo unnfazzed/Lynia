@@ -12,9 +12,11 @@ time rather than make the app a condition of joining.
 
 ## The workflow
 
-**Setup, per restaurant.** Ops or the owner turns on **Accept orders automatically** (admin: merchant page →
-Taking orders; merchant app: Account → Taking orders). **Show our number to customers** is on only if the
-restaurant agreed. Opening hours must be set: the server enforces them.
+**Setup.** None: **Accept orders automatically** is on for every restaurant, existing and new (migration 0064,
+owner decision 2026-10-01). A restaurant that wants the 3:00 accept window back turns it off itself (merchant app:
+Account → Taking orders), or ops do it (admin: merchant page → Taking orders). **Show our number to customers**
+is on only if the restaurant agreed. Opening hours are enforced by the server when set; a restaurant with none
+set reads as open.
 
 1. **The customer orders.** Accepted only inside the restaurant's hours (Harare time). The order goes
    straight to cooking at the restaurant's usual prep time (`prepBaselineMinutes`, else 20 min, plus 10 in
@@ -23,8 +25,8 @@ restaurant agreed. Opening hours must be set: the server enforces them.
    - the restaurant taps **Got it, we're making it** (or **Food is ready**) in the merchant app;
    - ops phone the restaurant from **Orders to confirm** in the admin console and tap **Confirmed**.
    Ops can also log **No answer** (and call again) or **Can't make it** (cancel; the customer is told).
-   After 5 minutes unconfirmed the order turns **urgent** at the top of the ops list. It is never cancelled
-   automatically.
+   After 5 minutes unconfirmed the order turns **urgent** at the top of the ops list. After **1 hour** unconfirmed
+   it is cancelled automatically and the customer is told nothing was charged (owner decision 2026-10-01).
 3. **Changes agreed by phone.** Before pickup, the restaurant or ops can change quantities or remove lines.
    The totals are recomputed on the server and the customer gets a push with the new total.
 4. **The rider search** starts 8 minutes before prep time ends, or straight away if the kitchen was
@@ -37,7 +39,7 @@ restaurant agreed. Opening hours must be set: the server enforces them.
 
 | # | Risk | What the code does |
 |---|---|---|
-| 1 | The kitchen never hears about the order | Dispatch is gated on `kitchenConfirmedAt`; escalation after 5 min; free customer cancel until confirmed |
+| 1 | The kitchen never hears about the order | Dispatch is gated on `kitchenConfirmedAt`; escalation after 5 min; auto-cancel after 1 hour; free customer cancel until confirmed |
 | 2 | "Collected" without proof | Geofence (`RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM`, 150 m); the generic `advance(picked_up)` is refused for food orders, so no path skips the check or the debt |
 | 3 | Orders at a closed kitchen | `placeOrder` checks the weekly hours in Harare time (`harareWallClock`), not only the manual Closed switch |
 | 4 | Ops can't act for restaurants | Admin call list, confirm, no answer, edit items, order settings; an ops cancel of a food order now clears kitchen/dispatch state and notifies customer, rider and restaurant |
@@ -45,7 +47,7 @@ restaurant agreed. Opening hours must be set: the server enforces them.
 
 ## Where it lives
 
-- Schema: `merchants.auto_accept`, `merchants.show_phone_to_customers`; `orders.auto_accepted`,
+- Schema: `merchants.auto_accept` (default on, 0064), `merchants.show_phone_to_customers`; `orders.auto_accepted`,
   `kitchen_confirmed_at/by`, `kitchen_escalated_at`, `ops_no_answer_at`, `items_edited_at` (migration 0063).
 - Config: `RESTAURANTS_AUTO_ACCEPT` in `packages/shared/src/restaurants-order.ts`.
 - API: `FoodOrderService` (`placeOrder`, `cancelUnpaid`, `confirmKitchenAsMerchant`, `editItems`,
@@ -57,8 +59,8 @@ restaurant agreed. Opening hours must be set: the server enforces them.
 
 ## Open decisions
 
-- **Ops hours.** Outside them nobody confirms by phone. Either close auto-accept restaurants then, or rely on
-  the restaurant using the app.
-- **Tuning.** 5 min escalation, 8 min dispatch lead and 150 m geofence are first guesses; adjust on real data.
+- **Ops hours.** Outside them nobody confirms by phone, so an order the restaurant doesn't confirm in its app
+  waits, then is cancelled after 1 hour.
+- **Tuning.** 5 min escalation, 1 hour auto-cancel, 8 min dispatch lead and 150 m geofence are first guesses; adjust on real data.
 - **Moving restaurants up.** Track per restaurant who confirms (ops vs app) and switch a restaurant off
   auto-accept once it confirms most orders in the app.

@@ -987,9 +987,10 @@ model Merchant {
   // D-48 (merchant mobile redesign): closed by hand from the Orders header until this time (or until
   // the merchant opens again). Null = open by hours.
   closedUntil    DateTime?        @map("closed_until")
-  // Auto-accept: new cash orders skip the accept window and go straight to cooking. For restaurants
-  // still taking orders by phone; the kitchen (or LyniaGo ops) confirms each order before a rider is sent.
-  autoAccept     Boolean          @default(false) @map("auto_accept")
+  // Auto-accept: new cash orders skip the accept window and go straight to cooking. On for every
+  // restaurant (0064, owner decision 2026-10-01); the kitchen (in the app, or LyniaGo ops by phone)
+  // confirms each order before a rider is sent.
+  autoAccept     Boolean          @default(true) @map("auto_accept")
   // The restaurant agreed to show its phone number to customers with a live order.
   showPhoneToCustomers Boolean    @default(false) @map("show_phone_to_customers")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food

@@ -134,7 +134,7 @@ describe("placeOrder — opening hours enforced in Harare time (safeguard 3)", (
 describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safeguard 1)", () => {
   const NOW = new Date("2026-09-30T10:00:00Z");
 
-  it("marks orders unconfirmed for 5 minutes as urgent, once, and never cancels them", async () => {
+  it("marks orders unconfirmed for 5 minutes as urgent, once", async () => {
     let escalateWhere: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -149,6 +149,39 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     expect(res.escalated).toBe(2);
     expect(escalateWhere).toMatchObject({ autoAccepted: true, kitchenConfirmedAt: null, kitchenEscalatedAt: null, status: "requested" });
     expect((escalateWhere!.createdAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs);
+  });
+
+  it("cancels orders nobody confirmed within an hour and tells the customer nothing was charged", async () => {
+    let abandonedWhere: Record<string, unknown> | undefined;
+    const cancels: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const { svc } = build({
+      order: {
+        updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (data.status === "cancelled") {
+            cancels.push({ where, data });
+            return { count: 1 };
+          }
+          return { count: 0 };
+        },
+        findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          if (where.kitchenConfirmedAt === null) {
+            abandonedWhere = where;
+            return [{ id: "stale", merchantId: "m1" }];
+          }
+          return [];
+        },
+        findUnique: async () => ({ customerId: "c1" }),
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    const res = await svc.sweepAutoAccepted(NOW);
+    expect(res.cancelled).toBe(1);
+    expect((abandonedWhere!.createdAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs);
+    // Guarded on still-unconfirmed, so a confirm racing the sweep wins.
+    expect(cancels[0]!.where).toMatchObject({ id: "stale", status: "requested", autoAccepted: true, kitchenConfirmedAt: null });
+    expect(cancels[0]!.data).toMatchObject({ status: "cancelled", rejectionReason: "kitchen_unconfirmed" });
+    expect(pushes[0]).toMatchObject({ profileIds: ["c1"], body: expect.stringContaining("nothing was charged") });
+    expect(queueChanges).toEqual(["stale"]);
   });
 
   it("only considers CONFIRMED orders for the rider search, and starts it 8 minutes before prep ends", async () => {

@@ -53,9 +53,11 @@ export const RESTAURANTS_TIMING = {
 export const RESTAURANTS_AUTO_ACCEPT = {
   /** Prep time when the restaurant hasn't set its usual one (`prepBaselineMinutes`). */
   defaultPrepMinutes: 20,
-  /** An order still unconfirmed this long after placement turns urgent on the ops call list. Never
-   *  cancelled automatically: ops or the customer decide. */
+  /** An order still unconfirmed this long after placement turns urgent on the ops call list. */
   escalateAfterMs: 5 * 60 * 1000,
+  /** An order nobody confirmed this long after placement is cancelled; the customer is told nothing
+   *  was charged (owner decision 2026-10-01). */
+  autoCancelAfterMs: 60 * 60 * 1000,
   /** The rider search starts this long before prep time runs out (roughly a rider's trip to the
    *  counter), or straight away when the kitchen is confirmed later than that. */
   dispatchLeadMs: 8 * 60 * 1000,
@@ -84,6 +86,8 @@ export const MERCHANT_REJECTION_REASONS = {
   // merchant. Reached either by the reconciler (cap exhausted, never held) or the merchant's own
   // "cancel" choice from the D-34 hold screen.
   no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
+  // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
+  kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
   other: "The restaurant couldn't take this order.",
 } as const;
 
