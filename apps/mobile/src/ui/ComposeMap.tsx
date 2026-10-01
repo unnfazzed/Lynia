@@ -15,7 +15,6 @@ import { mapFallbackHint } from "../logic/map-fallback";
 import { mapLoadSignal } from "../logic/map-load-signal";
 import { isReachable } from "../net/reachability";
 import { addBreadcrumb, captureException } from "../telemetry/sentry";
-import { withTimeout } from "../util";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
 
@@ -36,7 +35,6 @@ import { Icon } from "./index";
  * `pickupPoint`/`dropPoint` state and its already-`useCallback`'d reverse-geocode handlers do).
  */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
-const LOCATE_TIMEOUT_MS = 9_000;
 /**
  * The staged load-watch (RCA 2026-08-17 §3.1). On the program's own 600 ms-RTT design link, a full
  * Harare tile set legitimately takes longer than the old single 9 s deadline — so the failure card
@@ -70,6 +68,35 @@ export function mapElapsedBucket(ms: number): "<9s" | "9-15s" | "15-22s" | ">=22
 
 export type ActiveSlot = "pickup" | "drop";
 
+/**
+ * The handoff's pins (send-compose-v2 "Map"): pickup a 22px accent circle, drop-off a 20px danger square
+ * (radius 3), each with a 3px white ring and the card shadow, and an optional white pill label under it.
+ * Pickup = green dot, drop-off = red square is the app-wide visual language.
+ */
+function PinView({ kind, label }: { kind: ActiveSlot; label: string | null }): React.ReactElement {
+  const pickup = kind === "pickup";
+  return (
+    <View style={{ alignItems: "center", gap: 3, padding: 4 }}>
+      <View
+        style={{
+          width: pickup ? 22 : 20,
+          height: pickup ? 22 : 20,
+          borderRadius: pickup ? 11 : 3,
+          backgroundColor: pickup ? tokens.color.accent : tokens.color.danger,
+          borderWidth: 3,
+          borderColor: tokens.color.bg,
+          ...tokens.shadow.card,
+        }}
+      />
+      {label ? (
+        <View style={{ backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: 8, paddingVertical: 2, ...tokens.shadow.card }}>
+          <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{label}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export const ComposeMap = React.memo(function ComposeMap(props: {
   pickup: PickedPoint | null;
   drop: PickedPoint | null;
@@ -78,19 +105,27 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   onChangeDrop: (p: PickedPoint) => void;
   onReverseGeocodePickup?: (landmark: string) => void;
   onReverseGeocodeDrop?: (landmark: string) => void;
-  /**
-   * Distance (px) from the top of the map to clear the floating brand/account chrome laid over it by
-   * the parent. The kit (screens.jsx Home) stacks the "Use my location" pill and the "tap the map" hint
-   * just BELOW that top row; with the compose sheet now covering the map's bottom, both must sit in the
-   * visible top band rather than bottom-right (where the sheet would hide them).
-   */
+  /** Px from the map's top to clear the floating address card — the slow/failed cards and the hint sit below it. */
   topOffset?: number;
+  /** Px from the map's bottom to clear the pinned CTA bar — the "Use my location" / distance pills sit above it. */
+  bottomOffset?: number;
+  /** The dark map hint pill (handoff: "Or tap the map to set your drop-off"); null hides it. */
+  hint?: string | null;
+  /** White "Pickup" / "Drop-off" pill labels under the pins (hidden while an address row is being edited). */
+  labels?: boolean;
+  /** The dark distance pill bottom-left once both pins are set ("3.1 km"); null hides it. */
+  distanceLabel?: string | null;
+  /** "Use my location" pill bottom-right; omitted hides it (e.g. while an address row is being edited). */
+  onUseMyLocation?: () => void;
+  locating?: boolean;
+  /** Padding for framing both pins — must clear the address card and the CTA bar. */
+  edgePadding?: { top: number; right: number; bottom: number; left: number };
 }): React.ReactElement {
   const topOffset = props.topOffset ?? tokens.space.md;
+  const bottomOffset = props.bottomOffset ?? tokens.space.md;
   const { pickup, drop, active } = props;
+  const labels = props.labels ?? true;
   const mapRef = useRef<MapView>(null);
-  const [locating, setLocating] = useState(false);
-  const [locateMsg, setLocateMsg] = useState<string | null>(null);
   // Map-load fallback (C1 / kit `LJ.map_failed`). On Android the signal is `onMapLoaded` — "the map
   // finished rendering all tiles" — NOT `onMapReady`.
   //
@@ -227,7 +262,6 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
 
   const activePoint = active === "pickup" ? pickup : drop;
   const setActive = (c: LatLng): void => {
-    setLocateMsg(null);
     const point: PickedPoint = { lat: c.latitude, lng: c.longitude };
     if (active === "pickup") props.onChangePickup(point);
     else props.onChangeDrop(point);
@@ -269,7 +303,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
           { latitude: pickup.lat, longitude: pickup.lng },
           { latitude: drop.lat, longitude: drop.lng },
         ],
-        { edgePadding: { top: 120, right: 80, bottom: 120, left: 80 }, animated: true },
+        { edgePadding: props.edgePadding ?? { top: 120, right: 80, bottom: 120, left: 80 }, animated: true },
       );
     } else if (activePoint) {
       map.animateToRegion(
@@ -279,29 +313,6 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on a stable string of the coords + active slot.
   }, [key, mapMounted]);
-
-  const useMyLocation = async (): Promise<void> => {
-    setLocating(true);
-    setLocateMsg(null);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setLocateMsg("Location is off — tap the map to drop your pin, or turn it on in Settings.");
-        return;
-      }
-      const loc = await withTimeout(
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        LOCATE_TIMEOUT_MS,
-      );
-      const c: LatLng = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-      setActive(c);
-      mapRef.current?.animateToRegion({ ...c, latitudeDelta: 0.02, longitudeDelta: 0.02 }, 400);
-    } catch {
-      setLocateMsg("Couldn't get your location — tap the map to drop your pin.");
-    } finally {
-      setLocating(false);
-    }
-  };
 
   const initialRegion: Region = pickup
     ? { latitude: pickup.lat, longitude: pickup.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }
@@ -329,23 +340,31 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       >
         {pickup ? (
           <Marker
+            // Remounted when the label toggles: `tracksViewChanges` is off (a custom marker view repaints
+            // every frame otherwise), so a new key is how the label change reaches the native bitmap.
+            key={`pickup-${labels ? "l" : "n"}`}
             identifier="pickup"
             draggable={active === "pickup"}
             coordinate={{ latitude: pickup.lat, longitude: pickup.lng }}
             onDragEnd={(e: MarkerDragStartEndEvent) => setActive(e.nativeEvent.coordinate)}
-            pinColor={tokens.color.accent}
-            opacity={active === "pickup" ? 1 : 0.7}
-          />
+            anchor={{ x: 0.5, y: labels ? 0.25 : 0.5 }}
+            tracksViewChanges={false}
+          >
+            <PinView kind="pickup" label={labels ? "Pickup" : null} />
+          </Marker>
         ) : null}
         {drop ? (
           <Marker
+            key={`drop-${labels ? "l" : "n"}`}
             identifier="drop"
             draggable={active === "drop"}
             coordinate={{ latitude: drop.lat, longitude: drop.lng }}
             onDragEnd={(e: MarkerDragStartEndEvent) => setActive(e.nativeEvent.coordinate)}
-            pinColor={tokens.color.danger}
-            opacity={active === "drop" ? 1 : 0.7}
-          />
+            anchor={{ x: 0.5, y: labels ? 0.25 : 0.5 }}
+            tracksViewChanges={false}
+          >
+            <PinView kind="drop" label={labels ? "Drop-off" : null} />
+          </Marker>
         ) : null}
         {pickup && drop ? (
           <Polyline
@@ -353,75 +372,71 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
               { latitude: pickup.lat, longitude: pickup.lng },
               { latitude: drop.lat, longitude: drop.lng },
             ]}
-            strokeColor={tokens.color.accentText}
-            strokeWidth={3}
+            strokeColor={tokens.color.accent}
+            strokeWidth={5}
+            lineCap="round"
           />
         ) : null}
       </MapView>
       ) : null}
 
-      {/* Floating "use my location" (kit Home screens.jsx:166 — top-right, just below the account
-          avatar). The kit offers this for BOTH roles (`AddrSearch`'s onUseLocation handles pickup and
-          drop-off alike): a customer standing at the drop-off arranging a collection, or sending to where
-          they already are, was previously left with no shortcut at all on that slot. Anchored top-right
-          (not bottom) so the compose sheet over the map's lower half can't hide it. */}
-      {(
+      {/* Handoff (send-compose-v2) map pills: "Use my location" bottom-right and, once both pins are set,
+          the dark distance pill bottom-left — both 12px above the pinned CTA bar. */}
+      {props.onUseMyLocation ? (
         <Pressable
-          onPress={() => void useMyLocation()}
+          onPress={props.onUseMyLocation}
           accessibilityRole="button"
           accessibilityLabel={active === "pickup" ? "Use my current location for pickup" : "Use my current location for drop-off"}
           style={({ pressed }) => ({
             position: "absolute",
-            right: tokens.space.md,
-            top: topOffset,
+            right: 12,
+            bottom: bottomOffset,
+            height: tokens.touchTargetMin,
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
             backgroundColor: tokens.color.bg,
             borderRadius: tokens.radius.pill,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
+            paddingHorizontal: 14,
             opacity: pressed ? 0.7 : 1,
             ...tokens.shadow.card,
           })}
         >
           <Icon name="navigation" size={16} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.accentText }}>{locating ? "Locating…" : "Use my location"}</Text>
+          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
+            {props.locating ? "Locating…" : "Use my location"}
+          </Text>
         </Pressable>
-      )}
-
-      {locateMsg ? (
+      ) : null}
+      {props.distanceLabel ? (
         <View
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, bottom: 64, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.input, padding: tokens.space.sm, ...tokens.shadow.card }}
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 12,
+            bottom: bottomOffset,
+            height: tokens.touchTargetMin,
+            justifyContent: "center",
+            backgroundColor: tokens.color.ink,
+            borderRadius: tokens.radius.pill,
+            paddingHorizontal: 14,
+            ...tokens.shadow.card,
+          }}
         >
-          <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.danger }}>{locateMsg}</Text>
+          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, fontVariant: ["tabular-nums"] }}>
+            {props.distanceLabel}
+          </Text>
         </View>
       ) : null}
 
-      {/* Pin-discoverability hint: the full-bleed map dropped MapPicker's "tap to drop a pin" caption, so
-          a first-time user has no cue the map itself is the input. Show it until the active slot has a pin.
-          Styled as the kit's DARK pill (`screens.jsx` Home: ink fill, white label), not the muted-grey-on-
-          white it had drifted to — it was rendering as the faintest thing on the screen while being the
-          instruction the composer turns on.
-
-          Gated on the platform's load signal, not raw `mapReady`: inviting someone to tap a canvas that
-          never drew a tile is the exact dead end this file's fallback exists to replace, and the failure
-          card takes this slot in that state. (Gating it on `mapLoaded` alone meant iOS — where that event
-          is never emitted — lost the hint entirely, so the one cue that the map IS the input was missing
-          on every iOS session.) */}
-      {considerLoaded && !activePoint ? (
+      {/* The map is the input, so it says so — but only over a map that actually drew (see the load
+          signal above): inviting a tap on a canvas with no tiles is the dead end the failure card replaces. */}
+      {considerLoaded && props.hint ? (
         <View
           pointerEvents="none"
-          style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
+          style={{ position: "absolute", top: topOffset + 12, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.ink, borderRadius: tokens.radius.pill, paddingHorizontal: 12, paddingVertical: 6 }}
         >
-          {/* Kit Home (screens.jsx:164): a centred dark pill, verbatim copy. The "search an address"
-              half of the hint now lives on the AddressHint caption inside the sheet, so this map pill is
-              just the pin instruction the mock draws. */}
-          <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, textAlign: "center" }}>
-            {`Tap the map to drop your ${active === "pickup" ? "pickup" : "drop-off"} pin`}
-          </Text>
+          <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent, textAlign: "center" }}>{props.hint}</Text>
         </View>
       ) : null}
 
@@ -432,7 +447,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       {mapSlow && !mapFailed && !considerLoaded ? (
         <View
           pointerEvents="none"
-          style={{ position: "absolute", top: topOffset + 44, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
+          style={{ position: "absolute", top: topOffset + 12, alignSelf: "center", maxWidth: "90%", backgroundColor: tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: tokens.space.md, paddingVertical: tokens.space.sm, ...tokens.shadow.card }}
         >
           <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center" }}>
             The map is taking a while — you can search the address above meanwhile.
@@ -451,7 +466,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       {mapFailed ? (
         <View
           accessibilityRole="alert"
-          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: topOffset + 44, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.card, padding: tokens.space.md, alignItems: "center", ...tokens.shadow.card }}
+          style={{ position: "absolute", left: tokens.space.md, right: tokens.space.md, top: topOffset + 12, backgroundColor: tokens.color.bg, borderRadius: tokens.radius.card, padding: tokens.space.md, alignItems: "center", ...tokens.shadow.card }}
         >
           <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
             <Icon name="map-pin" size={24} color={tokens.color.muted} />

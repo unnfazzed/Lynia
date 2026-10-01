@@ -22,20 +22,15 @@ export interface FormDraft {
   dropLandmark: string;
   items: ItemRow[];
   note: string;
-  declaredValue: string;
   proposedFare: string;
 }
-
-// The liability-disclaimer policy the customer must accept before a first broadcast (A1-8). Bump this
-// string when the disclaimer copy/terms change and the accept-to-continue gate re-shows.
-export const DISCLAIMER_POLICY_VERSION = "2026-07-01";
 
 // C5: a re-broadcast from the order screen carries THAT order's route/landmarks/items/price in as
 // route params (`rb…`), so we can prefill the compose form instead of dumping the user on a blank one.
 // Builds the in-memory FormDraft the compose screen hydrates from. Returns null when the params aren't
 // a valid re-broadcast (normal home entry) so the screen opens a blank form.
 export type RebroadcastParams = Partial<Record<
-  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare" | "rbNote",
+  "rbPickupLat" | "rbPickupLng" | "rbPickupLandmark" | "rbDropLat" | "rbDropLng" | "rbDropLandmark" | "rbItems" | "rbFare" | "rbNote" | "rbDate",
   string | string[]
 >>;
 export function first(v: string | string[] | undefined): string | undefined {
@@ -58,6 +53,8 @@ export function buildRebroadcastParams(o: {
   // previously dropped silently on every re-send/reorder path, even though the server's OWN automatic
   // rider-bail rebroadcast (order-lifecycle.service.ts cloneForRebroadcast) already carries it verbatim.
   note?: string | null;
+  /** When the original order was placed — the Send flow's "Copied from your order on 28 Sep" banner. */
+  createdAt?: string | null;
 }): RebroadcastParams {
   const items =
     o.items && o.items.length > 0
@@ -75,6 +72,7 @@ export function buildRebroadcastParams(o: {
     rbItems: JSON.stringify(items),
     rbFare: o.proposedFare != null ? String(o.proposedFare) : "",
     rbNote: o.note ?? "",
+    rbDate: o.createdAt ?? "",
   };
 }
 
@@ -103,7 +101,6 @@ export function draftFromParams(p: RebroadcastParams): FormDraft | null {
     dropLandmark: first(p.rbDropLandmark) ?? "",
     items,
     note: first(p.rbNote) ?? "",
-    declaredValue: "",
     proposedFare: first(p.rbFare) ?? "",
   };
 }

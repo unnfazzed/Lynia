@@ -705,6 +705,7 @@ export default function OrderScreen(): React.ReactElement {
         items: order.items,
         proposedFare: order.proposedFare,
         note: order.note,
+        createdAt: order.events?.[0]?.createdAt ?? null,
       }),
     });
   };

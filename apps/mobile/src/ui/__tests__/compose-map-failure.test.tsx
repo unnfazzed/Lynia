@@ -68,7 +68,9 @@ const FAIL_TITLE = "The map didn't load";
 function render(): renderer.ReactTestRenderer {
   let tree!: renderer.ReactTestRenderer;
   act(() => {
-    tree = renderer.create(<ComposeMap pickup={null} drop={null} active="pickup" onChangePickup={noop} onChangeDrop={noop} />);
+    tree = renderer.create(
+      <ComposeMap pickup={null} drop={null} active="pickup" onChangePickup={noop} onChangeDrop={noop} hint="Or tap the map to set your drop-off" />,
+    );
   });
   // PERF-SEND-01: the native map is mounted one interaction AFTER the screen's first commit, so these
   // tests must let that interaction run before they can drive the map's own ready/loaded callbacks.
@@ -233,7 +235,7 @@ describe("ComposeMap — a platform that never emits onMapLoaded (iOS / Apple Ma
     act(() => {
       mounts[0]?.onMapReady?.();
     });
-    expect(texts(tree).join(" ")).toMatch(/tap the map to drop your pickup pin/i);
+    expect(texts(tree).join(" ")).toMatch(/or tap the map to set your drop-off/i);
 
     act(() => tree.unmount());
   });

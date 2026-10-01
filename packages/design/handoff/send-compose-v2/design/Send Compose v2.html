@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyniaGo — Send compose v2 (stepped, inline address)</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+html,body{margin:0}
+body{background:#eceff1;font-family:var(--font-sans);color:var(--ink);padding:32px 24px 64px}
+a{color:var(--accent-text)}a:hover{color:var(--ink)}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:48px 0 16px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 24px;max-width:720px;line-height:1.5}
+.grid{display:flex;flex-wrap:wrap;gap:36px 28px;align-items:flex-start}
+.cell{display:flex;flex-direction:column;gap:10px}
+.lab{font:600 13px/1.3 var(--font-sans);color:var(--ink);max-width:360px}.lab span{color:var(--muted);font-weight:400}
+.cl{max-width:760px;font-size:14px;line-height:1.55;background:var(--bg);border-radius:12px;padding:20px 24px}
+.cl h3{font-size:14px;margin:16px 0 6px}.cl h3:first-child{margin-top:0}.cl ul{margin:0;padding-left:18px}
+.copy{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:1400px}
+.copy div{background:var(--bg);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.5}
+.copy b{display:block;margin-bottom:6px}.copy ul{margin:0;padding-left:16px}
+.sc2-caret{display:inline-block;width:2px;height:18px;background:var(--accent-text);vertical-align:-3px;margin-left:1px;animation:sc2b 1s steps(1) infinite}
+@keyframes sc2b{50%{opacity:0}}
+.sc2-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sc2r .8s linear infinite;box-sizing:border-box}
+.sc2-spin-sm{width:12px;height:12px;border-width:2px;border-color:var(--line);border-top-color:var(--accent-text)}
+@keyframes sc2r{to{transform:rotate(360deg)}}
+.lynia-tabular{font-variant-numeric:tabular-nums}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00b14f"/><text x="50" y="62" font-size="34" font-family="sans-serif" font-weight="700" fill="#fff" text-anchor="middle">LG</text></svg></template>
+<div id="sc2-root"></div>
+<script type="text/babel" src="sc2-kit.jsx"></script>
+<script type="text/babel" src="sc2-step1.jsx"></script>
+<script type="text/babel" src="sc2-steps.jsx"></script>
+<script type="text/babel">
+const ST = [
+  ["1", "Step 1, open", "GPS pickup filled, drop-off empty", (W, H) => <Step1 W={W} H={H} mode="open" />, ["back","title","s1","s2","s3","s4","pickup","fromGps","change","drop","dropPh","search","mapHintDrop","useLoc","needDrop","next"]],
+  ["2", "Step 1, editing drop-off", "Inline row + dropdown over map, keyboard up", (W, H) => <Step1 W={W} H={H} mode="edit" />, ["drop","clear","useCur","tapMap"]],
+  ["3a", "Step 1, no results", "", (W, H) => <Step1 W={W} H={H} mode="nores" />, ["noRes","useCur","tapMap"]],
+  ["3b", "Step 1, searching on slow data", "", (W, H) => <Step1 W={W} H={H} mode="slow" />, ["slow","useCur","tapMap"]],
+  ["3c", "Step 1, no Places key / offline", "Device geocoder match + fallbacks", (W, H) => <Step1 W={W} H={H} mode="limited" />, ["limited","useCur","tapMap"]],
+  ["4", "Step 1, both pins set", "Map fitted to route, Next enabled", (W, H) => <Step1 W={W} H={H} mode="both" />, ["km","useLoc","next"]],
+  ["5", "Step 1, out of service area", "", (W, H) => <Step1 W={W} H={H} mode="out" />, ["outTag","outArea","next"]],
+  ["6", "Step 2, empty", "Sender prefilled, recent recipients", (W, H) => <Step2 W={W} H={H} mode="empty" />, ["edit","whatSend","itemPh","qty","addItem","note","notePh","sender","senderHint","rcpt","rcptHint","need2","next"]],
+  ["7", "Step 2, typing item description", "Keyboard open, CTA rides above it", (W, H) => <Step2 W={W} H={H} mode="typing" />, ["whatSend","qty","addItem","next"]],
+  ["8", "Step 2, max items (10)", "Scrolled to items 8–10", (W, H) => <Step2 W={W} H={H} mode="max" />, ["remove","maxItems"]],
+  ["9", "Step 2, invalid recipient phone", "", (W, H) => <Step2 W={W} H={H} mode="badphone" />, ["rcpt","rcptErr","rcptHint"]],
+  ["10", "Step 3, suggested price", "", (W, H) => <Step3 W={W} H={H} mode="suggested" />, ["yourPrice","tapType","minus","plus","band","km","cash","review"]],
+  ["11", "Step 3, below the band", "Soft hint, Review still enabled", (W, H) => <Step3 W={W} H={H} mode="low" />, ["low"]],
+  ["12", "Step 3, far above the band", "Soft hint, Review still enabled", (W, H) => <Step3 W={W} H={H} mode="high" />, ["high"]],
+  ["13", "Step 4, summary", "", (W, H) => <Step4 W={W} H={H} mode="summary" />, ["sumRoute","sumItems","sumNote","sumPhones","sumPrice","edit","you","recipient","cash","send"]],
+  ["14a", "Sending", "CTA loading → goes to live auction", (W, H) => <Step4 W={W} H={H} mode="sending" />, ["sending","finding"]],
+  ["14b", "Send failed", "Toast with retry; data kept", (W, H) => <Step4 W={W} H={H} mode="failed" />, ["failed","retry"]],
+  ["15", "Offline (step 4)", "Steps 1–3 stay usable; only Send needs data", (W, H) => <Step4 W={W} H={H} mode="offline" />, ["offline","offlineCta"]],
+  ["16", "Send again prefill", "Opens at summary, past order filled", (W, H) => <Step4 W={W} H={H} mode="again" />, ["again","send"]],
+  ["17", "Account on hold", "Blocking, replaces the flow", (W, H) => <Hold W={W} H={H} />, ["holdT","holdB","call","home"]],
+];
+const SMALL = ["1", "2", "7", "10", "13"];
+function Cell({ s, W, H }) {
+  return <div className="cell" data-screen-label={`${s[0]} ${s[1]}${W < 360 ? " 320" : ""}`}>
+    <div className="lab">{s[0]} · {s[1]}{s[2] ? <span> — {s[2]}</span> : null}</div>{s[3](W, H)}</div>;
+}
+function Page() {
+  return <div>
+    <h1>Send a parcel — v2</h1>
+    <p className="sub">Four steps: Where · What · Price · Review. Addresses are edited inline on the map; no search or confirm-pin screens, no landmarks, no disclaimer, no declared value. Pickup = green dot, drop-off = red square. Cash only.</p>
+    <h2>360 × 720</h2>
+    <div className="grid">{ST.map(s => <Cell key={s[0]} s={s} W={360} H={720} />)}</div>
+    <h2>320 × 640 re-check</h2>
+    <div className="grid">{ST.filter(s => SMALL.includes(s[0])).map(s => <Cell key={s[0]} s={s} W={320} H={640} />)}</div>
+    <h2>Changelog vs current</h2>
+    <div className="cl">
+      <h3>Moved</h3><ul>
+        <li>Address search moved from its own screen into the PICKUP / DROP-OFF rows. Tapping a row turns it into a text box; suggestions drop under it over the live map. Fewer screens, and the user always sees where the pin lands.</li>
+        <li>Address rows moved from the bottom sheet to the top of the map, so the dropdown has room above the keyboard.</li>
+        <li>One long sheet split into 4 steps. Each step has one job and a CTA that stays disabled until that step is valid.</li>
+        <li>Price moved out of a text field into its own step: big suggested fare, − / + $0.50 buttons (52px), band bar, soft hints.</li>
+        <li>"Use my location" kept as a map pill and added as the first dropdown row.</li>
+        <li>Pickup now auto-fills from GPS on open, tagged "Your location".</li>
+      </ul>
+      <h3>Removed</h3><ul>
+        <li>Address-search screen (04) and confirm-pin screen (05): replaced by inline editing.</li>
+        <li>Landmark field and landmark second line: the address name is the rider's label; details go in the rider note.</li>
+        <li>Declared value: sent as $0.</li>
+        <li>Disclaimer, consent checkbox, "Agree &amp; broadcast": replaced by a plain summary and "Send to riders".</li>
+        <li>"Broadcast request" CTA and the "Add pickup &amp; drop-off pins…" sentence: replaced by per-step CTAs and a one-line "Still needed" hint.</li>
+      </ul>
+      <h3>Added</h3><ul>
+        <li>Step indicator with numbers + labels. Summary with Edit per block. Recent-recipient chips. Send-failed toast with retry. Offline banner that only blocks Send.</li>
+      </ul>
+    </div>
+    <h2>Final copy per state</h2>
+    <div className="copy">{ST.map(s => <div key={s[0]}><b>{s[0]} · {s[1]}</b><ul>{s[4].map(k => <li key={k}>{S[k]}</li>)}</ul></div>)}</div>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById("sc2-root")).render(<Page />);
+</script>
+</body>
+</html>
