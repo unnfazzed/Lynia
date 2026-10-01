@@ -193,4 +193,63 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
     // The parcel keeps its own pinned card — two running jobs never collapse to one row.
     expect(has(activeTree, /Home → Office/)).toBe(true);
   });
+
+  describe("EARLIER list", () => {
+    const histRow = (id: string, over: Record<string, unknown> = {}) => ({
+      id,
+      orderType: "parcel",
+      merchantName: null,
+      role: "customer",
+      pickup: { point: { lat: 0, lng: 0 }, landmark: "Avondale" },
+      dropoff: { point: { lat: 0, lng: 0 }, landmark: "Borrowdale" },
+      itemDesc: "Documents",
+      note: null,
+      proposedFare: "4.00",
+      agreedFare: "4.50",
+      status: "delivered",
+      createdAt: "2026-09-28T10:00:00.000Z",
+      rating: null,
+      counterpartyName: null,
+      ...over,
+    });
+    const history = (rows: unknown[]) => ({ ...emptyHistory, rows });
+    const rowPress = (tree: renderer.ReactTestRenderer, title: string): (() => void) => {
+      const [row] = tree.root.findAll((n) => n.props.accessibilityLabel === `Open order ${title}` && typeof n.props.onPress === "function");
+      if (!row) throw new Error(`row "${title}" not found`);
+      return row.props.onPress;
+    };
+
+    it("a past food order opens the food tracker, a past parcel the parcel tracker", async () => {
+      mockGetActiveCustomerOrders.mockResolvedValue([]);
+      mockUseHistoryFeed.mockReturnValue(
+        history([histRow("food-1", { orderType: "merchant", merchantName: "Sadza Republic" }), histRow("parcel-1")]),
+      );
+      activeTree = renderOrders();
+      await settle();
+      act(() => rowPress(activeTree!, "Sadza Republic")());
+      expect(mockPush).toHaveBeenLastCalledWith("/food/order/food-1");
+      act(() => rowPress(activeTree!, "Avondale → Borrowdale")());
+      expect(mockPush).toHaveBeenLastCalledWith("/order/parcel-1");
+    });
+
+    it("drops jobs the user carried as a rider", async () => {
+      mockGetActiveCustomerOrders.mockResolvedValue([]);
+      mockUseHistoryFeed.mockReturnValue(
+        history([histRow("parcel-1"), histRow("rider-1", { role: "rider", pickup: { point: { lat: 0, lng: 0 }, landmark: "Mbare" } })]),
+      );
+      activeTree = renderOrders();
+      await settle();
+      expect(has(activeTree, /Avondale → Borrowdale/)).toBe(true);
+      expect(has(activeTree, /Mbare/)).toBe(false);
+    });
+
+    it("a rider-only history shows the empty state, not a blank screen", async () => {
+      mockGetActiveCustomerOrders.mockResolvedValue([]);
+      mockUseHistoryFeed.mockReturnValue(history([histRow("rider-1", { role: "rider" })]));
+      activeTree = renderOrders();
+      await settle();
+      expect(has(activeTree, /EARLIER/)).toBe(false);
+      expect(has(activeTree, /Nothing here yet/)).toBe(true);
+    });
+  });
 });
