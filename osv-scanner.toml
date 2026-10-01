@@ -71,3 +71,29 @@ reason = "JXL/HEIF infinite-loop DoS in image-size. No fixed version exists in a
 id = "GHSA-w3rx-r6r6-pgpr"
 ignoreUntil = 2026-11-08
 reason = "ICNS infinite-loop DoS in image-size. Same package, same single build-time importer (metro@0.81.5), same absence of any fixed version upstream (OSV last_affected 2.0.2 = current npm latest). Not reachable from a production surface: no untrusted image ever reaches this parser."
+
+# ── node-forge (2026-10-01) ──────────────────────────────────────────────────────────────────────
+# GHSA-86w9-cpqp-85rv (CVE-2026-85393, CVSS 8.7, integrity only): RSA PKCS#1 v1.5 signature
+# verification accepts extra nested DigestAlgorithm elements, an incomplete fix for CVE-2026-33894.
+# OSV rescored it at 2026-10-01T21:30Z, turning the gate red on main and every open PR.
+#
+# Accepted, time-boxed, because THERE IS NO FIXED VERSION: OSV records `last_affected: 1.4.0`, and
+# 1.4.0 is npm's `latest`. A bump cannot clear it.
+#
+# REACHABILITY — why this is acceptable rather than merely unavoidable:
+#   • Build/dev tooling only. The importers are `@expo/cli` (iOS code-signing helpers for
+#     `expo run:ios`, and dev-server certificates) and `@expo/code-signing-certificates` (pulled in by
+#     `@expo/cli` and by `expo-updates`' certificate-generation tooling). All run in Node on a
+#     developer, CI or EAS machine. None of it is in the device bundle (node-forge is a Node library;
+#     the app verifies nothing with it) or in `apps/api`.
+#   • No signature verification of untrusted input. The flaw lets a forged signature pass
+#     verification. This app configures no expo-updates code signing (`codeSigningCertificate` is
+#     absent from app.config.ts), and the tools above sign or generate; they do not verify signatures
+#     from a third party.
+#
+# Re-check on or before ignoreUntil: drop this entry the day a fixed node-forge ships (add a
+# `pnpm.overrides` bump if Expo has not moved to it yet).
+[[IgnoredVulns]]
+id = "GHSA-86w9-cpqp-85rv"
+ignoreUntil = 2026-10-31
+reason = "node-forge RSA PKCS#1 v1.5 signature-verification forgery. No fixed version exists (OSV last_affected 1.4.0 = npm latest). Build/dev tooling only: importers are @expo/cli and @expo/code-signing-certificates, run on dev/CI/EAS machines, never shipped to devices or used by apps/api; the app configures no expo-updates code signing, so no third-party signature is ever verified with it."

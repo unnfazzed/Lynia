@@ -1940,6 +1940,18 @@ landmarks, declared value and the pre-broadcast disclaimer (ledger D-52).
   optional, `declaredValue` is sent as 0, each stop's `landmark` is the address name), so it works
   against the API already live.
 
+**Build vc 41 — 2026-10-01 (Rider v2 and food dispatch rounds).**
+
+- **Build.** `mobile-release.yml` run 36925458030 (`profile: closed`, `main` at `f642e55`, #1019) queued
+  EAS build `1b1169db` (v0.51.0 / vc 41, runtime `db601ead…`, unchanged from vc 40). It FINISHED in 9
+  minutes (20:59 to 21:08 UTC).
+- **Submission.** Submission `8010a677` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  36929634257).
+- **What it carries.** The whole Rider v2 app (D-54, #1009 to #1017), the Send redesign (D-52) and the
+  order screen (D-53). With #1019's API deploy, food offers ring the best 10 riders at once, then everyone.
+- **Not in it.** The tab bar (#1018) merged after `f642e55`, so it is not in vc 41.
+- **Play's review.** Testers see the release once Play approves it, as with vc 40.
+
 ---
 
 ## 9. Pre-submission checklist
