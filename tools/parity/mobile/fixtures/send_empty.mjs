@@ -1,19 +1,13 @@
-// LJ.home_empty — the Send composer with no address yet. send.tsx runs two queries at mount: GET
-// /auth/me (the account-on-hold pre-check — must NOT be held, or the blocking on-hold screen replaces
-// the whole composer) and GET /orders/mine/active-order (the live-order restore banner — null ⇒ no
-// banner). With no draft (SecureStore is inert in parity) both pins stay unset, so the map hero renders
-// with empty address rows and the docked sheet's footer shows its CTA alone — since D-31 the mock's
-// "Add pickup & drop-off pins … to broadcast" hint is never rendered, and the CTA reads "Proceed".
-// The map itself is the react-native-maps shim (a gray fill — expected/honest).
+// LJ.home_empty — the Send flow on open. Since docs/DESIGN-DEVIATIONS.md D-52 the screen is the
+// send-compose-v2 handoff's step 1 "Where" (header + step bar, the inline two-row address card over the
+// full-bleed map, the pinned Next bar), and the gallery `Home` mock this key names is a SUPERSEDED target
+// (see tools/parity/rendered-conformance.pending.json). send.tsx runs one query at mount: GET /auth/me
+// (the account-on-hold check — must NOT be held, or the hold wall replaces the flow).
+// The map is the react-native-maps shim (a gray fill — expected/honest).
 //
-// Location is seeded as hard-denied, and that is now what MAKES this the empty state. Since the pickup
-// auto-locate landed (owner instruction 2026-08-17: the pickup pin prefills from the device's own
-// position on open — `src/logic/use-pickup-autolocate.ts`), a granted phone opens this composer with
-// the pickup pin already dropped, which is `LJ.home_pins`, not this mock. The mock's empty composer is
-// still exactly what the customer sees — it is simply reached when the app has no position to offer
-// (permission refused, location services off, no fix), so the fixture seeds that device instead of
-// pretending the auto-locate is not there. `"never"` (not `"denied"`) because the hook only skips the
-// OS prompt when `canAskAgain` is false; `"denied"` would still prompt-and-grant through the shim.
+// Location is seeded as hard-denied, so the pickup auto-locate (src/logic/use-pickup-autolocate.ts)
+// leaves both rows empty — the "nothing set yet" state. `"never"` (not `"denied"`) because the hook only
+// skips the OS prompt when `canAskAgain` is false.
 import { installRouter, withQuery } from "./_harness.mjs";
 
 // What the expo-location shim answers from — see tools/parity/mobile/shims/expo-location.js.

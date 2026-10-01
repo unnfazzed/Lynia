@@ -80,7 +80,7 @@ export default function HistoryScreen(): React.ReactElement {
   const reorder = (o: OrderHistoryRow): void => {
     router.push({
       pathname: "/send",
-      params: buildRebroadcastParams({ pickup: o.pickup, dropoff: o.dropoff, itemDesc: o.itemDesc, proposedFare: o.proposedFare, note: o.note }),
+      params: buildRebroadcastParams({ pickup: o.pickup, dropoff: o.dropoff, itemDesc: o.itemDesc, proposedFare: o.proposedFare, note: o.note, createdAt: o.createdAt }),
     });
   };
 

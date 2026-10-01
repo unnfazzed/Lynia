@@ -1,9 +1,9 @@
-// LJ.home_pins — the Send composer with BOTH pins set. The composer holds its pins in local state
-// seeded only from a stored draft or from re-broadcast (`rb…`) route params; SecureStore is inert in
-// parity, so we prefill via the rb params (the same path "Send again" / rebroadcast uses). That sets
-// both pins, both landmarks, a line-item and a proposed fare, so the map carries pickup + drop pins and
-// the sheet shows the price quote — the "both set" state. (draftFromParams also flips the small "Draft
-// restored" chip on, an honest artifact of the only fixture-reachable way to seed pins.)
+// LJ.home_pins — the Send flow with both pins set. The flow holds its stops in local state, seeded only
+// from "Send again" (`rb…`) route params in parity (SecureStore is inert), so this fixture prefills via
+// those params. Since docs/DESIGN-DEVIATIONS.md D-52 a Send again opens on the first step still missing
+// something — step 2 "What", because a re-sent order never carries the recipient's phone — with the
+// "Copied from your order" banner. The gallery `Home` mock this key names is a SUPERSEDED target (see
+// tools/parity/rendered-conformance.pending.json).
 import { installRouter, setParams, withQuery } from "./_harness.mjs";
 
 const me = {

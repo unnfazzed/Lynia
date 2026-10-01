@@ -4,7 +4,7 @@ import { InteractionManager, KeyboardAvoidingView, Modal, Platform, Pressable, S
 import MapView, { type LatLng, type MapPressEvent, Marker, type MarkerDragStartEndEvent, type Region } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ResolvedPlace } from "../api/places";
-import type { AddressSlot } from "./MapHome";
+export type AddressSlot = "pickup" | "drop";
 import type { PickedPoint } from "./MapPicker";
 import { Button, Field, Icon } from "./index";
 

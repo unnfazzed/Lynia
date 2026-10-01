@@ -61,7 +61,7 @@ function texts(tree: renderer.ReactTestRenderer): string[] {
 function mount(): renderer.ReactTestRenderer {
   let tree!: renderer.ReactTestRenderer;
   act(() => {
-    tree = renderer.create(<ComposeMap pickup={null} drop={null} active="pickup" onChangePickup={noop} onChangeDrop={noop} />);
+    tree = renderer.create(<ComposeMap pickup={null} drop={null} active="pickup" onChangePickup={noop} onChangeDrop={noop} onUseMyLocation={noop} />);
   });
   return tree;
 }

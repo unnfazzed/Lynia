@@ -446,25 +446,10 @@ export async function loadPermissionsPrimed(): Promise<boolean> {
   }
 }
 
-// Latest liability-disclaimer policy version the customer has accepted on this device (A1-8). Stored
-// so the accept-to-continue gate isn't re-shown every broadcast. Best-effort — a read failure just
-// re-shows the gate, which is safe.
+// The retired pre-broadcast disclaimer's accepted-version flag (A1-8; the disclaimer was removed from
+// the Send flow by ledger D-52). Nothing writes it any more; sign-out still deletes it so devices that
+// accepted it before D-52 don't carry a dead key forever.
 const DISCLAIMER_KEY = "lynia.disclaimerAccepted";
-
-export async function saveDisclaimerAccepted(policyVersion: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(DISCLAIMER_KEY, policyVersion);
-  } catch {
-    /* best-effort */
-  }
-}
-export async function loadDisclaimerAccepted(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(DISCLAIMER_KEY);
-  } catch {
-    return null;
-  }
-}
 
 // Orders the rider has already handed back (acknowledged the hand-back terminal for) on this device
 // (R8 follow-up). A cancelled order stays reopenable for 24h, so its snapshot keeps surfacing on the

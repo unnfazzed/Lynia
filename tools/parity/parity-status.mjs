@@ -37,13 +37,25 @@ export const PARITY_STATUS = {
   "LJ.stale_cache": { status: "PENDING" }, // Orders · saved copy
   "LJ.addr_search": {
     status: "PENDING",
-    reason: "SUPERSET — the app folds address-search INTO the send compose sheet (live inline AddressSearch) where the mock draws it as a standalone screen; composite-adopt or ledger. See docs/parity/ADOPTION-CLASSIFICATION.md",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-52 (owner, 2026-10-01): the send-compose-v2 handoff edits the address INLINE in the step-1 address card; there is no standalone search screen to wire. Not aligned to until a gallery export redraws it.",
   }, // Address search
-  "LJ.addr_map_confirm": { status: "PENDING" }, // Confirm pin on map
-  "LJ.home_expanded": { status: "PENDING" }, // Send · sheet expanded
-  "LJ.disclaimer": { status: "PENDING" }, // Broadcast disclaimer
+  "LJ.addr_map_confirm": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-52 (owner, 2026-10-01): the send-compose-v2 handoff removed the confirm-pin step and the landmark field; a picked address or a map tap commits straight to the row. Not aligned to.",
+  }, // Confirm pin on map
+  "LJ.home_expanded": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-52 (owner, 2026-10-01): the send-compose-v2 handoff replaced the two-snap compose sheet with four steps; there is no expanded sheet (and no declared value). Not aligned to.",
+  }, // Send · sheet expanded
+  "LJ.disclaimer": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-52 (owner, 2026-10-01): the send-compose-v2 handoff removed the pre-broadcast disclaimer; Review → 'Send to riders' goes straight to the auction. Not aligned to.",
+  }, // Broadcast disclaimer
   "LJ.draft_restored": { status: "PENDING" }, // Draft restored
-  "LJ.addr_unavailable": { status: "PENDING" }, // Address search down
+  "LJ.addr_unavailable": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-52 (owner, 2026-10-01): the send-compose-v2 handoff draws the keyless/offline search as the address dropdown's 'Search is limited right now…' row (state 3c); the gallery's separate search-down screen is not aligned to.",
+  }, // Address search down
   "LJ.map_failed": { status: "PENDING" }, // Map didn't load
   "LJ.loc_off": { status: "PENDING" }, // Location off · composer
   "LJ.auction_finding": { status: "PENDING" }, // Auction · finding

@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18, D-19, D-21, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50.** D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52.** D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -313,7 +313,9 @@ to revisit.
 
 ---
 
-## D-14 · `/send` composer keeps a floating Back puck the map-home mock never drew — APPROVED (2026-08-16)
+## D-14 · `/send` composer keeps a floating Back puck the map-home mock never drew — RETIRED by D-52 (2026-10-01)
+
+> **Retired.** The send-compose-v2 handoff (D-52) draws its own header with "‹ Back" on every step, so the floating puck and the map-home mock it compensated for are both gone.
 
 **In effect.** `LJ home_empty` / `home_pins` (`explorations/journey/screens.jsx` `Home`) draw exactly two
 things in the floating top row: the brand pill left, the account puck right. No back — correctly, because
@@ -560,7 +562,9 @@ entry is complete, not a sample.
 
 ---
 
-## D-21 · The account-on-hold wall keeps a plain back — APPROVED (2026-08-16)
+## D-21 · The account-on-hold wall keeps a plain back — RETIRED by D-52 (2026-10-01)
+
+> **Retired.** The handoff's state 17 (D-52) draws the hold wall with the Send header's Back and a "Back to home" button; the app follows it. D-19's "Sign out" on the hold wall goes with it (the handoff draws "Call support" / "Back to home").
 
 **In effect. Supersedes the "deliberately not done" paragraph of D-19**, decided by the owner the same
 day it was raised. The `OnHold` mock (`screens.jsx:852`) draws an icon, a title, a message, a support
@@ -1291,7 +1295,9 @@ to 76. Half 2 needs no retirement: no mock draws a pull-to-refresh, so an export
 
 ---
 
-## D-31 · The compose screen's submit bar and price block — APPROVED (2026-08-17)
+## D-31 · The compose screen's submit bar and price block — RETIRED by D-52 (2026-10-01)
+
+> **Retired.** The one-sheet composer this entry adjusted no longer exists. D-52's handoff draws the price as its own step (a big suggested fare, − / + $0.50, the band) and a stepped CTA with a one-line "what's missing" hint. The two owner rules from here that the handoff kept — the price opens on the suggested fare and is re-suggested when a pin moves, and a Send again keeps its own price — carry on unchanged.
 
 **In effect.** Owner instruction 2026-08-17, from two photographs of the running app (`LJ home_empty`
 and the same screen with both pins set). Four changes to `LJ Home`'s sheet, all in the owner's words:
@@ -2426,3 +2432,78 @@ answer, that **shop customer orders don't expire**, is recorded for the shop cus
 2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
 
 **Upstream ask:** redraw those three at ≥ `--target-min`.
+
+---
+
+## D-52 · Send a parcel: the stepped redesign replaces the one-sheet composer — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner asked for the Send screen ("the screen after
+you click send … where you put all the details") to be redesigned, answered a round of questions, had
+Claude Design draw it, and handed the result back with *"here lets implement"*. Earlier in the same
+session the owner set: *"the address for sending or current must be editable in the same place where it
+displays map without going to another field … i am also removing the disclaimer entirely and also
+removing landmarks"*, then chose, when asked: type in the row (no search screen); the address name is
+the rider's label; a short summary before sending; steps; the sender phone stays a full prefilled field;
+a big price with − / +; declared value removed.
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze
+gates. The design package only *absorbs a new export* here. Nothing in it is edited to match code.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/send-compose-v2/` | The handoff, **verbatim**: `PROMPT.md` (the brief, whose decisions are final), `README.md` (tokens, components, the 17 states, interactions, validation, copy), and `design/` (the standalone HTML of every state at 360×720 and 320×640, and the `sc2-*.jsx` sources with the `S` copy object). |
+
+### 2 · Authority for the customer Send flow (a scope rule)
+
+For `app/send.tsx` the authority chain's LOOK is now this handoff, not the gallery's `LJ` composer
+screens. Those gallery screens stay until an export redraws them, and they are **not aligned to**:
+
+| Gallery screen | Now |
+|---|---|
+| `LJ.home_empty`, `LJ.home_pins` | Superseded by steps 1–4. Still wired to `app/send.tsx` for the parity render, with SUPERSEDED reasons in `tools/parity/rendered-conformance.pending.json` and as deferrals in `tools/parity/codegen/adopted.mjs` (the old `map` / `footer` generated regions were deleted with the sheet; deferral ratchet 77 → 75). |
+| `LJ.home_expanded`, `LJ.addr_search`, `LJ.addr_map_confirm`, `LJ.addr_unavailable`, `LJ.disclaimer` | No counterpart any more (no expanded sheet, no search screen, no confirm-pin step, no disclaimer). PENDING with a SUPERSEDED reason in `tools/parity/parity-status.mjs`. |
+| `LJ.on_hold` | The handoff's state 17 (deferral reason updated). |
+
+### 3 · What changed in the app
+
+- **Four steps** (`app/send.tsx`, `src/ui/send/*`): header "‹ Back · Send a parcel" with the step bar;
+  Back walks one step back and leaves the flow from step 1 (Android back too); everything entered is kept.
+- **Step 1 · Where:** the floating two-row address card over the full-bleed map. Tapping a row turns it
+  into the input in place; the dropdown (Use my current location · results · Tap the map to set the pin)
+  opens under it inside the card. Places autocomplete as you type; no key or offline → the device
+  geocoder with the "Search is limited right now" row; a Places search that finds nothing also tries the
+  device geocoder before "No matches". Picking commits straight to the row and moves the pin. Map taps set
+  the active row's pin. Pins are the handoff's green circle / red square with "Pickup" / "Drop-off" labels,
+  a 5px accent route, "Use my location" and the distance pill above the Next bar. Out of area: the row's
+  "Outside our area" line, the calm notice, Next disabled.
+- **Step 2 · What:** route strip, item cards (Qty − / +, Remove, "Add another item", the 10-item notice),
+  rider note, sender phone (full field, prefilled), recipient phone with recent-recipient chips. Phone
+  errors show on blur; the CTA hint names what is still missing.
+- **Step 3 · Price:** the big suggested fare (tap to type), − / + $0.50 (floor $0.50), the band bar, the
+  soft below / far-above warnings, "Cash to your rider".
+- **Step 4 · Review:** route, items, note, phones, each with Edit; the price pinned in the CTA bar;
+  "Send to riders" goes straight to the auction. A failed send shows the "Try again" toast with the same
+  idempotency key; offline keeps Send disabled with "Connect to the internet to send."
+- **Removed:** the disclaimer sheet and its consent flag (orders no longer carry `disclaimerVersion`; the
+  API keeps accepting it, and sign-out still deletes the old device flag), the landmark fields (each
+  stop's `landmark` is now the address name, so rider apps keep reading a non-empty label), declared value
+  (sent as 0), the confirm-pin step in this flow (`AddressConfirmSheet` / `AddressSearch` stay for food
+  checkout), the map-home top bar, the "Online as a rider" pill and the active-order banner (not drawn;
+  live orders are reached from Home and Orders).
+
+### 4 · Still different from the handoff
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Send again (state 16) | Opens on the summary | Opens on the **first incomplete step** — normally step 2, because the recipient's phone is never carried in route params (a courier app keeps third-party numbers out of routing state); the banner shows on steps 2–4 | Opening on Review with no recipient would offer a send that can only fail |
+| A pin with no geocoder answer | Not drawn | The row shows the pin's coordinates until a name arrives | A stop's label can never be empty (rider apps read it) |
+| Send again banner date | Always drawn | Omitted ("Copied from your order. Check it, then send.") when the source order carries no date | Nothing to show |
+| Map hint | "Or tap the map to set your drop-off" | The same; no hint is shown for an empty pickup (none is drawn) | Not drawn |
+
+Evidence: `docs/parity/SEND-COMPOSE-V2-2026-10-01.png` (handoff left, app right, 360×720), produced by
+`tools/parity/shoot-send-v2.mjs`.
+
+**Upstream ask:** redraw the gallery's `LJ` composer screens (and `LJ.on_hold`) from this handoff, so the
+gallery and the shipped flow agree again.

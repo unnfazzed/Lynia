@@ -1,5 +1,4 @@
 import type {
-  AcceptDisclaimerRequest,
   AdvanceStatusRequest,
   CancelRequest,
   ConfirmItemsRequest,
@@ -239,16 +238,6 @@ export function cancelOrder(
   body: CancelRequest = {},
 ): Promise<{ orderId: string; status: "cancelled"; cancelledBy: "customer" | "rider"; cooldownUntil: string | null }> {
   return apiFetch(`/orders/${orderId}/cancel`, { method: "POST", body });
-}
-
-/**
- * Acknowledge the customer's pre-broadcast disclaimer consent at the gate (A1-8) and get the
- * server-authoritative timestamp. Best-effort — the binding record is the order's own
- * `disclaimerVersion`, stamped at create (the broadcast payload carries it), so a reject here must
- * never block the broadcast; the local flag already prevents the gate re-showing.
- */
-export function acceptDisclaimer(body: AcceptDisclaimerRequest): Promise<{ policyVersion: string; acceptedAt: string }> {
-  return apiFetch(`/orders/disclaimer`, { method: "POST", body });
 }
 
 /**
