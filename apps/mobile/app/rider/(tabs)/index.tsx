@@ -10,6 +10,7 @@ import { ApiError } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
+import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
@@ -19,6 +20,7 @@ import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
 import { runKycVerification } from "../../../src/kyc/verify";
 import { type KycSdkResult, onlineGateReason, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
+import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
@@ -38,6 +40,7 @@ import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast, W
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
+import { RiderSetupPending, RiderVerified } from "../../../src/ui/onboarding/rider";
 import { withTimeout } from "../../../src/util";
 
 // GPS fix bound: a cold fix can hang forever, and the server records a broadcast-eligible position only
@@ -204,6 +207,23 @@ export default function RiderHome(): React.ReactElement {
   const spentForce = useRef(false);
   const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
   const kycGate = knownUnverified ? resolveKycGate(rider, kycLaunch) : null;
+  // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
+  // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
+  const profileId = meQ.data?.profileId ?? null;
+  const verified = rider?.kycStatus === "verified";
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!profileId || !verified) return;
+    let alive = true;
+    void riderWelcomeSeen(profileId).then((seen) => {
+      if (alive) setWelcomeSeen(seen);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, verified]);
+  // New riders only: a rider with trips behind them is not "just verified" (no verified-at date is served).
+  const showWelcome = verified && welcomeSeen === false && (rider?.tripsCount ?? 0) === 0;
   const callSupport = (): void => {
     const uri = telUri(SOS_POLICY.safetyLine);
     if (uri) void Linking.openURL(uri);
@@ -342,14 +362,32 @@ export default function RiderHome(): React.ReactElement {
     void qc.invalidateQueries({ queryKey: ["activeJob"] });
   }, online);
 
-  const jobs: BoardJob[] = useMemo(
-    () =>
-      (Array.isArray(openQ.data) ? openQ.data : [])
-        .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
-        .map((o) => toBoardJob(o, loc))
-        .sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER)),
-    [openQ.data, bidIds, skipped, loc],
-  );
+  // Owner 2026-10-01: food, shop and parcel jobs all show on the board, tagged. A food job is the
+  // live dispatch offer the server is holding for THIS rider (food is offered to one rider at a time);
+  // it still rings full screen, and its card opens the same offer.
+  const foodOfferQ = useQuery({ queryKey: ["foodOffer"], queryFn: getFoodDispatchOffer, enabled: online && !!foodOn, refetchInterval: online && foodOn ? 15_000 : false });
+  const foodOffer = foodOn && foodOfferQ.data && new Date(foodOfferQ.data.expiresAt).getTime() > Date.now() ? foodOfferQ.data : null;
+  const jobs: BoardJob[] = useMemo(() => {
+    const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
+      .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
+      .map((o) => toBoardJob(o, loc));
+    const food: BoardJob[] = foodOffer
+      ? [
+          {
+            id: `food:${foodOffer.orderId}`,
+            pickup: { ...foodOffer.pickup.point, landmark: foodOffer.pickup.landmark },
+            dropoff: { ...foodOffer.dropoff.point, landmark: foodOffer.dropoff.landmark },
+            toPickupKm: loc ? haversineKm(loc, foodOffer.pickup.point) : null,
+            tripKm: foodOffer.distanceKm,
+            item: foodOffer.itemDesc,
+            asking: foodOffer.deliveryFee ?? 0,
+            kind: "food",
+          },
+        ]
+      : [];
+    return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
+  }, [openQ.data, bidIds, skipped, loc, foodOffer]);
+  const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 
   // J13: the job the rider was looking at was taken by someone else.
@@ -439,7 +477,7 @@ export default function RiderHome(): React.ReactElement {
   const myOffers = sentOffers.filter((s) => s.order.id !== activeJob?.id && !withdrawing.has(s.order.id));
 
   // ── Demand (busy zones) ──────────────────────────────────────────────────────────────────────────
-  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online, staleTime: 5 * 60_000 });
+  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online, staleTime: 2 * 60_000, refetchInterval: online ? 2 * 60_000 : false });
   const zones = zonesQ.data ?? [];
   const busiest = zones.length ? zones.reduce((a, b) => (b.level > a.level ? b : a)) : null;
   const busyLine = busiest && loc ? RF.busyLine(busiest.place, haversineKm(loc, busiest)) : null;
@@ -451,6 +489,10 @@ export default function RiderHome(): React.ReactElement {
   const conn = online && board.connected && !beatStale;
 
   const offerFor = (j: BoardJob): void => {
+    if (j.kind === "food") {
+      router.push("/rider/food-offer");
+      return;
+    }
     router.push({ pathname: "/rider/offer/[jobId]", params: { jobId: j.id, toKm: j.toPickupKm != null ? j.toPickupKm.toFixed(1) : "" } });
   };
 
@@ -459,7 +501,7 @@ export default function RiderHome(): React.ReactElement {
   const [sheetVisible, setSheetVisible] = useState(0);
   const empty = online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
   // Peek 50% of the screen (44% when empty), measured from the screen's top, as the handoff draws it. The
-  // floating tab bar (tab bar v1, D-55) takes no layout space, so the area runs to the screen's bottom
+  // floating tab bar (tab bar v1, D-56) takes no layout space, so the area runs to the screen's bottom
   // and everything above it is the mint top card; the sheet continues behind the bar.
   const tabSpace = useTabBarSpace();
   const mapShare = areaH > 0 ? Math.min(0.8, Math.max(0.2, (winH * (empty ? 0.56 : 0.5) - (winH - areaH)) / areaH)) : 0.5;
@@ -477,7 +519,14 @@ export default function RiderHome(): React.ReactElement {
       case "notRider":
         return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become") }} bridge={leaveForCustomer} />;
       case "pending":
-        return <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />;
+        // Calm Mint v2 R2 (D-55): "Rider setup" while the check is with the vendor — the checklist, safe
+        // to leave, a way to send a parcel. Manual (ops) review keeps the Rider v2 wall: R2's "usually
+        // under a minute" is only true of the automated check.
+        return kycGate?.kind === "in_flight" ? (
+          <RiderSetupPending onSendParcel={() => router.push("/send")} />
+        ) : (
+          <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />
+        );
       case "unfinished":
         return (
           <Gate icon="id-card" tone="calm" title={R.gUnfinishedT} body={R.gUnfinishedB} primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }} bridge={leaveForCustomer} />
@@ -563,7 +612,7 @@ export default function RiderHome(): React.ReactElement {
             </>
           ) : jobs.length ? (
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-              <Text style={{ flex: 1, fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.nearYou(jobs.length)}</Text>
+              <Text style={{ flex: 1, fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{mixedKinds ? RF.jobsNearYou(jobs.length) : RF.nearYou(jobs.length)}</Text>
               <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.nearest}</Text>
             </View>
           ) : null}
@@ -587,6 +636,21 @@ export default function RiderHome(): React.ReactElement {
       )}
     </>
   );
+
+  // R2 and R3 are whole pages in the handoff (no mint top card), so they replace the board outright.
+  if (gate === "pending" && kycGate?.kind === "in_flight" && gateView) return <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>{gateView}</View>;
+  if (showWelcome && !gate) {
+    return (
+      <RiderVerified
+        firstName={meQ.data?.firstName?.trim() || null}
+        onGoOnline={() => {
+          setWelcomeSeen(true);
+          if (profileId) void markRiderWelcomeSeen(profileId);
+        }}
+        onPapers={() => router.push("/rider/documents")}
+      />
+    );
+  }
 
   return (
     <AppScreen banner={banner}>
@@ -640,6 +704,7 @@ function toBoardJob(o: OpenOrder, loc: { lat: number; lng: number } | null): Boa
     tripKm: o.distanceKm ?? haversineKm(o.pickup.point, o.dropoff.point),
     item: o.itemDesc,
     asking: Number(o.proposedFare),
+    kind: o.kind === "shop" ? "shop" : "parcel",
   };
 }
 

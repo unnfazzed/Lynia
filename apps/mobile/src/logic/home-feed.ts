@@ -294,3 +294,53 @@ export function popularNearYou(
     })
     .slice(0, limit);
 }
+
+/**
+ * Calm Mint v2 (handoff/calm-mint-v2-2026-10 README §2.6, ledger D-55): ONE floating live-order bar,
+ * whatever the number of running orders. The newest order leads; the rest collapse into "+N order(s)".
+ *
+ *   · title — "<Rider first name> is on the way" once the parcel is moving (the drawn H1 string).
+ *     Before that, or when the rider's name isn't on this device, the order's honest status phrase.
+ *   · sub   — "Parcel to <drop-off>" or the restaurant's name.
+ *   · tap   — one order opens it; two or more open the Orders tab.
+ */
+export interface LiveBarModel {
+  icon: "bike" | "utensils";
+  title: string;
+  sub: string;
+  more: number;
+  step: number;
+  steps: number;
+  etaMinutes: number | null;
+  route: string;
+}
+
+export function liveBarModel(
+  orders: readonly LiveOrderLike[],
+  statusLabel: (status: string) => string,
+  riderFirstName: (orderId: string) => string | null,
+): LiveBarModel | null {
+  const lead = orders[0];
+  if (!lead) return null;
+  const food = lead.orderType === "merchant";
+  const foodStep = foodLiveStepIndex(lead.status, lead.merchantPhase);
+  const riderPoint =
+    lead.rider && lead.rider.currentLat != null && lead.rider.currentLng != null
+      ? { lat: lead.rider.currentLat, lng: lead.rider.currentLng }
+      : null;
+  const eta = liveEta({ status: lead.status, rider: riderPoint, pickup: lead.pickup.point, dropoff: lead.dropoff.point });
+  const moving = lead.status === "picked_up" || lead.status === "en_route_dropoff";
+  const first = riderFirstName(lead.id);
+  const phrase = food ? FOOD_LIVE_ORDER_STEPS[foodStep]!.label : statusLabel(lead.status);
+  const title = moving && first ? `${first} is on the way` : moving ? "On the way" : phrase.charAt(0).toUpperCase() + phrase.slice(1);
+  return {
+    icon: food ? "utensils" : "bike",
+    title,
+    sub: food ? lead.merchantName || "Restaurant order" : `Parcel to ${lead.dropoff.landmark || "drop-off"}`,
+    more: orders.length - 1,
+    step: food ? foodStep : liveOrderStepIndex(lead.status),
+    steps: food ? FOOD_LIVE_ORDER_STEPS.length : LIVE_ORDER_STEP_COUNT,
+    etaMinutes: eta?.minutes ?? null,
+    route: orders.length > 1 ? "/orders" : food ? `/food/order/${lead.id}` : `/order/${lead.id}`,
+  };
+}

@@ -61,6 +61,17 @@ export class OrdersController {
    * order's pickup/drop-off waypoints, landmarks and fares city-wide, or sweep `lat`/`lng` across the
    * corridor. Mirrors the `/riders/nearby` gate; contactPhone is already redacted server-side.
    */
+  /** Rider v2 board busy zones (owner 2026-10-01): pending + in-progress orders near the rider, last hour. */
+  @Get("demand")
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "order-demand" })
+  async demand(@CurrentUser() callerId: string, @Query("lat") lat?: string, @Query("lng") lng?: string) {
+    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Riders only");
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (!Number.isFinite(latN) || !Number.isFinite(lngN) || Math.abs(latN) > 90 || Math.abs(lngN) > 180) return [];
+    return this.orders.demandZones(latN, lngN);
+  }
+
   @Get("open")
   async open(
     @CurrentUser() callerId: string,

@@ -1,121 +1,96 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React from "react";
+import { Text, View } from "react-native";
 import { saveOnboardingSeen } from "../src/auth/session";
-import { useFeatureFlags } from "../src/net/use-feature-flags";
 import { riderModeAvailable } from "../src/rider-mode";
-import { type IconName } from "../src/ui";
-import { OnboardingView } from "./onboarding.view";
-
-// First-install intro carousel (customer/rider 0·2) — skippable slides shown once, before auth.
-// Two slide sets, chosen by `restaurantsEnabled` (fails open — restaurants is launched, same
-// contract as the home Food tile): the joint-launch set is the journey mockup verbatim (screens.jsx
-// `ONBOARD` — Food, Send, then the promise both share) and is also the boot default, so no parcels-
-// only frame flashes before the flags fetch resolves; the parcels-only set is the §1 kill-switch
-// copy for a server-flagged-off launch and is drawn by its OWN mock (screens-shipped.jsx
-// `OnboardFlagOff`, LJ.onboard_flag_off): a TWO-dot carousel opening on the banknote "Name your
-// price to send" slide — so the flag-off set is two slides, not three, and the index is clamped
-// below in case the flags fetch resolves mid-carousel.
-// `riderOnly` marks a slide the customer-only iPhone app leaves out (src/rider-mode.ts, D-41).
-type Slide = { icon: IconName; title: string; subtitle: string; riderOnly?: true };
-const SEND_FOOD_SLIDES: Slide[] = [
-  {
-    icon: "utensils",
-    title: "Food from kitchens near you",
-    subtitle: "Order from restaurants in your corridor — you see the arrival window before you pay.",
-  },
-  {
-    icon: "banknote",
-    title: "Name your price to send",
-    subtitle: "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.",
-  },
-  {
-    icon: "check",
-    title: "One app, one code",
-    subtitle: "Same riders, same delivery code at the door, cash if that's how you pay. More services soon.",
-  },
-];
-// The food-off set. Slide 1 is the `OnboardFlagOff` mock verbatim (banknote glyph, the same
-// name-your-price copy the joint-launch set carries); the mock draws TWO dots, so the set is two
-// slides long and the rider slide closes it.
-const PARCEL_SLIDES: Slide[] = [
-  {
-    icon: "banknote",
-    title: "Name your price to send",
-    subtitle: "Say what you'll pay to send a parcel. Riders bid for it — no fixed tariff, no haggling in the street.",
-  },
-  {
-    icon: "bike",
-    title: "Earn as a rider",
-    subtitle: "See parcels near you, name your fare, and get paid in cash on delivery. Ride when you want.",
-    riderOnly: true,
-  },
-];
+import { DoveMark, Icon, Tappable, Wordmark, type IconName } from "../src/ui";
+import { HeroRiderArt } from "../src/ui/art/HeroRiderArt";
+import { OB } from "../src/ui/onboarding/copy";
+import { Cta, H1, OnbScreen, Pad } from "../src/ui/onboarding/kit";
 
 /**
- * `initialSlide` is the carousel's starting index — 0 in the app (a first install always opens on
- * slide 1). It exists so a single frozen slide can be mounted directly: each slide is its own gallery
- * screen (LJ.onboard / LJ.onboard_send / LJ.onboard_shared) and the parity lane stages them through
- * this seam (tools/parity/mobile/fixtures/onboard_*.mjs). Expo-router passes no props, so the default
- * is what ships.
+ * C1 · Welcome — the first screen of a new install (Calm Mint v2,
+ * `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger D-55). It replaces the three-slide
+ * intro carousel: a mint hero panel inset 12px with the rider illustration (20px clear below it), the
+ * LyniaGo lockup, "Parcels and food / across town.", three facts, "Continue with your number" and the
+ * secondary "Want to earn? Ride with LyniaGo →", which carries a rider intent through sign-in.
+ *
+ * Shown once: both actions mark onboarding seen, and returning users never see it (app/index.tsx).
+ * The customer-only iPhone app (src/rider-mode.ts, D-41) has no rider path, so it draws no rider link.
  */
-export type OnboardingScreenProps = { initialSlide?: number };
+const FACTS: ReadonlyArray<{ icon: IconName; text: string }> = [
+  { icon: "banknote", text: OB.facts[0] },
+  { icon: "circle-check", text: OB.facts[1] },
+  { icon: "timer", text: OB.facts[2] },
+];
 
-export default function OnboardingScreen({ initialSlide = 0 }: OnboardingScreenProps = {}): React.ReactElement {
+/** The hero panel and the art inside it (README §3: panel 300 tall, art 230 tall, 20px clear below). */
+const HERO_H = 300;
+const ART_H = 230;
+const ART_W = (ART_H * 480) / 500;
+
+export default function OnboardingScreen(): React.ReactElement {
   const router = useRouter();
-  const { restaurantsEnabled } = useFeatureFlags();
-  const [index, setIndex] = useState(initialSlide);
-  // Once the user ADVANCES, the set they started reading is locked so the flags fetch (deferred
-  // ~250ms, so it can resolve mid-carousel) can never swap the deck under their thumb — a 3-slide
-  // joint-launch deck silently becoming the 2-slide flag-off deck mid-read looked like a glitch.
-  // While still on slide 1 the set stays live (the flag-off launch must show flag-off copy), and
-  // the length clamp below still guards the residual race of flags resolving in the same frame as
-  // the first Next.
-  const [lockedSlides, setLockedSlides] = useState<Slide[] | null>(null);
-  const liveSlides = restaurantsEnabled ? SEND_FOOD_SLIDES : PARCEL_SLIDES;
-  const slides = lockedSlides ?? (riderModeAvailable() ? liveSlides : liveSlides.filter((s) => !s.riderOnly));
-  // The two sets differ in length (3 joint-launch, 2 food-off), so a flags fetch resolving mid-
-  // carousel could otherwise strand the index past the end: clamp it into the live set. The `?? [0]!`
-  // fallback additionally keeps the lookup honest under noUncheckedIndexedAccess.
-  const active = Math.max(0, Math.min(index, slides.length - 1));
-  const slide = slides[active] ?? slides[0]!;
-  const last = active === slides.length - 1;
-
-  // "Skip" and the final "Get started" both land in the same place: mark onboarding seen (best-effort)
-  // and hand off to the phone/auth screen. The carousel never shows again on this install.
-  const finish = (): void => {
+  const go = (rider: boolean): void => {
     void saveOnboardingSeen();
-    router.replace("/phone");
-  };
-  const next = (): void => {
-    if (lockedSlides === null) setLockedSlides(slides);
-    if (last) finish();
-    else setIndex(active + 1);
+    router.replace(rider ? { pathname: "/phone", params: { intent: "rider" } } : "/phone");
   };
 
   return (
-    // The phone frame / safe area — the mock's AppScreen shell; the mock's own screen padding + column
-    // layout live inside OnboardingView (from its `Pad` wrapper). The container owns the slide SET
-    // (flag-gated), the active index and the Skip/Next handlers, feeding the view one slide at a time.
-    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      {/* SDK54-09: Yoga resolves the view's `minHeight: "100%"` against its parent's whole box, and
-          the safe-area insets are that parent's padding. Placed straight inside, the view was as tall
-          as the phone and began below the status bar, so Next / Get started ran off the bottom. This
-          unpadded View makes 100% the space between the insets. */}
-      <View style={{ flex: 1 }}>
-        <OnboardingView
-          icon={slide.icon}
-          title={slide.title}
-          body={slide.subtitle}
-          slide={active}
-          dots={slides.map((_, n) => n)}
-          primaryLabel={last ? "Get started" : "Next"}
-          onSkip={finish}
-          onNext={next}
-        />
+    <OnbScreen
+      padTop={0}
+      footer={
+        <>
+          <Cta label={OB.continueWithNumber} onPress={() => go(false)} />
+          {riderModeAvailable() ? (
+            <Tappable
+              onPress={() => go(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`${OB.wantToEarn} ${OB.rideWithLynia}`}
+              style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 }}
+            >
+              <Text style={{ fontSize: 14, color: tokens.color.muted }}>{OB.wantToEarn} </Text>
+              <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{OB.rideWithLynia}</Text>
+              <Icon name="arrow-right" size={14} color={tokens.color.accentText} />
+            </Tappable>
+          ) : null}
+        </>
+      }
+    >
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={{
+          marginHorizontal: 12,
+          marginTop: 12,
+          height: HERO_H,
+          borderRadius: 28,
+          backgroundColor: tokens.color.accentWash,
+          overflow: "hidden",
+          alignItems: "center",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View style={{ marginBottom: 20 }}>
+          <HeroRiderArt width={ART_W} />
+        </View>
       </View>
-    </SafeAreaView>
+      <Pad style={{ paddingTop: 20 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <DoveMark size={24} />
+          <Wordmark size={20} />
+        </View>
+        <H1 accent={OB.welcomeH1Accent}>{OB.welcomeH1}</H1>
+        <View style={{ marginTop: 16, gap: 10 }}>
+          {FACTS.map((f) => (
+            <View key={f.text} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Icon name={f.icon} size={18} color={tokens.color.accentText} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{f.text}</Text>
+            </View>
+          ))}
+        </View>
+      </Pad>
+    </OnbScreen>
   );
 }

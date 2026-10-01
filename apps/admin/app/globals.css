@@ -37,10 +37,10 @@
   --cta-fill: #00812f; /* primary-action fill — white label ≈4.7:1 (AA large) */
   --cta-fill-pressed: #006b27;
   --on-accent: #ffffff; /* text/icons on an accent (or danger) fill */
-  --highlight: #f2b705; /* 'recommended' marker only */
+  --highlight: #ffd23f; /* 'recommended' marker only */
   --highlight-wash: #fffcf2;
   --highlight-ink: #6b5600;
-  --highlight-border: #f2b70566;
+  --highlight-border: #ffd23f66;
   --danger: #c0392b;
   --danger-wash: #faedeb;
   --danger-ink: #8f2418; /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reasons */

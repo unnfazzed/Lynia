@@ -62,6 +62,12 @@ jest.mock("../../../../src/api/orders", () => ({
   getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
   getOpenOrders: (...args: unknown[]) => mockGetOpenOrders(...args),
 }));
+// Owner 2026-10-01: busy zones come from the server's demand feed; food offers ride the dispatch poll.
+const mockGetDemandZones = jest.fn(async (_loc: unknown) => [] as unknown[]);
+jest.mock("../../../../src/api/rider-v2", () => ({ getDemandZones: (loc: unknown) => mockGetDemandZones(loc) }));
+const mockGetFoodOffer = jest.fn(async () => null as unknown);
+jest.mock("../../../../src/api/food-rider", () => ({ getFoodDispatchOffer: () => mockGetFoodOffer() }));
+let mockFoodOn = false;
 jest.mock("../../../../src/api/offers", () => ({
   makeOffer: jest.fn(),
   withdrawOffer: (orderId: string) => mockWithdrawOffer(orderId),
@@ -91,7 +97,7 @@ jest.mock("../../../../src/realtime/use-rider-board", () => ({
   useRiderBoard: (...args: unknown[]) => mockUseRiderBoard(...args),
 }));
 jest.mock("../../../../src/net/use-feature-flags", () => ({
-  useFeatureFlags: () => ({ merchantDispatchAutoEnabled: false }),
+  useFeatureFlags: () => ({ merchantDispatchAutoEnabled: mockFoodOn }),
 }));
 
 import RiderHome from "../index";
@@ -228,6 +234,9 @@ afterEach(() => {
   jest.clearAllMocks();
   mockLocPermission = "granted";
   mockLocFixFails = false;
+  mockFoodOn = false;
+  mockGetDemandZones.mockImplementation(async () => []);
+  mockGetFoodOffer.mockImplementation(async () => null);
 });
 
 /**
@@ -794,7 +803,8 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
    */
   const CUSTOMER_BRIDGE = "Order food and send parcels";
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
-    ["in flight — with the vendor, only the bridge", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, [CUSTOMER_BRIDGE]],
+    // Calm Mint v2 R2 (D-55): in flight is "Rider setup", whose only action is its ghost.
+    ["in flight — with the vendor, only the R2 ghost", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, ["Send a parcel while you wait"]],
     ["unfinished — the rider's move, the bridge beneath it", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying", CUSTOMER_BRIDGE]],
     ["manual/ops review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "manual" }, [CUSTOMER_BRIDGE]],
     ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID", CUSTOMER_BRIDGE]],
@@ -836,10 +846,11 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     return treeText(activeTree);
   }
 
-  it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
+  it("in flight: R2 'Rider setup' says the check is under way, and asks nothing of the rider", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
-    expect(text).toContain("Your ID is under review");
-    expect(text).toContain("We're checking your ID");
+    expect(text).toContain("Rider setup");
+    expect(text).toContain("We\u2019re checking your ID");
+    expect(text).toContain("In review");
     expect(text).not.toContain("Finish verifying your ID");
   });
 
@@ -936,7 +947,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
       tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
     });
 
-    expect(treeText(activeTree)).toContain("We're checking your ID");
+    expect(treeText(activeTree)).toContain("We\u2019re checking your ID");
     expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
   });
 
@@ -1327,5 +1338,100 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
       .map((n) => n.props.accessibilityLabel as string);
     expect(labels.some((l) => /Change location/.test(l))).toBe(false);
     expect(treeText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
+  });
+});
+
+/** Calm Mint v2 R3 (D-55): "You're verified" takes the board's place once, for a new rider only. */
+describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
+  it("a verified rider with no trips yet sees R3; 'Go online' dismisses it to the board", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(treeText(activeTree)).toContain("Add licence and bike papers later in Account");
+    // No free-jobs rule on the server yet (NEEDS BACKEND), so the meter card is not drawn.
+    expect(treeText(activeTree)).not.toContain("Commission-free jobs");
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
+    });
+    expect(treeText(activeTree)).not.toContain("You’re verified");
+  });
+
+  it("a rider with trips behind them never sees R3", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 20 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).not.toContain("You’re verified");
+  });
+});
+
+describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
+  it("a business's booking wears the SHOP tag beside PARCEL jobs, and the count says jobs", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([{ ...openOrderFixture("shop-1"), kind: "shop", customerFirstName: "Mama's Kitchen" }, openOrderFixture("parcel-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const kinds = cards(activeTree).map((n) => [n.props.job.id, n.props.job.kind]);
+    expect(kinds).toEqual(expect.arrayContaining([["shop-1", "shop"], ["parcel-1", "parcel"]]));
+    const text = treeText(activeTree);
+    expect(text).toContain("SHOP");
+    expect(text).toContain("PARCEL");
+    expect(text).toContain("2 jobs near you");
+  });
+
+  it("the live food offer is a FOOD card on the board, and its button opens the offer", async () => {
+    mockFoodOn = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("parcel-1")]);
+    mockGetFoodOffer.mockImplementation(async () => ({
+      orderId: "food-1",
+      merchantId: "m1",
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mama's Kitchen" },
+      dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Belgravia" },
+      itemDesc: "2 items",
+      merchantGoodsTotal: 12.5,
+      deliveryFee: 3.2,
+      distanceKm: 3.1,
+      expiresAt: new Date(Date.now() + 40_000).toISOString(),
+      merchantPaymentMethod: "cash",
+      merchantCashRule: "collect_and_return",
+    }));
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const food = cards(activeTree).find((n) => n.props.job.kind === "food");
+    expect(food?.props.job).toMatchObject({ id: "food:food-1", asking: 3.2 });
+    const accept = activeTree.root.findAll((n) => n.props.label === "Accept this job" && typeof n.props.onPress === "function");
+    expect(accept.length).toBeGreaterThan(0);
+    act(() => accept[0]!.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/rider/food-offer");
+  });
+
+  it("the busiest demand zone names itself in the sheet", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("parcel-1")]);
+    mockGetDemandZones.mockImplementation(async () => [{ lat: -17.8, lng: 31.04, radiusM: 800, level: 1, place: "Avondale Shops" }]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(mockGetDemandZones).toHaveBeenCalledWith({ lat: -17.83, lng: 31.05 });
+    expect(treeText(activeTree)).toMatch(/Busier near Avondale Shops · \d/);
   });
 });

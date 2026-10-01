@@ -30,7 +30,7 @@
        #006b27 = ≈6.3:1 if a darker press is wanted */
   --cta-fill: #00812f;
   --cta-fill-pressed: #006b27;
-  --highlight: #f2b705;   /* 'recommended' marker only (gold, sparing) */
+  --highlight: #ffd23f;   /* gold, sparing: ETA chip, unread dot, header circle, star fill (Calm Mint v2 / D-55: was #f2b705) */
   --danger: #c0392b;      /* errors, destructive */
   --danger-wash: #faedeb; /* soft red wash — negative-balance hero, below-floor chip (never red text on white) */
   --danger-ink: #8f2418;  /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reason */
@@ -40,7 +40,7 @@
   /* Tints used in-product: earnings disclaimer card (gold wash), highlight border alpha. */
   --highlight-wash: #fffcf2;
   --highlight-ink: #6b5600;
-  --highlight-border: #f2b70566;
+  --highlight-border: #ffd23f66;
   /* Ink ON a solid --highlight gold chip (customer home 8c: the SOON chip and the ETA chip).
      Distinct from --highlight-ink, which is gold TEXT on the pale --highlight-wash. */
   --highlight-chip-ink: #3d3100;
@@ -81,7 +81,24 @@
   --live-bar: #063b22;
   --live-bar-ink: #bfe6cd;
   --rider-accent: #4b2fbf;   /* ≈5.6:1 on --tile-lilac */
-  --rider-wash: #ece8ff;
+  /* ── Calm Mint v2 (handoff/calm-mint-v2-2026-10, ledger D-55) ── */
+  --forest: #063b22;              /* the floating live-order bar */
+  --on-forest-muted: #bfe6cd;     /* secondary text on --forest */
+  --star-stroke: #c99500;         /* star outline (fill is --highlight) */
+  --free: #4b2fbf;                /* "Free delivery" tag fill, white text (7.9:1) — the website violet */
+  --coral: #ff6b4a;               /* decorative circle only, never text */
+  --sky: #3ec1f3;                 /* decorative circle only, never text */
+  --tile-send: #cdeeda;           /* service tile fills: Send · Restaurants · Shops · Pharmacy */
+  --tile-food: #ffd9cc;
+  --tile-shops: #ddd5ff;
+  --tile-pharmacy: #c5e9df;
+  --rider-wash: #ece8ff;          /* rider intro hero panel */
+  --highlight-chip-wash: #fff6d6; /* the pale gold "Checking" pill */
+  --kind-butchery: #ffe7e0;       /* shop-kind card tints (no photo): pharmacy reuses --tile-pharmacy-wash, */
+  --kind-fashion: #ffe4f2;        /* grocery --accent-wash, hardware/electronics/other --surface */
+  --kind-auto: #e3f6fe;
+  --kind-fashion-ink: #8a1f5c;    /* initial + kind chip ink on those tints (butchery uses --danger-ink, */
+  --kind-auto-ink: #0b5a7a;       /* pharmacy/grocery --accent-text) */
 
   /* ── Semantic aliases ─────────────────────────────────────── */
   --text-body: var(--ink);

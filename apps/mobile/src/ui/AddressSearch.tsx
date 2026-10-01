@@ -160,6 +160,11 @@ export type AddressSearchProps = {
    * real affordance rather than a decoration. Any change of value focuses; the initial value does not.
    */
   focusSignal?: number;
+  /**
+   * `sheet` — the Calm Mint v2 location sheet's search (H5): no visible label (the sheet title names
+   * it), a borderless `surface` fill. The label still names the input for screen readers.
+   */
+  variant?: "field" | "sheet";
 };
 
 /**
@@ -249,16 +254,16 @@ function AddressSearchDeviceGeocode(props: AddressSearchProps): React.ReactEleme
 
   return (
     <View style={{ marginBottom: tokens.space.sm }}>
-      <Label>{props.label}</Label>
+      {props.variant === "sheet" ? null : <Label>{props.label}</Label>}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           borderWidth: 1,
-          borderColor: tokens.color.line,
+          borderColor: props.variant === "sheet" ? tokens.color.surface : tokens.color.line,
           borderRadius: tokens.radius.input,
           paddingHorizontal: tokens.space.md,
-          backgroundColor: tokens.color.bg,
+          backgroundColor: props.variant === "sheet" ? tokens.color.surface : tokens.color.bg,
         }}
       >
         <Icon name="search" size={16} color={tokens.color.muted} />
@@ -308,9 +313,12 @@ function AddressSearchDeviceGeocode(props: AddressSearchProps): React.ReactEleme
           </Pressable>
         )}
       </View>
-      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs, lineHeight: 16 }}>
-        {message ?? "Type the address and tap Find — then check the pin. You can also tap the map to place it yourself."}
-      </Text>
+      {/* The map hint has no map to point at inside the Home location sheet (H5 draws no hint). */}
+      {message || props.variant !== "sheet" ? (
+        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: tokens.space.xs, lineHeight: 16 }}>
+          {message ?? "Type the address and tap Find — then check the pin. You can also tap the map to place it yourself."}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -529,16 +537,16 @@ function AddressSearchInner(props: AddressSearchProps): React.ReactElement {
 
   return (
     <View style={{ marginBottom: tokens.space.sm }}>
-      <Label>{props.label}</Label>
+      {props.variant === "sheet" ? null : <Label>{props.label}</Label>}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           borderWidth: 1,
-          borderColor: tokens.color.line,
+          borderColor: props.variant === "sheet" ? tokens.color.surface : tokens.color.line,
           borderRadius: tokens.radius.input,
           paddingHorizontal: tokens.space.md,
-          backgroundColor: tokens.color.bg,
+          backgroundColor: props.variant === "sheet" ? tokens.color.surface : tokens.color.bg,
         }}
       >
         <Icon name="search" size={16} color={tokens.color.muted} />

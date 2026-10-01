@@ -21,7 +21,17 @@ type Pt = { lat: number; lng: number };
 const ll = (p: Pt): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
 /** 20px tag, radius 6, 11/700, .04em: PARCEL accent-wash / accent-text; FOOD surface + line / ink. */
-export function JTag({ food }: { food?: boolean }): React.ReactElement {
+export type JobKind = "parcel" | "food" | "shop";
+
+/**
+ * The job tag: PARCEL (accent wash) · FOOD (surface + line) as drawn; SHOP (owner 2026-10-01: food, shop
+ * and parcel jobs all show on the board, tagged) in the highlight wash, the board's third tone.
+ */
+export function JTag({ food, kind }: { food?: boolean; kind?: JobKind }): React.ReactElement {
+  const k: JobKind = kind ?? (food ? "food" : "parcel");
+  const bg = k === "food" ? tokens.color.surface : k === "shop" ? tokens.color.highlightWash : tokens.color.accentWash;
+  const fg = k === "food" ? tokens.color.ink : k === "shop" ? tokens.color.highlightInk : tokens.color.accentText;
+  const label = k === "food" ? R.food : k === "shop" ? R.shop : R.parcel;
   return (
     <View
       style={{
@@ -29,18 +39,17 @@ export function JTag({ food }: { food?: boolean }): React.ReactElement {
         justifyContent: "center",
         paddingHorizontal: 7,
         borderRadius: 6,
-        backgroundColor: food ? tokens.color.surface : tokens.color.accentWash,
-        borderWidth: food ? 1 : 0,
-        borderColor: tokens.color.line,
+        backgroundColor: bg,
+        borderWidth: k === "parcel" ? 0 : 1,
+        borderColor: k === "shop" ? tokens.color.highlightBorder : tokens.color.line,
         alignSelf: "flex-start",
       }}
     >
-      <Text style={{ fontSize: 11, fontWeight: tokens.font.weight.bold, letterSpacing: 0.44, color: food ? tokens.color.ink : tokens.color.accentText }}>{food ? R.food : R.parcel}</Text>
+      <Text style={{ fontSize: 11, fontWeight: tokens.font.weight.bold, letterSpacing: 0.44, color: fg }}>{label}</Text>
     </View>
   );
 }
 
-/** Dot / square 10 + one-line name. */
 export function StopLine({ drop, name, size = 14 }: { drop?: boolean; name: string; size?: number }): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -60,6 +69,8 @@ export interface BoardJob {
   tripKm: number | null;
   item: string;
   asking: number;
+  /** Which board tag the card wears; parcel when absent. */
+  kind?: JobKind;
 }
 
 /** The board card: tag · "0.8 km to pickup" · fare + "asking"; stops; meta; one "Make an offer". */
@@ -83,7 +94,7 @@ export const BoardJobCard = React.memo(function BoardJobCard({
     <Tappable
       onPress={onSelect}
       disabled={!onSelect}
-      accessibilityLabel={`${R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`}
+      accessibilityLabel={`${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`}
       style={{
         borderWidth: selected ? 2 : 1,
         borderColor: selected ? tokens.color.accentText : tokens.color.line,
@@ -94,14 +105,14 @@ export const BoardJobCard = React.memo(function BoardJobCard({
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <JTag />
+        <JTag kind={job.kind} />
         <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, ...TABULAR }} numberOfLines={1}>
           {job.toPickupKm != null ? `${km(job.toPickupKm)} ` : ""}
           {job.toPickupKm != null ? <Text style={{ color: tokens.color.muted, fontWeight: tokens.font.weight.regular }}>{R.toPickup}</Text> : null}
         </Text>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={{ fontSize: 20, lineHeight: 24, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{usd(offer ? offer.fare : job.asking)}</Text>
-          <Text style={{ fontSize: 11, lineHeight: 14, color: tokens.color.muted }}>{offer ? R.offerSent.toLowerCase() : R.asking}</Text>
+          <Text style={{ fontSize: 11, lineHeight: 14, color: tokens.color.muted }}>{offer ? R.offerSent.toLowerCase() : job.kind === "food" ? R.foodFare.toLowerCase() : R.asking}</Text>
         </View>
       </View>
       <View style={{ gap: 4 }}>
@@ -121,7 +132,7 @@ export const BoardJobCard = React.memo(function BoardJobCard({
         </View>
       ) : onOffer ? (
         <View style={{ flexDirection: "row" }}>
-          <SmBtn kind="fill" flex={1} label={R.makeOffer} onPress={onOffer} />
+          <SmBtn kind="fill" flex={1} label={job.kind === "food" ? R.accept : R.makeOffer} onPress={onOffer} />
         </View>
       ) : null}
     </Tappable>

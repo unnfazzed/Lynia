@@ -2,9 +2,11 @@ import { normalizeNationalId } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { useQuery } from "@tanstack/react-query";
 import React, { useEffect, useRef, useState } from "react";
 import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
+import { getMe } from "../../src/api/auth";
 import { becomeRider, completeProfile } from "../../src/api/riders";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { runKycVerification } from "../../src/kyc/verify";
@@ -14,6 +16,8 @@ import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft, type Pen
 import { type ImageContentType, requestKycPhotoUpload, uploadImage } from "../../src/api/uploads";
 import { AppBar, Button, Card, Field, Heading, Icon, isTestBuild, Label, Screen, Sub, useActionError } from "../../src/ui";
 import { PhotoCaptureGuide, PhotoReviewCard } from "../../src/ui/rider/PhotoReviewCard";
+import { RO } from "../../src/ui/onboarding/copy";
+import { RiderIntro } from "../../src/ui/onboarding/rider";
 
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
@@ -59,6 +63,15 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const [reviewAsset, setReviewAsset] = useState<{ asset: UploadImageSource; source: "camera" | "library" } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
+  // Calm Mint v2 (D-55): R1 "Why ride" first, then the rider photo. A restored draft skips straight to
+  // the photo step — the rider already said yes once.
+  const [step, setStep] = useState<"intro" | "details">("intro");
+  // The name and ID already on the account (C5 collects the name; the ID is only on file for accounts
+  // that gave one). Only what is missing is asked for here.
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const me = meQ.data;
+  const needName = !!me && (!me.firstName?.trim() || !me.lastName?.trim());
+  const needId = !!me && !me.idNumber;
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
   const hydrated = useRef(false);
   // C-O8 (LC-C11): mirrors the draft's `pendingPhoto` field so the generic field-persistence effect
@@ -84,6 +97,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
         setPhotoKey(d.photoKey);
         setPhotoUri(d.photoUri);
         setDraftRestored(true);
+        setStep("details");
         // C-O8 (LC-C11): a photo capture that never finished uploading before the app was killed —
         // offer the same one-tap "Try again" resume a network-only failure already gets, with the
         // SAME captured asset, instead of forcing a fresh camera shot.
@@ -114,11 +128,12 @@ export default function BecomeRiderScreen(): React.ReactElement {
     void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey, photoUri, pendingPhoto: pendingPhotoRef.current });
   }, [firstName, lastName, idNumber, bikeReg, photoKey, photoUri]);
 
+  // The bike plate is optional since D-55 (added later in Account → Bike & documents); only a missing
+  // name or national ID is asked for, because rider onboarding needs both on the profile.
   const canSubmit =
-    firstName.trim().length > 0 &&
-    lastName.trim().length > 0 &&
-    idNumber.trim().length >= 4 &&
-    bikeReg.trim().length >= 3 &&
+    !!me &&
+    (!needName || (firstName.trim().length > 0 && lastName.trim().length > 0)) &&
+    (!needId || idNumber.trim().length >= 4) &&
     photoKey != null &&
     !uploading;
 
@@ -231,8 +246,14 @@ export default function BecomeRiderScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await completeProfile({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: normalizeNationalId(idNumber) });
-      const res = await becomeRider({ bikeReg: bikeReg.trim(), photoUrl: photoKey });
+      if (needName || needId) {
+        await completeProfile({
+          firstName: (needName ? firstName : me?.firstName ?? "").trim(),
+          lastName: (needName ? lastName : me?.lastName ?? "").trim(),
+          idNumber: normalizeNationalId(needId ? idNumber : me?.idNumber ?? ""),
+        });
+      }
+      const res = await becomeRider({ ...(bikeReg.trim().length >= 3 ? { bikeReg: bikeReg.trim() } : {}), photoUrl: photoKey });
       // KYC is submitted — the draft has served its purpose. Wipe the stored national ID immediately
       // rather than leaving it in the keystore any longer than needed.
       void clearKycDraft();
@@ -245,10 +266,14 @@ export default function BecomeRiderScreen(): React.ReactElement {
         res.sessionToken || res.verificationUrl
           ? await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl })
           : null;
+      // Calm Mint v2 (D-55): a check that went through lands on the board, which now shows R2 "Rider
+      // setup" while it is reviewed (or R3 once verified). The other outcomes keep their own line here.
+      if (res.kycStatus === "verified" || (res.mode !== "manual" && launch?.outcome === "completed")) {
+        router.replace("/rider");
+        return;
+      }
       setPending(
-        res.kycStatus === "verified"
-          ? "You're verified — you can go online."
-          : res.mode === "manual"
+        res.mode === "manual"
             // BH-03: manual mode has no vendor step at all — describing one here would name a step
             // that never happened.
             ? "Verification submitted. Our team will review it and notify you — no action needed from you."
@@ -278,6 +303,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
     }
   };
 
+  if (step === "intro" && !pending) {
+    return <RiderIntro onStart={() => setStep("details")} />;
+  }
+
   return (
     <Screen>
       {/* Back-only AppBar chrome: the KYC flow keeps its in-body Heading (kit KYC layout). Return to
@@ -287,8 +316,8 @@ export default function BecomeRiderScreen(): React.ReactElement {
           Falls back to /rider only when there's no history to pop (e.g. an unexpected cold-start entry). */}
       <AppBar onBack={() => (router.canGoBack() ? router.back() : router.replace("/rider"))} />
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Heading>Become a rider</Heading>
-        <Sub>Verify your ID and register your bike to start accepting deliveries.</Sub>
+        <Heading>{RO.photoTitle}</Heading>
+        <Sub>{RO.photoSub}</Sub>
 
         {draftRestored && !pending ? (
           <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginTop: tokens.space.xs }}>
@@ -320,16 +349,24 @@ export default function BecomeRiderScreen(): React.ReactElement {
           />
         ) : (
           <>
+            {needName || needId ? (
+              <Card>
+                {needName ? (
+                  <>
+                    <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
+                    <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
+                  </>
+                ) : null}
+                {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63123456A12"),
+                    so a number-pad would make the letter suffix untypeable. Only asked when the account
+                    has none on file (C5 no longer collects it, D-55); rider onboarding needs it for the
+                    one-ID-one-account check. */}
+                {needId ? (
+                  <Field label={RO.idNeeded} value={idNumber} onChangeText={setIdNumber} placeholder="63123456A42" maxLength={40} hint={RO.idNeededHint} />
+                ) : null}
+              </Card>
+            ) : null}
             <Card>
-              <Field label="First name" value={firstName} onChangeText={setFirstName} maxLength={80} />
-              <Field label="Last name" value={lastName} onChangeText={setLastName} maxLength={80} />
-              {/* Default (text) keyboard — Zimbabwean national IDs are alphanumeric (e.g. "63123456A12"),
-                  so a number-pad would make the letter suffix untypeable and block KYC submission.
-                  Placeholder is dash-free; spaces/dashes are normalised out on submit. */}
-              <Field label="National ID number" value={idNumber} onChangeText={setIdNumber} placeholder="63123456A42" maxLength={40} />
-            </Card>
-            <Card>
-              <Field label="Bike registration" value={bikeReg} onChangeText={setBikeReg} placeholder="ABZ 1234" maxLength={20} />
               <Label>Your photo</Label>
               {photoUri ? (
                 <Image
@@ -379,7 +416,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
                 <Text style={{ flex: 1, fontSize: 13, color: tokens.color.muted, lineHeight: 20 }}>
                   {isTestBuild()
                     ? "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online."
-                    : "We verify your national ID with an ID photo and a quick selfie check. We store your ID number, bike reg and photo to keep deliveries safe; we don't share them with customers."}
+                    : "We verify your national ID with an ID photo and a quick selfie check. We store your ID number and photo to keep deliveries safe; we don't share them with customers."}
                 </Text>
               </View>
             </Card>

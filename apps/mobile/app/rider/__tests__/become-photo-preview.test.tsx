@@ -1,3 +1,4 @@
+import React from "react";
 /**
  * B-O11 (LC lane B, Go-class runtime perf): the KYC photo preview must render the already-
  * downscaled upload asset (`downscaleForUpload`'s ~1280px/0.7 JPEG output), not the original
@@ -50,6 +51,36 @@ jest.mock("../../../src/api/riders", () => ({
 
 import BecomeRiderScreen from "../become";
 
+// Calm Mint v2 (D-55): the screen opens on R1 "Why ride" unless a draft is restored; it reads the
+// account through react-query and lays out inside a SafeAreaView.
+jest.mock("../../../src/api/auth", () => ({
+  getMe: jest.fn().mockResolvedValue({ profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, rider: null }),
+}));
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+const BECOME_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
+function becomeEl(): React.ReactElement {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <SafeAreaProvider initialMetrics={BECOME_METRICS}>
+      <QueryClientProvider client={qc}>
+        <BecomeRiderScreen />
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+}
+/** Tap past R1 when the screen opened on it. */
+async function passIntro(tree: renderer.ReactTestRenderer): Promise<void> {
+  const start = tree.root.findAll((n) => n.props.accessibilityLabel === "Start ID check" && typeof n.props.onPress === "function")[0];
+  if (!start) return;
+  await act(async () => {
+    start.props.onPress();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+
 function findByText(tree: renderer.ReactTestRenderer, text: string): renderer.ReactTestInstance {
   const node = tree.root.findAll((n) => n.props.children === text)[0];
   if (!node) throw new Error(`no node with text "${text}"`);
@@ -74,12 +105,13 @@ describe("BecomeRiderScreen — KYC photo preview uses the downscaled asset", ()
   it("renders the downscaled upload uri, not the original camera-capture uri", async () => {
     let tree!: renderer.ReactTestRenderer;
     act(() => {
-      tree = renderer.create(<BecomeRiderScreen />);
+      tree = renderer.create(becomeEl());
     });
     // Let the initial draft-hydration effect settle before interacting.
     await act(async () => {
       await Promise.resolve();
     });
+    await passIntro(tree);
 
     await act(async () => {
       press(findByText(tree, "Take photo"));

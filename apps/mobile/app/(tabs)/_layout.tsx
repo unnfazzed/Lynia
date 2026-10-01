@@ -7,7 +7,7 @@ import { APP_TABS, ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges } from
  * Home | Orders | Account. Routes inside this `(tabs)` group keep the segment name in their path (e.g.
  * `app/(tabs)/home.tsx` → `/home`) — the group folder itself is invisible to the URL.
  *
- * `tabBar` renders the tab bar v1 floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-55).
+ * `tabBar` renders the tab bar v1 floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56).
  * It floats over the screens, so `TabBarSpaceProvider` hands each tab root its bottom reserve
  * (`useTabBarSpace`). `tab.id` is deliberately the route's file name, so a press needs no lookup table.
  */

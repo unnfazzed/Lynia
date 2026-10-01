@@ -1,6 +1,7 @@
 import type { MerchantHours } from "@lynia/shared";
 import {
   LIVE_ORDER_STEP_COUNT,
+  liveBarModel,
   liveOrderCardModel,
   type LiveOrderLike,
   liveOrderStepIndex,
@@ -125,5 +126,45 @@ describe("restaurantCardStatus", () => {
 
   it("reports open with no note when a merchant hasn't set hours (fail-open per restaurant-hours.ts)", () => {
     expect(restaurantCardStatus(null, now)).toEqual({ closed: false, note: null });
+  });
+});
+
+describe("liveBarModel (Calm Mint v2 H1, D-55)", () => {
+  const order = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "o1",
+      status: "en_route_dropoff",
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "CBD" },
+      dropoff: { point: { lat: -17.8, lng: 31.04 }, landmark: "Avondale" },
+      rider: null,
+      agreedFare: "3.00",
+      proposedFare: "3.00",
+      ...over,
+    }) as Parameters<typeof liveBarModel>[0][number];
+  const label = (s: string): string => s.replace(/_/g, " ");
+
+  it("is null with no running orders", () => {
+    expect(liveBarModel([], label, () => null)).toBeNull();
+  });
+
+  it("names the rider once the parcel is moving — the drawn 'Tendai is on the way'", () => {
+    const m = liveBarModel([order()], label, () => "Tendai")!;
+    expect(m.title).toBe("Tendai is on the way");
+    expect(m.sub).toBe("Parcel to Avondale");
+    expect(m.more).toBe(0);
+    expect(m.route).toBe("/order/o1");
+  });
+
+  it("falls back to the status phrase before pickup, and with no cached name", () => {
+    expect(liveBarModel([order({ status: "en_route_pickup" })], () => "heading to pickup", () => "Tendai")!.title).toBe("Heading to pickup");
+    expect(liveBarModel([order()], label, () => null)!.title).toBe("On the way");
+  });
+
+  it("collapses 2+ orders into one bar: newest leads, '+N' counts the rest, tap opens Orders", () => {
+    const m = liveBarModel([order({ id: "a", orderType: "merchant", merchantName: "Golden Bao", status: "picked_up" }), order({ id: "b" }), order({ id: "c" })], label, () => null)!;
+    expect(m.sub).toBe("Golden Bao");
+    expect(m.icon).toBe("utensils");
+    expect(m.more).toBe(2);
+    expect(m.route).toBe("/orders");
   });
 });

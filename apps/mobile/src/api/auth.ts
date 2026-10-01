@@ -58,7 +58,7 @@ export interface Me {
   /** S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen). */
   onHold?: boolean;
   rider: {
-    bikeReg: string;
+    bikeReg: string | null;
     kycStatus: "pending" | "verified" | "failed" | "expired";
     // KYC decline detail (A-02), exposed on the rider/me path. `kycDeclineReason` is the canonical
     // reason for a `failed` check (null while pending/verified); `kycAttempts` is how many times the

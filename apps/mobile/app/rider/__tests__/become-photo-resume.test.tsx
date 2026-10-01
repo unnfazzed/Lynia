@@ -1,3 +1,4 @@
+import React from "react";
 /**
  * C-O8 (LC-C11): the become-a-rider KYC form's photo capture only committed `photoUri`/`photoKey`
  * to the durable draft on a SUCCESSFUL upload — an app kill strictly between firing the presigned-
@@ -64,6 +65,36 @@ jest.mock("../../../src/api/riders", () => ({
 
 import BecomeRiderScreen from "../become";
 
+// Calm Mint v2 (D-55): the screen opens on R1 "Why ride" unless a draft is restored; it reads the
+// account through react-query and lays out inside a SafeAreaView.
+jest.mock("../../../src/api/auth", () => ({
+  getMe: jest.fn().mockResolvedValue({ profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, rider: null }),
+}));
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+const BECOME_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
+function becomeEl(): React.ReactElement {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <SafeAreaProvider initialMetrics={BECOME_METRICS}>
+      <QueryClientProvider client={qc}>
+        <BecomeRiderScreen />
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+}
+/** Tap past R1 when the screen opened on it. */
+async function passIntro(tree: renderer.ReactTestRenderer): Promise<void> {
+  const start = tree.root.findAll((n) => n.props.accessibilityLabel === "Start ID check" && typeof n.props.onPress === "function")[0];
+  if (!start) return;
+  await act(async () => {
+    start.props.onPress();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+
 function storedDraft(): { pendingPhoto: unknown; photoKey: unknown } {
   const raw = secureStore["lynia.kycDraft.v1"];
   if (!raw) throw new Error("no draft persisted");
@@ -104,9 +135,10 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
   it("offers a resume with the same captured asset after a kill mid-upload, instead of forcing a re-shoot", async () => {
     let tree1!: renderer.ReactTestRenderer;
     act(() => {
-      tree1 = renderer.create(<BecomeRiderScreen />);
+      tree1 = renderer.create(becomeEl());
     });
     await flush(); // let the mount-time draft-load effect settle (nothing to restore yet)
+    await passIntro(tree1);
 
     press(findByText(tree1, "Take photo"));
     await flush(); // capture resolves and lands on the `photo_preview` review step
@@ -126,7 +158,7 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
     // SecureStore draft — the store, not JS memory, is what survives a real kill.
     let tree2!: renderer.ReactTestRenderer;
     act(() => {
-      tree2 = renderer.create(<BecomeRiderScreen />);
+      tree2 = renderer.create(becomeEl());
     });
     await flush();
 
@@ -149,9 +181,10 @@ describe("BecomeRiderScreen — KYC photo upload survives an app kill (C-O8/LC-C
   it("clears the persisted pendingPhoto once the upload actually succeeds", async () => {
     let tree!: renderer.ReactTestRenderer;
     act(() => {
-      tree = renderer.create(<BecomeRiderScreen />);
+      tree = renderer.create(becomeEl());
     });
     await flush();
+    await passIntro(tree);
 
     press(findByText(tree, "Take photo"));
     await flush(); // `photo_preview` review step

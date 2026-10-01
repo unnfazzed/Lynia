@@ -36,8 +36,9 @@ let blurHome: (() => void) | null = null;
 // fetch when the cache is still fresh.
 let refocusHome: (() => void) | null = null;
 
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
     React_.useEffect(() => {
@@ -48,16 +49,19 @@ jest.mock("expo-router", () => ({
     }, []);
   },
 }));
+const mockGetActiveOrder = jest.fn(async () => null as unknown);
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
+  getActiveOrder: () => mockGetActiveOrder(),
 }));
 // The 8c header reads the caller's first name and unread count. Both must be MOCKED, not merely
 // left to fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability`
 // -> react-query's `onlineManager` offline — and `onlineManager` is a process-wide singleton, so one
 // failed request PAUSES every query in every later test in this file (the active-orders query then
 // never fires and the whole suite reads as "the screen renders nothing").
+let mockMe: Record<string, unknown> = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
 jest.mock("../../../src/api/auth", () => ({
-  getMe: async () => ({ profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." }),
+  getMe: async () => mockMe,
 }));
 jest.mock("../../../src/api/notifications", () => ({
   getNotificationsUnreadCount: async () => ({ count: 0 }),
@@ -129,30 +133,41 @@ afterEach(() => {
   blurHome = null;
   refocusHome = null;
   mockSecureStore = {};
+  mockMe = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
+  mockGetActiveOrder.mockImplementation(async () => null);
   jest.clearAllMocks();
 });
 
 describe("(tabs)/home.tsx — Home tab states", () => {
-  it("loading: shows a skeleton, not a blank gap, while the first fetch is in flight", async () => {
-    mockGetActiveCustomerOrders.mockReturnValue(new Promise(() => {})); // never resolves
+  it("no address: the rails give way to the H6 card (Calm Mint v2, D-55)", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
     activeTree = renderHome();
-    const loading = activeTree.root.findAll((n) => n.props.accessibilityLabel === "Loading");
-    expect(loading.length).toBeGreaterThan(0);
+    await settle();
+    // Location is denied with no last-known fix in this suite, so the header has no address yet.
+    expect(has(activeTree, "NO ADDRESS YET")).toBe(true);
+    expect(has(activeTree, "Set your location")).toBe(true);
+    expect(has(activeTree, "Where should we deliver?")).toBe(true);
+    expect(has(activeTree, "Use my location")).toBe(true);
+    expect(has(activeTree, "Type an address")).toBe(true);
+    // The four service tiles are live — no SOON chip is drawn.
+    for (const label of ["Send", "Restaurants", "Shops", "Pharmacy"]) expect(has(activeTree, label)).toBe(true);
+    expect(has(activeTree, "SOON")).toBe(false);
   });
 
-  it("default: an active parcel renders the 8c tracker pill, not the reorder rail", async () => {
+  it("default: an active parcel renders the one live-order bar", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([activeOrderFixture()]);
     activeTree = renderHome();
     await settle();
-    // home-8c grammar: "‹who› · ‹phrase›" on ONE line. No rider identity is cached for this order,
-    // so `who` falls back to service copy; the phrase is the app's shipped status vocabulary because
-    // the rider is still heading to the PICKUP (the mock's drawn "on the way" is the drop-off leg).
-    expect(has(activeTree, /Your parcel · Heading to pickup/)).toBe(true);
-    // The pre-8c meta line is not drawn by 8c, so it is not rendered — the tracker screen owns it.
+    // No rider identity is cached and the rider is still heading to the PICKUP, so the title is the
+    // shipped status phrase; the handoff's "‹Name› is on the way" is the drop-off leg.
+    expect(has(activeTree, "Heading to pickup")).toBe(true);
+    expect(has(activeTree, "Parcel to Office")).toBe(true);
+    expect(has(activeTree, /\+\d order/)).toBe(false);
+    // The pre-8c meta line is not drawn, so it is not rendered — the tracker screen owns it.
     expect(has(activeTree, /Delivery code/)).toBe(false);
   });
 
-  it("RC.home: a food order and a parcel running side-by-side each render their own pill, newest first", async () => {
+  it("two running orders collapse into ONE bar led by the newest, with a +1 order pill", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([
       activeOrderFixture({
         id: "order-food",
@@ -166,12 +181,11 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     ]);
     activeTree = renderHome();
     await settle();
-    // Food pill: the restaurant stands in for the rider's name (none is cached for this order), and
-    // a picked-up order is the mock's drawn state, so the phrase is its verbatim "on the way".
-    expect(has(activeTree, /Sadza Republic · on the way/)).toBe(true);
-    // Parcel pill alongside it — the two jobs never collapse into one pill.
-    expect(has(activeTree, /Your parcel · on the way/)).toBe(true);
-    // 8c draws no payment/total meta line on the home pill.
+    expect(has(activeTree, "On the way")).toBe(true);
+    expect(has(activeTree, "Sadza Republic")).toBe(true);
+    expect(has(activeTree, "+1 order")).toBe(true);
+    // README §2.6: one bar only — the second order is not drawn as its own row.
+    expect(has(activeTree, "Parcel to Office")).toBe(false);
     expect(has(activeTree, /Cash at the door/)).toBe(false);
   });
 
@@ -304,5 +318,31 @@ describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant
     nowSpy.mockRestore();
 
     expect(mockGetActiveCustomerOrders).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("(tabs)/home.tsx — Rider v2 C5 live-job bar (ledger D-54)", () => {
+  it("a rider on the customer side mid-job sees the job bar, and it returns to the job", async () => {
+    mockMe = { profileId: "p1", role: "rider", firstName: "Tendai", lastName: "M.", rider: { kycStatus: "verified" } };
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    mockGetActiveOrder.mockImplementation(async () => activeOrderFixture({ status: "en_route_dropoff", orderType: "parcel" }));
+    activeTree = renderHome();
+    await settle();
+    await settle();
+
+    const bar = activeTree.root.findAll((n) => n.props.label === "Job in progress · Heading to drop-off" && typeof n.props.onPress === "function");
+    expect(bar.length).toBe(1);
+    act(() => bar[0]!.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/rider/job");
+  });
+
+  it("a customer who isn't a rider never reads the rider job and sees no bar", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    activeTree = renderHome();
+    await settle();
+    await settle();
+
+    expect(mockGetActiveOrder).not.toHaveBeenCalled();
+    expect(has(activeTree, "Job in progress")).toBe(false);
   });
 });

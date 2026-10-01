@@ -64,7 +64,7 @@ export default function ProfileScreen(): React.ReactElement {
   // screen behind the identity card never contradicts the one in front of it.
   const rows: AccountRow[] = asRider
     ? [
-        { icon: "id-card", label: "Bike & documents", sub: bikeDocsSub(rider?.kycStatus, rider?.bikeReg), onPress: () => router.push("/rider/documents") },
+        { icon: "id-card", label: "Bike & documents", sub: bikeDocsSub(rider?.kycStatus, rider?.bikeReg ?? undefined), onPress: () => router.push("/rider/documents") },
         { icon: "history", label: "Job history", sub: "Parcels and food in one list", onPress: () => router.push("/history") },
         { icon: "wallet", label: "Money", sub: "Balance, cash held, commission", onPress: () => router.push("/rider/money") },
         { icon: "bell", label: "Notifications", sub: notificationsRowSub(unreadCount), onPress: () => router.push("/notifications") },

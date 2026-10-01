@@ -1,4 +1,4 @@
-// Tab bar v1 (ledger D-55; packages/design/handoff/tab-bar-v1/): wraps an existing tab-root fixture in
+// Tab bar v1 (ledger D-56; packages/design/handoff/tab-bar-v1/): wraps an existing tab-root fixture in
 // the real tab shell — the bar-space provider + the floating `TabBar` — so tools/parity/shoot-tab-bar.mjs
 // shows the bar over the actual screen, exactly as the `(tabs)` layouts mount it.
 import * as React from "react";

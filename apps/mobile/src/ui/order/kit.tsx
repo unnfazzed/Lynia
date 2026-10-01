@@ -150,7 +150,7 @@ export function CtaButton({
 
 /** The pinned CTA bar (Send v2's): white, sheet shadow, padding 10 16 12; stacked or one row, optional hint. */
 export function CtaBar({ hint, row, dock, children }: { hint?: string; row?: boolean; dock?: number; children: React.ReactNode }): React.ReactElement {
-  // `dock` (tab bar v1, D-55): on a tab root the CTA panel becomes the dock — one white panel whose
+  // `dock` (tab bar v1, D-56): on a tab root the CTA panel becomes the dock — one white panel whose
   // bottom padding holds the floating tab bar: CTA → 12 → bar → 12 + inset. Pass the bar's reserve
   // (`useTabBarSpace()`); content never shows between the CTA and the bar.
   const dockPad = dock ? { paddingTop: 12, paddingBottom: 12 + dock } : null;

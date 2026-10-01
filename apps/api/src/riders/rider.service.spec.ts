@@ -274,6 +274,19 @@ describe("RiderService.becomeRider", () => {
     expect(res).toEqual({ kycStatus: "pending", mode: "manual", verificationUrl: undefined });
   });
 
+  it("registers a rider with no bike plate (D-55: the plate is added later) — stores null", async () => {
+    const create = vi.fn(async () => ({}));
+    const prisma = {
+      rider: { findUnique: async () => null, create },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      $transaction: async (arg: unknown) => (Array.isArray(arg) ? arg : []),
+    };
+    const s = svc(prisma, { KYC_MODE: "manual" });
+    await s.becomeRider("p1", { photoUrl: "kyc/p1/photo.jpg" });
+    const written = JSON.stringify(create.mock.calls);
+    expect(written).toContain('"bikeReg":null');
+  });
+
   it("maps a concurrent-create P2002 to a 409, not a raw 500 (DS13-06)", async () => {
     // The findUnique pre-check races a parallel become; the rider PK is the real guard. Its P2002 must
     // surface as the same ConflictException the pre-check raises, not leak as an unhandled 500.

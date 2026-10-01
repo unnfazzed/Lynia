@@ -8,7 +8,7 @@ import { Tappable } from "../Tappable";
 import { useReduceMotion } from "../useReduceMotion";
 
 /*
- * Tab bar v1 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-55). A port of the kit's
+ * Tab bar v1 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
  * `components/shell/TabBar.jsx` (the handoff's source of truth): geometry, art, badge logic and the
  * screen-reader strings come from there verbatim. Change a value here only together with the handoff.
  */

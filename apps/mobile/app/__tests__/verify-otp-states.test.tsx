@@ -1,123 +1,139 @@
 /**
- * The OTP screen's four drawn states (journey C·OTP + screens-safety.jsx `OtpState`). Each is its own
- * gallery screen, so each is pinned here against the mock it must match:
- *
- *   LJ.otp          idle       — the "SMS can take a minute on a busy network." hint under the field,
- *                                the green "Didn't get it? Resend code" link.
- *   LJ.otp_cooldown cooldown   — no hint; a muted clock row reading "Resend in 0:42".
- *   LJ.otp_resent   resent     — the mint "A fresh code is on its way — check your messages." banner,
- *                                and the row reads "Resend again in …".
- *   LJ.otp_locked   locked     — "That code has expired." on the field, the lockout explainer, and the
- *                                primary becomes "Send a fresh code" with NO countdown row.
- *
- * The hint is drawn ONLY in the idle mock — the countdown row / banner / lockout card are the guidance
- * in the other three — so its absence there is asserted, not incidental ("not drawn ⇒ not rendered").
+ * C4 · Code (Calm Mint v2, packages/design/handoff/calm-mint-v2-2026-10; ledger D-55): six boxes, no
+ * Verify button — the sixth digit submits; "Resend in m:ss" then "Resend on WhatsApp"; a wrong code
+ * shows the danger line; an expired / locked code shows "That code has expired" and "Send a new code".
+ * The channel line follows the real send (D-40): "Sent on WhatsApp" or, on Bird's fallback, "Sent by SMS".
  */
 import renderer, { act } from "react-test-renderer";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-// mock-prefixed per Jest's out-of-scope-variable rule for hoisted jest.mock factories (same pattern
-// as mockReplace in app/profile/__tests__/setup.test.tsx) — mutable so individual tests can vary the
-// route params without re-declaring the whole expo-router mock.
-let mockLocalSearchParams: { phone: string; deliveryChannel?: string } = { phone: "+263772451180" };
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
+
+let mockLocalSearchParams: { phone: string; deliveryChannel?: string; intent?: string; devCode?: string } = { phone: "+263772451180" };
+const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: jest.fn(), replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), replace: mockReplace, push: jest.fn(), canGoBack: () => true }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
-jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ signIn: jest.fn() }) }));
-jest.mock("../../src/api/auth", () => ({ requestOtp: jest.fn(async () => undefined), verifyOtp: jest.fn(async () => ({})) }));
+const mockSignIn = jest.fn(async () => undefined);
+jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ signIn: mockSignIn }) }));
+const mockVerifyOtp = jest.fn();
+jest.mock("../../src/api/auth", () => ({
+  requestOtp: jest.fn(async () => ({ deliveryChannel: "whatsapp" })),
+  verifyOtp: (...a: unknown[]) => mockVerifyOtp(...a),
+}));
+let mockRole: string | null = null;
+const mockSaveRole = jest.fn(async (_role: string) => undefined);
+jest.mock("../../src/auth/session", () => ({
+  loadRolePreference: async () => mockRole,
+  saveRolePreference: (r: string) => mockSaveRole(r),
+}));
 
-beforeEach(() => {
-  mockLocalSearchParams = { phone: "+263772451180" };
-});
-
+import { ApiError } from "../../src/api/client";
 import VerifyScreen, { type VerifyScreenProps } from "../verify";
 
-/**
- * Render, snapshot the tree as text, then unmount: the screen runs a 1s wall-clock interval for the
- * cooldown, and leaving it mounted past the test leaks a timer that re-renders after Jest tears the
- * environment down.
- */
-function render(props: VerifyScreenProps): string {
-  let tree!: renderer.ReactTestRenderer;
+let live: renderer.ReactTestRenderer | null = null;
+function mount(props: VerifyScreenProps = {}): renderer.ReactTestRenderer {
   act(() => {
-    tree = renderer.create(<VerifyScreen {...props} />);
+    live = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <VerifyScreen {...props} />
+      </SafeAreaProvider>,
+    );
   });
-  const out = JSON.stringify(tree.toJSON());
-  act(() => tree.unmount());
-  return out;
+  return live!;
+}
+const text = (t: renderer.ReactTestRenderer): string => JSON.stringify(t.toJSON());
+async function type(t: renderer.ReactTestRenderer, value: string): Promise<void> {
+  const input = t.root.find((n) => n.props?.accessibilityLabel === "6-digit code" && typeof n.props?.onChangeText === "function");
+  await act(async () => {
+    (input.props.onChangeText as (v: string) => void)(value);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  });
 }
 
-const HINT = "SMS can take a minute on a busy network.";
+beforeEach(() => {
+  mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
+  mockRole = null;
+});
+afterEach(() => {
+  if (live) act(() => live!.unmount());
+  live = null;
+  jest.clearAllMocks();
+});
 
-describe("OTP screen states match their mocks", () => {
-  it("idle (LJ.otp): the field hint and the tappable resend link", () => {
-    const out = render({ initialCooldownS: 0 });
-    expect(out).toContain(HINT);
-    expect(out).toContain("Didn");
-    expect(out).toContain("Resend code");
-    expect(out).toContain("Verify");
+describe("C4 · Code — drawn states", () => {
+  it("idle: the drawn copy, six boxes, no Verify button", () => {
+    const out = text(mount({ initialCooldownS: 42 }));
+    expect(out).toContain("Enter the code");
+    expect(out).toContain("WhatsApp");
+    expect(out).toContain("+263 77 245 1180");
+    expect(out).toContain("Change");
+    expect(out).toContain("Resend in 0:42");
+    expect(out).toContain("Resend on WhatsApp");
+    expect(out).toContain("Fills in by itself when the message arrives. We check it automatically.");
+    expect(out).not.toContain("Verify");
   });
 
-  it("cooldown (LJ.otp_cooldown): the countdown row, and no hint", () => {
-    const out = render({ initialCooldownS: 42 });
-    expect(out).toContain("0:42");
-    expect(out).toContain("Resend ");
-    expect(out).not.toContain(HINT);
-  });
-
-  it("resent (LJ.otp_resent): the fresh-code banner plus 'Resend again in'", () => {
-    const out = render({ initialResent: true, initialCooldownS: 58 });
-    expect(out).toContain("A fresh code is on its way — check your messages.");
-    expect(out).toContain("again ");
-    expect(out).toContain("0:58");
-    expect(out).not.toContain(HINT);
-  });
-
-  it("locked (LJ.otp_locked): expired error, lockout copy, 'Send a fresh code', no countdown", () => {
-    const out = render({ initialLocked: true, initialCooldownS: 42 });
-    expect(out).toContain("That code has expired.");
-    expect(out).toContain("Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.");
-    expect(out).toContain("Send a fresh code");
-    expect(out).not.toContain(HINT);
+  it("locked: 'That code has expired' and 'Send a new code', no countdown", () => {
+    const out = text(mount({ initialLocked: true, initialCooldownS: 42 }));
+    expect(out).toContain("That code has expired");
+    expect(out).toContain("Send a new code");
     expect(out).not.toContain("0:42");
   });
 
-  it("defaults are the app's own behaviour: a full cooldown, no banner, not locked", () => {
-    const out = render({});
-    expect(out).toContain("1:00");
-    expect(out).not.toContain("A fresh code is on its way");
-    expect(out).not.toContain("That code has expired.");
+  it("says 'Sent by SMS' when Bird fell back to SMS (D-40)", () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "sms" };
+    const out = text(mount({ initialCooldownS: 0 }));
+    expect(out).toContain("Sent by ");
+    expect(out).toContain("SMS");
   });
 });
 
-/**
- * D-40 (docs/DESIGN-DEVIATIONS.md): the screen no longer hardcodes "by SMS" — it says whichever
- * channel the API reports the code actually went out on (phone.tsx threads `deliveryChannel` from
- * requestOtp's response into this screen's route params), since Bird Verify can fall back from
- * WhatsApp to SMS on a per-send basis and a hardcoded claim would then sometimes be wrong either way.
- */
-describe("OTP screen copy reflects the real delivery channel (D-40)", () => {
-  it("says WhatsApp when requestOtp reported the code went out over WhatsApp", () => {
-    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
-    const out = render({ initialCooldownS: 0 });
-    expect(out).toContain("by WhatsApp.");
-    expect(out).toContain("WhatsApp can take a minute on a busy network.");
-    expect(out).not.toContain("by SMS.");
-    expect(out).not.toContain(HINT);
+describe("C4 · Code — the sixth digit verifies", () => {
+  const ok = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p", role: "customer", needsProfile: false };
+
+  it("a returning account with no saved role starts as a customer on Home", async () => {
+    mockVerifyOtp.mockResolvedValue(ok);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "41821");
+    expect(mockVerifyOtp).not.toHaveBeenCalled();
+    await type(t, "418210");
+    expect(mockVerifyOtp).toHaveBeenCalledWith("+263772451180", "418210");
+    expect(mockSaveRole).toHaveBeenCalledWith("customer");
+    expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("still says SMS when requestOtp reported sms (Bird's automatic fallback)", () => {
-    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "sms" };
-    const out = render({ initialCooldownS: 0 });
-    expect(out).toContain("by SMS.");
-    expect(out).toContain(HINT);
-    expect(out).not.toContain("by WhatsApp.");
+  it("the C1 rider path primes the rider permissions", async () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
+    mockVerifyOtp.mockResolvedValue(ok);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
   });
 
-  it("falls back to the SMS wording when deliveryChannel is absent (e.g. an older cached route)", () => {
-    mockLocalSearchParams = { phone: "+263772451180" };
-    const out = render({ initialCooldownS: 0 });
-    expect(out).toContain("by SMS.");
-    expect(out).toContain(HINT);
+  it("a new account goes to C5 carrying the phone, channel and intent", async () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
+    mockVerifyOtp.mockResolvedValue({ ...ok, needsProfile: true });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/profile/setup", params: { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" } });
+  });
+
+  it("a wrong code shows the danger line and is not resubmitted in a loop", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(401, "Invalid code"));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    expect(text(t)).toContain("isn’t right. Check the message and try again.");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+  });
+
+  it("an expired code switches to 'Send a new code'", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(401, "Code expired — request a new code"));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    expect(text(t)).toContain("Send a new code");
   });
 });

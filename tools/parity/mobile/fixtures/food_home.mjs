@@ -1,16 +1,14 @@
 // RC.home — the customer launcher home, populated to the MOCK'S drawn state.
 //
-// The mock is now **home 8c** (packages/design/explorations/home-redesign/home-8c.jsx, handoff at
-// packages/design/handoff/home-8c): a mint header with a time-aware greeting and the DETECTED
-// current location, three sticker service tiles, ONE live tracker pill ("Tendai M. · on the way",
-// 12 min, 5 of 7 segments) and a 2×2 "Popular near you" grid. The pre-8c state this fixture used to
-// stage (two live cards + a three-venue rail) is retired with the screen it belonged to.
+// The authority is now the Calm Mint v2 handoff (packages/design/handoff/calm-mint-v2-2026-10, H1;
+// ledger D-55): an address-first mint header, four service tiles, the "Popular restaurants" rail and
+// ONE floating live-order bar — "Tendai is on the way · Parcel to …" with a "+1 order" pill, 12 min,
+// 5 of 7 segments. The gallery's home-8c (`RC home`) is SUPERSEDED for this key (D-55), so
+// tools/parity/expected/RC.home.json is extracted but no longer asserted.
 //
-// A fixture's job is to stage the mock's drawn state, so the sample data IS the mock's sample data —
-// otherwise a rendered-conformance run reports fixture bookkeeping as parity drift. Where the app's
-// own arithmetic cannot reproduce a drawn number (the mock's "$1.00" is below the $1.50 delivery-fee
-// FLOOR the app and the server both price with), that stays a per-string `dynamic` escape in
-// tools/parity/expected/RC.home.json rather than a fixture that lies about pricing.
+// A fixture's job is to stage the mock's drawn state, so the sample data IS the mock's sample data.
+// The "$1.00" drawn delivery fee is below the $1.50 floor the app and the server both price with, so
+// the app shows its own computed fee rather than a fixture that lies about pricing.
 //
 // Feeds: GET /auth/me (the greeting name), GET /notifications/unread-count (the bell's gold dot),
 // GET /orders/mine/active-orders (the tracker pill), GET /restaurants (the venue grid).
@@ -88,6 +86,18 @@ const parcelOrder = {
   expiresAt: null,
 };
 
+// A second running job, still in the kitchen — the H1 bar's "+1 order".
+const foodOrder = {
+  ...parcelOrder,
+  id: "0a1b2c3d-0000-4000-8000-0000000000e2",
+  status: "assigned",
+  orderType: "merchant",
+  merchantName: "Golden Bao",
+  merchantPhase: "preparing",
+  rider: null,
+  events: [],
+};
+
 // The chosen rider's cached public identity — the ONLY place the app knows a rider's name (the
 // active-orders snapshot carries a profileId and GPS, nothing more), and therefore what turns the
 // pill's fallback service copy into the mock's drawn "Tendai M.".
@@ -109,7 +119,8 @@ installRouter([
   { match: /^\/auth\/me$/, json: { profileId: "0a1b2c3d-0000-4000-8000-0000000000c1", role: "customer", firstName: "Rudo", lastName: "Chikafu" } },
   // > 0 so the bell paints the mock's gold unread dot.
   { match: /^\/notifications\/unread-count$/, json: { count: 2 } },
-  { match: /^\/orders\/mine\/active-orders$/, json: [parcelOrder] },
+  // Two running jobs: the parcel leads (newest), the food order folds into the bar's "+1 order".
+  { match: /^\/orders\/mine\/active-orders$/, json: [parcelOrder, foodOrder] },
   { match: /^\/orders\/mine\/active-order$/, json: parcelOrder },
   { match: "/orders/history", json: [] },
   { match: "/restaurants", json: { restaurants: VENUES } },

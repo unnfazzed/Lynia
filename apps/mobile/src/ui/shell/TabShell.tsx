@@ -10,7 +10,7 @@ import { useReduceMotion } from "../useReduceMotion";
 import { TAB_BAR_SPACE, TabBar, type AppTab, type TabBadge } from "./TabBar";
 
 /*
- * The tab shells' plumbing for tab bar v1 (`packages/design/handoff/tab-bar-v1/`, ledger D-55): the
+ * The tab shells' plumbing for tab bar v1 (`packages/design/handoff/tab-bar-v1/`, ledger D-56): the
  * floating bar is absolutely positioned over the screens, so the layout contract ("content pads by
  * 72 + inset + 16") travels to the tab roots through a context instead of the bar taking layout space.
  */

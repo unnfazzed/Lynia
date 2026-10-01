@@ -1,5 +1,5 @@
 /**
- * Tab bar v1 (`packages/design/handoff/tab-bar-v1/`, ledger D-55) — behaviour pins:
+ * Tab bar v1 (`packages/design/handoff/tab-bar-v1/`, ledger D-56) — behaviour pins:
  * - a press on another tab navigates + plays the light tick; a re-tap of the active tab reselects
  *   (scroll to top) with NO haptic and no navigation;
  * - the bar is removed while `hidden` (keyboard open);

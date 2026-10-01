@@ -157,6 +157,8 @@ export interface OpenOrder {
   createdAt: string;
   /** The sender's first name ("Rudo is asking"). Absent on a live board push and on older APIs. */
   customerFirstName?: string | null;
+  /** The board tag (owner 2026-10-01): "shop" for a business's booking. Absent on older APIs → parcel. */
+  kind?: "parcel" | "shop";
 }
 
 /** Open orders the rider can bid on. When the rider's location is known, the server scopes to nearby
