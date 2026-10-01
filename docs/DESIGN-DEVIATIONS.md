@@ -2392,7 +2392,7 @@ Nothing in `packages/design/**` changes. **Upstream ask:** draw the confirming s
 the merchant auto-accept card, the Taking orders settings and the ops call list.
 
 
-## D-51 · Merchant branches: the switcher (C6), Add a branch (C7), and the not-live Orders home — DESIGN SYNC APPROVED; two readings PENDING owner OK (2026-10-01)
+## D-51 · Merchant branches: the switcher (C6), Add a branch (C7), and the not-live Orders home — APPROVED (2026-10-01)
 
 **Owner decision, this session (2026-09-30 / 2026-10-01):** option 1 for owners with shops in several
 places (*"option 1 is preferred"*: each branch is its own business, one login works in one branch at a
@@ -2419,5 +2419,10 @@ outside the area LyniaGo covers for now."
 | B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown only to an owner with **2+ branches** | Read literally from the mock's two triggers; a single new restaurant keeps today's Orders home, so onboarding is unchanged |
 | C4 Account rows | Shop front · Opening hours · **Branches** · Preferred riders · Team · Help | D-50's owner-only "Taking orders" stays, after Branches | D-50 row, not drawn in either export |
 | Three tap targets (C7 back chevron, the location card's "Change", the C7 banner's "Open WhatsApp") | 36px | `var(--target-min)` (44px); "Change" and "Open WhatsApp" keep the drawn layout with a −4px margin; C7 uses the shared AppBar's 44px back | **Upstream kit defect** (CLAUDE.md, owner decision D2 2026-08-20): a mock may not draw below the floor and the app never reproduces it. "Change" was already 36px in A4 (D-48); fixed there too, as it is the same component |
+
+**Owner OK on both readings (this session, 2026-10-01):** *"Shops are live yes. Shop orders don't expire"*,
+and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"). The second half of the first
+answer, that **shop customer orders don't expire**, is recorded for the shop customer surface (plan
+2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
 
 **Upstream ask:** redraw those three at ≥ `--target-min`.
