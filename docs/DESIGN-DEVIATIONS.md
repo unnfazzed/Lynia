@@ -2797,3 +2797,71 @@ Until each lands, its current screen stays as it is.
 **Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
 limit; auto-opening the "picked you" sheet.
 
+
+## D-55 · Tab bar v1: the floating pill bar replaces the flat bar on both sides — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner asked for a prompt to redesign the bottom
+menu bar for both the rider and customer sides, took a detailed brief to Claude Design, and uploaded the
+signed-off result (`Lynia_Design_System.zip`, `handoff/tab-bar-v1`, v1.3) with *"lets execute the home
+page here … the home nav bars"*. The handoff's `README.md` says every number in it is final.
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze
+gates. The design package only *absorbs a new export* here.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/tab-bar-v1/` | The handoff, **verbatim**: `README.md` (the spec), `CHANGES.md` (what it supersedes, v1.1–v1.3), `CLAUDE_CODE_PROMPT.md` (the build brief), the prototype (`Tab Bar Prototype.html` + its offline standalone), `Board.html`, `load-tabbar.js`, and `reference/` (the kit sources and the token files as the design tool had them). |
+| `packages/design/components/shell/TabBar.jsx` + `.d.ts` | Replaced by the handoff's `reference/TabBar.jsx.txt` / `TabBar.d.ts.txt`, as its `CHANGES.md` directs (the kit stays the source of truth). |
+| `packages/design/components/shell/AppScreen.jsx` | Replaced by `reference/AppScreen.jsx.txt` (the 72 + inset + 16 reserve and the CTA dock). `AppScreen.d.ts` gains the matching `role` / `tabBadges` / `inset` props. |
+| `packages/design/tokens/colors.css` | **Added** (nothing removed): `--accent-illus`, the `--illus-*` / `--illus-idle-*` illustration palette, and the Home (Calm Mint v2) surfaces `--tile-mint/-peach/-lilac/-sun`, `--coral-ink`, `--sun-ink`, `--live-bar(-ink)`, `--rider-accent`, `--rider-wash`. The handoff's `reference/colors.css` is an older snapshot without the home-8c tile tokens; those stay. One word in the `--accent-illus` comment is changed (a colon → "since") because the token-conformance parser read `--accent-wash: #00b14f` inside the comment as a declaration. No value changed. |
+| `packages/design/tokens/spacing.css` | **Added** `--shadow-float`, `--shadow-active`, `--shadow-badge`. |
+
+### 2 · Authority (a scope rule)
+
+The tab bar on both sides (`src/ui/shell/TabBar.tsx`, the `(tabs)` layouts) follows this handoff. It
+supersedes the `### TabBar` section of `handoff/rider-v2/README.md` (D-54 §3's "Tab bar" bullet: the flat
+60px bar with the 52×26 wash pill) and the old kit bar. Older handoff kits (`rv-kit.jsx` etc.) still draw
+the old bar; those drawings are superseded wherever they show it.
+
+### 3 · What landed
+
+- **The bar:** the illustrated variant, the handoff's default. A floating 60px pill 12 from the sides and
+  12 + the safe-area inset from the bottom, white with a 1px `line` edge and `shadow-float`. Three 52px
+  cells hold the 28px faux-3D art, a 2 gap and a 12/16 label (600 `muted` idle, 700 `ink` active).
+  - One shared indicator slides 200ms on `cubic-bezier(0.34, 1.36, 0.64, 1)`. It takes the active tab's
+    tile tint with a 2px ring in that tint's ink, cross-fading over 160ms.
+  - The active art rests at −2 / 1.08 and pops 0.86 → 1.16 → 1.08 on activation, never on first mount.
+  - Press scales the cell to 0.94, plus a `surface` fill on an idle cell.
+  - Reduce motion (the OS setting) makes every change instant.
+- **Art:** the 10 illustrations (5 drawings × active / idle) are drawn with `react-native-svg` from the
+  kit's `ILLUS` table, coordinates 1:1. The solid `GLYPHS` set ships as `glyphStyle="solid"` but is not
+  wired in.
+- **Badges** come from data the tab roots already fetch: cache-only observers, no new requests.
+  - Customer Orders `live`: active orders.
+  - Rider Jobs `count` (9+ cap): new jobs since Jobs was last open; clears on opening Jobs.
+  - Rider Money `warn`: balance below the floor, the same rule as the board's top-up gate.
+  - Rider Account `dot`: verification not done.
+  - Each badge has a 2px `bg` ring and `shadow-badge`, is anchored to the cell, and pops on appear or
+    change.
+- **Layout contract:** tab roots pad their scroll content by 72 + inset + 16 (`useTabRoot` /
+  `useTabBarSpace`). The rider board's sheet ends its scroll area at the bar, and its toast sits above
+  the bar.
+- **The dock:** the rider gates' CTA bar becomes the dock: CTA → 12 → bar → 12 + inset.
+- **Re-tap and keyboard:** re-tapping the active tab scrolls its root to the top, with no haptic. The bar
+  is removed while the keyboard is open.
+- **Accessibility:** the bar is a `tablist`; each cell is a `tab` with `selected` and the exact strings,
+  e.g. "Orders, tab, 2 of 3, 1 active order".
+
+### 4 · Deviations (each forced by the platform or the data)
+
+| What | Handoff | App | Why |
+|---|---|---|---|
+| Bar edge | `inset 0 0 0 1px` ring (takes no space) + padding 4 | A real 1px border + padding 3 | RN has no inset box-shadow. The cells and indicator still sit exactly 4 in. |
+| Shadows | `--shadow-float` (two layers), `--shadow-badge` | One RN shadow layer each (`tokens.shadow.float` / `.badge`) | RN draws one shadow per view (the same documented approximation as `shadow.card`). |
+| Focus ring | `0 0 0 2px bg, 0 0 0 4px ink` outside the cell | A 2px `ink` ring on the cell's pill | No box-shadow spread in RN, and no room outside the cell inside the bar's padding. D-pad/keyboard only either way. |
+| Label colour change | 120ms linear fade | Instant | Animating text colour needs the JS driver on every cell for a 120ms change; weight changes instantly in both. |
+| Tab-change haptic | `HapticFeedbackConstants.CLOCK_TICK` | The app's `tap` cue (a 12ms tick on Android; none on iOS) | The app ships no haptics module (see `src/ui/haptics.ts`). |
+| Customer Account `dot` | Verification / KYC needs attention | Not shown | Customers have no verification step, so there is no source. It appears the day one exists. |
+| Board sheet behind the bar | Content scrolls behind the bar | The sheet's white runs behind the bar; its list ends at the bar's top | `OrderSheet` measures its peek against its scroll area; the list stays fully reachable. |

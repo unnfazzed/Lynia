@@ -9,7 +9,7 @@ import { formatMoney } from "../../src/logic/money";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, Tappable } from "../../src/ui";
+import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, Tappable, useTabRoot } from "../../src/ui";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
@@ -104,6 +104,7 @@ function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void
 const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order", "foodOrder"];
 
 export default function OrdersTabScreen(): React.ReactElement {
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("orders");
   usePrewarmRoutes(ORDERS_PREWARM);
   const router = useRouter();
   const qc = useQueryClient();
@@ -150,8 +151,9 @@ export default function OrdersTabScreen(): React.ReactElement {
   return (
     <AppScreen>
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: tokens.space.screen, paddingBottom: tokens.space.xl }}
+        contentContainerStyle={{ padding: tokens.space.screen, paddingBottom: bottomPad }}
         showsVerticalScrollIndicator={false}
       >
         {/* Kit RC.orders: the screen title is 19px/700, not the 24px shared Heading. */}

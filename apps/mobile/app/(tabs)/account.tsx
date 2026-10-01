@@ -9,7 +9,7 @@ import { becomeStateFor } from "../../src/logic/become-state";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { AppScreen, SkeletonList } from "../../src/ui";
+import { AppScreen, SkeletonList, useTabRoot } from "../../src/ui";
 import { Notice } from "../../src/ui/send/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { BecomeCard, IdentityCard, MintTop, RCard, RoleToggle, RRow } from "../../src/ui/rider/kit";
@@ -24,6 +24,7 @@ import { useTabTop } from "../../src/query/use-tab-top";
  */
 export default function AccountTabScreen(): React.ReactElement {
   const router = useRouter();
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("account");
   const top = useTabTop();
   const location = useHomeLocation();
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
@@ -43,7 +44,7 @@ export default function AccountTabScreen(): React.ReactElement {
           <SkeletonList count={2} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad, gap: 12 }} showsVerticalScrollIndicator={false}>
           <IdentityCard
             name={name}
             line={me?.phone ? formatPhoneDisplay(me.phone) : ""}

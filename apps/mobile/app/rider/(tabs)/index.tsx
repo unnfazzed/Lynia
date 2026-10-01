@@ -30,7 +30,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { AppScreen, haptic, Icon, type IconName, statusPillLabel, useActionError } from "../../../src/ui";
+import { AppScreen, haptic, Icon, type IconName, statusPillLabel, useActionError, useTabBarSpace } from "../../../src/ui";
 import { CtaButton, IconDisc, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
@@ -48,8 +48,6 @@ const ACTIVATION_MAX_RETRIES = 3;
 const ACTIVATION_RETRY_MS = 15_000;
 /** The Undo window on a withdrawn offer (J10); the API call fires after it. */
 const WITHDRAW_UNDO_MS = 5_000;
-/** The tab bar's height (Rider v2 TabBar). */
-const TAB_H = 60;
 
 const BOARD_PREWARM: readonly PrewarmRoute[] = ["riderJob", "riderFoodJob"];
 
@@ -460,8 +458,11 @@ export default function RiderHome(): React.ReactElement {
   const [areaH, setAreaH] = useState(0);
   const [sheetVisible, setSheetVisible] = useState(0);
   const empty = online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
-  // Peek 50% of the screen (44% when empty), measured from the screen's top, as the handoff draws it.
-  const mapShare = areaH > 0 ? Math.min(0.8, Math.max(0.2, (winH * (empty ? 0.56 : 0.5) - (winH - areaH - TAB_H)) / areaH)) : 0.5;
+  // Peek 50% of the screen (44% when empty), measured from the screen's top, as the handoff draws it. The
+  // floating tab bar (tab bar v1, D-55) takes no layout space, so the area runs to the screen's bottom
+  // and everything above it is the mint top card; the sheet continues behind the bar.
+  const tabSpace = useTabBarSpace();
+  const mapShare = areaH > 0 ? Math.min(0.8, Math.max(0.2, (winH * (empty ? 0.56 : 0.5) - (winH - areaH)) / areaH)) : 0.5;
 
   const banner = <MintTop {...top} online={conn} loc={location.label} />;
 
@@ -595,14 +596,14 @@ export default function RiderHome(): React.ReactElement {
         <View testID="rider-board-area" style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
           <BoardMap jobs={jobs} selectedId={effectiveSelected} onSelect={setSelectedId} you={loc} zones={zones.map((z) => ({ ...z, busiest: z === busiest }))} padBottom={sheetVisible} />
           {areaH > 0 ? (
-            <OrderSheet areaHeight={areaH} fallbackShare={mapShare} floor={0} bottomInset={0} contentKey={empty ? "empty" : "list"} reduceMotion={reduceMotion} onVisibleHeight={setSheetVisible}>
+            <OrderSheet areaHeight={areaH} fallbackShare={mapShare} floor={0} bottomInset={tabSpace} contentKey={empty ? "empty" : "list"} reduceMotion={reduceMotion} onVisibleHeight={setSheetVisible}>
               {sheetContent}
             </OrderSheet>
           ) : null}
         </View>
       )}
       {toast ? (
-        <View style={{ position: "absolute", left: 12, right: 12, bottom: 10, zIndex: 30 }}>
+        <View style={{ position: "absolute", left: 12, right: 12, bottom: tabSpace + 10, zIndex: 30 }}>
           <RToast text={toast.text} icon={toast.icon} action={toast.undo ? R.undo : undefined} onAction={toast.undo} />
         </View>
       ) : null}

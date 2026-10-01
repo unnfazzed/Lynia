@@ -31,6 +31,9 @@ export const color = {
   accentText: "#006630",
   /** Light mint wash — selected states, chips, highlighted rows. */
   accentWash: "#E9F8EF",
+  /** Illustration mid-tone (mirrors --accent-illus) — illustrations and the tab bar's Home/Jobs active
+   *  ring only, never text. #009947 clears 3:1 on the mint tile. */
+  accentIllus: "#009947",
 
   /**
    * Primary-CTA FILL — sunlight-contrast decision applied. White CTA labels clear ≈4.7:1 (WCAG AA
@@ -64,6 +67,38 @@ export const color = {
   tileSendBlob: "#CDEEDA",
   tileFoodBlob: "#FBD9BD",
   tilePharmacyBlob: "#C5E9DF",
+
+  /**
+   * Faux-3D illustration palette (`packages/design/handoff/tab-bar-v1`) — the tab bar's tab art. Top /
+   * front / side faces + gold, coral, mint and sky details; the `illusIdle*` set is the same drawing in
+   * neutrals. Illustrations ONLY, never text or UI chrome.
+   */
+  illusLight: "#3CCB74",
+  illusMid: "#00B14F",
+  illusDark: "#00913C",
+  illusGold: "#FFD23F",
+  illusCoral: "#FF6B4A",
+  illusMint: "#B9E8CC",
+  illusSky: "#3EC1F3",
+  illusIdleLight: "#DDE1E5",
+  illusIdleMid: "#AEB6BD",
+  illusIdleDark: "#7D8790",
+
+  /**
+   * Home (Calm Mint v2) surfaces shared with the tab bar (`handoff/tab-bar-v1`): the active tab pill
+   * takes its tab's tile tint, ringed in that tint's ink (each ink clears 3:1 on its tint). `liveBar` is
+   * the dark live-order fill (the Orders `live` badge); `riderAccent`/`riderWash` the rider identity.
+   */
+  tileMint: "#CDEEDA",
+  tilePeach: "#FFD9CC",
+  tileLilac: "#DDD5FF",
+  tileSun: "#FFF6D6",
+  coralInk: "#C2412A",
+  sunInk: "#8A6A00",
+  liveBar: "#063B22",
+  liveBarInk: "#BFE6CD",
+  riderAccent: "#4B2FBF",
+  riderWash: "#ECE8FF",
 
   danger: "#C0392B",
   /** Danger tint (mirrors --danger-wash) — 'bad' status pills, warn bars, danger hover states. */
@@ -191,6 +226,31 @@ export const shadow = {
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 8,
+  },
+  /** Tab bar v1 floating pill (`--shadow-float`): the wide 8px/24px layer as one RN layer. */
+  float: {
+    shadowColor: "#14181B",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  /** Tab bar v1 solid-variant active pill (`--shadow-active`): the green under-glow, without the
+   *  1px inner highlight RN cannot draw. */
+  active: {
+    shadowColor: "#00812F",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.32,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  /** Tab badges (`--shadow-badge`). */
+  badge: {
+    shadowColor: "#14181B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.16,
+    shadowRadius: 3,
+    elevation: 2,
   },
 } as const;
 

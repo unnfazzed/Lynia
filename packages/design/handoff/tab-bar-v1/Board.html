@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LyniaGo tab bar v1 — board</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--font-sans);background:var(--bg);color:var(--ink)}a{color:var(--accent-text)}a:hover{color:var(--ink)}*{box-sizing:border-box}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="load-tabbar.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const boardUi = {
+  page: { width: 1600, padding: 48, display: "flex", flexDirection: "column", gap: 40 },
+  sec: { display: "flex", flexDirection: "column", gap: 16 },
+  h2: { margin: 0, fontSize: 20, lineHeight: "28px", fontWeight: 700 },
+  row: { display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-end" },
+  cap: { fontSize: 12, lineHeight: "16px", fontWeight: 600, color: "var(--muted)", fontFamily: "ui-monospace, monospace" },
+};
+function Strip({ TB, w = 360, inset = 0, cta, cap, grey, ...bar }) {
+  const { TabBar, TAB_BAR_SPACE } = TB;
+  const dock = cta ? 12 + 52 + 12 + TAB_BAR_SPACE + inset : 0;
+  const h = (cta ? dock + 24 : TAB_BAR_SPACE + inset + 24);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ width: w, height: h, position: "relative", overflow: "hidden", borderRadius: 12, background: "repeating-linear-gradient(0deg, var(--surface) 0 20px, var(--line) 20px 21px)", outline: "1px solid var(--line)", filter: grey ? "grayscale(1)" : "none" }}>
+        {cta ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: dock, background: "var(--bg)", boxShadow: "var(--shadow-sheet)", padding: "12px 16px 0", zIndex: 19 }}><div style={{ height: 52, borderRadius: 999, background: "var(--cta-fill)", color: "var(--on-accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{cta}</div></div> : null}
+        <TabBar inset={inset} {...bar} />
+        {inset ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: inset, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 30 }}><span style={{ width: 108, height: 4, borderRadius: 999, background: "var(--ink)" }} /></div> : null}
+      </div>
+      <div style={boardUi.cap}>{cap}</div>
+    </div>
+  );
+}
+function Board({ TB }) {
+  const roles = [
+    { role: "customer", name: "Customer", ids: ["home", "orders", "acct"], cta: "Place order · $15.50",
+      badges: [["Orders · live 1", { orders: { kind: "live", n: 1 } }], ["Orders · live 3 (active)", { orders: { kind: "live", n: 3 } }, "orders"], ["Account · dot (KYC)", { acct: { kind: "dot" } }]],
+      two: { orders: { kind: "live", n: 1 }, acct: { kind: "dot" } } },
+    { role: "rider", name: "Rider", ids: ["jobs", "money", "acct"], cta: "Top up $5.00",
+      badges: [["Jobs · count 3", { jobs: { kind: "count", n: 3 } }, "money"], ["Jobs · 12 → 9+", { jobs: { kind: "count", n: 12 } }, "acct"], ["Money · warn", { money: { kind: "warn" } }], ["Account · dot (KYC)", { acct: { kind: "dot" } }]],
+      two: { jobs: { kind: "count", n: 3 }, money: { kind: "warn" } } },
+  ];
+  return (
+    <div style={boardUi.page}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ fontSize: 32, lineHeight: "40px", fontWeight: 700 }}>LyniaGo tab bar v1.2 — floating pill</div>
+        <div style={{ fontSize: 16, color: "var(--muted)" }}>Bar 60 · float 12 · reserve 72 + inset (+16 content). Solid vector glyphs 24, solid --cta-fill active pill. Background stripes = scrolling content.</div>
+      </div>
+      <div style={boardUi.sec}><h2 style={boardUi.h2}>3D illustrated · both roles, each tab active</h2>
+        {roles.map((r) => <div key={r.role} style={boardUi.row}>{r.ids.map((id) => <Strip key={id} TB={TB} role={r.role} active={id} glyphStyle="illustrated" inset={24} cap={`360 · ${r.role} · ${id}`} />)}</div>)}
+        <div style={boardUi.row}>{roles.map((r) => <Strip key={r.role} TB={TB} w={320} role={r.role} active={r.ids[0]} glyphStyle="illustrated" badges={r.two} cap={`320 · ${r.role} · two badges`} />)}<Strip TB={TB} w={320} role="customer" active="orders" glyphStyle="illustrated" grey cap="greyscale check" /><Strip TB={TB} w={320} role="customer" active="home" glyphStyle="illustrated" previewFocus="orders" cap="focus ring" /></div>
+        <div style={boardUi.row}>{roles.map((r) => <Strip key={r.role} TB={TB} w={320} role={r.role} active={r.ids[0]} glyphStyle="illustrated" cta={r.cta} cap={`320 · ${r.role} · CTA dock`} />)}</div>
+      </div>
+      <div style={{ ...boardUi.h2, fontSize: 24, paddingTop: 8, borderTop: "1px solid var(--line)" }}>Solid vector (v1.1)</div>
+      {roles.map((r) => (
+        <React.Fragment key={r.role}>
+          <div style={boardUi.sec}><h2 style={boardUi.h2}>{r.name} · each tab active</h2>
+            <div style={boardUi.row}>{r.ids.map((id) => <Strip key={id} TB={TB} role={r.role} active={id} inset={24} cap={`360 · gesture 24 · ${id}`} />)}</div>
+            <div style={boardUi.row}>{r.ids.map((id) => <Strip key={id} TB={TB} w={320} role={r.role} active={id} cap={`320 · 3-button 0 · ${id}`} />)}</div>
+          </div>
+          <div style={boardUi.sec}><h2 style={boardUi.h2}>{r.name} · badges</h2>
+            <div style={boardUi.row}>{r.badges.map(([cap, b, act]) => <Strip key={cap} TB={TB} w={320} role={r.role} active={act || r.ids[0]} badges={b} cap={"320 · " + cap} />)}<Strip TB={TB} w={320} role={r.role} active={r.ids[2]} badges={r.two} cap="320 · two at once" /></div>
+          </div>
+          <div style={boardUi.sec}><h2 style={boardUi.h2}>{r.name} · pressed, focus, greyscale, CTA dock</h2>
+            <div style={boardUi.row}>
+              <Strip TB={TB} w={320} role={r.role} active={r.ids[0]} previewPressed={r.ids[1]} cap="pressed idle → --surface" />
+              <Strip TB={TB} w={320} role={r.role} active={r.ids[0]} previewPressed={r.ids[0]} cap="pressed active → --cta-fill-pressed" />
+              <Strip TB={TB} w={320} role={r.role} active={r.ids[0]} previewFocus={r.ids[1]} cap="focus ring (D-pad / keyboard)" />
+              <Strip TB={TB} w={320} role={r.role} active={r.ids[1]} badges={r.two} grey cap="greyscale check" />
+            </div>
+            <div style={boardUi.row}>
+              <Strip TB={TB} role={r.role} active={r.ids[0]} inset={24} cta={r.cta} cap="360 · CTA dock · gesture 24" />
+              <Strip TB={TB} w={320} role={r.role} active={r.ids[0]} cta={r.cta} cap="320 · CTA dock · 3-button 0" />
+            </div>
+          </div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+window.TBReady.then((TB) => ReactDOM.createRoot(document.getElementById("root")).render(<Board TB={TB} />));
+</script>
+</body>
+</html>

@@ -121,6 +121,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   `packages/design/handoff/rider-v2/` (ledger D-54, owner 2026-10-01; it retires D-15/16/17/22/25/26). The
   gallery `RJM`/`RJ` rider screens and the `LJ` Account/Settings screens it replaces are superseded and not
   aligned to. Strings come from `src/ui/rider/copy.ts` (the handoff's `R`, verbatim).
+- **The tab bar follows its own handoff (`handoff/tab-bar-v1/`).** Both sides' bottom bar
+  (`src/ui/shell/TabBar.tsx`, the `(tabs)` layouts) aligns to `packages/design/handoff/tab-bar-v1/`
+  (ledger D-55, owner 2026-10-01): a floating illustrated pill, a 72 + inset reserve that tab roots pad by
+  (`useTabRoot`), typed badges. It supersedes rider-v2's `### TabBar` section and the old kit bar.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

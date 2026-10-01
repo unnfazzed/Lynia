@@ -15,7 +15,7 @@
   --accent-text: #006630; /* text & small icons in green (≈7:1 on white) */
   --accent-wash: #e9f8ef; /* light mint wash — selected states, chips */
   /* Illustration mid-tone — the ONLY second tone allowed in two-tone service illustrations.
-     Sits between --accent-text and --accent (NOT between --accent and --accent-wash, since #00b14f is
+     Sits between --accent-text and --accent (NOT between --accent and --accent-wash: #00b14f is
      only 2.59:1 on the wash, so anything lighter than the brand green fails the 3:1 floor for
      meaningful graphics). #009947 = 3.39:1 on --accent-wash, 1.92:1 against --accent-text. */
   --accent-illus: #009947;
@@ -41,23 +41,10 @@
   --highlight-wash: #fffcf2;
   --highlight-ink: #6b5600;
   --highlight-border: #f2b70566;
-  /* Ink ON a solid --highlight gold chip (customer home 8c: the SOON chip and the ETA chip).
-     Distinct from --highlight-ink, which is gold TEXT on the pale --highlight-wash. */
-  --highlight-chip-ink: #3d3100;
 
-  /* ── Service-tile tints (customer home 8c, handoff/home-8c) ─── */
-  /* Each tile is a flat wash with a blob one shade deeper behind its sticker icon. Send reuses
-     --accent-wash / the mint blob; the other two verticals carry their own hue so three tiles read
-     apart at a glance without a border or a shadow between them. */
-  --tile-food-wash: #fdeadd;      /* Restaurants tile background */
-  --tile-pharmacy-wash: #dff4ee;  /* Pharmacy tile background */
-  --tile-send-blob: #cdeeda;      /* blob behind the Send sticker — also the tracker pill's unlit progress segment */
-  --tile-food-blob: #fbd9bd;
-  --tile-pharmacy-blob: #c5e9df;
-
-  /* Faux-3D illustration palette (handoff/tab-bar-v1) — same three-face recipe as assets/service-icons/v2
-     (top = light, left = mid, right = dark) + gold/coral/mint details. Illustrations ONLY, never text or
-     UI chrome. The idle set is the same recipe in neutrals (dark face ≥3:1 on white for meaningful graphics). */
+  /* Faux-3D illustration palette — same three-face recipe as assets/service-icons/v2 (top = light,
+     left = mid, right = dark) + gold/coral/mint details. Illustrations ONLY, never text or UI chrome.
+     The idle set is the same recipe in neutrals (dark face ≥3:1 on white for meaningful graphics). */
   --illus-light: #3ccb74;
   --illus-mid: #00b14f;
   --illus-dark: #00913c;
@@ -69,7 +56,7 @@
   --illus-idle-mid: #aeb6bd;
   --illus-idle-dark: #7d8790;
 
-  /* Home (Calm Mint v2) surfaces, shared with the tab bar so both read as one family (handoff/tab-bar-v1).
+  /* Home (Calm Mint v2) surfaces, shared with the tab bar so both read as one family.
      Tile tints = the service-tile backgrounds; each pairs with an ink that clears 3:1 on it (ring) and
      --ink for text. --live-bar = the dark floating live-order bar. --rider-* = rider identity. */
   --tile-mint: #cdeeda;      /* Send tile */

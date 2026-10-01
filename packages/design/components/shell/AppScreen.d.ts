@@ -7,9 +7,15 @@ export interface AppScreenProps {
   /** Active root tab id — omit for pushed screens with no tab bar. */
   tab?: string;
   /** Override the tab set (e.g. the rider's Jobs · Money · Account). Defaults to the customer tabs. */
-  tabs?: { id: string; icon: string; label: string }[];
-  /** Tab id showing an unread dot. */
+  tabs?: { id: string; glyph: "home" | "orders" | "account" | "jobs" | "money"; label: string }[];
+  /** Tab id showing an unread dot (deprecated — use `tabBadges`). */
   tabDot?: string;
+  /** Typed tab badges (tab-bar v1): `{ [tabId]: { kind: "dot" | "count" | "live" | "warn", n? } }`. */
+  tabBadges?: Record<string, { kind: "dot" | "count" | "live" | "warn"; n?: number }>;
+  /** Tab set role — "rider" selects Jobs · Money · Account. Default "customer". */
+  role?: "customer" | "rider";
+  /** Bottom safe-area inset in px (gesture nav ≈ 24, 3-button nav 0). */
+  inset?: number;
   /** Full-width strip under the status bar (offline banner, alerts). */
   banner?: React.ReactNode;
   /** Page background. Default var(--bg). Use var(--accent) when the top is the brand header. */

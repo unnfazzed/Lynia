@@ -26,7 +26,8 @@ import {
   ServiceTiles,
   SkeletonRows,
   statusPillLabel,
-  Tappable } from "../../src/ui";
+  Tappable,
+  useTabRoot } from "../../src/ui";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
@@ -155,6 +156,7 @@ function useBootHomePaintMark(): void {
 
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
+  const { scrollRef, bottomPad } = useTabRoot<ScrollView>("home");
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   const services = getServiceTiles(restaurantsEnabled);
@@ -257,8 +259,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
       }
     >
       <ScrollView
+        ref={scrollRef}
         style={{ backgroundColor: tokens.color.bg }}
-        contentContainerStyle={{ paddingBottom: tokens.space.xl }}
+        contentContainerStyle={{ paddingBottom: bottomPad }}
         showsVerticalScrollIndicator={false}
       >
         <ServiceTiles services={services} onService={onService} />
