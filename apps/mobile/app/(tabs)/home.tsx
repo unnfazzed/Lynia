@@ -4,7 +4,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { InteractionManager, Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
+import { getActiveCustomerOrders, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
+import { ACTIVE } from "../../src/logic/rider-job";
 import { greetingFor, greetingLine } from "../../src/logic/greeting";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { liveOrderPillModel, popularNearYou, riderShortName } from "../../src/logic/home-feed";
@@ -31,6 +32,8 @@ import {
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
+import { SmBtn } from "../../src/ui/order/kit";
+import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet } from "../../src/ui/home/ServiceSoonSheet";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 
@@ -220,6 +223,19 @@ export default function LauncherHomeScreen(): React.ReactElement {
     }
   }, [homeFocused, activeOrders, qc]);
 
+  // ── Rider v2 C5 (ledger D-54): a rider who switched to the customer side mid-job keeps the job — Home
+  // carries a live-job bar that returns to it. Only read for a verified rider; nothing renders otherwise.
+  const isRider = meQ.data?.rider?.kycStatus === "verified";
+  const riderJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: isRider, refetchInterval: homeFocused && isRider ? 30_000 : false });
+  const riderJob = isRider && riderJobQ.data && ACTIVE.includes(riderJobQ.data.status) ? riderJobQ.data : null;
+  const riderJobStage = riderJob
+    ? ["assigned", "confirmed", "en_route_pickup"].includes(riderJob.status)
+      ? riderJob.orderType === "merchant"
+        ? R.tToKitchen
+        : R.tToPickup
+      : R.tToDrop
+    : null;
+
   // ── "Popular near you" (8c §4) — the nearest open venues from the same feed /food browses ──
   // Renders nothing with the flag off: the Restaurants tile is degraded to SOON, so a grid with
   // nowhere honest to link would be a dead end. A genuinely empty result renders nothing too — the
@@ -261,6 +277,11 @@ export default function LauncherHomeScreen(): React.ReactElement {
         contentContainerStyle={{ paddingBottom: tokens.space.xl }}
         showsVerticalScrollIndicator={false}
       >
+        {riderJob && riderJobStage ? (
+          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <SmBtn kind="fill" icon="package" label={RF.swJobBar(riderJobStage)} onPress={() => router.push(riderJob.orderType === "merchant" ? "/rider/food-job" : "/rider/job")} />
+          </View>
+        ) : null}
         <ServiceTiles services={services} onService={onService} />
         {activeOrdersQ.isLoading ? (
           // Genuine first load — a skeleton beats a blank gap between the tiles and the venues grid,

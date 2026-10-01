@@ -372,11 +372,11 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | R7·1 | `RJM account` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C1–C5 (identity card, Customer | Rider toggle, standing, four rows) | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Since D-26 the identity card is INERT (the mock draws a plain Card); sign-out and the rest are reached through the `Settings` row |
-| 👁 | R7·2 | `RJ bike_docs` | Bike & documents | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
+| ⏭ | R7·2 | `RJ bike_docs` | Bike & documents | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S5 (Bike & documents, from Settings → RIDER) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
 | ⏭ | R7·3 | `RJ history` | Job history  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C12 (Job history, rider jobs only) | |
 | ⏭ | R7·4 | `RJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1–S3 (sectioned Settings) | |
-| ⬜ | R7·5 | `RJ help` | Help & support | | |
-| ⬜ | R7·6 | `RJM strikes` | Reliability · strikes | | |
+| ⏭ | R7·5 | `RJ help` | Help & support | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S6 (Help & support, rider side) | |
+| ⏭ | R7·6 | `RJM strikes` | Reliability · strikes | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C1–C3 (the Standing card on the rider Account) | |
 
 ### R8 · Trust & safety
 
