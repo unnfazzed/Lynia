@@ -14,6 +14,9 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 import type { OrderSnapshot } from "../../../src/api/orders";
 
 const HANDBACK_ACK_KEY = "lynia.handbackAck";
@@ -95,13 +98,8 @@ jest.mock("../../../src/realtime/use-rider-location", () => ({
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
   useForegroundRefetch: () => undefined,
 }));
-jest.mock("../../../src/ui/rider/JobDetailsCard", () => ({
-  JobDetailsCard: () => {
-    const React_ = require("react");
-    const { Text } = require("react-native");
-    return React_.createElement(Text, null, "JobDetailsCard");
-  },
-}));
+jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null }));
+jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ config: { ratePct: 10 }, isLoading: false }) }));
 
 import RiderJob from "../job";
 
@@ -118,9 +116,11 @@ async function render(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
       <QueryClientProvider client={client}>
         <RiderJob />
-      </QueryClientProvider>,
+      </QueryClientProvider>
+      </SafeAreaProvider>,
     );
   });
   await settle();
@@ -191,6 +191,6 @@ describe("rider job — no hand-back terminal flashes before the acknowledged li
 
     expect(textHits(tree, "No active job")).toBe(0);
     // The hand-back terminal owns the screen: its "Back to board" action is present.
-    expect(tree.root.findAll((n) => n.props.label === "Back to board" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.label === "Back to jobs" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
   });
 });

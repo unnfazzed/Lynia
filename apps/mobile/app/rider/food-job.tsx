@@ -1,10 +1,9 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, formatPhoneLocal, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, SOS_POLICY, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import {
   confirmFoodCollected,
@@ -18,36 +17,53 @@ import {
   reportFoodNoShow,
 } from "../../src/api/food-rider";
 import { advanceStatus, confirmDelivery, getActiveOrder, rateSender, type OrderSnapshot } from "../../src/api/orders";
+import { raiseIssue, raiseSos } from "../../src/api/safety";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { pendingOrQueued } from "../../src/query/client";
+import { useWalletConfig } from "../../src/query/use-wallet";
 import { handshakeState, codeEligible } from "../../src/logic/food-doorstep";
-import { FOOD_DROPPABLE, foodCashBreakdown, noShowStatus, returnLegNeeded, RIDER_FOOD_NEXT } from "../../src/logic/food-rider-job";
+import { FOOD_DROPPABLE, foodCashBreakdown, noShowStatus, returnLegNeeded } from "../../src/logic/food-rider-job";
 import { ACTIVE, reconcileOtpAttempts } from "../../src/logic/rider-job";
-import { formatMoney } from "../../src/logic/money";
-import { mapsPlaceUrl } from "../../src/logic/maps";
+import { type Arrival, type ArrivalMark, AUTO_ADVANCE, clearArrival, type FoodStage, loadArrival, saveArrival, stepFor } from "../../src/logic/rider-job-stage";
+import { navUrl, useRiderPrefs } from "../../src/logic/rider-prefs";
+import { uuidV4FromSeed } from "../../src/util";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, Screen, SkeletonList, StatusPill, Sub, TestBuildBanner, orderStatusTone, useActionError, useToast, Tappable } from "../../src/ui";
-import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
-import { FoodNavLeg } from "../../src/ui/rider/FoodNavLeg";
-import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
-import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
-import { CashHeldStrip } from "../../src/ui/rider/CashHeldStrip";
-import { RiderActiveFoodCashStripView } from "./active-food-cash-strip.view";
-import { BailSheet } from "../../src/ui/rider/BailSheet";
-import { CancelBlockedCard } from "../../src/ui/rider/CancelBlockedCard";
-import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
-import { PayMerchantCard } from "../../src/ui/rider/PayMerchantCard";
+import { AppBar, haptic, Heading, Icon, Screen, SkeletonList, Sub, useActionError, useToast } from "../../src/ui";
+import { useReduceMotion } from "../../src/ui/useReduceMotion";
+import { ORDER_COPY as A } from "../../src/ui/order/copy";
+import { IconDisc, Stars } from "../../src/ui/order/kit";
+import { OrderMap } from "../../src/ui/order/OrderMap";
+import { Notice } from "../../src/ui/send/kit";
+import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { CashLine, CashSplit, MSheet } from "../../src/ui/rider/kit";
+import {
+  CodeBoxes,
+  CodeError,
+  CtaBar,
+  CtaButton,
+  JobPage,
+  JobShell,
+  JobTitle,
+  type JobToast,
+  KV,
+  ProblemLink,
+  ProblemSheet,
+  RSteps,
+  SosSheet,
+  StopCard,
+  TerminalBody,
+  WaitLine,
+} from "../../src/ui/rider/job-kit";
 import { ReturnToRestaurantCard } from "../../src/ui/rider/ReturnToRestaurantCard";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
-import { CollectedPickupCard, PickupCodeCard } from "../../src/ui/food/PickupCodeCard";
 import { RiderCashHandshakeCard } from "../../src/ui/food/RiderCashHandshakeCard";
 import { UnreachableCustomerCard } from "../../src/ui/food/UnreachableCustomerCard";
-import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
+import { ReportSheet } from "../../src/ui/safety";
 
 /**
  * D5 — the rider's active FOOD job: accept → navigate → N-16 pickup code → collect → navigate →
@@ -182,38 +198,14 @@ export default function RiderFoodJob(): React.ReactElement {
   }, [jobQ.data, resumeChecked]);
 
   // ── Pre-pickup drop (D-33) ──────────────────────────────────────────────────────────────────────
-  const [dropping, setDropping] = useState(false);
-  // `cancel_blocked` (kit RR.cancel_blocked): post-collection the server refuses a drop (FOOD_DROPPABLE
-  // mirrors food-dispatch.service.ts). The button used to just vanish; this opens the card that says
-  // why and names the routes that DO exist.
-  const [showCancelBlocked, setShowCancelBlocked] = useState(false);
-  // `pay_merchant` (kit RR.pay_merchant): the rider's own acknowledgement that they handed the goods
-  // total over at a `pay_upfront` counter. Session-local on purpose — there is no rider-side "I paid
-  // the merchant" endpoint to record it against (see PayMerchantCard), and the 4-digit pickup code is
-  // the real gate either way. An app kill re-shows the instruction, which costs a tap and can't
-  // mislead; the alternative (persisting a payment claim the server never saw) could.
-  const [paidMerchant, setPaidMerchant] = useState(false);
-  // Kit RR.nav_rest / RR.nav_cust: each en-route leg opens map-first; "I've arrived" flips to the
-  // working screen (counter / doorstep cards). LOCAL state keyed to the status value — a new leg
-  // re-opens the map, and the server status only moves at the counter/door confirms, so a mistaken
-  // arrival tap costs nothing (the map stays one tap away via the leg's own status not changing).
-  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
-  // BailSheet's reason field is UI-only here — dropDispatch takes no body (unlike a parcel's
-  // CancelRequest.reason; see food-dispatch.service.ts's own docstring on why). Reused verbatim
-  // rather than forked for a one-field difference; the reliability-strike warning it also renders is
-  // accurate for a food drop too (same cancelStrikes axis).
-  const [dropReason, setDropReason] = useState("");
   const dropM = useMutation({
     mutationFn: () => dropFoodDispatch(orderId!),
     onSuccess: () => {
-      setDropping(false);
+      void clearArrival();
       toast.show("Job dropped — it's back with the kitchen for another rider.", "warning");
       router.replace("/rider");
     },
-    onError: (e) => {
-      setDropping(false);
-      fail(e);
-    },
+    onError: (e) => fail(e),
   });
 
   // ── Generic forward advance (assigned→confirmed→en_route_pickup, picked_up→en_route_dropoff) ─────
@@ -425,7 +417,6 @@ export default function RiderFoodJob(): React.ReactElement {
     },
     onError: (e) => fail(e),
   });
-  const [showUnreachable, setShowUnreachable] = useState(false);
 
   // The `return_rest` leg's one server-confirmed beat: `collect_and_return` opens a merchant debt at
   // pickup and the merchant's own `confirmGoodsReturned` settles it as `settled_goods`. Polled off the
@@ -477,148 +468,178 @@ export default function RiderFoodJob(): React.ReactElement {
     return () => clearInterval(t);
   }, [needsClock]);
 
+  // ── Rider v2 (ledger D-54): arrivals, sheets, toast, the auto-advanced server steps ─────────────
+  const { prefs } = useRiderPrefs();
+  const reduceMotion = useReduceMotion();
+  const { config: walletConfig } = useWalletConfig();
+  const [arrival, setArrival] = useState<ArrivalMark | null | "loading">("loading");
+  useEffect(() => {
+    let alive = true;
+    void loadArrival().then((m) => {
+      if (alive) setArrival(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const arrived: Arrival | null = arrival !== "loading" && arrival && arrival.orderId === orderId ? arrival.at : null;
+  const markArrived = (at: Arrival): void => {
+    if (!orderId) return;
+    const m = { orderId, at };
+    setArrival(m);
+    void saveArrival(m);
+    setRestoreDismissed(true);
+    haptic("tap");
+  };
+  const [sheet, setSheet] = useState<null | "problem" | "drop" | "reach" | "report" | "sos">(null);
+  const [jobToast, setJobToast] = useState<JobToast | null>(null);
+  useEffect(() => {
+    if (!jobToast) return;
+    const t = setTimeout(() => setJobToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [jobToast]);
+  const autoKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!order || order.orderType !== "merchant") return;
+    const to = AUTO_ADVANCE[order.status];
+    const key = `${order.id}:${order.status}`;
+    if (!to || autoKey.current === key || advanceM.isPending) return;
+    autoKey.current = key;
+    advanceM.mutate(to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the order's id + status only.
+  }, [order?.id, order?.status, advanceM.isPending]);
+  const wasConnected = useRef(false);
+  if (jobSocketConnected) wasConnected.current = true;
+  const liveReconnecting = !!order && ACTIVE.includes(order.status) && wasConnected.current && !jobSocketConnected;
+  const [offlineSince, setOfflineSince] = useState<number | null>(null);
+  useEffect(() => {
+    setOfflineSince((cur) => (liveReconnecting ? (cur ?? Date.now()) : null));
+  }, [liveReconnecting]);
+  const backToJobs = (): void => {
+    void clearArrival();
+    router.replace("/rider");
+  };
+  const dial = (phone: string | null | undefined): void => {
+    if (phone) void Linking.openURL(`tel:${phone}`).catch(() => undefined);
+  };
+  const wa = (phone: string | null | undefined): void => {
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (digits) void Linking.openURL(`https://wa.me/${digits}`).catch(() => undefined);
+  };
+  const lastOrder = useRef<OrderSnapshot | null>(null);
+  if (order) lastOrder.current = order;
+
   // ── Render ──────────────────────────────────────────────────────────────────────────────────────
+  const kitchenName = (o: OrderSnapshot | null): string => o?.merchantName || o?.pickup.landmark || R.kitchen;
+  const customer = (order ?? lastOrder.current)?.customerFirstName || R.theCustomer;
 
   if (deliveredFood) {
     const cashCollect = deliveredFood.paymentMethod === "cash" && deliveredFood.merchantCashRule === "collect_and_return";
     const breakdown = cashCollect ? foodCashBreakdown(deliveredFood) : null;
     const stillOwed = returnLegQ.data ? returnLegNeeded(returnLegQ.data) : cashCollect;
+    const snap = lastOrder.current && lastOrder.current.id === deliveredFood.orderId ? lastOrder.current : null;
+    // B5 — return the cash: blocking until the kitchen confirms it in its app.
+    if (cashCollect && stillOwed && breakdown) {
+      const kitchenPhone = (snap?.pickup as { contactPhone?: string | null } | undefined)?.contactPhone ?? null;
+      return (
+        <JobPage
+          title={R.tReturn}
+          help
+          onBack={() => router.replace("/rider")}
+          onHelp={() => setSheet("problem")}
+          centred
+          bar={
+            <CtaBar>
+              <CtaButton ghost icon="phone" label={R.callKitchen} disabled={!kitchenPhone} onPress={() => dial(kitchenPhone)} />
+            </CtaBar>
+          }
+          overlays={
+            <ProblemSheet
+              visible={sheet === "problem"}
+              onClose={() => setSheet(null)}
+              beforePickup={false}
+              food
+              onHelp={() => helpFor(deliveredFood.orderId)}
+              onReport={() => setSheet("report")}
+              onSos={() => setSheet("sos")}
+            />
+          }
+        >
+          <TerminalBody icon="banknote" title={RF.returnT(breakdown.owed, kitchenName(snap))} body={R.returnB}>
+            <View style={{ alignSelf: "stretch" }}>
+              <CashSplit title={R.cashNow} yours={breakdown.kept} owed={breakdown.owed} />
+            </View>
+            <WaitLine text={R.returnWait} />
+          </TerminalBody>
+        </JobPage>
+      );
+    }
+    // B6 — delivered.
+    const fee = deliveredFood.deliveryFee;
+    const rate = walletConfig?.ratePct ?? 0;
     return (
-      <Screen>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Your job</Heading>
-            <View style={{ flex: 1 }} />
-            <StatusPill status="delivered" tone={orderStatusTone("delivered")} dot />
+      <JobPage title={R.tDone} onBack={backToJobs} bar={<CtaBar><CtaButton label={R.nextJobs} onPress={backToJobs} /></CtaBar>}>
+        <ScrollView contentContainerStyle={{ gap: 14, paddingTop: 6 }} showsVerticalScrollIndicator={false}>
+          <View style={{ alignItems: "center", gap: 10 }}>
+            <IconDisc name="circle-check" tone="ok" size={64} />
+            <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{R.doneT}</Text>
           </View>
-          <Card>
-            <Celebrate />
-            <Text style={{ fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>
-              Delivered — you&apos;re free for the next job{cashCollect && stillOwed ? " once the cash is back with the kitchen" : ""}.
-            </Text>
-          </Card>
-          {breakdown ? (
-            <Card>
-              <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Cash breakdown</Text>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                <Sub>Collected at the door</Sub>
-                <Text style={{ fontVariant: ["tabular-nums"] }}>{formatMoney(breakdown.collected)}</Text>
+          {fee != null ? (
+            <>
+              <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, flexDirection: "row", alignItems: "baseline" }}>
+                <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{R.doneEarn}</Text>
+                <Text style={{ fontSize: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>+{usd(fee)}</Text>
               </View>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                <Sub>You keep (delivery fee)</Sub>
-                <Text style={{ fontVariant: ["tabular-nums"] }}>{formatMoney(breakdown.kept)}</Text>
+              <View style={{ paddingHorizontal: 4 }}>
+                {deliveredFood.paymentMethod === "cash" ? <KV k={R.doneCash} v={usd(fee)} /> : null}
+                {breakdown ? <KV k={R.lReturned} v={usd(breakdown.owed)} /> : null}
+                {rate > 0 ? <KV k={R.doneComm} v={`−${usd((fee * rate) / 100)}`} /> : null}
               </View>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Sub>Owed to the kitchen</Sub>
-                <Text style={{ fontVariant: ["tabular-nums"], fontWeight: "700" }}>{formatMoney(breakdown.owed)}</Text>
-              </View>
-            </Card>
+            </>
           ) : null}
-          {cashCollect && stillOwed ? (
-            <Card style={{ borderColor: tokens.color.danger }}>
-              {/* `r-rider.jsx` return_cash: this banner is about money in your pocket, so it reads
-                  with the banknote mark, not the generic alert triangle. */}
-              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
-                <Icon name="banknote" size={18} color={tokens.color.danger} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>Ride the food money back</Text>
-                  <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18, marginTop: 4 }}>
-                    No new offers until the kitchen confirms the cash.
-                  </Text>
-                </View>
-              </View>
-              <View style={{ marginTop: tokens.space.sm }}>
-                <CashHeldStrip yours={breakdown?.kept ?? 0} owed={breakdown?.owed ?? 0} />
-              </View>
-              {deliveredFood.pickupPoint ? (
-                <Tappable
-                  onPress={() => void Linking.openURL(mapsPlaceUrl(deliveredFood.pickupPoint!))}
-                  accessibilityRole="button"
-                  accessibilityLabel="Navigate back to the restaurant"
-                  style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm }}
-                >
-                  <Icon name="navigation" size={16} color={tokens.color.accentText} />
-                  <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Navigate back to the kitchen</Text>
-                </Tappable>
-              ) : null}
-            </Card>
-          ) : cashCollect ? (
-            <Card style={{ backgroundColor: tokens.color.accentWash, borderColor: "transparent" }}>
-              <Text style={{ fontWeight: "700", color: tokens.color.accentText }}>Hand-back confirmed</Text>
-              <Text style={{ fontSize: 13, color: tokens.color.accentText, marginTop: 2 }}>The kitchen has the cash. You&apos;re clear for your next job.</Text>
-            </Card>
-          ) : null}
-          <Card>
-            <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the customer</Text>
-            <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
-            {rateM.isSuccess ? (
-              <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
-            ) : (
-              <View style={{ flexDirection: "row", gap: 4 }}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <Tappable tone="icon"
-                    key={n}
-                    onPress={() => {
-                      setCustomerScore(n);
-                      rateM.mutate(n);
-                    }}
-                    disabled={rateM.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate the customer ${n} star${n === 1 ? "" : "s"}`}
-                    hitSlop={8}
-                    style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
-                  >
-                    <Text style={{ fontSize: 30, color: n <= customerScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                  </Tappable>
-                ))}
-              </View>
-            )}
-          </Card>
-          <GetHelpControl orderId={deliveredFood.orderId} />
-          {/* Report/block after the trip (rider → customer), same as the parcel delivered terminal. */}
-          <ReportControl orderId={deliveredFood.orderId} counterpartyNoun="customer" />
-          <Button
-            label={cashCollect && stillOwed ? "Cash not returned yet — leave anyway" : "Back to board"}
-            variant={cashCollect && stillOwed ? "ghost" : "primary"}
-            onPress={() => router.replace("/rider")}
-          />
-          <View style={{ height: tokens.space.xxl }} />
+          <View style={{ borderTopWidth: 1, borderTopColor: tokens.color.line, paddingTop: 14, gap: 6, alignItems: "center" }}>
+            <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.rateSender(customer)}</Text>
+            <Stars
+              value={customerScore}
+              onChange={(n) => {
+                if (rateM.isSuccess || rateM.isPending) return;
+                setCustomerScore(n);
+                rateM.mutate(n);
+              }}
+            />
+            <Text style={{ fontSize: 12, color: tokens.color.muted }}>{A.optional}</Text>
+          </View>
         </ScrollView>
-      </Screen>
+      </JobPage>
     );
   }
 
   if (undeliveredFood) {
-    // `return_rest` (kit RR.return_rest): the food is still on the bike. Until the kitchen confirms it
-    // back, "you're free for the next job" is only true of the dispatch — so the return leg leads and
-    // the freed-up line waits for the hand-back.
+    // `return_rest`: the food is still on the bike until the kitchen confirms it back.
     const returned = goodsReturnQ.data?.debtStatus != null && goodsReturnQ.data.debtStatus !== "open";
     return (
-      <Screen>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Your job</Heading>
-            <View style={{ flex: 1 }} />
-            <StatusPill status="undelivered" tone="offline" dot />
+      <JobPage
+        title={R.undelDoneT}
+        onBack={backToJobs}
+        bar={
+          <CtaBar>
+            <CtaButton ghost={!returned} label={R.nextJobs} onPress={backToJobs} />
+          </CtaBar>
+        }
+      >
+        <ScrollView contentContainerStyle={{ gap: 12, alignItems: "stretch" }} showsVerticalScrollIndicator={false}>
+          <View style={{ alignItems: "center", gap: 12 }}>
+            <TerminalBody
+              icon="package"
+              title={R.undelDoneT}
+              body={
+                undeliveredFood.reason === "refused"
+                  ? "The customer's cash access is now on hold for food orders — mobile money only from here on."
+                  : "Recorded after your wait and logged calls. The customer has been told."
+              }
+              note={R.undelNoStrike}
+            />
           </View>
-          <Card>
-            {/* Terminal grammar (kit `rider-screens.jsx` Undelivered / terminals.tsx): the bad news
-                rides in a danger-wash circle, not in a bare red line of type. */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
-                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
-              </View>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-                {undeliveredFood.reason === "refused" ? "Marked as customer refused" : "Marked as no-show"}
-              </Text>
-            </View>
-            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-              {undeliveredFood.reason === "refused"
-                ? "The customer's cash access is now on hold for food orders — mobile money only from here on."
-                : "Recorded after your wait and logged calls. The customer has been told."}
-            </Text>
-          </Card>
-
           <ReturnToRestaurantCard
             merchantName={undeliveredFood.pickupLandmark}
             pickupPoint={undeliveredFood.pickupPoint}
@@ -626,23 +647,13 @@ export default function RiderFoodJob(): React.ReactElement {
             frontedAmount={undeliveredFood.merchantGoodsTotal}
             debtStatus={goodsReturnQ.data?.debtStatus ?? null}
           />
-
-          <GetHelpControl orderId={undeliveredFood.orderId} />
-          {/* A no-show / refusal is exactly when a rider needs to report or block the customer. */}
-          <ReportControl orderId={undeliveredFood.orderId} counterpartyNoun="customer" />
-          <Button
-            label={returned ? "Back to board" : "Back to board — I'll return the food"}
-            variant={returned ? "primary" : "ghost"}
-            onPress={() => router.replace("/rider")}
-          />
-          <View style={{ height: tokens.space.xxl }} />
         </ScrollView>
-      </Screen>
+      </JobPage>
     );
   }
 
-  // Hold on the skeleton rather than guess which of the two cancelled-order screens applies (the
-  // hand-back terminal, or falling through to "no job") while the acknowledged-list read is in flight.
+  // Hold on the skeleton rather than guess which of the two cancelled-order screens applies while the
+  // acknowledged-list read is in flight.
   if (order && order.status === "cancelled" && ackedHandbacks === "loading") {
     return (
       <Screen>
@@ -652,58 +663,26 @@ export default function RiderFoodJob(): React.ReactElement {
   }
 
   if (handbackPending && order) {
-    // activeForRider's own R8 handback fallback only ever surfaces a cancelled order once
-    // `collectedAt` is set (see orders.service.ts) — a pre-pickup food cancel drops straight to null
-    // on the next poll instead, so reaching this branch at all means the food (and possibly cash) was
-    // already collected.
-    const collected = true;
+    // X9 — cancelled after collection (activeForRider only surfaces a cancelled food order once collected).
+    const title = order.cancelledBy === "customer" ? RF.custCxT(customer) : R.cancelled;
+    const leave = (): void => {
+      void acknowledgeHandback(order.id);
+      backToJobs();
+    };
     return (
-      <Screen>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Your job</Heading>
-            <View style={{ flex: 1 }} />
-            <StatusPill status="cancelled" tone="offline" dot />
-          </View>
-          <Card>
-            {/* Same icon-in-a-circle terminal header the parcel hand-back uses (ui/rider/terminals.tsx). */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.sm }}>
-              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.dangerWash, alignItems: "center", justifyContent: "center" }}>
-                <Icon name="circle-alert" size={18} color={tokens.color.danger} />
-              </View>
-              <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.danger }}>
-                This order was cancelled
-              </Text>
-            </View>
-            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-              {collected
-                ? "You may still be holding the food (and, if collected, cash) for this order. Contact support to sort out the hand-back — this doesn't affect your reliability score."
-                : "Cancelled before pickup — you're simply free. No food, straight back to the board."}
-            </Text>
-            {order.counterpartyPhone ? (
-              <Tappable
-                onPress={() => void Linking.openURL(`tel:${order.counterpartyPhone}`)}
-                accessibilityRole="button"
-                accessibilityLabel="Call customer"
-                style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm }}
-              >
-                <Icon name="phone" size={16} color={tokens.color.accentText} />
-                <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.accentText }}>Call customer · {formatPhoneLocal(order.counterpartyPhone)}</Text>
-              </Tappable>
-            ) : null}
-          </Card>
-          <GetHelpControl orderId={order.id} />
-          {/* A cancelled-mid-job hand-back is a report/block moment too — mirror the other terminals. */}
-          <ReportControl orderId={order.id} counterpartyNoun="customer" />
-          <Button
-            label="Back to board"
-            onPress={() => {
-              void acknowledgeHandback(order.id);
-              router.replace("/rider");
-            }}
-          />
-        </ScrollView>
-      </Screen>
+      <JobPage
+        title={title.length > 22 ? R.tDone : title}
+        onBack={leave}
+        centred
+        bar={
+          <CtaBar>
+            <CtaButton label={R.nextJobs} onPress={leave} />
+            {order.counterpartyPhone ? <CtaButton ghost icon="phone" label={RF.callName(customer)} onPress={() => dial(order.counterpartyPhone)} /> : null}
+          </CtaBar>
+        }
+      >
+        <TerminalBody icon="x" title={title} body={RF.custCxB(customer)} note={R.custCxNoStrike} />
+      </JobPage>
     );
   }
 
@@ -715,11 +694,7 @@ export default function RiderFoodJob(): React.ReactElement {
     );
   }
 
-  // `generic_error` (kit rider-screens.jsx `GenericError`). A FAILED READ is not "you have no work" —
-  // but that is exactly what this screen used to say, because a `jobQ`/`foodQ` error fell straight
-  // through the `!order` branch below into "No active job". For a rider carrying somebody's dinner,
-  // that is the single most alarming wrong answer the app can give. The kit's copy leads with the one
-  // thing that matters and is provably true: a read that failed changed nothing server-side.
+  // `generic_error`: a FAILED READ is not "you have no work".
   if ((jobQ.isError && !order) || (foodQ.isError && !foodOrder)) {
     return (
       <Screen>
@@ -755,7 +730,6 @@ export default function RiderFoodJob(): React.ReactElement {
   }
 
   const isActive = ACTIVE.includes(order.status);
-  const next = RIDER_FOOD_NEXT[order.status];
   const cashOrder = foodOrder.paymentMethod === "cash";
   const hState = handshakeState({
     paymentMethod: foodOrder.paymentMethod,
@@ -769,219 +743,262 @@ export default function RiderFoodJob(): React.ReactElement {
     riderCashConfirmedAt: foodOrder.riderCashConfirmedAt,
     cashHandshakeFrozenAt: foodOrder.cashHandshakeFrozenAt,
   });
+  const goods = foodOrder.merchantGoodsTotal ?? 0;
+  const fee = foodOrder.deliveryFee ?? 0;
   const total = foodOrder.merchantGoodsTotal != null && foodOrder.deliveryFee != null ? foodOrder.merchantGoodsTotal + foodOrder.deliveryFee : null;
+  const collectAtDoor = foodOrder.cashHandshakeAmount ?? total ?? 0;
   const noShow = noShowStatus(foodOrder.noShowCallTimestamps, nowMs);
-  const canReportUnreachable = order.status === "picked_up" || order.status === "en_route_dropoff";
-  // `pay_merchant` applies to exactly one variant: a CASH order at a kitchen that wants paying before
-  // it releases the food (`foodOfferVariant`'s `cash_upfront`, which is what the rider accepted on the
-  // offer card). A `collect_and_return` kitchen hands the food over unpaid, so it must never show here.
-  const payUpfront = cashOrder && foodOrder.merchantCashRule === "pay_upfront" && foodOrder.merchantPaymentConfirmedAt == null;
-  const needsPayMerchant = payUpfront && order.status === "en_route_pickup" && !paidMerchant;
+  const upfront = cashOrder && foodOrder.merchantCashRule === "pay_upfront";
+  const owedToKitchen = cashOrder && foodOrder.merchantCashRule === "collect_and_return" ? goods : 0;
+  const beforePickup = FOOD_DROPPABLE.has(order.status);
+  const before = order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup";
+  const stage: FoodStage = before ? (arrived === "pickup" ? "atKitchen" : "toKitchen") : arrived === "drop" ? "code" : "toCustomer";
+  const kitchenPhone = (order.pickup as { contactPhone?: string | null }).contactPhone ?? null;
   const restored = restoredJobId != null && restoredJobId === order.id && !restoreDismissed && isActive;
+  const kitchen = kitchenName(order);
+  const orderNo = order.id.slice(0, 8).toUpperCase();
+  const readyIn =
+    foodOrder.readyAt != null
+      ? 0
+      : foodOrder.prepStartedAt != null && foodOrder.prepMinutes != null
+        ? Math.max(0, Math.round((new Date(foodOrder.prepStartedAt).getTime() + foodOrder.prepMinutes * 60_000 - nowMs) / 60_000))
+        : null;
+  const away = (to: { lat: number; lng: number }): string | null => {
+    if (!riderPoint) return null;
+    const kmAway = haversineKm(riderPoint, to);
+    return RF.away(kmAway, Math.max(1, Math.round(kmAway * 5)));
+  };
+  const nav = (to: { lat: number; lng: number }): void => void Linking.openURL(navUrl(prefs.navApp, to)).catch(() => undefined);
+  const stageLine = stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? R.tAtKitchen : R.tToDrop;
+  const notices = (
+    <>
+      {restored ? <Notice icon="history" tone="wash" text={RF.restored(stageLine.toLowerCase())} /> : null}
+      {liveReconnecting ? (
+        offlineSince != null && nowMs - offlineSince >= 4 * 60_000 ? <Notice icon="wifi-off" tone="warn" text={R.offlineLong} /> : <Notice icon="wifi-off" text={R.offlineJob} />
+      ) : null}
+      {isActive && locationDenied ? <Notice icon="map-pin" tone="warn" text="Location is off — the customer can't see where you are." /> : null}
+    </>
+  );
+  const sos = (): void => {
+    haptic("alert");
+    setSheet(null);
+    void Linking.openURL(`tel:${SOS_POLICY.emergencyNumber}`).catch(() => undefined);
+    void raiseSos(order.id, riderPoint ? { lat: riderPoint.lat, lng: riderPoint.lng } : {}).catch(() => undefined);
+  };
+  const overlays = (
+    <>
+      <ProblemSheet
+        visible={sheet === "problem"}
+        onClose={() => setSheet(null)}
+        beforePickup={beforePickup}
+        food
+        onCancel={() => setSheet("drop")}
+        onReach={() => setSheet("reach")}
+        onDeliver={() => setSheet("reach")}
+        onHelp={() => helpFor(order.id)}
+        onReport={() => setSheet("report")}
+        onSos={() => setSheet("sos")}
+      />
+      <MSheet
+        visible={sheet === "drop"}
+        onClose={() => setSheet(null)}
+        title={R.dropT}
+        body={R.dropB}
+        buttons={
+          <>
+            <CtaButton label={R.cxKeep} onPress={() => setSheet(null)} />
+            <CtaButton ghost danger label={R.dropYes} loading={!!pendingOrQueued(dropM)} onPress={() => dropM.mutate(undefined, { onSettled: () => setSheet(null) })} />
+          </>
+        }
+      />
+      <MSheet visible={sheet === "reach"} onClose={() => setSheet(null)} title={RF.reachT(customer)} body={R.reachB}>
+        <UnreachableCustomerCard
+          customerPhone={order.counterpartyPhone}
+          callsLogged={noShow.callsLogged}
+          callsNeeded={noShow.callsNeeded}
+          waitRemainingMs={noShow.waitRemainingMs}
+          eligible={noShow.eligible}
+          onLogCall={() => logCallM.mutate()}
+          onReportNoShow={() => noShowM.mutate()}
+          onReportRefused={() => refusedM.mutate()}
+          logPending={pendingOrQueued(logCallM)}
+          reportPending={pendingOrQueued(noShowM, refusedM)}
+        />
+      </MSheet>
+      <ReportSheet orderId={order.id} counterpartyNoun="customer" visible={sheet === "report"} onClose={() => setSheet(null)} />
+      <SosSheet visible={sheet === "sos"} onClose={() => setSheet(null)} onCall={sos} />
+    </>
+  );
 
-  // Kit RR.nav_rest ("R2·1 — navigate to the restaurant") / RR.nav_cust ("R3·1 — ride to the
-  // customer"): the two en-route legs open as full-bleed map-first screens. Arrival (a local tap,
-  // never a server transition) returns to the working screen below.
-  if ((order.status === "en_route_pickup" || order.status === "en_route_dropoff") && arrivedAt !== order.status) {
-    const toRestaurant = order.status === "en_route_pickup";
+  // B4 — at the door: the cash handshake first (cash orders), then the delivery code.
+  if (stage === "code") {
+    const left = DELIVERY_OTP_MAX_ATTEMPTS - otpTries;
+    const locked = left <= 0;
+    const wrong = otpTries > 0 && deliveryCode.length === 6 && !deliverM.isPending && !locked;
+    const queued = pendingOrQueued(deliverM) === "queued";
+    const handshake = cashOrder && hState !== "confirmed";
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-        <TestBuildBanner />
-        <FoodNavLeg
-          leg={toRestaurant ? "restaurant" : "customer"}
-          order={order}
-          riderPoint={riderPoint}
-          paymentMethod={cashOrder ? "cash" : "wallet"}
-          collectAmount={!toRestaurant && cashOrder ? (foodOrder.cashHandshakeAmount ?? total) : null}
-          arrivedLabel={toRestaurant ? "I've arrived at the restaurant" : "I'm at the door"}
-          onArrived={() => setArrivedAt(order.status)}
-        >
-          {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
-        </FoodNavLeg>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <Screen>
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginBottom: tokens.space.md }}>
-          <Icon name="utensils" size={18} color={tokens.color.accentText} />
-          <Heading>Your job</Heading>
-          <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} tone={orderStatusTone(order.status)} />
-        </View>
-
-        {/* `offline_resume`: the app was killed mid-job and came straight back to it. */}
-        {restored ? <JobRestoredBanner onDismiss={() => setRestoreDismissed(true)} /> : null}
-
-        {isActive ? (
-          <View style={{ marginBottom: tokens.space.md }}>
-            {/* RJM active_food CashStrip (rider-one-app.jsx J7) — the codegen-adopted, guardrail-locked
-                "yours vs owed to a kitchen" split (RJM.active_food#cash_strip → active-food-cash-strip.view.tsx).
-                Same live seam the app already passed CashHeldStrip; pixels unchanged (CashStrip wraps it). */}
-            <RiderActiveFoodCashStripView yours={foodOrder.deliveryFee ?? 0} owed={foodOrder.debtStatus === "open" ? (foodOrder.debtAmount ?? 0) : 0} />
-          </View>
-        ) : null}
-
-        {isActive && locationDenied ? (
-          <View
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, borderWidth: 1, borderColor: tokens.color.line, marginBottom: tokens.space.sm }}
-          >
-            <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
-            <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-              Location is off — the customer can&apos;t see where you are.
-            </Text>
-            <Tappable tone="icon" onPress={() => void Linking.openSettings()} hitSlop={8}>
-              <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accent }}>Turn on</Text>
-            </Tappable>
-          </View>
-        ) : null}
-
-        <JobDetailsCard order={order} riderPoint={riderPoint} isActive={isActive} jobType="food" />
-
-        <Card>
-          <Text style={{ fontWeight: "700", marginBottom: tokens.space.sm }}>Order</Text>
-          {foodOrder.items.map((it, i) => (
-            <Text key={i} style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
-              {it.quantity}× {it.name}
-            </Text>
-          ))}
-        </Card>
-
-        {/* `rider-one-app.jsx` RJM.active_food: once the food (and the kitchen's cash duty) is on the
-            bike, an accent reminder of the door sequence rides with the carry — the strip carries the
-            figure, this carries the order of operations. Shown only while the collect-and-return debt
-            is actually open (post-pickup), so it can't precede the food it describes. */}
-        {isActive && cashOrder && foodOrder.merchantCashRule === "collect_and_return" && foodOrder.debtStatus === "open" ? (
-          <Card accent>
-            <Text style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>Collect {formatMoney(foodOrder.cashHandshakeAmount ?? total ?? 0)} at the door</Text>
-            <Text style={{ fontSize: 12, color: tokens.color.muted, lineHeight: 18, marginTop: 2 }}>
-              Food first, then the cash, then the code. The kitchen&apos;s money rides back with you.
-            </Text>
-          </Card>
-        ) : null}
-
-        {/* `pay_merchant` (kit RR.pay_merchant, "R2·2"): at a pay-upfront counter the rider's own cash
-            goes over the counter BEFORE the code is read out, so the amount gets a screen of its own
-            rather than a line inside the code card — the whole risk of this variant is handing over the
-            wrong figure (the delivery fee is not part of it). */}
-        {needsPayMerchant ? (
-          <PayMerchantCard
-            goodsTotal={foodOrder.merchantGoodsTotal ?? 0}
-            deliveryFee={foodOrder.deliveryFee ?? 0}
-            merchantName={order.pickup.landmark || null}
-            onConfirm={() => setPaidMerchant(true)}
-          />
-        ) : order.status === "en_route_pickup" && foodOrder.autoAccepted === true ? (
-          <CollectedPickupCard
-            pending={pendingOrQueued(collectedM)}
-            onCollected={onCollected}
-            error={collectedError}
-            paid={foodOrder.merchantPaymentConfirmedAt != null}
-            paidReference={foodOrder.merchantPaymentReference}
-            amountDue={cashOrder ? total : null}
-          />
-        ) : order.status === "en_route_pickup" ? (
-          <PickupCodeCard
-            code={pickupCode}
-            onChangeCode={setPickupCode}
-            attempts={pickupAttempts}
-            pending={pendingOrQueued(confirmPickupM)}
-            onConfirm={() => confirmPickupM.mutate()}
-            paid={foodOrder.merchantPaymentConfirmedAt != null}
-            paidReference={foodOrder.merchantPaymentReference}
-            amountDue={cashOrder ? total : null}
-          />
-        ) : next ? (
-          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={pendingOrQueued(advanceM)} />
-        ) : null}
-
-        {order.status === "en_route_dropoff" ? (
-          cashOrder && hState !== "confirmed" ? (
+      <JobPage
+        title={R.tArriving}
+        help
+        onBack={() => router.replace("/rider")}
+        onHelp={() => setSheet("problem")}
+        overlays={overlays}
+        toast={jobToast}
+        bar={
+          handshake ? null : locked ? (
+            <CtaBar hint={RF.newCodeWait(customer)}>
+              <CtaButton icon="phone" label={RF.callName(customer)} onPress={() => dial(order.counterpartyPhone)} />
+            </CtaBar>
+          ) : (
+            <CtaBar>
+              <CtaButton label={R.confirmCta} disabled={!codeReady || deliveryCode.length < 6 || order.status !== "en_route_dropoff"} loading={!!pendingOrQueued(deliverM) && !queued} onPress={() => deliverM.mutate()} />
+            </CtaBar>
+          )
+        }
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+          {notices}
+          <RSteps cur={2} />
+          {handshake ? (
             <RiderCashHandshakeCard
               state={hState}
-              amount={foodOrder.cashHandshakeAmount ?? total ?? 0}
+              amount={collectAtDoor}
               confirmedAt={foodOrder.customerCashConfirmedAt ?? null}
               nowMs={nowMs}
               onConfirm={() => confirmCashM.mutate()}
               onDispute={() => disputeCashM.mutate()}
               busy={pendingOrQueued(confirmCashM, disputeCashM)}
             />
-          ) : codeReady ? (
-            <DeliveryOtp code={deliveryCode} onChangeCode={setDeliveryCode} otpTries={otpTries} pending={pendingOrQueued(deliverM)} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
-          ) : null
-        ) : null}
-
-        {canReportUnreachable ? (
-          showUnreachable ? (
-            <UnreachableCustomerCard
-              customerPhone={order.counterpartyPhone}
-              callsLogged={noShow.callsLogged}
-              callsNeeded={noShow.callsNeeded}
-              waitRemainingMs={noShow.waitRemainingMs}
-              eligible={noShow.eligible}
-              onLogCall={() => logCallM.mutate()}
-              onReportNoShow={() => noShowM.mutate()}
-              onReportRefused={() => refusedM.mutate()}
-              logPending={pendingOrQueued(logCallM)}
-              reportPending={pendingOrQueued(noShowM, refusedM)}
-            />
           ) : (
-            <Button label="Can't reach the customer?" variant="ghost" onPress={() => setShowUnreachable(true)} />
-          )
+            <>
+              <JobTitle title={locked ? R.lockedT : RF.codeT(customer)} body={locked ? undefined : RF.codeB} />
+              <CodeBoxes value={deliveryCode} onChange={setDeliveryCode} error={wrong} locked={locked} />
+              {wrong ? <CodeError text={left === 1 ? RF.triesLast(customer) : RF.triesLeft(left)} /> : null}
+              {queued ? (
+                <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
+                  <Icon name="wifi-off" size={14} color={tokens.color.muted} />
+                  <Text style={{ fontSize: 13, color: tokens.color.muted }}>{R.offlineCode}</Text>
+                </View>
+              ) : null}
+            </>
+          )}
+          {cashOrder ? <CashSplit title={RF.collectFood(collectAtDoor)} yours={collectAtDoor - owedToKitchen} owed={owedToKitchen} /> : null}
+        </ScrollView>
+      </JobPage>
+    );
+  }
+
+  // B1 / B2 / B3 — the map and the stage sheet.
+  let content: React.ReactNode;
+  let bar: React.ReactNode;
+  if (stage === "atKitchen") {
+    const auto = foodOrder.autoAccepted === true;
+    const pickupLocked = pickupAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    const canCollect = order.status === "en_route_pickup" && (auto || (pickupCode.trim().length === 4 && !pickupLocked));
+    content = (
+      <>
+        {notices}
+        <RSteps cur={0} />
+        <StopCard food name={kitchen} here who={RF.kitchenReady(orderNo, readyIn)} onCall={kitchenPhone ? () => dial(kitchenPhone) : null} />
+        {upfront ? (
+          <>
+            <View style={{ borderWidth: 1.5, borderColor: tokens.color.ink, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Icon name="banknote" size={20} color={tokens.color.ink} />
+              <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.payNow(goods)}</Text>
+            </View>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.collectFoodB(fee, goods)}</Text>
+          </>
         ) : null}
-
-        {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
-
-        {FOOD_DROPPABLE.has(order.status) ? (
-          dropping ? (
-            <BailSheet reason={dropReason} onChangeReason={setDropReason} pending={pendingOrQueued(dropM)} onConfirm={() => dropM.mutate()} onDismiss={() => setDropping(false)} />
-          ) : (
-            <Button label="Drop this job" variant="ghost" onPress={() => setDropping(true)} />
-          )
-        ) : isActive ? (
-          /* `cancel_blocked` (kit RR.cancel_blocked, "R2·b2"): once the food is on the bike the server
-             refuses a drop, and the control simply disappeared — leaving a rider who wants out with no
-             stated way forward, which is exactly how an order ends up on a doorstep. The rule is now
-             said out loud, with the three routes that DO exist. */
-          showCancelBlocked ? (
-            <CancelBlockedCard
-              merchantName={order.pickup.landmark || null}
-              paidUpfront={foodOrder.merchantCashRule === "pay_upfront" ? foodOrder.merchantGoodsTotal : null}
-              onDismiss={() => setShowCancelBlocked(false)}
-              alternatives={[
-                {
-                  icon: "phone",
-                  title: "Call the customer",
-                  sub: order.counterpartyPhone ? "Ask for a better spot or a gate code" : "Their number isn't available on this job",
-                  onPress: order.counterpartyPhone ? () => void Linking.openURL(`tel:${order.counterpartyPhone}`) : undefined,
-                },
-                {
-                  icon: "circle-alert",
-                  title: "Get help from LyniaGo",
-                  sub: "Use “Get help with this job” below — support decides what happens next",
-                },
-                {
-                  icon: "refresh-cw",
-                  title: "Return the food to the restaurant",
-                  sub: canReportUnreachable
-                    ? "Opens after the wait and two logged calls — use “Can’t reach the customer?”"
-                    : "Only once you're at the door and the customer doesn't show",
-                },
-              ]}
-            />
-          ) : (
-            <Button label="Can I drop this job?" variant="ghost" onPress={() => setShowCancelBlocked(true)} />
-          )
+        {auto ? null : (
+          <>
+            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.pickupCodeL}</Text>
+            <CodeBoxes length={4} label={R.pickupCodeL} autoFocus={false} value={pickupCode} onChange={setPickupCode} error={pickupAttempts > 0 && pickupCode.length === 4 && !confirmPickupM.isPending} locked={pickupLocked} />
+            {pickupAttempts > 0 && !pickupLocked && pickupCode.length === 4 && !confirmPickupM.isPending ? <CodeError text={RF.triesLeft(DELIVERY_OTP_MAX_ATTEMPTS - pickupAttempts)} /> : null}
+          </>
+        )}
+        {collectedError ? <Notice icon="map-pin" tone="warn" text={collectedError} /> : null}
+        <ProblemLink onPress={() => setSheet("problem")} />
+      </>
+    );
+    bar = (
+      <CtaBar>
+        <CtaButton
+          label={upfront ? R.paidCta : R.collectedFood}
+          disabled={!canCollect}
+          loading={!!pendingOrQueued(auto ? collectedM : confirmPickupM)}
+          onPress={() => {
+            if (auto) onCollected();
+            else confirmPickupM.mutate();
+          }}
+        />
+      </CtaBar>
+    );
+  } else {
+    const kit = stage === "toKitchen";
+    const target = kit ? order.pickup : order.dropoff;
+    content = (
+      <>
+        {notices}
+        <RSteps cur={stepFor(stage)} />
+        <StopCard
+          food
+          drop={!kit}
+          name={kit ? kitchen : target.landmark}
+          line={away(target.point)}
+          who={kit ? RF.kitchenReady(orderNo, readyIn) : order.customerFirstName ? RF.who(order.customerFirstName, "customer") : null}
+          onCall={kit ? (kitchenPhone ? () => dial(kitchenPhone) : null) : order.counterpartyPhone ? () => dial(order.counterpartyPhone) : null}
+          onWhatsApp={!kit && order.counterpartyPhone ? () => wa(order.counterpartyPhone) : null}
+          onNavigate={() => nav(target.point)}
+        />
+        {kit ? (
+          upfront && total != null ? <CashLine text={RF.payKitchenB(goods, total)} /> : null
+        ) : cashOrder ? (
+          <CashSplit title={RF.collectFood(collectAtDoor)} yours={collectAtDoor - owedToKitchen} owed={owedToKitchen} />
         ) : null}
+        <ProblemLink onPress={() => setSheet("problem")} />
+      </>
+    );
+    bar = (
+      <CtaBar>
+        <CtaButton label={kit ? R.atKitchenCta : R.atDropCta} onPress={() => markArrived(kit ? "pickup" : "drop")} />
+      </CtaBar>
+    );
+  }
 
-        {isActive ? <GetHelpControl orderId={order.id} /> : null}
-        <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
-    </Screen>
+  return (
+    <JobShell
+      title={stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? R.tAtKitchen : R.tToDrop}
+      onBack={() => router.replace("/rider")}
+      onHelp={() => setSheet("problem")}
+      contentKey={`${stage}|${liveReconnecting ? "o" : ""}|${upfront ? "u" : ""}`}
+      toast={jobToast}
+      map={(padBottom) => (
+        <OrderMap
+          pickup={order.pickup.point}
+          dropoff={order.dropoff.point}
+          rider={riderPoint}
+          riderLabel={R.you}
+          riderPaused={liveReconnecting}
+          showRider
+          toPickupLine={stage === "toKitchen"}
+          rings={false}
+          dim={false}
+          frame={before ? "pickupRider" : "riderDrop"}
+          padBottom={padBottom}
+          reduceMotion={reduceMotion}
+        />
+      )}
+      content={content}
+      bar={bar}
+      overlays={overlays}
+    />
   );
+
+  function helpFor(id: string): void {
+    setSheet(null);
+    void raiseIssue(id, { type: "other", description: R.pHelp, idempotencyKey: uuidV4FromSeed(`${id}|help|${Math.floor(Date.now() / 60_000)}`) })
+      .then(() => setJobToast({ text: R.helpSent, icon: "circle-check" }))
+      .catch((e: unknown) => fail(e));
+  }
 }

@@ -7,6 +7,9 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 import type { OrderSnapshot } from "../../../src/api/orders";
 import type { MerchantOrderResponse } from "@lynia/shared";
 
@@ -55,13 +58,9 @@ jest.mock("../../../src/realtime/use-rider-job-socket", () => ({
 }));
 // LiveMap (react-native-maps) can't mount in this test environment — same precedent as
 // JobDetailsCard.test.tsx / ComposeMap.test.tsx.
-jest.mock("../../../src/ui/rider/JobDetailsCard", () => ({
-  JobDetailsCard: () => null,
-}));
-jest.mock("../../../src/ui/safety", () => ({
-  GetHelpControl: () => null,
-  SosControl: () => null,
-}));
+jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null }));
+jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ config: { ratePct: 10 }, isLoading: false }) }));
+jest.mock("../../../src/ui/safety", () => ({ ReportSheet: () => null }));
 
 import RiderFoodJob from "../food-job";
 
@@ -78,9 +77,11 @@ async function render(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
       <QueryClientProvider client={client}>
         <RiderFoodJob />
-      </QueryClientProvider>,
+      </QueryClientProvider>
+      </SafeAreaProvider>,
     );
   });
   await settle();

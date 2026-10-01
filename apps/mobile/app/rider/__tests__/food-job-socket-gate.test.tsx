@@ -64,6 +64,9 @@ jest.mock("../../../src/ui/LiveMap", () => ({
   LiveMap: () => null,
 }));
 
+jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null }));
+jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ config: { ratePct: 10 }, isLoading: false }) }));
+
 import RiderFoodJob from "../food-job";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 320, height: 640 } };
@@ -188,17 +191,15 @@ describe("rider food-job screen — A-O9 order-room socket gates the activeJob p
   it("still renders the active job correctly with the job socket already connected", async () => {
     mockUseRiderJobSocket.mockReturnValue({ connected: true });
     const tree = await render();
-    // Kit RR.nav_rest: an en-route job opens as the map-first nav leg — the working screen (with its
-    // status pill) sits behind the arrival tap, which is local UI state, never a server transition.
-    const arriveLabel = tree.root.findAll((n) => n.props.children === "I've arrived at the restaurant");
-    expect(arriveLabel.length).toBeGreaterThan(0);
-    let pressable: (typeof arriveLabel)[number] | null = arriveLabel[0] ?? null;
-    while (pressable && typeof pressable.props.onPress !== "function") pressable = pressable.parent;
-    expect(pressable).not.toBeNull();
+    // Rider v2 B1: an en-route job opens on "Heading to the kitchen"; "I'm at the kitchen" is a local
+    // arrival (never a server transition) that turns the sheet into B2 "At the kitchen".
+    const titleNow = (t: string): number => tree.root.findAll((n) => n.props.children === t).length;
+    expect(titleNow("Heading to the kitchen")).toBeGreaterThan(0);
+    const arrive = tree.root.findAll((n) => n.props.label === "I'm at the kitchen" && typeof n.props.onPress === "function")[0];
+    expect(arrive).toBeDefined();
     await act(async () => {
-      pressable!.props.onPress();
+      arrive!.props.onPress();
     });
-    const statusPill = tree.root.findAll((n) => n.props.status === "en_route_pickup");
-    expect(statusPill.length).toBeGreaterThan(0);
+    expect(titleNow("At the kitchen")).toBeGreaterThan(0);
   });
 });

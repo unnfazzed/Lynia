@@ -1963,98 +1963,20 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RJM.offer_food — the rider's incoming FOOD-DISPATCH OFFER (app/rider/food-offer.tsx), the
-    // accept-offer decision screen. ADOPTED this pass (region `offer`), unblocked by the owner's product-
-    // rule clarification (2026-08-12): riders NEVER pay cash upfront — cash is collected from the customer
-    // AFTER delivery, or the customer pre-pays via mobile money. The old `cash_upfront` branch (a danger-
-    // wash "THIS KITCHEN ASKS YOU TO PAY FIRST · front $X" card + an "Accept · front $X" money-commitment
-    // label) therefore drew a flow that DOES NOT EXIST — incorrect UI to remove, not money-safety copy to
-    // preserve. With cash_upfront gone the screen is the mock's cash-collect case plus the customer-prepaid
-    // (`wallet`) case, and the RJM mock's single-variant offer card is CORRECT to adopt.
-    //
-    // The mock `offer_food` (rider-one-app.jsx J4) is
-    //   S( div( AppBar 'Food job'·sub, Pad( Card( div(TypeTag food · Money), 'Your fare is fixed…' copy,
-    //        div('MONEY AT THE DOOR' · 'Collect $15.50 for the kitchen' · 'Nothing from your pocket…') ) ) ),
-    //      { footer: div( Button 'Accept this job', ghost 'Not this one' ) } )
-    // The offer CARD is the region adopted here (locator {el:"Card"} → RiderFoodOfferCardView), reducing on
-    // both sides to CARD( BOX[ai:center,row](TYPETAG, BOX[flex1], MONEY), TEXT, BOX(TEXT, BOX(MONEY), TEXT) ).
-    // `TypeTag` is a new tokens-only DS primitive (src/ui/rider/TypeTag.tsx) the generated view imports from
-    // its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), mirroring JobCard.
-    //
-    // TWO seams only, both leaf-level (structurally invisible): the header Money `v` → the rider's fixed
-    // delivery `fare`, and the tile Money `v` → the `collectAmount` (the kitchen's money collected at the
-    // door). The mock's tile amount line is `<div>Collect <Money/> for the kitchen</div>` — a div whose only
-    // ELEMENT child is Money (normalizes to BOX(MONEY)); RN's transpiler wraps the bare "Collect"/"for the
-    // kitchen" words in <Text> siblings (BOX(TEXT,MONEY,TEXT)), so the bind collapses that inner box back to
-    // the lone <Money> to match the mock, the eyebrow ("MONEY AT THE DOOR") + note carrying the copy. The
-    // mock copy (eyebrow, fare line, note, both button labels) is kept VERBATIM in the generated view.
-    //
-    // The footer accept/decline pair lives in the render-helper `S(…,{footer})` opts, which the region
-    // locators do not reach (jsxRootNode unwraps S() to its body; the footer slot is a future region
-    // concern — normalize.mjs) — so the pinned Button pair stays container glue in `<Screen footer=…>`,
-    // pruned from the composition (which reduces on both sides to SCREEN(REGION:offer)). The `wallet`
-    // (customer-prepaid) card is the honest container glue for the one case the single-variant mock does
-    // not draw (same Card anatomy, wallet copy) — also pruned from the composition.
-    //
-    // SENSITIVE-PATH PRESERVATION (byte-identical): the `getFoodDispatchOffer` 3s poll (`offerQ`), the
-    // `acceptFoodDispatch(offer.orderId)` / `declineFoodDispatch(offer.orderId)` mutations (`acceptM` /
-    // `declineM`) and their onSuccess nav/invalidations, `foodOfferVariant`, `pendingOrQueued` gating and
-    // the flag-off/loading/expired EmptyState early-returns are all unchanged — only the presentational
-    // tree is restructured and the dead cash_upfront variant removed. `food-rider-job.ts` `foodOfferVariant`
-    // still computes `cash_upfront`; the screen collapses that (impossible) value into the collect case.
+    // ── RJM.offer_food — the food offer (app/rider/food-offer.tsx). Its offer Card was region-adopted
+    // (food-offer-card.view.tsx) until 2026-10-01; the Rider v2 handoff's F1–F4 redraw the screen around a
+    // map and a countdown sheet, so the generated view was deleted with it.
     key: "RJM.offer_food",
     container: "apps/mobile/app/rider/food-offer.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "offer_food",
     uiImport: "../../src/ui",
-    regions: [
+    states: [],
+    deferred: [
       {
-        region: "offer",
-        locator: { el: "Card" },
-        componentName: "RiderFoodOfferCardView",
-        viewFile: "apps/mobile/app/rider/food-offer-card.view.tsx",
-        propsParam: "{ fare, collectAmount }: RiderFoodOfferCardViewProps",
-        propsType: [
-          "export type RiderFoodOfferCardViewProps = {",
-          "  /** The rider's fixed delivery fare (the mock header Money). */",
-          "  fare: string | number | null | undefined;",
-          "  /** The kitchen's money collected at the door and handed back after the drop (the tile Money). */",
-          "  collectAmount: string | number | null | undefined;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => {
-          let moneyIdx = 0;
-          const TEXT_ONLY = new Set(["fontSize", "fontWeight", "letterSpacing", "lineHeight", "color", "textAlign", "fontVariant"]);
-          return {
-            // The tile amount line `<div>Collect <Money/> for the kitchen</div>` becomes a View whose bare
-            // words RN wrapped in <Text>; collapse it to the lone <Money> so the box matches the mock's
-            // BOX(MONEY), and drop the text-only style keys the div carried (invalid on an RN View). The
-            // header row (TypeTag/spacer/Money) is untouched — it wraps a Money but carries no <Text>.
-            JSXElement(path) {
-              const open = path.node.openingElement;
-              if (open.name.name !== "View") return;
-              const elKids = path.node.children.filter((c) => c.type === "JSXElement" || c.type === "JSXSelfClosingElement");
-              const money = elKids.find((c) => c.openingElement && c.openingElement.name.name === "Money");
-              const hasText = elKids.some((c) => c.openingElement && c.openingElement.name.name === "Text");
-              if (!money || !hasText) return;
-              path.node.children = [money];
-              const styleAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
-              const obj = styleAttr && styleAttr.value && styleAttr.value.expression;
-              if (obj && obj.type === "ObjectExpression") {
-                obj.properties = obj.properties.filter((p) => !(p.type === "ObjectProperty" && !p.computed && TEXT_ONLY.has(p.key.name || p.key.value)));
-              }
-            },
-            // The two frozen Money literals → the data seam: the FIRST (header, size 20) is the fare, the
-            // SECOND (tile, size 13.5) is the collectAmount. Document order is stable.
-            JSXOpeningElement(path) {
-              if (path.node.name.name !== "Money") return;
-              moneyIdx += 1;
-              const which = moneyIdx === 1 ? "fare" : "collectAmount";
-              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
-              path.node.attributes.unshift(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr(which))));
-            },
-          };
-        },
+        state: "data",
+        key: "RJM.offer_food",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the food offer is now the Rider v2 handoff's F1–F4 — FoodHeader (no Back), the pickup-stage map, a sheet with the countdown pill and bar, the FOOD tag, the kitchen, 'Your fare', the stops or (at a kitchen paid up front) the 'Pay the kitchen' / 'Collect at the door' tiles, then 'Accept this job' / 'Not this one' under the no-penalty hint; F4 is the expired state. The gallery `offer_food` draws AppBar + one offer Card + a footer; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 food offer.",
       },
     ],
   },
@@ -2079,268 +2001,56 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RJM.active_food — the rider's ACTIVE FOOD JOB (app/rider/food-job.tsx). SENSITIVE screen
-    // (advance / pickup-code / doorstep dual-confirm / delivery-code / drop). The mock `active_food`
-    // (rider-one-app.jsx J7) is
-    //   S( div( AppBar 'Active job'·sub, CashStrip(yours·owed),
-    //        Pad( Card( div(TypeTag food · spacer · 'Navigate'), Stepper FOOD_STEPS ),
-    //             Card accent( 'Collect $15.50 at the door' · 'Food first, then the cash…' ) ) ),
-    //      { tab:"jobs", footer: Button 'Enter the delivery code' } )
-    //
-    // ONLY the CashStrip is region-adopted (display-only, no accept/advance/confirm logic touched). The
-    // three richer pieces DEFER — each a genuine wall, recorded honestly (CLAUDE.md "Pixel parity":
-    // honesty over volume; a clean deferral is the right outcome when adoption isn't safe):
-    //
-    //   • tracker Card (TypeTag·Navigate + Stepper) — the app's Stepper is BURIED inside JobDetailsCard,
-    //     which FUSES a LiveMap (src/ui/rider/JobDetailsCard.tsx:99 + :124) into one memoized composite
-    //     alongside the fare / phones / items / note. The mock's tracker Card draws a clean
-    //     Card(TypeTag+Navigate+Stepper) with NO map. Separating the Stepper region would mean un-fusing
-    //     the live-map composite (extracting the Stepper out of JobDetailsCard into the container's main
-    //     render) — the map-fused-composite deferral case (like food track_way); the map region does not
-    //     cleanly separate, so it is deferred rather than forced. (Also: the composition walker sees
-    //     JobDetailsCard as an opaque leaf, so its internal Stepper is invisible to a `tracker` region.)
-    //   • accent cash card ("Collect $X at the door") — display-only and the app DOES draw it
-    //     (food-job.tsx:800-807), but it is NOT ADDRESSABLE by the locator engine: `active_food` draws
-    //     TWO sibling <Card>s and locators anchor FIRST-by-tag (normalize.mjs `locateTs` / emit.mjs
-    //     `locateBabel`), so `{el:"Card"}` resolves to the tracker Card (deferred above), never the
-    //     second (accent) Card. There is no attribute/index locator to disambiguate a sibling Card
-    //     without extending the locator engine. Adoptable once the locator engine grows sibling
-    //     disambiguation (or the tracker Card is itself adopted, freeing first-Card for the accent one).
-    //   • footer "Enter the delivery code" — the DELIVERY-CODE seam (DeliveryOtp → confirmDelivery), the
-    //     most sensitive path on the screen, realized in-app as the conditional doorstep cards. It rides
-    //     in the mock's `S(…,{footer})` opts, which region locators do not reach (jsxRootNode unwraps
-    //     S() to its body; a helper-carried footer is a future region concern) — the same treatment
-    //     offer_food/offer_parcel's footers got. Container glue, pruned from the composition.
-    //
-    // The CashStrip region (locator {el:"CashStrip"} → RiderActiveFoodCashStripView) reduces on both
-    // sides to a single opaque CASHSTRIP leaf — the same shape RC.await_accept#tracker's `<RTracker>`→
-    // STEPPER leaf takes. `CashStrip` is a new tokens-only DS primitive (src/ui/rider/CashStrip.tsx, a
-    // thin wrapper over the shipped CashHeldStrip so pixels are unchanged) the generated view imports
-    // from its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser cycle), mirroring JobCard /
-    // TypeTag. Both mock and container reduce to SCREEN(REGION:cash_strip): the tracker/accent Cards and
-    // the AppBar are non-region glue (pruned), and the footer sits in opts (not reached).
-    //
-    // SENSITIVE-PATH PRESERVATION (byte-identical, nothing re-homed): the CashStrip carries NO handler —
-    // it is a pure `yours`/`owed` display, wired to the SAME expressions the app already passed
-    // CashHeldStrip (`foodOrder.deliveryFee ?? 0` / the open-debt amount). Every mutation — `advanceM`
-    // (advanceStatus), `confirmPickupM` (confirmFoodPickup), `dropM` (dropFoodDispatch), `deliverM`
-    // (confirmDelivery), the cash-handshake confirm/dispute, the pickup-code + delivery-code gates and
-    // their attempt reconciles, the FOOD_DROPPABLE / RIDER_FOOD_NEXT gating order — is UNTOUCHED. The
-    // container still mounts `<CashHeldStrip>` on its delivered terminal branch (a different render, not
-    // the main active screen the composition reduces); only the main-render strip is the adopted region.
+    // ── RJM.active_food — the food active job (app/rider/food-job.tsx). Same supersession as active_parcel:
+    // the Rider v2 handoff's B1–B6 replace the CashStrip + tracker + footer screen; the generated
+    // active-food-cash-strip.view.tsx was deleted with it.
     key: "RJM.active_food",
     container: "apps/mobile/app/rider/food-job.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "active_food",
     uiImport: "../../src/ui",
-    regions: [
-      {
-        region: "cash_strip",
-        locator: { el: "CashStrip" },
-        componentName: "RiderActiveFoodCashStripView",
-        viewFile: "apps/mobile/app/rider/active-food-cash-strip.view.tsx",
-        propsParam: "{ yours, owed }: RiderActiveFoodCashStripViewProps",
-        propsType: [
-          "export type RiderActiveFoodCashStripViewProps = {",
-          "  /** What the rider keeps (the delivery fee) — the accent 'YOURS' tile. */",
-          "  yours: number;",
-          "  /** The kitchen's money still riding back on an open collect-and-return debt (0 otherwise) —",
-          "   *  the 'OWED TO A KITCHEN' tile, danger-washed while owing. */",
-          "  owed: number;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "CashStrip") return;
-            // Swap the mock's frozen "2.40"/"15.50" string literals for the live numeric seam the app
-            // already computes. Structurally invisible: CashStrip is an opaque leaf either way.
-            path.node.attributes = path.node.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && ["yours", "owed"].includes(a.name.name)),
-            );
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("yours"), t.jsxExpressionContainer(expr("yours"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("owed"), t.jsxExpressionContainer(expr("owed"))));
-          },
-        }),
-      },
-    ],
-    deferred: [
-      {
-        state: "tracker",
-        key: "RJM.active_food#tracker",
-        reason:
-          "the mock's tracker Card is a clean Card(TypeTag+Navigate+Stepper) with no map, but the app's Stepper is BURIED inside JobDetailsCard, which fuses a LiveMap (JobDetailsCard.tsx) into one memoized composite alongside fare/phones/items/note. Separating a Stepper region would mean un-fusing that live-map composite (the map-fused-composite deferral case, like food track_way) — the map does not cleanly separate. JobDetailsCard is also an opaque leaf to the composition walker, so its internal Stepper is invisible to a region. Adoptable once the Stepper is drawn as a discrete, map-free node in the main render.",
-      },
-      {
-        state: "cash_card",
-        key: "RJM.active_food#cash_card",
-        reason:
-          "the accent 'Collect $X at the door' card is display-only and the app draws it (food-job.tsx), but it is NOT ADDRESSABLE: active_food draws TWO sibling <Card>s and the locator engine anchors FIRST-by-tag (locateTs / locateBabel), so {el:'Card'} resolves to the tracker Card (deferred), never the second (accent) Card. No attribute/index locator disambiguates a sibling Card without extending the engine. Adoptable once the locator engine grows sibling disambiguation, or the tracker Card is adopted (freeing first-Card for the accent one).",
-      },
-      {
-        state: "footer",
-        key: "RJM.active_food#footer",
-        reason:
-          "the footer 'Enter the delivery code' is the DELIVERY-CODE seam (DeliveryOtp → confirmDelivery), the most sensitive path on the screen, realized in-app as the conditional doorstep cards. It rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps S() to its body; a helper-carried footer is a future region concern) — the same treatment offer_food/offer_parcel footers got. Container glue, pruned from the composition.",
-      },
-    ],
-  },
-  {
-    // ── RJM.active_parcel — the rider's ACTIVE PARCEL JOB (app/rider/job.tsx). The MOST entangled active
-    // screen (advance / deliver / cancel / undeliver / confirmItems / sender-rating / delivery-code
-    // rotation / self-heal poll). The mock `active_parcel` (rider-one-app.jsx J6) is
-    //   S( div( AppBar 'Active job'·sub·back=false, CashStrip(yours),
-    //        Pad( Card( div(TypeTag · spacer · 'Navigate'), Stepper PARCEL_STEPS ) ) ),
-    //      { tab:"jobs", footer: Button "I've arrived at the drop-off" } )
-    //
-    // ONLY the CashStrip is region-adopted (display-only, no advance/deliver/cancel/confirm logic
-    // touched) — the SAME shape as RJM.active_food#cash_strip. The two richer pieces DEFER, each a genuine
-    // wall recorded honestly (CLAUDE.md "Pixel parity": honesty over volume; a clean deferral is the right
-    // outcome when adoption isn't safe):
-    //
-    //   • tracker Card (TypeTag·Navigate + Stepper) — IDENTICAL wall to active_food's tracker. The app's
-    //     status timeline is drawn by JobDetailsCard (job.tsx:950), which FUSES a LiveMap into one
-    //     memoized composite alongside fare/phones/items/note; the mock's tracker Card draws a clean
-    //     Card(TypeTag+Navigate+Stepper) with NO map. Separating a Stepper region would mean un-fusing the
-    //     live-map composite (the map-fused-composite deferral case) — the map does not cleanly separate,
-    //     and JobDetailsCard is an opaque leaf to the composition walker, so its internal timeline is
-    //     invisible to a region. Adoptable once the timeline is drawn as a discrete, map-free node.
-    //   • footer "I've arrived at the drop-off" — the ADVANCE seam (advanceM → advanceStatus, realized in
-    //     the main render as the `next.label` Button + the DeliveryOtp / can't-complete controls). It
-    //     rides in the mock's `S(…,{footer})` opts, which region locators do not reach (jsxRootNode
-    //     unwraps S() to its body; a helper-carried footer is a future region concern) — the same
-    //     treatment offer_food/offer_parcel/active_food footers got. Container glue, pruned from the
-    //     composition. NOTE: active_parcel draws only ONE Card (the tracker), so unlike active_food there
-    //     is no second-sibling `<Card>` cash-card deferral here.
-    //
-    // The CashStrip region (locator {el:"CashStrip"} → RiderActiveParcelCashStripView) reduces on both
-    // sides to a single opaque CASHSTRIP leaf. `CashStrip` is the shared tokens-only DS primitive
-    // (src/ui/rider/CashStrip.tsx, a thin wrapper over the shipped CashHeldStrip so pixels are unchanged)
-    // the generated view imports from its OWN module (emit.mjs NON_BARREL — no `no-circular` cruiser
-    // cycle). Both mock and container reduce to SCREEN(REGION:cash_strip): the tracker Card and the AppBar
-    // are non-region glue (pruned), and the footer sits in opts (not reached).
-    //
-    // SENSITIVE-PATH PRESERVATION (byte-identical, nothing re-homed): the CashStrip carries NO handler —
-    // it is a pure `yours`/`owed` display, wired to the SAME expression the app already passed
-    // CashHeldStrip on this screen (`Number(order.agreedFare ?? order.proposedFare)` / `owed={0}` — parcel
-    // cash is always all "yours"). Every mutation — `advanceM` (advanceStatus), `deliverM`
-    // (confirmDelivery + code), `cancelM` (cancelOrder), `undeliverM` (markUndelivered), `confirmItems`
-    // (confirmAndCollect), `senderRateM` (rateSender), the delivery-code rotation / OTP-attempt reconcile
-    // and the ACTIVE/NEXT/RIDER_CANCELLABLE gating order — is UNTOUCHED. This is the ONLY CashHeldStrip
-    // mount in job.tsx, so the swap replaces it outright (via the CashStrip wrapper the view imports); the
-    // offline-resume error branch draws a fare/route Card, not the strip.
-    key: "RJM.active_parcel",
-    container: "apps/mobile/app/rider/job.tsx",
-    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    mockComponent: "active_parcel",
-    uiImport: "../../src/ui",
-    regions: [
-      {
-        region: "cash_strip",
-        locator: { el: "CashStrip" },
-        componentName: "RiderActiveParcelCashStripView",
-        viewFile: "apps/mobile/app/rider/active-parcel-cash-strip.view.tsx",
-        propsParam: "{ yours, owed }: RiderActiveParcelCashStripViewProps",
-        propsType: [
-          "export type RiderActiveParcelCashStripViewProps = {",
-          "  /** What the rider keeps — the accent 'YOURS' tile. On a parcel this is the whole agreed fare. */",
-          "  yours: number;",
-          "  /** Kitchen money still owed — always 0 on a parcel (nothing is collected-and-returned), so the",
-          "   *  'OWED TO A KITCHEN' tile stays the muted zero state. Kept for parity with the shared strip. */",
-          "  owed: number;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "CashStrip") return;
-            // Swap the mock's frozen "3.00" string literal for the live numeric seam the app already
-            // computes. Structurally invisible: CashStrip is an opaque leaf either way.
-            path.node.attributes = path.node.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && ["yours", "owed"].includes(a.name.name)),
-            );
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("yours"), t.jsxExpressionContainer(expr("yours"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("owed"), t.jsxExpressionContainer(expr("owed"))));
-          },
-        }),
-      },
-    ],
-    deferred: [
-      {
-        state: "tracker",
-        key: "RJM.active_parcel#tracker",
-        reason:
-          "the mock's tracker Card is a clean Card(TypeTag+Navigate+Stepper) with no map, but the app's status timeline is drawn by JobDetailsCard (job.tsx), which fuses a LiveMap into one memoized composite alongside fare/phones/items/note. Separating a Stepper region would mean un-fusing that live-map composite (the map-fused-composite deferral case, like active_food's tracker) — the map does not cleanly separate. JobDetailsCard is also an opaque leaf to the composition walker, so its internal timeline is invisible to a region. Adoptable once the timeline is drawn as a discrete, map-free node in the main render.",
-      },
-      {
-        state: "footer",
-        key: "RJM.active_parcel#footer",
-        reason:
-          "the footer \"I've arrived at the drop-off\" is the ADVANCE seam (advanceM → advanceStatus), realized in-app as the main-render next.label Button plus the DeliveryOtp / can't-complete-delivery controls. It rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps S() to its body; a helper-carried footer is a future region concern) — the same treatment offer_food/offer_parcel/active_food footers got. Container glue, pruned from the composition.",
-      },
-    ],
-  },
-  {
-    // ── RJM.handoff — the delivery-code HAND-OFF (src/ui/rider/DeliveryOtp.tsx, the doorstep Card mounted
-    // inside the active-job screens app/rider/job.tsx:976 + app/rider/food-job.tsx:851). This is the MOST
-    // SENSITIVE rider screen — the delivery-confirmation money/handoff path (DeliveryOtp → confirmDelivery,
-    // the 3-wrong-tries lockout, the KB-DELIVERY-CODE-ROTATION-SIGNAL reconcile). The mock `handoff`
-    // (rider-one-app.jsx J8) is
-    //   S( div( AppBar 'Delivery code'·'Ask the customer to read it out',
-    //        Pad( Card( div(6 code cells [4,1,9,2,•,•]),
-    //                   div('Same code on parcels and food. Three wrong tries and the job locks…') ) ) ),
-    //      { footer: Button 'Confirm delivery' } )
-    //
-    // ADOPTED: NOTHING. This is the CORRECT and expected outcome for this screen (task #48 HARD RULE:
-    // "STRONGLY prefer deferring over any risk to the delivery-confirm path"; CLAUDE.md Pixel parity:
-    // honesty over volume). The whole screen IS the code-entry mechanism — there is NO display-only
-    // sub-tree that separates WITHOUT touching the code-entry field, the attempt counter, the lock, or the
-    // confirm mutation. Every child of the mock's one Card is a sensitive-path node:
-    //
-    //   • the 6 code cells ARE the code-entry field. In the app they are `<CodeInput length={6}
-    //     value={code} onChangeText={onChangeCode} error={otpTries>0} disabled={otpLocked} />` — the live
-    //     delivery-code entry, wired to the container's code state and the 3-try lock. Restructuring the
-    //     cells' presentation IS restructuring the code-entry field. Forbidden by the HARD RULE.
-    //   • the single static copy line describes the 3-try lock ("Three wrong tries and the job locks").
-    //     In the app that region is NOT a static line — it is the CONDITIONAL attempt/lock messaging driven
-    //     by `otpTries`/`otpLocked` (the lockout logic itself). Adopting a static line as a region would
-    //     either collide with that lock-driven messaging or ADD lock copy the app conditionally owns —
-    //     both touch the lock.
-    //   • the footer 'Confirm delivery' is the `confirmDelivery(orderId, code)` mutation (deliverM). It
-    //     rides in the mock's S(…,{footer}) opts, which region locators do not reach (jsxRootNode unwraps
-    //     S() to its body) — the same treatment active_food#footer / active_parcel#footer got. In fact
-    //     active_food#footer ('Enter the delivery code') already deferred noting it is "realized in-app as
-    //     the conditional doorstep cards" — i.e. THIS DeliveryOtp.
-    //
-    // NO-CONTAINER-BOUNDARY (live-vs-static). Beyond "the whole card is the mechanism", the region-codegen
-    // model has nothing to anchor to here: DeliveryOtp is a plain `<Card>` FRAGMENT (no Screen/AppScreen
-    // root), not a routed screen, so no region can root at SCREEN(REGION:x) on it. Its enclosing containers
-    // ARE routed screens — job.tsx / food-job.tsx — but those are RJM.active_parcel / RJM.active_food,
-    // whose AppBar reads 'Active job', NOT the mock's dedicated 'Delivery code' header. The app never
-    // navigates to a standalone delivery-code screen; it keys the code inline in a conditional doorstep
-    // branch of the active-job screen. So the mock's whole-screen S(AppBar 'Delivery code', …) has no app
-    // container whose composition it can match — a standalone mock screen realized as an inline Card inside
-    // a different screen (the same live-vs-static / no-boundary shape as RJM.gate_topup and RC.handoff).
-    //
-    // SENSITIVE-PATH PRESERVATION: byte-identical by NOT TOUCHING. DeliveryOtp.tsx is unchanged (0 +/− on
-    // the code state, the CodeInput, the attempt counter, otpLocked, and the Confirm button). All sensitive
-    // logic stays in the containers untouched: `otpTries` + `reconcileOtpAttempts` (the delivery-code
-    // rotation reconcile), `deliverM` = `confirmDelivery(orderId, code.trim())`, and the terminal-error
-    // `setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS)` lockout at the 3rd wrong try. RJM.handoff stays PENDING in
-    // parity-status.mjs (screen-inventory guardrail already satisfied); this entry records the disposition
-    // honestly in the ledger, mirroring RJM.money / RJM.gate_topup. Adoptable only if the product draws a
-    // standalone delivery-code screen (so the mock's AppBar+Card tree gains an app container), AND a
-    // presentational code-cell/copy sub-tree is expressible without touching the code-entry field or the
-    // lockout — i.e. never at display-only cost while the whole card is the code-entry mechanism.
-    key: "RJM.handoff",
-    container: "apps/mobile/src/ui/rider/DeliveryOtp.tsx",
-    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
-    uiImport: "../index",
     states: [],
     deferred: [
       {
-        state: "handoff",
+        state: "data",
+        key: "RJM.active_food",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the food active job is now the Rider v2 handoff's B1–B6 — the same JobShell as the parcel job, with the kitchen StopCard (· FOOD), the pay-the-kitchen row at an upfront kitchen, the CashSplit to collect at the door, the delivery code with the CashSplit, the blocking 'Return the cash' page and the done page. The gallery `active_food` draws AppBar + CashStrip + tracker + footer; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 food job.",
+      },
+    ],
+  },
+  {
+    // ── RJM.active_parcel — the parcel active job (app/rider/job.tsx). Until 2026-10-01 its CashStrip was
+    // region-adopted (active-parcel-cash-strip.view.tsx) with the tracker / footer deferred. D-54's Rider v2
+    // handoff redraws the active job as the rider-side mirror of After Send (JobShell: header with Help, a
+    // full-bleed map, a stage sheet, one primary), so the generated view was deleted with the old screen.
+    key: "RJM.active_parcel",
+    container: "apps/mobile/app/rider/job.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
+        key: "RJM.active_parcel",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the parcel active job is now the Rider v2 handoff's A1–A13 — AHeader (stage title + Help), a full-bleed map, a sheet sized to its content (RSteps, the StopCard with Call · WhatsApp · Navigate, the cash line, 'Problem with this job?') and one primary; the delivery code on its own page (CodeBoxes 3 + 3). The gallery `active_parcel` draws an AppBar, a CashStrip, a tracker card and a footer; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 active job.",
+      },
+    ],
+  },
+  {
+    // ── RJM.handoff — the delivery-code hand-off. DeliveryOtp.tsx is deleted: the Rider v2 handoff's A8–A12
+    // draw the code on its own page of the active job (CodeBoxes 3 + 3, wrong / last try / locked / offline).
+    key: "RJM.handoff",
+    container: "apps/mobile/app/rider/job.tsx",
+    mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
+    uiImport: "../../src/ui",
+    states: [],
+    deferred: [
+      {
+        state: "data",
         key: "RJM.handoff",
         reason:
-          "MOST SENSITIVE rider screen — the delivery-confirmation money/handoff path (DeliveryOtp → confirmDelivery, the 3-wrong-tries lockout, the delivery-code rotation reconcile). Adopted NOTHING (the correct, expected outcome). The whole screen IS the code-entry mechanism: the mock's one Card has only two children — the 6 code cells (= the app's `<CodeInput>`, the live delivery-code ENTRY field wired to the code state + the lock) and a single static line describing the 3-try lock (in the app: the CONDITIONAL otpTries/otpLocked messaging, i.e. the lockout logic) — plus a footer 'Confirm delivery' = the confirmDelivery mutation. No display-only sub-tree separates WITHOUT touching the code-entry field, the attempt counter, the lock, or the confirm mutation (task #48 HARD RULE; CLAUDE.md honesty over volume). NO CONTAINER BOUNDARY either: DeliveryOtp is a `<Card>` FRAGMENT (no Screen root) mounted inside job.tsx/food-job.tsx, whose AppBar reads 'Active job' (RJM.active_parcel/active_food) — the app has no standalone 'Delivery code' screen the mock's `S(AppBar 'Delivery code', Pad(Card))` can anchor to (live-vs-static, same shape as gate_topup / RC.handoff; the footer rides S(…,{footer}) opts region locators don't reach, as active_food#footer already noted for 'Enter the delivery code' — this very DeliveryOtp). DeliveryOtp.tsx is byte-identical (untouched). Adoptable only if the product draws a standalone delivery-code screen AND a code-cell/copy sub-tree becomes expressible without touching the code-entry/lock/confirmDelivery path.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the delivery code is now the Rider v2 handoff's A8–A12 — 'Arriving now' with the step track, 'Ask <recipient> for the delivery code', six boxes split 3 + 3 over the phone's number pad, the wrong / last-try / locked / offline states and 'Confirm delivery'. The gallery `handoff` draws the older inline code card; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 code page.",
       },
     ],
   },

@@ -1,22 +1,28 @@
-import { type AdvanceStatusRequest, UndeliveredReason } from "@lynia/shared";
+import { type AdvanceStatusRequest, haversineKm, SOS_POLICY, UndeliveredReason } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, ScrollView, Text, View } from "react-native";
+import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
-import { collectedItemCount, shouldShowJobError } from "../../src/logic/journey";
+import { raiseIssue, raiseSos } from "../../src/api/safety";
+import { shouldShowJobError } from "../../src/logic/journey";
 import {
   clearPickupChecklistDraft,
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
 import { clearPickupPhotoDraft } from "../../src/logic/pickup-photo-draft";
-import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, NEXT, parcelCashOnDelivery, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
+import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, parcelCashOnDelivery, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
+import { type Arrival, type ArrivalMark, AUTO_ADVANCE, clearArrival, loadArrival, parcelStage, REACH_WAIT_MS, saveArrival, stepFor } from "../../src/logic/rider-job-stage";
+import { navUrl, useRiderPrefs } from "../../src/logic/rider-prefs";
+import { uuidV4FromSeed } from "../../src/util";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
 import { pendingOrQueued } from "../../src/query/client";
 import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
+import { usePickupPhoto } from "../../src/query/use-pickup-photo";
+import { useWalletConfig } from "../../src/query/use-wallet";
 import {
   acknowledgeHandback,
   clearConfirmItemsPending,
@@ -39,19 +45,38 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, Celebrate, haptic, Heading, Icon, OfflineBanner, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast, Tappable } from "../../src/ui";
-import { RiderActiveParcelCashStripView } from "./active-parcel-cash-strip.view";
-import { JobRestoredBanner } from "../../src/ui/rider/JobRestoredBanner";
+import { AppBar, Button, Card, haptic, Heading, Icon, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
+import { useReduceMotion } from "../../src/ui/useReduceMotion";
+import { IconDisc, SmBtn, Stars, Tags } from "../../src/ui/order/kit";
+import { OrderMap } from "../../src/ui/order/OrderMap";
+import { ORDER_COPY as A } from "../../src/ui/order/copy";
+import { Notice } from "../../src/ui/send/kit";
+import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { CashLine, MSheet, Progress } from "../../src/ui/rider/kit";
+import {
+  CodeBoxes,
+  CodeError,
+  CtaBar,
+  CtaButton,
+  DangerNote,
+  ItemTick,
+  JobPage,
+  JobShell,
+  JobTitle,
+  type JobToast,
+  KV,
+  PhotoPreview,
+  PhotoRow,
+  ProblemLink,
+  ProblemSheet,
+  RSteps,
+  SosSheet,
+  StopCard,
+  TerminalBody,
+} from "../../src/ui/rider/job-kit";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
-import { DeliveryOtp } from "../../src/ui/rider/DeliveryOtp";
-import { JobDetailsCard } from "../../src/ui/rider/JobDetailsCard";
-import { LeaveJobButton } from "../../src/ui/rider/LeaveJobButton";
-import { PickupChecklist } from "../../src/ui/rider/PickupChecklist";
-import { CancelledHandback, UndeliveredDone } from "../../src/ui/rider/terminals";
-import { UndeliveredSheet } from "../../src/ui/rider/UndeliveredSheet";
-import { BailSheet } from "../../src/ui/rider/BailSheet";
-import { GetHelpControl, ReportControl, SosControl } from "../../src/ui/safety";
+import { ReportSheet } from "../../src/ui/safety";
 
 /** A short local clock label (e.g. "3:40 PM") for a cooldown-until timestamp; empty on a bad date. */
 export default function RiderJob(): React.ReactElement {
@@ -83,7 +108,7 @@ export default function RiderJob(): React.ReactElement {
     };
   }, []);
   // R1: the post-pickup "can't complete delivery" reason picker + the frozen terminal once it commits.
-  const [undelivering, setUndelivering] = useState(false);
+  const [, setUndelivering] = useState(false);
   const [undeliveredDone, setUndeliveredDone] = useState<UndeliveredReason | null>(null);
   // A successful delivery-confirm freezes the delivered order's id into a terminal (the only field the
   // terminal below actually renders — see GetHelpControl/ReportControl). A `delivered` order drops out
@@ -108,8 +133,8 @@ export default function RiderJob(): React.ReactElement {
   }, []);
   // 4·b3: the pre-pickup bail flow — open the reason + reliability-warning sheet before cancelling,
   // and carry the (optional) reason to the server so the customer's re-broadcast has a "why".
-  const [bailing, setBailing] = useState(false);
-  const [bailReason, setBailReason] = useState("");
+  // The cancel reason the old bail sheet captured; the v2 cancel sheet (X6) draws none, so it stays empty.
+  const [bailReason] = useState("");
   // R9: count wrong delivery-code tries to show attempts-remaining and lock the field at the cap.
   const [otpTries, setOtpTries] = useState(0);
   // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
@@ -590,8 +615,8 @@ export default function RiderJob(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile on a FRESH server value only; otpTries must NOT retrigger this (that is what avoids stomping the optimistic post-401 increment before its refetch lands).
   }, [order?.deliveryOtpAttempts]);
 
-  // Default every item ticked when the rider enters the pickup-verification step — they untick only
-  // what's missing — UNLESS a persisted draft for this exact order says otherwise (a relaunch after a
+  // Seed the pickup check when the rider reaches it — unticked (Rider v2 A2) — UNLESS a persisted
+  // draft for this exact order says otherwise (a relaunch after a
   // process death mid-verification). Keyed on primitives so a 6s poll (new object identity, same data)
   // doesn't reset the rider's manual ticks mid-verification. Waits on checklistDraft leaving "loading"
   // so it never seeds all-ticked first and then visibly flips once the async read resolves.
@@ -601,7 +626,8 @@ export default function RiderJob(): React.ReactElement {
       if (checklistDraft && checklistDraft.orderId === order.id) {
         setCheckedItems(new Set(checklistDraft.checkedIndexes.filter((i) => i < items.length)));
       } else {
-        setCheckedItems(new Set(items.map((_, i) => i)));
+        // Rider v2 A2: the check starts unticked — the rider ticks what is in hand (A6 shows it ticked).
+        setCheckedItems(new Set());
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per order/step (or once the
@@ -675,6 +701,71 @@ export default function RiderJob(): React.ReactElement {
       });
   }, [order, pendingConfirm]);
 
+  // ── Rider v2 (ledger D-54): arrivals, the sheets, the can't-reach timer and the pickup photo ──────
+  const { prefs } = useRiderPrefs();
+  const reduceMotion = useReduceMotion();
+  const { config: walletConfig } = useWalletConfig();
+  const photo = usePickupPhoto(orderId, order?.pickupPhotoUrl);
+  const [arrival, setArrival] = useState<ArrivalMark | null | "loading">("loading");
+  useEffect(() => {
+    let alive = true;
+    void loadArrival().then((m) => {
+      if (alive) setArrival(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const arrived: Arrival | null = arrival !== "loading" && arrival && arrival.orderId === orderId ? arrival.at : null;
+  const markArrived = (at: Arrival): void => {
+    if (!orderId) return;
+    const m = { orderId, at };
+    setArrival(m);
+    void saveArrival(m);
+    setRestoreDismissed(true);
+    haptic("tap");
+  };
+  const [sheet, setSheet] = useState<null | "problem" | "cancel" | "undeliver" | "report" | "sos">(null);
+  const [reach, setReach] = useState<{ startedAt: number; calls: number; wa: number } | null>(null);
+  const [undelPick, setUndelPick] = useState<number | null>(null);
+  const [jobToast, setJobToast] = useState<JobToast | null>(null);
+  useEffect(() => {
+    if (!jobToast) return;
+    const t = setTimeout(() => setJobToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [jobToast]);
+  // The last live snapshot, for the done / undelivered terminals once the order leaves the active feed.
+  const lastOrder = useRef<OrderSnapshot | null>(null);
+  if (order) lastOrder.current = order;
+  const liveReconnecting = !!order && ACTIVE.includes(order.status) && wasJobConnected.current && !jobSocketConnected;
+  const [offlineSince, setOfflineSince] = useState<number | null>(null);
+  useEffect(() => {
+    setOfflineSince((cur) => (liveReconnecting ? (cur ?? Date.now()) : null));
+  }, [liveReconnecting]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!reach && offlineSince == null) return;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [reach, offlineSince]);
+  // The server's own steps the handoff draws no tap for: accept → heading to pickup on open, and
+  // collected → heading to the drop-off right after the collect. Once per (order, status).
+  const autoKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!order) return;
+    const to = AUTO_ADVANCE[order.status];
+    const key = `${order.id}:${order.status}`;
+    if (!to || autoKey.current === key || advanceM.isPending) return;
+    autoKey.current = key;
+    advanceM.mutate(to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the order's id + status only.
+  }, [order?.id, order?.status, advanceM.isPending]);
+  const backToJobs = (): void => {
+    void clearRiderJobTerminal();
+    void clearArrival();
+    router.replace("/rider");
+  };
+
   // D5 redirect (see the effect above) — render nothing of this parcel screen for a food order; the
   // brief frame before the effect's router.replace() lands just shows the skeleton.
   if (order && order.orderType === "merchant") {
@@ -685,13 +776,19 @@ export default function RiderJob(): React.ReactElement {
     );
   }
 
-  // Terminal: the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
+  const senderName = (order ?? lastOrder.current)?.customerFirstName || null;
+  const senderPhone = (order ?? lastOrder.current)?.counterpartyPhone ?? null;
+  const dial = (phone: string | null | undefined): void => {
+    if (phone) void Linking.openURL(`tel:${phone}`).catch(() => undefined);
+  };
+  const wa = (phone: string | null | undefined): void => {
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (digits) void Linking.openURL(`https://wa.me/${digits}`).catch(() => undefined);
+  };
+
+  // X9 — the customer (or ops) cancelled. Rendered from the frozen WS snapshot (keeps the sender
   // contact after the order leaves the active feed), OR — R8 — from a fetched cancelled order when the
-  // rider reopens after missing the `job:cancelled` push while backgrounded. activeForRider only
-  // surfaces a cancelled order this rider had COLLECTED, so `collected` is true on that reopen path.
-  // The reopen path has no WS event to read the actor from — fall back to the order snapshot's own
-  // `cancelledBy` (a rider's own bail never reaches this branch: it's blocked post-pickup and takes the
-  // rebroadcast path instead, never landing here as "collected").
+  // rider reopens after missing the `job:cancelled` push while backgrounded.
   const handback =
     cancelledJob ??
     (order && order.status === "cancelled" && ackedHandbacks !== "loading" && !ackedHandbacks.has(order.id)
@@ -699,100 +796,96 @@ export default function RiderJob(): React.ReactElement {
       : null);
   if (handback) {
     const snap = handback.snapshot;
+    const name = snap.customerFirstName || R.theSender;
+    const title = handback.cancelledBy === "customer" ? RF.custCxT(name) : R.cancelled;
+    const leave = (): void => {
+      // Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the rider.
+      void acknowledgeHandback(snap.id);
+      void clearArrival();
+      router.replace("/rider");
+    };
     return (
-      <CancelledHandback
-        collected={handback.collected}
-        cancelledBy={handback.cancelledBy}
-        snapshot={snap}
-        onBack={() => {
-          // Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the
-          // rider on their next visit — then drop back to the board.
-          void acknowledgeHandback(snap.id);
-          router.replace("/rider");
-        }}
-      />
+      <JobPage
+        title={title.length > 22 ? R.tDone : title}
+        onBack={leave}
+        centred
+        bar={
+          <CtaBar>
+            <CtaButton label={R.nextJobs} onPress={leave} />
+            {handback.collected && snap.counterpartyPhone ? <CtaButton ghost icon="phone" label={RF.callName(name)} onPress={() => dial(snap.counterpartyPhone)} /> : null}
+          </CtaBar>
+        }
+      >
+        <TerminalBody icon="x" title={title} body={RF.custCxB(name)} note={R.custCxNoStrike} />
+      </JobPage>
     );
   }
 
-  // Terminal: the rider recorded a failed hand-off (R1). Frozen locally — an `undelivered` order leaves
-  // the active-job feed, so a refetch would drop to "No active job" with no acknowledgement.
+  // X5 — the rider recorded a failed hand-off (R1). Frozen locally — an `undelivered` order leaves the
+  // active-job feed, so a refetch would drop to "No active job" with no acknowledgement.
   if (undeliveredDone) {
+    const name = senderName || R.theSender;
     return (
-      <UndeliveredDone
-        reason={undeliveredDone}
-        onBack={() => {
-          void clearRiderJobTerminal();
-          router.replace("/rider");
-        }}
-      />
+      <JobPage
+        title={R.undelDoneT}
+        onBack={backToJobs}
+        centred
+        bar={
+          <CtaBar>
+            {senderPhone ? <CtaButton icon="phone" label={RF.callName(name)} onPress={() => dial(senderPhone)} /> : null}
+            <CtaButton ghost={!!senderPhone} label={R.nextJobs} onPress={backToJobs} />
+          </CtaBar>
+        }
+      >
+        <TerminalBody icon="package" title={R.undelDoneT} body={RF.undelDoneB(name)} note={R.undelNoStrike} />
+      </JobPage>
     );
   }
 
-  // Terminal: delivery confirmed. Frozen locally — a `delivered` order leaves the active-job feed, so
-  // the post-confirm refetch drops to "No active job" with no acknowledgement the parcel arrived. This
-  // is the previously-unreachable delivered UI (Celebrate + rate-the-sender + report/help), now driven
-  // from the frozen snapshot ahead of the `!order` check, mirroring the undelivered/cancelled terminals.
+  // A13 — delivery confirmed. Frozen locally — a `delivered` order leaves the active-job feed.
   if (deliveredDone) {
+    const snap = lastOrder.current && lastOrder.current.id === deliveredDone ? lastOrder.current : null;
+    const fare = snap ? Number(snap.agreedFare ?? snap.proposedFare) : null;
+    const rate = walletConfig?.ratePct ?? 0;
+    const name = senderName || R.theSender;
+    const rated = senderRatingConfirmed || senderRateM.isSuccess;
     return (
-      <Screen>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-            <Heading>Your job</Heading>
-            <View style={{ flex: 1 }} />
-            <StatusPill status="delivered" tone={orderStatusTone("delivered")} dot />
+      <JobPage title={R.tDone} onBack={backToJobs} bar={<CtaBar><CtaButton label={R.nextJobs} onPress={backToJobs} /></CtaBar>}>
+        <ScrollView contentContainerStyle={{ gap: 14, paddingTop: 6 }} showsVerticalScrollIndicator={false}>
+          <View style={{ alignItems: "center", gap: 10 }}>
+            <IconDisc name="circle-check" tone="ok" size={64} />
+            <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{R.doneT}</Text>
           </View>
-          <Card>
-            <Celebrate />
-            <Text style={{ fontWeight: "700", color: tokens.color.accentText, textAlign: "center", marginTop: tokens.space.sm }}>Delivered. Waiting for the customer to rate — you're free for the next job.</Text>
-          </Card>
-          {/* Rate the sender (4·7) — OPTIONAL, recorded-only ("a no-show or cash problem here
-              protects other riders"). Tap a star to submit; swaps to a thank-you on success. */}
-          <Card>
-            <Text style={{ fontWeight: "700", marginBottom: 2 }}>Rate the sender</Text>
-            <Sub>Optional — a no-show or cash problem here protects other riders.</Sub>
-            {senderRatingConfirmed || senderRateM.isSuccess ? (
-              <Text style={{ fontSize: 14, color: tokens.color.accentText, fontWeight: "600" }}>Thanks for the feedback.</Text>
-            ) : (
-              <View style={{ flexDirection: "row", gap: 4 }}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <Tappable tone="icon"
-                    key={n}
-                    onPress={() => {
-                      setSenderScore(n);
-                      // BH-07: persist BEFORE the POST resolves so a full app-kill (not just a lost
-                      // response) is retried on the next launch by the reconciliation effect above.
-                      void saveSenderRatingPending(deliveredDone, n);
-                      setPendingSenderRating({ orderId: deliveredDone, score: n });
-                      senderRateM.mutate(n);
-                    }}
-                    disabled={senderRateM.isPending}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate the sender ${n} star${n === 1 ? "" : "s"}`}
-                    accessibilityState={{ selected: n <= senderScore }}
-                    hitSlop={8}
-                    style={{ minWidth: tokens.touchTargetMin, minHeight: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}
-                  >
-                    <Text style={{ fontSize: 30, color: n <= senderScore ? tokens.color.highlight : tokens.color.line }}>★</Text>
-                  </Tappable>
-                ))}
+          {fare != null ? (
+            <>
+              <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, flexDirection: "row", alignItems: "baseline" }}>
+                <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{R.doneEarn}</Text>
+                <Text style={{ fontSize: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>+{usd(fare)}</Text>
               </View>
-            )}
-          </Card>
-          {/* Order-level support + report/block after the trip (rider → sender), same as a live delivered order. */}
-          <GetHelpControl orderId={deliveredDone} />
-          <ReportControl orderId={deliveredDone} counterpartyNoun="sender" />
-          <Button
-            label="Back to board"
-            onPress={() => {
-              void clearRiderJobTerminal();
-              router.replace("/rider");
-            }}
-          />
-          {/* A failed rate-the-sender POST writes `error` (senderRateM.onError → fail); surface it here
-              the same way live-job errors do — this frozen terminal is the only place that mutation runs. */}
-          <View style={{ height: tokens.space.xxl }} />
+              <View style={{ paddingHorizontal: 4 }}>
+                <KV k={R.doneCash} v={usd(fare)} />
+                {rate > 0 ? <KV k={R.doneComm} v={`−${usd((fare * rate) / 100)}`} /> : null}
+              </View>
+            </>
+          ) : null}
+          <View style={{ borderTopWidth: 1, borderTopColor: tokens.color.line, paddingTop: 14, gap: 6, alignItems: "center" }}>
+            <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.rateSender(name)}</Text>
+            <Stars
+              value={senderScore}
+              onChange={(n) => {
+                if (rated || senderRateM.isPending) return;
+                setSenderScore(n);
+                // BH-07: persist BEFORE the POST resolves so a full app-kill (not just a lost response)
+                // is retried on the next launch by the reconciliation effect above.
+                void saveSenderRatingPending(deliveredDone, n);
+                setPendingSenderRating({ orderId: deliveredDone, score: n });
+                senderRateM.mutate(n);
+              }}
+            />
+            <Text style={{ fontSize: 12, color: tokens.color.muted }}>{A.optional}</Text>
+          </View>
         </ScrollView>
-      </Screen>
+      </JobPage>
     );
   }
 
@@ -804,13 +897,10 @@ export default function RiderJob(): React.ReactElement {
     );
   }
   // Cold-start fetch failure with NOTHING cached: the job fetch failed, which is not the same as
-  // "you have no work". Ordered AFTER the loading and cancelled-terminal (handback / undelivered)
-  // checks so those still win — and gated on `!order` so a warm refetch that retains the job (or a
-  // successful empty fetch) never lands here. Mirrors the rider board's honest error+retry pattern.
+  // "you have no work". Ordered AFTER the loading and terminal checks so those still win.
   if (shouldShowJobError(jobQ.isError, order != null)) {
-    // Offline cold-start: the fetch failed but we have the last-known job summary. Show it (the root
-    // offline banner already explains why it's stale) instead of a bare error — the live query takes
-    // over the moment we reconnect.
+    // Offline cold-start: the fetch failed but we have the last-known job summary. Show it instead of a
+    // bare error — the live query takes over the moment we reconnect.
     if (lastKnownJob) {
       return (
         <Screen>
@@ -836,29 +926,14 @@ export default function RiderJob(): React.ReactElement {
         </Screen>
       );
     }
-    // `generic_error` (kit rider-screens.jsx `GenericError`). Nothing cached, nothing to show — but the
-    // rider may well be carrying a parcel, and a failed READ changed nothing server-side. The kit's copy
-    // says so ("your active job is safe") instead of leaving that to be inferred from a bare retry.
     return (
       <Screen>
-        <RiderErrorState
-          onRetry={() => void jobQ.refetch()}
-          retrying={jobQ.isFetching}
-          onBack={() => router.replace("/rider")}
-          backLabel="Back"
-        />
+        <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => router.replace("/rider")} backLabel="Back" />
       </Screen>
     );
   }
-  // No live job — either genuinely nothing, or an already-acknowledged hand-back whose cancelled
-  // snapshot still lingers in the 24h reopen window (handback resolved to null above). Either way
-  // there's nothing to act on, so show the calm empty terminal rather than the collect/deliver flow.
-  // First wait for the durable terminal marker to load — otherwise a delivered/undelivered order whose
-  // in-memory state was lost to an app kill would flash "No active job" for a frame before the
-  // promotion effect above catches up. `ackedHandbacks` joins it for the mirror-image reason: until
-  // that read lands the `handback` derivation above cannot tell an already-acknowledged cancel from a
-  // fresh one, and guessing either way paints a screen the next frame contradicts. A fresh WS cancel
-  // (`cancelledJob`) resolves `handback` before reaching here, so it is never delayed by this.
+  // No live job — first wait for the durable terminal marker and the acknowledged hand-backs to load,
+  // so neither screen flashes before the one the next frame would draw.
   if ((!order || order.status === "cancelled") && (persistedTerminal === "loading" || ackedHandbacks === "loading")) {
     return (
       <Screen>
@@ -876,173 +951,302 @@ export default function RiderJob(): React.ReactElement {
     );
   }
 
-  const next = NEXT[order.status];
   const isActive = ACTIVE.includes(order.status);
-  const canUndeliver = order.status === "picked_up" || order.status === "en_route_dropoff";
-  // Total quantity across the ticked items — the collect CTA counts pieces, not rows ("Confirm 3
-  // items collected" for a 1× + 2× selection).
-  const collectedCount = collectedItemCount(items, checkedItems);
+  const stage = parcelStage(order.status, arrived);
+  const beforePickup = RIDER_CANCELLABLE.includes(order.status);
+  const fare = Number(order.agreedFare ?? order.proposedFare);
+  const cod = parcelCashOnDelivery(order);
+  const pickupPhone = (order.pickup as { contactPhone?: string | null }).contactPhone ?? order.counterpartyPhone;
+  const dropPhone = (order.dropoff as { contactPhone?: string | null }).contactPhone ?? null;
+  const name = senderName || R.theSender;
+  const recipient = R.theRecipient;
+  const away = (to: { lat: number; lng: number }): string | null => {
+    if (!riderPoint) return null;
+    const kmAway = haversineKm(riderPoint, to);
+    return RF.away(kmAway, Math.max(1, Math.round(kmAway * 5)));
+  };
+  const nav = (to: { lat: number; lng: number }): void => void Linking.openURL(navUrl(prefs.navApp, to)).catch(() => undefined);
+  const itemsOk = items.length === 0 || checkedItems.size > 0;
+  const collectOk = itemsOk && !!photo.uri && order.status === "en_route_pickup";
+  const collect = (): void => {
+    if (items.length > 0) confirmAndCollect();
+    else {
+      void clearPickupPhotoDraft();
+      advanceM.mutate("picked_up");
+    }
+  };
+  const help = (): void => {
+    setSheet(null);
+    void raiseIssue(order.id, { type: "other", description: R.pHelp, idempotencyKey: uuidV4FromSeed(`${order.id}|help|${Math.floor(Date.now() / 60_000)}`) })
+      .then(() => setJobToast({ text: R.helpSent, icon: "circle-check" }))
+      .catch((e: unknown) => fail(e));
+  };
+  const sos = (): void => {
+    haptic("alert");
+    setSheet(null);
+    void Linking.openURL(`tel:${SOS_POLICY.emergencyNumber}`).catch(() => undefined);
+    void raiseSos(order.id, riderPoint ? { lat: riderPoint.lat, lng: riderPoint.lng } : {}).catch(() => undefined);
+  };
+  const strikes = meQ.data?.rider?.cancelStrikes ?? 0;
+  const finalStrike = strikes >= 2;
 
-  const jobReconnecting = isActive && wasJobConnected.current && !jobSocketConnected;
+  // Notices at the top of the sheet: job restored (X12), connection lost (X10/X11), and the live
+  // states the app already knew about (customer offline, location off, a shop's cash on delivery).
+  const stageLine = stage === "toPickup" ? R.tToPickup : stage === "atPickup" ? R.tAtPickup : R.tToDrop;
+  const notices = (
+    <>
+      {restoredJobId === order.id && !restoreDismissed && isActive ? <Notice icon="history" tone="wash" text={RF.restored(stageLine.toLowerCase())} /> : null}
+      {liveReconnecting ? (
+        offlineSince != null && now - offlineSince >= 4 * 60_000 ? <Notice icon="wifi-off" tone="warn" text={R.offlineLong} /> : <Notice icon="wifi-off" text={R.offlineJob} />
+      ) : null}
+      {isActive && customerStale ? <Notice icon="triangle-alert" text="The customer's app looks offline — they may not be seeing live updates. Call them if you need to reach the sender." /> : null}
+      {isActive && locationDenied ? <Notice icon="map-pin" tone="warn" text="Location is off — the customer can't see where you are." /> : null}
+      {isActive && cod !== null ? <Notice icon="banknote" text={`Collect $${cod.toFixed(2)} cash from the buyer. It's the shop's money: take it back to the shop within 30 minutes of delivering.`} /> : null}
+    </>
+  );
+
+  const overlays = (
+    <>
+      <ProblemSheet
+        visible={sheet === "problem"}
+        onClose={() => setSheet(null)}
+        beforePickup={beforePickup}
+        onCancel={() => setSheet("cancel")}
+        onReach={() => {
+          setReach((r) => r ?? { startedAt: Date.now(), calls: 0, wa: 0 });
+          if (!arrived || arrived !== "drop") markArrived("drop");
+          setSheet(null);
+        }}
+        onDeliver={() => {
+          setUndelPick(null);
+          setSheet("undeliver");
+        }}
+        onHelp={help}
+        onReport={() => setSheet("report")}
+        onSos={() => setSheet("sos")}
+      />
+      <MSheet
+        visible={sheet === "cancel"}
+        onClose={() => setSheet(null)}
+        title={R.cxT}
+        body={RF.cxB(name)}
+        buttons={
+          <>
+            <CtaButton label={R.cxKeep} onPress={() => setSheet(null)} />
+            <CtaButton ghost danger label={finalStrike ? R.cxYesFinal : R.cxYes} loading={!!pendingOrQueued(cancelM)} onPress={() => cancelM.mutate(undefined, { onSettled: () => setSheet(null) })} />
+          </>
+        }
+      >
+        {finalStrike ? <DangerNote text={R.cxFinal} /> : <Notice icon="circle-alert" text={RF.cxStrike(strikes, 3)} />}
+      </MSheet>
+      <MSheet
+        visible={sheet === "undeliver"}
+        onClose={() => setSheet(null)}
+        title={R.undelT}
+        buttons={
+          <>
+            {undelPick == null ? <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center" }}>{R.undelPick}</Text> : null}
+            <CtaButton
+              label={R.undelSend}
+              disabled={undelPick == null}
+              loading={!!pendingOrQueued(undeliverM)}
+              onPress={() => {
+                const reason = UNDELIVERED_CHOICES[undelPick ?? -1];
+                if (reason) undeliverM.mutate(reason, { onSettled: () => setSheet(null) });
+              }}
+            />
+          </>
+        }
+      >
+        <Tags list={R.undelReasons} on={undelPick == null ? [] : [undelPick]} onToggle={(i) => setUndelPick((c) => (c === i ? null : i))} />
+        <Notice icon="package" text={RF.undelNext(name)} />
+      </MSheet>
+      <ReportSheet orderId={order.id} counterpartyNoun="customer" visible={sheet === "report"} onClose={() => setSheet(null)} />
+      <SosSheet visible={sheet === "sos"} onClose={() => setSheet(null)} onCall={sos} />
+      <PhotoPreview uri={photo.preview?.uri ?? null} saving={photo.saving} onUse={photo.use} onRetake={photo.retake} onClose={photo.cancelPreview} />
+    </>
+  );
+
+  // A8–A12 — the delivery code, on its own page with the number pad up.
+  if (stage === "code" && !reach) {
+    const left = DELIVERY_OTP_MAX_ATTEMPTS - otpTries;
+    const locked = left <= 0;
+    const wrong = otpTries > 0 && code.length === 6 && !deliverM.isPending && !locked;
+    const queued = pendingOrQueued(deliverM) === "queued";
+    return (
+      <JobPage
+        title={R.tArriving}
+        help
+        onBack={() => router.replace("/rider")}
+        onHelp={() => setSheet("problem")}
+        overlays={overlays}
+        toast={jobToast}
+        bar={
+          locked ? (
+            <CtaBar hint={RF.newCodeWait(name)}>
+              <CtaButton icon="phone" label={RF.askResend(name)} onPress={() => dial(order.counterpartyPhone)} />
+            </CtaBar>
+          ) : (
+            <CtaBar>
+              <CtaButton label={R.confirmCta} disabled={code.length < 6 || order.status !== "en_route_dropoff"} loading={!!pendingOrQueued(deliverM) && !queued} onPress={() => deliverM.mutate()} />
+            </CtaBar>
+          )
+        }
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+          {notices}
+          <RSteps cur={2} />
+          <JobTitle title={locked ? R.lockedT : RF.codeT(recipient)} body={locked ? RF.lockedB(name, recipient) : RF.codeB} />
+          <CodeBoxes value={code} onChange={setCode} error={wrong} locked={locked} />
+          {wrong ? <CodeError text={left === 1 ? RF.triesLast(recipient) : RF.triesLeft(left)} /> : null}
+          {queued ? (
+            <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
+              <Icon name="wifi-off" size={14} color={tokens.color.muted} />
+              <Text style={{ fontSize: 13, color: tokens.color.muted }}>{R.offlineCode}</Text>
+            </View>
+          ) : null}
+          <CashLine text={RF.cashParcel(fare)} />
+        </ScrollView>
+      </JobPage>
+    );
+  }
+
+  // A1 / A2 / A6 / A7 / X3 — the map and the stage sheet.
+  const reachElapsed = reach ? Math.max(0, Math.floor((now - reach.startedAt) / 1000)) : 0;
+  const reachOpen = reach != null && reachElapsed * 1000 >= REACH_WAIT_MS;
+  const title = reach ? R.tArriving : stage === "toPickup" ? R.tToPickup : stage === "atPickup" ? R.tAtPickup : R.tToDrop;
+  let content: React.ReactNode;
+  let bar: React.ReactNode;
+  if (reach) {
+    content = (
+      <>
+        {notices}
+        <RSteps cur={2} />
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+          <IconDisc name="phone-off" size={48} />
+          <Text style={{ flex: 1, fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.reachT(R.recipientRole)}</Text>
+        </View>
+        <Text style={{ fontSize: 14, lineHeight: 20, color: tokens.color.muted }}>{R.reachB}</Text>
+        <View style={{ backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 6 }}>
+          <View style={{ flexDirection: "row" }}>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{RF.reachWait(Math.min(reachElapsed, REACH_WAIT_MS / 1000))}</Text>
+            <Text style={{ fontSize: 13, color: tokens.color.muted }}>{RF.reachCalls(reach.calls, reach.wa)}</Text>
+          </View>
+          <Progress pct={Math.min(100, (reachElapsed * 1000 * 100) / REACH_WAIT_MS)} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <SmBtn
+            flex={1}
+            kind="fill"
+            icon="phone"
+            label={R.call}
+            onPress={() => {
+              setReach((r) => (r ? { ...r, calls: r.calls + 1 } : r));
+              dial(dropPhone);
+            }}
+          />
+          <SmBtn
+            flex={1}
+            icon="message-circle"
+            label={R.whatsapp}
+            onPress={() => {
+              setReach((r) => (r ? { ...r, wa: r.wa + 1 } : r));
+              wa(dropPhone);
+            }}
+          />
+        </View>
+      </>
+    );
+    bar = (
+      <CtaBar hint={reachOpen ? undefined : R.undelHint}>
+        <CtaButton
+          ghost
+          danger
+          label={R.markUndel}
+          disabled={!reachOpen}
+          onPress={() => {
+            setUndelPick(0);
+            setSheet("undeliver");
+          }}
+        />
+      </CtaBar>
+    );
+  } else if (stage === "atPickup") {
+    content = (
+      <>
+        {notices}
+        <RSteps cur={0} />
+        <Text style={{ fontSize: 18, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.checkItems}</Text>
+        {items.map((it, i) => (
+          <ItemTick key={i} label={`${it.description} × ${it.quantity}`} on={checkedItems.has(i)} onToggle={() => toggleItem(i)} />
+        ))}
+        <PhotoRow saved={!!photo.uri} thumb={photo.uri ? <Image source={{ uri: photo.uri }} style={{ width: 56, height: 56 }} accessibilityLabel={R.photoSaved} /> : undefined} onTake={photo.take} />
+        {photo.uri && !photo.uploaded && liveReconnecting ? <Notice icon="wifi-off" text={R.photoFail} /> : null}
+        <ProblemLink onPress={() => setSheet("problem")} />
+      </>
+    );
+    bar = (
+      <CtaBar hint={collectOk || (itemsOk && photo.uri) ? undefined : R.needPhoto}>
+        <CtaButton label={R.collectedCta} disabled={!collectOk} loading={!!pendingOrQueued(advanceM)} onPress={collect} />
+      </CtaBar>
+    );
+  } else {
+    const pick = stage === "toPickup";
+    const target = pick ? order.pickup : order.dropoff;
+    const phone = pick ? pickupPhone : dropPhone;
+    content = (
+      <>
+        {notices}
+        <RSteps cur={stepFor(stage)} />
+        <StopCard
+          drop={!pick}
+          name={target.landmark}
+          line={away(target.point)}
+          who={pick ? (senderName ? RF.who(senderName, "sender") : null) : R.recipientRole}
+          onCall={phone ? () => dial(phone) : null}
+          onWhatsApp={phone ? () => wa(phone) : null}
+          onNavigate={() => nav(target.point)}
+        />
+        <CashLine text={RF.cashParcel(fare)} />
+        <ProblemLink onPress={() => setSheet("problem")} />
+      </>
+    );
+    bar = (
+      <CtaBar>
+        <CtaButton label={pick ? R.atPickupCta : R.atDropCta} onPress={() => markArrived(pick ? "pickup" : "drop")} />
+      </CtaBar>
+    );
+  }
 
   return (
-    <Screen>
-      {/* 4·b4: socket dropped mid-job — a muted "live paused" banner, never a red alarm. The job is
-          saved locally and syncs on reconnect; the rider keeps riding. */}
-      {jobReconnecting ? <OfflineBanner state="reconnecting" /> : null}
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-          <Heading>Your job</Heading>
-          <View style={{ flex: 1 }} />
-          <StatusPill status={order.status} tone={jobReconnecting ? "reconnecting" : orderStatusTone(order.status)} />
-        </View>
-
-        {/* `offline_resume`: the app was killed mid-job and relaunched straight back onto it. Distinct
-            from the reconnecting banner above — that's a dropped socket, this is a dead process. */}
-        {restoredJobId === order.id && !restoreDismissed && isActive ? (
-          <JobRestoredBanner onDismiss={() => setRestoreDismissed(true)} />
-        ) : null}
-
-        {/* Plan §5 B4 / RIDER-ONE-APP-PLAN.md decision 6: cash-held split, live for the one job a
-            rider can carry at a time — the first real (non-zero) figure this component renders
-            (the Money tab still shows 0/0 — no feed exists yet for "cash owed across any open
-            job"). Parcel cash is always all "yours"; "owed to a kitchen" stays 0 here too — a food
-            job's collect-and-return money isn't wired to the rider screen until Lane D5. */}
-        {isActive ? (
-          <View style={{ marginBottom: tokens.space.md }}>
-            {/* RJM active_parcel CashStrip (rider-one-app.jsx J6) — the codegen-adopted, guardrail-locked
-                "yours vs owed to a kitchen" split (RJM.active_parcel#cash_strip → active-parcel-cash-strip.view.tsx).
-                Same live seam the app already passed CashHeldStrip; pixels unchanged (CashStrip wraps it).
-                A parcel's fare is all "yours"; "owed" is 0 unless it's a shop booking with cash on delivery
-                (D-48 PR 4b), whose collected price rides back to the shop. */}
-            <RiderActiveParcelCashStripView yours={Number(order.agreedFare ?? order.proposedFare)} owed={parcelCashOnDelivery(order) ?? 0} />
-          </View>
-        ) : null}
-
-        {/* D-48 PR 4b: a shop booking with cash on delivery — the goods' price is collected at the door
-            and taken back to the shop (the items list also carries it, for installs older than this). */}
-        {isActive && parcelCashOnDelivery(order) !== null ? (
-          <Card style={{ marginBottom: tokens.space.md, backgroundColor: tokens.color.highlightWash, borderColor: tokens.color.highlightBorder }}>
-            <Text style={{ fontSize: tokens.font.size.body, fontWeight: "700", color: tokens.color.highlightInk }}>
-              Collect ${(parcelCashOnDelivery(order) ?? 0).toFixed(2)} cash from the buyer
-            </Text>
-            <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.ink, marginTop: 4, lineHeight: 18 }}>
-              It&apos;s the shop&apos;s money: take it back to the shop within 30 minutes of delivering. You take no new jobs until the shop has it.
-            </Text>
-          </Card>
-        ) : null}
-
-        {jobReconnecting ? (
-          <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
-            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-              Live paused — reconnecting. Your job is saved; keep riding and it&apos;ll sync when you&apos;re back on.
-            </Text>
-          </Card>
-        ) : null}
-
-        {/* C5: the customer's app went dark — they may not be seeing your live updates. Soft, muted
-            warning (a state, not an alarm); it clears itself on the next status change. */}
-        {isActive && customerStale ? (
-          <View
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, borderWidth: 1, borderColor: tokens.color.line, marginBottom: tokens.space.sm }}
-          >
-            <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
-            <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-              The customer&apos;s app looks offline — they may not be seeing live updates. Call them if you need to reach the sender.
-            </Text>
-          </View>
-        ) : null}
-
-        {/* JOURNEY-BUGS: location permission can be revoked (Android "only this time", or toggled off
-            in Settings) AFTER a job starts — the GPS stream then silently stops with no signal anywhere
-            in the app. Actionable, unlike the customer-stale notice above, since the rider can fix it. */}
-        {isActive && locationDenied ? (
-          <View
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, padding: tokens.space.sm, borderRadius: tokens.radius.input, backgroundColor: tokens.color.surface, borderWidth: 1, borderColor: tokens.color.line, marginBottom: tokens.space.sm }}
-          >
-            <Icon name="triangle-alert" size={15} color={tokens.color.muted} />
-            <Text style={{ flex: 1, fontSize: tokens.font.size.caption, color: tokens.color.muted, lineHeight: 18 }}>
-              Location is off — the customer can&apos;t see where you are.
-            </Text>
-            <Tappable tone="icon" onPress={() => void Linking.openSettings()} hitSlop={8}>
-              <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.accent }}>Turn on</Text>
-            </Tappable>
-          </View>
-        ) : null}
-
-        <JobDetailsCard order={order} riderPoint={riderPoint} isActive={isActive} />
-
-        {/* Pickup item verification — between "arrived at pickup" and "collected", the rider ticks the
-            sender's items against what's physically in hand. The collect CTA counts them and confirms.
-            Legacy orders with no line-items fall back to the plain advance button. */}
-        {order.status === "en_route_pickup" && items.length > 0 ? (
-          <PickupChecklist
-            items={items}
-            checkedItems={checkedItems}
-            collectedCount={collectedCount}
-            pending={pendingOrQueued(advanceM)}
-            onToggle={toggleItem}
-            onConfirm={confirmAndCollect}
-            // §5c optional proof-of-pickup photo — the checklist owns capture/upload; never blocks collect.
-            orderId={orderId}
-            onCantCollect={() => setBailing(true)}
-          />
-        ) : next ? (
-          <Button label={next.label} onPress={() => advanceM.mutate(next.to)} loading={pendingOrQueued(advanceM)} />
-        ) : null}
-
-        {order.status === "en_route_dropoff" ? (
-          <DeliveryOtp code={code} onChangeCode={setCode} otpTries={otpTries} pending={pendingOrQueued(deliverM)} onConfirm={() => deliverM.mutate()} senderPhone={order.counterpartyPhone} />
-        ) : null}
-
-        {/* R1: post-pickup, the rider needs a way to record a hand-off that can't happen — otherwise a
-            refused / unreachable / wrong-address / breakdown job is a dead end. Opens a reason picker
-            that commits the terminal `undelivered` state and frees the rider for the next job. */}
-        {canUndeliver ? (
-          undelivering ? (
-            <UndeliveredSheet orderId={orderId ?? undefined} canAttachProof={order.status === "en_route_dropoff"} pending={pendingOrQueued(undeliverM)} onSelect={(reason) => undeliverM.mutate(reason)} onDismiss={() => setUndelivering(false)} />
-          ) : (
-            <Button label="Can't complete delivery" variant="ghost" onPress={() => setUndelivering(true)} />
-          )
-        ) : null}
-
-        {/* NOTE: the delivered acknowledgement + rate-the-sender UI is no longer rendered here — a
-            `delivered` order leaves the active feed, so this branch was never reached. It now lives in
-            the frozen `deliveredDone` terminal above (set from deliverM's success/reconciliation). */}
-
-        {/* SOS on a live run (R-16/F-13) — a deliberate danger control, highest value at the cash
-            hand-off. Passes the rider's own live GPS when available. */}
-        {isActive ? <SosControl orderId={order.id} lat={riderPoint?.lat} lng={riderPoint?.lng} /> : null}
-
-        {/* 4·b3: pre-pickup bail. The confirm sheet warns about the reliability hit and captures an
-            optional reason before the (real, server-side) strike + cooldown land — no more silent
-            one-tap penalty. Hidden once the parcel is collected (RIDER_CANCELLABLE), where the escape
-            hatch becomes "Can't complete delivery" above. */}
-        {RIDER_CANCELLABLE.includes(order.status) ? (
-          bailing ? (
-            <BailSheet
-              reason={bailReason}
-              onChangeReason={setBailReason}
-              pending={pendingOrQueued(cancelM)}
-              onConfirm={() => cancelM.mutate()}
-              onDismiss={() => setBailing(false)}
-              currentStrikes={meQ.data?.rider?.cancelStrikes}
-            />
-          ) : (
-            <Button label="Cancel job" variant="ghost" onPress={() => setBailing(true)} />
-          )
-        ) : null}
-
-        {/* Order-level support while the run is live (the post-trip report/help now lives on the
-            frozen delivered terminal above, since a delivered order no longer reaches this flow). */}
-        {isActive ? <GetHelpControl orderId={order.id} /> : null}
-        <LeaveJobButton isActive={isActive} onLeave={() => router.replace("/rider")} />
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
-    </Screen>
+    <JobShell
+      title={title}
+      onBack={() => router.replace("/rider")}
+      onHelp={() => setSheet("problem")}
+      contentKey={`${stage}|${reach ? "r" : ""}|${liveReconnecting ? "o" : ""}`}
+      toast={jobToast}
+      map={(padBottom) => (
+        <OrderMap
+          pickup={order.pickup.point}
+          dropoff={order.dropoff.point}
+          rider={riderPoint}
+          riderLabel={R.you}
+          riderPaused={liveReconnecting}
+          showRider
+          toPickupLine={stage === "toPickup"}
+          rings={false}
+          dim={false}
+          frame={stage === "toPickup" || stage === "atPickup" ? "pickupRider" : "riderDrop"}
+          padBottom={padBottom}
+          reduceMotion={reduceMotion}
+        />
+      )}
+      content={content}
+      bar={bar}
+      overlays={overlays}
+    />
   );
 }
+
+/** X4's five reasons, in the order drawn (u1–u5). */
+const UNDELIVERED_CHOICES: readonly UndeliveredReason[] = ["unreachable", "refused", "wrong_address", "breakdown", "other"];
