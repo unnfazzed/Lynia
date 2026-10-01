@@ -84,13 +84,14 @@ export const OPEN_ORDERS = [
   open(3, "Fife Ave Shops", { lat: -17.818, lng: 31.047 }, "Belgravia", { lat: -17.81, lng: 31.04 }, "Phone + charger", "2.50", 1.6, "Chipo"),
 ];
 
-export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, side, kycPendingState, openOrders = [] } = {}) {
+export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, side, kycPendingState, openOrders = [], active = false, extra = [] } = {}) {
   if (side) setParams({ side });
   installRouter([
     { match: "/auth/me", json: me({ rider, kycStatus, cancelStrikes, kycPendingState }) },
     { match: "/notifications/unread-count", json: { count: 3 } },
     // `false`, not `null`: the harness coalesces a null body to `{}`, which would read as an active job.
-    { match: "/orders/mine/active", json: false },
+    { match: "/orders/mine/active", json: active },
+    ...extra,
     { match: "/orders/open", json: openOrders },
     { match: "/orders/history", json: HISTORY },
     { match: "/wallet/config", json: { enabled: true, ratePct: 10, floor: 2, graceCredit: 3, minTopUp: 2, maxTopUp: 100 } },
@@ -101,3 +102,44 @@ export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, s
 
 export const wrap = withQuery();
 export const wrapAuth = withAuthQuery();
+
+// The rider's live parcel job (A1–A8): the handoff's Eastgate Mall → 14 Glenara Ave with Rudo sending.
+export function activeJob(status) {
+  return {
+    id: "0a1b2c3d-0000-4000-8000-0000000job01",
+    orderType: "parcel",
+    status,
+    agreedFare: "3.20",
+    proposedFare: "3.20",
+    customerFirstName: "Rudo",
+    pickup: { point: { lat: -17.8306, lng: 31.0525 }, landmark: "Eastgate Mall", contactPhone: "+263772451180" },
+    dropoff: { point: { lat: -17.8125, lng: 31.0712 }, landmark: "14 Glenara Ave", contactPhone: "+263773112233" },
+    items: [{ description: "Documents envelope", quantity: 1 }],
+    itemsCollected: null,
+    note: null,
+    pickupPhotoUrl: null,
+    rider: { profileId: "0a1b2c3d-0000-4000-8000-00000000me01", currentLat: -17.8251, currentLng: 31.0471, updatedAt: ago(0) },
+    events: [],
+    counterpartyPhone: "+263772451180",
+    expiresAt: null,
+    deliveryOtpAttempts: 0,
+    distanceKm: 3.1,
+  };
+}
+
+// A live food offer (F1/F2): Mama's Kitchen → Belgravia, 42 s left.
+export function foodOffer(cashRule) {
+  return {
+    orderId: "0a1b2c3d-0000-4000-8000-0000000food1",
+    merchantId: "0a1b2c3d-0000-4000-8000-0000000mer01",
+    pickup: { point: { lat: -17.8009, lng: 31.0389 }, landmark: "Mama's Kitchen" },
+    dropoff: { point: { lat: -17.81, lng: 31.04 }, landmark: "Belgravia" },
+    itemDesc: "2 items",
+    merchantGoodsTotal: 12.5,
+    deliveryFee: 3.2,
+    distanceKm: 3.1,
+    expiresAt: new Date(Date.now() + 42_000).toISOString(),
+    merchantPaymentMethod: "cash",
+    merchantCashRule: cashRule,
+  };
+}

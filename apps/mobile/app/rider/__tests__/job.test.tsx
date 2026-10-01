@@ -19,12 +19,16 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 import type { OrderSnapshot } from "../../../src/api/orders";
 
 const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, unknown[]>();
 const mockGetOrder = jest.fn<Promise<OrderSnapshot>, [string]>();
 const mockConfirmDelivery = jest.fn();
 const mockReplace = jest.fn();
+const mockAdvanceStatus = jest.fn(async (..._args: unknown[]) => ({}));
 
 let secureStore: Record<string, string> = {};
 const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
@@ -79,7 +83,7 @@ jest.mock("../../../src/api/orders", () => ({
   getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
   getOrder: (...args: [string]) => mockGetOrder(...args),
   confirmDelivery: (...args: unknown[]) => mockConfirmDelivery(...args),
-  advanceStatus: jest.fn(),
+  advanceStatus: (...args: unknown[]) => mockAdvanceStatus(...args),
   cancelOrder: jest.fn(),
   confirmItems: jest.fn(),
   markUndelivered: jest.fn(),
@@ -97,13 +101,9 @@ jest.mock("../../../src/realtime/use-rider-location", () => ({
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
   useForegroundRefetch: () => undefined,
 }));
-jest.mock("../../../src/ui/rider/JobDetailsCard", () => ({
-  JobDetailsCard: () => {
-    const React_ = require("react");
-    const { Text } = require("react-native");
-    return React_.createElement(Text, null, "JobDetailsCard");
-  },
-}));
+// The job map (react-native-maps) can't mount here; the wallet config is a network read.
+jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null }));
+jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ config: { ratePct: 10 }, isLoading: false }) }));
 
 import RiderJob from "../job";
 
@@ -120,9 +120,11 @@ async function render(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
       <QueryClientProvider client={client}>
         <RiderJob />
-      </QueryClientProvider>,
+      </QueryClientProvider>
+      </SafeAreaProvider>,
     );
   });
   await settle();
@@ -137,13 +139,14 @@ function press(tree: renderer.ReactTestRenderer, label: string): void {
 }
 
 function setDeliveryCode(tree: renderer.ReactTestRenderer, code: string): void {
-  const node = tree.root.findAll((n) => n.props.accessibilityLabel === "Delivery code" && typeof n.props.onChangeText === "function")[0];
+  const node = tree.root.findAll((n) => n.props.accessibilityLabel === "DELIVERY CODE" && typeof n.props.onChangeText === "function")[0];
   if (!node) throw new Error("no delivery-code field found");
   act(() => node.props.onChangeText(code));
 }
 
 beforeEach(() => {
-  secureStore = {};
+  // Rider v2: the rider tapped "I'm at the drop-off", so the job opens on the delivery-code page (A8).
+  secureStore = { "lynia.riderJobArrival": JSON.stringify({ orderId: "order-1", at: "drop" }) };
   mockGetActiveOrder.mockReset();
   mockGetOrder.mockReset();
   mockConfirmDelivery.mockReset();
@@ -188,7 +191,7 @@ describe("rider delivery-confirm terminal marker survives an app kill mid-reques
 
     expect(
       fresh.root.findAll(
-        (n) => typeof n.props.children === "string" && n.props.children.includes("Delivered. Waiting for the customer to rate"),
+        (n) => typeof n.props.children === "string" && n.props.children.includes("Delivered. Nice work."),
       ).length,
     ).toBeGreaterThan(0);
     // The dead-end "No active job" screen must NOT be what greets the rider after the kill.
@@ -207,5 +210,33 @@ describe("rider delivery-confirm terminal marker survives an app kill mid-reques
 
     // onMutate wrote the provisional marker, but the definitive 401 rejection must have cleared it.
     expect(secureStore["lynia.riderJobTerminal"]).toBeUndefined();
+  });
+});
+
+describe("Rider v2 parcel job stages (A1 → A2, ledger D-54)", () => {
+  it("an accepted job heads to pickup on its own — the server steps the handoff draws no tap for", async () => {
+    secureStore = {};
+    mockGetActiveOrder.mockResolvedValue(baseOrder({ status: "assigned" }));
+    await render();
+    await settle();
+    expect(mockAdvanceStatus).toHaveBeenCalledWith("order-1", "confirmed");
+  });
+
+  it("I'm at pickup turns the sheet into the check, and the collect waits for a ticked item AND a photo", async () => {
+    secureStore = {};
+    mockGetActiveOrder.mockResolvedValue(baseOrder({ status: "en_route_pickup", items: [{ description: "Documents envelope", quantity: 1 }] }));
+    const tree = await render();
+    await settle();
+
+    expect(tree.root.findAll((n) => n.props.children === "Heading to pickup").length).toBeGreaterThan(0);
+    press(tree, "I'm at pickup");
+    await settle();
+
+    expect(JSON.parse(secureStore["lynia.riderJobArrival"]!)).toEqual({ orderId: "order-1", at: "pickup" });
+    expect(tree.root.findAll((n) => n.props.children === "Check before you leave").length).toBeGreaterThan(0);
+    const collect = tree.root.findAll((n) => n.props.label === "I've collected the parcel" && typeof n.props.onPress === "function")[0]!;
+    expect(collect.props.disabled).toBe(true);
+    // The hint says what's missing.
+    expect(tree.root.findAll((n) => n.props.hint === "Tick the item and add a photo to continue.").length).toBe(1);
   });
 });

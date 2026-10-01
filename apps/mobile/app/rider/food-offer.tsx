@@ -1,37 +1,45 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Text, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from "../../src/api/food-rider";
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, EmptyState, haptic, Icon, Money, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
-import { TypeTag } from "../../src/ui/rider/TypeTag";
-import { RiderFoodOfferCardView } from "./food-offer-card.view";
+import { EmptyState, haptic, Icon, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
+import { useReduceMotion } from "../../src/ui/useReduceMotion";
+import { CtaBar, CtaButton } from "../../src/ui/order/kit";
+import { OrderMap } from "../../src/ui/order/OrderMap";
+import { OrderSheet, PeekMark } from "../../src/ui/order/OrderSheet";
+import { JTag, StopLine } from "../../src/ui/rider/board";
+import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { TerminalBody } from "../../src/ui/rider/job-kit";
+
+/** How long a food offer holds (the server's window); the bar shows the share left. */
+const OFFER_WINDOW_S = 60;
 
 /**
- * D5/C5: the rider's incoming food-dispatch offer. Entered from the board's `food:offer` socket push,
- * a `food_offer` notification tap, or a cold reopen — in every case this screen's own source of truth
- * is the poll-fallback GET (`dispatch/offer`), never the payload that happened to trigger the
- * navigation, so a stale/lost push can never show a dead offer. Polls every 3s while mounted so an
- * offer taken by someone else (or timed out) is caught even with no live socket on this screen.
- *
- * Aligned to the RJM `offer_food` mock (rider-one-app.jsx J4): AppBar + one offer Card + a pinned
- * `Screen.footer` accept/decline pair. The offer Card is a codegen-adopted, guardrail-locked region
- * (RJM.offer_food#offer → food-offer-card.view.tsx). The mock draws the CASH-COLLECT case — the rider
- * collects the kitchen's money at the door and hands it back after the drop; nothing from the rider's
- * own pocket. Riders NEVER front their own cash (product rule, owner 2026-08-12): cash is collected
- * from the customer AFTER delivery, or the customer pre-pays via mobile money (the `wallet` case). The
- * old `cash_upfront` "front your own cash" danger card drew a flow that does not exist and is removed.
+ * Rider v2 food offer (F1–F4, ledger D-54). Entered from the board's `food:offer` push, a `food_offer`
+ * notification tap or a cold reopen — in every case the screen's own source of truth is the poll-fallback
+ * GET (`dispatch/offer`), polled every 3 s, so an offer taken by someone else or timed out is caught with
+ * no live socket. FoodHeader (no Back) · the pickup-stage map · a sheet with the countdown, the FOOD tag,
+ * the kitchen, "Your fare", the stops (or, at a kitchen paid up front, the two money tiles) · "Accept this
+ * job" / "Not this one". The countdown runs off the server's `expiresAt`.
  */
 export default function FoodOffer(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const reduceMotion = useReduceMotion();
+  const { height: winH } = useWindowDimensions();
   const { restaurantsEnabled } = useFeatureFlags();
   const offerQ = useQuery({ queryKey: ["foodOffer"], queryFn: getFoodDispatchOffer, refetchInterval: 3000, enabled: restaurantsEnabled });
   const offer = offerQ.data ?? null;
+  const [now, setNow] = useState(() => Date.now());
+  const [areaH, setAreaH] = useState(0);
+  const [ctaH, setCtaH] = useState(0);
+  const [visible, setVisible] = useState(0);
 
   const acceptM = useMutation({
     mutationFn: (orderId: string) => acceptFoodDispatch(orderId),
@@ -45,20 +53,36 @@ export default function FoodOffer(): React.ReactElement {
     mutationFn: (orderId: string) => declineFoodDispatch(orderId),
     onSuccess: () => router.replace("/rider"),
   });
-  // Accept/decline failures speak once as an auto-dismissing toast (owner instruction 2026-08-12) —
-  // this screen is a live countdown, the worst possible place to camp a stuck red line. Declared here
-  // (above the flag early-return) so the hook runs unconditionally on every render path.
+  // Accept/decline failures speak once as an auto-dismissing toast (owner instruction 2026-08-12).
   useActionErrorEffect(acceptM.error ?? declineM.error);
 
+  const expiresMs = offer ? new Date(offer.expiresAt).getTime() : 0;
+  const leftS = offer ? Math.max(0, Math.ceil((expiresMs - now) / 1000)) : 0;
+  const live = offer != null && leftS > 0;
+
+  useEffect(() => {
+    if (!live) return;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [live]);
+  // The alarm: a strong buzz the moment the offer lands, repeated while it is live (handoff: "a looping
+  // alarm plays until the rider accepts, passes or the offer expires").
+  const ringing = useRef<string | null>(null);
+  useEffect(() => {
+    if (!live || !offer) return;
+    if (ringing.current !== offer.orderId) {
+      ringing.current = offer.orderId;
+      haptic("alert");
+    }
+    const iv = setInterval(() => haptic("alert"), 4000);
+    return () => clearInterval(iv);
+  }, [live, offer]);
+
   // Reachable only from a live server `false` (the kill switch actually pulled) — NOT a boot state.
-  // `useFeatureFlags` defaults `restaurantsEnabled` true because the vertical is launched, so this
-  // screen never renders as a cold-start frame ahead of the flags fetch (MOB-BOOT-02).
   if (!restaurantsEnabled) {
     return (
       <Screen>
-        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon.">
-          <Button label="Back to board" variant="ghost" onPress={() => router.replace("/rider")} />
-        </EmptyState>
+        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon." />
       </Screen>
     );
   }
@@ -71,86 +95,120 @@ export default function FoodOffer(): React.ReactElement {
     );
   }
 
-  if (!offer) {
-    // RR.offer_expired (r-rider.jsx): the food offer timed out or another rider took it. The mock
-    // wraps the EmptyState (icon "timer") in a Card and pins a reassurance line below — "no penalty"
-    // is stated as the standing rule, and the rider is told they're still first in line. Copy verbatim;
-    // the "Back to the board" ghost keeps the unchanged `router.replace("/rider")` navigation.
+  const header = <FoodHeader />;
+
+  // F4 — the offer timed out or another rider took it.
+  if (!offer || !live) {
     return (
-      <Screen>
-        <View style={{ paddingTop: 30 }}>
-          <Card style={{ padding: 16 }}>
-            <EmptyState
-              icon="timer"
-              title="That one went to another rider"
-              message="Offers hold for 60 seconds, then move to the next rider nearby. Passing or missing one doesn't affect your standing."
-            >
-              <Button label="Back to the board" onPress={() => router.replace("/rider")} />
-            </EmptyState>
-          </Card>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.sm, justifyContent: "center", marginTop: 14 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.accent }} />
-            <Text style={{ fontSize: 12.5, color: tokens.color.muted }}>You're online and first in line for the next one</Text>
-          </View>
+      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        {header}
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>
+          <TerminalBody icon="clock" title={R.expT} body={R.expB} />
         </View>
-      </Screen>
+        <CtaBar>
+          <CtaButton label={R.backBoard} onPress={() => router.replace("/rider")} />
+        </CtaBar>
+      </SafeAreaView>
     );
   }
 
-  // `cash_upfront` cannot occur (riders never front their own cash); it collapses into the standard
-  // collect case. `wallet` is the customer-prepaid case (already paid via mobile money — collect
-  // nothing). Everything else renders the cash-collect card. The accept/decline mutations below are
-  // called identically for every variant.
-  const isWallet = foodOfferVariant(offer) === "wallet";
+  const upfront = foodOfferVariant(offer) === "cash_upfront";
+  const pay = offer.merchantGoodsTotal ?? 0;
+  const fee = offer.deliveryFee ?? 0;
+  const collect = pay + fee;
   const pending = acceptM.isPending || declineM.isPending;
+  // Peek: 40% of the screen (26% upfront, 20% under 700dp), measured from the top of the screen.
+  const share = upfront ? (winH < 700 ? 0.2 : 0.26) : 0.4;
+  const area = areaH || Math.max(0, winH - 80);
+  const mapShare = Math.min(0.8, Math.max(0.15, (winH * share) / Math.max(1, area)));
 
   return (
-    <Screen
-      footer={
-        // RJM offer_food footer (rider-one-app.jsx J4): the pinned accept + ghost decline pair, copy
-        // verbatim. Wired to the UNCHANGED food-dispatch accept/decline mutations.
-        <View style={{ gap: tokens.space.sm }}>
-          <Button label="Accept this job" onPress={() => acceptM.mutate(offer.orderId)} loading={pendingOrQueued(acceptM)} disabled={pending} />
-          <Button label="Not this one" variant="ghost" onPress={() => declineM.mutate(offer.orderId)} loading={pendingOrQueued(declineM)} disabled={pending} />
-        </View>
-      }
-    >
-      {/* RJM offer_food AppBar (rider-one-app.jsx J4): "Food job" + a "pickup → drop-off" sub. */}
-      <AppBar title="Food job" sub={`${offer.pickup.landmark} → ${offer.dropoff.landmark}`} onBack={() => router.replace("/rider")} />
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {isWallet ? (
-          // Customer pre-paid via mobile money — collect nothing. The RJM offer_food mock draws only
-          // the cash-collect case, so this prepaid card is honest container glue (pruned from the
-          // composition check): same Card anatomy, wallet copy.
-          <Card style={{ padding: 12 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <TypeTag food />
-              <View style={{ flex: 1 }} />
-              <Money v={offer.deliveryFee ?? 0} size={20} />
-            </View>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 20 }}>
-              Your fare is fixed for food jobs. No bidding.
-            </Text>
-            <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: tokens.color.accentWash }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-                <Icon name="circle-check" size={20} color={tokens.color.accentText} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>No money from your pocket</Text>
-                  <Text style={{ fontSize: 12, color: tokens.color.accentText, lineHeight: 18 }}>
-                    The customer already paid the restaurant. Just collect and deliver.
-                  </Text>
-                </View>
+    <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      {header}
+      <View testID="food-offer-area" style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
+        <OrderMap
+          pickup={offer.pickup.point}
+          dropoff={offer.dropoff.point}
+          rider={null}
+          riderLabel={R.you}
+          riderPaused={false}
+          showRider={false}
+          toPickupLine={false}
+          rings={false}
+          dim={false}
+          frame="route"
+          padBottom={visible || Math.round(area * (1 - mapShare))}
+          reduceMotion={reduceMotion}
+        />
+        {area > 0 ? (
+          <OrderSheet areaHeight={area} fallbackShare={mapShare} floor={0} bottomInset={ctaH} contentKey={upfront ? "upfront" : "offer"} reduceMotion={reduceMotion} onVisibleHeight={setVisible}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 28, paddingHorizontal: 10, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.surface }}>
+                <Icon name="timer" size={14} color={tokens.color.ink} />
+                <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{RF.left(leftS)}</Text>
+              </View>
+              <View style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: tokens.color.line, overflow: "hidden" }}>
+                <View style={{ width: `${Math.min(100, (leftS / OFFER_WINDOW_S) * 100)}%`, height: "100%", backgroundColor: tokens.color.accent }} />
               </View>
             </View>
-          </Card>
-        ) : (
-          // RJM offer_food#offer — the codegen-adopted, guardrail-locked cash-collect card. `fare` is
-          // the rider's fixed delivery fee; `collectAmount` is the kitchen's money collected at the
-          // door and handed back after the drop.
-          <RiderFoodOfferCardView fare={offer.deliveryFee} collectAmount={offer.merchantGoodsTotal} />
-        )}
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
-    </Screen>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                <JTag food />
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{offer.pickup.landmark}</Text>
+                <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{RF.foodMeta(null, offer.distanceKm)}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.foodFare}</Text>
+                <Text style={{ fontSize: 28, lineHeight: 34, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{usd(fee)}</Text>
+              </View>
+            </View>
+            {upfront ? (
+              <>
+                <StopLine drop name={offer.dropoff.landmark} />
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <MoneyTile label={R.payKitchen} value={pay} />
+                  <MoneyTile label={R.collectDoor} value={collect} />
+                </View>
+                <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.payKitchenB(pay, collect)}</Text>
+                <PeekMark />
+              </>
+            ) : (
+              <>
+                <View style={{ gap: 4 }}>
+                  <StopLine name={offer.pickup.landmark} />
+                  <StopLine drop name={offer.dropoff.landmark} />
+                </View>
+                <PeekMark />
+              </>
+            )}
+          </OrderSheet>
+        ) : null}
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 25 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
+          <CtaBar hint={R.passHint}>
+            <CtaButton label={R.accept} onPress={() => acceptM.mutate(offer.orderId)} loading={!!pendingOrQueued(acceptM)} disabled={pending} />
+            <CtaButton ghost label={R.pass} onPress={() => declineM.mutate(offer.orderId)} loading={!!pendingOrQueued(declineM)} disabled={pending} />
+          </CtaBar>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+/** FoodHeader: the After Send bar with no Back — Utensils + "New food job", centred. */
+function FoodHeader(): React.ReactElement {
+  return (
+    <View style={{ minHeight: 53, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderBottomWidth: 1, borderBottomColor: tokens.color.line, backgroundColor: tokens.color.bg }}>
+      <Icon name="utensils" size={17} color={tokens.color.accentText} />
+      <Text accessibilityRole="header" style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.tFoodOffer}</Text>
+    </View>
+  );
+}
+
+function MoneyTile({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <View style={{ flex: 1, backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 2 }}>
+      <Text style={{ fontSize: 12, color: tokens.color.muted }}>{label}</Text>
+      <Text style={{ fontSize: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{usd(value)}</Text>
+    </View>
   );
 }

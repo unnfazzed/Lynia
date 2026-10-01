@@ -47,6 +47,7 @@
     "RJM.money": "Balance figures come from the fixture and differ from the mock's, and the mock's '≈ 30 more jobs' runway line has no app counterpart while the app adds a long commission explainer the mock never draws.",
     "RJM.offer_food": "The rider_food_offer fixture stages Nando's Avondale → Borrowdale where the mock draws Sadza Republic → Belgravia, and the app renders the collect amount as a bare '$13.00' where the mock draws 'Collect $15.50 for the kitchen' — a copy divergence hiding behind a fixture mismatch.",
     "RR.nav_rest": "The mock draws map markers as single glyphs ('R', '•') and no SOS control; the app renders an SOS action and the fixture's restaurant. Marker structure work before this can be asserted.",
-    "RR.offer_cash": "The app renders the EXPIRED terminal ('That offer's gone') where the mock draws the live countdown offer ('NEW ORDER', '47s'): the offer fixture's expiry is in the past by the time jest mounts it. Needs a fixture with a pinned clock."
+    "RR.offer_cash": "The app renders the EXPIRED terminal ('That offer's gone') where the mock draws the live countdown offer ('NEW ORDER', '47s'): the offer fixture's expiry is in the past by the time jest mounts it. Needs a fixture with a pinned clock.",
+    "RR.offer_expired": "SUPERSEDED TARGET, not drift: docs/DESIGN-DEVIATIONS.md D-54 (owner instruction 2026-10-01) made the Rider v2 handoff (packages/design/handoff/rider-v2/, F4) the authority for the expired food offer: FoodHeader, a Clock disc, 'That one went to another rider', the 60-second hold line and 'Back to jobs'. The gallery's card-wrapped EmptyState with 'Back to the board' and the first-in-line footnote is not aligned to until an export redraws it."
   }
 }
