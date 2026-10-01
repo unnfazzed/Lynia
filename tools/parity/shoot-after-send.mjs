@@ -85,7 +85,8 @@ async function shootMock(browser, id, phone) {
     await mockPage.goto(MOCK, { waitUntil: "load" });
     await mockPage.waitForTimeout(2500);
   }
-  const anchor = `#s-${id.replace(/\./g, "\\.")}${phone.width < 360 ? "-320" : ""}`;
+  // An attribute selector needs no CSS escaping for the dots in a state id ("2.1").
+  const anchor = `[id="s-${id}${phone.width < 360 ? "-320" : ""}"]`;
   const cell = mockPage.locator(anchor).first();
   await cell.scrollIntoViewIfNeeded();
   await mockPage.waitForTimeout(900);
