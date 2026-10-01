@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { MerchantEndOfDaySummaryResponse, MerchantProfileResponse } from "@lynia/shared";
 import { ApiError } from "../../lib/api-client";
+import { showBranchChevron, showNotLiveHome, useBranches } from "../../lib/branches";
 import { primeBusiness } from "../../lib/business";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
 import { getTodaySummary } from "../../lib/orders-api";
 import { money, openStatus } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
+import { BranchSheet } from "../branches/BranchSheet";
+import { Icon } from "../icons";
 import { Switch } from "./Switch";
 import { useToast } from "./Toast";
 
@@ -49,6 +52,10 @@ export function useOpenSwitch(merchant: MerchantProfileResponse | null, onMercha
  * ledger D-48): the business, "● Open until 22:00" and the open/closed switch, then (owners) the
  * Orders · Sales · Cash overdue tiles, refreshed every half minute and whenever `refreshKey` changes.
  * Closed by hand, it greys. `children` sits under the tiles (D1's "Book a rider").
+ *
+ * Branches (ledger D-51, README section F): an owner with 2+ branches gets a chevron after the name; the
+ * name and chevron are one 44px target that opens C6. In a branch LyniaGo hasn't switched on, the open
+ * line becomes a grey "Not live yet" pill and the switch and tiles go (README §5).
  */
 export function OrdersHeader({
   merchant,
@@ -65,7 +72,11 @@ export function OrdersHeader({
 }) {
   const owner = merchant.myRole === "owner";
   const [summary, setSummary] = useState<MerchantEndOfDaySummaryResponse | null>(null);
-  const closed = open.status.closedByHand;
+  const [sheet, setSheet] = useState(false);
+  const branches = useBranches(owner);
+  const chevron = showBranchChevron(merchant, branches.length);
+  const notLive = showNotLiveHome(merchant, branches.length);
+  const closed = open.status.closedByHand && !notLive;
 
   const loadSummary = useCallback(() => {
     if (!owner) return;
@@ -74,27 +85,41 @@ export function OrdersHeader({
       .catch(() => {});
   }, [owner]);
   useEffect(() => {
+    if (notLive) return undefined;
     loadSummary();
     if (!owner) return undefined;
     const t = setInterval(loadSummary, SUMMARY_POLL_MS);
     return () => clearInterval(t);
-  }, [owner, loadSummary, refreshKey]);
+  }, [owner, notLive, loadSummary, refreshKey]);
 
   return (
     <div className={`m-hd${closed ? " m-hd-off" : ""}`}>
       <div className="m-hdt">
         <div className="m-biz">
-          <b>{merchant.name}</b>
-          <span style={open.status.open ? undefined : { color: "var(--muted)" }}>● {open.status.label}</span>
+          {chevron ? (
+            <button type="button" className="m-biz-switch" aria-haspopup="dialog" onClick={() => setSheet(true)}>
+              <b>{merchant.name}</b>
+              <Icon name="chevron-down" size={20} color="var(--ink)" />
+            </button>
+          ) : (
+            <b>{merchant.name}</b>
+          )}
+          {notLive ? (
+            <span className="m-pl m-grey">Not live yet</span>
+          ) : (
+            <span style={open.status.open ? undefined : { color: "var(--muted)" }}>● {open.status.label}</span>
+          )}
         </div>
-        <Switch
-          checked={open.status.open}
-          label={open.status.open ? "Open for orders" : "Closed"}
-          disabled={open.switching || disabled}
-          onChange={(next) => void open.toggleOpen(next)}
-        />
+        {!notLive && (
+          <Switch
+            checked={open.status.open}
+            label={open.status.open ? "Open for orders" : "Closed"}
+            disabled={open.switching || disabled}
+            onChange={(next) => void open.toggleOpen(next)}
+          />
+        )}
       </div>
-      {owner && !closed && (
+      {owner && !closed && !notLive && (
         <div className="m-stats">
           <div className="m-stat">
             <span>Orders</span>
@@ -110,7 +135,8 @@ export function OrdersHeader({
           </Link>
         </div>
       )}
-      {children}
+      {!notLive && children}
+      {sheet && <BranchSheet business={merchant} branches={branches} onClose={() => setSheet(false)} />}
     </div>
   );
 }

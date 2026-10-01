@@ -1172,3 +1172,260 @@
   letter-spacing: 0.12em;
   color: var(--accent-text);
 }
+
+/* ── Branches (merchant-mobile README section F; handoff branches/README.md; ledger D-51) ───────── */
+
+/* B1 / D1 header: name + chevron as one 44px target, drawn with −8/−6 margins so the header keeps its
+ * height (README §1). Only rendered for an owner with 2+ branches. */
+.m-biz-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--target-min);
+  margin: -8px 0 -6px;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.m-biz .m-biz-switch b {
+  min-width: 0;
+}
+.m-biz-switch svg {
+  flex-shrink: 0;
+}
+.m-biz .m-pl {
+  margin-top: 4px;
+}
+
+/* C6 · Branches (README §2). */
+.m-sheet.m-branches {
+  gap: 8px;
+  max-height: calc(100% - 8px - env(safe-area-inset-top));
+}
+.m-branches-title {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 2px 0 4px;
+}
+.m-offline.m-branches-offline {
+  margin: 0 -16px;
+  font-size: 13px;
+}
+.m-branches-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+.m-branch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.m-branch:last-child {
+  border-bottom: none;
+}
+.m-branch .m-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-branch .m-t b {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-branch .m-t span {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-branch svg,
+.m-branch .m-pl {
+  flex-shrink: 0;
+}
+.m-branch:disabled,
+.m-branches-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.m-branches-add {
+  width: 100%;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+/* C7 · Add a branch (README §4). */
+.m-c7 {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 16px;
+  flex: 1;
+}
+.m-c7[aria-busy="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.m-c7-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.m-c7-copy .m-t {
+  flex: 1;
+  min-width: 0;
+}
+.m-c7-copy .m-t b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.m-c7-copy .m-t span {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-c7-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.m-c7-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--danger-ink);
+}
+.m-c7-err svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.m-c7-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.m-c7-banner a {
+  color: inherit;
+  text-decoration: underline;
+  display: inline-flex;
+  align-items: center;
+  /* Drawn 36px (an upstream kit defect, ledger D-51): a 44px tap box, the drawn line height kept. */
+  min-height: var(--target-min);
+  margin: -4px 0;
+  font-weight: 600;
+}
+.m-c7-foot {
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+}
+.m-c7-foot .m-btn:disabled {
+  opacity: 1;
+  background: var(--line);
+  color: var(--muted);
+}
+.m-c7-foot .m-btn[aria-busy="true"] {
+  background: var(--cta-fill);
+  color: var(--on-accent);
+}
+.m-spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: var(--on-accent);
+  animation: m-spin 0.8s linear infinite;
+}
+@keyframes m-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* B1 / D1 not live yet (README §5). */
+.m-notlive {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 28px;
+  text-align: center;
+  min-height: 100%;
+}
+.m-notlive-ic {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+}
+.m-notlive b {
+  font-size: 18px;
+  font-weight: 700;
+}
+.m-notlive p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-notlive .m-gh {
+  padding: 0 20px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.m-notlive .m-lnk {
+  font-size: 13px;
+}
+
+/* C6 and C7 draw the offline bar inside themselves (under the sheet title; under the AppBar), so the
+ * shell's own bar steps aside while they are up (branches README §2, §4). */
+.m-app:has(.m-branches) > .m-offline,
+.m-app:has(.m-c7) > .m-offline {
+  display: none;
+}
+.m-c7-saving .m-back {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.m-c7-offline {
+  font-size: 13px;
+}

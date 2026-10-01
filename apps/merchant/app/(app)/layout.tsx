@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
+import { useBranchEpoch } from "../lib/branches";
 import { KitchenConnectionProvider, useKitchenConnection } from "../components/KitchenConnectionProvider";
 
 /** Client-side safety net: if the session is cleared while a page is mounted (an API call's
@@ -31,10 +32,19 @@ function SessionGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Branches (ledger D-51): a switch bumps the epoch, so the page under the shell re-mounts and every
+ *  screen re-reads its data for the new branch. The provider above it (socket, alarm) stays up. */
+function BranchScope({ children }: { children: React.ReactNode }) {
+  const epoch = useBranchEpoch();
+  return <Fragment key={epoch}>{children}</Fragment>;
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <KitchenConnectionProvider>
-      <SessionGuard>{children}</SessionGuard>
+      <SessionGuard>
+        <BranchScope>{children}</BranchScope>
+      </SessionGuard>
     </KitchenConnectionProvider>
   );
 }
