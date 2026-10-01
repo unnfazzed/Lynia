@@ -1,4 +1,5 @@
 import type { Me } from "./auth";
+import { apiFetch } from "./client";
 
 /**
  * Rider v2 adapter (`packages/design/handoff/rider-v2/`, ledger D-54). The handoff draws a few figures
@@ -40,12 +41,14 @@ export interface DemandZone {
 }
 
 /**
- * TODO(backend): demand zones need a server-side feed (orders per area over the last 60 minutes —
- * BRIEF open question 2). Until it exists the board draws no zones and no "Busier near" line, rather
- * than inventing one.
+ * The board's busy zones (owner 2026-10-01: "demand from orders pending and in progress") — the server
+ * groups the last hour's waiting and on-the-road orders near the rider into ~1 km cells and returns the
+ * busiest three. No position, no zones.
  */
-export async function getDemandZones(_loc: { lat: number; lng: number } | null): Promise<DemandZone[]> {
-  return [];
+export async function getDemandZones(loc: { lat: number; lng: number } | null): Promise<DemandZone[]> {
+  if (!loc) return [];
+  const rows = await apiFetch<DemandZone[]>(`/orders/demand?lat=${loc.lat}&lng=${loc.lng}`);
+  return Array.isArray(rows) ? rows.filter((z) => Number.isFinite(z.lat) && Number.isFinite(z.lng) && z.place) : [];
 }
 
 /**
