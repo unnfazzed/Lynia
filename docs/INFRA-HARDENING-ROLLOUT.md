@@ -11,7 +11,8 @@ Do these one stage at a time, in a low-traffic window, verifying each before the
 `terraform plan` → review → `terraform apply`.
 
 Legend: 🟢 additive/safe · 🟡 coordinated (brief disruption possible) · 🔴 recreates a resource /
-ephemeral-state loss · ⚖️ product/compliance decision, not purely technical.
+ephemeral-state loss · ⚖️ product/compliance decision, not purely technical · 💰 cost stage, not a
+security control.
 
 > Cost note: STANDARD_HA Redis and REGIONAL Cloud SQL roughly double those line items. WAF/Armor adds a
 > per-policy + per-request charge. Size these against the pilot budget.
@@ -106,6 +107,11 @@ ship in **PREVIEW** (log-only) so you can catch false positives before they 403 
 5. **Rollback:** `armor_waf_preview = true` → apply (back to log-only) — instant, no data impact.
 6. Tune `armor_rate_limit_count` / `armor_rate_limit_interval_sec` to your measured peak if 429s appear.
 
+> Cost note: Armor bills **$5/policy + $1/rule/month** regardless of `preview`, so the five OWASP
+> rules cost the same ~$5/mo whether they block or only log. Preview is the right posture *while
+> you are watching the logs* (step 1) — but a policy left in preview indefinitely is paying full
+> price for no enforcement. Either finish step 3 or drop the rules.
+
 ## §6 — Availability HA (pre-launch, not pilot)
 
 - **Redis STANDARD_HA**  🔴 — `redis_tier = "STANDARD_HA"` adds a replica with automatic failover.
@@ -115,6 +121,57 @@ ship in **PREVIEW** (log-only) so you can catch false positives before they 403 
 - **Cloud SQL REGIONAL**  🟡 — set `availability_type = "REGIONAL"` in `sql.tf` (line ~21). This is an
   in-place update with a brief failover blip, giving a synchronous standby in another zone. Verify with
   `gcloud sql instances describe lynia-pg --format='value(settings.availabilityType)'`.
+
+## §7 — Cloud Run Direct VPC egress  🟡  💰  (`direct_vpc_egress_enabled` + `DIRECT_VPC_EGRESS`)
+
+**A cost stage, not a hardening stage** — the only one in this runbook, kept here because it is a
+gated terraform flag with exactly the same verify-and-rollback shape as the rest.
+
+The Serverless VPC Access connector (`network.tf`) is billed as **two always-on VMs**
+(`min_instances = 2`) whether or not a request is served — roughly **$12–18/mo** at `africa-south1`
+list, for a pilot that is idle most of the day. Cloud Run's **Direct VPC egress** (GA 2024-04-23)
+reaches the same private addresses at the **same per-GB network rates**, with **no compute charge**,
+and scales to zero with the service. Numbers and the wider picture:
+[`HOSTING-COST-COMPARISON.md`](./HOSTING-COST-COMPARISON.md) §8.
+
+Two flags, deliberately separate, so the connector is destroyed only *after* the service is proven on
+the new path — a single combined flag would tear down the old route in the same apply that builds the
+new one, and the running revision still references the connector until it is redeployed.
+
+1. **Create the subnet** (🟢 additive — changes no running service): `direct_vpc_egress_enabled = true`
+   → apply. Direct VPC egress needs a real subnet and this VPC (`auto_create_subnetworks = false`) had
+   none; `lynia-run-direct` lands at `10.9.0.0/24`, provably disjoint from the connector's
+   `10.8.0.0/28` and the private-services range `10.10.0.0/16`.
+2. **Read the wiring values:** `terraform output RUN_DIRECT_NETWORK` and
+   `terraform output RUN_DIRECT_SUBNET`. Set them as repo **Variables** `RUN_VPC_NETWORK` /
+   `RUN_VPC_SUBNET`.
+3. **Move the service** (🟡): set repo Variable `DIRECT_VPC_EGRESS=true` and trigger a release. The
+   deploy swaps `--vpc-connector` for `--network`/`--subnet`; `--vpc-egress private-ranges-only` is
+   unchanged on both paths, so egress behaviour does not move. `deploy-staging.yml` reads the same
+   variable and follows, because staging shares this VPC.
+4. **Verify — this is the whole stage.** The failure mode is silent: a service that builds, starts and
+   serves HTTP while every Redis-backed path is dead.
+   - `/healthz` reports **`redis: true`** on the new revision.
+   - Request an OTP end to end (Redis attempt counters).
+   - Run an order auction and let an offer expire (BullMQ `offer-expiry` — the job queue, not just a
+     connection check).
+   - Open a tracking socket and confirm a position reaches a second client (Socket.IO pub/sub).
+   - Logs show no `Redis ping failed`.
+   - `gcloud run services describe <svc> --region <region>` shows the VPC access spec naming the
+     subnet, not the connector.
+5. **Rollback** (instant, no data impact): set `DIRECT_VPC_EGRESS=false` and redeploy — the connector
+   is still there because step 6 has not run. This is why step 6 is a separate stage.
+6. **Only then, bank the saving** (🔴 one-way until re-applied): `vpc_connector_enabled = false` →
+   apply, destroying `lynia-connector`. Re-creating it later is a fresh apply (a few minutes), so do
+   not run this until step 4 has been green across at least one full operating day. With both flags
+   false, `terraform plan` **refuses** (`terraform_data.vpc_egress_path_guard`) rather than leaving
+   Cloud Run with no route to Redis. `release.yml`'s preflight enforces the same either/or, demanding
+   `RUN_VPC_NETWORK`/`RUN_VPC_SUBNET` or `VPC_CONNECTOR` according to the selected path.
+
+> Not done here: `db_tier` and Memorystore downsizing. Both are larger line items and both are held
+> deliberately until the `docs/LOAD-MODEL.md` k6 run produces evidence — `LC-INF2` raised the disk
+> specifically for GPS-write IOPS, and Redis holds in-flight BullMQ jobs. See
+> `HOSTING-COST-COMPARISON.md` §8 for why those two are *not* in this runbook yet.
 
 ---
 
@@ -127,5 +184,7 @@ ship in **PREVIEW** (log-only) so you can catch false positives before they 403 
 
 ## Suggested order
 
-§5 preview-watch (from launch) → §3 CMEK → §4 retention (once decided) → §1 SQL private-only →
-§2 Redis TLS + §6 Redis HA (same window) → §6 SQL REGIONAL → §5 WAF enforce (once preview is clean).
+§7 Direct VPC egress (independent of the rest — it touches no security control, and it pays for
+itself) → §5 preview-watch (from launch) → §3 CMEK → §4 retention (once decided) → §1 SQL
+private-only → §2 Redis TLS + §6 Redis HA (same window) → §6 SQL REGIONAL → §5 WAF enforce (once
+preview is clean).

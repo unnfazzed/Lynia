@@ -332,7 +332,12 @@ graph TB
 Key facts:
 
 - **Cloud Run** is the only compute; it has no VPC route by default, so the **Serverless VPC Access
-  connector** is what lets it reach private-IP Redis (and is why it exists at all).
+  connector** is what lets it reach private-IP Redis (and is why it exists at all). The connector bills
+  as two always-on VMs regardless of traffic; **Direct VPC egress** is wired as an equivalent path with
+  no idle compute charge, gated off by default — `direct_vpc_egress_enabled` in Terraform plus the
+  `DIRECT_VPC_EGRESS` repo variable, cutover sequence in `docs/INFRA-HARDENING-ROLLOUT.md` §7, costing
+  in `docs/HOSTING-COST-COMPARISON.md`. Whichever path is selected, egress stays
+  `--vpc-egress private-ranges-only`.
 - **Secrets** are injected as env vars at deploy time (`--set-secrets`), not read via a managed
   identity SDK — that keeps the app cloud-neutral (D7). GCS signing uses the runtime SA's `signBlob`
   IAM permission (ADC), so **no private key lives in env**.
