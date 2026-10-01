@@ -179,79 +179,36 @@ export const ADOPTED = [
     }),
   },
   {
-    // RC.list — the food restaurant-list screen (app/food/index.tsx). The first MULTI-STATE adoption:
-    // its state machine (loading / empty / error / data) maps each state to its own RC.list* mock key.
-    // Only the states that are a CLEAN structural match given Foundation-A's primitives are adopted;
-    // the rest are DEFERRED with a precise reason (below) rather than forced into a divergent view.
+    // RC.list — until 2026-10-01 its loading and error states were generated whole-screen views (food-list.loading/.error.view.tsx); D-57 made the Browse v2 handoff the authority, so both views were deleted and every RC.list* key is a SUPERSEDED deferral.
     key: "RC.list",
     container: "apps/mobile/app/food/index.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
     uiImport: "../../src/ui",
-    states: [
-      {
-        // R1·2 list_loading — a full-screen content skeleton (its own Screen), drawn while the cold
-        // load has NO data yet (not even a stale copy). Pure presentational: no data seam, no handlers,
-        // no props — the mock is fixed skeleton geometry, so the generated view is 0-residual and needs
-        // no `bind`. The container early-returns it (like RC.cart_empty), replacing the whole screen so
-        // the layout does not jump when data lands.
-        state: "loading",
-        key: "RC.list_loading",
-        component: "list_loading",
-        componentName: "FoodListLoadingView",
-        viewFile: "apps/mobile/app/food/food-list.loading.view.tsx",
-      },
-      {
-        // R1·4 list_error — the cold offline/fetch-failed state (fetch settled in error with NO data,
-        // not even a stale copy). The mock wraps the whole screen in `<Screen banner={<Banner offline/>}>`
-        // — now adoptable because Foundation-C gave the DS `Screen` a `banner` slot AND taught the
-        // structural normalizer to fold that slot into the tree (so the banner is verified, not invisible).
-        // Container early-returns it (like loading); the retry button and the AppBar back are the only
-        // data seam. The Banner's `action="Retry"` mirrors the mock's decorative span verbatim (the kit's
-        // Banner has no handler either — the functional retry is the EmptyState's "Try again" button).
-        state: "error",
-        key: "RC.list_error",
-        component: "list_error",
-        componentName: "FoodListErrorView",
-        viewFile: "apps/mobile/app/food/food-list.error.view.tsx",
-        propsParam: "{ onBack, onRetry, loading }: FoodListErrorViewProps",
-        propsType: [
-          "export type FoodListErrorViewProps = {",
-          "  onBack: () => void;",
-          "  onRetry: () => void;",
-          "  loading?: boolean;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            const name = path.node.name.name;
-            if (name === "AppBar") {
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
-            }
-            if (name === "Button") {
-              // Kit Button's web `onClick={nop}` → the app Button's `onPress`; wire the container's
-              // refetch and reflect its in-flight state, preserving the screen's existing retry behavior.
-              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onRetry"))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
-            }
-          },
-        }),
-      },
-    ],
-    // Deferred states — recorded, not forced (CLAUDE.md "Pixel parity": honesty over volume). Each is a
-    // genuine wall, not laziness; adopting anyway would ship a divergent or dishonest screen.
+    states: [],
     deferred: [
-      {
-        state: "empty",
-        key: "RC.list_empty",
-        reason:
-          "the mock draws a 'Notify me when they open' primary action with NO backend to honor it (a permanently dead button — CLAUDE.md forbids promising an action the app can't deliver), plus a live 'Belgravia · 22:40' AppBar sub; it also collapses the app's two honest empty conditions (open-now-filtered-empty vs no-restaurants-at-all) into one. Needs a notify-when-open feature before it can adopt.",
-      },
       {
         state: "data",
         key: "RC.list",
         reason:
-          "CODEGEN-shape-gated only — the backend argument this deferral used to make has EXPIRED and the header is now hand-aligned (2026-08-19). The old reason said rating/distance/fee/ETA were absent from `RestaurantListItem` and that the screen had no customer geolocation; #673 added ratingAvg/ratingCount/prepBaselineMinutes alongside the existing `location`, and `home-location.ts` gave the screen a live fix, so all four drawn pills, the live deliver-to + chevron picker and the `N places deliver to <area> · lo–hi min` count line are wired to real data (src/logic/food-list.ts). What still blocks CODEGEN adoption is shape, not data: the mock's list body is a static `.map` over five frozen rows, whereas the app must keep the FlatList virtualization (B-T3) and cursor pagination (B-O10) that a generated view would flatten away, and RestaurantRow's meta line is not wired yet. Structural congruence here is pinned by the screen's own tests instead. See docs/parity/PHASE4-browse.md.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant list is now the Browse v2 handoff's B1/B5–B7/B12/B14 (packages/design/handoff/browse-v2) — a mint header with the address control, the service sticker and the search; one Sort pill (the cuisine lives in the Sort sheet) and a Free delivery pill; '6 places · 25–45 min'; two full 16:9 cards then compact rows; a 'Closed now' group at the end. The gallery `list` draws the 'FOOD · DELIVER TO' row, four equal pills (Open now · Nearest · Under $2 fee · Top rated), a 'N places deliver to <area>' line and drop-shadow cards; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
+      },
+      {
+        state: "loading",
+        key: "RC.list_loading",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant list's first load is now the Browse v2 handoff's B8 (packages/design/handoff/browse-v2) — the real mint header stays and only the body is a skeleton. The gallery `list_loading` draws a full-screen skeleton with no header; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
+      },
+      {
+        state: "error",
+        key: "RC.list_error",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant list's failed first load is now the Browse v2 handoff's B10b/B11 (packages/design/handoff/browse-v2) — the mint header stays over a centred block ('Couldn’t load restaurants' or 'You’re offline') with ↻ Try again. The gallery `list_error` draws an offline Banner over an AppBar and a Card; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
+      },
+      {
+        state: "empty",
+        key: "RC.list_empty",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant list's empty states is now the Browse v2 handoff's B6/B9 (packages/design/handoff/browse-v2) — filters that leave nothing say 'No places match' with Clear filters; an empty corridor shows the mint 'No restaurants deliver to <area> yet' card with Change address and Send a parcel. The gallery `list_empty` draws a 'Notify me when they open' card; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
       },
     ],
   },
@@ -409,216 +366,34 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.menu — the restaurant menu (app/food/[id].tsx). The FIRST region-adopted INTERACTIVE
-    // container (Foundation-E). A whole-screen generated view cannot host this screen's live behaviour
-    // (category tabs, ItemSheet, RemindWhenOpen, 'just closed' interrupt, add-to-cart) without
-    // regressing it — so instead of `≡ whole-screen mock`, the screen adopts PIECE-BY-PIECE: each
-    // `regions[]` entry is a generated, guarded FRAGMENT view of a named sub-tree of the RC.menu mock,
-    // and the container COMPOSES them while keeping all interactive glue. The guardrail asserts BOTH
-    // (a) each fragment view ≡ its mock fragment, AND (b) the container mounts the fragments in the
-    // mock's region composition order/nesting (the composition check) — pieces AND assembly, statically.
+    // RC.menu — until 2026-10-01 region-adopted (cover / rows / footer → menu-cover/menu-rows/menu-cart-bar.view.tsx); D-57 made the Browse v2 handoff the authority, so the regions were deleted and the key is a SUPERSEDED deferral.
     key: "RC.menu",
     container: "apps/mobile/app/food/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    mockComponent: "menu",
     uiImport: "../../src/ui",
-    regions: [
-      {
-        // Cover region — the full-bleed cover band: DS CoverPhoto with the floating back button, the
-        // (decorative, static-mock) search glyph and the round DS ShopLogo overhanging its corner. The
-        // back glyph is wired to onBack via a transparent Tappable (invisible to the structural diff).
-        region: "cover",
-        locator: { el: "CoverPhoto" },
-        componentName: "MenuCoverView",
-        viewFile: "apps/mobile/app/food/menu-cover.view.tsx",
-        propsParam: "{ name, photo, logoPhoto, onBack }: MenuCoverViewProps",
-        propsType: [
-          "export type MenuCoverViewProps = {",
-          "  name: string;",
-          "  /** Cover image URI, or `false` for the kit's tinted-name fallback (honest-empty). */",
-          "  photo: string | false;",
-          "  /** Logo image URI, or `false` for the kit's accent-initial fallback (honest-empty). */",
-          "  logoPhoto: string | false;",
-          "  onBack: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr, wrap }) => ({
-          JSXOpeningElement(path) {
-            const name = path.node.name.name;
-            if (name === "CoverPhoto") {
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("name"), t.jsxExpressionContainer(expr("name"))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("photo"), t.jsxExpressionContainer(expr("photo"))));
-            }
-            if (name === "ShopLogo") {
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("name"), t.jsxExpressionContainer(expr("name"))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("photo"), t.jsxExpressionContainer(expr("logoPhoto"))));
-            }
-          },
-          // The back glyph is the absolute box with a `left` inset (the search glyph has `right`); wrap
-          // it in a Tappable(onBack). Transparent wrapper → invisible to the structural guardrail.
-          JSXElement(path) {
-            const open = path.node.openingElement;
-            if (open.name.name !== "View") return;
-            const style = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
-            const obj = style?.value?.expression;
-            if (obj?.type !== "ObjectExpression") return;
-            const keys = obj.properties.filter((p) => p.type === "ObjectProperty" && !p.computed).map((p) => p.key.name || p.key.value);
-            if (!keys.includes("left") || !keys.includes("position")) return;
-            if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
-            path.replaceWith(wrap(path.node, "Tappable", `onPress={onBack} accessibilityRole="button" accessibilityLabel="Back"`));
-            path.skip();
-          },
-        }),
-      },
-      {
-        // Rows region — the section's dish list: `{rows.map(i => <MenuRow i qty/>)}`. Each MenuRow is
-        // wrapped in a Tappable(onDishPress) so a tap opens the live ItemSheet (kept in the container).
-        region: "rows",
-        locator: { map: "MenuRow" },
-        componentName: "MenuRowsView",
-        viewFile: "apps/mobile/app/food/menu-rows.view.tsx",
-        propsParam: "{ rows, qtyFor, onDishPress }: MenuRowsViewProps",
-        propsType: [
-          "/** A menu row's kit-item shape plus the dish `id` the list keys + maps back to. */",
-          "export type MenuRowSeed = MenuRowItem & { id: string };",
-          "export type MenuRowsViewProps = {",
-          "  rows: MenuRowSeed[];",
-          "  qtyFor: (i: MenuRowSeed) => number;",
-          "  onDishPress: (i: MenuRowSeed) => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr, wrap }) => ({
-          CallExpression(path) {
-            const callee = path.node.callee;
-            if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
-            callee.object = expr("rows");
-            const arrow = path.node.arguments[0];
-            if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
-            const row = arrow.body.type === "JSXElement" ? arrow.body : null;
-            if (!row || row.openingElement.name.name !== "MenuRow") return;
-            const open = row.openingElement;
-            // qty is the live in-cart count; drop the mock's literal and wire qtyFor(i).
-            open.attributes = open.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "qty"));
-            open.attributes.push(t.jsxAttribute(t.jsxIdentifier("qty"), t.jsxExpressionContainer(expr("qtyFor(i)"))));
-            const keyAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
-            open.attributes = open.attributes.filter((a) => a !== keyAttr);
-            const wrapped = wrap(row, "Tappable", `onPress={() => onDishPress(i)} accessibilityRole="button" disabled={!!i.oos}`);
-            if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
-            arrow.body = wrapped;
-          },
-        }),
-      },
-      {
-        // Footer region — the pinned "N items · View cart" cart bar the kit draws in `<Screen footer=…>`.
-        region: "footer",
-        locator: { slot: "footer" },
-        componentName: "MenuCartBarView",
-        viewFile: "apps/mobile/app/food/menu-cart-bar.view.tsx",
-        propsParam: "{ itemLabel, subtotal, onViewCart }: MenuCartBarViewProps",
-        propsType: [
-          "export type MenuCartBarViewProps = {",
-          "  itemLabel: string;",
-          "  subtotal: number;",
-          "  onViewCart: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            const name = path.node.name.name;
-            if (name === "Button") {
-              // Kit-only props (web onClick, block, style) → drop; wire the app Button's onPress.
-              path.node.attributes = path.node.attributes.filter(
-                (a) => !(a.type === "JSXAttribute" && ["onClick", "block", "style"].includes(a.name.name)),
-              );
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onViewCart"))));
-            }
-            if (name === "Money") {
-              path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "v"));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("v"), t.jsxExpressionContainer(expr("subtotal"))));
-            }
-          },
-          // The "2 items" count line — replace the mock's literal with the live item label.
-          JSXText(path) {
-            if (path.node.value.trim() === "2 items") path.replaceWith(t.jsxExpressionContainer(expr("itemLabel")));
-          },
-        }),
-      },
-    ],
-    // The shop-header META line (`★ 4.7 (210) · 1.2 km · 25–35 min · $1.50 delivery`) is NOT a region:
-    // rating, geo-distance, ETA and delivery fee are ALL absent from the customer menu read contract
-    // (RestaurantMenuResponse) and the screen has no customer geolocation, so drawing them would ship
-    // fabricated figures (CLAUDE.md forbids). The container honest-keeps the API-backed cuisine-tags +
-    // priceLevel line instead; this stays glue (pruned from the composition check), tracked here.
+    states: [],
     deferred: [
       {
-        state: "meta",
-        key: "RC.menu_meta",
+        state: "data",
+        key: "RC.menu",
         reason:
-          "BACKEND-gated shop-header meta line (rating / km / ETA / delivery fee) — none are in RestaurantMenuResponse and the screen has no customer geolocation, so it is honest-kept as the API-backed cuisine-tags + priceLevel line rather than fabricated. Not a region; container glue, pruned from the composition check.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant storefront is now the Browse v2 handoff's S1–S7/S10–S13 and I1–I3 (packages/design/handoff/browse-v2) — a 196px cover with back and search discs, a 76px logo, the name, the open line, a four-cell info strip (rating · time · fee · distance), sticky scroll-spy tabs over ONE scrolling menu (a Popular rail first), 112px dish photos with the + inside, a forest cart bar. The gallery `menu` draws a 92px cover with the name printed in it, category pills that swap the list, a restated uppercase label and a + disc overlapping the thumbnail; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
       },
     ],
   },
   {
-    // ── RC.closed_interrupt — the "kitchen closes while you're browsing" interrupt (R2·b1). It is NOT a
-    // standalone screen: the app raises it as a modal OVERLAY inside the same interactive menu container
-    // (app/food/[id].tsx) the moment `hours` cross open→closed mid-browse (the `justClosed` state). So it
-    // adopts the SAME way RC.menu did — PIECE-BY-PIECE (Foundation-E), not as a whole-screen view: one
-    // generated, guarded FRAGMENT of the mock's overlay Card, composed by the container. This is the SECOND
-    // region-adopted mock keyed to `app/food/[id].tsx` (RC.menu is the first); the composition check runs
-    // per-entry — `optsFromRegions` anchors ONLY this entry's region, so it prunes the RC.menu cover/rows/
-    // footer regions (and vice-versa), and the two checks stay independent on the one container.
-    //
-    // The mock draws the interrupt over a DIMMED SKELETON placeholder of the menu; the app draws it over
-    // the LIVE menu (mock-wins: the skeleton is the design's stand-in for "the menu you were browsing", the
-    // app shows the actual one). That backdrop is not a region and is pruned from the composition, so no
-    // deviation is needed. Both mock and container reduce to `SCREEN( REGION:interrupt )`.
+    // RC.closed_interrupt — until 2026-10-01 region-adopted (closed-interrupt.view.tsx); superseded by D-57's S9.
     key: "RC.closed_interrupt",
     container: "apps/mobile/app/food/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    mockComponent: "closed_interrupt",
     uiImport: "../../src/ui",
-    regions: [
+    states: [],
+    deferred: [
       {
-        // Interrupt region — the centred modal Card: a highlight clock-tile, headline, body line and two
-        // named ways forward (see-open / keep-cart). Locator {el:"Card"} anchors the mock's single Card;
-        // the app mounts <ClosedInterruptView/> inside its transparent dim-overlay Tappable (invisible to
-        // the composition walker, which bubbles a non-scaffold wrapper's region). No backend gate, no
-        // fabricated control — both actions are honest (navigate to the open list · dismiss keeping cart).
-        region: "interrupt",
-        locator: { el: "Card" },
-        componentName: "ClosedInterruptView",
-        viewFile: "apps/mobile/app/food/closed-interrupt.view.tsx",
-        propsParam: "{ title, body, onSeeOpen, onDismiss }: ClosedInterruptViewProps",
-        propsType: [
-          "export type ClosedInterruptViewProps = {",
-          "  /** '<Shop> just closed' — the live restaurant name drives the headline. */",
-          "  title: string;",
-          "  /** The reassurance line (cart kept, nothing ordered). */",
-          "  body: string;",
-          "  /** 'See places still open' → the browse list. */",
-          "  onSeeOpen: () => void;",
-          "  /** 'Keep my cart for tomorrow' → dismiss the interrupt. */",
-          "  onDismiss: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          // The headline + body are the DATA SEAM: the restaurant name and (honest) reassurance copy come
-          // from the container. The structural guardrail ignores text, so these are leaf swaps.
-          JSXText(path) {
-            const v = path.node.value.trim();
-            if (v === "Sadza Republic just closed") path.replaceWith(t.jsxExpressionContainer(expr("title")));
-            else if (v.startsWith("They stopped taking orders")) path.replaceWith(t.jsxExpressionContainer(expr("body")));
-          },
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "Button") return;
-            // Kit Button's web `onClick={nop}` → the app Button's `onPress`; route by the mock label.
-            const label = path.node.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "label");
-            const lv = label && label.value && label.value.value;
-            path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
-            const handler = lv === "See places still open" ? "onSeeOpen" : "onDismiss";
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr(handler))));
-          },
-        }),
+        state: "interrupt",
+        key: "RC.closed_interrupt",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant 'just closed' interrupt is now the Browse v2 handoff's S9 (packages/design/handoff/browse-v2) — a centred radius-24 card with a clock disc, '<venue> just closed', the cart-is-saved line, 'See open places' and 'OK'. The gallery `closed_interrupt` draws a Card with 'See places still open' and 'Keep my cart for tomorrow'; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
       },
     ],
   },
@@ -662,8 +437,7 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.menu_closed — the closed-restaurant menu (a state of app/food/[id].tsx). DEFER-only: a
-    // live-vs-static structural divergence within the already-region-adopted interactive menu container.
+    // RC.menu_closed — superseded by D-57's S8a/S8b.
     key: "RC.menu_closed",
     container: "apps/mobile/app/food/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
@@ -674,7 +448,7 @@ export const ADOPTED = [
         state: "closed",
         key: "RC.menu_closed",
         reason:
-          "LIVE-vs-STATIC structural divergence inside an already-region-adopted INTERACTIVE container, plus a backend-gated meta line — not a missing primitive. The static mock frames the closed state as its OWN whole `<Screen banner={<Banner warn 'is closed'/>} footer={<Button 'Remind me when they open'/>}>` with a dimmed CoverPhoto + shop-meta + an all-OOS MenuRow list. The app realizes the SAME closed state LIVE inside the shared menu container (app/food/[id].tsx, already region-adopted for RC.menu): it derives open/closed from `hours` and, when closed, renders an INLINE notice Card (clock icon + `nextOpenDescription` copy + the working `RemindWhenOpen` control) BETWEEN the shop-meta and the category tabs — NOT as the mock's Screen `banner` + pinned `footer` button. Mock-wins can't losslessly restructure this without regressing the live open/closed derivation, the category tabs and the real reopen-reminder toggle (which, unlike RC.list's dead 'Notify me', IS backed by `useReopenReminder`). The mock's shop-meta also draws `4.0 km` (geo-distance — the RC.menu#meta backend gate). A separate whole-screen or banner/footer-region view is not expressible over the live menu container without either a Foundation build (banner/footer region roots for the closed variant) or regressing the interactive glue. Adoptable once the closed variant earns banner/footer region boundaries against the app's inline-notice tree.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): the restaurant closed storefront is now the Browse v2 handoff's S8a/S8b (packages/design/handoff/browse-v2) — prices and photos stay, there is no + anywhere, a surface strip says 'Closed · opens 10:00' and a bordered row holds 'Remind me when they open' with a switch. The gallery `menu_closed` draws a grey 'is closed' card above the menu with bright + buttons still on every dish; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
       },
     ],
   },

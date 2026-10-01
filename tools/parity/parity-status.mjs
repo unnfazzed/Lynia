@@ -158,9 +158,12 @@ export const PARITY_STATUS = {
   "RC.handoff_code": { status: "PENDING" }, // Both confirmed · code
   "RC.list_empty": {
     status: "PENDING",
-    reason: "CONTROL-DEVIATION — structure adopts; the mock draws a 'Notify me when they open' primary with no notify-when-open backend (a dead control) + a live 'area · time' AppBar sub. Honest-disable the one control or ledger; not a whole-screen defer. See docs/parity/ADOPTION-CLASSIFICATION.md",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-57, owner 2026-10-01): the list's empty states are the Browse v2 handoff's B6 (filters leave nothing → 'No places match' + Clear filters) and B9 (an empty corridor → the mint 'No restaurants deliver to <area> yet' card). Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
   }, // Nothing open
-  "RC.closed_interrupt": { status: "PENDING" }, // Closes while browsing
+  "RC.closed_interrupt": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-57, owner 2026-10-01): the 'just closed' interrupt is the Browse v2 handoff's S9 (a centred card, 'See open places' / 'OK'), drawn by app/food/[id].tsx. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Closes while browsing
   "RC.cart_oos": { status: "PENDING" }, // Item sold out
   "RC.cart_price": { status: "PENDING" }, // Price changed
   "RC.cart_min": { status: "PENDING" }, // Under the minimum

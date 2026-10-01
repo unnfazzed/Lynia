@@ -132,10 +132,10 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C3·1 | `RC list` | Restaurant list  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | header aligned 2026-08-19: live deliver-to + chevron picker, all four filter chips, count line. Row meta line & hero row FIXED 2026-08-23 (UIP-03, `docs/KNOWN_BUGS.md`) — `RestaurantRow` now wires ★rating/distance/ETA/fee via `restaurantMeta()`, first row renders as the hero card. Still 👁 not ✅: RC.list/RC.search stay in `tools/parity/rendered-conformance.pending.json` (not yet in the jest suite's ASSERTED set), so no machine guardrail actively passes on them yet — that's the remaining step to earn ✅ |
-| ⬜ | C3·2 | `RC list_loading` | List loading  [FOOD] | | |
+| ⏭ | C3·1 | `RC list` | Restaurant list  [FOOD] | **Browse v2 (2026-10-01, D-57)** — rebuilt to `packages/design/handoff/browse-v2` B1/B5–B7/B12/B14: mint header with the shared address control, one Sort pill + Free delivery, two full cards then compact rows, a 'Closed now' group. The gallery target is SUPERSEDED. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
+| ⏭ | C3·2 | `RC list_loading` | List loading  [FOOD] | **SUPERSEDED by D-57** — Browse v2 B8 (real header, skeleton body). Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
-| ✅ | C3·4 | `RC menu` | Menu  [FOOD] | **region-adopted (Foundation-E)** — first machine-guarded INTERACTIVE screen: cover / dish-rows / cart-bar are generated guarded fragments the container composes; per-region congruence + composition check green (`tools/parity/codegen/cli.mjs check`) | cover band + overhanging shop logo + floating back button; tabs/ItemSheet/RemindWhenOpen/just-closed stay live glue; backend-gated meta line honest-kept (non-region) |
+| ⏭ | C3·4 | `RC menu` | Menu  [FOOD] | **Browse v2 (2026-10-01, D-57)** — rebuilt to `packages/design/handoff/browse-v2` S1–S7/S10–S13 + I1–I3: cover, logo, info strip, one scrolling menu under sticky scroll-spy tabs (Popular first), + inside the photo, the forest cart bar, the new-cart sheet. The Foundation-E regions were deleted; the gallery target is SUPERSEDED. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
 | ⏭ | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 | |
 | ⏭ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; search is inline in the step-1 row | |
@@ -229,10 +229,10 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C10·1 | `RC list_empty` | Nothing open  [FOOD] | | |
-| ⬜ | C10·2 | `RC list_error` | Offline list  [FOOD] | | |
-| ⬜ | C10·3 | `RC menu_closed` | Closed restaurant  [FOOD] | | |
-| ⬜ | C10·4 | `RC closed_interrupt` | Closes while browsing  [FOOD] | | |
+| ⏭ | C10·1 | `RC list_empty` | Nothing open  [FOOD] | **SUPERSEDED by D-57** — Browse v2 B6 (no match) / B9 (nothing delivers here). Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
+| ⏭ | C10·2 | `RC list_error` | Offline list  [FOOD] | **SUPERSEDED by D-57** — Browse v2 B10/B11. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
+| ⏭ | C10·3 | `RC menu_closed` | Closed restaurant  [FOOD] | **SUPERSEDED by D-57** — Browse v2 S8a/S8b (no + anywhere, Remind me). Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
+| ⏭ | C10·4 | `RC closed_interrupt` | Closes while browsing  [FOOD] | **SUPERSEDED by D-57** — Browse v2 S9. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⬜ | C10·5 | `RC cart_oos` | Item sold out  [FOOD] | | |
 | ⬜ | C10·6 | `RC cart_price` | Price changed  [FOOD] | | |
 | ⬜ | C10·7 | `RC cart_empty` | Empty cart  [FOOD] | | |

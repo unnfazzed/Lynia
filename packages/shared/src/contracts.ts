@@ -1137,6 +1137,11 @@ export const RestaurantMenuCategory = z
     id: z.string().uuid(),
     name: z.string(),
     dishes: z.array(RestaurantMenuDish),
+    // Browse v2 (D-57): a category's time window ("Breakfast 07:00–11:00", D-29), "HH:MM" or null =
+    // always served. Additive and optional: an installed client ignores it, and a server that predates
+    // it simply omits it.
+    availableFrom: z.string().nullable().optional(),
+    availableTo: z.string().nullable().optional(),
   })
   .strict();
 export type RestaurantMenuCategory = z.infer<typeof RestaurantMenuCategory>;
@@ -1145,6 +1150,10 @@ export const RestaurantMenuResponse = z
   .object({
     restaurant: RestaurantListItem,
     categories: z.array(RestaurantMenuCategory),
+    // Browse v2 (D-57): the storefront's "Popular" rail — this kitchen's most-ordered dishes over the
+    // last 30 days, most-ordered first. Ids only (each one is also in `categories`). Empty when the
+    // kitchen has too little history to rank honestly. Additive and optional.
+    popularDishIds: z.array(z.string().uuid()).optional(),
   })
   .strict();
 export type RestaurantMenuResponse = z.infer<typeof RestaurantMenuResponse>;

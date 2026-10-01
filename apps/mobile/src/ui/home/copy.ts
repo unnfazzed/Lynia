@@ -52,15 +52,15 @@ export const H = {
       title: "Shops are coming soon",
       body: "Groceries, butcheries, fashion and auto parts from shops near you. We’ll message you on WhatsApp the day they open in your area.",
     },
-    // D-55: the handoff draws the sheet for Shops only. Pharmacy and (kill-switched) Restaurants
-    // reuse its grammar with their own noun.
+    // Pharmacy and (kill-switched) Restaurants: drawn by the Browse v2 handoff (`B.svc.*.off`,
+    // packages/design/handoff/browse-v2, ledger D-57), verbatim. Calm Mint v2 drew Shops only.
     pharmacy: {
       title: "Pharmacy is coming soon",
-      body: "Prescriptions and over-the-counter essentials from pharmacies near you. We’ll message you on WhatsApp the day they open in your area.",
+      body: "Over-the-counter medicine, baby care and first aid from pharmacies near you. We’ll message you on WhatsApp the day it opens in your area.",
     },
     food: {
       title: "Restaurants are coming soon",
-      body: "Meals from kitchens near you, delivered by the same riders. We’ll message you on WhatsApp the day they open in your area.",
+      body: "Meals from kitchens near you, cooked to order. We’ll message you on WhatsApp the day they open in your area.",
     },
   },
   /** D-55: the armed state of the notify toggle (kept from 8c — a second tap must undo the first). */

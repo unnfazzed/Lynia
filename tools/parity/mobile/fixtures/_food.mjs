@@ -134,26 +134,27 @@ export function orderSnapshot(over = {}) {
   };
 }
 
-function Seeder({ lines, children }) {
+function Seeder({ lines, venue, children }) {
   const cart = useFoodCart();
   const done = React.useRef(false);
   React.useEffect(() => {
     if (done.current || lines.length === 0) return;
     done.current = true;
-    for (const l of lines) cart.addItem(RID, RESTAURANT.name, l);
+    for (const l of lines) cart.addItem(venue.restaurantId, venue.restaurantName, l);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return children;
 }
 
-/** wrap that provides react-query + the real food cart, seeded with `lines` (pass [] for an empty cart). */
-export function withCart(lines = []) {
+/** wrap that provides react-query + the real food cart, seeded with `lines` (pass [] for an empty cart).
+ *  `venue` names the kitchen the lines belong to (Gava's Kitchen, RID, by default). */
+export function withCart(lines = [], venue = { restaurantId: RID, restaurantName: RESTAURANT.name }) {
   return (el) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } } });
     return React.createElement(
       QueryClientProvider,
       { client: qc },
-      React.createElement(FoodCartProvider, null, React.createElement(Seeder, { lines }, el)),
+      React.createElement(FoodCartProvider, null, React.createElement(Seeder, { lines, venue }, el)),
     );
   };
 }

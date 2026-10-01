@@ -938,6 +938,55 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     // Same signing contract as listRestaurants: customers get a readable URL, never the raw key.
     expect(res.categories[0]!.dishes[0]!.photoUrl).toBe("https://signed.example/dish/x.jpg");
   });
+
+  /** Browse v2 (D-57): the storefront's Popular rail and the category time windows. */
+  function menuPrisma(groupRows: Array<{ dishId: string | null; _count: { orderId: number } }>) {
+    const dish = (id: string) => ({ id, name: id, description: null, priceUsd: 5, photoUrl: null, outOfStockUntil: null });
+    let groupArgs: unknown = null;
+    return {
+      prisma: {
+        merchant: { findFirst: async () => ({ id: "m1", name: "Gava", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2 }) },
+        merchantCategory: {
+          findMany: async () => [
+            { id: "c1", name: "Breakfast", availableFrom: "07:00", availableTo: "11:00", dishes: [dish("d1"), dish("d2")] },
+            { id: "c2", name: "Mains", availableFrom: null, availableTo: null, dishes: [dish("d3"), dish("d4")] },
+          ],
+        },
+        merchantOrderItem: {
+          groupBy: async (args: unknown) => {
+            groupArgs = args;
+            return groupRows;
+          },
+        },
+      },
+      groupArgs: () => groupArgs,
+    };
+  }
+
+  it("getRestaurantMenu ranks popular dishes by delivered orders, drops thin history, keeps menu order on ties", async () => {
+    const m = menuPrisma([
+      { dishId: "d3", _count: { orderId: 9 } },
+      { dishId: "d1", _count: { orderId: 4 } },
+      { dishId: "d4", _count: { orderId: 4 } },
+      { dishId: "d2", _count: { orderId: 2 } }, // under the 3-order bar
+      { dishId: null, _count: { orderId: 50 } }, // a deleted dish
+    ]);
+    const res = await svc(m.prisma).getRestaurantMenu("m1");
+    expect(res.popularDishIds).toEqual(["d3", "d1", "d4"]);
+    // Only delivered orders, only this kitchen, only dishes still on the menu.
+    expect(m.groupArgs()).toMatchObject({
+      by: ["dishId"],
+      where: { dishId: { in: ["d1", "d2", "d3", "d4"] }, order: { merchantId: "m1", status: { in: ["delivered", "completed"] } } },
+    });
+    expect(res.categories[0]).toMatchObject({ availableFrom: "07:00", availableTo: "11:00" });
+    expect(res.categories[1]).toMatchObject({ availableFrom: null, availableTo: null });
+  });
+
+  it("getRestaurantMenu sends no Popular rail when fewer than two dishes have history", async () => {
+    const m = menuPrisma([{ dishId: "d3", _count: { orderId: 12 } }]);
+    const res = await svc(m.prisma).getRestaurantMenu("m1");
+    expect(res.popularDishIds).toEqual([]);
+  });
 });
 
 describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {

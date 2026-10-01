@@ -103,6 +103,13 @@ const RESTAURANTS_PAGE_SIZE = 20;
 // #673 search: cap each of the PLACES / DISHES result sets, and ignore blank/1-char queries so a
 // stray keystroke never dumps the corridor (the search screen shows results only once typing).
 const RESTAURANTS_SEARCH_LIMIT = 20;
+/** Browse v2 (D-57) "Popular" rail: a kitchen's most-ordered dishes over this window. */
+const POPULAR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** A dish needs this many delivered orders in the window to count as popular — one lucky order isn't. */
+const POPULAR_MIN_ORDERS = 3;
+/** The rail holds at most this many dishes, and is dropped below two (a rail of one is not a rail). */
+const POPULAR_MAX = 6;
+const POPULAR_MIN_DISHES = 2;
 const RESTAURANTS_SEARCH_MIN_CHARS = 2;
 
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
@@ -584,6 +591,7 @@ export class MerchantService {
       // D-31: draft (photoless) dishes are excluded entirely from the customer read API.
       include: { dishes: { where: { isDraft: false }, orderBy: { sortOrder: "asc" } } },
     });
+    const dishIds = categories.flatMap((c) => c.dishes.map((d) => d.id));
     return {
       restaurant: await this.toListItem(merchant),
       categories: await Promise.all(
@@ -591,9 +599,35 @@ export class MerchantService {
           id: c.id,
           name: c.name,
           dishes: await Promise.all(c.dishes.map((d) => this.toCustomerDish(d))),
+          availableFrom: c.availableFrom,
+          availableTo: c.availableTo,
         })),
       ),
+      popularDishIds: await this.popularDishIds(merchant.id, dishIds),
     };
+  }
+
+  /** Browse v2 (D-57): the storefront's "Popular" rail — the dishes on today's menu that delivered
+   *  orders over the last 30 days picked most often. Ranked by how many orders included the dish (not
+   *  by quantity, so one office's 20-portion order doesn't outrank 20 separate customers). Empty when
+   *  fewer than two dishes clear the bar: the client then draws no rail rather than a thin one. */
+  private async popularDishIds(merchantId: string, menuDishIds: string[]): Promise<string[]> {
+    if (menuDishIds.length < POPULAR_MIN_DISHES) return [];
+    const rows = await this.prisma.merchantOrderItem.groupBy({
+      by: ["dishId"],
+      where: {
+        dishId: { in: menuDishIds },
+        order: { merchantId, status: { in: ["delivered", "completed"] }, createdAt: { gte: new Date(Date.now() - POPULAR_WINDOW_MS) } },
+      },
+      _count: { orderId: true },
+    });
+    const ranked = rows
+      .filter((r): r is typeof r & { dishId: string } => r.dishId != null && r._count.orderId >= POPULAR_MIN_ORDERS)
+      // Ties keep menu order, so the rail doesn't reshuffle between two equally popular dishes.
+      .sort((a, b) => b._count.orderId - a._count.orderId || menuDishIds.indexOf(a.dishId) - menuDishIds.indexOf(b.dishId))
+      .slice(0, POPULAR_MAX)
+      .map((r) => r.dishId);
+    return ranked.length >= POPULAR_MIN_DISHES ? ranked : [];
   }
 
   // ── E3: money surfaces — weekly statement + end-of-day summary (N-13) ─────────────────────────────
