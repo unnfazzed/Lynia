@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Defs, G, Mask, Path, Polygon, Rect } from "react-native-svg";
+import Svg, { Circle, Path, Polygon, Rect } from "react-native-svg";
 import { haptic } from "../haptics";
 import { Tappable } from "../Tappable";
 import { useReduceMotion } from "../useReduceMotion";
@@ -131,69 +131,9 @@ export const TabIllus = React.memo(function TabIllus({ name, idle = false, size 
   );
 });
 
-/* Solid vector glyphs, 24 grid — the handoff's documented fallback for low-end / high-glare builds
-   (`glyphStyle="solid"`). Not used by default. "f" = filled shape, "c" = knockout (transparent idle,
-   painted with `detail` when active), "t" = fill drawn on top of the detail layer. */
-const GLYPHS: Record<TabArt, Part[]> = {
-  home: [
-    ["path", "f", { d: "M3 10.2a1.5 1.5 0 0 1 .54-1.15l7.5-6.3a1.5 1.5 0 0 1 1.92 0l7.5 6.3a1.5 1.5 0 0 1 .54 1.15V19.5A1.5 1.5 0 0 1 19.5 21h-15A1.5 1.5 0 0 1 3 19.5Z" }],
-    ["rect", "c", { x: 9.75, y: 13.5, width: 4.5, height: 8, rx: 1.25 }],
-  ],
-  orders: [
-    ["path", "f", { d: "M5.5 2.5h13A1.5 1.5 0 0 1 20 4v17.2l-2.67-1.6-2.66 1.6L12 19.6l-2.67 1.6-2.66-1.6L4 21.2V4a1.5 1.5 0 0 1 1.5-1.5Z" }],
-    ["rect", "c", { x: 8, y: 7, width: 8, height: 2, rx: 1 }],
-    ["rect", "c", { x: 8, y: 11, width: 8, height: 2, rx: 1 }],
-    ["rect", "c", { x: 8, y: 15, width: 4.5, height: 2, rx: 1 }],
-  ],
-  account: [
-    ["circle", "f", { cx: 12, cy: 7.75, r: 4.75 }],
-    ["path", "f", { d: "M3.5 20.2c0-4.1 3.8-6.7 8.5-6.7s8.5 2.6 8.5 6.7a.8.8 0 0 1-.8.8H4.3a.8.8 0 0 1-.8-.8Z" }],
-    ["path", "c", { d: "M10 13.75h4L12 17.5Z" }],
-  ],
-  jobs: [
-    ["rect", "f", { x: 2, y: 3, width: 8.5, height: 6.5, rx: 1.5 }],
-    ["rect", "c", { x: 5.5, y: 3, width: 1.5, height: 2.5 }],
-    ["rect", "f", { x: 2, y: 10.75, width: 13.5, height: 3.75, rx: 1.875 }],
-    ["path", "f", { d: "M13.4 13.9 16.1 4.4a1 1 0 0 1 .96-.73H20a1 1 0 0 1 0 2h-2.2l-2.4 8.5Z" }],
-    ["path", "f", { d: "M14.3 12.7l1.7-.9 3.6 6-1.7 1Z" }],
-    ["circle", "f", { cx: 5.5, cy: 18.25, r: 3 }],
-    ["circle", "c", { cx: 5.5, cy: 18.25, r: 1.25 }],
-    ["circle", "f", { cx: 18.75, cy: 18.25, r: 3 }],
-    ["circle", "c", { cx: 18.75, cy: 18.25, r: 1.25 }],
-  ],
-  money: [
-    ["path", "f", { d: "M4.5 6.2 15.6 2.9a1.5 1.5 0 0 1 1.9 1.1l.5 2Z" }],
-    ["rect", "f", { x: 2.5, y: 6, width: 19, height: 15, rx: 3 }],
-    ["rect", "c", { x: 14.5, y: 11, width: 7, height: 5, rx: 2.5 }],
-    ["circle", "t", { cx: 17, cy: 13.5, r: 1.25 }],
-  ],
-};
-
-/** Solid vector glyph. Knockouts are transparent, or painted with `detail` (the two-tone active state). */
-export function TabGlyph({ name, color, detail, size = 24 }: { name: TabArt; color: string; detail?: string; size?: number }): React.ReactElement {
-  const parts = GLYPHS[name];
-  const id = `tg-${name}`;
-  const draw = (kind: string, fill: string) =>
-    parts
-      .filter((p) => p[1] === kind)
-      .map(([tag, , a], i) => {
-        const El = SVG_TAG[tag] as React.ComponentType<Record<string, unknown>>;
-        return <El key={kind + i} {...a} fill={fill} />;
-      });
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Defs>
-        <Mask id={id} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
-          <Rect width="24" height="24" fill="#fff" />
-          {draw("c", "#000")}
-        </Mask>
-      </Defs>
-      <G mask={`url(#${id})`}>{draw("f", color)}</G>
-      {detail ? draw("c", detail) : null}
-      {draw("t", color)}
-    </Svg>
-  );
-}
+/* The handoff's solid-vector fallback (`glyphStyle="solid"`, GLYPHS / TabGlyph) is deliberately NOT
+   ported: the handoff says to build it only if asked, and it would ship unused bytes over metered data
+   (the bundle-size budget, docs/APP-SIZE.md). Its drawings stay in the kit's TabBar.jsx (ledger D-56). */
 
 // ── Badges + screen-reader strings ──────────────────────────────────────────────────────────────
 
@@ -261,11 +201,9 @@ function Cell({
   on,
   badge,
   width,
-  solid,
   reduceMotion,
   mounted,
   onPress,
-  onPressedChange,
 }: {
   tab: AppTab;
   index: number;
@@ -273,11 +211,9 @@ function Cell({
   on: boolean;
   badge?: TabBadge | null;
   width: number;
-  solid: boolean;
   reduceMotion: boolean;
   mounted: boolean;
   onPress: () => void;
-  onPressedChange: (down: boolean) => void;
 }): React.ReactElement {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -297,22 +233,17 @@ function Cell({
 
   const setDown = (down: boolean): void => {
     setPressed(down);
-    onPressedChange(down);
     if (reduceMotion) return;
     Animated.timing(press, { toValue: down ? 0.94 : 1, duration: down ? 100 : 160, easing: down ? Easing.out(Easing.ease) : SPRING_EASE, useNativeDriver: true }).start();
   };
 
-  const artTransform = solid
-    ? on
-      ? [{ scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.82, 1.12, 1] }) }]
-      : []
-    : on
-      ? [
-          { translateY: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, -4, -2] }) },
-          { scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.86, 1.16, 1.08] }) },
-        ]
-      : [];
-  const ink = on ? (solid ? c.onAccent : c.ink) : c.muted;
+  // Active art rests raised (−2, 1.08) and pops on activation; idle art sits flat.
+  const artTransform = on
+    ? [
+        { translateY: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, -4, -2] }) },
+        { scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.86, 1.16, 1.08] }) },
+      ]
+    : [];
   // Re-key on kind/count so a change re-pops; never on first mount.
   const badgeKey = badge ? `${badge.kind}${"n" in badge ? (badge.n ?? "") : ""}` : "none";
 
@@ -328,11 +259,11 @@ function Cell({
       accessibilityState={{ selected: on }}
       style={styles.cell}
     >
-      <Animated.View style={[styles.cellInner, { gap: solid ? 4 : 2, transform: [{ scale: press }] }, pressed && !on ? styles.pressFill : null, focused ? styles.focus : null]}>
+      <Animated.View style={[styles.cellInner, { gap: 2, transform: [{ scale: press }] }, pressed && !on ? styles.pressFill : null, focused ? styles.focus : null]}>
         <Animated.View style={{ transform: artTransform }}>
-          {solid ? <TabGlyph name={tab.glyph} color={ink} detail={on ? c.accent : undefined} /> : <TabIllus name={tab.glyph} idle={!on} />}
+          <TabIllus name={tab.glyph} idle={!on} />
         </Animated.View>
-        <Text numberOfLines={1} style={on ? [styles.labelOn, { color: ink }] : styles.labelOff}>
+        <Text numberOfLines={1} style={on ? styles.labelOn : styles.labelOff}>
           {tab.label}
         </Text>
       </Animated.View>
@@ -356,7 +287,6 @@ export function TabBar({
   onReselect,
   hidden = false,
   reduceMotion: reduceMotionProp,
-  glyphStyle = "illustrated",
 }: {
   active?: string;
   tabs?: AppTab[];
@@ -365,12 +295,10 @@ export function TabBar({
   onReselect?: (id: string) => void;
   hidden?: boolean;
   reduceMotion?: boolean;
-  glyphStyle?: "illustrated" | "solid";
 }): React.ReactElement | null {
   const insets = useSafeAreaInsets();
   const osReduce = useReduceMotion();
   const reduceMotion = reduceMotionProp ?? osReduce;
-  const solid = glyphStyle === "solid";
   const n = tabs.length;
   const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
   const cur = tabs[idx]!;
@@ -379,7 +307,6 @@ export function TabBar({
   const cellW = barW > 0 ? (barW - 8) / n : 0;
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const [activePressed, setActivePressed] = useState(false);
 
   // One shared indicator: translateX slides (native driver); the tint + ring cross-fade (JS driver,
   // on a nested view — the two drivers can't share a node).
@@ -415,13 +342,11 @@ export function TabBar({
     onTab?.(t.id);
   };
 
-  const indicatorFill = solid
-    ? { backgroundColor: activePressed ? c.ctaPressed : c.cta, ...tokens.shadow.active }
-    : {
-        backgroundColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[0], tint.current.to[0]] }),
-        borderWidth: 2,
-        borderColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[1], tint.current.to[1]] }),
-      };
+  const indicatorFill = {
+    backgroundColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[0], tint.current.to[0]] }),
+    borderWidth: 2,
+    borderColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[1], tint.current.to[1]] }),
+  };
 
   return (
     <View
@@ -444,13 +369,9 @@ export function TabBar({
           on={t.id === cur.id}
           badge={badges[t.id] ?? null}
           width={cellW}
-          solid={solid}
           reduceMotion={reduceMotion}
           mounted={mounted}
           onPress={() => tap(t)}
-          onPressedChange={(down) => {
-            if (t.id === cur.id) setActivePressed(down);
-          }}
         />
       ))}
     </View>
@@ -488,7 +409,7 @@ const styles = StyleSheet.create({
   // room for an outside ring in RN, which has no box-shadow spread.
   focus: { borderWidth: 2, borderColor: c.ink },
   overhang: { overflow: "visible" },
-  labelOn: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold },
+  labelOn: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold, color: c.ink },
   labelOff: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.semibold, color: c.muted },
   badge: { position: "absolute", borderWidth: 2, borderColor: c.bg, borderRadius: tokens.radius.pill, transformOrigin: "0% 100%", ...tokens.shadow.badge },
   dot: { top: 4, width: 12, height: 12, backgroundColor: c.highlight },

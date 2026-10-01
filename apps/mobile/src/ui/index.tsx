@@ -14,7 +14,7 @@ export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { BrandHeader } from "./shell/BrandHeader";
-export { APP_TABS, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TabBar, TabGlyph, TabIllus, tabA11yLabel, type AppTab, type TabArt, type TabBadge } from "./shell/TabBar";
+export { APP_TABS, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TabBar, TabIllus, tabA11yLabel, type AppTab, type TabArt, type TabBadge } from "./shell/TabBar";
 export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
 // The 8c home members still used elsewhere: the rider board's mint header (HomeHeader/HomeStatusRow),
 // the Orders tab's live cards (LiveOrderCard) and the rider's restaurant card. The customer Home itself

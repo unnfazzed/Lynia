@@ -2965,8 +2965,7 @@ the old bar; those drawings are superseded wherever they show it.
   - Press scales the cell to 0.94, plus a `surface` fill on an idle cell.
   - Reduce motion (the OS setting) makes every change instant.
 - **Art:** the 10 illustrations (5 drawings × active / idle) are drawn with `react-native-svg` from the
-  kit's `ILLUS` table, coordinates 1:1. The solid `GLYPHS` set ships as `glyphStyle="solid"` but is not
-  wired in.
+  kit's `ILLUS` table, coordinates 1:1. The solid `GLYPHS` fallback is not ported (see §4).
 - **Badges** come from data the tab roots already fetch: cache-only observers, no new requests.
   - Customer Orders `live`: active orders.
   - Rider Jobs `count` (9+ cap): new jobs since Jobs was last open; clears on opening Jobs.
@@ -2993,6 +2992,7 @@ the old bar; those drawings are superseded wherever they show it.
 | Label colour change | 120ms linear fade | Instant | Animating text colour needs the JS driver on every cell for a 120ms change; weight changes instantly in both. |
 | Tab-change haptic | `HapticFeedbackConstants.CLOCK_TICK` | The app's `tap` cue (a 12ms tick on Android; none on iOS) | The app ships no haptics module (see `src/ui/haptics.ts`). |
 | Customer Account `dot` | Verification / KYC needs attention | Not shown | Customers have no verification step, so there is no source. It appears the day one exists. |
+| Solid-vector fallback | `glyphStyle="solid"` kept behind a flag, not wired by default | Not ported; the drawings stay in the kit's `TabBar.jsx` | The handoff says to build it only if asked, and unused code is still downloaded over metered data: the merged bundle went 2.4 KB over its Hermes budget (`size-budget.json`) with it in. |
 | Board sheet behind the bar | Content scrolls behind the bar | The sheet's white runs behind the bar; its list ends at the bar's top | `OrderSheet` measures its peek against its scroll area; the list stays fully reachable. |
 Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
