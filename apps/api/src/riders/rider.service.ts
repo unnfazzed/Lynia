@@ -185,7 +185,7 @@ export class RiderService {
   /** Upgrade a customer to a rider; submit to KYC (auto) or leave pending for review (manual). */
   async becomeRider(
     profileId: string,
-    data: { bikeReg: string; photoUrl: string },
+    data: { bikeReg?: string; photoUrl: string },
   ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const existing = await this.prisma.rider.findUnique({
       where: { profileId },
@@ -272,7 +272,7 @@ export class RiderService {
         this.prisma.rider.create({
           data: {
             profileId,
-            bikeReg: data.bikeReg,
+            bikeReg: data.bikeReg || null,
             photoUrl: data.photoUrl,
             kycStatus: initialKyc,
             idVerified: stubAutoPass,

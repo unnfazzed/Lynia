@@ -53,3 +53,51 @@ export const OB = {
   /** D-55: the C5 draft-restore line (kept from the shipped screen — a half-filled form survives a kill). */
   draftRestored: "We saved what you’d filled in — pick up where you left off.",
 } as const;
+
+/**
+ * Rider onboarding copy — Calm Mint v2 R1–R3 (`shared.js` `O.rider` / `O.pending`, `mint2.js`
+ * `OB.verified`), verbatim. D-55 marks what is held back until the backend serves it.
+ */
+export const RO = {
+  // R1 · Why ride + what you need
+  h1: "Ride with LyniaGo.",
+  h1Accent: "Earn on your terms.",
+  chips: ["You set your fare", "Cash on delivery", "Ride when you want"] as const,
+  stepAccount: "Your account",
+  /** D-55 (D-38 stands): the handoff draws "ID check with Didit"; the app never names the vendor. */
+  stepId: "ID check",
+  stepIdTime: "~2 min",
+  stepPhoto: "Rider photo for your profile",
+  stepPhotoTime: "~30 sec",
+  done: "Done",
+  /** The full drawn note; the first two sentences wait on the free-jobs rule (NEEDS BACKEND, D-55). */
+  noteFree: "No top-up to start. Your first jobs are commission-free.",
+  notePapers: "Licence and bike papers can wait.",
+  startIdCheck: "Start ID check",
+
+  // R2 · ID pending
+  setupTitle: "Rider setup",
+  checking: "Checking",
+  /** D-55 (D-38 stands): the handoff draws "Didit is checking your ID". */
+  diditChecking: "We\u2019re checking your ID",
+  diditCheckingB: "Usually under a minute. We’ll notify you, so you can leave this screen.",
+  stepPhotoShort: "Rider photo",
+  stepIdShort: "ID check",
+  inReview: "In review",
+  stepGoOnline: "Go online",
+  next: "Next",
+  fixNote: "If something needs fixing, we’ll tell you exactly what. Nothing is lost if you close the app.",
+  sendWhileWait: "Send a parcel while you wait",
+
+  // R3 · Verified
+  verifiedTitle: (first: string | null): string => (first ? `You’re verified, ${first}` : "You’re verified"),
+  verifiedSub: "You can go online and take jobs now.",
+  goOnline: "Go online",
+  papersLater: "Add licence and bike papers later in Account",
+
+  /** D-55: the R1 photo step (the handoff draws R1's checklist row, not the capture page itself). */
+  photoTitle: "Rider photo for your profile",
+  photoSub: "Customers see it when you pick up. Face the light, no hat or sunglasses.",
+  idNeeded: "Your national ID number",
+  idNeededHint: "The 8–12 digits on your national ID card.",
+} as const;

@@ -2856,7 +2856,7 @@ for Home. D-13 (no send-again rail) stands: the handoff draws none. The rider-v2
 the KYC gates on the job board; its "live-job bar" for a rider in customer view (C5) is a sibling of
 this bar and lands with that work.
 
-### 3 · What has landed (part 1 Home, part 2 customer onboarding)
+### 3 · What has landed (part 1 Home, part 2 customer onboarding, part 3 rider onboarding)
 
 - **Art:** the four v2 stickers and four illustrations are transcribed node for node into
   `react-native-svg` by `apps/mobile/scripts/svg-to-rn.mjs` (`src/ui/art/`, generated; c2pa metadata
@@ -2878,7 +2878,14 @@ this bar and lands with that work.
   priming screens — location is asked on Home, notifications right after the first order goes out
   (`src/push/ask-in-context.ts`, called from Send and food checkout).
 
-### 4 · Still different from the handoff (parts 1–2)
+- **Rider onboarding (R1–R3)** (`src/ui/onboarding/rider.tsx`, `copy.ts` `RO`): `app/rider/become.tsx`
+  opens on R1 "Why ride" (hero, chips, the three-step checklist, "Start ID check"), then the rider photo
+  step, then the in-app ID check. While the automated check runs the board shows R2 "Rider setup"; the
+  first time a new rider opens the board verified it shows R3 "You're verified" once. API: the bike plate
+  is optional (`bikeReg` optional on `POST /riders/become`, migration `0065_rider_bike_reg_optional`),
+  per the owner's decision that riders need only the ID check to start.
+
+### 4 · Still different from the handoff (parts 1–3)
 
 | Where | Handoff | App | Why |
 |---|---|---|---|
@@ -2898,10 +2905,16 @@ this bar and lands with that work.
 | C5 | Two fields, the verified row, the note | The same, plus the existing "We saved what you'd filled in…" line when a draft is restored | A half-filled form survives an app kill (LC-C10); the line says why the fields are already filled |
 | C5 exit | None drawn | None — the kyc-2026-08 "Use a different number" ghost is gone with `Register` | A mistyped number is fixed with C4's "Change" before the code is accepted |
 | Rider path after sign-in | Permissions in context | Riders still see the location + job-alert priming screens (`/permissions?next=/rider`) before the rider app | A rider without location and job alerts cannot take work; the handoff's in-context rule is written for customers |
+| R1 / R2 vendor name | "ID check with Didit", "Didit is checking your ID" | "ID check", "We're checking your ID" | D-38 (owner, 2026-08-22) stands: the app never names the verification partner; the handoff's brief named it by mistake |
+| R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does |
+| R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online" |
+| R1 → ID check | "Start ID check" opens the check | "Start ID check" opens the rider photo step first (the existing capture + review), then the check | The rider photo is uploaded before the vendor session is opened (`POST /riders/become` needs it); R2 draws the photo as done before the check, so this is the handoff's own order |
+| Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND |
+| R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
+| R3 | After verification | Once per account per phone, and only for a rider with no trips yet | No verified-at date is served; a rider with trips is not "just verified" |
 
 ### 5 · Still to land (follow-up PRs, same handoff)
 
-Rider onboarding R1–R3 (why ride + checklist, the resumable pending screen,
-verified + the commission-free jobs meter). Backend, per README §5: popularity ranking, the
+Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
 shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.

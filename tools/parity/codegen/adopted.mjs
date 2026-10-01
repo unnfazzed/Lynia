@@ -1560,7 +1560,7 @@ export const ADOPTED = [
         state: "intro",
         key: "RJ.kyc_intro",
         reason:
-          "the 'Set up as a rider' prompt is NOT a standalone screen — it is one branch (knownUnverified && !rider) of the RiderHome multi-state board container (app/rider/(tabs)/index.tsx:1063), rendered as a bare `<EmptyState icon=\"id-card\" title=\"Set up as a rider\">` with a 'Become a rider' + 'Refresh status' pair, INSIDE the container's ScrollView under the live AppScreen banner. The mock `KycIntro` draws `Pad(RiderHead, EmptyState(one Button))` as its own whole screen; the app supersets it with a Refresh-status action and hosts it as one interleaved gate state among the KYC-pending/failed/expired, no-GPS and online-gate branches (the mock's RiderHead is the app's AppScreen banner). The whole-screen codegen model gates a WHOLE-screen view (`view ≡ mock`) and cannot isolate one branch of that interactive container. The screenshot-lane target (RJ.kyc_intro → become.tsx) points at the become FORM, a different screen. Adoptable once the rider gate states are modelled as their own state-views on the board container.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the rider's first page is the Calm Mint v2 handoff's R1 'Why ride' (app/rider/become.tsx opens on it) — the rider-wash hero with the scooter art, 'Ride with LyniaGo. / Earn on your terms.', three chips, the three-step checklist and 'Start ID check'. The gallery `KycIntro` draws an id-card disc, 'Set up as a rider' and one button; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },
@@ -1575,7 +1575,7 @@ export const ADOPTED = [
         state: "form",
         key: "RJ.kyc_form",
         reason:
-          "become.tsx is a live INTERACTIVE container, not the mock's static `KycForm`. The mock draws `Pad(Heading, Sub, Card(3 Fields), Card(Field + Label + a frozen 'Photo added — retake' pill), Card(consent note), Button)`. The app hosts, in ONE screen: an ImagePicker camera/gallery capture, a downscale→presign→PUT upload chain with a slow-link 'Still uploading' state, a PhotoReviewCard preview STEP that replaces the whole form body before commit (kit photo_preview), an encrypted KYC-draft restore banner, an OS 'don't ask again' permission-blocked 'Open settings' recovery, a 'Try again' re-PUT of a failed asset, and a submitted 'pending' Card that supplants the form — none drawn by the static mock, several swapping the entire body (reviewAsset / pending). This is a sensitive KYC screen where behaviour must stay identical; a whole-screen generated view cannot host the capture/preview/upload/draft branches without regressing them, and region-adopting only the static name-fields Card would be a thin, fragile win on load-bearing PII capture. Live-vs-static superset (the live photo capture is the realization of the mock's static pill). Adoptable once the form's static sub-tree earns a boundary separable from the capture/preview interaction.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): after R1 the form asks only for the rider photo — the name and national ID only when the account has none on file, and no bike registration (owner decision: papers are optional, added later in Account). The gallery `KycForm` (names, ID, bike reg, photo, consent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },
@@ -1590,7 +1590,7 @@ export const ADOPTED = [
         state: "pending",
         key: "RJ.kyc_pending",
         reason:
-          "folded into the RiderHome board container (index.tsx:1117-1139), not a standalone screen. The app renders TWO honest pending branches the single static mock never drew — a manual-review 'Your ID is under review · no action needed' EmptyState (kycMode==='manual', which has NO vendor browser step) and an auto 'Finish verifying your ID · Continue verification' EmptyState (retryKyc mints a fresh Didit session) — interleaved among the other gate branches under the live AppScreen banner. The mock `KycPending` is `Pad(RiderHead, EmptyState(one 'Continue in browser' Button))` as its own screen. Whole-screen codegen cannot gate one branch of the interactive container, and the app's honest manual/auto split supersets the single mock (rendering only the browser-step variant would lie to manual-mode riders). Adoptable once the board's gate states earn their own state-views.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): while the automated check is with the vendor the board shows the Calm Mint v2 handoff's R2 'Rider setup' (Checking pill, the mint card, the four-step checklist, 'Send a parcel while you wait'); manual review keeps the Rider v2 wall (D-54). The gallery `KycPending` is the structure both retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },
@@ -1605,7 +1605,7 @@ export const ADOPTED = [
         state: "verified",
         key: "RJ.kyc_verified",
         reason:
-          "NOT drawn in the app (CLAUDE.md not-drawn⇒not-rendered): the mock `KycVerified` is a whole-screen celebration `Pad(RiderHead chip, Card accent('You're verified'), Button 'Go online')`, but the app has no verified-confirmation surface — a verified rider drops straight onto the board (the RJM.board list / the offline go-online Card), and the 'go online' affordance is the board's own toggle, not a dismissable success page. Adopting this would ADD a celebration interstitial the current one-app flow intentionally never shows. Deferred as correctly-absent; adoptable only if the product decides to add a post-verification interstitial.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the first time a new rider opens the board verified it shows the Calm Mint v2 handoff's R3 ('You’re verified, <name>', 'Go online', 'Add licence and bike papers later in Account'; the commission-free jobs card waits on the backend). The gallery `KycVerified` (rider head chip, accent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },

@@ -24,7 +24,7 @@ export function completeProfile(body: { firstName: string; lastName: string; idN
 }
 
 /** `photoUrl` carries the storage key returned by requestKycPhotoUpload (not a URL). */
-export function becomeRider(body: { bikeReg: string; photoUrl: string }): Promise<BecomeResult> {
+export function becomeRider(body: { bikeReg?: string; photoUrl: string }): Promise<BecomeResult> {
   return apiFetch("/riders/become", { method: "POST", body });
 }
 

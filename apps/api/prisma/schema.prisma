@@ -292,7 +292,7 @@ model Rider {
   profileId         String                                 @id @map("profile_id") @db.Uuid
   profile           Profile                                @relation(fields: [profileId], references: [id], onDelete: Cascade)
   vehicleInfo       String?                                @map("vehicle_info")
-  bikeReg           String                                 @map("bike_reg")
+  bikeReg           String?                                @map("bike_reg")
   photoUrl          String                                 @map("photo_url")
   idVerified        Boolean                                @default(false) @map("id_verified")
   kycStatus         KycStatus                              @default(pending) @map("kyc_status")

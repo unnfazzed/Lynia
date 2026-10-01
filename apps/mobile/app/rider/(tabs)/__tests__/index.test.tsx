@@ -794,7 +794,8 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
    */
   const CUSTOMER_BRIDGE = "Order food and send parcels";
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
-    ["in flight — with the vendor, only the bridge", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, [CUSTOMER_BRIDGE]],
+    // Calm Mint v2 R2 (D-55): in flight is "Rider setup", whose only action is its ghost.
+    ["in flight — with the vendor, only the R2 ghost", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, ["Send a parcel while you wait"]],
     ["unfinished — the rider's move, the bridge beneath it", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying", CUSTOMER_BRIDGE]],
     ["manual/ops review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "manual" }, [CUSTOMER_BRIDGE]],
     ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID", CUSTOMER_BRIDGE]],
@@ -836,10 +837,11 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     return treeText(activeTree);
   }
 
-  it("in flight: says the check is with the vendor, and asks nothing of the rider", async () => {
+  it("in flight: R2 'Rider setup' says the check is under way, and asks nothing of the rider", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
-    expect(text).toContain("Your ID is under review");
-    expect(text).toContain("We're checking your ID");
+    expect(text).toContain("Rider setup");
+    expect(text).toContain("We\u2019re checking your ID");
+    expect(text).toContain("In review");
     expect(text).not.toContain("Finish verifying your ID");
   });
 
@@ -936,7 +938,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
       tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
     });
 
-    expect(treeText(activeTree)).toContain("We're checking your ID");
+    expect(treeText(activeTree)).toContain("We\u2019re checking your ID");
     expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
   });
 
@@ -1327,5 +1329,36 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
       .map((n) => n.props.accessibilityLabel as string);
     expect(labels.some((l) => /Change location/.test(l))).toBe(false);
     expect(treeText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
+  });
+});
+
+/** Calm Mint v2 R3 (D-55): "You're verified" takes the board's place once, for a new rider only. */
+describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
+  it("a verified rider with no trips yet sees R3; 'Go online' dismisses it to the board", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(treeText(activeTree)).toContain("Add licence and bike papers later in Account");
+    // No free-jobs rule on the server yet (NEEDS BACKEND), so the meter card is not drawn.
+    expect(treeText(activeTree)).not.toContain("Commission-free jobs");
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
+    });
+    expect(treeText(activeTree)).not.toContain("You’re verified");
+  });
+
+  it("a rider with trips behind them never sees R3", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 20 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).not.toContain("You’re verified");
   });
 });

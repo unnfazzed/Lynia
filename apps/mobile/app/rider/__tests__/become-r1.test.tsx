@@ -81,17 +81,7 @@ async function passIntro(tree: renderer.ReactTestRenderer): Promise<void> {
 }
 
 
-function findByText(tree: renderer.ReactTestRenderer, text: string): renderer.ReactTestInstance {
-  const node = tree.root.findAll((n) => n.props.children === text)[0];
-  if (!node) throw new Error(`no node with text "${text}"`);
-  return node;
-}
 
-function press(node: renderer.ReactTestInstance): void {
-  let n: typeof node | null = node;
-  while (n && typeof n.props.onPress !== "function") n = n.parent;
-  n?.props.onPress();
-}
 
 beforeEach(() => {
   secureStore = {};
@@ -101,40 +91,32 @@ beforeEach(() => {
   mockDeleteItemAsync.mockClear();
 });
 
-describe("BecomeRiderScreen — KYC photo preview uses the downscaled asset", () => {
-  it("renders the downscaled upload uri, not the original camera-capture uri", async () => {
+
+describe("BecomeRiderScreen — Calm Mint v2 R1 (D-55)", () => {
+  it("opens on R1 'Why ride' with the checklist, then the photo step asks only for what is missing", async () => {
     let tree!: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(becomeEl());
     });
-    // Let the initial draft-hydration effect settle before interacting.
     await act(async () => {
       await Promise.resolve();
+      await Promise.resolve();
     });
+    const r1 = JSON.stringify(tree.toJSON());
+    for (const s of ["Ride with LyniaGo.", "Earn on your terms.", "You set your fare", "Cash on delivery", "Ride when you want", "Your account", "ID check", "Rider photo for your profile", "Licence and bike papers can wait.", "Start ID check"]) {
+      expect(r1).toContain(s);
+    }
+    // The vendor is never named (D-38), and the free-jobs promise waits on the backend.
+    expect(r1).not.toContain("Didit");
+    expect(r1).not.toContain("commission-free");
+
     await passIntro(tree);
-
-    await act(async () => {
-      press(findByText(tree, "Take photo"));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // The capture now lands on the kit's `photo_preview` review step first ("Can you read everything?")
-    // — the upload only fires once the rider commits, so drive that here.
-    await act(async () => {
-      press(findByText(tree, "Use this photo"));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    const image = tree.root.findAll(
-      (n) => typeof n.props.source === "object" && n.props.source !== null && "uri" in n.props.source,
-    )[0];
-    expect(image?.props.source.uri).toBe("file://downscaled-1280px.jpg");
-    expect(image?.props.source.uri).not.toBe("file://original-4000px-capture.jpg");
-
+    const step = JSON.stringify(tree.toJSON());
+    // The account has a name but no national ID on file: only the ID is asked for, and no bike plate.
+    expect(step).toContain("Your national ID number");
+    expect(step).not.toContain("First name");
+    expect(step).not.toContain("Bike registration");
+    expect(step).toContain("Take photo");
     act(() => {
       tree.unmount();
     });

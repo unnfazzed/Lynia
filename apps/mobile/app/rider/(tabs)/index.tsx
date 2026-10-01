@@ -19,6 +19,7 @@ import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
 import { runKycVerification } from "../../../src/kyc/verify";
 import { type KycSdkResult, onlineGateReason, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
+import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
@@ -38,6 +39,7 @@ import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast, W
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
+import { RiderSetupPending, RiderVerified } from "../../../src/ui/onboarding/rider";
 import { withTimeout } from "../../../src/util";
 
 // GPS fix bound: a cold fix can hang forever, and the server records a broadcast-eligible position only
@@ -206,6 +208,23 @@ export default function RiderHome(): React.ReactElement {
   const spentForce = useRef(false);
   const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
   const kycGate = knownUnverified ? resolveKycGate(rider, kycLaunch) : null;
+  // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
+  // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
+  const profileId = meQ.data?.profileId ?? null;
+  const verified = rider?.kycStatus === "verified";
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!profileId || !verified) return;
+    let alive = true;
+    void riderWelcomeSeen(profileId).then((seen) => {
+      if (alive) setWelcomeSeen(seen);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, verified]);
+  // New riders only: a rider with trips behind them is not "just verified" (no verified-at date is served).
+  const showWelcome = verified && welcomeSeen === false && (rider?.tripsCount ?? 0) === 0;
   const callSupport = (): void => {
     const uri = telUri(SOS_POLICY.safetyLine);
     if (uri) void Linking.openURL(uri);
@@ -476,7 +495,14 @@ export default function RiderHome(): React.ReactElement {
       case "notRider":
         return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become") }} bridge={leaveForCustomer} />;
       case "pending":
-        return <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />;
+        // Calm Mint v2 R2 (D-55): "Rider setup" while the check is with the vendor — the checklist, safe
+        // to leave, a way to send a parcel. Manual (ops) review keeps the Rider v2 wall: R2's "usually
+        // under a minute" is only true of the automated check.
+        return kycGate?.kind === "in_flight" ? (
+          <RiderSetupPending onSendParcel={() => router.push("/send")} />
+        ) : (
+          <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />
+        );
       case "unfinished":
         return (
           <Gate icon="id-card" tone="calm" title={R.gUnfinishedT} body={R.gUnfinishedB} primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }} bridge={leaveForCustomer} />
@@ -586,6 +612,21 @@ export default function RiderHome(): React.ReactElement {
       )}
     </>
   );
+
+  // R2 and R3 are whole pages in the handoff (no mint top card), so they replace the board outright.
+  if (gate === "pending" && kycGate?.kind === "in_flight" && gateView) return <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>{gateView}</View>;
+  if (showWelcome && !gate) {
+    return (
+      <RiderVerified
+        firstName={meQ.data?.firstName?.trim() || null}
+        onGoOnline={() => {
+          setWelcomeSeen(true);
+          if (profileId) void markRiderWelcomeSeen(profileId);
+        }}
+        onPapers={() => router.push("/rider/documents")}
+      />
+    );
+  }
 
   return (
     <AppScreen banner={banner}>

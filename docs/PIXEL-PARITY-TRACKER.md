@@ -291,15 +291,15 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | R2·1 | `RJ kyc_intro` | Become a rider | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | `become.tsx` realizes the `kyc_form` beat (name/ID + bike/photo + Didit reassurance cards); the `kyc_intro` empty-state itself is realized upstream on the rider board — intro-mock vs form-app is an inherent beat difference (deviation) |
-| ⬜ | R2·2 | `RJ kyc_form` | KYC form + consent | | |
+| ⏭ | R2·1 | `RJ kyc_intro` | Become a rider | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 Why ride. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
+| ⏭ | R2·2 | `RJ kyc_form` | KYC form + consent | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 → rider photo step (no bike reg). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 | ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
 | ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
-| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G2 (Your ID is under review) | |
+| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R2 Rider setup while the automated check runs; manual review keeps the D-54 wall. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 | ⏭ | R2·7 | `RJ kyc_unfinished` | Verification not finished | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G3 (Finish verifying) | |
 | ⏭ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G7 (We couldn't open the ID check) | |
-| ⬜ | R2·9 | `RJ kyc_verified` | Verified | | |
+| ⏭ | R2·9 | `RJ kyc_verified` | Verified | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R3 You're verified (new riders, once). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 
 > **Two rows here are newer than the export.** `kyc_unfinished` and `kyc_cant_start` (#841) were
 > drawn in-repo rather than exported — see `docs/DESIGN-DEVIATIONS.md` D-35 and its upstream-sync
