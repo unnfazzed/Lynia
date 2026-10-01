@@ -5,8 +5,7 @@ import type { PrismaService } from "../prisma/prisma.service";
  * C4 soft-lock: a rider who owes a merchant a collect-and-return cash debt (R-01), or is mid-doorstep
  * handshake awaiting their own confirm (R-04/R-05, including a frozen dispute), takes no new offers —
  * food or parcel — until it's settled (N-20). Lives in `common/` (neither `merchant/` nor
- * `matching|offers|orders/`) for the same reason as {@link ../merchant/food-dispatch-lock}
- * `hasLiveFoodDispatchOffer`: BOTH sides need to import it without tripping the
+ * `matching|offers|orders/`) because BOTH sides need to import it without tripping the
  * `express-no-merchant-coupling` depcruise rule, which only ever points at this neutral file, never
  * at merchant code itself.
  *

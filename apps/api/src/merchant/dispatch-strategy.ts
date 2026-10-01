@@ -1,6 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
-import { LIVE_FOOD_DISPATCH_OFFER_WHERE } from "../common/food-dispatch-lock";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
@@ -20,35 +19,36 @@ export const PREFERRED_DISPATCH_SLACK_M = 2_000;
 const PREFERRED_DISTANCE_BUCKET_M = 100;
 
 /**
- * The pluggable "who gets offered next" decision (plan §0b/P4 "DispatchStrategy seam"). Distinct
- * from Express's own broadcast — Express fans a delivery out to EVERY nearby rider and lets the
- * customer pick; a food order auto-offers to exactly ONE candidate at a time (N-08), so this seam is
- * what a future ETA-ranked or acceptance-rate-weighted strategy would swap in without touching
- * FoodDispatchService's tick/retry/cap machinery.
+ * The pluggable "who gets offered" decision (plan §0b/P4 "DispatchStrategy seam"). A food order is
+ * offered to several riders at once (owner decision 2026-10-01, ledger D-54: the best 10 first, then
+ * everyone after 60s; the first to accept gets it), so the strategy returns an ORDERED list — a future
+ * ETA-ranked or acceptance-rate-weighted strategy swaps in here without touching FoodDispatchService's
+ * round/retry/cap machinery.
  */
 export interface DispatchStrategy {
-  /** The single best candidate within `radiusM` of `(lat, lng)`, excluding `excludeRiderIds` (already
-   *  tried this dispatch cycle) and anyone busy/ineligible — or null if nobody qualifies.
+  /** Eligible riders within `radiusM` of `(lat, lng)`, best first, excluding `excludeRiderIds` (passed or
+   *  dropped this dispatch cycle) and anyone busy/ineligible; at most `limit` of them (all when null).
    *  `preferredRiderIds` (L3) are the restaurant's own riders: they only reorder riders who are already
    *  eligible, never let anyone else in. */
-  pickCandidate(params: {
+  pickCandidates(params: {
     lat: number;
     lng: number;
     radiusM: number;
     excludeRiderIds: readonly string[];
     preferredRiderIds?: readonly string[];
-  }): Promise<DispatchCandidate | null>;
+    limit: number | null;
+  }): Promise<DispatchCandidate[]>;
 }
 
 export const DISPATCH_STRATEGY = Symbol("DISPATCH_STRATEGY");
 
 /**
- * Default strategy: nearest eligible online rider. "Eligible" narrows TrackingService.nearbyRiders'
- * online/standing/KYC/heartbeat filter with the two things a food auto-offer additionally can't
- * tolerate: a rider already mid-ride (ACTIVE_RIDE_STATUSES — one_active_ride would reject the accept
- * anyway, but skipping them here saves a wasted 60s offer window) and a rider already holding a
- * DIFFERENT live food offer (their own dispatchOfferedRiderId is unexpired elsewhere) — the C3
- * soft-lock's mirror image: not just "can't take a parcel", but "can't be offered a second food job".
+ * Default strategy: nearest eligible online riders. "Eligible" narrows TrackingService.nearbyRiders'
+ * online/standing/KYC/heartbeat filter with what a food offer additionally can't tolerate: a rider
+ * already mid-ride (ACTIVE_RIDE_STATUSES — one_active_ride would reject the accept anyway) and a rider
+ * owing a restaurant cash (the C4 soft-lock). A rider already ringing for ANOTHER food order is still
+ * offered this one: with every round going to several riders, locking them out would starve a second
+ * order at the same kitchen.
  */
 @Injectable()
 export class NearestRiderDispatchStrategy implements DispatchStrategy {
@@ -57,18 +57,19 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  async pickCandidate(params: {
+  async pickCandidates(params: {
     lat: number;
     lng: number;
     radiusM: number;
     excludeRiderIds: readonly string[];
     preferredRiderIds?: readonly string[];
-  }): Promise<DispatchCandidate | null> {
+    limit: number | null;
+  }): Promise<DispatchCandidate[]> {
     const nearby = await this.tracking.nearbyRiders(params.lat, params.lng, params.radiusM);
-    if (nearby.length === 0) return null;
+    if (nearby.length === 0) return [];
     const exclude = new Set(params.excludeRiderIds);
     const candidateIds = nearby.map((r) => r.profileId).filter((id) => !exclude.has(id));
-    if (candidateIds.length === 0) return null;
+    if (candidateIds.length === 0) return [];
 
     const busy = await this.prisma.order.findMany({
       where: {
@@ -78,16 +79,6 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
       select: { riderId: true },
     });
     const busyIds = new Set(busy.map((o) => o.riderId));
-
-    const holdingOtherOffer = await this.prisma.order.findMany({
-      where: {
-        dispatchOfferedRiderId: { in: candidateIds },
-        dispatchOfferExpiresAt: { gt: new Date() },
-        ...LIVE_FOOD_DISPATCH_OFFER_WHERE,
-      },
-      select: { dispatchOfferedRiderId: true },
-    });
-    const offeredIds = new Set(holdingOtherOffer.map((o) => o.dispatchOfferedRiderId));
 
     // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake
     // (including frozen), isn't offered a SECOND food job until it settles (N-20/R-05) — same
@@ -106,18 +97,17 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     });
     const owingIds = new Set(owingDebt.map((o) => o.riderId));
 
-    // `nearby` is nearest-first, so the first eligible rider is the nearest one.
-    const eligible = nearby.filter(
-      (r) => !exclude.has(r.profileId) && !busyIds.has(r.profileId) && !offeredIds.has(r.profileId) && !owingIds.has(r.profileId),
-    );
+    // `nearby` is nearest-first, so `eligible` is too.
+    const eligible = nearby.filter((r) => !exclude.has(r.profileId) && !busyIds.has(r.profileId) && !owingIds.has(r.profileId));
     const nearest = eligible[0];
-    if (!nearest) return null;
+    if (!nearest) return [];
 
-    // L3 (design doc "Restaurant auto-dispatch"): one of the restaurant's own riders goes first — among
-    // the eligible, so KYC, standing, holds, one active ride and the debt lock all still apply — unless
+    // L3 (design doc "Restaurant auto-dispatch"): the restaurant's own riders go first — among the
+    // eligible, so KYC, standing, holds, one active ride and the debt lock all still apply — unless
     // they're more than 2 km farther than the nearest. Several: by distance, then rating.
     const preferred = new Set(params.preferredRiderIds ?? []);
     const own = eligible.filter((r) => preferred.has(r.profileId) && r.distanceM - nearest.distanceM <= PREFERRED_DISPATCH_SLACK_M);
+    let ordered: DispatchCandidate[] = eligible.map((r) => ({ riderId: r.profileId, distanceM: r.distanceM }));
     if (own.length > 0) {
       const ratings =
         own.length > 1
@@ -128,11 +118,15 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
             )
           : new Map<string, number>();
       const bucket = (m: number) => Math.floor(m / PREFERRED_DISTANCE_BUCKET_M);
-      const [best] = [...own].sort(
+      const first = [...own].sort(
         (a, b) => bucket(a.distanceM) - bucket(b.distanceM) || (ratings.get(b.profileId) ?? 0) - (ratings.get(a.profileId) ?? 0) || a.distanceM - b.distanceM,
       );
-      return { riderId: best!.profileId, distanceM: best!.distanceM, preferred: true };
+      const firstIds = new Set(first.map((r) => r.profileId));
+      ordered = [
+        ...first.map((r) => ({ riderId: r.profileId, distanceM: r.distanceM, preferred: true })),
+        ...ordered.filter((c) => !firstIds.has(c.riderId)),
+      ];
     }
-    return { riderId: nearest.profileId, distanceM: nearest.distanceM };
+    return params.limit == null ? ordered : ordered.slice(0, params.limit);
   }
 }

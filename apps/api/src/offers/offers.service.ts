@@ -1,7 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
-import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
@@ -101,13 +100,6 @@ export class OffersService {
       throw new ForbiddenException("Go online to make offers");
     }
 
-    // C3 soft-lock: a rider holding a live food auto-offer countdown (N-08) can't also be bidding on
-    // a parcel — the kitchen's dispatch clock assumes they're deciding on that one job. Checked here
-    // (not just at selectOffer) so the customer's board never even shows a bid it can't select.
-    if (await hasLiveFoodDispatchOffer(this.prisma, riderId)) {
-      this.metrics.incOffersMade("forbidden");
-      throw new ForbiddenException("You have a food pickup offer waiting — respond to that first");
-    }
     // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake,
     // takes no new jobs until it's settled (N-20/R-05).
     if (await hasOpenMerchantObligation(this.prisma, riderId)) {

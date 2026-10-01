@@ -2811,11 +2811,40 @@ offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the t
 ### 5 · Still to land
 
 Nothing from this handoff remains to build; the rows in §4 marked `TODO(backend)` fill in as their data
-arrives, and the open questions below stand.
+arrives.
 
-**Open questions (BRIEF.md):** three decided by the owner on 2026-10-01 — food, shop and parcel jobs all
-show on the board, tagged; busy zones come from orders pending and in progress (`GET /orders/demand`: the
-last hour's waiting and on-the-road orders near the rider, grouped into ~1 km cells, the busiest three);
-no limit on withdrawing an offer. Still open: auto-opening the "picked you" sheet (today it opens on
-its own, locked, when a customer picks the rider).
+**Open questions (BRIEF.md): all four decided by the owner on 2026-10-01.**
+
+1. Food, shop and parcel jobs all show on the board, tagged.
+2. Busy zones come from orders pending and in progress (`GET /orders/demand`: the last hour's waiting
+   and on-the-road orders near the rider, grouped into ~1 km cells, the busiest three).
+3. No limit on withdrawing an offer.
+4. The "picked you" sheet stays as built: it opens on its own, locked, the moment a customer picks the
+   rider, and its only action opens the job. No 10 s timer.
+
+**Food dispatch: the best 10 first, then everyone (owner, 2026-10-01).** A ready food order used to
+ring one rider at a time for 60 s. Now each 60 s round rings several riders at once and the first to
+accept gets it:
+
+- **Round 1** goes to the best 10 eligible riders within 8 km: the restaurant's own riders first (L3,
+  within 2 km of the nearest), then the nearest.
+- **Every round after** goes to everyone eligible.
+
+Eligible means online, verified, in good standing, not on a ride and not owing a restaurant cash. A
+rider who taps "Not this one" (or drops the job) is never offered that order again. A rider who just let
+a round run out is offered the next one.
+
+The NO_RIDER cap is unchanged: six rounds, then the kitchen's hold screen. Policy lives in
+`RESTAURANTS_DISPATCH` (`firstRoundSize`, `radiusM`). The round logic is in
+`merchant/food-dispatch.service.ts`, and the transitions table records each edge.
+
+Because a round now rings many riders, the old C3 lock (a rider with a food offer ringing could not bid
+on a parcel) is gone. Otherwise every rider near a kitchen would be shut out of parcels while it
+searched. The one-active-ride rule still stops a rider from holding both. The rider app needed no change:
+the offer screen already says "another rider took it" when a round closes on someone.
+
+**Paying the kitchen up front: allowed for every rider (owner, 2026-10-01).** A kitchen set to "pay me
+up front" is offered to any eligible rider. The offer shows "Pay the kitchen" and "Collect at the door"
+before they accept (F2), and the job asks them to pay first (B2). No rider is filtered out by cash
+rule.
 

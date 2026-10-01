@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
-  dispatchRadiusForAttempt,
+  dispatchRoundSize,
   FoodOfferEvent,
   type HeldReason,
   RELIABILITY,
@@ -35,9 +35,16 @@ import { preferredRiderIds } from "./preferred-riders";
  * "where this doc and the code disagree, the code wins — reconcile and flag it" instruction; called
  * out again in the PR body.)
  *
+ * Rounds (owner decision 2026-10-01, ledger D-54): each 60s round offers the job to several riders at
+ * once — the best `RESTAURANTS_DISPATCH.firstRoundSize` on the first round (the restaurant's own riders
+ * first, then the nearest), everyone eligible on every round after — and the first to accept gets it.
+ * A rider's live offer is their own `FoodDispatchAttempt` row (`pending`, unexpired) on an order at
+ * `open_for_offers`; the order's `dispatchOfferExpiresAt` is the round's end. A rider who passes (or
+ * drops the job) is never offered it again this cycle; one who simply let a round run out is.
+ *
  * State model (reuses OrderStatus, no new values — plan §0b.1): a merchant order sits at `requested`
- * while dispatch is either searching (no live offer) or holding (NO_RIDER cap exhausted, D-34), and
- * at `open_for_offers` for the ~60s a single candidate is deciding (N-08) — the SAME status value
+ * while dispatch is either searching (no live round) or holding (NO_RIDER cap exhausted, D-34), and
+ * at `open_for_offers` for the ~60s a round is live (N-08) — the SAME status value
  * Express uses for its own auction, safe because C1/C2 already added `orderType` filters to every
  * Express read/write keyed on it (status-keyed-query-audit A-1..A-4). `merchantPhase` stays
  * `ready_for_pickup` for the entire dispatch lifetime (search, offered, hold) and is cleared to null
@@ -93,20 +100,20 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
   // ── Reconciler sweeps ────────────────────────────────────────────────────────────────────────────
 
-  /** N-08: a live single-rider offer whose 60s window elapsed with no response. Always lands back at
-   *  `requested` (re-enter the search — sweepSearch's next pass picks the next candidate); the cap
-   *  check lives there, not here, so this method's job is purely "close out a stale offer". */
+  /** N-08: a live round whose 60s window elapsed with nobody accepting. Always lands back at
+   *  `requested` (re-enter the search — sweepSearch's next pass opens the next round); the cap check
+   *  lives there, not here, so this method's job is purely "close out a stale round". */
   async sweepExpiredOffers(): Promise<{ expired: number }> {
     let expired = 0;
     const stale = await this.prisma.order.findMany({
       where: { orderType: "merchant", status: "open_for_offers", dispatchOfferExpiresAt: { lt: new Date() } },
-      select: { id: true, dispatchOfferedRiderId: true },
+      select: { id: true, dispatchOfferExpiresAt: true },
       take: 200,
     });
     for (const o of stale) {
-      if (!o.dispatchOfferedRiderId) continue;
+      if (!o.dispatchOfferExpiresAt) continue;
       try {
-        if (await this.releaseCurrentOffer(o.id, o.dispatchOfferedRiderId, "expired")) expired++;
+        if (await this.closeRound(o.id, o.dispatchOfferExpiresAt)) expired++;
       } catch (err) {
         this.logger.error(`sweepExpiredOffers failed for order ${o.id}: ${(err as Error).message}`);
       }
@@ -142,9 +149,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return { offered, held };
   }
 
-  /** One dispatch attempt: widen the radius, ask the strategy for a candidate, either offer it
-   *  (`dispatch_offer`, N-08) or park for the next poll (`dispatch_search` self-loop) — unless the
-   *  NO_RIDER cap (N-07) is exhausted, which enters the D-34 merchant hold instead. */
+  /** One dispatch round: ask the strategy for this round's riders (the best 10 first, everyone after),
+   *  either offer it to all of them at once (`dispatch_offer`, N-08) or park for the next poll
+   *  (`dispatch_search` self-loop) — unless the NO_RIDER cap (N-07) is exhausted, which enters the
+   *  D-34 merchant hold instead. */
   private async tick(orderId: string): Promise<"offered" | "searching" | "held" | "skipped"> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -192,19 +200,22 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       return "skipped";
     }
 
-    const radiusM = dispatchRadiusForAttempt(attempt);
-    const candidate = await this.strategy.pickCandidate({
+    const radiusM = RESTAURANTS_DISPATCH.radiusM;
+    const candidates = await this.strategy.pickCandidates({
       lat: point.lat,
       lng: point.lng,
       radiusM,
       excludeRiderIds: order.dispatchExcludedRiderIds,
       preferredRiderIds: await this.preferredFor(order.merchantId),
+      limit: dispatchRoundSize(attempt),
     });
-    if (candidate?.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${candidate.riderId} distanceM=${Math.round(candidate.distanceM)}`);
+    for (const c of candidates) {
+      if (c.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${c.riderId} distanceM=${Math.round(c.distanceM)}`);
+    }
     const now = new Date();
     const startedAt = order.dispatchStartedAt ?? now;
 
-    if (!candidate) {
+    if (candidates.length === 0) {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
         data: {
@@ -221,7 +232,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
       data: {
         status: "open_for_offers",
-        dispatchOfferedRiderId: candidate.riderId,
+        dispatchOfferedRiderId: null,
         dispatchOfferExpiresAt: expiresAt,
         dispatchAttempt: attempt,
         dispatchStartedAt: startedAt,
@@ -230,27 +241,37 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) return "skipped";
     if (attempt === 1) await this.prisma.orderEvent.create({ data: { orderId, status: "open_for_offers" } });
+    // One row per (order, rider): a rider who let an earlier round run out is offered again on the same
+    // row, reset to pending with this round's expiry. Riders who passed never get here (excluded above).
+    const riderIds = candidates.map((c) => c.riderId);
     try {
-      await this.prisma.foodDispatchAttempt.create({
-        data: { orderId, riderId: candidate.riderId, attemptNumber: attempt, radiusM, offeredAt: now, expiresAt },
+      await this.prisma.$transaction(async (tx) => {
+        for (const riderId of riderIds) {
+          await tx.foodDispatchAttempt.upsert({
+            where: { orderId_riderId: { orderId, riderId } },
+            create: { orderId, riderId, attemptNumber: attempt, radiusM, offeredAt: now, expiresAt },
+            update: { attemptNumber: attempt, radiusM, offeredAt: now, expiresAt, outcome: "pending", respondedAt: null },
+          });
+        }
       });
     } catch (err) {
-      // The (orderId, riderId) unique index backstops dispatchExcludedRiderIds — a duplicate offer to
-      // the same rider (a data race, not the expected path) fails here rather than corrupting the log.
-      this.logger.error(`FoodDispatchAttempt insert failed for order ${orderId}/rider ${candidate.riderId}: ${(err as Error).message}`);
+      // Without the rows nobody can accept: close the round now so the next sweep opens a fresh one.
+      this.logger.error(`FoodDispatchAttempt write failed for order ${orderId}: ${(err as Error).message}`);
+      await this.closeRound(orderId, expiresAt);
+      return "skipped";
     }
-    void this.notifications.notifyProfiles([candidate.riderId], {
+    void this.notifications.notifyProfiles(riderIds, {
       title: "New food pickup",
-      body: "A kitchen order is ready nearby — tap to accept before it's offered to someone else.",
+      body: "A kitchen order is ready nearby — tap to accept before another rider takes it.",
       data: { orderId, kind: "food_offer" },
     });
     // C5 rider offer alarm channel: the live-app signal alongside the push above — GET
     // /merchant/orders/dispatch/offer is the reconnect/poll fallback for the SAME offer this builds.
-    // Best-effort: emitFoodOffer never throws, and a build failure here must never undo the offer
+    // Best-effort: emitFoodOffer never throws, and a build failure here must never undo the round
     // that just committed above.
     try {
       const event = this.buildFoodOfferEvent(orderId, order.merchantId!, order, expiresAt);
-      void this.gateway.emitFoodOffer(candidate.riderId, event);
+      for (const riderId of riderIds) void this.gateway.emitFoodOffer(riderId, event);
     } catch (err) {
       this.logger.warn(`food:offer build failed for order ${orderId}: ${(err as Error).message}`);
     }
@@ -304,38 +325,46 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Shared close-out for a live offer that ends WITHOUT acceptance (sweep expiry or rider decline):
-   *  mark its FoodDispatchAttempt row, exclude the rider from this order's remaining attempts, and
-   *  park for the next sweepSearch pass. Returns false if it lost a race (already resolved) — the
-   *  updateMany's own CAS (status + dispatchOfferedRiderId) is what actually decides that; a stale
-   *  read of `dispatchExcludedRiderIds` below can never smuggle in a double-append because any writer
-   *  that wins the CAS has already moved dispatchOfferedRiderId off `riderId`, so a loser's updateMany
-   *  always affects zero rows. */
-  private async releaseCurrentOffer(orderId: string, riderId: string, outcome: "expired" | "declined"): Promise<boolean> {
-    const current = await this.prisma.order.findUnique({ where: { id: orderId }, select: { dispatchExcludedRiderIds: true } });
-    if (!current) return false;
-    const excluded = current.dispatchExcludedRiderIds.includes(riderId)
-      ? current.dispatchExcludedRiderIds
-      : [...current.dispatchExcludedRiderIds, riderId];
+  /** Close a live round that ended WITHOUT acceptance (it ran out, or every rider on it passed): back
+   *  to `requested` for the next sweepSearch pass, every still-pending row on it marked expired and its
+   *  alarm closed. The CAS on the round's own expiry decides a race — a concurrent accept, or a round
+   *  already closed, leaves it affecting zero rows, and this returns false. */
+  private async closeRound(orderId: string, roundExpiresAt: Date): Promise<boolean> {
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "open_for_offers", dispatchOfferedRiderId: riderId },
-      data: {
-        status: "requested",
-        dispatchOfferedRiderId: null,
-        dispatchOfferExpiresAt: null,
-        dispatchExcludedRiderIds: excluded,
-        dispatchNextCheckAt: new Date(),
-      },
+      where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: roundExpiresAt },
+      data: { status: "requested", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: null, dispatchNextCheckAt: new Date() },
     });
     if (claimed.count === 0) return false;
-    await this.prisma.foodDispatchAttempt.updateMany({
-      where: { orderId, riderId, outcome: "pending" },
-      data: { outcome, respondedAt: new Date() },
-    });
-    // C5: close the rider offer alarm channel — a no-op UI-wise for the "declined" caller (they
-    // already know), but the only signal the OTHER path (sweep-driven "expired") has.
-    void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    await this.expirePending(orderId);
     return true;
+  }
+
+  /** Mark every still-pending row on the order expired (but `exceptRiderId`'s) and close those riders'
+   *  offer alarms (C5) — the only signal a rider whose phone is still ringing gets. */
+  private async expirePending(orderId: string, exceptRiderId?: string): Promise<void> {
+    const where: Prisma.FoodDispatchAttemptWhereInput = { orderId, outcome: "pending", ...(exceptRiderId ? { riderId: { not: exceptRiderId } } : {}) };
+    const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
+    if (open.length === 0) return;
+    await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
+    for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+  }
+
+  /** The order behind the rider's live offer, or the reason they have none: not offered it at all
+   *  (403), or the round closed, someone else took it, they already answered, or it ran out (409). */
+  private async liveOffer(orderId: string, riderId: string): Promise<{ merchantId: string | null; roundExpiresAt: Date | null; excluded: string[] }> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, orderType: "merchant" },
+      select: { status: true, merchantId: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    const offer = await this.prisma.foodDispatchAttempt.findUnique({
+      where: { orderId_riderId: { orderId, riderId } },
+      select: { outcome: true, expiresAt: true },
+    });
+    if (!offer) throw new ForbiddenException("This offer isn't yours");
+    if (order.status !== "open_for_offers" || offer.outcome !== "pending") throw new ConflictException("This offer is no longer live");
+    if (offer.expiresAt.getTime() < Date.now()) throw new ConflictException("This offer just expired, pick your next job");
+    return { merchantId: order.merchantId, roundExpiresAt: order.dispatchOfferExpiresAt, excluded: order.dispatchExcludedRiderIds };
   }
 
   // ── Rider actions ────────────────────────────────────────────────────────────────────────────────
@@ -346,45 +375,44 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  front (unlike every other dispatch action here, which is `:orderId`-scoped). Null when this
    *  rider holds no live offer — not an error, since "nothing right now" is the normal state. */
   async getOfferForRider(riderId: string): Promise<FoodOfferEvent | null> {
-    const order = await this.prisma.order.findFirst({
-      where: { orderType: "merchant", status: "open_for_offers", dispatchOfferedRiderId: riderId, dispatchOfferExpiresAt: { gt: new Date() } },
+    // Several orders can ring the same rider at once; the one running out first is shown first.
+    const offer = await this.prisma.foodDispatchAttempt.findFirst({
+      where: { riderId, outcome: "pending", expiresAt: { gt: new Date() }, order: { orderType: "merchant", status: "open_for_offers" } },
+      orderBy: { expiresAt: "asc" },
       select: {
-        id: true,
-        merchantId: true,
-        pickup: true,
-        dropoff: true,
-        itemDesc: true,
-        merchantGoodsTotal: true,
-        deliveryFee: true,
-        distanceKm: true,
-        dispatchOfferExpiresAt: true,
-        merchantPaymentMethod: true,
-        merchantCashRule: true,
+        expiresAt: true,
+        order: {
+          select: {
+            id: true,
+            merchantId: true,
+            pickup: true,
+            dropoff: true,
+            itemDesc: true,
+            merchantGoodsTotal: true,
+            deliveryFee: true,
+            distanceKm: true,
+            merchantPaymentMethod: true,
+            merchantCashRule: true,
+          },
+        },
       },
     });
-    if (!order || !order.merchantId || !order.dispatchOfferExpiresAt) return null;
-    return this.buildFoodOfferEvent(order.id, order.merchantId, order, order.dispatchOfferExpiresAt);
+    if (!offer || !offer.order.merchantId) return null;
+    return this.buildFoodOfferEvent(offer.order.id, offer.order.merchantId, offer.order, offer.expiresAt);
   }
 
-  /** D-04 "rider secured" — the candidate holding the live offer accepts. Mirrors matching.service.ts:
-   *  selectOffer's shape (mint a fresh delivery code, one_active_ride race handled the same way) one
-   *  level up: the "who" decision was already made by dispatch, this just commits it. */
+  /** D-04 "rider secured" — a rider on the live round accepts, and the first to do so gets it. Mirrors
+   *  matching.service.ts:selectOffer's shape (mint a fresh delivery code, one_active_ride race handled
+   *  the same way); every other rider on the round is told it's gone. */
   async acceptDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, orderType: "merchant" },
-      select: { status: true, dispatchOfferedRiderId: true, dispatchOfferExpiresAt: true, merchantId: true },
-    });
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.dispatchOfferedRiderId !== riderId) throw new ForbiddenException("This offer isn't yours");
-    if (order.status !== "open_for_offers") throw new ConflictException("This offer is no longer live");
-    if (!order.dispatchOfferExpiresAt || order.dispatchOfferExpiresAt.getTime() < Date.now()) {
-      throw new ConflictException("This offer just expired, pick your next job");
-    }
+    const order = await this.liveOffer(orderId, riderId);
 
     const deliveryCode = this.tokens.randomOtp();
     try {
+      // First writer wins. The CAS is on the round itself, so a rider whose round closed (and maybe
+      // reopened without them) between the read above and here loses cleanly.
       const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "open_for_offers", dispatchOfferedRiderId: riderId },
+        where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: order.roundExpiresAt },
         data: {
           status: "assigned",
           riderId,
@@ -408,6 +436,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { orderId, riderId, outcome: "pending" },
       data: { outcome: "accepted", respondedAt: new Date() },
     });
+    await this.expirePending(orderId, riderId);
     await this.prisma.orderEvent.create({ data: { orderId, status: "assigned" } });
 
     // D-04: "rider secured" is a first-class, pushed event for all three actors. Customer + rider both
@@ -438,18 +467,21 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: "assigned" };
   }
 
-  /** The rider's "can't take it" — frees the offer immediately rather than making the kitchen wait
-   *  out the full 60s. */
+  /** The rider's "Not this one": they're never offered this order again this cycle. When they were the
+   *  last rider still deciding, the round closes now rather than making the kitchen wait out the 60s. */
   async declineDispatch(orderId: string, riderId: string): Promise<{ orderId: string; declined: true }> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, orderType: "merchant" },
-      select: { status: true, dispatchOfferedRiderId: true },
+    const order = await this.liveOffer(orderId, riderId);
+    const marked = await this.prisma.foodDispatchAttempt.updateMany({
+      where: { orderId, riderId, outcome: "pending" },
+      data: { outcome: "declined", respondedAt: new Date() },
     });
-    if (!order) throw new NotFoundException("Order not found");
-    if (order.dispatchOfferedRiderId !== riderId) throw new ForbiddenException("This offer isn't yours");
-    if (order.status !== "open_for_offers") throw new ConflictException("This offer is no longer live");
-    const ok = await this.releaseCurrentOffer(orderId, riderId, "declined");
-    if (!ok) throw new ConflictException("This offer is no longer live");
+    if (marked.count === 0) throw new ConflictException("This offer is no longer live");
+    if (!order.excluded.includes(riderId)) {
+      await this.prisma.order.update({ where: { id: orderId }, data: { dispatchExcludedRiderIds: { push: riderId } } });
+    }
+    void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    const deciding = await this.prisma.foodDispatchAttempt.count({ where: { orderId, outcome: "pending", expiresAt: { gt: new Date() } } });
+    if (deciding === 0 && order.roundExpiresAt) await this.closeRound(orderId, order.roundExpiresAt);
     return { orderId, declined: true };
   }
 
