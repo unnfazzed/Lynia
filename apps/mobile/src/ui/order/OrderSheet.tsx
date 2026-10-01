@@ -1,24 +1,43 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Animated, Easing, PanResponder, ScrollView, View } from "react-native";
 import { chooseSnap } from "../BottomSheet";
+import { Tappable } from "../Tappable";
+import { ORDER_COPY as A } from "./copy";
 
 /**
- * The order screen's bottom sheet (After Send handoff "Sheet", ledger D-53): white, radius 16 on top, a
- * 16px grabber row (36×4 `line` bar), content in a column with a 12px gap that scrolls at either snap.
- * Two snaps — PEEK (the stage's share of the space under the header goes to the map) and FULL (a 96px
- * map strip stays under the header). Drag or tap the grabber; the content area ends at the top of the
- * pinned CTA bar (`bottomInset`).
+ * The order screen's bottom sheet (After Send handoff "Sheet", ledger D-53, v2 round): white, radius 16 on
+ * top, a 28px grabber row (36×4 `line` bar), content in a column with a 12px gap that scrolls at either
+ * snap. Two snaps — PEEK and FULL (a 96px map strip stays under the header). The content area ends at the
+ * top of the pinned CTA bar (`bottomInset`).
  *
- * The sheet's `top` animates (JS driver: it changes the scroll viewport, which a transform can't), on a
- * stage change too (250ms ease-out). The content cross-fades in (opacity 0 → 1, translateY 8 → 0, 250ms)
- * whenever `contentKey` changes. Reduce motion cuts both instantly. Core Animated + PanResponder only
- * (no reanimated / gesture-handler in this app — see BottomSheet.tsx).
+ * PEEK is measured (v2 §1.3): each stage marks the end of the block that must be fully visible with
+ * `<PeekMark/>`; the sheet's peek height is that block's bottom + 16 + the CTA bar, never below the
+ * stage's floor and never leaving the map under 96. A stage without a mark falls back to `fallbackShare`.
+ *
+ * The grabber's tap/drag target is 120×44: the 28px row plus 16px ABOVE the sheet's edge. It is rendered
+ * as a sibling of the sheet (riding the same animated `top`), because Android doesn't deliver touches to a
+ * child drawn outside its parent's bounds. Tap toggles peek ↔ full; TalkBack reads "Show more" / "Show less".
+ *
+ * The sheet's `top` animates on the JS driver (it changes the scroll viewport, which a transform can't).
+ * The content cross-fades in (opacity 0 → 1, translateY 8 → 0, 250ms) when `contentKey` changes. Reduce
+ * motion cuts both instantly. Core Animated + PanResponder only (no reanimated in this app).
  */
 
-/** The map strip kept under the header when the sheet is at FULL. */
+/** The map strip kept under the header when the sheet is at FULL — and the map's minimum at peek. */
 export const FULL_STRIP = 96;
+const GRAB = 28;
 const DRAG_CLAIM_PX = 6;
+const GAP = 12;
+
+const PeekContext = createContext<((y: number) => void) | null>(null);
+
+/** Marks where the must-see block of a stage ends (put it right after that block). */
+export function PeekMark(): React.ReactElement {
+  const set = useContext(PeekContext);
+  // The mark sits one column gap below the block it follows.
+  return <View pointerEvents="none" style={{ height: 0, marginTop: -GAP }} onLayout={(e) => set?.(e.nativeEvent.layout.y)} />;
+}
 
 export interface OrderSheetHandle {
   /** True when the sheet is at FULL (Back collapses it before leaving). */
@@ -31,8 +50,10 @@ export const OrderSheet = React.forwardRef<
   {
     /** Height of the area under the header (map + sheet). */
     areaHeight: number;
-    /** The map's share of `areaHeight` at peek. */
-    mapShare: number;
+    /** The map's share of `areaHeight` at peek when the stage has no `PeekMark`. */
+    fallbackShare: number;
+    /** The stage's floor for the sheet's height at peek (README v2 peek table), 0 for none. */
+    floor: number;
     /** The pinned CTA bar's height — the content area ends there. */
     bottomInset: number;
     contentKey: string;
@@ -42,9 +63,17 @@ export const OrderSheet = React.forwardRef<
     children: React.ReactNode;
   }
 >(function OrderSheet(props, ref) {
-  const { areaHeight, mapShare, bottomInset, reduceMotion } = props;
-  const peekTop = Math.round(areaHeight * mapShare);
+  const { areaHeight, bottomInset, reduceMotion, floor, fallbackShare, contentKey } = props;
+  const [mark, setMark] = useState<number | null>(null);
+  // A new stage re-measures.
+  useEffect(() => setMark(null), [contentKey]);
+
+  const maxH = Math.max(0, areaHeight - FULL_STRIP);
+  const measured = mark != null ? GRAB + mark + 16 + bottomInset : Math.round(areaHeight * (1 - fallbackShare));
+  const peekH = Math.min(maxH, Math.max(floor, measured));
+  const peekTop = Math.round(areaHeight - peekH);
   const fullTop = Math.min(FULL_STRIP, peekTop);
+
   const top = useRef(new Animated.Value(peekTop)).current;
   const [full, setFull] = useState(false);
   const fullRef = useRef(false);
@@ -70,6 +99,8 @@ export const OrderSheet = React.forwardRef<
     isFull: () => fullRef.current,
     collapse: () => animateTo(peekTop, false),
   }));
+
+  const toggle = (): void => (fullRef.current ? animateTo(peekTop, false) : animateTo(fullTop, fullTop !== peekTop));
 
   const pan = useMemo(
     () =>
@@ -99,51 +130,58 @@ export const OrderSheet = React.forwardRef<
     }
     fade.setValue(0);
     Animated.timing(fade, { toValue: 1, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
-  }, [props.contentKey, reduceMotion, fade]);
+  }, [contentKey, reduceMotion, fade]);
 
   return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        top,
-        bottom: 0,
-        backgroundColor: tokens.color.bg,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        zIndex: 10,
-        ...tokens.shadow.sheet,
-      }}
-    >
-      <View {...pan.panHandlers}>
-        {/* Drag-only: the handoff also says "tap the grabber", but its drawn row is 16px — below
-            --target-min — so it is not a tap target here (ledger D-53 §4). Screen readers expand and
-            collapse it through the adjustable actions. */}
-        <View
-          accessible
-          accessibilityRole="adjustable"
-          accessibilityLabel={full ? "Collapse the order details" : "Expand the order details"}
-          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-          onAccessibilityAction={(e) => {
-            if (e.nativeEvent.actionName === "increment") animateTo(fullTop, true);
-            else animateTo(peekTop, false);
-          }}
-          style={{ height: 16, alignItems: "center", justifyContent: "center" }}
-        >
+    <>
+      <Animated.View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top,
+          bottom: 0,
+          backgroundColor: tokens.color.bg,
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          zIndex: 10,
+          ...tokens.shadow.sheet,
+        }}
+      >
+        <View style={{ height: GRAB, alignItems: "center", justifyContent: "center" }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: tokens.color.line }} />
         </View>
-      </View>
-      <ScrollView
-        style={{ flex: 1, marginBottom: bottomInset }}
-        contentContainerStyle={{ paddingTop: 4, paddingHorizontal: 16, paddingBottom: 16 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        <ScrollView
+          style={{ flex: 1, marginBottom: bottomInset }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <PeekContext.Provider value={setMark}>
+            <Animated.View style={{ gap: GAP, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
+              {props.children}
+            </Animated.View>
+          </PeekContext.Provider>
+        </ScrollView>
+      </Animated.View>
+      {/* The grabber's 120×44 target: 16px above the sheet edge + the 28px row. */}
+      <Animated.View
+        {...pan.panHandlers}
+        style={{ position: "absolute", top: Animated.add(top, -16), left: "50%", marginLeft: -60, width: 120, height: 44, zIndex: 12 }}
       >
-        <Animated.View style={{ gap: 12, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
-          {props.children}
-        </Animated.View>
-      </ScrollView>
-    </Animated.View>
+        <Tappable
+          tone="icon"
+          onPress={toggle}
+          accessibilityRole="button"
+          accessibilityLabel={full ? A.grabLess : A.grabMore}
+          accessibilityActions={[{ name: "expand" }, { name: "collapse" }]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === "expand") animateTo(fullTop, fullTop !== peekTop);
+            else animateTo(peekTop, false);
+          }}
+          style={{ width: 120, height: 44 }}
+        />
+      </Animated.View>
+    </>
   );
 });

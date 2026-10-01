@@ -40,6 +40,69 @@ export const STATUS_NOTICES: Record<string, Notice> = {
   cancelled: { to: ["customer", "rider"], title: "Order cancelled", body: "This delivery was cancelled." },
 };
 
+/** The suggested resend step after a closed window (after-send v2 "Send again at $X" = last price + $0.50). */
+const RESEND_STEP = 0.5;
+
+/** "$3.36" — a fare as the after-send copy writes it. */
+function money(value: unknown): string {
+  return `$${(Math.round(Number(value) * 100) / 100).toFixed(2)}`;
+}
+
+/** "09:31" in Harare time — the delivered push's hand-over time. */
+function harareTime(at: Date): string {
+  return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Africa/Harare" }).format(at);
+}
+
+/** Why a hand-off failed, in the not-delivered sheet's own words (after-send v2 "REASON FROM YOUR RIDER"). */
+const UNDELIVERED_REASON_COPY: Record<string, string> = {
+  unreachable: "Recipient didn't answer.",
+  refused: "Recipient refused the parcel.",
+  wrong_address: "The address was wrong.",
+  breakdown: "The bike broke down.",
+};
+
+interface ParcelCopyOrder {
+  dropoff?: unknown;
+  deliveredAt?: Date | null;
+  undeliveredReason?: string | null;
+  rider?: { profile?: { firstName?: string | null } | null } | null;
+}
+
+/**
+ * After-send v2: the parcel CUSTOMER's stage-push copy, named and placed off the order. Null for a status
+ * whose copy is the static STATUS_NOTICES entry. No server-side ETA exists for a leg, so the design's
+ * "Arriving in about N min" / "About N min" clauses are dropped rather than invented, and no push names
+ * the delivery code. `en_route_dropoff` keeps the static copy: it fires when the rider LEAVES the pickup,
+ * so the design's "is at the drop-off" (an arrival the server never observes) would be false there.
+ */
+function parcelCustomerCopy(status: string, order: ParcelCopyOrder): { title: string; body: string } | null {
+  const first = order.rider?.profile?.firstName?.trim() || null;
+  switch (status) {
+    case "en_route_pickup":
+      return { title: `${first ?? "Your rider"} is on the way to pickup`, body: "Open to see your delivery code." };
+    case "picked_up": {
+      const landmark = (order.dropoff as { landmark?: unknown } | null | undefined)?.landmark;
+      const where = typeof landmark === "string" && landmark.trim() ? landmark.trim() : "the drop-off";
+      return { title: `${first ?? "Your rider"} has your parcel`, body: `On the way to ${where}.` };
+    }
+    case "delivered": {
+      const rate = `Tap to rate ${first ?? "your rider"}.`;
+      return { title: "Parcel delivered", body: order.deliveredAt ? `Handed over at ${harareTime(new Date(order.deliveredAt))}. ${rate}` : rate };
+    }
+    case "undelivered": {
+      const reason = (order.undeliveredReason && UNDELIVERED_REASON_COPY[order.undeliveredReason]) || null;
+      const call = `Call ${first ?? "your rider"} to sort it out.`;
+      return { title: `${first ?? "Your rider"} couldn't deliver your parcel`, body: reason ? `${reason} ${call}` : call };
+    }
+    // The customer is excluded from a cancel they made, and a rider's cancel sends the rebroadcast
+    // notice instead (OrderLifecycleService.cancel) — so the customer hears this when LyniaGo cancels.
+    case "cancelled":
+      return { title: "Your order was cancelled", body: "Open to see why. Nothing to pay." };
+    default:
+      return null;
+  }
+}
+
 /**
  * C5: a food order's own curated push contract (packages/design/RESTAURANTS-DECISIONS.md §3
  * "Customer notifications" — "No push for step changes in between, the tracker is enough"). Only
@@ -112,7 +175,16 @@ export class NotificationsService {
       if (!(status in STATUS_NOTICES) && !(status in MERCHANT_STATUS_NOTICES)) return;
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
-        select: { customerId: true, riderId: true, orderType: true },
+        select: {
+          customerId: true,
+          riderId: true,
+          orderType: true,
+          // parcelCustomerCopy's inputs. Never the delivery code — no push carries it.
+          dropoff: true,
+          deliveredAt: true,
+          undeliveredReason: true,
+          rider: { select: { profile: { select: { firstName: true } } } },
+        },
       });
       if (!order) return;
       // A-6 (status-keyed-query-audit): STATUS_NOTICES is parcel-voiced copy ("Your parcel was
@@ -129,11 +201,13 @@ export class NotificationsService {
       for (const aud of notice.to) {
         const id = aud === "customer" ? order.customerId : order.riderId;
         if (!id || id === excludeProfileId) continue;
+        // After-send v2: a parcel customer's stage pushes name the rider and the place/time.
+        const copy = (aud === "customer" && order.orderType === "parcel" && parcelCustomerCopy(status, order)) || notice;
         // D-O3: a caller retrying/duplicating the same order+status transition (no idempotency key
         // upstream) must replace this recipient's still-undelivered tray entry, not stack a second one.
         await this.send([id], {
-          title: notice.title,
-          body: notice.body,
+          title: copy.title,
+          body: copy.body,
           // Stamp the order type so the client opens the right tracker on tap: a food (merchant) order
           // must land on /food/order/:id, not the parcel-voiced /order/:id. Additive on the wire —
           // older clients ignore it and fall back to /order/:id (the prior, food-mis-routing behaviour).
@@ -147,31 +221,31 @@ export class NotificationsService {
   }
 
   /**
-   * Auction-expiry notice to the customer (§5c), in three honest variants:
+   * Auction-expiry notice to the customer (§5c), in two variants:
    *  - `noSupply` (zero bids AND nobody online near the pickup) — "raise it" would be a lie, so the
    *    customer hears that nobody was online to take it.
-   *  - `hadOffers` (riders DID bid, but the window closed before the customer picked) — again "raise the
-   *    price" is dishonest; riders offered, so the honest nudge is just to send it again.
-   *  - otherwise (no bids but riders WERE around) — the default price nudge.
-   * `noSupply` takes precedence (it's only ever computed when there were no offers). Best-effort, never throws.
+   *  - otherwise — after-send v2's "No rider took $3.36 / Send again at $3.86 in one tap.", with or
+   *    without bids (`hadOffers` no longer changes the copy; kept for the caller's signature).
+   * Best-effort, never throws.
    */
-  async notifyOrderExpired(orderId: string, noSupply: boolean, hadOffers = false): Promise<void> {
+  async notifyOrderExpired(orderId: string, noSupply: boolean, _hadOffers = false): Promise<void> {
     try {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
-        select: { customerId: true },
+        select: { customerId: true, proposedFare: true },
       });
       if (!order) return;
+      // After-send v2 "No match": the closed price, and the one-tap resend at the suggested price (the
+      // last price + RESEND_STEP, the same suggestion the No-match sheet draws). Applies whether or not
+      // riders bid — either way nobody took it in time. Without a readable price, the static notice.
+      const fare = order.proposedFare == null ? NaN : Number(order.proposedFare);
       const msg = noSupply
         ? {
             title: "No riders online nearby",
             body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
           }
-        : hadOffers
-          ? {
-              title: "The window closed",
-              body: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
-            }
+        : Number.isFinite(fare)
+          ? { title: `No rider took ${money(fare)}`, body: `Send again at ${money(fare + RESEND_STEP)} in one tap.` }
           : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
       await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
     } catch (err) {
@@ -179,16 +253,55 @@ export class NotificationsService {
     }
   }
 
-  /** Notify a customer that a rider has responded to their broadcast. Best-effort, never throws. */
+  /**
+   * Notify a customer that a rider has responded to their broadcast. Best-effort, never throws.
+   * After-send v2 copy: the FIRST pending offer names the rider, the price and their pickup ETA; once
+   * two or more are pending it's a count. One collapse key per order, so the tray keeps only the
+   * latest ("3 offers for your parcel" replaces "New offer: $3.00").
+   */
   async notifyNewOffer(orderId: string, customerId: string): Promise<void> {
     try {
       await this.send([customerId], {
-        title: "New offer",
-        body: "A rider responded to your delivery — tap to compare offers.",
+        ...(await this.newOfferCopy(orderId)),
         data: { orderId, kind: "offer" },
+        collapseKey: `order:${orderId}:offers`,
       });
     } catch (err) {
       this.logger.warn(`notifyNewOffer(${orderId}) failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** The new-offer copy off the order's live pending offers. A lookup failure falls back to the count
+   *  copy's wording, so the push still goes out. */
+  private async newOfferCopy(orderId: string): Promise<{ title: string; body: string }> {
+    const fallback = { title: "New offer for your parcel", body: "Choose a rider before the timer ends." };
+    try {
+      const pending = await this.prisma.offer.findMany({
+        where: { orderId, status: "pending" },
+        orderBy: { createdAt: "desc" },
+        take: 2,
+        select: {
+          offeredFare: true,
+          etaMinutes: true,
+          rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        },
+      });
+      if (pending.length === 0) return fallback;
+      if (pending.length > 1) {
+        const count = await this.prisma.offer.count({ where: { orderId, status: "pending" } });
+        return { title: `${count} offers for your parcel`, body: "Choose a rider before the timer ends." };
+      }
+      const [offer] = pending;
+      const profile = offer.rider?.profile;
+      const first = profile?.firstName?.trim();
+      const initial = profile?.lastName?.trim().charAt(0);
+      const who = first ? (initial ? `${first} ${initial.toUpperCase()}.` : first) : "A rider";
+      return {
+        title: `New offer: ${money(offer.offeredFare)}`,
+        body: `${who} can pick up in ${offer.etaMinutes} min. Choose before the timer ends.`,
+      };
+    } catch {
+      return fallback;
     }
   }
 

@@ -79,6 +79,9 @@ export interface OrderSnapshot {
     plate: string | null;
     verified: boolean;
   } | null;
+  // The customer's own rating of this order (After Send v2: "You rated Tendai ★★★★ Good", and whether
+  // a completed order can still be rated). Customer view only; null when unrated; absent on an older API.
+  rating?: { score: number; tags: string[] } | null;
   events: OrderEvent[];
   counterpartyPhone: string | null;
   /** ISO end of the offer window while `open_for_offers`, else null — drives the auction countdown. */

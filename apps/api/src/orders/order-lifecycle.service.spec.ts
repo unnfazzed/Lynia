@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
@@ -1238,6 +1239,34 @@ describe("OrderLifecycleService.cancel", () => {
     expect(rebroadcasts).toEqual([["o1", "rebroadcast-1"]]);
   });
 
+  it("tells the customer, in the after-send v2 copy, that other riders are being asked at the same price", async () => {
+    const notifyProfiles = vi.spyOn(noopNotifications, "notifyProfiles");
+    try {
+      const { svc } = build(
+        cancellable({
+          order: {
+            findUnique: async () => order({ proposedFare: new Prisma.Decimal("3.36") }),
+            updateMany: async () => ({ count: 1 }),
+            create: async () => ({ id: "rebroadcast-1" }),
+          },
+          rider: {
+            findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
+            update: async () => ({}),
+          },
+        }),
+      );
+      await svc.cancel("o1", "r1");
+      expect(notifyProfiles).toHaveBeenCalledWith(["c1"], {
+        title: "Your rider cancelled",
+        body: "We're asking other riders at $3.36.",
+        // The tap lands on the NEW clone's order screen.
+        data: { orderId: "rebroadcast-1", kind: "rebroadcast" },
+      });
+    } finally {
+      notifyProfiles.mockRestore();
+    }
+  });
+
   it("F-12: a rejected post-commit announceOpenOrder is caught — the rider cancel still resolves", async () => {
     const { svc, orders } = build(
       cancellable({
@@ -1577,6 +1606,137 @@ describe("OrderLifecycleService.rate — parcel feedback tags", () => {
     });
     await svc.rate("o1", "c1", 5, undefined, undefined, ["careful", "on_time"]);
     expect(ratingData).toMatchObject({ score: 5, foodScore: null, tags: ["careful", "on_time"] });
+  });
+});
+
+describe("OrderLifecycleService.rate — late rating after the auto-close (after-send v2)", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  /**
+   * A stateful fake of one parcel order through BOTH completion edges: completeOrder (the auto-close)
+   * then the customer's late rate(). Tracks the order's status, its rating rows, the rider row and
+   * every commission debit / status push, so the test can assert each side effect happened exactly once.
+   */
+  function lateHarness(opts: { deliveredAgoMs: number; rider?: Record<string, unknown>; deliveredAt?: "column" | "event" | "none" }) {
+    const deliveredAt = new Date(Date.now() - opts.deliveredAgoMs);
+    const row = {
+      status: "delivered",
+      orderType: "parcel",
+      customerId: "c1",
+      riderId: "r1",
+      merchantId: null,
+      agreedFare: 3,
+      suggestedFare: 3,
+      deliveredAt: (opts.deliveredAt ?? "column") === "column" ? deliveredAt : null,
+      completedAt: null as Date | null,
+    };
+    const rider: Record<string, unknown> = { ratingAvg: 4, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null, ...opts.rider };
+    const ratings: Array<Record<string, unknown>> = [];
+    const updateManyCalls: Array<Record<string, unknown>> = [];
+    const events: string[] = [];
+    const h = build({
+      order: {
+        findUnique: async () => ({ ...row }),
+        updateMany: async (args: { where: { status: string }; data: Record<string, unknown> }) => {
+          updateManyCalls.push(args);
+          if (row.status !== args.where.status) return { count: 0 };
+          Object.assign(row, args.data);
+          return { count: 1 };
+        },
+      },
+      orderEvent: {
+        create: async (args: { data: { status: string } }) => { events.push(args.data.status); return {}; },
+        findFirst: async () => (opts.deliveredAt === "event" ? { createdAt: deliveredAt } : null),
+      },
+      rating: {
+        findUnique: async () => ratings[0] ?? null,
+        create: async (args: { data: Record<string, unknown> }) => { ratings.push(args.data); return {}; },
+        count: async () => 0,
+      },
+      rider: {
+        findUnique: async () => ({ ...rider }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          for (const [k, v] of Object.entries(args.data)) {
+            rider[k] = v && typeof v === "object" && "increment" in v ? (rider[k] as number) + (v as { increment: number }).increment : v;
+          }
+          return {};
+        },
+      },
+    });
+    return { ...h, row, rider, ratings, updateManyCalls, events };
+  }
+
+  it("rates an auto-closed order within 7 days — rating row + star aggregate, but no second trip, recovery, commission or completion push", async () => {
+    const h = lateHarness({ deliveredAgoMs: 2 * 24 * HOUR });
+    const notifyOrderStatus = vi.spyOn(noopNotifications, "notifyOrderStatus");
+    // The auto-close: one trip, +RECOVER (90 → 92), one commission debit, one completion event + push.
+    expect(await h.svc.completeOrder("o1")).toEqual({ completed: true });
+    expect(h.rider).toMatchObject({ tripsCount: 6, reliabilityScore: 92 });
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+    notifyOrderStatus.mockClear();
+
+    expect(await h.svc.rate("o1", "c1", 5, undefined, undefined, ["on_time"])).toEqual({ orderId: "o1", status: "completed" });
+
+    expect(h.row.status).toBe("completed");
+    expect(h.ratings).toEqual([expect.objectContaining({ orderId: "o1", byProfileId: "c1", score: 5, tags: ["on_time"] })]);
+    // (4*2 + 5) / 3 — the rating still moves the public aggregate…
+    expect(h.rider.ratingAvg as number).toBeCloseTo(4.3333, 3);
+    expect(h.rider.ratingCount).toBe(3);
+    // …but the trip, the recovery and the commission were the auto-close's, and stay single.
+    expect(h.rider).toMatchObject({ tripsCount: 6, reliabilityScore: 92 });
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+    expect(h.events).toEqual(["completed"]);
+    // Only a WS refetch nudge for the late rating — never a second "Delivery complete" push to the rider.
+    expect(h.emits).toEqual([["o1", "completed"], ["o1", "completed"]]);
+    expect(notifyOrderStatus).not.toHaveBeenCalled();
+    // The late path's CAS is on the observed `completed` status (a row-lock no-op write, no status change).
+    expect(h.updateManyCalls.at(-1)).toMatchObject({ where: { id: "o1", status: "completed", customerId: "c1" } });
+    expect(h.updateManyCalls.at(-1)!.data).not.toHaveProperty("status");
+    notifyOrderStatus.mockRestore();
+  });
+
+  it("a LOW late rating still costs the rider its reliability penalty (once), on top of the auto-close recovery", async () => {
+    const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
+    await h.svc.completeOrder("o1"); // 90 → 92
+    await h.svc.rate("o1", "c1", 2);
+    // -lowRating (10): 92 → 82. No second +RECOVER, no second trip.
+    expect(h.rider).toMatchObject({ reliabilityScore: 82, tripsCount: 6, ratingCount: 3 });
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+  });
+
+  it("409s after the 7-day window, writing nothing", async () => {
+    const h = lateHarness({ deliveredAgoMs: 7 * 24 * HOUR + 60_000 });
+    await h.svc.completeOrder("o1");
+    await expect(h.svc.rate("o1", "c1", 5)).rejects.toThrow(/too late to rate/i);
+    expect(h.ratings).toEqual([]);
+    expect(h.rider).toMatchObject({ ratingCount: 2, tripsCount: 6 });
+  });
+
+  it("409s an order that's already rated (a normal rate, or a second late one)", async () => {
+    const h = lateHarness({ deliveredAgoMs: HOUR });
+    await h.svc.rate("o1", "c1", 4); // the normal path: delivered → completed, one rating row
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+    await expect(h.svc.rate("o1", "c1", 5)).rejects.toThrow(/already rated/i);
+    expect(h.ratings).toHaveLength(1);
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+  });
+
+  it("maps a concurrent duplicate's unique violation (P2002) to the same 409", async () => {
+    const h = lateHarness({ deliveredAgoMs: HOUR });
+    await h.svc.completeOrder("o1");
+    (h.prisma.rating as Record<string, unknown>).create = async () => {
+      throw new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
+    };
+    await expect(h.svc.rate("o1", "c1", 5)).rejects.toThrow(/already rated/i);
+  });
+
+  it("falls back to the `delivered` event when the order has no deliveredAt stamp", async () => {
+    const ok = lateHarness({ deliveredAgoMs: 6 * 24 * HOUR, deliveredAt: "event" });
+    await ok.svc.completeOrder("o1");
+    await expect(ok.svc.rate("o1", "c1", 5)).resolves.toEqual({ orderId: "o1", status: "completed" });
+    const late = lateHarness({ deliveredAgoMs: 8 * 24 * HOUR, deliveredAt: "event" });
+    await late.svc.completeOrder("o1");
+    await expect(late.svc.rate("o1", "c1", 5)).rejects.toThrow(/too late to rate/i);
   });
 });
 

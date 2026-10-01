@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53.** D-53 is the customer order screen redesign (2026-10-01): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53.** D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -2579,3 +2579,53 @@ the four 320×640 re-checks), produced by `tools/parity/shoot-after-send.mjs`.
 
 **Upstream asks:** redraw the gallery's `LJ` order screens from this handoff; draw the delivery code at
 six digits; make the grabber row clear `--target-min` or drop "tap the grabber".
+
+### 5 · The v2 round (2026-10-01) — corrections + the states v1 didn't draw
+
+**Owner instruction, this session:** the owner sent the v1 gaps back to Claude Design (the prompt and
+materials are in `packages/design/handoff/after-send-v2/PROMPT-v2.md`), uploaded the answer
+(`design_handoff_after_send_v2`) with *"claude code has designed the gaps you gave"*.
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/after-send-v2/` | The v2 handoff, **verbatim**: `README.md` (the v2 spec + changelog per state, peek floors, share and push copy, gallery map), `PROMPT-v2.md`, `BRIEF.md`, `CLAUDE-CODE-PROMPT.md`, `v1/README-v1.md`, and `design/` (the standalone HTML with every v1 + 2.x state at 360×720, 320×640 and font scale 1.3; `as-kit.jsx` with the updated `A`; `as-screens.jsx`; `as-v2.jsx`). It supersedes `after-send/` as the LOOK for `app/order/[id].tsx`; `after-send/` stays as the v1 record. |
+
+**What v2 resolved from §4 above:** the code is drawn at six digits (3+3, "418 290"); the grabber row is
+28px with a 120×44 tap/drag target above the sheet edge (tap toggles; "Show more" / "Show less");
+state 13 is redrawn as the re-broadcast's finding state ("Tendai had to cancel." · "Raise to $3.86");
+the "Re-issue" gap is drawn as "Getting your code…" (2.14); "You rated Tendai ★★★★ Good" comes from the
+snapshot now; Share my trip shares text (no link). Those §4 rows no longer apply.
+
+**What changed in the app:** every 2.x state (2.1 opening · 2.2/2.3 load errors · 2.4 the saved copy on
+an offline cold start · 2.5/2.6 raise in flight / failed, non-optimistic · 2.7 · 2.8 notify confirmed /
+unavailable · 2.9 choose in flight + slow · 2.10 the 15 s choose grace · 2.11 offer variants · 2.12 no GPS
+fix · 2.13 rider card variants · 2.14 · 2.15 no number yet · 2.16 the photo viewer · 2.17 Report a problem
+· 2.18 back from the emergency call · 2.19 · 2.21/2.22/2.24 failures with "Try again" · 2.23 no reason
+pre-selected · 2.25 rate a completed trip within 7 days · 2.26 · 2.27 receipt variants · 2.29 reasons +
+bodies · 2.30 · 2.31 · 2.32 font scale: buttons grow, labels wrap, header title ellipsises), the measured
+peek with the README's floors, and the CHANGED v1 states. **API:** the snapshot's `rating`; rating an
+auto-closed order within 7 days (side effects once); new offers refused after the window, choosing allowed
+for 15 s more (`OFFER_CHOOSE_GRACE_MS`), expiry deferred while offers are pending; parcel push copy from
+the README table (never the delivery code). The order screen keeps its last snapshot on disk
+(`net/order-copy-store.ts`, wiped with the query cache at sign-out) for 2.4.
+
+**Still different from v2:**
+
+| Where | v2 | App | Why |
+|---|---|---|---|
+| 2.33 Home live-order bar | A 60px white card per stage; "Rider at the drop-off · Code 418290" | Home keeps the home-8c mint pill (no code) | It contradicts the approved home-8c handoff, which removed the code from the pill on purpose — **owner to choose**; not changed until then |
+| 2.34 "Arriving" push | "Tendai is at the drop-off" | Not sent; the `en_route_dropoff` push stays "On the way to drop-off" | The server has no arrival signal — `en_route_dropoff` fires when the rider leaves the pickup |
+| 2.34 ETAs in pushes | "Arriving in about 6 min", "About 12 min" | Dropped (the offer push keeps the bid's ETA) | The server has no live ETA |
+| 2.34 LyniaGo-cancelled push | "Open to see why. Nothing to pay." | As drawn | Note: screen 18c leaves "Nothing to pay." out — **upstream**: confirm which |
+| 2.4 saved copy | Any stage | Saved per status change while the order is live; the code card still works from SecureStore | — |
+| 2.17 Report a problem | "Tell us more · Optional" | When left empty, the picked type is sent as the description | The support case requires a description |
+| 2.18 | The note shows when the app becomes active again | Shows as soon as Emergency is tapped (the dialer is in front) | Same outcome without an AppState listener |
+| Part 3 — the gallery | Delete the old LJ order screens, register the v2 ids | Not done here | `packages/design/` mirrors the design tool: the gallery changes with a design export (CLAUDE.md). The old ids stay SUPERSEDED |
+| `/dev/order-states` | Every v1 + 2.x frame | `tools/parity/shoot-after-send.mjs` renders them from fixtures | No dev-only route in the production bundle |
+| Map | Drawn streets | The real map (grey in the parity render) | — |
+
+Evidence: `docs/parity/AFTER-SEND-V2-2026-10-01.png` (v2 handoff left, app right).
+
+**Upstream asks (v2):** export the gallery with the v2 ids; settle 2.33 against home-8c; confirm
+"Nothing to pay" for LyniaGo cancels; confirm the 999 number and support hours with ops.
+

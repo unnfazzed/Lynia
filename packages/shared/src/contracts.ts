@@ -9,6 +9,12 @@ import { z } from "zod";
  *  value — one source so the clock the customer sees and the server enforces can't drift. */
 export const OFFER_WINDOW_MS = 90_000;
 
+/** Choose grace after the offer window (after-send v2). When the countdown hits 0, offers already on
+ *  the customer's screen stay choosable for this long; NEW offers are refused from the window end.
+ *  The API expires an order with pending offers only once the grace has run out (one with none
+ *  expires at the window end). `expiresAt` still marks the window end, not the end of the grace. */
+export const OFFER_CHOOSE_GRACE_MS = 15_000;
+
 /** Presence escalation window (INTERFACE-AUDIT C5). One shared constant for BOTH sides of a live
  *  trip: after this long with a socket dark, the muted "live paused" treatment escalates to a
  *  warning (customer: "rider offline — call your rider"; rider: reassurance → warning). Rider

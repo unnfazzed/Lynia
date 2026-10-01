@@ -1,4 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
+import { OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { TokenService } from "../auth/token.service";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -344,6 +345,96 @@ describe("MatchingService.expireOrder — persists the no-supply verdict for lat
     expect(orderUpdate).not.toHaveBeenCalled();
     // Bids existed → noSupply=false, hadOffers=true → the honest "riders offered" copy, not "raise price".
     expect(notifyOrderExpired).toHaveBeenCalledWith(orderId, false, true);
+  });
+});
+
+describe("MatchingService — the 15 s choose grace after the offer window (after-send v2)", () => {
+  /** A selectable pending offer on an order created `ageMs` ago; `claim` is the assign CAS's count. */
+  function selectSvc(ageMs: number, claim = 1) {
+    const orderUpdateMany = vi.fn(async () => ({ count: claim }));
+    const { service, metrics } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "3.00" },
+          order: { status: "open_for_offers", customerId: "cust", createdAt: new Date(Date.now() - ageMs) },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: orderUpdateMany, findFirst: async () => null },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    return { service, metrics, orderUpdateMany };
+  }
+
+  it("still assigns an offer chosen inside the grace (window over, grace not), and pins the grace in the CAS", async () => {
+    const { service, orderUpdateMany } = selectSvc(OFFER_WINDOW_MS + 5_000);
+    await expect(service.selectOffer(orderId, offerId, "cust")).resolves.toMatchObject({ status: "assigned", riderId: "r1" });
+    const where = (orderUpdateMany.mock.calls[0] as unknown as [{ where: { createdAt: { gt: Date } } }])[0].where;
+    expect(where).toMatchObject({ id: orderId, status: "open_for_offers" });
+    // The CAS cutoff is window + grace ago — an order older than that can't be claimed even if it's still open.
+    const cutoffAgo = Date.now() - where.createdAt.gt.getTime();
+    expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
+    expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+  });
+
+  it("409s once the grace has run out, without touching the order — even though it's still open_for_offers", async () => {
+    const { service, metrics, orderUpdateMany } = selectSvc(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+    await expect(service.selectOffer(orderId, offerId, "cust")).rejects.toThrow(/time to choose has ended/i);
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+    expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "not_open" satisfies MatchSelectOutcome);
+  });
+
+  /** expireOrder's tx: `claim` is the expiry CAS's count; `stillOpen` is the order the deferral re-read finds. */
+  function expireSvc(claim: number, stillOpen: { createdAt: Date } | null) {
+    const updateMany = vi.fn(async () => ({ count: claim }));
+    const offerUpdateMany = vi.fn(async () => ({ count: 0 }));
+    const eventCreate = vi.fn(async () => ({}));
+    const tx = {
+      order: { updateMany, findFirst: async () => stillOpen },
+      offer: { count: async () => 1, updateMany: offerUpdateMany },
+      orderEvent: { create: eventCreate },
+    };
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+      order: { findUnique: async () => ({ pickup: { point: { lat: -17.8, lng: 31.05 } }, createdAt: new Date() }), update: async () => ({}) },
+    } as unknown as PrismaService;
+    const notifyOrderExpired = vi.fn(async () => {});
+    const service = new MatchingService(prisma, noopTokens, { notifyOrderExpired } as unknown as NotificationsService, fakeMetrics(), noopGateway, noopTracking);
+    return { service, updateMany, offerUpdateMany, eventCreate, notifyOrderExpired };
+  }
+
+  it("the expiry CAS only claims an order past the grace OR with no pending offer", async () => {
+    const { service, updateMany } = expireSvc(1, null);
+    await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: true });
+    const where = (updateMany.mock.calls[0] as unknown as [{ where: { OR: [{ createdAt: { lte: Date } }, unknown] } }])[0].where;
+    expect(where).toMatchObject({
+      id: orderId,
+      status: "open_for_offers",
+      OR: [{ createdAt: { lte: expect.any(Date) } }, { offers: { none: { status: "pending" } } }],
+    });
+    const cutoffAgo = Date.now() - where.OR[0].createdAt.lte.getTime();
+    expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
+    expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+  });
+
+  it("defers (no expiry, no push) an order still holding pending offers inside the grace, and says when the grace ends", async () => {
+    const createdAt = new Date(Date.now() - OFFER_WINDOW_MS - 2_000);
+    const { service, offerUpdateMany, eventCreate, notifyOrderExpired } = expireSvc(0, { createdAt });
+    const res = await service.expireOrder(orderId);
+    expect(res).toEqual({ expired: false, graceEndsAt: new Date(createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) });
+    expect(offerUpdateMany).not.toHaveBeenCalled();
+    expect(eventCreate).not.toHaveBeenCalled();
+    expect(notifyOrderExpired).not.toHaveBeenCalled();
+  });
+
+  it("is a plain no-op (no graceEndsAt) once the order already left open_for_offers", async () => {
+    const { service } = expireSvc(0, null);
+    await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: false });
   });
 });
 

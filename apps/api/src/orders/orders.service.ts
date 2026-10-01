@@ -947,7 +947,7 @@ export class OrdersService {
 
     const storage = this.storage; // consts (not `this.`/`order.` members) so the closures below narrow
     const pickupPhotoKey = order.pickupPhotoKey;
-    const [rider, ridersNearby, rebroadcastedToId, hadOffers, pickupPhotoUrl] = await Promise.all([
+    const [rider, ridersNearby, rebroadcastedToId, hadOffers, pickupPhotoUrl, rating] = await Promise.all([
       // Freshest rider position: the live-position index (Redis) leads the PG columns, which only
       // hold the last throttled flush. Fall back to the PG snapshot on a miss / no-Redis.
       (async () => {
@@ -1006,6 +1006,21 @@ export class OrdersService {
               () => null,
             );
           })()
+        : null,
+
+      // After-send v2: the CUSTOMER's own rating of this order ("You rated Tendai ★★★★ Good" on Trip
+      // complete), and whether a completed order is still unrated (OrderLifecycleService.rate's late
+      // path). Only the customer→rider direction (byProfileId = the customer); the rider's "rate the
+      // sender" row is never surfaced here. Null for the rider viewer and on every status but `completed`
+      // (rate() writes the row in the same commit that completes the order, so a `delivered` order is
+      // always unrated) — the live-tracking polls never pay for it.
+      isCustomer && !isRider && order.status === "completed"
+        ? this.prisma.rating
+            .findUnique({
+              where: { orderId_byProfileId: { orderId: order.id, byProfileId: order.customerId } },
+              select: { score: true, tags: true },
+            })
+            .then((r) => (r ? { score: r.score, tags: r.tags } : null))
         : null,
     ]);
 
@@ -1089,6 +1104,9 @@ export class OrdersService {
       hadOffers,
       rider,
       riderCard,
+      // The customer's own rating of this order ({ score, tags }), or null — unrated, the rider viewer,
+      // or a status with no rating. See the side-read above.
+      rating,
       // A-O5: deduped to one row per status (earliest occurrence) — see {@link dedupeEventsByStatus}.
       events: dedupeEventsByStatus(order.events),
       counterpartyPhone,

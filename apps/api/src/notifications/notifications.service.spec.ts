@@ -384,20 +384,30 @@ describe("NotificationsService — notifyRidersAvailable durable feed fallback (
   });
 });
 
-describe("NotificationsService — notifyOrderExpired copy branches (Fix 1)", () => {
-  it("uses the honest 'riders offered' copy when the auction had bids (not 'raise your price')", async () => {
+describe("NotificationsService — notifyOrderExpired copy (after-send v2 \"No match\")", () => {
+  it("names the closed price and the one-tap resend at +$0.50 when the auction had bids", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", proposedFare: "3.36" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
 
     await service.notifyOrderExpired("o1", false, true);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent.title).toBe("The window closed");
-    expect(sent.body).toContain("no need to raise the price");
+    expect(sent).toMatchObject({ title: "No rider took $3.36", body: "Send again at $3.86 in one tap.", data: { orderId: "o1", status: "expired" } });
   });
 
-  it("keeps the default raise-the-price nudge when there were no bids and supply was unknown", async () => {
+  it("uses the same copy with no bids (supply present or unknown)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", proposedFare: 3 });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderExpired("o1", false, false);
+
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent).toMatchObject({ title: "No rider took $3.00", body: "Send again at $3.50 in one tap." });
+  });
+
+  it("falls back to the static notice when the price can't be read", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
@@ -405,12 +415,12 @@ describe("NotificationsService — notifyOrderExpired copy branches (Fix 1)", ()
     await service.notifyOrderExpired("o1", false, false);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent.body).toContain("raising it");
+    expect(sent.title).toBe("No riders yet");
   });
 
-  it("no-supply takes precedence over hadOffers (only ever computed when there were no bids)", async () => {
+  it("no-supply keeps its honest 'nobody was online' copy", async () => {
     const { prisma, push, service } = makeDeps();
-    prisma.order.findUnique.mockResolvedValue({ customerId: "cust" });
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", proposedFare: "3.36" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
 
     await service.notifyOrderExpired("o1", true, false);
@@ -421,13 +431,110 @@ describe("NotificationsService — notifyOrderExpired copy branches (Fix 1)", ()
 });
 
 describe("NotificationsService — new-offer notice", () => {
-  it("notifies the customer with the order id and an `offer` kind", async () => {
+  const offerRow = (fare: string, eta: number, firstName: string | null, lastName: string | null) => ({
+    offeredFare: fare,
+    etaMinutes: eta,
+    rider: { profile: { firstName, lastName } },
+  });
+
+  it("notifies the customer with the order id and an `offer` kind, collapsed per order", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
     await service.notifyNewOffer("o1", "cust");
     expect(push.sendEach).toHaveBeenCalledWith([
-      expect.objectContaining({ token: "c1", data: { orderId: "o1", kind: "offer" } }),
+      expect.objectContaining({ token: "c1", data: { orderId: "o1", kind: "offer" }, collapseKey: "order:o1:offers" }),
     ]);
+  });
+
+  it("the first offer names the rider (first name + initial), the price and their pickup ETA", async () => {
+    const { prisma, push, service } = makeDeps();
+    Object.assign(prisma, { offer: { findMany: vi.fn().mockResolvedValue([offerRow("3", 6, "Tendai", "Moyo")]), count: vi.fn() } });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+    await service.notifyNewOffer("o1", "cust");
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent).toMatchObject({ title: "New offer: $3.00", body: "Tendai M. can pick up in 6 min. Choose before the timer ends." });
+  });
+
+  it("two or more pending offers become a count", async () => {
+    const { prisma, push, service } = makeDeps();
+    Object.assign(prisma, {
+      offer: {
+        findMany: vi.fn().mockResolvedValue([offerRow("3.5", 4, "Rudo", "Chari"), offerRow("3", 6, "Tendai", "Moyo")]),
+        count: vi.fn().mockResolvedValue(3),
+      },
+    });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+    await service.notifyNewOffer("o1", "cust");
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent).toMatchObject({ title: "3 offers for your parcel", body: "Choose a rider before the timer ends." });
+  });
+
+  it("still pushes (generic copy) when the offer lookup fails", async () => {
+    const { prisma, push, service } = makeDeps();
+    Object.assign(prisma, { offer: { findMany: vi.fn().mockRejectedValue(new Error("db blip")), count: vi.fn() } });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+    await service.notifyNewOffer("o1", "cust");
+    const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
+    expect(sent).toMatchObject({ title: "New offer for your parcel", data: { orderId: "o1", kind: "offer" } });
+  });
+});
+
+describe("NotificationsService — parcel customer stage copy (after-send v2)", () => {
+  const parcel = (over: Record<string, unknown> = {}) => ({
+    customerId: "cust",
+    riderId: "rider",
+    orderType: "parcel",
+    dropoff: { point: { lat: -17.8, lng: 31.05 }, landmark: "14 Glenara Ave" },
+    deliveredAt: new Date("2026-09-30T07:31:00Z"), // 09:31 in Harare (UTC+2)
+    undeliveredReason: "unreachable",
+    rider: { profile: { firstName: "Tendai" } },
+    ...over,
+  });
+  async function sentFor(status: string, order: Record<string, unknown>) {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue(order);
+    prisma.deviceToken.findMany.mockImplementation(async ({ where }: { where: { profileId: { in: string[] } } }) =>
+      where.profileId.in.map((id) => ({ token: `${id}-tok`, profileId: id })),
+    );
+    await service.notifyOrderStatus("o1", status);
+    return (push.sendEach as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0][0] as PushMessage);
+  }
+
+  it.each([
+    ["en_route_pickup", "Tendai is on the way to pickup", "Open to see your delivery code."],
+    ["picked_up", "Tendai has your parcel", "On the way to 14 Glenara Ave."],
+    ["delivered", "Parcel delivered", "Handed over at 09:31. Tap to rate Tendai."],
+    ["undelivered", "Tendai couldn't deliver your parcel", "Recipient didn't answer. Call Tendai to sort it out."],
+  ])("%s → the named copy, deep-linked to the order", async (status, title, body) => {
+    const [sent] = await sentFor(status, parcel());
+    expect(sent).toMatchObject({ token: "cust-tok", title, body, data: { orderId: "o1", status, to: "customer", orderType: "parcel" } });
+  });
+
+  it("falls back to 'your rider' / 'the drop-off' / no time when the names and stamps are missing", async () => {
+    const bare = parcel({ rider: null, dropoff: { point: { lat: 0, lng: 0 } }, deliveredAt: null, undeliveredReason: null });
+    expect((await sentFor("en_route_pickup", bare))[0]).toMatchObject({ title: "Your rider is on the way to pickup" });
+    expect((await sentFor("picked_up", bare))[0]).toMatchObject({ title: "Your rider has your parcel", body: "On the way to the drop-off." });
+    expect((await sentFor("delivered", bare))[0]).toMatchObject({ body: "Tap to rate your rider." });
+    expect((await sentFor("undelivered", bare))[0]).toMatchObject({ body: "Call your rider to sort it out." });
+  });
+
+  it("cancelled: the customer gets 'Your order was cancelled', the rider keeps the rider copy", async () => {
+    const sent = await sentFor("cancelled", parcel());
+    expect(sent.find((m) => m.token === "cust-tok")).toMatchObject({ title: "Your order was cancelled", body: "Open to see why. Nothing to pay." });
+    expect(sent.find((m) => m.token === "rider-tok")).toMatchObject({ title: "Order cancelled", body: "This delivery was cancelled." });
+  });
+
+  it("no push carries the delivery code", async () => {
+    for (const status of ["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff", "delivered", "undelivered", "cancelled"]) {
+      for (const m of await sentFor(status, parcel())) {
+        expect(JSON.stringify(m)).not.toMatch(/\b\d{4,6}\b/);
+      }
+    }
+  });
+
+  it("leaves the food-order copy alone", async () => {
+    const [sent] = await sentFor("en_route_dropoff", parcel({ orderType: "merchant" }));
+    expect(sent).toMatchObject({ title: "Your rider is at the door" });
   });
 });
 

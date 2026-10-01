@@ -1,4 +1,4 @@
-import { GPS_PAUSED_MS, phoneMasked, resolveStage, type StageInput, stageMapShare, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
+import { GPS_PAUSED_MS, phoneMasked, resolveStage, type StageInput, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
 
 const NOW = Date.parse("2026-10-01T09:30:00Z");
 const DROP = { lat: -17.8105, lng: 31.0705 };
@@ -73,6 +73,25 @@ describe("resolveStage", () => {
     expect(stage({ status: "open_for_offers", rider: stale }).gpsPaused).toBe(false);
   });
 
+  it("v2 state 13: the re-broadcast after a rider cancel is a finding state until an offer lands", () => {
+    expect(stage({ reopened: true }).stage).toBe("reopened");
+    expect(stage({ reopened: true, ridersNearby: 0 }).stage).toBe("reopened");
+    expect(stage({ reopened: true, offerCount: 1 }).stage).toBe("offers");
+    // Its window closing is the ordinary no-match retry.
+    expect(stage({ reopened: true, status: "expired" }).stage).toBe("retryNoMatch");
+  });
+
+  it("v2 2.12: matched with no GPS fix yet, until the 60 s paused rule takes over", () => {
+    const assigned = [{ status: "assigned", createdAt: at(10_000) }];
+    expect(stage({ status: "en_route_pickup", events: assigned }).noFix).toBe(true);
+    expect(stage({ status: "en_route_pickup", events: assigned, rider: { lat: -17.83, lng: 31.05, at: at(1_000) } }).noFix).toBe(false);
+    const old = [{ status: "assigned", createdAt: at(GPS_PAUSED_MS + 5_000) }];
+    const r = stage({ status: "en_route_pickup", events: old });
+    expect(r.gpsPaused).toBe(true);
+    expect(r.noFix).toBe(false);
+    expect(stage({ status: "delivered" }).noFix).toBe(false);
+  });
+
   it("offline follows reachability on every stage", () => {
     expect(stage({ online: false }).offline).toBe(true);
     expect(stage({ status: "picked_up", online: false }).offline).toBe(true);
@@ -96,6 +115,14 @@ describe("stage helpers", () => {
     expect(stageMapShare("undelivered")).toBe(0.22);
     expect(stageMapShare("completed")).toBe(0.2);
     expect(stageMapShare("delivered")).toBe(0.14);
+  });
+
+  it("v2 peek floors per window and font scale", () => {
+    expect(stagePeekFloor("finding", 720, 1)).toBe(424);
+    expect(stagePeekFloor("offers", 640, 1)).toBe(473);
+    expect(stagePeekFloor("offers", 640, 1.3)).toBe(495);
+    expect(stagePeekFloor("handoff", 720, 1.3)).toBe(534);
+    expect(stagePeekFloor("completed", 720, 1)).toBe(0);
   });
 
   it("step track", () => {

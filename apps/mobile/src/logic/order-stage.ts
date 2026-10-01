@@ -14,6 +14,7 @@ export type OrderStage =
   | "handoff"
   | "retryNoMatch"
   | "retryRiderCancelled"
+  | "reopened"
   | "delivered"
   | "completed"
   | "undelivered"
@@ -33,6 +34,11 @@ export interface StageInput {
   /** App-wide reachability (false = offline). */
   online: boolean;
   nowMs: number;
+  /**
+   * This auction is the re-broadcast the server opened when the customer's rider cancelled before
+   * pickup (v2 state 13): while it has no offers it is a finding state with a reason header.
+   */
+  reopened?: boolean;
 }
 
 export interface StageResult {
@@ -41,6 +47,8 @@ export interface StageResult {
   gpsPaused: boolean;
   /** The device is offline (state 19). */
   offline: boolean;
+  /** Matched but no GPS fix has arrived yet, and it's not yet "paused" (v2 2.12). */
+  noFix: boolean;
 }
 
 /** No fix for 60 s on a live trip → the paused marker and the "call them" notice. */
@@ -58,6 +66,7 @@ function baseStage(i: StageInput): OrderStage {
   switch (i.status) {
     case "open_for_offers":
       if (i.offerCount > 0) return "offers";
+      if (i.reopened) return "reopened";
       // `null` is "unknown" — keep the calm finding state rather than claim nobody is online.
       return i.ridersNearby === 0 ? "noRiders" : "finding";
     case "assigned":
@@ -102,7 +111,8 @@ export function resolveStage(i: StageInput): StageResult {
     const t = since ? Date.parse(since) : NaN;
     gpsPaused = Number.isFinite(t) && i.nowMs - t > GPS_PAUSED_MS;
   }
-  return { stage, gpsPaused, offline: !i.online };
+  const noFix = LIVE.has(stage) && i.rider == null && !gpsPaused;
+  return { stage, gpsPaused, offline: !i.online, noFix };
 }
 
 /** The header title per stage (README "Header" table) — keys into the order screen's copy object. */
@@ -115,6 +125,7 @@ const TITLE_KEY = {
   handoff: "tHandoff",
   retryNoMatch: "tNoRider",
   retryRiderCancelled: "tRiderCx",
+  reopened: "tRiderCx",
   delivered: "tDelivered",
   completed: "tComplete",
   undelivered: "tNotDel",
@@ -137,6 +148,7 @@ export function stageMapShare(stage: OrderStage): number {
     case "toPickup":
     case "toDropoff":
     case "cancelled":
+    case "reopened":
       return 0.3;
     case "retryNoMatch":
     case "retryRiderCancelled":
@@ -152,6 +164,33 @@ export function stageMapShare(stage: OrderStage): number {
     case "delivered":
       return 0.14;
   }
+}
+
+/**
+ * v2 peek floors (README "Peek floors"): the sheet's minimum height at peek, in dp, so the stage's
+ * must-see block is fully visible. Columns: 360×720 · 320×640 · 320×640 at font scale 1.3. A window
+ * at least 700dp tall takes the first column; shorter ones the second (third above font scale 1.05).
+ * Stages without a floor return 0 (the measured peek alone decides).
+ */
+const PEEK_FLOORS: Partial<Record<OrderStage, readonly [number, number, number]>> = {
+  finding: [424, 372, 372],
+  noRiders: [424, 372, 372],
+  cancelled: [424, 372, 372],
+  offers: [540, 473, 495],
+  toPickup: [450, 394, 417],
+  toDropoff: [450, 394, 417],
+  handoff: [534, 467, 484],
+  retryNoMatch: [476, 417, 417],
+  retryRiderCancelled: [476, 417, 417],
+  reopened: [476, 417, 417],
+  delivered: [553, 484, 507],
+  undelivered: [502, 439, 473],
+};
+
+export function stagePeekFloor(stage: OrderStage, windowHeight: number, fontScale: number): number {
+  const f = PEEK_FLOORS[stage];
+  if (!f) return 0;
+  return windowHeight >= 700 ? f[0] : fontScale > 1.05 ? f[2] : f[1];
 }
 
 /** The step track's current step: Matched 0 · Picked up 1 · On the way 2 · Delivered 3. */

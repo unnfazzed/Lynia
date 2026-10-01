@@ -24,8 +24,11 @@ const JITTER_MAX_MS = 10_000;
  *  BullMQ job here shouldn't leave it frozen for a quarter of an hour. */
 const RECONCILE_INTERVAL_MS = 2 * 60 * 1000;
 /** A little grace past the window (covers the primary job's own jitter) before the reconciler treats
- *  an `open_for_offers` order as stuck rather than just about to expire on schedule. */
+ *  an `open_for_offers` order as stuck rather than just about to expire on schedule. Also past the
+ *  choose grace (OFFER_CHOOSE_GRACE_MS, 15 s) so the sweep never meets an order expireOrder would defer. */
 const RECONCILE_GRACE_MS = OFFER_WINDOW_MS + JITTER_MAX_MS + 15_000;
+/** Added to the choose-grace follow-up's delay so it lands just after the grace, never just before. */
+const GRACE_FOLLOW_UP_MARGIN_MS = 1_000;
 
 /**
  * Expiry delay with ADDITIVE-ONLY jitter (0–10s) on top of the base window. Bursts of orders created
@@ -67,7 +70,7 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
         async (job) =>
           job.name === "expand"
             ? this.matching.expandBroadcast(job.data.orderId as string, job.data.step as number)
-            : this.matching.expireOrder(job.data.orderId as string),
+            : this.expireOrDefer(job.data.orderId as string),
         { connection },
       );
       this.worker.on("failed", (job, err) =>
@@ -136,6 +139,31 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
         },
       );
     }
+  }
+
+  /**
+   * The expire job's body. An order still holding pending offers inside the choose grace isn't expired
+   * yet (MatchingService.expireOrder) — re-enqueue one follow-up for the grace end. Its own jobId, since
+   * the job running this still owns `orderId`; a 1 s margin keeps it from firing a hair early and
+   * deferring again. A lost follow-up is covered by reconcileStaleOffers (its cutoff is past the grace).
+   */
+  async expireOrDefer(orderId: string): Promise<{ expired: boolean }> {
+    const res = await this.matching.expireOrder(orderId);
+    if (!res.expired && res.graceEndsAt && this.queue) {
+      await this.queue.add(
+        "expire",
+        { orderId },
+        {
+          delay: Math.max(0, res.graceEndsAt.getTime() - Date.now()) + GRACE_FOLLOW_UP_MARGIN_MS,
+          jobId: `grace-${orderId}`,
+          removeOnComplete: true,
+          removeOnFail: 100,
+          attempts: 3,
+          backoff: { type: "exponential", delay: 5_000 },
+        },
+      );
+    }
+    return { expired: res.expired };
   }
 
   /** Expire every order still `open_for_offers` well past its window. Idempotent via expireOrder's

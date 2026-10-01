@@ -58,8 +58,10 @@ export function SmBtn({
   loading?: boolean;
   accessibilityLabel?: string;
 }): React.ReactElement {
-  const bg = kind === "fill" ? (disabled && !loading ? tokens.color.line : tokens.color.accent) : tokens.color.bg;
-  const fg = danger ? tokens.color.danger : kind === "fill" ? (disabled && !loading ? tokens.color.muted : tokens.color.onAccent) : tokens.color.accentText;
+  // v2: loading = a spinner in place of the icon, label kept; disabled = line fill (fill) / muted text.
+  const off = !!disabled && !loading;
+  const bg = kind === "fill" ? (off ? tokens.color.line : tokens.color.accent) : tokens.color.bg;
+  const fg = off ? tokens.color.muted : danger ? tokens.color.danger : kind === "fill" ? tokens.color.onAccent : tokens.color.accentText;
   return (
     <Tappable
       tone={kind === "fill" ? "onDark" : "row"}
@@ -70,12 +72,14 @@ export function SmBtn({
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={{
         flex,
-        height: tokens.touchTargetMin,
+        // minHeight, not height: at a large system font scale the label wraps and the button grows (2.32).
+        minHeight: tokens.touchTargetMin,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         gap: 6,
         paddingHorizontal: 14,
+        paddingVertical: 4,
         borderRadius: tokens.radius.pill,
         backgroundColor: bg,
         borderWidth: kind === "ghost" ? 1.5 : 0,
@@ -84,9 +88,7 @@ export function SmBtn({
       }}
     >
       {loading ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={16} color={fg} /> : null}
-      <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: fg }}>
-        {label}
-      </Text>
+      <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: fg, textAlign: "center", flexShrink: 1, ...TABULAR }}>{label}</Text>
     </Tappable>
   );
 }
@@ -114,7 +116,7 @@ export function CtaButton({
 }): React.ReactElement {
   const off = disabled && !loading;
   const bg = ghost ? tokens.color.bg : off ? tokens.color.line : tokens.color.accent;
-  const fg = danger ? tokens.color.danger : ghost ? tokens.color.accentText : off ? tokens.color.muted : tokens.color.onAccent;
+  const fg = off ? tokens.color.muted : danger ? tokens.color.danger : ghost ? tokens.color.accentText : tokens.color.onAccent;
   return (
     <Tappable
       tone={ghost ? "row" : "onDark"}
@@ -125,7 +127,7 @@ export function CtaButton({
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={{
         flex,
-        height: tokens.touchTargetPrimary,
+        minHeight: tokens.touchTargetPrimary,
         borderRadius: tokens.radius.pill,
         backgroundColor: bg,
         borderWidth: ghost ? 1.5 : 0,
@@ -135,13 +137,13 @@ export function CtaButton({
         justifyContent: "center",
         gap: 8,
         paddingHorizontal: 12,
+        paddingVertical: 6,
         overflow: "hidden",
       }}
     >
       {loading ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={18} color={fg} /> : null}
-      <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: fg }}>
-        {label}
-      </Text>
+      {/* Never truncated: at a large font scale the label wraps and the button grows (2.32). */}
+      <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: fg, textAlign: "center", flexShrink: 1, ...TABULAR }}>{label}</Text>
     </Tappable>
   );
 }
@@ -288,14 +290,16 @@ export function VerifiedTag(): React.ReactElement {
   );
 }
 
-/** "Bike" + the plate chip (12/700, 1.5px ink border, radius 4). */
-export function Plate({ plate }: { plate: string }): React.ReactElement {
+/** "Bike" + the plate chip (12/700, 1.5px ink border, radius 4); "Bike" only when no plate is on file (2.13). */
+export function Plate({ plate }: { plate: string | null }): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <Text style={{ fontSize: 12, color: tokens.color.muted }}>{A.bike}</Text>
-      <View style={{ borderWidth: 1.5, borderColor: tokens.color.ink, borderRadius: 4, paddingHorizontal: 6 }}>
-        <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, letterSpacing: 1, color: tokens.color.ink, lineHeight: 18 }}>{plate}</Text>
-      </View>
+      {plate ? (
+        <View style={{ borderWidth: 1.5, borderColor: tokens.color.ink, borderRadius: 4, paddingHorizontal: 6 }}>
+          <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, letterSpacing: 1, color: tokens.color.ink, lineHeight: 18 }}>{plate}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -354,8 +358,11 @@ export function StepTrack({ current }: { current: number }): React.ReactElement 
               </View>
             </View>
             <Text
-              numberOfLines={1}
+              // v2: labels may wrap to two lines at a large font scale.
+              numberOfLines={2}
               style={{
+                textAlign: "center",
+                paddingHorizontal: 3,
                 fontSize: 12,
                 lineHeight: 16,
                 fontWeight: now ? tokens.font.weight.bold : tokens.font.weight.semibold,
@@ -535,18 +542,28 @@ export function Divider(): React.ReactElement {
   return <View style={{ height: 1, backgroundColor: tokens.color.line }} />;
 }
 
-/** A green dot / red square + the stop name, muted, one line. */
+/** A green dot / red square + the stop name, muted. v2: the address wraps instead of an ellipsis. */
 export function StopLine({ drop, name }: { drop?: boolean; name: string }): React.ReactElement {
   return (
-    <Row gap={8}>
-      {drop ? (
-        <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: tokens.color.danger }} />
-      ) : (
-        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tokens.color.accent }} />
-      )}
-      <Muted lines={1} style={{ flex: 1 }}>
-        {name}
-      </Muted>
+    <Row gap={8} align="flex-start">
+      <View style={{ height: 18, justifyContent: "center" }}>
+        {drop ? (
+          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: tokens.color.danger }} />
+        ) : (
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tokens.color.accent }} />
+        )}
+      </View>
+      <Muted style={{ flex: 1 }}>{name}</Muted>
     </Row>
+  );
+}
+
+/** The green note (price raised, notify confirmed, safety team told): wash, CircleCheck 18, 13/600 accent-text. */
+export function OkNote({ text, style }: { text: string; style?: ViewStyle }): React.ReactElement {
+  return (
+    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, paddingVertical: 10, paddingHorizontal: 12, ...style }}>
+      <Icon name="circle-check" size={18} color={tokens.color.accentText} />
+      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{text}</Text>
+    </View>
   );
 }

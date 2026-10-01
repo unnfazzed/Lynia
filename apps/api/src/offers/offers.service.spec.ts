@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { MakeOfferRequest } from "@lynia/shared";
+import { type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
 import { makeOffer } from "@lynia/shared/fixtures";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -134,6 +134,55 @@ describe("OffersService.makeOffer", () => {
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not open for offers/i);
     expect(create).not.toHaveBeenCalled();
     expect(metrics.incOffersMade).toHaveBeenCalledWith("conflict");
+  });
+
+  it("409s a new bid once the offer window has ended — even inside the choose grace, while the order is still open", async () => {
+    // After-send v2: the order stays `open_for_offers` for OFFER_CHOOSE_GRACE_MS past the window so the
+    // customer can pick from the offers already on screen — but no NEW offer may land in that grace.
+    const create = vi.fn();
+    const riderLookup = vi.fn(async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }));
+    const { service, metrics } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", createdAt: new Date(Date.now() - OFFER_WINDOW_MS - 5_000) }),
+        findFirst: async () => null,
+      },
+      rider: { findUnique: riderLookup },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/offer window has closed/i);
+    expect(create).not.toHaveBeenCalled();
+    expect(riderLookup).not.toHaveBeenCalled(); // refused before any gating work
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("conflict");
+  });
+
+  it("409s (no offer) when the window ends between the pre-check and the FOR UPDATE re-check", async () => {
+    const create = vi.fn();
+    const { service, metrics } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", createdAt: new Date(Date.now() - OFFER_WINDOW_MS + 60_000) }),
+        findFirst: async () => null,
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      // Under the lock the row reads as still open but its window has run out.
+      $queryRaw: async () => [{ status: "open_for_offers", order_type: "parcel", created_at: new Date(Date.now() - OFFER_WINDOW_MS) }],
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/offer window has closed/i);
+    expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("conflict");
+  });
+
+  it("still takes a bid just inside the window", async () => {
+    const { service } = svc({
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", createdAt: new Date(Date.now() - OFFER_WINDOW_MS + 2_000) }),
+        findFirst: async () => null,
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      $queryRaw: async () => [{ status: "open_for_offers", order_type: "parcel", created_at: new Date(Date.now() - OFFER_WINDOW_MS + 2_000) }],
+      offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).resolves.toMatchObject({ id: "o1" });
   });
 
   it("labels the offers_made_total counter by outcome (created / forbidden / conflict)", async () => {

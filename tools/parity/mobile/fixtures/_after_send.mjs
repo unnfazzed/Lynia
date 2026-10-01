@@ -56,8 +56,32 @@ const EVENTS = {
  * @param {object} [o.extra]        snapshot overrides
  * @param {boolean} [o.offline]
  * @param {boolean} [o.race]        Choose answers 409 and the tapped rider drops off the list (state 4)
+ * v2 round:
+ * @param {object} [o.params]       extra route params (e.g. { riderCx: "Tendai" } for state 13)
+ * @param {string[]} [o.fail]       POST path suffixes that answer 500 ("price", "cancel", "resend", "rating")
+ * @param {"queued"|"unavailable"} [o.notify]  the notify-me answer
+ * @param {boolean} [o.codeIssuing] no stored code, and the re-issue never answers (2.14)
+ * @param {number} [o.expiresInMs]  offer window end relative to now (negative = in the 15 s grace)
+ * @param {number|null} [o.loadStatus] the order GET answers this status (404 / 500), or never (null + hang)
+ * @param {boolean} [o.hang]        the order GET never answers (2.1)
  */
-export function stage({ status, offers = 0, nearby = 3, pos, fixAgoMs = 4_000, extra = {}, offline = false, race = false }) {
+export function stage({
+  status,
+  offers = 0,
+  nearby = 3,
+  pos,
+  fixAgoMs = 4_000,
+  extra = {},
+  offline = false,
+  race = false,
+  params = {},
+  fail = [],
+  notify,
+  codeIssuing = false,
+  expiresInMs = 84_000,
+  loadStatus,
+  hang = false,
+}) {
   const moving = ["assigned", "en_route_pickup", "picked_up", "en_route_dropoff"].includes(status);
   const withRider = moving || ["delivered", "completed", "undelivered"].includes(status);
   const events =
@@ -81,14 +105,17 @@ export function stage({ status, offers = 0, nearby = 3, pos, fixAgoMs = 4_000, e
     riderCard: withRider ? RIDER_CARD : null,
     events,
     counterpartyPhone: withRider && status !== "delivered" && status !== "completed" ? "+263771234580" : null,
-    expiresAt: status === "open_for_offers" ? new Date(now + 84_000).toISOString() : null,
+    expiresAt: status === "open_for_offers" ? new Date(now + expiresInMs).toISOString() : null,
     ridersNearby: status === "open_for_offers" ? nearby : null,
     deliveryOtpAttempts: 0,
     codeRotatedAt: null,
     ...extra,
   };
   let live = OFFERS.slice(0, offers);
+  const failing = fail.map((f) => ({ match: new RegExp(`^/orders/[^/]+/${f}$`), method: "POST", status: 500, json: { message: "Internal error" } }));
   installRouter([
+    ...failing,
+    { match: "/orders/notify-me", method: "POST", json: { queued: notify !== "unavailable" } },
     // "+ $0.50" (state 5): the server takes the raise, and the next read carries it.
     {
       match: /^\/orders\/[^/]+\/price$/,
@@ -112,10 +139,19 @@ export function stage({ status, offers = 0, nearby = 3, pos, fixAgoMs = 4_000, e
       },
     },
     { match: /^\/orders\/[^/]+\/offers$/, json: () => live },
-    { match: /^\/orders\/[^/]+$/, json: () => order },
+    { match: /^\/orders\/[^/]+$/, status: loadStatus ?? 200, json: () => (loadStatus ? { message: "x" } : order) },
   ]);
-  setParams({ id: ORDER_ID });
-  if (moving || status === "delivered") void SecureStore.setItemAsync(`lynia.deliveryCode.${ORDER_ID}`, "418290");
+  if (hang || codeIssuing) {
+    const routed = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (hang && /\/orders\/[^/]+$/.test(new URL(url, "http://p").pathname)) return new Promise(() => undefined);
+      if (codeIssuing && /delivery-code\/rotate/.test(url)) return new Promise(() => undefined);
+      return routed(input, init);
+    };
+  }
+  setParams({ id: ORDER_ID, ...params });
+  if ((moving || status === "delivered") && !codeIssuing) void SecureStore.setItemAsync(`lynia.deliveryCode.${ORDER_ID}`, "418290");
   if (offline) {
     __setProbeFetch(async () => false);
     setTimeout(() => reportUnreachable(), 50);

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyniaGo — After Send v2 (corrections + missing states)</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+html,body{margin:0}html{scroll-behavior:smooth}
+body{background:#eceff1;font-family:var(--font-sans);color:var(--ink)}
+a{color:var(--accent-text)}a:hover{color:var(--ink)}
+.nav{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:4px;align-items:center;padding:6px 16px;overflow-x:auto;scrollbar-width:none}
+.nav b{font-size:14px;margin-right:10px;white-space:nowrap}
+.nav a{height:36px;display:flex;align-items:center;padding:0 12px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;color:var(--muted);white-space:nowrap}
+.nav a:hover{background:var(--surface);color:var(--ink)}.nav a.on{background:var(--accent-wash);color:var(--accent-text)}
+main{padding:28px 24px 80px}
+section{scroll-margin-top:64px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:48px 0 6px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:760px;line-height:1.5}
+.grid{display:flex;flex-wrap:wrap;gap:36px 28px;align-items:flex-start;margin-top:16px}
+.cell{display:flex;flex-direction:column;gap:8px;scroll-margin-top:64px}
+.lab{font:600 13px/1.35 var(--font-sans);max-width:360px}.lab span{color:var(--muted);font-weight:400}
+.lab em{display:block;font-style:normal;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px;text-wrap:pretty}
+.badge{display:inline-flex;min-width:26px;height:20px;padding:0 6px;border-radius:999px;background:var(--ink);color:#fff;font-size:11px;align-items:center;justify-content:center;margin-right:6px;box-sizing:border-box}
+.flag{display:inline-flex;height:18px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.04em;align-items:center;margin-right:6px;vertical-align:1px}
+.flag.new{background:var(--accent-wash);color:var(--accent-text)}.flag.chg{background:var(--surface);color:var(--danger);box-shadow:inset 0 0 0 1px var(--danger)}
+.proto{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:16px}
+.rail{width:280px;background:var(--bg);border-radius:12px;padding:8px;max-height:720px;overflow:auto;box-sizing:border-box}
+.rail h4{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:10px 8px 4px}
+.rail button{all:unset;box-sizing:border-box;display:flex;gap:8px;align-items:center;width:100%;min-height:36px;padding:4px 8px;border-radius:8px;font-size:13px;cursor:pointer}
+.rail button:hover{background:var(--surface)}.rail button.on{background:var(--accent-wash);color:var(--accent-text);font-weight:700}
+.rail button .badge{background:var(--surface);color:var(--muted);flex:none}.rail button.on .badge{background:var(--accent-text);color:#fff}
+.pctl{display:flex;flex-direction:column;gap:10px;align-items:center}
+.pbtns{display:flex;gap:8px;align-items:center}
+.pbtns button{all:unset;cursor:pointer;height:40px;padding:0 16px;border-radius:999px;background:var(--bg);font-size:13px;font-weight:700;color:var(--accent-text);box-shadow:0 0 0 1px var(--line)}
+.pbtns button:hover{background:var(--accent-wash)}
+.pbtns span{font-size:13px;color:var(--muted);min-width:120px;text-align:center}
+.card{max-width:820px;font-size:14px;line-height:1.55;background:var(--bg);border-radius:12px;padding:20px 24px;margin-top:16px}
+.card h3{font-size:14px;margin:16px 0 6px}.card h3:first-child{margin-top:0}.card ul{margin:0;padding-left:18px}
+.card table{border-collapse:collapse;width:100%;font-size:13px}.card td,.card th{border-top:1px solid var(--line);padding:8px 8px 8px 0;vertical-align:top;text-align:left}.card td:first-child{font-weight:600}
+.copy{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;max-width:1400px;margin-top:16px}
+.copy div{background:var(--bg);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.5}
+.copy b{display:block;margin-bottom:6px}.copy ul{margin:0;padding-left:16px}
+.sc2-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sc2r .8s linear infinite;box-sizing:border-box}
+.as-spin{display:inline-block;flex:none;border-radius:50%;border:2.5px solid;animation:sc2r .8s linear infinite;box-sizing:border-box}
+@keyframes sc2r{to{transform:rotate(360deg)}}
+.as-ring{position:absolute;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;border:2px solid var(--accent);opacity:0;animation:asr 2.4s ease-out infinite;pointer-events:none}
+.as-ring2{animation-delay:1.2s}
+@keyframes asr{0%{transform:scale(.5);opacity:.7}100%{transform:scale(3.2);opacity:0}}
+@media (prefers-reduced-motion:reduce){.as-ring{animation:none;opacity:.35;transform:scale(1.6)}.as-spin,.sc2-spin{animation-duration:2.4s}}
+.lynia-tabular{font-variant-numeric:tabular-nums}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00b14f"/><text x="50" y="62" font-size="30" font-family="sans-serif" font-weight="700" fill="#fff" text-anchor="middle">v2</text></svg></template>
+<div id="as-root"></div>
+<script type="text/babel" src="sc2-kit.jsx"></script>
+<script type="text/babel" src="as-kit.jsx"></script>
+<script type="text/babel" src="as-screens.jsx"></script>
+<script type="text/babel" src="as-v2.jsx"></script>
+<script type="text/babel">
+/* [id, group, title, note, flag ("chg" changed vs v1 | "new" | ""), render(W,H), opts] */
+const G = [["fixes", "1 · Corrections"], ["loading", "Loading & errors"], ["finding", "Finding"], ["choosing", "Choosing"], ["tracking", "Tracking"], ["safety", "Cancel & help"], ["retry", "Retry"], ["done", "Delivered"], ["ended", "Ended early"], ["global", "Global"]];
+const B = { board: true };
+const ST = [
+  ["1.1a", "fixes", "Code card, 360", "3+3 digits at 28/800 beside Share code; issuing state", "chg", (W) => <CodeBoard W={360} />, { ...B, h: 560 }],
+  ["1.1b", "fixes", "Code card, 320", "Still one row at 1.0; stacks when it overflows", "chg", (W) => <CodeBoard W={320} />, { ...B, h: 560 }],
+  ["1.2", "fixes", "Grabber hit area", "Red dashes = 120×44 tap/drag target: the 28 px grabber row + 16 px above the sheet edge", "chg", (W, H) => <Track W={W} H={H} showHit />, { small: true }],
+
+  ["2.1", "loading", "Opening an order", "Back, no title, no pins, sheet skeleton", "new", (W, H) => <Opening W={W} H={H} />],
+  ["2.2", "loading", "Couldn't load (network)", "Try again + Back to home", "new", (W, H) => <LoadError W={W} H={H} />],
+  ["2.3", "loading", "Not found / not yours", "Permanent: Back to home only", "new", (W, H) => <LoadError W={W} H={H} gone />],
+  ["2.4", "loading", "Offline cold start, saved copy", "Last-known stage, no rider marker or ETA, code works", "new", (W, H) => <Saved W={W} H={H} />, { small: true }],
+
+  ["1", "finding", "Finding, just sent", "", "chg", (W, H) => <Finding W={W} H={H} />],
+  ["1b", "finding", "Cancel request, one-line confirm", "", "", (W, H) => <Finding W={W} H={H} mode="cancel" />],
+  ["2.22b", "finding", "Yes, cancel in flight", "Spinner on Yes, cancel; Keep looking disabled", "new", (W, H) => <Finding W={W} H={H} mode="cancelling" />],
+  ["2", "finding", "No riders online nearby", "", "", (W, H) => <Finding W={W} H={H} mode="none" />],
+  ["2.8a", "finding", "Notify me, confirmed", "Plain text with a check; no longer a link", "new", (W, H) => <Finding W={W} H={H} mode="notifyOn" />],
+  ["2.8b", "finding", "Notify me, can't take reminders", "Fallback line; nothing to tap", "new", (W, H) => <Finding W={W} H={H} mode="notifyFail" />],
+  ["2.5", "finding", "+ $0.50 in flight", "Spinner in the button; price unchanged", "new", (W, H) => <Finding W={W} H={H} mode="raising" />],
+  ["2.6", "finding", "+ $0.50 failed", "Toast + Try again; price stays $3.36", "new", (W, H) => <Finding W={W} H={H} mode="raiseFail" />],
+  ["5", "finding", "Price raised in place", "", "", (W, H) => <Finding W={W} H={H} mode="raised" />],
+
+  ["3", "choosing", "Offers, 3 riders", "Ranked by the app: here a new rider is first", "chg", (W, H) => <Offers W={W} H={H} />, { small: true }],
+  ["4", "choosing", "Select race", "Farai was taken; Tendai is now best match", "chg", (W, H) => <Offers W={W} H={H} race />],
+  ["2.7", "choosing", "Price raised while offers show", "Note sits under the price row, above the list; over-price strips recompute", "new", (W, H) => <Offers W={W} H={H} raised list={[RIDERS.t, RIDERS.k]} />],
+  ["2.9a", "choosing", "Choose in flight", "Spinner in that card; other Choose, + $0.50 and Cancel disabled", "new", (W, H) => <Offers W={W} H={H} busy={0} />],
+  ["2.9b", "choosing", "Choose in flight, slow (> 5 s)", "", "new", (W, H) => <Offers W={W} H={H} busy={0} slow />],
+  ["2.10", "choosing", "Timer hit 0 with offers on screen", "15 s grace to choose; no new offers accepted", "new", (W, H) => <Offers W={W} H={H} late list={[RIDERS.t]} />],
+  ["2.11", "choosing", "Offer card variants", "", "new", (W) => <OfferBoard W={360} />, { ...B, h: 760 }],
+
+  ["6", "tracking", "Matched, to pickup", "6-digit code", "chg", (W, H) => <Track W={W} H={H} />, { small: true }],
+  ["2.12", "tracking", "Matched, no GPS fix yet", "No marker, no ETA", "new", (W, H) => <Track W={W} H={H} stage="nofix" />],
+  ["2.14", "tracking", "Code being issued", "Grey digits, Share code disabled, no Re-issue", "new", (W, H) => <Track W={W} H={H} issuing />],
+  ["2.15", "tracking", "Rider number not available yet", "Call / WhatsApp disabled with a reason", "new", (W, H) => <Track W={W} H={H} noPhone />],
+  ["2.13", "tracking", "Rider card variants, 320", "", "new", () => <RiderBoard W={320} />, { ...B, h: 780 }],
+  ["7", "tracking", "Picked up, to drop-off", "", "chg", (W, H) => <Track W={W} H={H} stage="drop" />],
+  ["2.16", "tracking", "Pickup photo viewer", "Full screen from View", "new", (W, H) => <PhotoViewer W={W} H={H} />],
+  ["8", "tracking", "Hand-off, arriving", "418 290 at 56/800 in one panel", "chg", (W, H) => <Handoff W={W} H={H} />, { small: true }],
+  ["9", "tracking", "Rider GPS paused", "", "chg", (W, H) => <Track W={W} H={H} stage="paused" />],
+  ["19", "tracking", "Offline / reconnecting", "", "chg", (W, H) => <Track W={W} H={H} stage="offline" />],
+
+  ["10a", "safety", "Cancel, before pickup", "No reason pre-selected (2.23)", "chg", (W, H) => <Cancel W={W} H={H} />],
+  ["10b", "safety", "Cancel, after pickup", "No reason pre-selected (2.23)", "chg", (W, H) => <Cancel W={W} H={H} after />],
+  ["2.22a", "safety", "Cancel order in flight", "", "new", (W, H) => <Cancel W={W} H={H} sel={[0]} busy />],
+  ["2.22c", "safety", "Cancel failed", "Toast + Try again; panel stays", "new", (W, H) => <Cancel W={W} H={H} sel={[0]} fail />],
+  ["11", "safety", "Get help", "Share my trip subline: no live link", "chg", (W, H) => <Help W={W} H={H} />],
+  ["2.17a", "safety", "Report a problem", "Send enabled once a type is picked", "new", (W, H) => <Report W={W} H={H} />, { small: true }],
+  ["2.17b", "safety", "Report sent", "", "new", (W, H) => <Report W={W} H={H} done />],
+  ["2.18", "safety", "Back from the emergency call", "Safety-team note stays on the sheet for the trip", "new", (W, H) => <Track W={W} H={H} stage="drop" sos />],
+  ["2.19", "safety", "Share my trip", "Text only, Android share sheet", "new", (W, H) => <ShareTrip W={W} H={H} />],
+
+  ["12", "retry", "No match, window closed", "", "", (W, H) => <Retry W={W} H={H} />],
+  ["2.21a", "retry", "Send again in flight", "", "new", (W, H) => <Retry W={W} H={H} busy />],
+  ["2.21b", "retry", "Send again failed", "", "new", (W, H) => <Retry W={W} H={H} fail />],
+  ["13", "retry", "Rider cancelled before pickup (2.20)", "Already reopened at $3.36; Raise to $3.86 patches the live order", "chg", (W, H) => <RiderCancelled W={W} H={H} />, { small: true }],
+
+  ["14a", "done", "Delivered, rate", "Handed over with code 418290", "chg", (W, H) => <Rate W={W} H={H} />, { small: true }],
+  ["14b", "done", "Delivered, low rating", "", "chg", (W, H) => <Rate W={W} H={H} low />],
+  ["2.24", "done", "Rating didn't save", "After the undo window; stars and tags kept", "new", (W, H) => <Rate W={W} H={H} fail />],
+  ["15", "done", "Rated, undo + receipt", "Rated line carries the word", "chg", (W, H) => <Rated W={W} H={H} />],
+  ["2.26", "done", "Trip complete, rated (= 16)", "", "chg", (W, H) => <Completed W={W} H={H} />],
+  ["2.25", "done", "Trip complete, not rated", "Rate card for 7 days", "new", (W, H) => <Completed W={W} H={H} unrated />],
+  ["2.27", "done", "Receipt variants", "Several items · long address wraps · no pickup time", "new", (W, H) => <Completed W={W} H={H} rv={{ items: ["Documents envelope × 1", "Shoebox × 2", "Laptop bag × 1"], longAddr: true, noPickTime: true }} />],
+
+  ["17", "ended", "Not delivered · didn't answer", "", "", (W, H) => <NotDelivered W={W} H={H} />, { small: true }],
+  ["2.29a", "ended", "Not delivered · refused", "", "new", (W, H) => <NotDelivered W={W} H={H} r={2} tries={1} />],
+  ["2.29b", "ended", "Not delivered · wrong address", "", "new", (W, H) => <NotDelivered W={W} H={H} r={3} tries={2} />],
+  ["2.29c", "ended", "Not delivered · bike broke down", "", "new", (W, H) => <NotDelivered W={W} H={H} r={4} tries={1} />],
+  ["18a", "ended", "Cancelled by you", "", "", (W, H) => <Cancelled W={W} H={H} />],
+  ["2.30", "ended", "Cancelled by you, no reason", "Reason line dropped", "new", (W, H) => <Cancelled W={W} H={H} noReason />],
+  ["18b", "ended", "Cancelled by the rider", "After pickup only; before pickup is 13", "", (W, H) => <Cancelled W={W} H={H} who="rider" />],
+  ["18c", "ended", "Cancelled by LyniaGo", "", "", (W, H) => <Cancelled W={W} H={H} who="lynia" />],
+  ["2.31a", "ended", "LyniaGo, specific ops reason", "", "new", (W, H) => <Cancelled W={W} H={H} who="lynia" ly="specific" />],
+  ["2.31b", "ended", "LyniaGo, generic default", "", "new", (W, H) => <Cancelled W={W} H={H} who="lynia" ly="generic" />],
+
+  ["2.33", "global", "Home live-order bar", "", "new", () => <BarBoard W={360} />, { ...B, h: 560 }],
+  ["2.34", "global", "Push notifications", "", "new", () => <PushBoard W={360} />, { ...B, h: 1100 }],
+];
+const FS = [["3", (W, H) => <Offers W={W} H={H} fs={1.3} />], ["6", (W, H) => <Track W={W} H={H} fs={1.3} />], ["8", (W, H) => <Handoff W={W} H={H} fs={1.3} />], ["14a", (W, H) => <Rate W={W} H={H} fs={1.3} />], ["17", (W, H) => <NotDelivered W={W} H={H} fs={1.3} />]];
+const PHONES = ST.filter(s => !(s[6] || {}).board);
+
+function scanCopy(el) {
+  const nodes = new Set(); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) { const v = w.currentNode.nodeValue.trim(); if (v) nodes.add(v); }
+  const all = el.textContent;
+  return Object.keys(A).filter(k => nodes.has(A[k]) || (A[k].length >= 12 && all.includes(A[k])));
+}
+function Lazy({ W, H, children }) {
+  const ref = React.useRef(null); const [on, setOn] = React.useState(() => new URLSearchParams(location.search).has("frames"));
+  React.useEffect(() => {
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { setOn(true); io.disconnect(); } }, { rootMargin: "800px 0px" });
+    io.observe(ref.current); return () => io.disconnect();
+  }, []);
+  return <div ref={ref} style={{ width: W, minHeight: on ? 0 : H }}>{on ? children : <div style={{ width: W, height: H, borderRadius: 18, background: "var(--surface)" }}></div>}</div>;
+}
+const Flag = ({ f }) => f ? <span className={"flag " + f}>{f === "new" ? "NEW" : "CHANGED"}</span> : null;
+function Cell({ s, W, H, suffix = "", render }) {
+  const o = s[6] || {}, w = o.board ? (s[0] === "1.1b" || s[0] === "2.13" ? 320 : 360) : W, h = o.board ? o.h : H;
+  return <div className="cell" id={`s-${s[0]}${suffix}`} data-screen-label={`${s[0]} ${s[2]}${suffix}`}>
+    <div className="lab" style={{ maxWidth: Math.max(w, 300) }}><span className="badge">{s[0]}</span><Flag f={s[4]} />{s[2]}{suffix ? <span> · {suffix.replace(/-/g, " ").trim()}</span> : null}{s[3] ? <em>{s[3]}</em> : null}</div>
+    <Lazy W={w} H={h}>{(render || s[5])(W, H)}</Lazy>
+  </div>;
+}
+
+function Proto() {
+  const [i, setI] = React.useState(() => Math.min(+(localStorage.getItem("as2-proto-idx") || 0), PHONES.length - 1));
+  const go = (n) => setI((n + PHONES.length) % PHONES.length);
+  React.useEffect(() => { localStorage.setItem("as2-proto-idx", i); }, [i]);
+  React.useEffect(() => {
+    const k = (e) => { if (e.target.tagName === "INPUT") return; if (e.key === "ArrowRight") go(i + 1); if (e.key === "ArrowLeft") go(i - 1); };
+    window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
+  }, [i]);
+  const s = PHONES[i];
+  return <div className="proto">
+    <div className="rail">{G.map(([g, gl]) => PHONES.some(x => x[1] === g) ? <div key={g}><h4>{gl}</h4>{PHONES.map((x, j) => x[1] === g ? <button key={x[0]} className={j === i ? "on" : ""} onClick={() => setI(j)}><span className="badge">{x[0]}</span>{x[2]}</button> : null)}</div> : null)}</div>
+    <div className="pctl">
+      <div onClick={() => go(i + 1)} style={{ cursor: "pointer" }} title="Click for the next state" key={s[0]}>{s[5](360, 720)}</div>
+      <div className="pbtns"><button onClick={() => go(i - 1)}>‹ Previous</button><span>{i + 1} of {PHONES.length} · ← → keys</span><button onClick={() => go(i + 1)}>Next ›</button></div>
+      <div className="lab" style={{ textAlign: "center" }}><span className="badge">{s[0]}</span><Flag f={s[4]} />{s[2]}<em>{s[3]}</em></div>
+    </div>
+  </div>;
+}
+
+function Nav() {
+  const ids = [["proto", "Prototype"], ...G, ["small", "320 × 640"], ["scale", "Font 1.3"], ["rules", "Decisions"], ["gallery", "Gallery map"], ["copy", "Copy"]];
+  const [on, setOn] = React.useState("proto");
+  React.useEffect(() => {
+    const f = () => { let cur = ids[0][0]; for (const [id] of ids) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top < 120) cur = id; } setOn(cur); };
+    window.addEventListener("scroll", f, { passive: true }); f(); return () => window.removeEventListener("scroll", f);
+  }, []);
+  return <nav className="nav"><b>After Send v2</b>{ids.map(([id, l]) => <a key={id} href={"#" + id} className={on === id ? "on" : ""}>{l}</a>)}</nav>;
+}
+
+function CopyList() {
+  const [copy, setCopy] = React.useState(null);
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      const box = document.createElement("div"); box.style.cssText = "position:absolute;left:-9999px;top:0"; document.body.appendChild(box);
+      const out = {};
+      for (const s of ST) { const r = ReactDOM.createRoot(box); ReactDOM.flushSync(() => r.render(s[5](360, 720))); out[s[0]] = scanCopy(box); r.unmount(); }
+      box.remove(); setCopy(out);
+    }, 600);
+    return () => clearTimeout(t);
+  }, []);
+  return <div className="copy">{ST.map(s => <div key={s[0]}><b>{s[0]} · {s[2]}</b><ul>{((copy && copy[s[0]]) || []).map(k => <li key={k}><code style={{ color: "var(--muted)" }}>{k}</code> {A[k]}</li>)}</ul></div>)}</div>;
+}
+
+const GAL = [["auction_finding", "1"], ["auction_live", "3"], ["auction_counter", "3 (over-price strip)"], ["no_riders", "2"], ["select_race", "4"], ["auction_expired", "12"], ["rider_cancelled", "13"], ["track_active", "6 · 7"], ["track_code", "8"], ["track_paused", "9"], ["track_dark", "19"], ["cancel", "10a · 10b"], ["cancelled", "18a · 18b · 18c"], ["undelivered", "17"], ["delivered_rate", "14a"], ["rate_undo", "15"], ["completed", "16 / 2.26"]];
+
+function Page() {
+  const q = new URLSearchParams(location.search);
+  if (q.get("shots")) return <div style={{ display: "flex", flexWrap: "wrap", gap: 20, padding: 20, alignItems: "flex-start" }}>{ST.map(s => <div key={s[0]} id={"shot-" + s[0]}>{s[5](360, 720)}</div>)}{ST.filter(s => (s[6] || {}).small).map(s => <div key={s[0] + "s"} id={"shot-" + s[0] + "-320"}>{s[5](320, 640)}</div>)}{FS.map(([id, r]) => <div key={id + "f"} id={"shot-" + id + "-320-fs13"}>{r(320, 640)}</div>)}</div>;
+  const only = q.get("frames");
+  if (only) { const ids = only.split(","), w = q.get("w") === "320"; return <main><div className="grid" style={{ marginTop: 0 }}>{ST.filter(s => ids.includes(s[0])).map(s => <Cell key={s[0]} s={s} W={w ? 320 : 360} H={w ? 640 : 720} />)}{q.get("fs") ? FS.filter(f => ids.includes(f[0])).map(([id, r]) => <Cell key={id + "f"} s={ST.find(s => s[0] === id)} W={320} H={640} suffix="-320-fs13" render={r} />) : null}</div></main>; }
+  return <>
+    <Nav />
+    <main>
+      <h1>After Send v2 — corrections + the states v1 didn't draw</h1>
+      <p className="sub">Same screen, header, tokens and type scale as v1. <span className="flag chg">CHANGED</span> = redrawn vs v1, <span className="flag new">NEW</span> = state v1 never drew (2.x ids). Unflagged v1 states are unchanged apart from the 28 px grabber row.</p>
+
+      <section id="proto"><h2>Prototype</h2><p className="sub">Every phone state in order. Click the phone, use the buttons, or press ← →.</p><Proto /></section>
+
+      {G.map(([g, gl]) => <section key={g} id={g}><h2>{gl}</h2><div className="grid">{ST.filter(s => s[1] === g).map(s => <Cell key={s[0]} s={s} W={360} H={720} />)}</div></section>)}
+
+      <section id="small"><h2>320 × 640</h2><div className="grid">{ST.filter(s => (s[6] || {}).small).map(s => <Cell key={s[0]} s={s} W={320} H={640} suffix="-320" />)}</div></section>
+
+      <section id="scale"><h2>2.32 · System font scale 1.3 at 320 × 640</h2><p className="sub">Text scales like Android sp; buttons grow instead of clipping; labels wrap rather than truncate. The code is capped (big code ×1.0, card code ×1.15) — it's already the largest text. The card code always stacks Share code under the digits at scale &gt; 1.</p>
+        <div className="grid">{FS.map(([id, r]) => <Cell key={id} s={ST.find(s => s[0] === id)} W={320} H={640} suffix="-320-fs13" render={r} />)}</div></section>
+
+      <section id="rules"><h2>Decisions</h2>
+        <div className="card">
+          <h3>1.1 Six-digit code</h3><ul>
+            <li>Shown as 3 + 3 groups ("418 290"), tabular, letter-spacing .04em. The value copied, shared and spoken has no space: 418290.</li>
+            <li>Code card: label + digits 28/800 on the left, white Share code on the right. That fits at 320 and 360 dp at scale 1.0 (digits ≈ 125 dp + button ≈ 128 dp in 262 dp). When the row overflows (font scale > 1, long translations) Share code moves under the digits, full width. Decide with onLayout, not by screen width.</li>
+            <li>Code big (hand-off): no boxes. One white panel with a 2 px <code>--accent-text</code> border, digits 56/800 (48 under 340 dp), 20 px group gap (16 under 340). Fits 300 / 260 dp with room; still 2.5× the next-largest text.</li></ul>
+          <h3>1.2 Grabber</h3><ul><li>Tap and drag. Grabber row is now 28 px (was 16); bar stays 36×4. Hit area 120×44: the row plus 16 px above the sheet edge (over the map). Tap toggles peek ↔ full. TalkBack label "Show more" / "Show less". Content starts 12 px lower than v1.</li></ul>
+          <h3>1.3 Peek heights (sheet height at peek, dp)</h3>
+          <table><thead><tr><th>Stage</th><th>First block that must be fully visible</th><th>360×720</th><th>320×640</th><th>320×640 @1.3</th></tr></thead><tbody>
+            <tr><td>Finding, cancelled</td><td>Headline + countdown + price</td><td>424</td><td>372</td><td>372</td></tr>
+            <tr><td>Offers</td><td>First offer card, whole</td><td>540</td><td>473</td><td>495</td></tr>
+            <tr><td>Matched, picked up, paused, offline</td><td>ETA line + steps</td><td>450</td><td>394</td><td>417</td></tr>
+            <tr><td>Hand-off</td><td>The code panel, whole</td><td>534</td><td>467</td><td>484</td></tr>
+            <tr><td>Retry</td><td>Reason + price</td><td>476</td><td>417</td><td>417</td></tr>
+            <tr><td>Delivered (rate)</td><td>Stars row</td><td>553</td><td>484</td><td>507</td></tr>
+            <tr><td>Not delivered</td><td>Headline + reason</td><td>502</td><td>439</td><td>473</td></tr>
+          </tbody></table>
+          <p style={{ margin: "8px 0 0" }}>Rule for the build: peek = first block's bottom + 16 dp, measured after layout, never less than the table and never leaving the map under 96 dp.</p>
+          <h3>Behaviour calls</h3><ul>
+            <li><b>2.10</b> Timer hits 0: offers already on screen stay choosable for 15 s ("Choose in 0:12"). Offers arriving after 0:00 are rejected by the server and never shown. No offers on screen → straight to 12.</li>
+            <li><b>2.12</b> No GPS fix: "Tendai is heading to pickup" + one line; no marker, no ETA. Becomes 6 on the first fix. After 60 s with no fix it becomes 9.</li>
+            <li><b>2.18</b> Emergency: yes, confirm on return — a green note at the top of the sheet for the rest of the trip, plus "Call 999 again" in place of the Google Maps row.</li>
+            <li><b>2.20</b> Rider cancelled before pickup is a finding state, not a retry: "We're already asking other riders at $3.36." Primary is "Raise to $3.86" (PATCH, same as + $0.50 ×1). If that window then closes, it becomes 12. 18b is now only for a rider cancel after pickup.</li>
+            <li><b>2.23</b> Cancel reasons start with none selected. Tapping a selected chip clears it.</li>
+            <li><b>2.25</b> Not rated: a "Rate Tendai" card with five 44 px stars; a tap opens 14a's tags inline. Available for 7 days after delivery, then the card disappears.</li>
+            <li><b>2.28</b> Confirmed: "Send again" on 16 / 17 / 18 opens Send step 2 (What) with the v2 banner "Copied from your order on 30 Sep. Check it, then send." No one-tap variant there — prices and phones may be stale. 12's "Send again at $3.86" stays one-tap.</li>
+            <li><b>2.34</b> Push never contains the delivery code (lock screens). The live-order bar may, because it's inside the unlocked app.</li></ul>
+        </div>
+      </section>
+
+      <section id="gallery"><h2>Part 3 · All Screens Gallery</h2>
+        <div className="card"><p style={{ margin: "0 0 8px" }}>Delete the old LJ order screens; register every id on this page instead (phones and boards). Old → new:</p>
+          <table><tbody>{GAL.map(([o, n]) => <tr key={o}><td><code>{o}</code></td><td>{n}</td></tr>)}</tbody></table></div>
+      </section>
+
+      <section id="copy"><h2>Final copy per state</h2><p className="sub">Keys from the <code>A</code> object in <code>as-kit.jsx</code>. Names, prices, times and addresses are sample data.</p><CopyList /></section>
+    </main>
+  </>;
+}
+ReactDOM.createRoot(document.getElementById("as-root")).render(<Page />);
+</script>
+</body>
+</html>

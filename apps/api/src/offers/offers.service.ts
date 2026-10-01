@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import type { MakeOfferRequest } from "@lynia/shared";
+import { type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
 import { hasLiveFoodDispatchOffer } from "../common/food-dispatch-lock";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -10,6 +10,13 @@ import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
 import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+
+const WINDOW_CLOSED = "The offer window has closed. This order isn't taking new offers.";
+
+/** True once the order's offer window (createdAt + OFFER_WINDOW_MS) has run out. */
+function windowClosed(createdAt: Date): boolean {
+  return Date.now() >= new Date(createdAt).getTime() + OFFER_WINDOW_MS;
+}
 
 @Injectable()
 export class OffersService {
@@ -27,11 +34,19 @@ export class OffersService {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true, proposedFare: true, orderType: true },
+      select: { status: true, customerId: true, proposedFare: true, orderType: true, createdAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
       throw new ConflictException("This order is not open for offers");
+    }
+    // After-send v2 choose grace: once the window ends (createdAt + OFFER_WINDOW_MS, the snapshot's
+    // expiresAt) the customer may still pick from the offers already on screen for OFFER_CHOOSE_GRACE_MS,
+    // and the order stays `open_for_offers` meanwhile — so a status check alone would let a bid slip in
+    // during the grace. New bids close at the window end. Re-checked under the row lock below.
+    if (windowClosed(order.createdAt)) {
+      this.metrics.incOffersMade("conflict");
+      throw new ConflictException(WINDOW_CLOSED);
     }
     // A-2 (status-keyed-query-audit): an Express bid is a parcel-only mechanism — a merchant order's
     // rider is C3's dispatch decision, never an offer a rider posts themselves.
@@ -123,8 +138,8 @@ export class OffersService {
         // row-locks the order, so taking FOR UPDATE here serializes the two: either the assign commits
         // first (we then read a non-open status and reject) or it waits for us (and its decline-pending
         // sweep then includes our just-created offer).
-        const locked = await tx.$queryRaw<Array<{ status: string; order_type: string }>>(
-          Prisma.sql`SELECT status, order_type FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
+        const locked = await tx.$queryRaw<Array<{ status: string; order_type: string; created_at: Date }>>(
+          Prisma.sql`SELECT status, order_type, created_at FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
         );
         // A-2: re-check orderType under the lock too — the pre-lock read above can't observe a
         // concurrent write, but orderType is immutable post-create, so this is belt-and-braces
@@ -132,6 +147,9 @@ export class OffersService {
         if (locked.length === 0 || locked[0].status !== "open_for_offers" || locked[0].order_type !== "parcel") {
           throw new ConflictException("This order is not open for offers");
         }
+        // The window can end between the pre-check and the lock; the expiry job counts on no new bid
+        // landing after it (an order with no pending offer at the window end expires right away).
+        if (windowClosed(locked[0].created_at)) throw new ConflictException(WINDOW_CLOSED);
         return tx.offer.create({
           data: {
             orderId: input.orderId,

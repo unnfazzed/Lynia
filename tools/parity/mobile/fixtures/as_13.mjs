@@ -1,4 +1,4 @@
-// After Send shoot fixture (tools/parity/shoot-after-send.mjs, ledger D-53).
+// After Send shoot fixture (tools/parity/shoot-after-send.mjs, ledger D-53 v2).
 import { stage } from "./_after_send.mjs";
 
-export default stage({ status: "cancelled", extra: { cancelledBy: "rider", cancelReason: "Bike broke down" } });
+export default stage({ status: "open_for_offers", params: { riderCx: "Tendai" } });
