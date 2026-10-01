@@ -758,35 +758,24 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx), REGION-adopted directly against the
-    // home-8c redesign mock (2026-08-17). RC.home used to render the DS `AppHome` composite and was
-    // walked INTO via composites.mjs; 8c retires that composite as the home body, and the mock now
-    // declares its four members as named components in one file, so the regions anchor without a
-    // composite hop (the resolver stays available for the container's local helpers).
-    //
-    // The app mounts same-named TWINS of those four members (HomeHeader / ServiceTiles /
-    // LiveOrderCard / RestaurantCard from src/ui), so the COMPOSITION check gates assembly: banner
-    // header → tiles → one live pill per running job → the venues grid, in mock order. The members'
-    // INTERNAL congruence (mock member ≡ app twin) is the referenced deferral below.
+    // ── RC.home — the customer Home tab (app/(tabs)/home.tsx). Until 2026-10-01 this was REGION-adopted
+    // against the home-8c mock (explorations/home-redesign/home-8c.jsx): header → tiles → one live pill
+    // per job → the venues grid. docs/DESIGN-DEVIATIONS.md D-55 made the owner's Calm Mint v2 handoff
+    // (packages/design/handoff/calm-mint-v2-2026-10) the authority for Home, and its tree differs
+    // (address-first header, four tiles, two rails, ONE floating live-order bar), so the gallery key is
+    // recorded here as a SUPERSEDED deferral until an export redraws it. The 8c composition regions and
+    // the 'twin-internals' deferral went with the 8c tree — net deferral count unchanged.
     key: "RC.home",
     container: "apps/mobile/app/(tabs)/home.tsx",
     mockFile: "packages/design/explorations/home-redesign/home-8c.jsx",
-    // `Home8c` is the whole screen (`<Screen tab="home" bg="--accent-wash">…`), so the walk roots at
-    // the Screen exactly like the app's `<AppScreen banner={<HomeHeader/>}>`.
-    mockComponent: "Home8c",
     uiImport: "../../src/ui",
-    regions: [
-      { region: "header", locator: { el: "HomeHeader" }, componentName: "HomeHeader", compositionOnly: true },
-      { region: "tiles", locator: { el: "ServiceTiles" }, componentName: "ServiceTiles", compositionOnly: true },
-      { region: "livecards", locator: { map: "LiveOrderCard" }, componentName: "LiveOrderCard", compositionOnly: true },
-      { region: "venues", locator: { map: "RestaurantCard" }, componentName: "RestaurantCard", compositionOnly: true },
-    ],
+    states: [],
     deferred: [
       {
-        state: "twin-internals",
+        state: "data",
         key: "RC.home",
         reason:
-          "Composition is GATED (four regions, mock order/nesting). The four members' INTERNAL trees (home-8c mock members ≡ app twins HomeHeader/ServiceTiles/LiveOrderCard/RestaurantCard) need per-pair KIND folds — the RN twins reach the mock's DOM shapes through different primitives (an <img> sticker is a react-native-svg tree, the mock's <button> tile is a Tappable, the ETA pill is an absolutely-positioned View) — tracked in docs/PIXEL-PARITY-TRACKER.md C2·1 and burned down by the R1 completion lane; see docs/parity/ADOPTION-CLASSIFICATION.md.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the customer Home is now the Calm Mint v2 handoff's H1–H6 — a mint header with the address control ('DELIVERING TO'), bell and one-line greeting, the search; four service tiles in one row; 'Popular restaurants' and 'Popular shops' horizontal rails of 148px cards; ONE floating forest live-order bar above the tab bar. The gallery home-8c `Home8c` draws a two-line greeting with a sun sticker, three tiles, one pill per order and a two-column venues grid; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },

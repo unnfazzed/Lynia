@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54.** D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55.** D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -997,7 +997,9 @@ delete this half) or an unread count on the Account row's Notifications entry (d
 
 ---
 
-## D-28 · Customer home 8c — the design-package sync, and the two sheets the export specifies but does not draw — APPROVED (2026-08-17)
+## D-28 · Customer home 8c — the design-package sync, and the two sheets the export specifies but does not draw — RETIRED by D-55 (2026-10-01)
+
+> **Retired.** The Calm Mint v2 handoff (D-55) replaces the 8c home and draws both sheets this entry built undrawn (the location sheet is H5, the notify-me sheet is `H.notify`). The 8c files stay in `packages/design/` as the lineage record; the rider board's 8c header (D-29) is unaffected.
 
 **What arrived.** A new design-tool export, `Lynia_Design_System.zip → home-8c/`, marked
 **SELECTED (2026-08-17)**: the redesigned customer home, lineage 2a → 7a/7b → 8a → 8b → **8c**. It
@@ -2723,3 +2725,77 @@ Until each lands, its current screen stays as it is.
 **Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
 limit; auto-opening the "picked you" sheet.
 
+
+---
+
+## D-55 · Calm Mint v2: the customer Home, customer onboarding and rider onboarding follow the calm-mint-v2 handoff — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** the owner briefed Claude Design on the customer Home
+and both onboarding flows (a combined brief with screenshots of every current screen, the lyniago.com
+style pack and the tokens), answered its clarifying questions, and uploaded the result
+(`Lynia_Design_System_-_home.zip`, `handoff/calm-mint-v2-2026-10`) with *"lets build the designs
+here"*. The decisions the owner gave in that brief are final:
+
+1. Match the website's accent colours and vibrancy, with a stronger local feel.
+2. "Free delivery" is merchant-funded: the venue pays, the rider is paid in full.
+3. The designer chooses the layout for the discovery sections (it chose two rails, Free delivery as a tag).
+4. Four service tiles: Send · Restaurants · Shops · Pharmacy.
+5. No national ID at customer sign-up; it is optional, later.
+6. No role choice screen: everyone starts as a customer; "Ride with LyniaGo" is the secondary path.
+7. Riders need only the Didit ID check to start; licence and bike papers are optional, later, in Account.
+8. The first top-up is waived: commission-free first jobs, then the prepaid-balance gate.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/calm-mint-v2-2026-10/` | The handoff, **verbatim**: `README.md` (tokens, H1–H6, C1–C5, R1–R3, NEEDS BACKEND, retires), `CLAUDE-CODE-PROMPT.md` (the work order), `Calm Mint v2 - all screens.html` + `shared.js` / `mint2.js` / `calm-mint-v2.js` (the pixel reference; `?screen=H1` … `R3` renders one screen at 360px), the four v2 service stickers, four illustrations, fonts and sample food photos. |
+| `packages/design/tokens/colors.css` | `--highlight` **#f2b705 → #ffd23f** (and `--highlight-border` with it) — the handoff replaces the gold everywhere; the admin and merchant faces follow (token-conformance). New: `--forest`, `--on-forest-muted`, `--star-stroke`, `--free`, `--coral`, `--sky`, `--tile-send/-food/-shops/-pharmacy`, `--rider-wash`, `--highlight-chip-wash`, `--kind-*`. |
+
+### 2 · Authority (a scope rule)
+
+The LOOK for `app/(tabs)/home.tsx` (and the location / notify-me sheets it opens) is now this handoff,
+H1–H6. Customer onboarding (`app/onboarding.tsx`, `app/phone.tsx`, `app/verify.tsx`,
+`app/profile/setup.tsx`, `app/role.tsx`, `app/permissions.tsx`) aligns to C1–C5 and the rider's first
+run to R1–R3 as those parts land. The gallery `RC home` (home-8c) and the gallery first-run screens the
+handoff retires (`LJ onboard*`, `LJ role_select*`, `LJ register`'s ID field, `LJ perm_loc`/`perm_notif`
+as standalone screens, `RJ kyc_intro`) stay in the gallery until an export redraws them and are **not
+aligned to**. This retires **D-28** (the 8c home sync and its two undrawn sheets — both are drawn now)
+for Home. D-13 (no send-again rail) stands: the handoff draws none. The rider-v2 handoff (D-54) keeps
+the KYC gates on the job board; its "live-job bar" for a rider in customer view (C5) is a sibling of
+this bar and lands with that work.
+
+### 3 · What has landed (part 1, Home)
+
+- **Art:** the four v2 stickers and four illustrations are transcribed node for node into
+  `react-native-svg` by `apps/mobile/scripts/svg-to-rn.mjs` (`src/ui/art/`, generated; c2pa metadata
+  dropped). Metro has no SVG transformer, so this is how "use the SVGs verbatim" is honoured.
+- **Home (H1–H6)** (`src/ui/home/kit.tsx`, `copy.ts` = the handoff's `H`, verbatim): the mint header
+  with three decorative circles, the address control → location sheet, the 44px bell, the one-line
+  greeting with the name in green (wraps under 340dp, H3), the 48px search; four tiles (64px / 44px
+  sticker / "Food" under 340dp); the "Popular restaurants" rail of 148px cards; skeleton rails on
+  first load (H4); the H6 card with no address; ONE forest live-order bar 12px above the tab bar with
+  "+N order(s)". The location sheet (H5) and the notify-me sheet (`H.notify`) are restyled to the
+  drawing; the shared `HomeHeader` stays for the rider board (D-29, until D-54 replaces it).
+
+### 4 · Still different from the handoff (part 1)
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Shops and Pharmacy tiles | "Everything is live", no SOON chips | No chip; the tile opens the notify-me sheet (Shops: the drawn `H.notify`; Pharmacy and a kill-switched Restaurants: the same drawing with their own title/body) | No shop or pharmacy vertical exists yet (README §5 "Customer shop list"); a tile must never be inert. Two undrawn title/body pairs |
+| "Free delivery" tag | On cards whose venue funds delivery | Never shown | No `free_delivery` flag on venues yet (README §5); the work order says hide it when absent |
+| "Popular shops" rail | Drawn | Hidden | No customer shop list yet (README §5); the work order says hide it when absent |
+| "Popular restaurants" | "Most ordered near you" | The nearest open venues (up to 8) | No popularity ranking yet (README §5); the copy is the drawn string |
+| Live bar title | "Tendai is on the way" | That, once the order is moving and the rider's name is on the phone; otherwise the order's status ("Heading to pickup", "Order placed", "On the way") | The active-orders API carries no rider name; one cached identity per phone |
+| Live bar icon for a food order | Bike | Utensils | Tells a food order from a parcel at a glance; a bike disc on a "Golden Bao" bar reads as a parcel |
+| Live bar tap | "Tapping it opens the Orders tab" | One order → that order; two or more → the Orders tab | Opening the list for a single order is an extra tap |
+| Offline | A muted banner under the header | The app-wide offline banner at the top of the screen | One banner owner (`_layout.tsx`); the rails keep their cached data either way |
+| Location sheet | Search, current location, Home, Work, Add a place | The same, plus the existing one-line notes when location is off or a fix fails; "Add a place" focuses the search (saving a found place as Home/Work is the search's own job) | The sheet must still explain why "Use my current location" did nothing |
+
+### 5 · Still to land (follow-up PRs, same handoff)
+
+Customer onboarding C1–C5 (welcome, +263 phone, the auto-verifying code screen, First name + Surname,
+permissions in context) and rider onboarding R1–R3 (why ride + checklist, the resumable pending screen,
+verified + the commission-free jobs meter). Backend, per README §5: popularity ranking, the
+merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
+shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.
