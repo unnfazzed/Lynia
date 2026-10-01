@@ -28,7 +28,7 @@ const mockSignOut = jest.fn(async () => {
 const mockReplace = jest.fn();
 // Mutable so individual tests can vary the route params (D-40, docs/DESIGN-DEVIATIONS.md) without
 // re-declaring the whole expo-router mock — see the reset in beforeEach below.
-let mockLocalSearchParams: { phone: string; deliveryChannel?: string } = { phone: "+263 77 245 1180" };
+let mockLocalSearchParams: { phone: string; deliveryChannel?: string; intent?: string } = { phone: "+263 77 245 1180" };
 
 let secureStore: Record<string, string> = {};
 const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
@@ -59,11 +59,12 @@ jest.mock("../../../src/auth/auth-context", () => ({
     signOut: mockSignOut,
   }),
 }));
+const mockSaveRole = jest.fn(async (_role: string) => undefined);
 jest.mock("../../../src/auth/session", () => ({
   loadRolePreference: async () => null,
+  saveRolePreference: (r: string) => mockSaveRole(r),
 }));
 
-import { riderModeAvailable } from "../../../src/rider-mode";
 import ProfileSetupScreen from "../setup";
 
 /** Fields are located by the accessibilityLabel `Field` derives from `label` (see src/ui/index.tsx). */
@@ -85,11 +86,26 @@ async function settle(): Promise<void> {
   });
 }
 
-/** The intro line under the heading (mock `LJ.register`'s `Sub`). */
-function introLine(tree: renderer.ReactTestRenderer): string | undefined {
-  const node = tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.startsWith("You're sending parcels."))[0];
-  return node?.props.children as string | undefined;
+async function pressStart(tree: renderer.ReactTestRenderer): Promise<void> {
+  const btn = tree.root.findAll((n) => n.props.accessibilityLabel === "Start using LyniaGo" && typeof n.props.onPress === "function")[0];
+  if (!btn) throw new Error("no Start using LyniaGo button");
+  await act(async () => {
+    btn.props.onPress();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  await settle();
 }
+
+async function mountSetup(): Promise<renderer.ReactTestRenderer> {
+  let tree!: renderer.ReactTestRenderer;
+  await act(async () => {
+    tree = renderer.create(<ProfileSetupScreen />);
+  });
+  await settle();
+  return tree;
+}
+
+const text = (t: renderer.ReactTestRenderer): string => JSON.stringify(t.toJSON());
 
 beforeEach(() => {
   secureStore = {};
@@ -101,296 +117,87 @@ beforeEach(() => {
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
+  mockSaveRole.mockClear();
   mockLocalSearchParams = { phone: "+263 77 245 1180" };
 });
 
-/**
- * The screen's only drawn exit (design handoff kyc-2026-08 §6, mock `LJ.register`).
- *
- * A customer who mistyped their number and then passed the code sent to THAT number is trapped here:
- * the phone field is deliberately read-only, so nothing on screen corrects it. The ghost must exist,
- * and it must SIGN OUT rather than merely navigate — by this point the wrong number is a verified
- * session, and routing to /phone while still authenticated returns them here on the next guard pass.
- */
-describe("profile setup — the different-number exit", () => {
-  function pressGhost(tree: renderer.ReactTestRenderer): void {
-    const btn = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
-    if (!btn) throw new Error("no 'Use a different number' action on the screen");
-    act(() => {
-      void btn.props.onPress();
-    });
-  }
-
-  it("offers the exit, and it is a ghost so it never competes with Continue", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-
-    const ghost = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
-    if (!ghost) throw new Error("no 'Use a different number' action on the screen");
-    expect(ghost.props.variant).toBe("ghost");
-    // Exact label. "Back" would suggest losing the code they just passed; "Change number" is a
-    // system word. The mock draws this string and the app ships it verbatim.
-    expect(tree.root.findAll((n) => n.props.label === "Back").length).toBe(0);
+describe("C5 · Name (Calm Mint v2, D-55)", () => {
+  it("draws the handoff's copy: two name fields, the verified row, the no-ID note — and no ID field", async () => {
+    const out = text(await mountSetup());
+    for (const s of ["What should riders call you?", "First name", "Surname", "+263 77 245 1180", "Verified", "No ID needed.", "Start using LyniaGo"]) {
+      expect(out).toContain(s);
+    }
+    expect(out).not.toContain("National ID number");
+    expect(out).not.toContain("Use a different number");
   });
 
-  it("signs out before returning to the phone step", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+  it("saves the name alone and starts a new account as a customer on Home", async () => {
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
+    setFieldByAccessibilityLabel(tree, "Surname", "Marufu");
     await settle();
-
-    pressGhost(tree);
-    await settle();
-
-    expect(mockSignOut).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith("/phone");
-    // The ORDER is the point, not just that both happened: navigating before the revoke lands would
-    // race the auth guard on /phone against a session that is still valid.
-    const [signOutAt] = mockSignOut.mock.invocationCallOrder;
-    const [replaceAt] = mockReplace.mock.invocationCallOrder;
-    if (signOutAt === undefined || replaceAt === undefined) throw new Error("both calls must have happened");
-    expect(signOutAt).toBeLessThan(replaceAt);
+    await pressStart(tree);
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Chipo", lastName: "Marufu" });
+    expect(mockSaveRole).toHaveBeenCalledWith("customer");
+    expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  // A double-tap must not fire two sign-outs. The guard is a ref precisely because the `leaving`
-  // state write is not visible to a second press in the same tick — assert the behaviour, so a
-  // future refactor back to state-guarding fails here.
-  it("ignores a second press in the same tick", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+  it("a rider intent from C1 starts the account as a rider", async () => {
+    mockLocalSearchParams = { phone: "+263 77 245 1180", intent: "rider" };
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
     await settle();
-
-    const btn = tree.root.findAll((n) => n.props.label === "Use a different number")[0];
-    if (!btn) throw new Error("no 'Use a different number' action on the screen");
-    act(() => {
-      void btn.props.onPress();
-      void btn.props.onPress();
-    });
-    await settle();
-
-    expect(mockSignOut).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledTimes(1);
+    await pressStart(tree);
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
   });
 
-  it("replaces rather than pushes, so no back-stack entry returns to a dead session", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+  it("needs both names before it submits", async () => {
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
     await settle();
-
-    pressGhost(tree);
-    await settle();
-
-    // `replace` is the only navigation this action performs — a push would leave this screen
-    // reachable by back, with the session it depends on already revoked.
-    expect(mockReplace).toHaveBeenCalledTimes(1);
-  });
-
-  it("drops the typed draft, because it holds a national ID and this is a sign-out", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-
-    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
-    setFieldByAccessibilityLabel(tree, "National ID number", "63123456A42");
-    await settle();
-
-    pressGhost(tree);
-    await settle();
-
-    // The rider retypes their name, and that is the intended trade. Preserving the draft across a
-    // sign-out would leave whoever verifies a number NEXT on this handset looking at a stranger's
-    // name and national ID — the leak LC-C10 closed. This assertion is the guard on that: a future
-    // "improvement" that re-saves the draft to spare the retyping fails here.
-    act(() => tree.unmount());
-    let fresh!: renderer.ReactTestRenderer;
-    await act(async () => {
-      fresh = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(getFieldValue(fresh, "Full name")).toBe("");
-    expect(getFieldValue(fresh, "National ID number")).toBe("");
+    await pressStart(tree);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
   });
 });
 
 describe("profile setup — draft persistence (LC-C10)", () => {
-  it("restores typed name/ID after an app kill + relaunch (unmount + fresh mount)", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+  it("restores the typed names after an app kill + relaunch (unmount + fresh mount)", async () => {
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
     await settle();
-
-    // The mock (screens.jsx `Register`) draws a single "Full name" field; setup.tsx splits it into
-    // first/last only at the draft + PATCH boundaries, so the durable draft still round-trips.
-    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
-    setFieldByAccessibilityLabel(tree, "National ID number", "63-123456-A-42");
-    await settle();
-
-    // The app is killed here — no submit ever fired. A fresh screen mount is the relaunch.
     act(() => tree.unmount());
-
-    let fresh!: renderer.ReactTestRenderer;
-    await act(async () => {
-      fresh = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-
-    expect(getFieldValue(fresh, "Full name")).toBe("Tendai Moyo");
-    expect(getFieldValue(fresh, "National ID number")).toBe("63-123456-A-42");
+    const fresh = await mountSetup();
+    expect(getFieldValue(fresh, "First name")).toBe("Tendai");
+    expect(getFieldValue(fresh, "Surname")).toBe("Moyo");
   });
 
   it("clears the draft once the profile PATCH actually lands", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
     await settle();
-
-    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
-    setFieldByAccessibilityLabel(tree, "National ID number", "63-123456-A-42");
-    await settle();
-
-    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
-    if (!saveButton) throw new Error("no Continue button found");
-    await act(async () => {
-      await saveButton.props.onPress();
-    });
-    await settle();
-
-    // The ID is normalised on submit — dashes/spaces stripped, letters upper-cased — so the account
-    // record and the server's duplicate-ID hash agree however the customer punctuated it.
-    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42" });
-    expect(secureStore["lynia.profileDraft.v1"]).toBeUndefined();
+    await pressStart(tree);
+    expect(secureStore[PROFILE_DRAFT_KEY]).toBeUndefined();
   });
 });
 
 /**
- * The sign-up → back-to-the-OTP-screen report. Saving the name used to finish with
- * `signIn({ ...session, needsProfile: false })`, where `session` is the one THIS RENDER captured. A new
- * account that left to find its ID card came back with an expired access token, so the PATCH refreshed
- * — rotating the refresh token — and that write-back then restored the rotated-away token to memory and
- * the keychain. The next refresh presented a dead token and signed the brand-new user out. The flag must
- * be cleared by patching whatever session the auth layer holds now (proven in auth-context.test.tsx).
+ * Saving the name used to finish with `signIn({ ...session, needsProfile: false })`, where `session` is
+ * the one THIS RENDER captured — which could write back a rotated-away refresh token and sign a brand-new
+ * user out. The flag must be cleared by patching whatever session the auth layer holds now.
  */
 describe("profile setup — finishing sign-up never writes back a stale session", () => {
   it("clears needsProfile via updateSession, never signIn with the render's session", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
     await settle();
-
-    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
-    setFieldByAccessibilityLabel(tree, "National ID number", "63123456A42");
-    await settle();
-    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
-    if (!saveButton) throw new Error("no Continue button found");
-    await act(async () => {
-      await saveButton.props.onPress();
-    });
-    await settle();
-
+    await pressStart(tree);
     expect(mockUpdateSession).toHaveBeenCalledTimes(1);
     expect(mockUpdateSession).toHaveBeenCalledWith({ needsProfile: false });
     expect(mockSignIn).not.toHaveBeenCalled();
-    // …and sign-up carries on to the role fork (no saved role yet) rather than stalling on an error.
-    expect(mockReplace).toHaveBeenCalledWith("/role");
-  });
-});
-
-/**
- * D-40 (docs/DESIGN-DEVIATIONS.md): the read-only "Verified" phone field's hint no longer hardcodes
- * "by SMS" — it names whichever channel verify.tsx actually verified the code over, threaded here as
- * the `deliveryChannel` route param.
- */
-describe("profile setup — 'Verified by X' hint reflects the actual delivery channel (D-40)", () => {
-  function verifiedHint(tree: renderer.ReactTestRenderer): string | undefined {
-    const field = tree.root.findAll(
-      (n) => n.props.label === "Phone number" && typeof n.props.hint === "string",
-    )[0];
-    return field?.props.hint as string | undefined;
-  }
-
-  it("reads 'Verified by WhatsApp' when the OTP verified over WhatsApp", async () => {
-    mockLocalSearchParams = { phone: "+263 77 245 1180", deliveryChannel: "whatsapp" };
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(verifiedHint(tree)).toBe("Verified by WhatsApp ✓");
-  });
-
-  it("reads 'Verified by SMS' when deliveryChannel is sms or absent", async () => {
-    mockLocalSearchParams = { phone: "+263 77 245 1180" };
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(verifiedHint(tree)).toBe("Verified by SMS ✓");
-  });
-});
-
-/**
- * D-41 (docs/DESIGN-DEVIATIONS.md): the customer-only iPhone app collects no national ID. The field is
- * not drawn, Continue needs only the name, and the PATCH carries no idNumber (optional in the
- * contract) — so no ID number ever leaves an iPhone. Sign-up then skips the role fork.
- */
-describe("profile setup on the customer-only iPhone app (D-41)", () => {
-  beforeEach(() => {
-    jest.mocked(riderModeAvailable).mockReturnValue(false);
-  });
-
-  it("draws no national ID field and finishes sign-up with the name alone", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "National ID number")).toHaveLength(0);
-
-    setFieldByAccessibilityLabel(tree, "Full name", "Tendai Moyo");
-    await settle();
-    const saveButton = tree.root.findAll((n) => n.props.label === "Continue" && typeof n.props.onPress === "function")[0];
-    if (!saveButton) throw new Error("no Continue button found");
-    expect(saveButton.props.disabled).toBe(false);
-    await act(async () => {
-      await saveButton.props.onPress();
-    });
-    await settle();
-
-    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Tendai", lastName: "Moyo" });
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/home");
-  });
-
-  it("does not promise an ID in the intro line, since it asks for none", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(introLine(tree)).toBe("You're sending parcels. Just a name for your account record — no documents, no verification.");
-  });
-});
-
-describe("profile setup intro line where rider mode exists", () => {
-  it("is the mock's line verbatim, ID included", async () => {
-    let tree!: renderer.ReactTestRenderer;
-    await act(async () => {
-      tree = renderer.create(<ProfileSetupScreen />);
-    });
-    await settle();
-    expect(introLine(tree)).toBe("You're sending parcels. Just a name and ID for your account record — no documents, no verification.");
   });
 });

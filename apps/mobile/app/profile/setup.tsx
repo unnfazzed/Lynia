@@ -1,79 +1,78 @@
-import { formatPhoneLocal, normalizeNationalId } from "@lynia/shared";
+import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 import { updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/auth-context";
-import { loadRolePreference } from "../../src/auth/session";
-import { signedInDestination } from "../../src/logic/sign-in-route";
+import { loadRolePreference, saveRolePreference } from "../../src/auth/session";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
-import { riderModeAvailable } from "../../src/rider-mode";
-import { Button, Field, Heading, Icon, Screen, Sub, useActionError } from "../../src/ui";
+import { parseSignInIntent, signedInDestination, startRoleFor } from "../../src/logic/sign-in-route";
+import { DismissKeyboardArea, Icon, useActionError } from "../../src/ui";
+import { OB } from "../../src/ui/onboarding/copy";
+import { Cta, FieldLabel, H2, Note, OnbScreen, Pad, Sub } from "../../src/ui/onboarding/kit";
 
 /**
- * The mock (screens.jsx `Register`) draws a single "Full name" field; the account record and the
- * update-profile contract still carry firstName + lastName separately, so we hold one editable string
- * here and split it at the two boundaries that need the halves — the durable draft and the PATCH. The
- * first whitespace-run splits given name from the rest (family name), matching how the draft used to
- * store the two fields directly.
+ * C5 · Name (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger D-55): the
+ * last of the four screens to Home. "What should riders call you?", First name + Surname side by side,
+ * the verified phone row, the "No ID needed" note, and "Start using LyniaGo".
+ *
+ * No national ID at sign-up any more (owner decision, D-55): the profile is saved with the name only —
+ * the API has accepted that since the customer-only iPhone build (D-41) — and an ID can be added later
+ * in Account. No role choice either: the account starts as a customer, or as a rider when it came in
+ * through C1's "Ride with LyniaGo" (`intent`).
+ *
+ * The half-filled form survives an app kill (logic/profile-draft.ts), as before.
  */
-function splitName(full: string): { firstName: string; lastName: string } {
-  const parts = full.trim().split(/\s+/).filter(Boolean);
-  return { firstName: parts[0] ?? "", lastName: parts.slice(1).join(" ") };
+function NameField({ label, value, onChangeText, autoComplete }: { label: string; value: string; onChangeText: (v: string) => void; autoComplete: "given-name" | "family-name" }): React.ReactElement {
+  return (
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <FieldLabel>{label}</FieldLabel>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        accessibilityLabel={label}
+        autoComplete={autoComplete}
+        textContentType={autoComplete === "given-name" ? "givenName" : "familyName"}
+        autoCapitalize="words"
+        maxLength={60}
+        style={{
+          height: tokens.touchTargetPrimary,
+          borderWidth: 1,
+          borderColor: tokens.color.line,
+          borderRadius: tokens.radius.input,
+          paddingHorizontal: 14,
+          fontSize: 17,
+          color: tokens.color.ink,
+        }}
+      />
+    </View>
+  );
 }
 
-/**
- * Post-OTP profile setup — the "Tell us who you are" step (finding C12). A freshly-verified account is
- * created with an empty name (verifyOtp seeds firstName ""), so verify.tsx routes here FIRST when
- * `needsProfile` is true. We collect the name once, PATCH it to /auth/me, then continue to the role
- * fork (brand-new account) or straight home (a returning user who already picked a role). Mirrors the
- * design mockup's calm copy (0·6): name + a national ID for the account record. The phone is already
- * verified — over whichever channel (WhatsApp or SMS) actually delivered the code, per the
- * `deliveryChannel` threaded from verify.tsx.
- *
- * LC-C10: this collects the exact same fields (name + national ID) as the become-a-rider KYC form, which
- * already survives an app kill via `kyc-draft.ts` — this screen previously held them in plain React state
- * with no durable draft, so an OS-level kill while typing (this is often the FIRST screen a brand-new
- * account ever sees, right after the OTP hand-off) silently lost the typed name/ID. Mirrors the same
- * hydrate-then-persist-then-clear pattern via `profile-draft.ts`.
- */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
-  const { updateSession, signOut } = useAuth();
-  // The just-verified number (and the channel that verified it — D-40, docs/DESIGN-DEVIATIONS.md),
-  // threaded from verify.tsx; shown read-only in the "Verified" phone field.
-  const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string }>();
+  const { updateSession } = useAuth();
+  const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
-  const verifiedByWhatsApp = params.deliveryChannel === "whatsapp";
-  const [fullName, setFullName] = useState("");
-  const [idNumber, setIdNumber] = useState("");
+  const intent = parseSignInIntent(params.intent);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [busy, setBusy] = useState(false);
-  // Separate from `busy`: the two actions are independent, and sharing one flag would spin the
-  // primary while the rider is actually leaving.
-  const [leaving, setLeaving] = useState(false);
-  // The synchronous half of the guard above — see useDifferentNumber.
-  const leavingRef = useRef(false);
-  // Action errors speak once as an auto-dismissing toast, never as a persistent card
-  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
   const [draftRestored, setDraftRestored] = useState(false);
-  // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
   const hydrated = useRef(false);
 
+  // Restore a half-filled form from before an app kill.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const d = await loadProfileDraft();
-      if (cancelled) {
-        hydrated.current = true;
-        return;
-      }
-      if (d && profileDraftHasContent(d)) {
-        setFullName([d.firstName, d.lastName].filter(Boolean).join(" "));
-        setIdNumber(d.idNumber);
-        setDraftRestored(true);
+      if (!cancelled && d && profileDraftHasContent(d)) {
+        setFirstName(d.firstName);
+        setLastName(d.lastName);
+        setDraftRestored(!!(d.firstName || d.lastName));
       }
       hydrated.current = true;
     })();
@@ -82,41 +81,24 @@ export default function ProfileSetupScreen(): React.ReactElement {
     };
   }, []);
 
-  // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveProfileDraft({ ...splitName(fullName), idNumber });
-  }, [fullName, idNumber]);
+    void saveProfileDraft({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: "" });
+  }, [firstName, lastName]);
 
-  // Mirror the contract floor (UpdateProfileRequest: both names non-empty ≤80, idNumber 4–40) so Save
-  // can't enable only to bounce off a raw server Zod error. The single name field must split into a
-  // given AND a family name for that to hold.
-  const { firstName, lastName } = splitName(fullName);
-  // The customer-only iPhone app collects no national ID (owner decision 2026-09-27, D-41): the field
-  // is not drawn there and the contract already treats idNumber as optional.
-  const collectsNationalId = riderModeAvailable();
-  const canSubmit = firstName.length > 0 && lastName.length > 0 && (!collectsNationalId || idNumber.trim().length >= 4);
+  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0;
 
   const submit = async (): Promise<void> => {
-    if (!canSubmit) return;
+    if (!canSubmit || busy) return;
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName, lastName, ...(collectsNationalId ? { idNumber: normalizeNationalId(idNumber) } : {}) });
-      // The draft has served its purpose — wipe the stored national ID immediately rather than leaving
-      // it in the keystore any longer than needed (mirrors become.tsx clearing the KYC draft on submit).
+      await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
       void clearProfileDraft();
-      // BH-15: clear the durable needsProfile flag now that the PATCH actually landed, so index.tsx's
-      // bootstrap redirect stops sending this account back here on future launches. updateSession, NOT
-      // signIn({ ...session, … }): when the PATCH had to refresh an expired access token (a new account
-      // that left to find its ID card), the `session` this render captured still holds the rotated-away
-      // tokens, and writing it back is what bounced brand-new accounts to the OTP screen after sign-up.
       await updateSession({ needsProfile: false });
-      // Continue the sign-in fork the same way verify.tsx does for a returning user: a saved role goes
-      // straight to its home, a brand-new account still sees the role picker (none on the
-      // customer-only iPhone app — signedInDestination).
       const chosen = await loadRolePreference();
-      router.replace(signedInDestination(chosen));
+      if (!chosen) void saveRolePreference(startRoleFor(null, intent));
+      router.replace(signedInDestination(chosen, intent));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save your details.");
     } finally {
@@ -124,96 +106,33 @@ export default function ProfileSetupScreen(): React.ReactElement {
     }
   };
 
-  /**
-   * Abandon this verified number and start the phone step again.
-   *
-   * The lock is a REF, not the `leaving` state: a state write is not visible to a second press in
-   * the same tick, so guarding on it lets a double-tap fire two sign-outs (two server revokes, two
-   * device wipes, two navigations) before the button ever re-renders disabled. Cleared on the
-   * failure path so a genuine retry is still possible.
-   */
-  const useDifferentNumber = async (): Promise<void> => {
-    if (leavingRef.current) return;
-    leavingRef.current = true;
-    setLeaving(true);
-    try {
-      await signOut();
-      router.replace("/phone");
-    } catch {
-      // signOut is already best-effort about the server revoke; if the local clear itself fails the
-      // rider must not be left on a dead button with no explanation.
-      leavingRef.current = false;
-      setLeaving(false);
-      setError("Couldn't switch numbers. Try again.");
-    }
-  };
-
   return (
-    <Screen>
-      <Heading>Tell us who you are</Heading>
-      {/* D-41: there is no ID field on an iPhone, so the line does not mention one. */}
-      <Sub>{`You're sending parcels. Just a name${collectsNationalId ? " and ID" : ""} for your account record — no documents, no verification.`}</Sub>
-      {draftRestored ? (
-        <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginBottom: tokens.space.xs }}>
-          We saved what you&apos;d filled in — pick up where you left off.
-        </Text>
-      ) : null}
-      <Field
-        label="Full name"
-        value={fullName}
-        onChangeText={setFullName}
-        placeholder="Chipo Marufu"
-        maxLength={80}
-        autoComplete="name"
-        textContentType="name"
-      />
-      {/* The phone is already verified (OTP) — a read-only display with the "Verified" badge the mock
-          draws, not an editable field. */}
-      <View>
-        <Field
-          label="Phone number"
-          value={formatPhoneLocal(phone)}
-          onChangeText={() => {}}
-          editable={false}
-          keyboardType="phone-pad"
-          hint={`Verified by ${verifiedByWhatsApp ? "WhatsApp" : "SMS"} ✓`}
-        />
-        <View style={{ position: "absolute", top: 30, right: 12, flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Icon name="check" size={13} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 11.5, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>Verified</Text>
-        </View>
-      </View>
-      {/* National ID stored on the account record (0·6). Default (text) keyboard:
-          Zimbabwean IDs are alphanumeric (e.g. "63123456A42"), so a number pad would block them.
-          Placeholder is dash-free — customers enter the ID plain; spaces/dashes are normalised on save. */}
-      {collectsNationalId ? (
-        <Field
-          label="National ID number"
-          value={idNumber}
-          onChangeText={setIdNumber}
-          placeholder="63123456A42"
-          maxLength={40}
-          hint="Stored on your account only — we don't verify it. Riders go through a separate ID check."
-        />
-      ) : null}
-      <Button label="Continue" onPress={submit} loading={busy} disabled={!canSubmit} />
-      {/* The mock's `Register` ghost (LJ.register), and the only drawn exit from this screen.
-          Without it a customer who mistyped their number and then passed the code sent to THAT
-          number is trapped: the phone field above is deliberately read-only, so there is nothing on
-          screen to correct, and the Android system back button is the only way out — the one thing
-          DESIGN.md's accessibility section forbids ("easy error recovery").
-
-          It signs out rather than just navigating, because by this point the wrong number is a
-          verified session: routing to /phone while still authenticated as +263-whatever would send
-          them back here on the next guard pass. `replace`, not `push`, so no back-stack entry
-          returns to a screen whose session no longer exists.
-
-          The typed name/ID draft does NOT survive this, and that is correct rather than a wart:
-          signOut → clearDeviceState wipes PROFILE_DRAFT_KEY because the draft holds a national ID
-          (LC-C10, same shared-device rule as the KYC draft). Preserving it across a sign-out would
-          mean whoever verifies a number NEXT on this handset lands here pre-filled with a stranger's
-          name and ID. Retyping a name is the cheaper of the two costs, so the rider retypes. */}
-      <Button label="Use a different number" variant="ghost" onPress={useDifferentNumber} loading={leaving} />
-    </Screen>
+    <DismissKeyboardArea>
+      <OnbScreen footer={<Cta label={OB.startUsing} onPress={() => void submit()} busy={busy} disabled={!canSubmit} />}>
+        <Pad>
+          <H2>{OB.nameTitle}</H2>
+          <Sub>{OB.nameSub}</Sub>
+          {draftRestored ? (
+            <Text style={{ marginTop: -12, marginBottom: 12, fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{OB.draftRestored}</Text>
+          ) : null}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <NameField label={OB.firstName} value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
+            <NameField label={OB.surname} value={lastName} onChangeText={setLastName} autoComplete="family-name" />
+          </View>
+          {phone ? (
+            <View
+              accessible
+              accessibilityLabel={`${formatPhoneDisplay(phone)}, ${OB.verified}`}
+              style={{ marginTop: 16, flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.surface }}
+            >
+              <Icon name="circle-check" size={18} color={tokens.color.accent} />
+              <Text style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatPhoneDisplay(phone)}</Text>
+              <Text style={{ marginLeft: "auto", fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{OB.verified}</Text>
+            </View>
+          ) : null}
+          <Note icon="id-card">{OB.noIdNote}</Note>
+        </Pad>
+      </OnbScreen>
+    </DismissKeyboardArea>
   );
 }

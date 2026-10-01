@@ -37,177 +37,42 @@
  * …), passing each its data seam — composition, not a rewrite: the queries, pagination and FlatList
  * virtualization stay exactly as they were.
  */
-/**
- * Shared data seam for the role fork (LJ.role_select + its food-off twin role_select_flag_off). The
- * mock's inline `Opt` cards are STATIC (a frozen `selected={true/false}`, a web `onClick={noop}` on the
- * Button); wire each option to its LIVE `selected` state and a transparent `Tappable` tap handler —
- * distinguished by the rider option's `icon="bike"` — and swap the Button's frozen `onClick`/`label` for
- * the container's `onContinue` + dynamic `continueLabel`. Structure-neutral: the Tappable wrap is
- * transparent to the guardrail and the `Opt` call stays an opaque OPT leaf, so mock↔view congruence holds
- * by construction; only leaf values / an interaction wrapper change. The frozen option COPY (titles,
- * descriptions) is kept verbatim from each mock — the flag-on and flag-off views carry their own drawn
- * copy, the container picking the view by `restaurantsEnabled`.
- */
-function roleSelectBind({ t, expr, wrap }) {
-  return {
-    // The mock's nested `Opt` presentational component keeps its destructured param — untyped in the
-    // .jsx, but implicit-any in the generated .tsx. Annotate it with the emitted `RoleOptionData` type
-    // (icon/title/desc/selected) so the view typechecks under strict mode; the param stays structurally
-    // opaque (the Opt call is an OPT leaf), so this is a leaf-level seam, not a tree change.
-    VariableDeclarator(path) {
-      if (path.node.id.type !== "Identifier" || path.node.id.name !== "Opt") return;
-      const init = path.node.init;
-      if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
-      const param = init.params[0];
-      if (param && !param.typeAnnotation) param.typeAnnotation = t.tsTypeAnnotation(t.tsTypeReference(t.identifier("RoleOptionData")));
-    },
-    JSXElement(path) {
-      const open = path.node.openingElement;
-      if (open.name.name !== "Opt") return;
-      if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
-      const iconAttr = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "icon");
-      const isRider = !!iconAttr && iconAttr.value?.type === "StringLiteral" && iconAttr.value.value === "bike";
-      open.attributes = open.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "selected"));
-      open.attributes.push(t.jsxAttribute(t.jsxIdentifier("selected"), t.jsxExpressionContainer(expr(isRider ? "riderSelected" : "customerSelected"))));
-      const handler = isRider ? "onSelectRider" : "onSelectCustomer";
-      const wrapped = wrap(path.node, "Tappable", `onPress={${handler}} accessibilityRole="radio"`);
-      path.replaceWith(wrapped);
-      path.skip();
-    },
-    JSXOpeningElement(path) {
-      if (path.node.name.name !== "Button") return;
-      path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && ["onClick", "label"].includes(a.name.name)));
-      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("continueLabel"))));
-      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onContinue"))));
-    },
-  };
-}
-
 export const ADOPTED = [
   {
-    // LJ.login — the phone sign-in screen (app/phone.tsx). A clean static auth form: the mock's `Login`
-    // is `Pad(Lockup, Heading, Sub, Field, Button)`. Lockup→BrandLockup (transpiler DS_RENAME); the data
-    // seam wires the phone value/handler onto the Field and the submit onto the Button. The send-failure
-    // error rides the Field's own `error` caption (structurally invisible — a leaf prop) so it stays
-    // in-flow within the mock's tree rather than as an undrawn extra line.
+    // LJ.login — the phone sign-in screen (app/phone.tsx). Until 2026-10-01 a whole-screen view generated
+    // from screens.jsx `Login`; docs/DESIGN-DEVIATIONS.md D-55 made the Calm Mint v2 handoff C2/C3 the
+    // authority, so the generated view was deleted and the gallery key is a SUPERSEDED deferral.
     key: "LJ.login",
-    mockFile: "packages/design/explorations/journey/screens.jsx",
-    component: "Login",
-    componentName: "LoginView",
-    viewFile: "apps/mobile/app/phone.view.tsx",
     container: "apps/mobile/app/phone.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
     uiImport: "../src/ui",
-    propsParam: "{ phone, onChangePhone, onSubmit, loading, submitDisabled, error }: LoginViewProps",
-    propsType: [
-      "export type LoginViewProps = {",
-      "  phone: string;",
-      "  onChangePhone: (v: string) => void;",
-      "  onSubmit: () => void;",
-      "  loading?: boolean;",
-      "  submitDisabled?: boolean;",
-      "  error?: string;",
-      "};",
-    ].join("\n"),
-    bind: ({ t, expr }) => ({
-      JSXOpeningElement(path) {
-        const name = path.node.name.name;
-        if (name === "Field") {
-          // Kit Field props (web `onChange`, `inputMode`, the frozen `value` literal) → the app Field's
-          // `value`/`onChangeText`/`keyboardType`; add the autofill hints + placeholder the phone screen
-          // needs, and surface the send-failure error as the field's own caption.
-          path.node.attributes = path.node.attributes.filter(
-            (a) => !(a.type === "JSXAttribute" && ["value", "onChange", "inputMode"].includes(a.name.name)),
-          );
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("phone"))));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangePhone"))));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("placeholder"), t.stringLiteral("+263 77 000 0000")));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("keyboardType"), t.stringLiteral("phone-pad")));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("autoComplete"), t.stringLiteral("tel")));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("textContentType"), t.stringLiteral("telephoneNumber")));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("error"), t.jsxExpressionContainer(expr("error"))));
-        }
-        if (name === "Button") {
-          path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onSubmit"))));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("submitDisabled"))));
-        }
+    states: [],
+    deferred: [
+      {
+        state: "form",
+        key: "LJ.login",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the phone screen is now the Calm Mint v2 handoff's C2/C3 — a 44px Back, 'What’s your number?', a 52px field with a fixed +263 prefix segment, the 'Starts with 71, 73, 77 or 78.' help (C3: danger border + the too-short line), 'Send code' and the Terms / Privacy footer. The gallery `Login` draws the brand lockup, 'Welcome to Lynia' and a plain phone Field; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
-    }),
+    ],
   },
   {
-    // LJ.onboard — the first-install intro carousel (app/onboarding.tsx). The mock's `Onboarding` is a
-    // SINGLE-slide renderer parameterised by a `slide` index — the app's live carousel is exactly that,
-    // driven in-place. Mock-wins (live-vs-static): adopt the mock's one-slide tree and wire the live
-    // behaviour INTO it — the container owns the slide SET (flag-gated Food/Send vs parcels-only) and the
-    // current index, feeding this view the active slide's icon/title/body, the dot indices, the primary
-    // label ("Next"/"Get started"), and the Skip/Next handlers. `onboard_send`/`onboard_shared` are the
-    // SAME mock component at slide 1/2 and `onboard_flag_off` is its 2-slide twin — all structurally this
-    // view, covered by the container's slide state (not separate generated views).
+    // LJ.onboard — the first-install screen (app/onboarding.tsx). Until 2026-10-01 a whole-screen view
+    // generated from screens.jsx `Onboarding` (the three-slide carousel); D-55 replaced the carousel with
+    // the Calm Mint v2 C1 Welcome, so the generated view was deleted and the key is a SUPERSEDED deferral.
     key: "LJ.onboard",
-    mockFile: "packages/design/explorations/journey/screens.jsx",
-    component: "Onboarding",
-    componentName: "OnboardingView",
-    viewFile: "apps/mobile/app/onboarding.view.tsx",
     container: "apps/mobile/app/onboarding.tsx",
+    mockFile: "packages/design/explorations/journey/screens.jsx",
     uiImport: "../src/ui",
-    propsParam: "{ icon, title, body, slide, dots, primaryLabel, onSkip, onNext }: OnboardingViewProps",
-    propsType: [
-      "export type OnboardingViewProps = {",
-      "  /** The active slide's mint-tile glyph. */",
-      "  icon: IconName;",
-      "  title: string;",
-      "  body: string;",
-      "  /** The active slide index (drives the elongated progress dot). */",
-      "  slide: number;",
-      "  /** The dot indices — length = slide count (2 flag-off, 3 joint-launch). */",
-      "  dots: number[];",
-      "  /** 'Next' on any slide but the last, 'Get started' on the last. */",
-      "  primaryLabel: string;",
-      "  onSkip: () => void;",
-      "  onNext: () => void;",
-      "};",
-    ].join("\n"),
-    hoist: ["s"],
-    bind: ({ t, expr, wrap }) => ({
-      // `s.icon`/`s.title`/`s.body` → the hoisted `icon`/`title`/`body` props (the `const s = ONBOARD[…]`
-      // line is dropped by `hoist`, since ONBOARD is a mock-only module const with no app equivalent).
-      MemberExpression(path) {
-        if (path.node.object.type === "Identifier" && path.node.object.name === "s" && !path.node.computed && path.node.property.type === "Identifier") {
-          path.replaceWith(t.identifier(path.node.property.name));
-        }
+    states: [],
+    deferred: [
+      {
+        state: "slide",
+        key: "LJ.onboard",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the intro carousel is retired. The first screen of a new install is the Calm Mint v2 handoff's C1 Welcome — a mint hero panel inset 12px with the rider illustration, the LyniaGo lockup, 'Parcels and food / across town.', three facts, 'Continue with your number' and 'Want to earn? Ride with LyniaGo →'. The gallery `Onboarding` draws a skippable icon-in-a-circle slide with dots and Next; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
-      // The progress dots: the mock hard-codes `[0,1,2]`; the app's slide count is flag-dependent (2 or
-      // 3), so drive the map off the `dots` prop. `n === slide` still marks the active dot.
-      CallExpression(path) {
-        const callee = path.node.callee;
-        if (callee.type === "MemberExpression" && callee.property.name === "map" && callee.object.type === "ArrayExpression") {
-          callee.object = expr("dots");
-        }
-      },
-      JSXOpeningElement(path) {
-        if (path.node.name.name === "Button") {
-          // Kit web `onClick` + the `slide===2?…` literal label → the app Button's `onPress` + the
-          // container-computed `primaryLabel` (so the flag-off 2-slide set gets "Get started" on index 1).
-          path.node.attributes = path.node.attributes.filter(
-            (a) => !(a.type === "JSXAttribute" && ["onClick", "label"].includes(a.name.name)),
-          );
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("primaryLabel"))));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onNext"))));
-        }
-      },
-      // The "Skip" affordance is a bare Text in the mock; wrap it in a Tappable(onSkip) — a transparent
-      // interaction wrapper the structural guardrail sees through.
-      JSXElement(path) {
-        const open = path.node.openingElement;
-        if (open.name.name !== "Text") return;
-        const kids = path.node.children.filter((c) => !(c.type === "JSXText" && c.value.trim() === ""));
-        if (kids.length !== 1 || kids[0].type !== "JSXText" || kids[0].value.trim() !== "Skip") return;
-        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
-        path.replaceWith(wrap(path.node, "Tappable", `onPress={onSkip} accessibilityRole="button" hitSlop={8}`));
-        path.skip();
-      },
-    }),
+    ],
   },
   {
     key: "LJ.help",
@@ -1344,6 +1209,8 @@ export const ADOPTED = [
         state: "idle",
         key: "LJ.otp",
         reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the code screen is now the Calm Mint v2 handoff's C4 — Back, 'Enter the code', 'Sent on WhatsApp to +263 … Change', six 56px boxes (the active one bordered 2px brand), 'Resend in 0:42' then 'Resend on WhatsApp', and NO Verify button (the sixth digit submits); wrong / expired states inline. The gallery `Otp` draws a single code Field, Verify, a resend link and a ghost Back; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+        reason:
           "live-vs-static multi-state, not a clean whole-screen form. The mock `Otp` draws ONLY the idle state (Heading, Sub, code Field, Verify, a plain 'Resend code' link, Back). The app verify.tsx interleaves, in ONE render, three further states that each have their OWN mock key — a resend-confirmation banner (LJ.otp_resent, a conditional Card above the Field), a locked/expired RECOVERY branch that swaps Verify for an info card + 'Send a fresh code' (LJ.otp_locked), and a live wall-clock cooldown that turns the resend link into a 'Resend in m:ss' countdown (LJ.otp_cooldown). Those conditionals (COND nodes the static Otp mock never drew) make the container's tree diverge from the whole-screen mock, and the codegen model gates a WHOLE-screen generated view — it cannot host the interleaved resent/locked/cooldown branches without either regressing the load-bearing OTP resend/cooldown/lockout-recovery behaviour or adding nodes the mock lacks. Adoptable once the OTP states are modelled as separate mock keys wired to their own state-views (otp_resent/otp_locked/otp_cooldown), not by forcing the live screen into the idle mock.",
       },
     ],
@@ -1361,74 +1228,9 @@ export const ADOPTED = [
         state: "form",
         key: "LJ.register",
         reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): profile setup is now the Calm Mint v2 handoff's C5 — 'What should riders call you?', First name + Surname side by side, the verified phone row, the 'No ID needed' note and 'Start using LyniaGo'. The national ID field and the 'Use a different number' ghost of the gallery `Register` are gone by owner decision (no ID at sign-up); a structural snapshot against `Register` would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+        reason:
           "UNDESIGNED-SUPERSET (the transpiler wall is now GONE). The mixed element+text-siblings idiom — the mock's 'Verified' badge `<span …absolute>{<Icon/> Verified}</span>` (a bare ' Verified' text run sibling of an `<Icon>`) — is now BUILT (Foundation-F.e wraps mixed siblings in `<Text>`, and the app already renders the badge as BOX(ICON, TEXT), so it would match). What still blocks adoption is a genuine UNDESIGNED SUPERSET: the app draws an inline draft-restored banner ('We saved what you'd filled in…') BETWEEN the Sub and the name Field — the visible affordance of the load-bearing LC-C10 profile-draft persistence — which NO mock draws (the existing LJ.draft_restored is the parcel-send composer's ComposerState draft, a different screen; there is no profile-setup draft-restored mock). The whole-screen codegen model cannot host that mid-tree COND without adding a node no mock has, and dropping the cue to match `Register` would strand a UX-review affordance. The draft PERSISTENCE itself is preserved regardless (container logic). Adoptable once a profile-setup draft-restored state earns its own drawn mock (then it wires as a separate state-view); the transpiler idiom is no longer the wall.",
-      },
-    ],
-  },
-  {
-    // LJ.role_select — the post-OTP role fork (app/role.tsx). ADOPTED (Foundation-F.e): the two web idioms
-    // in the mock's inline `Opt` card — a DYNAMIC template-literal `border` and a CONDITIONAL spread-token
-    // `boxShadow` — now lower to RN (transpile.mjs template-literal-border + conditional-shadow-spread), so
-    // `RoleSelect` generates a clean, typechecking whole-screen view. Structurally `Pad(Lockup, Heading,
-    // Sub, Opt, Opt, Button)` → `BOX(BRANDLOCKUP, HEADING, SUB, OPT, OPT, BUTTON)`; the nested `Opt` is an
-    // opaque sub-component on both sides (uppercase-fallback OPT), so structure holds by construction and
-    // the idioms only make the view valid RN. The container keeps ALL logic (role state, saveRolePreference,
-    // permission-priming route); the data seam wires each option's live `selected` + tap handler (a
-    // transparent Tappable wrap) and the Button's dynamic label/onPress. `role_select_flag_off` is the
-    // food-off twin — SAME structure but a `div(Dove, Wordmark)` brand mark (vs `Lockup`) and its own frozen
-    // copy — adopted as a second state so the flag-off screen aligns to its OWN mock (brand mark + verbatim
-    // copy), the container switching views on `restaurantsEnabled`.
-    key: "LJ.role_select",
-    container: "apps/mobile/app/role.tsx",
-    mockFile: "packages/design/explorations/journey/screens.jsx",
-    uiImport: "../src/ui",
-    states: [
-      {
-        state: "form",
-        key: "LJ.role_select",
-        component: "RoleSelect",
-        componentName: "RoleSelectView",
-        viewFile: "apps/mobile/app/role.view.tsx",
-        propsParam: "{ customerSelected, riderSelected, onSelectCustomer, onSelectRider, continueLabel, onContinue }: RoleSelectViewProps",
-        propsType: [
-          "export type RoleSelectViewProps = {",
-          "  /** The customer option's live selected state (drives its mint-wash + check). */",
-          "  customerSelected: boolean;",
-          "  /** The rider option's live selected state. */",
-          "  riderSelected: boolean;",
-          "  onSelectCustomer: () => void;",
-          "  onSelectRider: () => void;",
-          "  /** 'Continue as a customer' / 'Continue as a rider', per the live selection. */",
-          "  continueLabel: string;",
-          "  onContinue: () => void;",
-          "};",
-          "",
-          "/** The nested Opt option card's props (mock `Opt` param), typed so the view compiles strict. */",
-          "type RoleOptionData = { icon: IconName; title: string; desc: string; selected: boolean };",
-        ].join("\n"),
-        bind: roleSelectBind,
-      },
-      {
-        state: "flag_off",
-        key: "LJ.role_select_flag_off",
-        mockFile: "packages/design/explorations/journey/screens-shipped.jsx",
-        component: "RoleSelectFlagOff",
-        componentName: "RoleSelectFlagOffView",
-        viewFile: "apps/mobile/app/role-flag-off.view.tsx",
-        propsParam: "{ customerSelected, riderSelected, onSelectCustomer, onSelectRider, continueLabel, onContinue }: RoleSelectViewProps",
-        propsType: [
-          "export type RoleSelectViewProps = {",
-          "  customerSelected: boolean;",
-          "  riderSelected: boolean;",
-          "  onSelectCustomer: () => void;",
-          "  onSelectRider: () => void;",
-          "  continueLabel: string;",
-          "  onContinue: () => void;",
-          "};",
-          "",
-          "type RoleOptionData = { icon: IconName; title: string; desc: string; selected: boolean };",
-        ].join("\n"),
-        bind: roleSelectBind,
       },
     ],
   },

@@ -90,10 +90,17 @@ describe("bootRedirectTarget (LC-D-T3: cold-start deep link vs default boot dest
 });
 
 describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profile/setup.tsx)", () => {
-  it("sends a saved role to its home and a brand-new account to the role fork", () => {
+  it("sends a saved role to its home; with no role, a new account starts as a customer (D-55: no role fork)", () => {
     expect(signedInDestination("rider")).toBe("/rider");
     expect(signedInDestination("customer")).toBe("/home");
-    expect(signedInDestination(null)).toBe("/role");
+    expect(signedInDestination(null)).toBe("/home");
+  });
+
+  it("the C1 rider path primes location + job alerts before the rider app", () => {
+    expect(signedInDestination(null, "rider")).toBe("/permissions?next=/rider");
+    // A saved role always wins over the C1 intent.
+    expect(signedInDestination("customer", "rider")).toBe("/home");
+    expect(signedInDestination("rider", "rider")).toBe("/rider");
   });
 });
 
@@ -104,8 +111,9 @@ describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () =
     jest.mocked(riderModeAvailable).mockReturnValue(false);
   });
 
-  it("skips the role fork: a new account goes through the customer's permission priming", () => {
-    expect(signedInDestination(null)).toBe("/permissions?next=/home");
+  it("has no rider path: every account lands on the customer Home", () => {
+    expect(signedInDestination(null)).toBe("/home");
+    expect(signedInDestination(null, "rider")).toBe("/home");
     expect(signedInDestination("customer")).toBe("/home");
     expect(signedInDestination("rider")).toBe("/home");
   });

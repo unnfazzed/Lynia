@@ -33,6 +33,14 @@
 export const PARITY_STATUS = {
   // ── LJ ──────────────────────────────────────────────────────────
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
+  "LJ.role_select": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-55 (owner, 2026-10-01): the Calm Mint v2 handoff (packages/design/handoff/calm-mint-v2-2026-10) removes the role choice screen — every account starts as a customer, and the rider path is 'Want to earn? Ride with LyniaGo' on C1 or the Account card. app/role.tsx was deleted; there is no screen to wire. Not aligned to.",
+  }, // Choose your role
+  "LJ.role_select_flag_off": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-55 (owner, 2026-10-01): the Calm Mint v2 handoff (packages/design/handoff/calm-mint-v2-2026-10) removes the role choice screen — every account starts as a customer, and the rider path is 'Want to earn? Ride with LyniaGo' on C1 or the Account card. app/role.tsx was deleted; there is no screen to wire. Not aligned to.",
+  }, // Choose your role · food off
   "LJ.order_restore": { status: "PENDING" }, // Cold start · order running
   "LJ.stale_cache": { status: "PENDING" }, // Orders · saved copy
   "LJ.addr_search": {

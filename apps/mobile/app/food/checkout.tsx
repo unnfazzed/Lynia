@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { placeFoodOrder } from "../../src/api/food-orders";
+import { askNotificationsInContext } from "../../src/push/ask-in-context";
 import type { ResolvedPlace } from "../../src/api/places";
 import { useFoodCart } from "../../src/food/cart-context";
 import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
@@ -191,6 +192,8 @@ export default function FoodCheckoutScreen(): React.ReactElement {
         idempotencyKey,
       });
       void saveMyPickupPhone(dropPhone.trim());
+      // D-55: notifications are asked for here, after the order goes out, not on a priming screen.
+      void askNotificationsInContext();
       seedFoodOrder(queryClient, order);
       cart.clear();
       if (!mountedRef.current) return;

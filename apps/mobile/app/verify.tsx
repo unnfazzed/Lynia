@@ -1,42 +1,49 @@
 import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { AppState, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { AppState, Text, TextInput, View } from "react-native";
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
-import { loadRolePreference } from "../src/auth/session";
-import { signedInDestination } from "../src/logic/sign-in-route";
+import { loadRolePreference, saveRolePreference } from "../src/auth/session";
 import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
-import { Button, DismissKeyboardArea, Field, Heading, Icon, Screen, Sub, useActionError, Tappable } from "../src/ui";
+import { parseSignInIntent, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
+import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
+import { OB } from "../src/ui/onboarding/copy";
+import { BackButton, Cta, H2, OnbScreen, Pad } from "../src/ui/onboarding/kit";
 
 /**
- * The three seed props stage the OTP screen's non-idle states, each of which is its own gallery
- * screen: LJ.otp_cooldown (a countdown running), LJ.otp_resent (the fresh-code banner + countdown)
- * and LJ.otp_locked (the expired/locked recovery branch). In the app all three are reached by living
- * through the flow — the defaults below ARE the app's behaviour (a full cooldown on arrival, no
- * banner, not locked) — so this seam only lets the parity lane mount one frozen state directly
- * (tools/parity/mobile/fixtures/auth_otp*.mjs). Expo-router passes no props.
+ * Test seam: the parity lane stages the code screen's states by mounting it directly (expo-router passes
+ * no props, so the defaults are what ships).
  */
 export type VerifyScreenProps = {
-  /** Seconds left on the resend cooldown at mount (default: the full RESEND_COOLDOWN_S). */
   initialCooldownS?: number;
-  /** Seed the "A fresh code is on its way" confirmation banner. */
   initialResent?: boolean;
-  /** Seed the expired/locked recovery branch (info card + "Send a fresh code"). */
   initialLocked?: boolean;
 };
 
-/** What the screen tells the customer to go check. Mirrors the API's OtpDeliveryChannel — kept as a
- *  local literal union rather than a shared import since neither client currently shares these OTP
- *  response types with the API (each has its own local copy; see src/api/auth.ts). */
 type DeliveryChannel = "whatsapp" | "sms";
 
 function asDeliveryChannel(v: unknown): DeliveryChannel {
   return v === "whatsapp" ? "whatsapp" : "sms";
 }
 
+const CODE_LENGTH = 6;
+/** The idle resend line, greyed until the countdown ends (`shared.js` `O.otp`). */
+const RESEND_IDLE = "#9AA3AB";
+
+/**
+ * C4 · Code (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger D-55):
+ * "Enter the code", "Sent on WhatsApp to +263 … Change", six 56px boxes with the active one bordered
+ * 2px brand, "Resend in 0:42" then "Resend on WhatsApp", and the footer note. There is NO Verify button:
+ * the sixth digit submits. A wrong code shows the danger line; an expired or locked code shows "That
+ * code has expired" and "Send a new code".
+ *
+ * The channel line follows the real send (D-40): Bird Verify is WhatsApp-first and can fall back to SMS
+ * per number, so "Sent by SMS" when it did. The input keeps the platform autofill hints (`sms-otp`,
+ * `oneTimeCode`), which is what "fills in by itself" rests on.
+ */
 export default function VerifyScreen({
   initialCooldownS = RESEND_COOLDOWN_S,
   initialResent = false,
@@ -44,40 +51,29 @@ export default function VerifyScreen({
 }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { signIn } = useAuth();
-  const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string }>();
+  const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
+  const intent = parseSignInIntent(params.intent);
   const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
   const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
-  // The channel the code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — starts from what
-  // phone.tsx just learned from requestOtp, and is re-set on every resend below, since a resend can
-  // land on a DIFFERENT channel (e.g. Bird falling back from WhatsApp to SMS).
   const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(asDeliveryChannel(params.deliveryChannel));
   const [busy, setBusy] = useState(false);
-  // Action errors speak once as an auto-dismissing toast, never as a persistent card
-  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
   const setError = useActionError();
-  // Resend affordance (C3): a visible cooldown so the user isn't left tapping "Back" when the code
-  // never arrives. `resent` shows a calm confirmation after a successful resend; the countdown starts
-  // ticking on arrival (a code was just sent from the phone screen) and resets after each resend.
-  // Anchored to an absolute deadline (not a decrementing counter): reading the code means backgrounding
-  // to WhatsApp, which pauses JS timers — so a relative countdown would freeze and block "Resend" for
-  // longer than the real 60s. We derive the remaining seconds from the wall clock instead.
+  const [wrong, setWrong] = useState(false);
   const [cooldownEndsAt, setCooldownEndsAt] = useState<number>(() => Date.now() + initialCooldownS * 1000);
   const [cooldown, setCooldown] = useState(initialCooldownS);
   const [resending, setResending] = useState(false);
-  const [resent, setResent] = useState(initialResent);
-  // Expiry / lockout recovery (A0-1 / R0-1): the entered code expired (TTL) or the record is locked
-  // (too many wrong tries). We stop offering "Verify" on a code the server will never accept and
-  // promote "Send a fresh code" instead — a resend mints a new code AND resets attempts server-side,
-  // so recovery is a single tap and never a dead end.
+  const [, setResent] = useState(initialResent);
   const [locked, setLocked] = useState(initialLocked);
+  const [focused, setFocused] = useState(false);
+  const input = useRef<TextInput>(null);
+  // The last code we submitted — the sixth digit auto-submits once per distinct code, never in a loop.
+  const tried = useRef<string | null>(null);
 
   useEffect(() => {
     const tick = (): void => setCooldown(Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000)));
     tick(); // recompute immediately (mount, resend, and — via AppState below — on foreground)
     const iv = setInterval(tick, 1000);
-    // Backgrounding pauses the interval; recompute from the wall clock the instant we return so the
-    // countdown reflects the real elapsed time rather than resuming where it froze.
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") tick();
     });
@@ -87,9 +83,6 @@ export default function VerifyScreen({
     };
   }, [cooldownEndsAt]);
 
-  // Request a brand-new code. Used by both the throttled "Resend" affordance and the "Send a fresh
-  // code" recovery action; the latter bypasses the UI cooldown gate because a locked/expired user needs
-  // a new code now (the server's own rate limit is the real guard).
   const requestFreshCode = async (): Promise<void> => {
     if (resending || phone.length === 0) return;
     setError(null);
@@ -99,8 +92,11 @@ export default function VerifyScreen({
       setDeliveryChannel(asDeliveryChannel(res.deliveryChannel));
       setResent(true);
       setLocked(false);
+      setWrong(false);
       setCode("");
+      tried.current = null;
       setCooldownEndsAt(Date.now() + RESEND_COOLDOWN_S * 1000);
+      input.current?.focus();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't send a new code.");
     } finally {
@@ -108,16 +104,14 @@ export default function VerifyScreen({
     }
   };
 
-  const resend = (): void => {
-    if (cooldown > 0) return;
-    void requestFreshCode();
-  };
-
-  const submit = async (): Promise<void> => {
+  const submit = async (value: string): Promise<void> => {
+    if (busy) return;
+    tried.current = value;
     setError(null);
+    setWrong(false);
     setBusy(true);
     try {
-      const res = await verifyOtp(phone, code.trim());
+      const res = await verifyOtp(phone, value);
       await signIn({
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
@@ -126,31 +120,24 @@ export default function VerifyScreen({
         role: res.role,
         needsProfile: res.needsProfile,
       });
-      // A brand-new account has no name yet (verifyOtp seeds firstName ""); collect it on the
-      // profile-setup step FIRST (finding C12) before the role fork / home. That screen routes onward
-      // to /role or /home itself once the name is saved.
+      // A brand-new account has no name yet: C5 first, carrying the verified number, the channel that
+      // verified it, and the C1 rider intent. That screen routes onward itself once the name is saved.
       if (res.needsProfile) {
-        // Carry the just-verified number (and the channel that verified it — D-40) to the setup screen
-        // so it can show the read-only "Verified" phone field the mock draws (LJ.register); setup.tsx
-        // has no other source for either.
-        router.replace({ pathname: "/profile/setup", params: { phone, deliveryChannel } });
+        router.replace({ pathname: "/profile/setup", params: { phone, deliveryChannel, ...(intent ? { intent } : {}) } });
         return;
       }
-      // Show the role fork once per account (RIDER-JOURNEY-AUDIT R0-4). A returning user who already
-      // picked a role goes straight home rather than being re-prompted every sign-in.
+      // No role choice screen (D-55): a saved role wins; otherwise the account starts as a customer, or
+      // as a rider if it came in through C1's "Ride with LyniaGo".
       const chosen = await loadRolePreference();
-      // Route to the saved role's home (mirrors role.tsx's go()): a returning rider lands on the rider
-      // dashboard, a customer on compose, and a brand-new account still sees the role fork (R3) — except
-      // on the customer-only iPhone app, which has no fork (signedInDestination, src/rider-mode.ts).
-      router.replace(signedInDestination(chosen));
+      if (!chosen) void saveRolePreference(startRoleFor(null, intent));
+      router.replace(signedInDestination(chosen, intent));
     } catch (e) {
-      // An expired or locked code isn't a "try again" error — it needs a fresh code. Drop into the
-      // recovery state (info card + "Send a fresh code") instead of a raw error the user can't act on.
+      // An expired or locked code isn't a "try again" error — it needs a fresh code.
       if (e instanceof ApiError && isOtpExpiredOrLocked(e)) {
         setLocked(true);
-        setError(null);
+      } else if (e instanceof ApiError && (e.status === 400 || e.status === 401 || e.status === 422)) {
+        setWrong(true);
       } else {
-        setLocked(false);
         setError(e instanceof ApiError ? e.message : "Couldn't verify the code.");
       }
     } finally {
@@ -158,125 +145,128 @@ export default function VerifyScreen({
     }
   };
 
+  // The sixth digit submits (README §3 "auto-verifies, so there's no Verify button").
+  useEffect(() => {
+    if (code.length === CODE_LENGTH && !locked && tried.current !== code) void submit(code);
+  }, [code, locked]);
+
+  const back = (): void => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/phone");
+  };
+
+  const shown = phone ? formatPhoneDisplay(phone) : "";
+  const active = Math.min(code.length, CODE_LENGTH - 1);
+
   return (
     // The number pad has no return key on iOS: a tap outside the field is the way to put it away.
     <DismissKeyboardArea>
-      <Screen>
-        {/* The kit's `Otp` screen (screens.jsx) carries no top bar — just the in-body heading and a
-            bottom ghost "Back". */}
-        <Heading>Check your messages</Heading>
-        {/* On a QA build the code arrives pre-filled (console OTP channel) — no message was sent, so
-            don't claim one was. Real users see the "we sent a code" copy naming whichever channel the
-            code actually went out on (D-40 / docs/DESIGN-DEVIATIONS.md) — never a hardcoded claim that
-            could be wrong the moment Bird falls back from WhatsApp to SMS on a given send. */}
-        <Sub>
-          {prefilled
-            ? "Test build: code pre-filled — tap Verify."
-            : `We sent a 6-digit code to ${phone ? formatPhoneDisplay(phone) : "your phone"} by ${deliveryChannel === "whatsapp" ? "WhatsApp" : "SMS"}.`}
-        </Sub>
-
-        {/* Calm confirmation after a resend, announced to screen readers. */}
-        {resent && !locked ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: tokens.space.sm,
-              paddingVertical: tokens.space.sm,
-              paddingHorizontal: tokens.space.md,
-              borderRadius: tokens.radius.input,
-              backgroundColor: tokens.color.accentWash,
-              marginBottom: tokens.space.sm,
-            }}
-          >
-            <Icon name="check" size={16} color={tokens.color.accentText} />
-            <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-              A fresh code is on its way — check your messages.
-            </Text>
-          </View>
-        ) : null}
-
-        <Field
-          label="6-digit code"
-          value={code}
-          onChangeText={(v) => {
-            setCode(v);
-            if (locked) setLocked(false);
-          }}
-          placeholder="000000"
-          keyboardType="number-pad"
-          maxLength={6}
-          // Autofill: `sms-otp` is the Android autofill hint (AUTOFILL_HINT_SMS_OTP) for a code arriving
-          // by SMS; `oneTimeCode` drives iOS Security-Code AutoFill (which also covers SMS/iMessage, not
-          // WhatsApp). Both are harmless no-ops when this send actually went out over WhatsApp — there is
-          // no autofill hook for a WhatsApp message, so the user just types/pastes it — and still help on
-          // the SMS-fallback case, so they stay on regardless of `deliveryChannel`.
-          autoComplete="sms-otp"
-          textContentType="oneTimeCode"
-          // Drawn in the IDLE mock only (screens.jsx `Otp`). The cooldown / resent / locked mocks
-          // (screens-safety.jsx `OtpState`) draw the field with no hint under it — the countdown row,
-          // the banner and the lockout card are the guidance in those states — so it is not rendered
-          // there. Not drawn ⇒ not rendered.
-          hint={
-            cooldown > 0 || locked
-              ? undefined
-              : deliveryChannel === "whatsapp"
-                ? "WhatsApp can take a minute on a busy network."
-                : "SMS can take a minute on a busy network."
-          }
-          error={locked ? "That code has expired." : undefined}
-        />
-
-        {locked ? (
-          // Recovery, not a dead end: one tap issues a new code and resets the attempt counter server-side.
-          <>
-            <View
-              style={{
-                padding: tokens.space.md,
-                borderRadius: tokens.radius.input,
-                backgroundColor: tokens.color.surface,
-                marginBottom: tokens.space.sm,
-              }}
-            >
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
-                Codes last 10 minutes, and 5 wrong tries locks one. Send a fresh code — it resets your attempts too.
-              </Text>
-            </View>
-            <Button label="Send a fresh code" onPress={() => void requestFreshCode()} loading={resending} />
-          </>
-        ) : (
-          <>
-            <Button label="Verify" onPress={submit} loading={busy} disabled={code.trim().length !== 6} />
-            {/* Resend affordance (screens.jsx `Otp` idle · screens-safety.jsx `OtpState`): an inline
-                centred link, not a ghost button. Idle → green "Didn't get it? Resend code"; during the
-                cooldown → a muted "Resend in m:ss" (or "Resend again in m:ss" after a resend). */}
-            <Tappable
-              onPress={resend}
-              disabled={cooldown > 0}
-              accessibilityRole="button"
-              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: tokens.space.xs + 2, minHeight: tokens.touchTargetMin }}
-            >
-              {cooldown > 0 ? (
-                <>
-                  <Icon name="clock" size={15} color={tokens.color.muted} />
-                  <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>
-                    Resend {resent ? "again " : ""}in <Text style={{ fontVariant: ["tabular-nums"] }}>{formatCountdown(cooldown)}</Text>
-                  </Text>
-                </>
-              ) : (
-                <Text style={{ fontSize: 13.5, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                  Didn&apos;t get it? Resend code
+      <OnbScreen
+        footer={
+          locked ? (
+            <Cta label={OB.sendNewCode} onPress={() => void requestFreshCode()} busy={resending} />
+          ) : (
+            <Text style={{ textAlign: "center", fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{OB.autoNote}</Text>
+          )
+        }
+      >
+        <Pad>
+          <BackButton onPress={back} />
+          <H2>{OB.codeTitle}</H2>
+          <Text style={{ marginBottom: 20, fontSize: 15, lineHeight: 21.75, color: tokens.color.muted }}>
+            {prefilled ? (
+              OB.testBuild
+            ) : (
+              <>
+                {OB.sentTo(deliveryChannel)}
+                <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{OB.channelName(deliveryChannel)}</Text>
+                {" to "}
+                <Text style={{ fontVariant: ["tabular-nums"] }}>{shown}</Text>
+                {". "}
+                <Text accessibilityRole="link" onPress={back} style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>
+                  {OB.change}
                 </Text>
-              )}
-            </Tappable>
-          </>
-        )}
+              </>
+            )}
+          </Text>
 
-        {/* The kit draws the way back as a bottom ghost button (no top bar). */}
-        <Button label="Back" variant="ghost" onPress={() => router.back()} />
+          <Tappable onPress={() => input.current?.focus()} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {Array.from({ length: CODE_LENGTH }, (_, i) => {
+                const current = focused && !locked && i === active && code.length < CODE_LENGTH;
+                return (
+                  <View
+                    key={i}
+                    style={{
+                      flex: 1,
+                      height: 56,
+                      borderRadius: 12,
+                      borderWidth: current ? 2 : 1,
+                      borderColor: current ? tokens.color.accent : wrong || locked ? tokens.color.danger : tokens.color.line,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ fontSize: 24, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{code[i] ?? ""}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Tappable>
+          {/* One real input under the six boxes: it owns the keyboard, autofill and paste. */}
+          <TextInput
+            ref={input}
+            value={code}
+            onChangeText={(v) => {
+              setCode(v.replace(/\D/g, "").slice(0, CODE_LENGTH));
+              setWrong(false);
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            autoFocus={!prefilled}
+            keyboardType="number-pad"
+            maxLength={CODE_LENGTH}
+            autoComplete="sms-otp"
+            textContentType="oneTimeCode"
+            accessibilityLabel="6-digit code"
+            caretHidden
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0 }}
+          />
 
-      </Screen>
+          {wrong ? (
+            <Text accessibilityLiveRegion="polite" style={{ marginTop: 12, fontSize: 13, lineHeight: 18, color: tokens.color.dangerInk }}>
+              {OB.wrongCode}
+            </Text>
+          ) : null}
+          {locked ? (
+            <Text accessibilityLiveRegion="polite" style={{ marginTop: 12, fontSize: 13, lineHeight: 18, color: tokens.color.dangerInk }}>
+              {OB.expired}
+            </Text>
+          ) : (
+            <>
+              {cooldown > 0 ? (
+                <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Icon name="clock" size={16} color={tokens.color.muted} />
+                  <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{OB.resendIn(formatCountdown(cooldown))}</Text>
+                </View>
+              ) : null}
+              <Tappable
+                onPress={() => void requestFreshCode()}
+                disabled={cooldown > 0 || resending}
+                accessibilityRole="button"
+                accessibilityLabel={OB.resendOnWhatsApp}
+                accessibilityState={{ disabled: cooldown > 0 }}
+                style={{ marginTop: cooldown > 0 ? 6 : 14, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6 }}
+              >
+                <Icon name="refresh-cw" size={16} color={cooldown > 0 ? RESEND_IDLE : tokens.color.accentText} />
+                <Text style={{ fontSize: 14, fontWeight: cooldown > 0 ? tokens.font.weight.regular : tokens.font.weight.semibold, color: cooldown > 0 ? RESEND_IDLE : tokens.color.accentText }}>
+                  {OB.resendOnWhatsApp}
+                </Text>
+              </Tappable>
+            </>
+          )}
+        </Pad>
+      </OnbScreen>
     </DismissKeyboardArea>
   );
 }

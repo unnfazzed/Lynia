@@ -2765,7 +2765,7 @@ for Home. D-13 (no send-again rail) stands: the handoff draws none. The rider-v2
 the KYC gates on the job board; its "live-job bar" for a rider in customer view (C5) is a sibling of
 this bar and lands with that work.
 
-### 3 · What has landed (part 1, Home)
+### 3 · What has landed (part 1 Home, part 2 customer onboarding)
 
 - **Art:** the four v2 stickers and four illustrations are transcribed node for node into
   `react-native-svg` by `apps/mobile/scripts/svg-to-rn.mjs` (`src/ui/art/`, generated; c2pa metadata
@@ -2778,7 +2778,16 @@ this bar and lands with that work.
   "+N order(s)". The location sheet (H5) and the notify-me sheet (`H.notify`) are restyled to the
   drawing; the shared `HomeHeader` stays for the rider board (D-29, until D-54 replaces it).
 
-### 4 · Still different from the handoff (part 1)
+- **Customer onboarding (C1–C5)** (`src/ui/onboarding/kit.tsx`, `copy.ts` = the handoff's `O`/`OB`,
+  verbatim): C1 Welcome replaces the intro carousel (`app/onboarding.tsx`); C2/C3 the +263 phone screen
+  (`app/phone.tsx`, `logic/zw-mobile.ts`); C4 the six-box code screen that submits on the sixth digit
+  (`app/verify.tsx`); C5 First name + Surname with no national ID (`app/profile/setup.tsx`). The role
+  choice screen is gone (`app/role.tsx` deleted): a new account starts as a customer, or as a rider when it
+  came in through C1's "Ride with LyniaGo" (`logic/sign-in-route.ts`). Customers skip the permission
+  priming screens — location is asked on Home, notifications right after the first order goes out
+  (`src/push/ask-in-context.ts`, called from Send and food checkout).
+
+### 4 · Still different from the handoff (parts 1–2)
 
 | Where | Handoff | App | Why |
 |---|---|---|---|
@@ -2791,11 +2800,17 @@ this bar and lands with that work.
 | Live bar tap | "Tapping it opens the Orders tab" | One order → that order; two or more → the Orders tab | Opening the list for a single order is an extra tap |
 | Offline | A muted banner under the header | The app-wide offline banner at the top of the screen | One banner owner (`_layout.tsx`); the rails keep their cached data either way |
 | Location sheet | Search, current location, Home, Work, Add a place | The same, plus the existing one-line notes when location is off or a fix fails; "Add a place" focuses the search (saving a found place as Home/Work is the search's own job) | The sheet must still explain why "Use my current location" did nothing |
+| C2 wrong prefix | Only the too-short line (C3) is drawn | A nine-digit number that isn't 71/73/77/78 gets "That doesn't look like a mobile number…" | Sending a code to a landline wastes a send; one undrawn line |
+| C4 channel line | "Sent on WhatsApp to …" | That, or "Sent by SMS to …" when Bird fell back to SMS for this number | D-40: Bird Verify is WhatsApp-first with a per-number SMS fallback; a fixed "WhatsApp" would sometimes be false |
+| C4 "Fills in by itself" | Auto-read from the message | The input carries the platform autofill hints (`sms-otp`, `oneTimeCode`); a WhatsApp code is pasted or tapped in from the suggestion strip, and the sixth digit still submits | No app can read a WhatsApp message; true zero-tap needs WhatsApp's one-tap autofill template (NEEDS BACKEND, Bird) |
+| C4 on a QA build | — | "Test build: code pre-filled." in place of the channel line | No message is sent on a QA build (console OTP); the drawn line would be false |
+| C5 | Two fields, the verified row, the note | The same, plus the existing "We saved what you'd filled in…" line when a draft is restored | A half-filled form survives an app kill (LC-C10); the line says why the fields are already filled |
+| C5 exit | None drawn | None — the kyc-2026-08 "Use a different number" ghost is gone with `Register` | A mistyped number is fixed with C4's "Change" before the code is accepted |
+| Rider path after sign-in | Permissions in context | Riders still see the location + job-alert priming screens (`/permissions?next=/rider`) before the rider app | A rider without location and job alerts cannot take work; the handoff's in-context rule is written for customers |
 
 ### 5 · Still to land (follow-up PRs, same handoff)
 
-Customer onboarding C1–C5 (welcome, +263 phone, the auto-verifying code screen, First name + Surname,
-permissions in context) and rider onboarding R1–R3 (why ride + checklist, the resumable pending screen,
+Rider onboarding R1–R3 (why ride + checklist, the resumable pending screen,
 verified + the commission-free jobs meter). Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
 shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.
