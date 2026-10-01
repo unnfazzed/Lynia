@@ -9,7 +9,7 @@ The original screens (29 PNGs, 1024px tablet, captured 2026-09-29) are listed in
 The HTML files here are **design references**: prototypes that show the intended look and behaviour, **not production code**. Recreate them in the target codebase using its own patterns. The customer and rider apps are Expo / React Native, so use the same stack and the existing Lynia design-system components (`Button`, `Card`, `Field`, `StatusPill`, `Stepper`, `AppBar`, `TabBar`, `Icon`, `EmptyState`, `OfflineBanner`). Add new shared components where noted below.
 
 - `Merchant Prototype (standalone).html` — **clickable prototype**. Opens offline. It has a side panel with a Restaurant/Shop switch, "Simulate new order", a jump list of every screen and a "why it changed" note per screen. On a narrow viewport it fills the screen as a phone.
-- `Merchant Screens Canvas (standalone).html` — all 28 screens on one pannable canvas, grouped by flow, each with its change note.
+- `Merchant Screens Canvas (standalone).html` — all 28 screens plus the 2026-10 branch frames (rows F and G) on one pannable canvas, grouped by flow, each with its change note.
 - `reference/proto.js` — prototype wiring: every tap target, navigation parent, confirm sheet and timer. **Read this for the exact behaviour.**
 - `reference/Stepper.reference.txt` — the existing design-system stepper. Merchant tracking uses its `RESTAURANT_STEPS` grammar.
 - `reference/tokens/*.css` — the design tokens used by everything.
@@ -101,8 +101,37 @@ Common frame: 360 × 720 (320px must also work, so 16px screen edges). A 30px st
 - **C1 Menu.** Mint header "Menu" with a search. Category chips (selected = ink fill; "+ Category" in mint). Rows are 64px: a 44px initial tile, name/price, and a **stock switch**. An off dish is greyed, with "Off until tomorrow" in `--highlight-ink`. Tapping the row edits it (editor not drawn). Primary "+ Add a dish".
 - **C2 Out-of-stock sheet.** Scrim, then a sheet "Mazondo is off. For how long?" with radio options **Rest of today** (default, "Back on automatically at 08:00") and "Until I turn it back on". Primary "Turn off", link "Keep it on"; tapping the scrim cancels.
 - **C3 Money.** Header segmented Today / This week, "Sales · 7 orders" and **$59.50** (34/700). Body: a gold overdue row "$9.50 overdue · #A098 · Tino · due 11:40", then an Orders list (#id · time / status, total on the right).
-- **C4 Account.** An avatar (initials) with the business name and "Farai · Owner". Rows: Shop front · Opening hours · Preferred riders · Team (gold "1" badge) · Help, then a red "Sign out" (confirm). The same screen serves both modes (name, initials and the second tab change). Staff should not see Money or Team (not drawn).
+- **C4 Account.** An avatar (initials) with the business name and "Farai · Owner". Rows: Shop front · Opening hours · **Branches** (owner only; muted count when 2+; opens C7) · Preferred riders · Team (gold "1" badge) · Help, then a red "Sign out" (confirm). The same screen serves both modes (name, initials and the second tab change). Staff should not see Money or Team (not drawn).
 - **C5 Hours.** Segmented "Same every day | Per day". Open/Close time fields (18/600). Days-open chips M–S (multi-select). A "Busy mode (+10 min)" switch card. Primary "Save hours".
+
+### F · Branches (2026-10, brief "branch switcher and Add branch")
+Each branch is its own business (location, hours, menu, team, orders, cash). The owner works in one branch at a time; switching moves the whole app. Server: PR #999.
+
+- **B1 / D1 header, 2+ branches.** A 20px `chevron-down` after the 22/700 name; name + chevron is one tap target, 44px tall (`--target-min`; drawn with −8px/−6px margins so the header height is unchanged). It opens C6. **One branch: header exactly as today, no chevron.** B5 (closed) carries the same chevron.
+- **C6 Branches** (bottom sheet, radius 20 top, `--shadow-sheet`, scrim tap closes). Title "Your branches" (18/700). Rows 64px min: name 14.5/600 and location 13 muted, each one line with ellipsis. Current branch first with an accent `check` (20px); a grey `pl` **"Not live yet"** (11.5/700) on branches LyniaGo hasn't switched on (they still open). Ghost button "+ Add a branch" (44px) at the foot, owner only.
+  - Tap another branch → sheet closes on that branch's Orders home (B1 / D1, or the not-live state) with toast **"Now at {branch name}"**. Tap the current branch → just closes.
+  - Many (up to 20): the list scrolls inside the sheet; the sheet tops out 8px below the status bar (top 38px); title and "Add a branch" stay fixed.
+  - Offline: the red offline bar sits under the title, full-bleed; rows and "Add a branch" disabled (45% opacity).
+- **C7 Add a branch** (pushed, AppBar "Add a branch"). Top to bottom: **Branch name** (empty, hint "How customers will see it, like Mama’s Kitchen · Avondale"); **Location**, A4's block unchanged (result card + ghost "Use my current location" + "Or search street or area"; result-card meta "From your phone’s location" or **"From search"**); **Copy my menu** / **Copy my items** row with `Switch`, on by default, meta "12 dishes in 3 categories" / "40 items in 5 categories" (live counts); muted 13 line "Your logo, photos, opening hours and cash rule come too. You can change them in the new branch."; primary **"Create branch"** (52px) pinned at the bottom. No phone field (contact = owner's sign-in number).
+  - Disabled (`--line` fill, `--muted` text) until there's a name and a location.
+  - Saving: spinner + "Creating branch…" in the primary; form at 50% and back locked.
+  - Success: switch to the new branch, land on its Orders home in the not-live state, toast **"{branch name} is ready"**.
+- **B1 / D1 not live yet.** Header: name + chevron, grey "Not live yet" pill in place of the open line; **no open switch, no stat tiles**. Body (centred): 72px surface circle with `store`, "Almost ready" (18/700), "LyniaGo will call you to switch this branch on. Customers can’t see it until then." (13), ghost "Check your menu" (shop: "Check your items", opens C1 / E1), link "Set opening hours" (C5). Tab bar as normal.
+
+**C7 error copy (final — the API copy changes to match):**
+| When | Shown | Copy |
+|---|---|---|
+| Name used by another of their branches | Inline under the name (replaces the hint; field border `--danger`) | You already have a branch with that name. Add the area, like “Mama’s Kitchen · Avondale”. |
+| Location outside the covered area | Inline under the result card (card border `--danger`, `--danger-wash` fill) | That address is outside the area LyniaGo covers for now. *(reworded from "That pin…")* |
+| 20 branches already | Banner at the top of the form (`--danger-wash`, link "Open WhatsApp"); primary disabled | You can have up to 20 branches. Message LyniaGo on WhatsApp for more. |
+| Account on hold | Same banner; primary disabled | This account is on hold. Message LyniaGo on WhatsApp to sort it out. |
+| Offline | Red offline bar under the AppBar; fields editable, primary disabled | No connection, retrying… |
+
+**Who sees what.** Staff work at one business: no chevron, no Branches row, no "+ Add a branch" (not drawn; same screens minus those).
+
+**Open question — orders at other branches: answer A.** Leave it as is: each branch's own staff and phones ring for its orders. Revisit with B (a "2 new" count per C6 row, needs a server addition) if owners report missed orders.
+
+**DESIGN-DEVIATIONS.md entry (for the app PR):** `2026-10 · Merchant D-48 · Added C6 Branches (sheet) and C7 Add branch, B1/D1 branch chevron + not-live state, C4 Branches row. New icon use: chevron-down in the Orders header. API error copy for "outside area" reworded to "That address is outside the area LyniaGo covers for now."`
 
 ### D · Shop orders and book a rider
 - **D1 Shop Orders home.** The same header as B1 (Mbare Auto Spares, Open until 18:00, stats Orders · Sales · Cash overdue), plus a white full-width "Book a rider" button in the header. Body:
@@ -129,7 +158,7 @@ Common frame: 360 × 720 (320px must also work, so 16px screen edges). A 30px st
 ---
 
 ## Interactions and behaviour
-- **Navigation model.** Tabs are roots (no back). Every pushed screen has a **fixed parent**, not a history stack: A2→A1, A3→A2, A4→A3, A5→A1, B3/B4/B5/B6/B7→B1, C2→C1, C5→C4, D2→D1, D3→D2, D4/D5/D7→D1, E2→C4, E3→E2, E4→C4. Hardware back = the same parent logic; it closes an open sheet first.
+- **Navigation model.** Tabs are roots (no back). Every pushed screen has a **fixed parent**, not a history stack: A2→A1, A3→A2, A4→A3, A5→A1, B3/B4/B5/B6/B7→B1, C2→C1, C5→C4, **C6→B1/D1 (sheet closes), C7→C4 (whether opened from C4 or C6)**, D2→D1, D3→D2, D4/D5/D7→D1, E2→C4, E3→E2, E4→C4. Hardware back = the same parent logic; it closes an open sheet first.
 - **Ringing (B2/D6).** Loops until Accept or Decline. Back is blocked with the toast "Accept or decline to stop the alarm". The countdown starts at 1:14 (the accept window is 3:00 per N-03; the mock starts mid-way). On timeout: return home, "Missed · the customer was told".
 - **Confirm sheet** (a reusable bottom sheet: title, one line, confirm button, "Keep", tap-scrim-to-close) before: Decline order, Cancel order, Cancel booking, Sign out, Mark ride completed, Close without cash, Remove team member. Destructive = `--danger` fill; neutral closes = `--cta-fill`.
 - **Toasts.** Ink bubble 84px above the bottom, 2.2s, after every committed action ("Accepted · customer told 15 min", "Cash confirmed · order closed", …).
@@ -180,7 +209,8 @@ Dish/item editor · add-rider sheet · shop front editor · order detail from Mo
 - Icons are the **Lucide** subset (`lynia-icons.js` in the design system): inbox, utensils, package, wallet, user, bike, timer, clock, phone, map-pin, navigation, search, plus, minus, x, check, circle-check, circle-alert, chevron-right, volume-2, power, wifi-off, store, banknote.
 
 ## Files
-- `Merchant Prototype (standalone).html` — clickable prototype (offline).
+- `Merchant Prototype (standalone).html` — clickable prototype (offline). Branches: tap the business name on Orders home → C6; Account → Branches → C7 (type a name, tap "Use my current location", Create).
+- All Screens Gallery: the branch frames are registered under **Merchant · phone (D-48)**, bands MM1 (switcher) and MM2 (add a branch), rendered live from the canvas via `?frame=<id>`.
 - `Merchant Screens Canvas (standalone).html` — every screen with its change notes.
 - `reference/proto.js` — the interaction wiring.
 - `reference/Stepper.reference.txt` — the design-system stepper.

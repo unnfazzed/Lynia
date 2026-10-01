@@ -1,6 +1,6 @@
 # Multi-branch owners — one owner, several shops
 
-Status: **server shipped in this PR (phase 1); app screens wait on a design (phase 2).**
+Status: **phase 1 (server) shipped in PR #999; phase 2 (merchant app screens) built from the 2026-10-01 design export (ledger D-51).**
 Owner decision 2026-09-30: *"option 1 is preferred"* — the minimum viable way to support someone with
 shops in several places. This reverses the "multi-branch owners" line in the *Explicitly not in scope*
 list of `docs/plans/2026-09-29-merchant-web-upgrade-plan.md`.
@@ -54,20 +54,24 @@ A parent brand entity, one menu shared across branches, combined reports across 
 moving staff between branches, and an owner inviting themselves as staff elsewhere. Each is a later
 feature if chains ask for it.
 
-## Phase 2 — the app (blocked on design)
+## Phase 2 — the app (built)
 
-The merchant mobile handoff (`packages/design/handoff/merchant-mobile/`, ledger D-48) draws **no branch
-switcher and no "Add branch" screen**. Under the pixel-parity rule (*not drawn ⇒ not rendered*), the
-screens wait for a design export. Needed from the design tool:
+The owner had the screens drawn from a brief and handed over the export on 2026-10-01. It is in
+`packages/design/handoff/merchant-mobile/` (README section F, `branches/`), and the app follows it:
 
-1. **Switcher** — the business name in the Orders header opens a list of the owner's branches (name +
-   landmark, the active one marked, "Not live yet" for a dormant one). Only shown with 2+ branches.
-2. **Add branch** — Account → "Add branch": name, the location step reused from sign-up, and a
-   "Copy my menu" toggle. Ends on the new branch's setup checklist.
+- **B1 / D1 header:** a chevron after the business name for an owner with 2+ branches; the name and
+  chevron open **C6**.
+- **C6 Branches:** a sheet listing the branches, the current one first with a check, "Not live yet" on a
+  restaurant ops haven't switched on, and "+ Add a branch" (owner).
+- **C4 Account:** a **Branches** row (owner), with the count once there are 2+, which opens **C7**.
+- **C7 Add a branch:** name, A4's location block, "Copy my menu / items" with live counts, the four API
+  errors in the drawn places, saving and offline states.
+- **Not live yet:** an owner's dormant restaurant branch shows "Almost ready" instead of an empty queue.
 
-Once the export lands: wire `GET/POST /merchant/branches` and `…/switch` into `apps/merchant`, and
-re-subscribe the kitchen socket after a switch. Until then nobody sees a change: the endpoints exist, but
-no screen calls them.
+A switch (or a new branch) re-joins the live order feed for the new branch, re-mounts every screen so it
+re-reads its data, and lands on that branch's Orders home with the drawn toast. The order alarm rings only
+for the current branch (the export's answer A). The two readings the app had to make, which count as live
+and when "Almost ready" shows, are in ledger D-51. Evidence: `docs/parity/MERCHANT-MOBILE-BRANCHES-2026-10-01.png`.
 
 ## Rollout
 

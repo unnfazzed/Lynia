@@ -1,6 +1,6 @@
 // LJ.home_pins — the Send flow with both pins set. The flow holds its stops in local state, seeded only
 // from "Send again" (`rb…`) route params in parity (SecureStore is inert), so this fixture prefills via
-// those params. Since docs/DESIGN-DEVIATIONS.md D-51 a Send again opens on the first step still missing
+// those params. Since docs/DESIGN-DEVIATIONS.md D-52 a Send again opens on the first step still missing
 // something — step 2 "What", because a re-sent order never carries the recipient's phone — with the
 // "Copied from your order" banner. The gallery `Home` mock this key names is a SUPERSEDED target (see
 // tools/parity/rendered-conformance.pending.json).

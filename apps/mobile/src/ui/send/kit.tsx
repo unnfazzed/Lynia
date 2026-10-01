@@ -7,7 +7,7 @@ import { Tappable } from "../Tappable";
 
 /**
  * The Send flow's shared parts — rebuilt from `packages/design/handoff/send-compose-v2/design/sc2-kit.jsx`
- * (ledger D-51) on the app's tokens. Geometry is the handoff's: 52px header row + step bar, the 52px
+ * (ledger D-52) on the app's tokens. Geometry is the handoff's: 52px header row + step bar, the 52px
  * pill CTA in a pinned bar, 48px fields with a 2px focus/error ring, 44px text buttons, 12px radii.
  * Every user-facing string lives in `SEND_COPY` (the handoff's `S` object, verbatim).
  */

@@ -8,7 +8,7 @@ import { Icon } from "../Icon";
 import { SEND_COPY, SendButton, SendHeader } from "./kit";
 
 /**
- * Account on hold (ledger D-51; handoff state 17). Checked before step 1 opens: a held customer never
+ * Account on hold (ledger D-52; handoff state 17). Checked before step 1 opens: a held customer never
  * reaches the composer. The header keeps its Back (no step bar), the middle says what happened, and the
  * two ways out are a call to support and "Back to home". A hold only blocks composing NEW orders —
  * tracking an order already in flight still works from Home and Orders.

@@ -302,7 +302,7 @@ describe("MerchantBranchesService (multi-branch owners)", () => {
     it("refuses a held account and a pin outside the service area", async () => {
       await expect(w.svc.create(OWNER_AT_M1, "mai", body({ location: { ...PIN, point: { lat: -20.15, lng: 28.58 } } }))).rejects.toMatchObject({
         status: 400,
-        response: { reason: "outside_service_area" },
+        response: { reason: "outside_service_area", message: "That address is outside the area LyniaGo covers for now." },
       });
       w.profiles.set("mai", { onHold: true });
       await expect(w.svc.create(OWNER_AT_M1, "mai", body())).rejects.toMatchObject({ status: 403, response: { reason: "on_hold" } });

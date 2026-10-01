@@ -4,15 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MerchantBusinessType } from "@lynia/shared";
-import { Icon } from "../components/icons";
 import { AppBar } from "../components/m/AppBar";
+import { LocationField } from "../components/m/LocationField";
 import { useToast } from "../components/m/Toast";
 import { RetryableError } from "../components/RetryableError";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
-import { newSessionToken, type PlaceSuggestion, placesEnabled, resolvePlace, reverseGeocode, searchPlaces } from "../lib/places";
 import { clearMerchantSession } from "../lib/session";
-import { fieldForReason, type SignUpErrors, type SignUpForm, type SignUpLocation, toBecomeRequest, validateDetails } from "../lib/sign-up";
+import { fieldForReason, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
 import { noBusinessPath } from "../lib/team-api";
 
 type Gate = { status: "checking" } | { status: "form" } | { status: "error"; message: string };
@@ -242,138 +241,6 @@ function TextField({
       <div className="m-in" data-invalid={error ? true : undefined}>
         <input id={id} value={value} autoComplete={autoComplete} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} />
       </div>
-      {error && <span className="m-err">{error}</span>}
-    </div>
-  );
-}
-
-/**
- * A4's location: the result card once there is one (map pin, the address line, where it came from,
- * "Change"), and under it, always, the two ways in — "Use my current location" and "Or search street
- * or area" — as drawn.
- */
-function LocationField({ value, error, onChange }: { value: SignUpLocation | null; error?: string; onChange: (loc: SignUpLocation | null) => void }) {
-  const [locating, setLocating] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<PlaceSuggestion[]>([]);
-  const session = useRef(newSessionToken());
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < 3) {
-      setResults([]);
-      return undefined;
-    }
-    let alive = true;
-    const t = setTimeout(() => {
-      void searchPlaces(q, session.current).then((rows) => {
-        if (alive) setResults(rows);
-      });
-    }, 300);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [query]);
-
-  function locate() {
-    setNote(null);
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setNote("This phone can't share its location. Search for your street instead.");
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const point = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        void reverseGeocode(point).then((place) => {
-          setLocating(false);
-          onChange({ point, address: place?.address ?? "", source: "gps" });
-        });
-      },
-      () => {
-        setLocating(false);
-        setNote("Couldn't get your location. Search for your street instead.");
-      },
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
-    );
-  }
-
-  async function pick(s: PlaceSuggestion) {
-    const place = await resolvePlace(s, session.current);
-    session.current = newSessionToken();
-    if (!place) {
-      setNote("Couldn't find that place. Try another search.");
-      return;
-    }
-    setQuery("");
-    setResults([]);
-    onChange({ point: place.point, address: place.address || s.primary, source: "search" });
-  }
-
-  return (
-    <div className="m-fld">
-      <span className="m-label">Location</span>
-      {value && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            border: "2px solid var(--accent)",
-            background: "var(--accent-wash)",
-            borderRadius: 12,
-            padding: "10px 14px",
-          }}
-        >
-          <Icon name="map-pin" size={18} color="var(--accent-text)" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b style={{ fontSize: 14.5, display: "block" }}>{value.address || "Your current location"}</b>
-            <span className="m-hint">{value.source === "gps" ? "From your phone’s location" : "From your search"}</span>
-          </div>
-          {/* "Change" = search for a different address (proto.js A4). */}
-          <button
-            type="button"
-            className="m-lnk"
-            style={{ minHeight: 36, fontSize: 13 }}
-            onClick={() => (searchRef.current ? searchRef.current.focus() : onChange(null))}
-          >
-            Change
-          </button>
-        </div>
-      )}
-      <button type="button" className="m-gh" style={{ width: "100%" }} disabled={locating} onClick={locate}>
-        <Icon name="navigation" size={16} />
-        {locating ? "Finding you…" : "Use my current location"}
-      </button>
-      {placesEnabled() && (
-        <div className="m-in">
-          <Icon name="search" size={16} color="var(--muted)" />
-          <input
-            ref={searchRef}
-            aria-label="Search street or area"
-            placeholder="Or search street or area"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      )}
-      {results.length > 0 && (
-        <div className="m-card" style={{ padding: "0 14px", gap: 0 }}>
-          {results.map((r) => (
-            <button key={r.placeId} type="button" className="m-li" onClick={() => void pick(r)}>
-              <Icon name="map-pin" size={16} color="var(--muted)" />
-              <div className="m-t">
-                <b>{r.primary}</b>
-                {r.secondary && <span>{r.secondary}</span>}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-      {note && <span className="m-hint">{note}</span>}
       {error && <span className="m-err">{error}</span>}
     </div>
   );

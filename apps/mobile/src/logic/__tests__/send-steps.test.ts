@@ -20,7 +20,7 @@ const IN2: Stop = { lat: -17.82, lng: 31.06, name: "14 Glenara Ave, Avenues", so
 const OUT: Stop = { lat: -18.3, lng: 31.3, name: "Seke Rd, Chitungwiza", source: "search" };
 const item = (description: string) => ({ description, quantity: 1 });
 
-describe("send-steps (ledger D-51)", () => {
+describe("send-steps (ledger D-52)", () => {
   it("step 1 needs both stops inside the corridor", () => {
     expect(whereOk(IN, null)).toBe(false);
     expect(whereOk(IN, OUT)).toBe(false);

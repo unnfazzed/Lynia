@@ -1,4 +1,4 @@
-// Shared staging for the Send flow v2 shoot (tools/parity/shoot-send-v2.mjs, ledger D-51). Each
+// Shared staging for the Send flow v2 shoot (tools/parity/shoot-send-v2.mjs, ledger D-52). Each
 // send_v2_* fixture calls `stage()` with the one thing that differs; the handoff's own sample data
 // (sc2-kit.jsx ADDR/PH) is used so the app column reads like the mock column.
 import { installRouter, setParams, withQuery } from "./_harness.mjs";

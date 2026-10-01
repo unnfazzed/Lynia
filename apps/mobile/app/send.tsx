@@ -49,7 +49,7 @@ import { SendWhatStep } from "../src/ui/send/SendWhatStep";
 import { parseNum, randomUuidV4, uuidV4FromSeed, withTimeout } from "../src/util";
 
 /**
- * Send a parcel — the stepped compose flow (ledger D-51; handoff `packages/design/handoff/send-compose-v2`):
+ * Send a parcel — the stepped compose flow (ledger D-52; handoff `packages/design/handoff/send-compose-v2`):
  * 1 Where · 2 What · 3 Price · 4 Review. Addresses are edited INLINE on the map screen (the address row
  * becomes the search field; picking a result moves the pin on the same map). There is no search screen,
  * no confirm-pin screen, no landmark field, no declared value and no disclaimer: "Send to riders" on the

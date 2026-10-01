@@ -137,14 +137,14 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
 | ✅ | C3·4 | `RC menu` | Menu  [FOOD] | **region-adopted (Foundation-E)** — first machine-guarded INTERACTIVE screen: cover / dish-rows / cart-bar are generated guarded fragments the container composes; per-region congruence + composition check green (`tools/parity/codegen/cli.mjs check`) | cover band + overhanging shop logo + floating back button; tabs/ItemSheet/RemindWhenOpen/just-closed stay live glue; backend-gated meta line honest-kept (non-region) |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
-| ⏭ | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 | |
-| ⏭ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; search is inline in the step-1 row | |
-| ⏭ | C3·8 | `LJ addr_map_confirm` | Confirm pin on map  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; no confirm step | |
-| ⏭ | C3·9 | `LJ home_pins` | Send · both set  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 both pins | |
-| ⏭ | C3·10 | `LJ home_expanded` | Send · sheet expanded  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; no expanded sheet | |
-| ⏭ | C3·11 | `LJ disclaimer` | Broadcast disclaimer  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; disclaimer removed | |
+| ⏭ | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 | |
+| ⏭ | C3·7 | `LJ addr_search` | Address search  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; search is inline in the step-1 row | |
+| ⏭ | C3·8 | `LJ addr_map_confirm` | Confirm pin on map  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; no confirm step | |
+| ⏭ | C3·9 | `LJ home_pins` | Send · both set  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 both pins | |
+| ⏭ | C3·10 | `LJ home_expanded` | Send · sheet expanded  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; no expanded sheet | |
+| ⏭ | C3·11 | `LJ disclaimer` | Broadcast disclaimer  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; disclaimer removed | |
 | ⬜ | C3·12 | `LJ draft_restored` | Draft restored  [PARCEL] | | |
-| ⏭ | C3·13 | `LJ addr_unavailable` | Address search down  [PARCEL] | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; drawn as the dropdown's limited row | |
+| ⏭ | C3·13 | `LJ addr_unavailable` | Address search down  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; drawn as the dropdown's limited row | |
 | ⬜ | C3·14 | `LJ map_failed` | Map didn't load  [PARCEL] | | |
 | ⬜ | C3·15 | `LJ loc_off` | Location off · composer  [PARCEL] | | |
 
@@ -263,7 +263,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | C10·32 | `LJ otp_resent` | OTP · code re-sent | | |
 | ⬜ | C10·33 | `LJ otp_locked` | OTP · expired / locked | | |
 | ⬜ | C10·34 | `LJ offline` | Offline banner | | |
-| ⏭ | C10·35 | `LJ on_hold` | Account on hold | superseded by D-51 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = handoff state 17 | |
+| ⏭ | C10·35 | `LJ on_hold` | Account on hold | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = handoff state 17 | |
 | ⬜ | C10·36 | `LJ force_update` | Force update | | |
 | ⛔ | C10·37 | `LJ no_gps` | Location off / no GPS | | |
 | ⬜ | C10·38 | `LJ generic_error` | Generic error | | |

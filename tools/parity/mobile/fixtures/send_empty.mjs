@@ -1,4 +1,4 @@
-// LJ.home_empty — the Send flow on open. Since docs/DESIGN-DEVIATIONS.md D-51 the screen is the
+// LJ.home_empty — the Send flow on open. Since docs/DESIGN-DEVIATIONS.md D-52 the screen is the
 // send-compose-v2 handoff's step 1 "Where" (header + step bar, the inline two-row address card over the
 // full-bleed map, the pinned Next bar), and the gallery `Home` mock this key names is a SUPERSEDED target
 // (see tools/parity/rendered-conformance.pending.json). send.tsx runs one query at mount: GET /auth/me

@@ -3,7 +3,7 @@ import { autocompletePlaces, placeDetails, placesEnabled, type ResolvedPlace } f
 import { geocodeAddress } from "./geocode";
 
 /**
- * The suggestion engine behind the Send flow's inline address row (ledger D-51; handoff
+ * The suggestion engine behind the Send flow's inline address row (ledger D-52; handoff
  * `send-compose-v2` README "Address card" + "Interactions"). The row IS the search field — there is no
  * search screen and no confirm-pin screen any more — so this hook turns what the customer has typed
  * into the dropdown's middle section:

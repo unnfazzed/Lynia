@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WS_EVENTS } from "@lynia/shared";
 import { getAlarmController } from "./alarm-singleton";
@@ -38,6 +38,9 @@ export interface KitchenConnectionValue {
    *  from E2 onward must consume this and disable themselves (§3: "all mutating actions disabled"). */
   actionsDisabled: boolean;
   wakeLock: { supported: boolean; active: boolean };
+  /** Join the live queue again, for the branch the person now works in (after a branch switch the
+   *  server has dropped this device from the old branch's room). */
+  rejoinQueue: () => void;
 }
 
 const KitchenConnectionContext = createContext<KitchenConnectionValue | null>(null);
@@ -77,16 +80,26 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   // auto-cancel guarantee, which was previously unenforceable for any merchant (see queue-socket.ts).
   // Gated on `session` (not just mount) so a signed-out tablet leaves the room instead of reporting a
   // phantom "online" merchant nobody is actually watching.
+  const socketRef = useRef<ReturnType<typeof createMerchantQueueSocket> | null>(null);
   useEffect(() => {
     if (!session) return undefined;
     const socket = createMerchantQueueSocket();
+    socketRef.current = socket;
     socket.on("connect", () => {
       socket.emit(WS_EVENTS.merchantQueueSubscribe);
     });
     return () => {
+      socketRef.current = null;
       socket.disconnect();
     };
   }, [session]);
+
+  // The server picks the room from the person's current branch, so the same subscribe joins the new one.
+  // Not yet connected: the `connect` handler above subscribes when it is.
+  const rejoinQueue = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.connected) socket.emit(WS_EVENTS.merchantQueueSubscribe);
+  }, []);
 
   // Each of these only bumps `alarmTick` when the controller's state actually transitioned — NOT
   // unconditionally. B-D0: the queue screen's alarm-sync effect depends on `alarm` (KitchenBar and
@@ -189,8 +202,9 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
       reachability: reachState,
       actionsDisabled: !reachState.reachable,
       wakeLock,
+      rejoinQueue,
     }),
-    [session, sessionChecked, signOut, alarm, reachState, wakeLock],
+    [session, sessionChecked, signOut, alarm, reachState, wakeLock, rejoinQueue],
   );
 
   return <KitchenConnectionContext.Provider value={value}>{children}</KitchenConnectionContext.Provider>;

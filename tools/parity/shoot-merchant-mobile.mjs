@@ -14,6 +14,9 @@
  *   node tools/parity/shoot-merchant-mobile.mjs --set menu --out docs/parity/MERCHANT-MOBILE-MENU-MONEY-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set account --out docs/parity/MERCHANT-MOBILE-ACCOUNT-2026-09-30
  *   node tools/parity/shoot-merchant-mobile.mjs --set shop --out docs/parity/MERCHANT-MOBILE-SHOP-2026-09-30
+ *   node tools/parity/shoot-merchant-mobile.mjs --set branches --out docs/parity/MERCHANT-MOBILE-BRANCHES-2026-10-01
+ *
+ * `PARITY_NARROW=1` renders the app at the 320×640 entry-phone check instead of 360×720.
  */
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -27,7 +30,7 @@ const OUT = resolve(outArg > 0 ? process.argv[outArg + 1] : "out/merchant-mobile
 const SHOTS = `${OUT}-shots`;
 const PROTO = pathToFileURL(resolve("../../packages/design/handoff/merchant-mobile/Merchant Prototype (standalone).html")).href;
 
-const PHONE = { width: 360, height: 720 };
+const PHONE = process.env.PARITY_NARROW ? { width: 320, height: 640 } : { width: 360, height: 720 };
 const setArg = process.argv.indexOf("--set");
 /** `--set orders` shoots PR 2b's Orders screens, `--set menu` PR 3a's Menu and Money, `--set account` PR 3b's
  *  Hours, Team and Riders; the default is PR 1's. */
@@ -198,6 +201,7 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/invites") return json(200, scenario.invites ?? { invites: [] });
   if (path === "/merchant/team") return json(200, TEAM);
   if (path === "/merchant/riders") return json(200, RIDERS);
+  if (path === "/merchant/branches") return json(200, scenario.branches ?? { branches: [] });
   return json(200, []);
 }
 
@@ -333,6 +337,56 @@ const SHOP_ROWS = [
   { id: "D7", label: "D7 · Delivered + cash back", mode: "shop", sub: "no delivered time in the booking payload", app: { name: "D7", path: `/deliveries/${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
 ];
 
+// ── Branches (ledger D-51): the header chevron, C6, the C4 row, C7 and the not-live home ─────────
+const BRANCHES = {
+  branches: [
+    { id: "m-parity", name: "Sadza Republic", landmark: "5th Street, Mbare", role: "owner", active: true, pilotEnabled: true },
+    { id: "m-avondale", name: "Sadza Republic · Avondale", landmark: "Fife Ave, Avondale", role: "owner", active: false, pilotEnabled: false },
+  ],
+};
+const NOT_LIVE = {
+  branches: [
+    { ...BRANCHES.branches[1], id: "m-parity", active: true },
+    { ...BRANCHES.branches[0], id: "m-cbd", active: false },
+  ],
+};
+/** The export's own 360×720 frames (handoff branches/screenshots): the prototype renders the new rows
+ *  only partly styled, so the drawn frames are the mock for this set. */
+const FRAME = (f) => resolve(`../../packages/design/handoff/merchant-mobile/branches/screenshots/branches/${f}.png`);
+const BRANCH_ROWS = [
+  { id: "B1", frame: FRAME("29-b1-d1-2-branches"), label: "B1 · header with 2 branches", sub: "name + chevron, one 44px target", app: { name: "B1-branches", path: "/queue", scenario: { me: KITCHEN, orders: BOARD, branches: BRANCHES } } },
+  {
+    id: "C6",
+    frame: FRAME("30-c6-branches-2-one-not-live"),
+    label: "C6 · Branches",
+    app: { name: "C6", path: "/queue", scenario: { me: KITCHEN, orders: BOARD, branches: BRANCHES }, before: async (p) => p.getByRole("button", { name: "Sadza Republic", exact: true }).click() },
+  },
+  { id: "C4", frame: FRAME("34-c4-account-branches-row"), label: "C4 · Account with Branches", sub: "D-50's owner-only “Taking orders” stays, after Branches", app: { name: "C4-branches", path: "/account", scenario: { me: KITCHEN, branches: BRANCHES } } },
+  { id: "C7", frame: FRAME("36-c7-empty"), label: "C7 · Add a branch (empty)", app: { name: "C7", path: "/branches/new", scenario: { me: KITCHEN, menu: MENU, branches: BRANCHES } } },
+  {
+    id: "C7",
+    frame: FRAME("37-c7-from-gps"),
+    label: "C7 · from GPS, name typed",
+    sub: "keyless run: no Places key, so the card reads “Your current location”",
+    app: {
+      name: "C7-gps",
+      path: "/branches/new",
+      scenario: { me: KITCHEN, menu: MENU, branches: BRANCHES },
+      before: async (p) => {
+        await p.getByLabel("Branch name").fill("Sadza Republic · Avondale");
+        await p.getByRole("button", { name: "Use my current location" }).click();
+        await p.getByText("From your phone’s location").waitFor();
+      },
+    },
+  },
+  {
+    id: "B1n",
+    frame: FRAME("35-b1-d1-just-created-not-live"),
+    label: "B1 · not live yet",
+    app: { name: "B1n", path: "/queue", scenario: { me: { ...KITCHEN, name: "Sadza Republic · Avondale", pilotEnabled: false }, orders: [], branches: NOT_LIVE } },
+  },
+];
+
 const PR1_ROWS = [
   { id: "A1", label: "A1 · Sign in", app: { name: "A1", path: "/login", signedIn: false } },
   { id: "A2", label: "A2 · Code", app: { name: "A2", path: "/login", signedIn: false, before: toCode } },
@@ -353,8 +407,8 @@ await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
 const rows = [];
 try {
-  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : SET === "account" ? ACCOUNT_ROWS : SET === "shop" ? SHOP_ROWS : PR1_ROWS) {
-    const mock = r.id ? await shootProto(browser, r.id, r.mode) : undefined;
+  for (const r of SET === "orders" ? ORDER_ROWS : SET === "menu" ? MENU_ROWS : SET === "account" ? ACCOUNT_ROWS : SET === "shop" ? SHOP_ROWS : SET === "branches" ? BRANCH_ROWS : PR1_ROWS) {
+    const mock = r.frame ?? (r.id ? await shootProto(browser, r.id, r.mode) : undefined);
     const app = await shootApp(browser, r.app);
     rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: 360, ...(r.id ? {} : { mockNote: "drawn by the prototype's wiring, not as a screen" }) });
     console.log(`ok ${r.label}`);
@@ -373,6 +427,8 @@ await buildSheet({
           ? "Merchant mobile redesign · PR 3b (D-48): Hours C5, Team E2–E3, Riders E4"
           : SET === "shop"
             ? "Merchant mobile redesign · PR 4 (D-48): the shop D1–D5, D7, with cash on delivery"
+            : SET === "branches"
+              ? "Merchant branches (D-51): header chevron, C6 Branches, C4 row, C7 Add a branch, not live yet"
         : "Merchant mobile redesign · PR 1 (D-48): get in + shell + Account",
   out: OUT,
   rows,

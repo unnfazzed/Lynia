@@ -447,8 +447,8 @@ export async function loadPermissionsPrimed(): Promise<boolean> {
 }
 
 // The retired pre-broadcast disclaimer's accepted-version flag (A1-8; the disclaimer was removed from
-// the Send flow by ledger D-51). Nothing writes it any more; sign-out still deletes it so devices that
-// accepted it before D-51 don't carry a dead key forever.
+// the Send flow by ledger D-52). Nothing writes it any more; sign-out still deletes it so devices that
+// accepted it before D-52 don't carry a dead key forever.
 const DISCLAIMER_KEY = "lynia.disclaimerAccepted";
 
 // Orders the rider has already handed back (acknowledged the hand-back terminal for) on this device

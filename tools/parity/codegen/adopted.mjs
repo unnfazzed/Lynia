@@ -1570,7 +1570,7 @@ export const ADOPTED = [
   },
   {
     // LJ.on_hold — the customer account-on-hold wall (app/send.tsx → SendHoldView). DEFER-only: since
-    // docs/DESIGN-DEVIATIONS.md D-51 the wall is drawn by the send-compose-v2 handoff (state 17), not by
+    // docs/DESIGN-DEVIATIONS.md D-52 the wall is drawn by the send-compose-v2 handoff (state 17), not by
     // the gallery's `OnHold`. See the deferred reason.
     key: "LJ.on_hold",
     container: "apps/mobile/app/send.tsx",
@@ -1582,7 +1582,7 @@ export const ADOPTED = [
         state: "data",
         key: "LJ.on_hold",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-51, owner instruction 2026-10-01): the hold wall is now the send-compose-v2 handoff's state 17 — the Send header without its step bar, a 72px surface disc with the ban icon, 'Your account is on hold', the handoff's body copy, and two 52px pills 'Call support' / 'Back to home' (app SendHoldView). The gallery `OnHold` draws a different tree (`Pad(icon-disc, title, message, CallRow 'Support', Button 'Sign out')`) and its 24-hour review copy; a whole-screen snapshot against it would assert the structure D-51 retired. Re-adoptable when a gallery export draws the v2 hold wall.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-52, owner instruction 2026-10-01): the hold wall is now the send-compose-v2 handoff's state 17 — the Send header without its step bar, a 72px surface disc with the ban icon, 'Your account is on hold', the handoff's body copy, and two 52px pills 'Call support' / 'Back to home' (app SendHoldView). The gallery `OnHold` draws a different tree (`Pad(icon-disc, title, message, CallRow 'Support', Button 'Sign out')`) and its 24-hour review copy; a whole-screen snapshot against it would assert the structure D-52 retired. Re-adoptable when a gallery export draws the v2 hold wall.",
       },
     ],
   },
@@ -1658,13 +1658,13 @@ export const ADOPTED = [
   {
     // ── PARCEL SEND-COMPOSER cluster (app/send.tsx). Until 2026-10-01 this was region-adopted against the
     // gallery mock `Home` (screens.jsx:145): a `map` region (send-map.view.tsx) and a submit `footer`
-    // region (send-compose-footer.view.tsx). docs/DESIGN-DEVIATIONS.md D-51 replaced that mock as the
+    // region (send-compose-footer.view.tsx). docs/DESIGN-DEVIATIONS.md D-52 replaced that mock as the
     // authority with the owner's send-compose-v2 handoff (packages/design/handoff/send-compose-v2): a
     // 4-step flow (Where · What · Price · Review) with inline address editing, no landmark field, no
     // declared value and no disclaimer. Both generated views were deleted with the old sheet, so the
     // gallery `Home` states are recorded here as DEFERRED (superseded), not adopted: the gallery has not
     // been re-exported with the v2 screens, and a structural snapshot against the old `Home` would assert
-    // the very structure D-51 retired. Re-adoptable the moment a gallery export draws the v2 flow.
+    // the very structure D-52 retired. Re-adoptable the moment a gallery export draws the v2 flow.
     key: "LJ.home_empty",
     container: "apps/mobile/app/send.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
@@ -1675,13 +1675,13 @@ export const ADOPTED = [
         state: "empty",
         key: "LJ.home_empty",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-51, owner instruction 2026-10-01): the gallery `Home` at pins=false is no longer the authority for app/send.tsx. The send-compose-v2 handoff replaced the one-sheet composer with step 1 \"Where\" (header + step bar, a floating two-row address card that edits inline, the full-bleed map, a pinned Next bar). The map/footer regions this entry used to adopt no longer exist in the container. Re-adopt against a gallery export that draws the v2 flow.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-52, owner instruction 2026-10-01): the gallery `Home` at pins=false is no longer the authority for app/send.tsx. The send-compose-v2 handoff replaced the one-sheet composer with step 1 \"Where\" (header + step bar, a floating two-row address card that edits inline, the full-bleed map, a pinned Next bar). The map/footer regions this entry used to adopt no longer exist in the container. Re-adopt against a gallery export that draws the v2 flow.",
       },
       {
         state: "pins",
         key: "LJ.home_pins",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-51): the gallery `Home` at pins=true. In the v2 flow the both-pins state is step 1 \"Where\" with the route, the distance pill and Next enabled; items, phones and price moved to steps 2–3. Re-adopt against a gallery export that draws the v2 flow.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-52): the gallery `Home` at pins=true. In the v2 flow the both-pins state is step 1 \"Where\" with the route, the distance pill and Next enabled; items, phones and price moved to steps 2–3. Re-adopt against a gallery export that draws the v2 flow.",
       },
     ],
   },

@@ -9,7 +9,7 @@ import { Tappable } from "../Tappable";
 import { LABEL_STYLE, Notice, SEND_COPY, SendField, TextAction } from "./kit";
 
 /**
- * Step 2 · What and who (ledger D-51; handoff states 6–9). Item cards (description + Qty − / +), "Add
+ * Step 2 · What and who (ledger D-52; handoff states 6–9). Item cards (description + Qty − / +), "Add
  * another item" (or the calm 10-item notice), the rider note, the sender phone as a full prefilled field,
  * and the recipient phone with recent-recipient chips while it is empty. Phone errors show on blur or on
  * Next, never per keystroke — the screen decides when via the `*Error` props.

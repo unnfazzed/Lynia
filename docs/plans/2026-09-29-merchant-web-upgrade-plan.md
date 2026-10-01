@@ -285,6 +285,9 @@ trail (builds on `merchant_bookings`); Web Push; the rider-app "Refuse: prohibit
 "{Business} calls you their rider" opt-out (one mobile release); admin tooling for owner recovery beyond
 the transfer action; a merchant socket feed for bookings.
 
+**Owner decision (2026-10-01, ledger D-51): shop customer orders don't expire.** When shops take customer
+orders, there is no restaurant-style 3-minute accept window that cancels an unanswered order.
+
 **Phase 3: the shop customer surface.** Shops section fed by `GET /shops?kind=`, shop menus and search,
 with an item review of every shop before its first switch-on. Prescription items stay out until MCAZ/PCZ
 sign-off (plan 2026-07-26 §6 P6).

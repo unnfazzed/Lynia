@@ -3,7 +3,7 @@ import type { ItemRow } from "./order-draft";
 import { isWithinServiceCorridor } from "./gates";
 
 /**
- * The pure rules of the stepped Send flow (ledger D-51, packages/design/handoff/send-compose-v2). The
+ * The pure rules of the stepped Send flow (ledger D-52, packages/design/handoff/send-compose-v2). The
  * screen (app/send.tsx) owns state and effects; everything that decides "is this step done, what is
  * still missing, where does the price go" lives here so it is unit-testable without rendering.
  */

@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51.** D-51 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-22, D-23, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52.** D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -313,9 +313,9 @@ to revisit.
 
 ---
 
-## D-14 · `/send` composer keeps a floating Back puck the map-home mock never drew — RETIRED by D-51 (2026-10-01)
+## D-14 · `/send` composer keeps a floating Back puck the map-home mock never drew — RETIRED by D-52 (2026-10-01)
 
-> **Retired.** The send-compose-v2 handoff (D-51) draws its own header with "‹ Back" on every step, so the floating puck and the map-home mock it compensated for are both gone.
+> **Retired.** The send-compose-v2 handoff (D-52) draws its own header with "‹ Back" on every step, so the floating puck and the map-home mock it compensated for are both gone.
 
 **In effect.** `LJ home_empty` / `home_pins` (`explorations/journey/screens.jsx` `Home`) draw exactly two
 things in the floating top row: the brand pill left, the account puck right. No back — correctly, because
@@ -562,9 +562,9 @@ entry is complete, not a sample.
 
 ---
 
-## D-21 · The account-on-hold wall keeps a plain back — RETIRED by D-51 (2026-10-01)
+## D-21 · The account-on-hold wall keeps a plain back — RETIRED by D-52 (2026-10-01)
 
-> **Retired.** The handoff's state 17 (D-51) draws the hold wall with the Send header's Back and a "Back to home" button; the app follows it. D-19's "Sign out" on the hold wall goes with it (the handoff draws "Call support" / "Back to home").
+> **Retired.** The handoff's state 17 (D-52) draws the hold wall with the Send header's Back and a "Back to home" button; the app follows it. D-19's "Sign out" on the hold wall goes with it (the handoff draws "Call support" / "Back to home").
 
 **In effect. Supersedes the "deliberately not done" paragraph of D-19**, decided by the owner the same
 day it was raised. The `OnHold` mock (`screens.jsx:852`) draws an icon, a title, a message, a support
@@ -1295,9 +1295,9 @@ to 76. Half 2 needs no retirement: no mock draws a pull-to-refresh, so an export
 
 ---
 
-## D-31 · The compose screen's submit bar and price block — RETIRED by D-51 (2026-10-01)
+## D-31 · The compose screen's submit bar and price block — RETIRED by D-52 (2026-10-01)
 
-> **Retired.** The one-sheet composer this entry adjusted no longer exists. D-51's handoff draws the price as its own step (a big suggested fare, − / + $0.50, the band) and a stepped CTA with a one-line "what's missing" hint. The two owner rules from here that the handoff kept — the price opens on the suggested fare and is re-suggested when a pin moves, and a Send again keeps its own price — carry on unchanged.
+> **Retired.** The one-sheet composer this entry adjusted no longer exists. D-52's handoff draws the price as its own step (a big suggested fare, − / + $0.50, the band) and a stepped CTA with a one-line "what's missing" hint. The two owner rules from here that the handoff kept — the price opens on the suggested fare and is re-suggested when a pin moves, and a Send again keeps its own price — carry on unchanged.
 
 **In effect.** Owner instruction 2026-08-17, from two photographs of the running app (`LJ home_empty`
 and the same screen with both pins set). Four changes to `LJ Home`'s sheet, all in the owner's words:
@@ -2397,9 +2397,45 @@ with consent). Plan: `docs/plans/2026-09-30-restaurant-auto-accept.md`.
 Nothing in `packages/design/**` changes. **Upstream ask:** draw the confirming state, the Collected card,
 the merchant auto-accept card, the Taking orders settings and the ops call list.
 
+
+## D-51 · Merchant branches: the switcher (C6), Add a branch (C7), and the not-live Orders home — APPROVED (2026-10-01)
+
+**Owner decision, this session (2026-09-30 / 2026-10-01):** option 1 for owners with shops in several
+places (*"option 1 is preferred"*: each branch is its own business, one login works in one branch at a
+time; server in PR #999, plan `docs/plans/2026-09-30-multi-branch-owners.md`). The owner then had the
+screens drawn from the brief and handed over the export (`design_handoff_merchant_branches`, 2026-10-01).
+The export answers the brief's open question with **A**: an order rings only on the current branch's
+devices; no alarm for other branches.
+
+**The design-package sync (a record, not a deviation).** `packages/design/handoff/merchant-mobile/`
+absorbs the export **verbatim**: the README is the export's updated D-48 README (new section F · Branches,
+the C4 Branches row, C6/C7 in the fixed-parent map); the screens canvas (rows F and G) and the clickable
+prototype; `reference/proto.js`; five Lucide assets (`check`, `chevron-down`, `circle-alert`, `map-pin`,
+`store`); and `branches/` holding the delta README, the original brief, the work order and the 16 frame
+screenshots. Tokens are byte-identical to the D-48 copy. Nothing in it is edited to match code.
+
+**Recorded by the handoff itself (its README checklist):** 2026-10 · Merchant D-48 · Added C6 Branches
+(sheet) and C7 Add branch, B1/D1 branch chevron + not-live state, C4 Branches row. New icon use:
+chevron-down in the Orders header. API error copy for "outside area" reworded to "That address is
+outside the area LyniaGo covers for now."
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| "Not live yet" (C6 pill, B1/D1 state) | A branch "LyniaGo hasn't switched on" | Live = a **shop**, or a **restaurant** ops switched on (`pilotEnabled`) | Ops only ever switch restaurants on (the go-live switch refuses shops), so a shop read by the flag alone would never leave "Almost ready" and would lose Book a rider |
+| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown only to an owner with **2+ branches** | Read literally from the mock's two triggers; a single new restaurant keeps today's Orders home, so onboarding is unchanged |
+| C4 Account rows | Shop front · Opening hours · **Branches** · Preferred riders · Team · Help | D-50's owner-only "Taking orders" stays, after Branches | D-50 row, not drawn in either export |
+| Three tap targets (C7 back chevron, the location card's "Change", the C7 banner's "Open WhatsApp") | 36px | `var(--target-min)` (44px); "Change" and "Open WhatsApp" keep the drawn layout with a −4px margin; C7 uses the shared AppBar's 44px back | **Upstream kit defect** (CLAUDE.md, owner decision D2 2026-08-20): a mock may not draw below the floor and the app never reproduces it. "Change" was already 36px in A4 (D-48); fixed there too, as it is the same component |
+
+**Owner OK on both readings (this session, 2026-10-01):** *"Shops are live yes. Shop orders don't expire"*,
+and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"). The second half of the first
+answer, that **shop customer orders don't expire**, is recorded for the shop customer surface (plan
+2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
+
+**Upstream ask:** redraw those three at ≥ `--target-min`.
+
 ---
 
-## D-51 · Send a parcel: the stepped redesign replaces the one-sheet composer — APPROVED (2026-10-01)
+## D-52 · Send a parcel: the stepped redesign replaces the one-sheet composer — APPROVED (2026-10-01)
 
 **Owner instruction, this session (2026-10-01):** the owner asked for the Send screen ("the screen after
 you click send … where you put all the details") to be redesigned, answered a round of questions, had

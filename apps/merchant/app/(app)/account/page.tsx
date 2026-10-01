@@ -10,6 +10,7 @@ import { useKitchenConnection } from "../../components/KitchenConnectionProvider
 import { ConfirmSheet } from "../../components/m/ConfirmSheet";
 import { useToast } from "../../components/m/Toast";
 import { ApiError } from "../../lib/api-client";
+import { useBranches } from "../../lib/branches";
 import { clearBusinessCache, useBusiness } from "../../lib/business";
 import { supportWhatsAppUrl } from "../../lib/config";
 import { firstName, initials, ROLE_LABEL } from "../../lib/team";
@@ -19,7 +20,7 @@ type Confirm = null | "sign-out" | "leave";
 
 /**
  * C4 · Account (packages/design/handoff/merchant-mobile): the business's initials avatar, its name and
- * "Farai · Owner", then Shop front · Opening hours · Taking orders (owner, restaurant) · Preferred riders · Team (the gold count is the
+ * "Farai · Owner", then Shop front · Opening hours · Branches (owner, D-51) · Taking orders (owner, restaurant) · Preferred riders · Team (the gold count is the
  * invites still waiting) · Help, and a red "Sign out" behind the confirm sheet. It is where the old
  * top bar's person menu, the setup banner and the side rail's Shop / Hours / Riders / Team went.
  *
@@ -39,6 +40,7 @@ export default function AccountPage() {
   const owner = business?.myRole === "owner";
   const shop = business?.businessType === "shop";
   const help = supportWhatsAppUrl();
+  const branches = useBranches(owner);
 
   useEffect(() => {
     if (!owner) return undefined;
@@ -88,6 +90,8 @@ export default function AccountPage() {
       <div className="m-bd" style={{ paddingTop: 6, gap: 0 }}>
         {owner && <Row href="/shop" icon="store" label="Shop front" />}
         <Row href="/hours" icon="clock" label="Opening hours" />
+        {/* Branches (ledger D-51): owner only, the count once there are 2+; opens C7. */}
+        {owner && <Row href="/branches/new" icon="map-pin" label="Branches" count={branches.length >= 2 ? String(branches.length) : undefined} />}
         {/* Auto-accept and the customer-facing number are the owner's, and only a restaurant takes orders. */}
         {owner && !shop && <Row href="/ordering" icon="inbox" label="Taking orders" />}
         <Row href="/riders" icon="bike" label="Preferred riders" />
@@ -133,7 +137,22 @@ export default function AccountPage() {
   );
 }
 
-function Row({ href, icon, label, badge, external }: { href: string; icon: IconName; label: string; badge?: string; external?: boolean }) {
+function Row({
+  href,
+  icon,
+  label,
+  badge,
+  count,
+  external,
+}: {
+  href: string;
+  icon: IconName;
+  label: string;
+  badge?: string;
+  /** A plain muted count (Branches), unlike the gold `badge` (Team's waiting invites). */
+  count?: string;
+  external?: boolean;
+}) {
   const inner = (
     <>
       <Icon name={icon} size={18} color="var(--accent-text)" />
@@ -141,6 +160,11 @@ function Row({ href, icon, label, badge, external }: { href: string; icon: IconN
         <b>{label}</b>
       </div>
       {badge && <span className="m-pl m-gold">{badge}</span>}
+      {count && (
+        <span className="m-num" style={{ fontSize: 12, color: "var(--muted)" }}>
+          {count}
+        </span>
+      )}
       <Icon name="chevron-right" size={18} color="var(--muted)" />
     </>
   );

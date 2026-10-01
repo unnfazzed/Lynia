@@ -7,7 +7,7 @@ import { Icon } from "../Icon";
 import { Dot, LABEL_STYLE, SEND_COPY, Sq, TextAction } from "./kit";
 
 /**
- * Step 4 · Review (ledger D-51; handoff state 13 — the replacement for the disclaimer). One compact block
+ * Step 4 · Review (ledger D-52; handoff state 13 — the replacement for the disclaimer). One compact block
  * per part of the order, each with "✎ Edit" back to its step. The price is NOT a block: it is pinned in
  * the CTA bar (`SendReviewPriceBar`) so it can never scroll out of view above "Send to riders".
  */

@@ -8,7 +8,7 @@ import { Tappable } from "../Tappable";
 import { Notice, SEND_COPY, SendButton } from "./kit";
 
 /**
- * Step 3 · Price (ledger D-51; handoff states 10–12). The fare is the screen's one big decision, so it
+ * Step 3 · Price (ledger D-52; handoff states 10–12). The fare is the screen's one big decision, so it
  * is the biggest thing on it: a 56px number (48 under 340px) the customer can tap to type, − / + $0.50
  * buttons, and a band bar that places their number against what riders usually accept. Both warnings
  * are soft — Review stays enabled for any price above zero.

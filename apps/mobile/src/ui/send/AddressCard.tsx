@@ -9,7 +9,7 @@ import { Tappable } from "../Tappable";
 import { Dot, LABEL_STYLE, SEND_COPY, Sq, TextAction } from "./kit";
 
 /**
- * Step 1's floating address card (ledger D-51; handoff README "Address card"). Two rows — PICKUP (green
+ * Step 1's floating address card (ledger D-52; handoff README "Address card"). Two rows — PICKUP (green
  * dot) and DROP-OFF (red square). Tapping a row turns THAT ROW into the search input in place, and the
  * dropdown opens directly under it inside the same card, with the live map still showing around it.
  * There is no search screen, no confirm-pin screen and no landmark line, ever.

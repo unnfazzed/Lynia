@@ -110,7 +110,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   replaces the RM tablet mocks (1024×680) as the merchant authority. Align merchant screens to that
   handoff's README and prototype, not to `RM.*`.
 - **Send a parcel follows its own handoff.** `app/send.tsx` aligns to `packages/design/handoff/send-compose-v2/`
-  (ledger D-51, owner 2026-10-01): four steps, inline address editing, no landmarks, no declared value, no
+  (ledger D-52, owner 2026-10-01): four steps, inline address editing, no landmarks, no declared value, no
   disclaimer. The gallery's `LJ` composer screens (`home_empty`/`home_pins`/`home_expanded`, `addr_*`,
   `disclaimer`, `on_hold`) are superseded and not aligned to until an export redraws them.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
