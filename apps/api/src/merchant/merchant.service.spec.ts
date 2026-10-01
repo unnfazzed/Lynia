@@ -1255,3 +1255,51 @@ describe("MerchantService photo-URL micro-cache (RCA 2026-08-17 §5.1)", () => {
     expect(calls.sort()).toEqual(["merchant/m1/cover.jpg", "merchant/m1/logo.jpg"]);
   });
 });
+
+describe("MerchantService customer Shops & Pharmacy reads (D-58)", () => {
+  const WHERE = { pilotEnabled: true, businessType: "shop", shopKind: "pharmacy" } as const;
+  const SHOP = { id: "s1", name: "Avondale Pharmacy", coverPhotoUrl: "cover/a.jpg", logoUrl: null, cuisineTags: [], priceLevel: null, shopKind: "pharmacy", foodRatingCount: 0 };
+
+  it("listShops applies the controller's visibility rule, pages like the restaurant list and carries the kind", async () => {
+    let args: { where: unknown; take: number } | undefined;
+    const s = svc({ merchant: { findMany: async (a: { where: unknown; take: number }) => ((args = a), [SHOP]) } });
+    const res = await s.listShops(WHERE);
+    expect(args).toMatchObject({ where: WHERE, take: 21 });
+    expect(res.nextCursor).toBeUndefined();
+    expect(res.shops[0]).toMatchObject({ id: "s1", shopKind: "pharmacy", coverPhotoUrl: "https://signed.example/cover/a.jpg", ratingAvg: null });
+  });
+
+  it("getShopCatalogue 404s a shop outside the rule, and serves live items only", async () => {
+    await expect(svc({ merchant: { findFirst: async () => null } }).getShopCatalogue(WHERE, "s1")).rejects.toThrow(/not found/i);
+    let where: unknown;
+    const s = svc({
+      merchant: { findFirst: async (a: { where: unknown }) => ((where = a.where), SHOP) },
+      merchantCategory: {
+        findMany: async ({ include }: { include: { dishes: { where: unknown } } }) => {
+          expect(include.dishes.where).toEqual({ isDraft: false });
+          return [{ id: "c1", name: "Pain & fever", availableFrom: null, availableTo: null, dishes: [{ id: "d1", name: "Paracetamol 500mg (20 tabs)", description: null, priceUsd: 1.5, photoUrl: "d/p.jpg", outOfStockUntil: null }] }];
+        },
+      },
+    });
+    const res = await s.getShopCatalogue(WHERE, "s1");
+    expect(where).toEqual({ AND: [WHERE, { id: "s1" }] });
+    expect(res.shop.shopKind).toBe("pharmacy");
+    expect(res.categories[0]!.dishes[0]).toMatchObject({ name: "Paracetamol 500mg (20 tabs)", priceUsd: 1.5, outOfStock: false });
+  });
+
+  it("searchShops ignores a one-letter query and bounds item hits to the visible shops", async () => {
+    const s = svc({
+      merchant: { findMany: async ({ select }: { select?: unknown }) => (select ? [{ id: "s1", name: "Avondale Pharmacy" }] : []) },
+      merchantDish: {
+        findMany: async ({ where }: { where: { merchantId: unknown; isDraft: boolean } }) => {
+          expect(where.merchantId).toEqual({ in: ["s1"] });
+          expect(where.isDraft).toBe(false);
+          return [{ id: "d1", name: "Paracetamol", priceUsd: 1.5, photoUrl: null, merchantId: "s1" }];
+        },
+      },
+    });
+    expect(await s.searchShops(WHERE, "p")).toEqual({ shops: [], items: [] });
+    const res = await s.searchShops(WHERE, "para");
+    expect(res.items).toEqual([{ dishId: "d1", name: "Paracetamol", priceUsd: 1.5, photoUrl: null, merchantId: "s1", merchantName: "Avondale Pharmacy" }]);
+  });
+});

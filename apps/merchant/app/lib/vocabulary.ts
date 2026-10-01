@@ -100,8 +100,8 @@ function shopVocabulary(kind: MerchantShopKind | null | undefined): Vocabulary {
     whatYouOffer: "What you sell",
     starterCategories: starters,
     bannerPhotoTip: "A real photo of your shop beats a logo on the banner. Shoot in daylight, no flash — and keep the left edge clear, your logo sits there.",
-    // Shops aren't listed to customers yet (L1.5), so nothing here goes live straight away.
-    profileSub: "This is your shop front. Customers will see it when LyniaGo Shops opens.",
+    // Customers browse live shops in Shops / Pharmacy (ledger D-58): the restaurant line holds for both.
+    profileSub: "This is your shop front. Changes go live straight away.",
     // The restaurant line's "ordered about twice as often" is a claim about dishes; a shop's note keeps the rule only.
     itemPhotoNote: "Every item needs one photo before customers see it. Pick the file from this device; we shrink it for you.",
     itemCropSub: "Square crop. Fill the frame with the item, not the table.",

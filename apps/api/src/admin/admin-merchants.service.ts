@@ -60,12 +60,12 @@ export class AdminMerchantsService {
    *  admin-customers.service.ts's listCustomers aggregation shape). Newest first.
    *
    *  Merchant web upgrade L1 (plan 2026-09-29 D5): `filter=awaiting_go_live` is the ops queue —
-   *  restaurants that signed up and aren't switched on yet; `filter=shops` lists signed-up shops, which
-   *  have no go-live until LyniaGo Shops ships but which ops calls about Book a rider. */
+   *  businesses that signed up and aren't switched on yet; `filter=shops` lists signed-up shops (live or
+   *  not), which go live through the same switch (ledger D-58). */
   async listMerchants(filter?: string) {
     const where =
       filter === "awaiting_go_live"
-        ? { businessType: "restaurant" as const, pilotEnabled: false }
+        ? { pilotEnabled: false }
         : filter === "shops"
           ? { businessType: "shop" as const }
           : {};
@@ -292,15 +292,14 @@ export class AdminMerchantsService {
 
   /**
    * The go-live switch (merchant web upgrade L1; RCA-MERCHANT-NOT-SET-UP-2026-08-18 fix #1) — the ONLY
-   * writer of `pilotEnabled`, the flag the customer restaurant list filters on. The flip and its audit
+   * writer of `pilotEnabled`, the flag the customer restaurant, shop and pharmacy lists filter on. The flip and its audit
    * row are one transaction. Idempotent: setting the current value writes nothing.
    *
-   * Refused (409) when switching ON:
-   *  - a SHOP — going live changes nothing a shop can see until LyniaGo Shops ships, and a shop switched
-   *    on now would surface there unreviewed (design doc R2-7);
-   *  - a restaurant with no pickup pin (placeOrder would 409 every order) or no live, photo'd dish (the
-   *    menu would be empty). The rest of the go-live checks are the ops runbook's human call
-   *    (docs/MERCHANT-GO-LIVE-RUNBOOK.md).
+   * Refused (409) when switching ON a business with no pickup pin (placeOrder would 409 every order,
+   * and a shop's delivery fee can't be quoted) or no live, photo'd dish / item (the menu or catalogue
+   * would be empty). Restaurants and shops go live the same way (ledger D-58); a live shop shows in the
+   * customer Shops or Pharmacy section while that section's flag is on. The rest of the go-live checks
+   * are the ops runbook's human call (docs/MERCHANT-GO-LIVE-RUNBOOK.md) — a pharmacy's licence among them.
    * Switching OFF is always allowed.
    */
   async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {
@@ -309,15 +308,16 @@ export class AdminMerchantsService {
       if (!merchant) throw new NotFoundException("Merchant not found");
       if (merchant.pilotEnabled === input.enabled) return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
       if (input.enabled) {
-        if (merchant.businessType !== "restaurant") {
-          throw new ConflictException({ reason: "shops_not_open", message: "Shops open with LyniaGo Shops — a shop can't go live yet." });
-        }
+        const noun = merchant.businessType === "shop" ? "shop" : "restaurant";
         if (!merchant.location) {
-          throw new ConflictException({ reason: "no_location", message: "This restaurant has no pickup pin yet." });
+          throw new ConflictException({ reason: "no_location", message: `This ${noun} has no pickup pin yet.` });
         }
         const liveDishes = await tx.merchantDish.count({ where: { merchantId: id, isDraft: false } });
         if (liveDishes === 0) {
-          throw new ConflictException({ reason: "no_live_dishes", message: "This restaurant has no dish with a photo yet — its menu would be empty." });
+          throw new ConflictException({
+            reason: "no_live_dishes",
+            message: noun === "shop" ? "This shop has no item with a photo yet — its shop would be empty." : "This restaurant has no dish with a photo yet — its menu would be empty.",
+          });
         }
       }
       await tx.merchant.update({ where: { id }, data: { pilotEnabled: input.enabled } });

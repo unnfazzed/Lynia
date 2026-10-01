@@ -79,6 +79,14 @@ jest.mock("expo-location", () => ({
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
 }));
+// Shops & Pharmacy (D-58): per-test switches; the list API is mocked so no request ever leaves.
+let mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
+jest.mock("../../../src/net/use-service-flags", () => ({
+  useServiceFlags: () => mockServiceFlags,
+}));
+jest.mock("../../../src/api/shops", () => ({
+  getShops: async () => ({ shops: [] }),
+}));
 
 import LauncherHomeScreen from "../home";
 
@@ -135,6 +143,7 @@ afterEach(() => {
   mockSecureStore = {};
   mockMe = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
   mockGetActiveOrder.mockImplementation(async () => null);
+  mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
   jest.clearAllMocks();
 });
 
@@ -346,3 +355,34 @@ describe("(tabs)/home.tsx — Rider v2 C5 live-job bar (ledger D-54)", () => {
     expect(has(activeTree, "Job in progress")).toBe(false);
   });
 });
+
+describe("(tabs)/home.tsx — Shops and Pharmacy tiles (ledger D-58)", () => {
+  function tap(tree: renderer.ReactTestRenderer, label: string): void {
+    const tile = tree.root.find((n) => n.props.accessibilityLabel === label && typeof n.props.onPress === "function");
+    act(() => tile.props.onPress());
+  }
+
+  it("open their sections while switched on — no coming-soon sheet", async () => {
+    mockServiceFlags = { shopsEnabled: true, pharmacyEnabled: true };
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    activeTree = renderHome();
+    await settle();
+    tap(activeTree, "Shops");
+    expect(mockPush).toHaveBeenCalledWith("/shops");
+    tap(activeTree, "Pharmacy");
+    expect(mockPush).toHaveBeenCalledWith("/pharmacy");
+    expect(has(activeTree, "Shops are coming soon")).toBe(false);
+    expect(has(activeTree, "Pharmacy is coming soon")).toBe(false);
+  });
+
+  it("a section its server flag switched off opens the notify-me sheet instead", async () => {
+    mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: true };
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    activeTree = renderHome();
+    await settle();
+    tap(activeTree, "Shops");
+    expect(mockPush).not.toHaveBeenCalledWith("/shops");
+    expect(has(activeTree, "Shops are coming soon")).toBe(true);
+  });
+});
+

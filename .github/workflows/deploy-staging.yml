@@ -140,6 +140,10 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
+          # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
+          # to switch a section off (the kill switch).
+          SHOPS_ENABLED: ${{ vars.STAGING_SHOPS_ENABLED || 'true' }}
+          PHARMACY_ENABLED: ${{ vars.STAGING_PHARMACY_ENABLED || 'true' }}
           MICRO_CACHE_REDIS_L2: ${{ vars.STAGING_MICRO_CACHE_REDIS_L2 }}
           # Same lane, same reason: lands inside ENV_VARS, so never interpolated into the script.
           CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
@@ -159,7 +163,7 @@ jobs:
           # an empty one is a syntax error that fails the ENTIRE workflow to parse (KB-CI-EXPR-EMPTY).
           # MICRO_CACHE_REDIS_L2 rides the same lane (STAGING_MICRO_CACHE_REDIS_L2 Variable): the
           # shared micro-cache Redis L2 (PR #809) over the staging REDIS_URL — no new infra.
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

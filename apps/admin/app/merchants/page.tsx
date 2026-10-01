@@ -10,13 +10,13 @@ import { IconStore } from "../components/icons";
 const FILTERS = {
   awaiting_go_live: {
     label: "awaiting go-live",
-    sub: "Restaurants that signed up and aren't switched on yet — newest first. Call each within a business day.",
-    emptyTitle: "No restaurants waiting",
-    emptyLine: "Every restaurant that signed up is switched on.",
+    sub: "Restaurants and shops that signed up and aren't switched on yet — newest first. Call each within a business day.",
+    emptyTitle: "Nobody waiting",
+    emptyLine: "Every business that signed up is switched on.",
   },
   shops: {
     label: "shops (signed up)",
-    sub: "Shops open with LyniaGo Shops — no go-live yet. Call them about booking a rider.",
+    sub: "Every shop that signed up, live or not — newest first. Shops go live with the same switch as restaurants.",
     emptyTitle: "No shops yet",
     emptyLine: "Shops that sign up on the merchant web will appear here.",
   },

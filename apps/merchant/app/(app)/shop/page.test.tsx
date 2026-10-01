@@ -81,13 +81,13 @@ describe("ShopPage initial-load failure has a way out (LC-D##)", () => {
 });
 
 describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
-  it("asks what it sells, says when customers will see it, and has no cash-order rule to choose", async () => {
+  it("asks what it sells, says changes go live straight away, and has no cash-order rule to choose", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ name: "Mbare Auto Spares", businessType: "shop", shopKind: "auto_parts" }));
 
     render(<ShopPage />);
 
     expect(await screen.findByText("WHAT YOU SELL · up to 3")).toBeTruthy();
-    expect(screen.getByText("This is your shop front. Customers will see it when LyniaGo Shops opens.")).toBeTruthy();
+    expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
     expect(screen.queryByText("How riders pay you")).toBeNull();
     expect(screen.queryAllByText(/food|cook/i)).toHaveLength(0);
   });

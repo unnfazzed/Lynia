@@ -9,10 +9,10 @@ import { listBranches } from "./branches-api";
  * which one this app is working in, and the rules the screens share. Pure helpers are exported for tests.
  */
 
-/** Live for customers. Ops only ever switch restaurants on (the go-live switch refuses shops), so a shop
- *  counts as live: read by the flag alone it would never leave "Almost ready" (ledger D-51). */
+/** Live for customers: ops switched it on. Shops go live through the same switch as restaurants since
+ *  customer Shops and Pharmacy opened (ledger D-58), so the flag alone decides for both (D-51). */
 export function isLive(b: { pilotEnabled: boolean; businessType: MerchantBusinessType }): boolean {
-  return b.businessType === "shop" || b.pilotEnabled;
+  return b.pilotEnabled;
 }
 
 /** The header chevron (README §1): an owner with 2+ branches. Staff never have a second branch. */

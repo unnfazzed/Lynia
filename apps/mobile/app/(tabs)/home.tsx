@@ -12,6 +12,9 @@ import { liveBarModel, popularNearYou } from "../../src/logic/home-feed";
 import { loadRiderIdentity } from "../../src/logic/rider-identity";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useServiceFlags } from "../../src/net/use-service-flags";
+import { useShopListFeed } from "../../src/query/use-shops";
+import { SHOP_KIND_LABEL } from "../../src/logic/browse";
 import { invalidateIfStale, orderKey } from "../../src/query/client";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
@@ -170,15 +173,16 @@ const RAIL_MIN = 2;
  * service tiles, "Popular restaurants" and "Popular shops" rails, and ONE floating live-order bar.
  *
  * Data the handoff marks NEEDS BACKEND renders nothing until it exists (its work order §8): the
- * "Free delivery" tag (no venue flag yet) and the shops rail (no customer shop list yet). Shops and
- * Pharmacy are drawn live with no SOON chip; until their verticals exist their tiles open the
- * notify-me sheet the handoff draws for Shops, so no tile is ever inert (D-55).
+ * "Free delivery" tag (no venue flag yet). Shops and Pharmacy open their sections (ledger D-58); a
+ * section switched off by its server flag opens the notify-me sheet instead, so no tile is ever inert.
+ * "Popular shops" mixes both sections' nearest open shops.
  */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("home");
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
+  const { shopsEnabled, pharmacyEnabled } = useServiceFlags();
   usePrewarmRoutes(HOME_PREWARM);
   useBootHomePaintMark();
   const { width } = useWindowDimensions();
@@ -256,12 +260,27 @@ export default function LauncherHomeScreen(): React.ReactElement {
     () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT) : []),
     [restaurantsEnabled, feed.restaurants, now, location.point],
   );
-  const firstLoad = restaurantsEnabled && feed.restaurants == null && feed.isFetching;
   const showRestaurants = venues.length >= RAIL_MIN;
+
+  // ── "Popular shops" — both sections' nearest open shops (Calm Mint v2 §2.5; ledger D-58) ──
+  const shopsFeed = useShopListFeed("shops", shopsEnabled);
+  const pharmacyFeed = useShopListFeed("pharmacy", pharmacyEnabled);
+  const shopVenues = useMemo(() => {
+    const all = [...(shopsEnabled ? (shopsFeed.shops ?? []) : []), ...(pharmacyEnabled ? (pharmacyFeed.shops ?? []) : [])];
+    const kindOf = new Map(all.map((x) => [x.id, x.shopKind] as const));
+    return popularNearYou(all, now, location.point, RAIL_LIMIT).map((v) => ({ ...v, shopKind: kindOf.get(v.id) ?? "other" }));
+  }, [shopsEnabled, pharmacyEnabled, shopsFeed.shops, pharmacyFeed.shops, now, location.point]);
+  const showShops = shopVenues.length >= RAIL_MIN;
+  const firstLoad =
+    (restaurantsEnabled && feed.restaurants == null && feed.isFetching) ||
+    (shopsEnabled && shopsFeed.shops == null && shopsFeed.isFetching) ||
+    (pharmacyEnabled && pharmacyFeed.shops == null && pharmacyFeed.isFetching);
 
   const onTile = (id: ServiceId): void => {
     if (id === "send") router.push("/send");
     else if (id === "food" && restaurantsEnabled) router.push("/food");
+    else if (id === "shops" && shopsEnabled) router.push("/shops");
+    else if (id === "pharmacy" && pharmacyEnabled) router.push("/pharmacy");
     else setSoon(id === "food" ? "food" : id);
   };
   const openLocation = (search: boolean): void => {
@@ -301,26 +320,48 @@ export default function LauncherHomeScreen(): React.ReactElement {
         <ServiceGrid narrow={narrow} onTile={onTile} />
         {noAddress ? (
           <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+        ) : showRestaurants || showShops ? (
+          <View>
+            {showRestaurants ? (
+              <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
+                {venues.map((v) => (
+                  <VenueCard
+                    key={v.id}
+                    name={v.name}
+                    photoUrl={v.photoUrl}
+                    rating={v.rating}
+                    etaMinutes={v.etaMinutes}
+                    deliveryFee={v.deliveryFee}
+                    closed={v.closed}
+                    onPress={() => router.push(`/food/${v.id}`)}
+                  />
+                ))}
+              </VenueRail>
+            ) : null}
+            {showShops ? (
+              // "See all" opens Shops (the larger section); a pharmacy card opens its Pharmacy storefront.
+              <VenueRail title={H.popularShops} sub={H.popularShopsSub} sticker="shops" onSeeAll={() => router.push(shopsEnabled ? "/shops" : "/pharmacy")}>
+                {shopVenues.map((v) => (
+                  <VenueCard
+                    key={v.id}
+                    name={v.name}
+                    photoUrl={v.photoUrl}
+                    kind={SHOP_KIND_LABEL[v.shopKind]}
+                    rating={v.rating}
+                    etaMinutes={v.etaMinutes}
+                    deliveryFee={v.deliveryFee}
+                    closed={v.closed}
+                    onPress={() => router.push(v.shopKind === "pharmacy" ? `/pharmacy/${v.id}` : `/shops/${v.id}`)}
+                  />
+                ))}
+              </VenueRail>
+            ) : null}
+          </View>
         ) : firstLoad ? (
           <View>
             <RailSkeleton />
             <RailSkeleton />
           </View>
-        ) : showRestaurants ? (
-          <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
-            {venues.map((v) => (
-              <VenueCard
-                key={v.id}
-                name={v.name}
-                photoUrl={v.photoUrl}
-                rating={v.rating}
-                etaMinutes={v.etaMinutes}
-                deliveryFee={v.deliveryFee}
-                closed={v.closed}
-                onPress={() => router.push(`/food/${v.id}`)}
-              />
-            ))}
-          </VenueRail>
         ) : (
           // README §2 rules: both rails empty → the H6 card, titled "Nothing delivers here yet".
           <NoLocationCard title={H.nothingHere} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />

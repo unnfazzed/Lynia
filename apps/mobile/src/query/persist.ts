@@ -41,6 +41,8 @@ export const PERSISTED_KEY_ROOTS: ReadonlySet<string> = new Set([
   // banner ("Showing what we had at HH:MM") now derives from the query's own persisted
   // `dataUpdatedAt` — see use-restaurants.ts.
   "restaurants",
+  // Shops & Pharmacy lists and catalogues (ledger D-58): the same stale-safe browse data.
+  "shops",
 ]);
 
 /**

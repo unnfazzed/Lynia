@@ -217,17 +217,20 @@ export function RemindRow({ on, busy, onToggle, bordered = true }: { on: boolean
   );
 }
 
-/** Closed: a surface strip "Closed · opens 10:00", then the Remind me row. */
-export function ClosedStrip({ label, remindOn, remindBusy, onRemind }: { label: string; remindOn: boolean; remindBusy: boolean; onRemind: () => void }): React.ReactElement {
+/** Closed: a surface strip "Closed · opens 10:00", then the Remind me row (none without `onRemind`:
+ *  Shops and Pharmacy have no reminder while they're browse-only, ledger D-58). */
+export function ClosedStrip({ label, remindOn = false, remindBusy = false, onRemind }: { label: string; remindOn?: boolean; remindBusy?: boolean; onRemind?: () => void }): React.ReactElement {
   return (
     <View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginHorizontal: 16, minHeight: 40, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: tokens.color.surface }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.muted }} />
         <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{label}</Text>
       </View>
-      <View style={{ marginTop: 10, marginHorizontal: 16 }}>
-        <RemindRow on={remindOn} busy={remindBusy} onToggle={onRemind} />
-      </View>
+      {onRemind ? (
+        <View style={{ marginTop: 10, marginHorizontal: 16 }}>
+          <RemindRow on={remindOn} busy={remindBusy} onToggle={onRemind} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -431,6 +434,84 @@ export function DishRow({
         {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
       </VenueImage>
     </Tappable>
+  );
+}
+
+/** README §4 "Item tile (shops)" with the §4b values: a square photo (radius 16), price first 16/700,
+ *  then the name 13.5/400 on two lines. Two to a row (`ShopGrid`). No + while shops are browse-only (D-58). */
+export function ShopTile({ item, onOpen }: { item: StoreItem; onOpen: () => void }): React.ReactElement {
+  const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  return (
+    <Tappable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}
+      style={{ flex: 1, minWidth: 0 }}
+    >
+      <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }} />
+      <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
+      <Text numberOfLines={2} style={{ marginTop: 2, fontSize: 13.5, lineHeight: 18.2, color: ink }}>
+        {item.name}
+      </Text>
+      {item.outOfStock ? <OosChip /> : null}
+    </Tappable>
+  );
+}
+
+/** Lays `ShopTile`s out two to a row: row gap 20, column gap 12, padding 8 16 0 (README §4b). */
+export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile: (item: StoreItem) => React.ReactElement }): React.ReactElement {
+  const rows: StoreItem[][] = [];
+  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
+  return (
+    <View style={{ paddingTop: 8, paddingHorizontal: 16, gap: 20 }}>
+      {rows.map((row) => (
+        <View key={row[0]!.id} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+          {row.map((it) => (
+            <React.Fragment key={it.id}>{renderTile(it)}</React.Fragment>
+          ))}
+          {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** README §4 "Item row (pharmacy)" with the §4b values: photo 72 radius 14, vertically centred; name
+ *  15/600 (the pack size is part of the name), price 15/700; inset hairline. */
+export function PharmacyRow({ item, highlight, onOpen }: { item: StoreItem; highlight?: string; onOpen: () => void }): React.ReactElement {
+  const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  return (
+    <Tappable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}
+      style={{ flexDirection: "row", alignItems: "center", gap: 14, marginHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: HAIRLINE }}
+    >
+      <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, lineHeight: 19.5, fontWeight: tokens.font.weight.semibold, color: ink }}>
+          {highlight ? <Highlighted text={item.name} match={highlight} /> : item.name}
+        </Text>
+        <Text style={{ marginTop: 4, fontSize: 15, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
+        {item.outOfStock ? <OosChip /> : null}
+      </View>
+    </Tappable>
+  );
+}
+
+/** README §4 "OTC notice": surface, radius 12, padding 12 14, circle-alert 18 green-text, the first
+ *  sentence bold. Text, not a gate. On the Pharmacy list (margin 12 16 0) and storefront (10 16 0). */
+export function OtcNotice({ marginTop = 12 }: { marginTop?: number }): React.ReactElement {
+  const [lead, ...rest] = B.list.otc.split(". ");
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop, marginHorizontal: 16, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.surface }}>
+      <View style={{ marginTop: 1 }}>
+        <Icon name="circle-alert" size={18} color={tokens.color.accentText} />
+      </View>
+      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18.85, color: tokens.color.ink }}>
+        <Text style={{ fontWeight: tokens.font.weight.bold }}>{`${lead}.`}</Text> {rest.join(". ")}
+      </Text>
+    </View>
   );
 }
 

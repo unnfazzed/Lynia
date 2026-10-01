@@ -657,6 +657,13 @@ export const MerchantFeatureFlagsResponse = z
   .strict();
 export type MerchantFeatureFlagsResponse = z.infer<typeof MerchantFeatureFlagsResponse>;
 
+/** `GET /app/service-flags` — the Shops and Pharmacy kill switches (browse-v2 README §7,
+ *  `SHOPS_ENABLED` / `PHARMACY_ENABLED`). Its own endpoint, not two more keys on
+ *  `MerchantFeatureFlagsResponse`: that body is strict, so an added key would fail every installed
+ *  client's parse and drop all of their flags to defaults (the rider food board among them). */
+export const ServiceFlagsResponse = z.object({ shopsEnabled: z.boolean(), pharmacyEnabled: z.boolean() }).strict();
+export type ServiceFlagsResponse = z.infer<typeof ServiceFlagsResponse>;
+
 // ---------------------------------------------------------------------------
 // Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
 // ---------------------------------------------------------------------------
@@ -1157,6 +1164,29 @@ export const RestaurantMenuResponse = z
   })
   .strict();
 export type RestaurantMenuResponse = z.infer<typeof RestaurantMenuResponse>;
+
+// --- Customer Shops & Pharmacy read API (browse-v2 B2–B4, S3–S4; ledger D-58) ---
+// A shop is the same row as a restaurant with `businessType = shop` (plan 2026-09-29 D1), so the
+// customer shapes reuse the restaurant ones and add the kind. Pharmacy is the `pharmacy` kind, listed
+// on its own; Shops is every other kind. Gated by SHOPS_ENABLED / PHARMACY_ENABLED + `pilotEnabled`.
+
+/** Which customer section a shop belongs to. */
+export const ShopService = z.enum(["shops", "pharmacy"]);
+export type ShopService = z.infer<typeof ShopService>;
+
+export const ShopListItem = RestaurantListItem.extend({ shopKind: MerchantShopKind }).strict();
+export type ShopListItem = z.infer<typeof ShopListItem>;
+
+export const ShopListResponse = z.object({ shops: z.array(ShopListItem), nextCursor: z.string().optional() }).strict();
+export type ShopListResponse = z.infer<typeof ShopListResponse>;
+
+/** A shop's catalogue: categories → items, drafts and hidden categories already removed. */
+export const ShopCatalogueResponse = z.object({ shop: ShopListItem, categories: z.array(RestaurantMenuCategory) }).strict();
+export type ShopCatalogueResponse = z.infer<typeof ShopCatalogueResponse>;
+
+/** Search inside one section: PLACES (shop names) + ITEMS (catalogue items across its shops). */
+export const ShopSearchResponse = z.object({ shops: z.array(ShopListItem), items: z.array(RestaurantSearchDish) }).strict();
+export type ShopSearchResponse = z.infer<typeof ShopSearchResponse>;
 
 /**
  * D1 `menu_closed` / `list_empty` — "Remind me when they open". `set` is whether the customer is

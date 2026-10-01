@@ -175,7 +175,9 @@ const NOTE_HINT: Record<BrowseService, string> = { food: B.item.noteHint, shops:
  * I1 — the item sheet: 16:9 photo with a close disc, name + price, description, Quantity stepper, the
  * optional note (200 max, "Notes can't change the price."), and "Add · $4.50" / "Add 2 · $9.00". While
  * the note is focused the photo is dropped so the CTA rides above the keyboard (I2). Closed venue (I1d):
- * read-only, a disabled "Opens at 10:00" bar and the Remind me row.
+ * read-only, a disabled "Opens at 10:00" bar and the Remind me row. `browseOnly` (Shops and Pharmacy
+ * until Order flow v2, ledger D-58): photo, name, price and description only — nothing to add.
+ * Pharmacy (I1c) carries the OTC line.
  */
 export function ItemSheet({
   item,
@@ -186,9 +188,11 @@ export function ItemSheet({
   onRemind,
   onAdd,
   onClose,
+  browseOnly = false,
 }: {
   item: StoreItem | null;
   service: BrowseService;
+  browseOnly?: boolean;
   /** Non-null when the venue is closed: the time it next opens ("10:00"). */
   closedAt: string | null;
   remindOn: boolean;
@@ -206,7 +210,7 @@ export function ItemSheet({
     setTyping(false);
     onClose();
   };
-  const readOnly = closedAt != null || !!item?.unavailable;
+  const readOnly = browseOnly || closedAt != null || !!item?.unavailable;
   return (
     <Sheet visible={item != null} onClose={close}>
       {item ? (
@@ -278,8 +282,14 @@ export function ItemSheet({
               </View>
             </>
           ) : null}
+          {service === "pharmacy" ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+              <Icon name="circle-alert" size={14} color={tokens.color.accentText} />
+              <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted }}>{B.list.otc}</Text>
+            </View>
+          ) : null}
           <View style={{ marginTop: 14 }}>
-            {closedAt != null ? (
+            {browseOnly ? null : closedAt != null ? (
               <>
                 <BrowseButton label={fmt(B.item.closedCta, { t: closedAt })} variant="muted" disabled onPress={() => undefined} />
                 <View style={{ marginTop: 4 }}>

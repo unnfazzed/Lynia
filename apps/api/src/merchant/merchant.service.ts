@@ -20,6 +20,10 @@ import type {
   RestaurantMenuResponse,
   RestaurantSearchDish,
   RestaurantSearchResponse,
+  ShopCatalogueResponse,
+  ShopListItem,
+  ShopListResponse,
+  ShopSearchResponse,
   SetMerchantBusyModeRequest,
   UpdateMerchantOrderSettingsRequest,
   SetMerchantOpenRequest,
@@ -607,6 +611,85 @@ export class MerchantService {
     };
   }
 
+  // --- Customer Shops & Pharmacy read API (ledger D-58). `where` is customerVisibleShop(env, service)
+  // from the controller, which owns the SHOPS_ENABLED / PHARMACY_ENABLED switches. Same shapes and
+  // paging as the restaurant reads, plus the shop's kind.
+
+  async listShops(where: Prisma.MerchantWhereInput, cursor?: string): Promise<ShopListResponse> {
+    const merchants = await this.prisma.merchant.findMany({
+      where,
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: RESTAURANTS_PAGE_SIZE + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    const hasMore = merchants.length > RESTAURANTS_PAGE_SIZE;
+    const page = hasMore ? merchants.slice(0, RESTAURANTS_PAGE_SIZE) : merchants;
+    return {
+      shops: await Promise.all(page.map((m) => this.toShopItem(m))),
+      nextCursor: hasMore ? page[page.length - 1]!.id : undefined,
+    };
+  }
+
+  /** PLACES (shop name) + ITEMS (live catalogue items across the visible shops), as restaurant search. */
+  async searchShops(where: Prisma.MerchantWhereInput, rawQuery?: string): Promise<ShopSearchResponse> {
+    const q = (rawQuery ?? "").trim();
+    if (q.length < RESTAURANTS_SEARCH_MIN_CHARS) return { shops: [], items: [] };
+    const shopRows = await this.prisma.merchant.findMany({
+      where: { AND: [where, { name: { contains: q, mode: "insensitive" } }] },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: RESTAURANTS_SEARCH_LIMIT,
+    });
+    const shops = await Promise.all(shopRows.map((m) => this.toShopItem(m)));
+    // Bounded to the visible set up front, so a shop that isn't live can never leak an item.
+    const visible = await this.prisma.merchant.findMany({ where, select: { id: true, name: true } });
+    const nameOf = new Map(visible.map((p) => [p.id, p.name] as const));
+    const itemRows = visible.length
+      ? await this.prisma.merchantDish.findMany({
+          where: {
+            merchantId: { in: visible.map((p) => p.id) },
+            isDraft: false,
+            OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
+          },
+          orderBy: [{ name: "asc" }, { id: "asc" }],
+          take: RESTAURANTS_SEARCH_LIMIT,
+        })
+      : [];
+    const items: RestaurantSearchDish[] = await Promise.all(
+      itemRows.map(async (d) => ({
+        dishId: d.id,
+        name: d.name,
+        priceUsd: Number(d.priceUsd),
+        photoUrl: await this.signPhoto(d.photoUrl),
+        merchantId: d.merchantId,
+        merchantName: nameOf.get(d.merchantId) ?? "",
+      })),
+    );
+    return { shops, items };
+  }
+
+  async getShopCatalogue(where: Prisma.MerchantWhereInput, merchantId: string): Promise<ShopCatalogueResponse> {
+    const merchant = await this.prisma.merchant.findFirst({ where: { AND: [where, { id: merchantId }] } });
+    if (!merchant) throw new NotFoundException("Shop not found");
+    const categories = await this.prisma.merchantCategory.findMany({
+      where: { merchantId: merchant.id, hidden: false },
+      orderBy: { sortOrder: "asc" },
+      // D-31: draft (photoless) items are excluded entirely from the customer read API.
+      include: { dishes: { where: { isDraft: false }, orderBy: { sortOrder: "asc" } } },
+    });
+    return {
+      shop: await this.toShopItem(merchant),
+      categories: await Promise.all(
+        categories.map(async (c) => ({
+          id: c.id,
+          name: c.name,
+          dishes: await Promise.all(c.dishes.map((d) => this.toCustomerDish(d))),
+          availableFrom: c.availableFrom,
+          availableTo: c.availableTo,
+        })),
+      ),
+    };
+  }
+
   /** Browse v2 (D-57): the storefront's "Popular" rail — the dishes on today's menu that delivered
    *  orders over the last 30 days picked most often. Ranked by how many orders included the dish (not
    *  by quantity, so one office's 20-portion order doesn't outrank 20 separate customers). Empty when
@@ -924,6 +1007,11 @@ export class MerchantService {
       ratingCount: merchant.foodRatingCount,
       prepBaselineMinutes: merchant.prepBaselineMinutes,
     };
+  }
+
+  private async toShopItem(merchant: Prisma.MerchantGetPayload<Record<string, never>>): Promise<ShopListItem> {
+    // customerVisibleShop never matches a null kind; "other" only keeps the type honest.
+    return { ...(await this.toListItem(merchant)), shopKind: merchant.shopKind ?? "other" };
   }
 
   private async toCustomerDish(dish: DishRow): Promise<RestaurantMenuDish> {

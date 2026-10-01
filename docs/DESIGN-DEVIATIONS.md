@@ -3116,3 +3116,55 @@ D-55 had to write for it.
 
 Open questions (`BRIEF.md`): a 16:9 cover upload for merchants; promoting the Fashion / Auto parts
 inks to tokens (they already are: `--kind-fashion-ink`, `--kind-auto-ink`); real shop photos; busy mode.
+
+## D-58 · Browse v2 part 2: Shops and Pharmacy open, browse only until Order flow v2 — APPROVED (2026-10-01)
+
+**Owner instruction, this session (2026-10-01):** *"enable shops and pharmacies in the app and in
+production. No more coming soon."* Asked how far that goes, the owner chose:
+
+1. **Browse now, order later.** Shops and Pharmacy ship as browse-only sections. Checkout, hand-over
+   and done for shops wait for the Order flow v2 handoff (`docs/designs/order-flow-v2/` brief, #1022);
+   nothing is improvised for them.
+2. **Same go-live switch as restaurants.** Ops switch each shop on in admin after the runbook call; the
+   API's go-live switch no longer refuses shops (`shops_not_open` is gone).
+3. **Pharmacy: the OTC notice only.** No licence-upload gate; ops check the licence on the go-live call
+   (`docs/MERCHANT-GO-LIVE-RUNBOOK.md` §3).
+4. **Production:** the API ships with both sections on (`SHOPS_ENABLED` / `PHARMACY_ENABLED`, default on
+   in the release workflows), and qualifying shops are switched on.
+
+### 1 · Authority (a scope rule)
+
+`app/shops/*` and `app/pharmacy/*` (list, storefront, search) align to `packages/design/handoff/browse-v2/`
+B2, B3a/b, B4, S3, S4, I1b, I1c and X3 (scoped to one section), on the D-57 kit. The Home tiles for
+Shops and Pharmacy open those sections while their flag is on; the Calm Mint v2 notify-me sheet (D-55)
+is now only the flag-off state (B13), as the handoff's §8 retires it. Home's "Popular shops" rail
+(Calm Mint v2 §2.5, NEEDS BACKEND until now) renders from the new list API.
+
+### 2 · What landed
+
+- **API:** `GET /shops?service=shops|pharmacy`, `GET /shops/search`, `GET /shops/:id/catalogue`
+  (`ShopsController`, `ShopsEnabledGuard`: 503 before auth while a section is off), visibility =
+  `pilotEnabled` + `businessType = shop` + the section's kinds (`customerVisibleShop`). Public
+  `GET /app/service-flags` (`ServiceFlagsResponse`) — its own body because `MerchantFeatureFlagsResponse`
+  is strict and two more keys would fail every installed client's parse. `placeOrder` still refuses
+  shops (D8).
+- **Admin:** Go live on a shop's page, with shop / pharmacy wording; "awaiting go-live" lists shops too.
+- **Merchant web:** a shop is live once switched on (`isLive` reads the flag alone), and its profile
+  line is the restaurant one ("Changes go live straight away").
+- **Mobile:** `ShopListScreen`, `ShopStoreScreen`, `ShopSearchScreen` (`src/ui/browse/`), the shop tile
+  grid, pharmacy rows and OTC notice (`store.tsx`), `useServiceFlags` (fails OPEN like
+  `restaurantsEnabled`), `useShopListFeed` (persisted like the restaurant list).
+
+### 3 · Still different from the handoff
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| + on tiles / rows, the stepper, the cart bar, S5/S6, I3 | Drawn | Not rendered | Owner decision 1: no shop ordering until Order flow v2. A + that led nowhere would be a dead control. |
+| Item sheet (I1b / I1c) | Quantity, note, "Add · $x" | Photo, name, price, description (+ the OTC line for pharmacy) | Same. |
+| Closed strip | "Closed · opens 10:00" + Remind me | The strip without Remind me | The reminder push says "They're taking orders again"; a shop can't take app orders yet. |
+| Closing strip (S7) | "Closes in 15 min · order by 17:45" | Not shown; the open line says "Open until …" | "order by" promises an order the customer can't place yet. |
+| Just-closed modal (S9) | Drawn | Not shown | Its purpose is protecting a cart; there is none. |
+| Search (X3) | PLACES + ITEMS, item hit adds | PLACES + ITEMS, an item hit opens its shop | Browse only. |
+| Home search / X1–X2 | Cross-service | Unchanged (part 3) | Out of scope here. |
+
+These rows close when Order flow v2 lands; that PR removes them.
