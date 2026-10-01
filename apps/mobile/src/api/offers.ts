@@ -43,3 +43,9 @@ export interface MakeOfferResult {
 export function makeOffer(orderId: string, body: Omit<MakeOfferRequest, "orderId">): Promise<MakeOfferResult> {
   return apiFetch<MakeOfferResult>(`/orders/${orderId}/offers`, { method: "POST", body });
 }
+
+/** Withdraw the rider's own pending offer on an open order (Rider v2 J10). One round per job still
+ *  holds: a withdrawn offer can't be replaced by a new one. */
+export function withdrawOffer(orderId: string): Promise<{ orderId: string; withdrawn: true }> {
+  return apiFetch<{ orderId: string; withdrawn: true }>(`/orders/${orderId}/offers/mine`, { method: "DELETE" });
+}

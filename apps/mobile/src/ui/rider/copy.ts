@@ -42,6 +42,8 @@ export const RIDER_COPY = {
   withdrawn: "Offer withdrawn.",
   undo: "Undo",
   /* make an offer */
+  /** Not drawn: stands in for the sender's name when the API sends none (ledger D-54 §4). */
+  theSender: "The sender",
   tOffer: "Make an offer",
   yourFare: "Your fare",
   tapType: "Tap the fare to type an amount",
