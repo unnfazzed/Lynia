@@ -26,11 +26,14 @@ const row = (i: number, role: "customer" | "rider", status: OrderHistoryRow["sta
   rating: null,
   counterpartyName: null,
 });
-const mockRows = [...Array.from({ length: 30 }, (_, i) => row(i, "customer")), row(1, "rider"), row(2, "rider", "cancelled")];
+const food = (r: OrderHistoryRow): OrderHistoryRow => ({ ...r, id: `${r.id}-food`, orderType: "merchant", merchantName: "Sadza Republic" });
+const baseRows = [...Array.from({ length: 30 }, (_, i) => row(i, "customer")), row(1, "rider"), row(2, "rider", "cancelled")];
+let mockRows = baseRows;
 
 let mockSide = "rider";
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({ side: mockSide }),
 }));
 jest.mock("../../../src/query/use-history-feed", () => ({
@@ -81,5 +84,24 @@ describe("history split by side", () => {
     expect(ids(t)).toHaveLength(30);
     expect(ids(t).every((id) => id.startsWith("customer-"))).toBe(true);
     expect(text(t)).toContain("Trip history");
+  });
+
+  it("a placed food order opens the food tracker; a carried food job stays on the order screen", () => {
+    const press = (t: renderer.ReactTestRenderer, id: string): void => {
+      const list = t.root.findByType(SectionList);
+      const item = (list.props.sections as { data: OrderHistoryRow[] }[]).flatMap((s) => s.data).find((r) => r.id === id)!;
+      const el = list.props.renderItem({ item, index: 0 });
+      act(() => el.props.onPress());
+    };
+    mockRows = [...baseRows, food(row(99, "customer")), food(row(98, "rider"))];
+    mockSide = "customer";
+    press(render(), "customer-99-food");
+    expect(mockPush).toHaveBeenLastCalledWith("/food/order/customer-99-food");
+    press(render(), "customer-0");
+    expect(mockPush).toHaveBeenLastCalledWith("/order/customer-0");
+    mockSide = "rider";
+    press(render(), "rider-98-food");
+    expect(mockPush).toHaveBeenLastCalledWith("/order/rider-98-food");
+    mockRows = baseRows;
   });
 });
