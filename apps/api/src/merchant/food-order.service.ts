@@ -1027,12 +1027,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   /**
    * Auto-accept safeguard 1. Two jobs for auto-accepted orders still in the kitchen:
    *  - Escalate: unconfirmed RESTAURANTS_AUTO_ACCEPT.escalateAfterMs after placement → marked urgent for
-   *    the ops call list (once). Never cancelled automatically: ops or the customer decide.
+   *    the ops call list (once).
+   *  - Cancel: still unconfirmed RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs after placement → cancelled,
+   *    customer told nothing was charged (a cash order has taken no money yet).
    *  - Send a rider: once CONFIRMED, the order goes to `ready_for_pickup` (which starts dispatch)
    *    RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs before prep time runs out, or straight away if confirmed
    *    later than that. An unconfirmed order never reaches dispatch.
    */
-  async sweepAutoAccepted(now: Date = new Date()): Promise<{ escalated: number; released: number }> {
+  async sweepAutoAccepted(now: Date = new Date()): Promise<{ escalated: number; released: number; cancelled: number }> {
     const escalated = await this.prisma.order.updateMany({
       where: {
         orderType: "merchant",
@@ -1045,6 +1047,29 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       data: { kitchenEscalatedAt: now },
     });
     if (escalated.count > 0) this.logger.warn(`auto-accept: ${escalated.count} order(s) unconfirmed — urgent on the ops call list`);
+
+    let cancelled = 0;
+    const abandoned = await this.prisma.order.findMany({
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        autoAccepted: true,
+        kitchenConfirmedAt: null,
+        createdAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs) },
+      },
+      select: { id: true, merchantId: true },
+      take: 200,
+    });
+    for (const o of abandoned) {
+      try {
+        if (await this.commitStaleCancellation(o.id, o.merchantId, { autoAccepted: true, kitchenConfirmedAt: null }, "kitchen_unconfirmed")) {
+          cancelled++;
+        }
+      } catch (err) {
+        this.logger.error(`sweepAutoAccepted cancel failed for order ${o.id}: ${(err as Error).message}`);
+      }
+    }
+    if (cancelled > 0) this.logger.warn(`auto-accept: ${cancelled} order(s) never confirmed by the kitchen — cancelled`);
 
     let released = 0;
     const cooking = await this.prisma.order.findMany({
@@ -1069,7 +1094,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         this.logger.error(`sweepAutoAccepted failed for order ${o.id}: ${(err as Error).message}`);
       }
     }
-    return { escalated: escalated.count, released };
+    return { escalated: escalated.count, released, cancelled };
   }
 
   // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────

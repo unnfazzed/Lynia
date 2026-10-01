@@ -3535,6 +3535,7 @@
         "reason": {
           "enum": [
             "closing_soon",
+            "kitchen_unconfirmed",
             "no_rider",
             "other",
             "out_of_ingredient",
@@ -3553,6 +3554,7 @@
     "MerchantRejectionReasonCode": {
       "enum": [
         "closing_soon",
+        "kitchen_unconfirmed",
         "no_rider",
         "other",
         "out_of_ingredient",
@@ -3568,6 +3570,7 @@
         "reason": {
           "enum": [
             "closing_soon",
+            "kitchen_unconfirmed",
             "no_rider",
             "other",
             "out_of_ingredient",
