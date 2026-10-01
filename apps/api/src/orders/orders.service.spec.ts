@@ -1095,6 +1095,55 @@ describe("OrdersService.listOpen", () => {
   });
 });
 
+describe("OrdersService.listOpen — board tags (owner 2026-10-01)", () => {
+  const row = (phone: string | null) => ({
+    id: "o1",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
+    itemDesc: "Documents",
+    suggestedFare: { toString: () => "2.40" },
+    proposedFare: { toString: () => "2.50" },
+    distanceKm: 1.5,
+    createdAt: new Date("2026-06-26T00:00:00Z"),
+    customer: { firstName: phone?.startsWith("business:") ? "Mama's Kitchen" : "Rudo", phone },
+  });
+  const svcWith = (rows: unknown[]) =>
+    new OrdersService({ order: { findMany: async () => rows } } as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+  it("a business's booking is a SHOP job, named for the business — and its booking-account phone never leaves", async () => {
+    const rows = await svcWith([row("business:5f0c2b1e-0000-4000-8000-000000000001")]).listOpen();
+    expect(rows[0]).toMatchObject({ kind: "shop", customerFirstName: "Mama's Kitchen" });
+    expect(JSON.stringify(rows[0])).not.toContain("business:");
+  });
+
+  it("a person's send is a PARCEL job", async () => {
+    const rows = await svcWith([row("+263771234567")]).listOpen();
+    expect(rows[0]).toMatchObject({ kind: "parcel" });
+    expect(JSON.stringify(rows[0])).not.toContain("+263");
+  });
+});
+
+describe("OrdersService.demandZones", () => {
+  it("returns the busiest cells with a level against the busiest and a radius that grows with the count", async () => {
+    const queryRaw = vi.fn(async () => [
+      { lat: -17.8, lng: 31.04, n: 6, place: "Avondale Shops" },
+      { lat: -17.83, lng: 31.05, n: 3, place: "Eastgate Mall" },
+    ]);
+    const svc = new OrdersService({ $queryRaw: queryRaw } as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    const zones = await svc.demandZones(-17.82, 31.05);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(zones).toEqual([
+      { lat: -17.8, lng: 31.04, radiusM: 800, level: 1, place: "Avondale Shops" },
+      { lat: -17.83, lng: 31.05, radiusM: 575, level: 0.5, place: "Eastgate Mall" },
+    ]);
+  });
+
+  it("no busy cells → no zones", async () => {
+    const svc = new OrdersService({ $queryRaw: async () => [] } as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+    expect(await svc.demandZones(-17.82, 31.05)).toEqual([]);
+  });
+});
+
 describe("OrdersService.historyForUser", () => {
   const svc = (rows: unknown[], capture?: (a: { where: unknown; orderBy: unknown; take: unknown }) => void) =>
     new OrdersService(

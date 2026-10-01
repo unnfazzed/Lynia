@@ -10,6 +10,7 @@ import { ApiError } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
+import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
@@ -363,14 +364,32 @@ export default function RiderHome(): React.ReactElement {
     void qc.invalidateQueries({ queryKey: ["activeJob"] });
   }, online);
 
-  const jobs: BoardJob[] = useMemo(
-    () =>
-      (Array.isArray(openQ.data) ? openQ.data : [])
-        .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
-        .map((o) => toBoardJob(o, loc))
-        .sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER)),
-    [openQ.data, bidIds, skipped, loc],
-  );
+  // Owner 2026-10-01: food, shop and parcel jobs all show on the board, tagged. A food job is the
+  // live dispatch offer the server is holding for THIS rider (food is offered to one rider at a time);
+  // it still rings full screen, and its card opens the same offer.
+  const foodOfferQ = useQuery({ queryKey: ["foodOffer"], queryFn: getFoodDispatchOffer, enabled: online && !!foodOn, refetchInterval: online && foodOn ? 15_000 : false });
+  const foodOffer = foodOn && foodOfferQ.data && new Date(foodOfferQ.data.expiresAt).getTime() > Date.now() ? foodOfferQ.data : null;
+  const jobs: BoardJob[] = useMemo(() => {
+    const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
+      .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
+      .map((o) => toBoardJob(o, loc));
+    const food: BoardJob[] = foodOffer
+      ? [
+          {
+            id: `food:${foodOffer.orderId}`,
+            pickup: { ...foodOffer.pickup.point, landmark: foodOffer.pickup.landmark },
+            dropoff: { ...foodOffer.dropoff.point, landmark: foodOffer.dropoff.landmark },
+            toPickupKm: loc ? haversineKm(loc, foodOffer.pickup.point) : null,
+            tripKm: foodOffer.distanceKm,
+            item: foodOffer.itemDesc,
+            asking: foodOffer.deliveryFee ?? 0,
+            kind: "food",
+          },
+        ]
+      : [];
+    return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
+  }, [openQ.data, bidIds, skipped, loc, foodOffer]);
+  const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 
   // J13: the job the rider was looking at was taken by someone else.
@@ -460,7 +479,7 @@ export default function RiderHome(): React.ReactElement {
   const myOffers = sentOffers.filter((s) => s.order.id !== activeJob?.id && !withdrawing.has(s.order.id));
 
   // ── Demand (busy zones) ──────────────────────────────────────────────────────────────────────────
-  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online, staleTime: 5 * 60_000 });
+  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online, staleTime: 2 * 60_000, refetchInterval: online ? 2 * 60_000 : false });
   const zones = zonesQ.data ?? [];
   const busiest = zones.length ? zones.reduce((a, b) => (b.level > a.level ? b : a)) : null;
   const busyLine = busiest && loc ? RF.busyLine(busiest.place, haversineKm(loc, busiest)) : null;
@@ -472,6 +491,10 @@ export default function RiderHome(): React.ReactElement {
   const conn = online && board.connected && !beatStale;
 
   const offerFor = (j: BoardJob): void => {
+    if (j.kind === "food") {
+      router.push("/rider/food-offer");
+      return;
+    }
     router.push({ pathname: "/rider/offer/[jobId]", params: { jobId: j.id, toKm: j.toPickupKm != null ? j.toPickupKm.toFixed(1) : "" } });
   };
 
@@ -588,7 +611,7 @@ export default function RiderHome(): React.ReactElement {
             </>
           ) : jobs.length ? (
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-              <Text style={{ flex: 1, fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RF.nearYou(jobs.length)}</Text>
+              <Text style={{ flex: 1, fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{mixedKinds ? RF.jobsNearYou(jobs.length) : RF.nearYou(jobs.length)}</Text>
               <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.nearest}</Text>
             </View>
           ) : null}
@@ -680,6 +703,7 @@ function toBoardJob(o: OpenOrder, loc: { lat: number; lng: number } | null): Boa
     tripKm: o.distanceKm ?? haversineKm(o.pickup.point, o.dropoff.point),
     item: o.itemDesc,
     asking: Number(o.proposedFare),
+    kind: o.kind === "shop" ? "shop" : "parcel",
   };
 }
 

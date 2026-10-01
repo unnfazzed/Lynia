@@ -20,6 +20,8 @@ export const RIDER_COPY = {
   foodRings: "Food jobs ring full screen. Keep LyniaGo open.",
   parcel: "PARCEL",
   food: "FOOD",
+  /** Undrawn (owner 2026-10-01, ledger D-54 §4): a business's booking on the board. */
+  shop: "SHOP",
   toPickup: "to pickup",
   trip: "trip",
   asking: "asking",
@@ -395,6 +397,8 @@ export const hMin = (ms: number): string => {
 export const RF = {
   greeting: (phrase: string, name?: string | null): string => (name ? `${phrase}, ${name}` : phrase),
   nearYou: (n: number): string => (n === 1 ? "1 parcel near you" : `${n} parcels near you`),
+  /** Undrawn: the count when the board mixes parcels with food or shop jobs (owner 2026-10-01). */
+  jobsNearYou: (n: number): string => (n === 1 ? "1 job near you" : `${n} jobs near you`),
   busyLine: (place: string, kmAway: number): string => `Busier near ${place} · ${km(kmAway)} from you`,
   whyQuietB: (place: string): string => `It's quiet around ${place} right now. Most jobs come in 7–9am and 5–7pm.`,
   picked: (customer: string): string => `${customer} picked you!`,

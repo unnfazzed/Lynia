@@ -2786,7 +2786,9 @@ offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the t
 | Top-up number edit sheet | Not drawn | A sheet with the provider chips, the number field and "Save" | The row needs somewhere to edit; one undrawn string (`save`) |
 | Test alarm | The looping food-offer alarm | One local notification with sound + a strong haptic | No alarm sound ships yet (see "Food-offer alarm" below) |
 | `/dev/rider-states` | Asked for by the build plan | Not shipped | No dev-only route in the production bundle (as D-53) |
-| Busy zones on the board map (J1/J4) | Dashed zones + "Busy" + "Busiest near Avondale · 1.2 km" | Not drawn | No demand endpoint yet (`getDemandZones` returns none, `TODO(backend)`); the zones and the pointer appear the day it does |
+| Job tags on the board (owner 2026-10-01) | PARCEL and FOOD drawn | PARCEL · FOOD · SHOP; SHOP (a business's booking, named for the business) in the highlight wash (`shop`) | Owner: "food jobs and shop jobs and send package jobs all appear there with tags" |
+| Food job on the board (owner 2026-10-01) | Food only rings full screen | The food offer the server is holding for this rider is also a FOOD card ("your fare", "Accept this job" → the offer) | Food is dispatched to one rider at a time, so the board shows the one this rider can take |
+| Board count with mixed kinds | "4 parcels near you" | "N jobs near you" (`jobsNearYou`) when food or shop jobs are among them | The parcel wording would be wrong |
 | Usual-band bar (O1) | Server band for the trip | A band derived on the phone from the asking fare (`fareBand`) | No fare-band endpoint |
 | Unknown sender name | "Rudo" | "The sender" (one undrawn string, `theSender`) | An order whose customer has no first name on file |
 | Force update (G15) | A gate on the board | The app-wide force-update screen, which runs before any tab mounts | Already shipped; same copy |
@@ -2813,8 +2815,11 @@ offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the t
 Nothing from this handoff remains to build; the rows in §4 marked `TODO(backend)` fill in as their data
 arrives, and the open questions below stand.
 
-**Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
-limit; auto-opening the "picked you" sheet.
+**Open questions (BRIEF.md):** three decided by the owner on 2026-10-01 — food, shop and parcel jobs all
+show on the board, tagged; busy zones come from orders pending and in progress (`GET /orders/demand`: the
+last hour's waiting and on-the-road orders near the rider, grouped into ~1 km cells, the busiest three);
+no limit on withdrawing an offer. Still open: auto-opening the "picked you" sheet (today it opens on
+its own, locked, when a customer picks the rider).
 
 
 ---
