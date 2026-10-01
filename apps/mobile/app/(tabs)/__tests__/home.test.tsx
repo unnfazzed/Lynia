@@ -36,8 +36,9 @@ let blurHome: (() => void) | null = null;
 // fetch when the cache is still fresh.
 let refocusHome: (() => void) | null = null;
 
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
     React_.useEffect(() => {
@@ -48,16 +49,19 @@ jest.mock("expo-router", () => ({
     }, []);
   },
 }));
+const mockGetActiveOrder = jest.fn(async () => null as unknown);
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
+  getActiveOrder: () => mockGetActiveOrder(),
 }));
 // The 8c header reads the caller's first name and unread count. Both must be MOCKED, not merely
 // left to fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability`
 // -> react-query's `onlineManager` offline — and `onlineManager` is a process-wide singleton, so one
 // failed request PAUSES every query in every later test in this file (the active-orders query then
 // never fires and the whole suite reads as "the screen renders nothing").
+let mockMe: Record<string, unknown> = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
 jest.mock("../../../src/api/auth", () => ({
-  getMe: async () => ({ profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." }),
+  getMe: async () => mockMe,
 }));
 jest.mock("../../../src/api/notifications", () => ({
   getNotificationsUnreadCount: async () => ({ count: 0 }),
@@ -129,6 +133,8 @@ afterEach(() => {
   blurHome = null;
   refocusHome = null;
   mockSecureStore = {};
+  mockMe = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
+  mockGetActiveOrder.mockImplementation(async () => null);
   jest.clearAllMocks();
 });
 
@@ -312,5 +318,31 @@ describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant
     nowSpy.mockRestore();
 
     expect(mockGetActiveCustomerOrders).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("(tabs)/home.tsx — Rider v2 C5 live-job bar (ledger D-54)", () => {
+  it("a rider on the customer side mid-job sees the job bar, and it returns to the job", async () => {
+    mockMe = { profileId: "p1", role: "rider", firstName: "Tendai", lastName: "M.", rider: { kycStatus: "verified" } };
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    mockGetActiveOrder.mockImplementation(async () => activeOrderFixture({ status: "en_route_dropoff", orderType: "parcel" }));
+    activeTree = renderHome();
+    await settle();
+    await settle();
+
+    const bar = activeTree.root.findAll((n) => n.props.label === "Job in progress · Heading to drop-off" && typeof n.props.onPress === "function");
+    expect(bar.length).toBe(1);
+    act(() => bar[0]!.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/rider/job");
+  });
+
+  it("a customer who isn't a rider never reads the rider job and sees no bar", async () => {
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    activeTree = renderHome();
+    await settle();
+    await settle();
+
+    expect(mockGetActiveOrder).not.toHaveBeenCalled();
+    expect(has(activeTree, "Job in progress")).toBe(false);
   });
 });

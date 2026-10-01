@@ -4,7 +4,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { InteractionManager, Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { getMe } from "../../src/api/auth";
-import { getActiveCustomerOrders, type OrderSnapshot } from "../../src/api/orders";
+import { getActiveCustomerOrders, getActiveOrder, type OrderSnapshot } from "../../src/api/orders";
+import { ACTIVE } from "../../src/logic/rider-job";
 import { greetingFor } from "../../src/logic/greeting";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { liveBarModel, popularNearYou } from "../../src/logic/home-feed";
@@ -34,6 +35,8 @@ import {
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
+import { SmBtn } from "../../src/ui/order/kit";
+import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 
@@ -232,6 +235,19 @@ export default function LauncherHomeScreen(): React.ReactElement {
   }, [homeFocused, activeOrders, qc]);
   const bar = liveBarModel(activeOrders, statusPillLabel, (id) => riderNames[id] ?? null);
 
+  // ── Rider v2 C5 (ledger D-54): a rider who switched to the customer side mid-job keeps the job — Home
+  // carries a live-job bar that returns to it. Only read for a verified rider; nothing renders otherwise.
+  const isRider = meQ.data?.rider?.kycStatus === "verified";
+  const riderJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: isRider, refetchInterval: homeFocused && isRider ? 30_000 : false });
+  const riderJob = isRider && riderJobQ.data && ACTIVE.includes(riderJobQ.data.status) ? riderJobQ.data : null;
+  const riderJobStage = riderJob
+    ? ["assigned", "confirmed", "en_route_pickup"].includes(riderJob.status)
+      ? riderJob.orderType === "merchant"
+        ? R.tToKitchen
+        : R.tToPickup
+      : R.tToDrop
+    : null;
+
   // ── "Popular restaurants" — the nearest open venues from the same feed /food browses ──
   // NEEDS BACKEND (handoff §5): a real popularity ranking; until then "popular" is nearest-open.
   const feed = useRestaurantListFeed(restaurantsEnabled);
@@ -273,6 +289,12 @@ export default function LauncherHomeScreen(): React.ReactElement {
           onBell={() => router.push("/notifications")}
           onSearch={() => router.push("/food/search")}
         />
+        {riderJob && riderJobStage ? (
+          // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
+          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <SmBtn kind="fill" icon="package" label={RF.swJobBar(riderJobStage)} onPress={() => router.push(riderJob.orderType === "merchant" ? "/rider/food-job" : "/rider/job")} />
+          </View>
+        ) : null}
         <ServiceGrid narrow={narrow} onTile={onTile} />
         {noAddress ? (
           <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />

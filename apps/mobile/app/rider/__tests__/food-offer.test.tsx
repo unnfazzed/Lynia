@@ -1,16 +1,10 @@
 /**
- * RJM.offer_food (mock→RN codegen, region `offer`). The rider's incoming food-dispatch offer screen,
- * realigned to the RJM mock: an AppBar + the adopted offer Card + a pinned Screen.footer accept/decline
- * pair. Product rule (owner 2026-08-12): riders NEVER front their own cash — the old `cash_upfront`
- * danger-wash "front $X" card + "Accept · front $X" label drew a non-existent flow and is removed.
- *
- * This pins the two things a future change must not break:
- *   (1) the ACCEPT path — tapping "Accept this job" calls `acceptFoodDispatch(offer.orderId)` exactly
- *       once, and "Not this one" calls `declineFoodDispatch(offer.orderId)` — the sensitive food-
- *       dispatch mutations, unchanged by the realignment;
- *   (2) the money-variant rendering — cash-collect shows the "MONEY AT THE DOOR" card, wallet shows the
- *       customer-prepaid card, and the removed cash-upfront danger copy ("PAY FIRST" / "front") is gone
- *       from BOTH.
+ * Rider v2 food offer (F1–F4, ledger D-54). Pins the two things a future change must not break:
+ *   (1) the ACCEPT path — "Accept this job" calls `acceptFoodDispatch(offer.orderId)` exactly once and
+ *       "Not this one" calls `declineFoodDispatch(offer.orderId)` — the food-dispatch mutations;
+ *   (2) the money variants — F1 shows the fare and the stops; F2 (a kitchen paid up front) shows the
+ *       "Pay the kitchen" / "Collect at the door" tiles; a prepaid (wallet) order shows neither tile;
+ *       F4 is the expired state with "Back to jobs".
  *
  * Fake timers: the screen polls the offer via `refetchInterval: 3000`; without them the interval fires
  * outside `act(...)` at teardown and react-test-renderer surfaces it as a spurious render error.
@@ -85,6 +79,9 @@ async function render(): Promise<renderer.ReactTestRenderer> {
     jest.advanceTimersByTime(1);
     await Promise.resolve();
   });
+  // The sheet mounts once its area has a height, as on a device.
+  const area = tree.root.findAll((n) => typeof n.type === "string" && n.props.testID === "food-offer-area")[0];
+  if (area) act(() => area.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 610 } } }));
   return tree;
 }
 
@@ -109,21 +106,30 @@ beforeEach(() => {
   mockDecline.mockReturnValue(new Promise(() => {}));
 });
 
-describe("FoodOffer (RJM.offer_food)", () => {
-  it("cash-collect: renders the 'money at the door' card, no cash-upfront danger copy", async () => {
+describe("FoodOffer (Rider v2 F1–F4)", () => {
+  it("F1: the kitchen, the fare, both stops — no pay-the-kitchen tiles at a collect-and-return kitchen", async () => {
     mockGetOffer.mockResolvedValue(offer());
     const tree = await render();
     const text = textOf(tree);
 
-    expect(text).toContain("MONEY AT THE DOOR");
-    expect(text).toContain("$15.50"); // the kitchen's money (merchantGoodsTotal)
-    expect(text).toContain("$2.40"); // the rider's fixed fare (deliveryFee)
-    expect(text).toContain("Food job");
+    expect(text).toContain("New food job");
+    expect(text).toContain("Sadza Republic");
+    expect(text).toContain("Belgravia");
+    expect(text).toContain("Your fare");
+    expect(text).toContain("$2.40");
+    expect(text).toContain("Passing or missing a food offer doesn't affect your standing.");
+    expect(text).not.toContain("Pay the kitchen");
+  });
 
-    // The removed cash-upfront flow must be gone.
-    expect(text).not.toMatch(/PAY FIRST/i);
-    expect(text).not.toMatch(/front \$/i);
-    expect(tree.root.findAll((n) => typeof n.props.label === "string" && /front/i.test(n.props.label))).toHaveLength(0);
+  it("F2: a kitchen paid up front shows what to pay and what to collect", async () => {
+    mockGetOffer.mockResolvedValue(offer({ merchantCashRule: "pay_upfront" }));
+    const tree = await render();
+    const text = textOf(tree);
+
+    expect(text).toContain("Pay the kitchen");
+    expect(text).toContain("$15.50");
+    expect(text).toContain("Collect at the door");
+    expect(text).toContain("$17.90");
   });
 
   it("accepting calls acceptFoodDispatch(orderId) exactly once", async () => {
@@ -148,18 +154,24 @@ describe("FoodOffer (RJM.offer_food)", () => {
     expect(mockAccept).not.toHaveBeenCalled();
   });
 
-  it("wallet (customer prepaid): renders the prepaid card, no collect-at-door or upfront copy", async () => {
+  it("a prepaid (wallet) order shows no money tiles and still accepts", async () => {
     mockGetOffer.mockResolvedValue(offer({ merchantPaymentMethod: "wallet", merchantCashRule: null }));
     const tree = await render();
     const text = textOf(tree);
 
-    expect(text).toContain("No money from your pocket");
-    expect(text).toContain("The customer already paid the restaurant");
-    expect(text).not.toContain("MONEY AT THE DOOR");
-    expect(text).not.toMatch(/PAY FIRST/i);
-
-    // Accept still wired to the same mutation for the wallet variant.
+    expect(text).not.toContain("Pay the kitchen");
+    expect(text).not.toContain("Collect at the door");
     await press(tree, "Accept this job");
     expect(mockAccept).toHaveBeenCalledWith(ORDER_ID);
+  });
+
+  it("F4: an offer past its window is the expired state, with Back to jobs", async () => {
+    mockGetOffer.mockResolvedValue(offer({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
+    const tree = await render();
+    const text = textOf(tree);
+
+    expect(text).toContain("That one went to another rider");
+    expect(tree.root.findAll((n) => n.props.label === "Back to jobs" && typeof n.props.onPress === "function").length).toBe(1);
+    expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 });

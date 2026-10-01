@@ -127,7 +127,7 @@ export type ConfirmDeliveryRequest = z.infer<typeof ConfirmDeliveryRequest>;
  *  object stays non-strict so a stale client that still sends `note` is stripped, never 400'd out of
  *  a terminal hand-off. Evidence for disputes is the proof-of-drop photo + GPS (KB-POD-DISPUTE). */
 export const MarkUndeliveredRequest = z.object({
-  reason: z.enum(["unreachable", "refused", "wrong_address", "breakdown"]),
+  reason: z.enum(["unreachable", "refused", "wrong_address", "breakdown", "other"]),
 });
 export type MarkUndeliveredRequest = z.infer<typeof MarkUndeliveredRequest>;
 

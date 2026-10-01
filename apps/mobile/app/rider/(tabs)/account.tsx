@@ -82,7 +82,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
           <RCard>
             <RRow first icon="history" label={R.rJobHist} sub={R.rJobHistS} onPress={() => router.push("/history?side=rider")} />
             <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
-            <RRow icon="message-circle" label={R.rHelp} sub={R.rHelpS} onPress={() => router.push("/help")} />
+            <RRow icon="message-circle" label={R.rHelp} sub={R.rHelpS} onPress={() => router.push("/rider/help")} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsS} onPress={() => router.push("/settings?side=rider")} />
           </RCard>
         </ScrollView>

@@ -13,13 +13,6 @@ import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusP
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
-// The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome (fixed
-// in the standalone /history screen) — same fix, independent copy per home-feed.ts's own convention
-// of keeping small per-file label helpers rather than cross-importing them.
-function riderOutcomeLabel(status: string): string {
-  return status === "delivered" || status === "completed" ? "Delivered" : statusPillLabel(status);
-}
-
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -33,7 +26,6 @@ function fmtDate(iso: string): string {
 function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): React.ReactElement {
   const isFood = o.orderType === "merchant";
   const title = isFood ? o.merchantName || "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
-  const outcome = o.role === "customer" ? "Sent" : riderOutcomeLabel(o.status);
   const fare = o.agreedFare ?? o.proposedFare;
   return (
     <Pressable
@@ -59,7 +51,7 @@ function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): 
           {title}
         </Text>
         <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }} numberOfLines={1}>
-          {fmtDate(o.createdAt)} · {outcome}
+          {fmtDate(o.createdAt)} · Sent
           {o.counterpartyName ? ` · ${o.counterpartyName}` : ""}
         </Text>
       </View>
@@ -147,10 +139,13 @@ export default function OrdersTabScreen(): React.ReactElement {
     invalidateCustomerOrderHistory(qc);
   });
 
-  // Live orders also appear in the same history feed (their status hasn't reached a terminal one
-  // yet) — excluded from "earlier" so they aren't shown twice.
+  // `GET /orders/history` returns BOTH roles — this is the customer's tab, so jobs the user carried
+  // as a rider are dropped (same split `app/history/index.tsx` applies for `?side=customer`). Live
+  // orders also appear in the same feed (their status hasn't reached a terminal one yet) — excluded
+  // from "earlier" so they aren't shown twice. A rider-only history leaves `earlier` empty and falls
+  // through to the empty state below, keyed on `hasLiveData`, not on `rows` being empty.
   const liveIds = new Set(activeOrders.map((o) => o.id));
-  const earlier = (rows ?? []).filter((r) => !liveIds.has(r.id));
+  const earlier = (rows ?? []).filter((r) => r.role === "customer" && !liveIds.has(r.id));
 
   return (
     <AppScreen>
@@ -188,7 +183,12 @@ export default function OrdersTabScreen(): React.ReactElement {
               </View>
             ) : null}
             {earlier.map((o) => (
-              <OrderRow key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} />
+              <OrderRow
+                key={o.id}
+                o={o}
+                // Same split as the live card: `app/order/[id].tsx` has no food handling.
+                onPress={() => router.push(o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`)}
+              />
             ))}
           </>
         ) : rows === null && isFetching ? (

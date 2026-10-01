@@ -613,6 +613,7 @@ export class OrdersService {
         proposedFare: true,
         distanceKm: true,
         createdAt: true,
+        customer: { select: { firstName: true } },
       },
     });
     return orders.map((o) => ({
@@ -626,6 +627,8 @@ export class OrdersService {
       proposedFare: o.proposedFare.toString(),
       distanceKm: o.distanceKm,
       createdAt: o.createdAt.toISOString(),
+      // Rider v2 (ledger D-54): "Rudo is asking $3.00". The first name only — never the phone.
+      customerFirstName: o.customer?.firstName?.trim() || null,
     }));
   }
 
@@ -653,6 +656,7 @@ export class OrdersService {
         distance_km: number | null;
         created_at: Date;
         pickup_distance_m: number;
+        customer_first_name: string | null;
       }>
     >`
       SELECT id,
@@ -663,7 +667,8 @@ export class OrdersService {
              proposed_fare,
              distance_km,
              created_at,
-             ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m
+             ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m,
+             (SELECT first_name FROM profiles WHERE profiles.id = orders.customer_id) AS customer_first_name
       FROM orders
       WHERE status = 'open_for_offers'
         AND order_type = 'parcel'
@@ -683,6 +688,7 @@ export class OrdersService {
         proposedFare: o.proposed_fare.toString(),
         distanceKm: o.distance_km,
         createdAt: o.created_at.toISOString(),
+        customerFirstName: o.customer_first_name?.trim() || null,
       }));
   }
 
@@ -872,7 +878,7 @@ export class OrdersService {
         expiryNoSupply: true,
         collectedAt: true,
         pickupPhotoKey: true,
-        customer: { select: { phone: true } },
+        customer: { select: { phone: true, firstName: true } },
         rider: {
           select: {
             profileId: true,
@@ -1104,6 +1110,9 @@ export class OrdersService {
       hadOffers,
       rider,
       riderCard,
+      // Rider v2 (ledger D-54): the sender's first name for the assigned rider's job screen ("Call Rudo").
+      // A business booking account has no person's name — its rider sees no name, not the account label.
+      customerFirstName: isRider && !isBusinessBookingAccountPhone(order.customer.phone) ? order.customer.firstName?.trim() || null : null,
       // The customer's own rating of this order ({ score, tags }), or null — unrated, the rider viewer,
       // or a status with no rating. See the side-read above.
       rating,

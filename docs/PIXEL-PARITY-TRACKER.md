@@ -296,9 +296,9 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
 | ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
-| ⬜ | R2·6 | `RJ kyc_pending` | Verification pending | | |
-| ⬜ | R2·7 | `RJ kyc_unfinished` | Verification not finished | | |
-| ⬜ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | | |
+| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G2 (Your ID is under review) | |
+| ⏭ | R2·7 | `RJ kyc_unfinished` | Verification not finished | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G3 (Finish verifying) | |
+| ⏭ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G7 (We couldn't open the ID check) | |
 | ⬜ | R2·9 | `RJ kyc_verified` | Verified | | |
 
 > **Two rows here are newer than the export.** `kyc_unfinished` and `kyc_cant_start` (#841) were
@@ -312,56 +312,56 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R3·1 | `RJM offline` | Offline  [BOTH] | | |
-| 👁 | R3·2 | `RJM board` | Jobs · one list  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | white "Jobs near you" bar + bell (green BrandHeader removed), compact online pill, primary card actions; honest inert-socket "Reconnecting" + flag-off copy |
-| 👁 | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`); **codegen adoption WITHDRAWN 2026-08-17 (D-30)** — the mock's ghost "Refresh" is undrawn per the owner's no-manual-refreshing instruction, one node fewer than the mock, which the structural snapshot cannot express | Card wrapper kept; omission recorded as `undrawn` on `tools/parity/expected/RJM.board_empty.json`; deferral baseline 76 → 77, reversible once an export redraws `board_empty` without the button |
+| ⏭ | R3·1 | `RJM offline` | Offline  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J6 (always online; Reconnecting in the top card, the list dims — there is no offline screen) | |
+| ⏭ | R3·2 | `RJM board` | Jobs · one list  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J1/J3 (map + busy zones + sheet of job cards) | white "Jobs near you" bar + bell (green BrandHeader removed), compact online pill, primary card actions; honest inert-socket "Reconnecting" + flag-off copy |
+| ⏭ | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J4 (empty sheet over the map, why-is-it-quiet, busy-zone pointer) | Card wrapper kept; omission recorded as `undrawn` on `tools/parity/expected/RJM.board_empty.json`; deferral baseline 76 → 77, reversible once an export redraws `board_empty` without the button |
 | ⬜ | R3·4 | `RJM notifications` | One inbox  [BOTH] | | |
-| ⬜ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | | |
-| ⬜ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | | |
+| ⏭ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J3 (food line hidden with dispatch off) | |
+| ⏭ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J5 (food sentence hidden with dispatch off) | |
 
 ### R4 · Taking a job
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R4·1 | `RJM offer_parcel` | Parcel · name your fare  [PARCEL] | | |
-| ⬜ | R4·2 | `RJ offer_sent` | Offer sent · waiting  [PARCEL] | | |
-| ⬜ | R4·3 | `RJ picked` | Customer picked you  [PARCEL] | | |
-| 👁 | R4·4 | `RJM offer_food` | Food · accept the job  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | one screen serves both food-offer keys; the harness fixture is a live cash-dispatch offer, so the app matches `RR offer_cash` — the `RJM offer_food` no-countdown surface is the flag-off branch (honest deviation) |
-| 👁 | R4·5 | `RR offer_cash` | Food · CASH collect  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | added the cta-fill NEW ORDER timer banner, CASH PayTag + YOU EARN row, marked COLLECT FROM/DELIVER TO legs card, and the return-leg note; COLLECT AT THE DOOR + accept/pass labels already matched |
-| ⬜ | R4·6 | `RR offer_upfront` | Food · kitchen wants upfront  [FOOD] | | |
-| ⬜ | R4·7 | `RR offer_wallet` | Food · already paid  [FOOD] | | |
+| ⏭ | R4·1 | `RJM offer_parcel` | Parcel · name your fare  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 O1–O4 (Make an offer, its own screen) | |
+| ⏭ | R4·2 | `RJ offer_sent` | Offer sent · waiting  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J9 (YOUR OFFERS card: waiting, Withdraw + Undo) | |
+| ⏭ | R4·3 | `RJ picked` | Customer picked you  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J11 (the locked "picked you" sheet → Open job) | |
+| ⏭ | R4·4 | `RJM offer_food` | Food · accept the job  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 F1 (food offer: countdown sheet over the map) | one screen serves both food-offer keys; the harness fixture is a live cash-dispatch offer, so the app matches `RR offer_cash` — the `RJM offer_food` no-countdown surface is the flag-off branch (honest deviation) |
+| ⏭ | R4·5 | `RR offer_cash` | Food · CASH collect  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 F1 | added the cta-fill NEW ORDER timer banner, CASH PayTag + YOU EARN row, marked COLLECT FROM/DELIVER TO legs card, and the return-leg note; COLLECT AT THE DOOR + accept/pass labels already matched |
+| ⏭ | R4·6 | `RR offer_upfront` | Food · kitchen wants upfront  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 F2 (Pay the kitchen / Collect at the door tiles) | |
+| ⏭ | R4·7 | `RR offer_wallet` | Food · already paid  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 F1 (prepaid: no money tiles) | |
 
 ### R5 · The active job
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R5·1 | `RJM active_parcel` | Active · parcel  [PARCEL] | | |
-| 👁 | R5·2 | `RJ job_assigned` | Job · assigned  [PARCEL] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | "Your job" + assigned pill, Agreed fare, revealed sender/recipient contacts (fixture now seeds the phones), items, stepper, "Confirm the job" verbatim; contacts render as JobDetailsCard "Call …" links vs the mock's boxed CallRows (shared-card shape, deviation) |
-| ⬜ | R5·3 | `RJ job_pickup` | En route to pickup  [PARCEL] | | |
-| ⬜ | R5·4 | `RJ job_verify` | Verify items at pickup  [PARCEL] | | |
-| ⬜ | R5·5 | `RJ job_collect` | Parcel collected  [PARCEL] | | |
-| ⬜ | R5·6 | `RJ job_dropoff` | En route to drop-off  [PARCEL] | | |
-| 👁 | R5·7 | `RJM active_food` | Active · food  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | fixture re-driven to the `picked_up` CARRY state: CashHeldStrip YOURS $2.50 / OWED $13.00 (goods debt open), food stepper mid-flow, plus the added "Collect $X at the door" accent card; CTA is "Navigate to the customer" (code entry lives at the door via the map-first leg, RR.nav_cust), header "Your job" (deviations) |
-| 👁 | R5·8 | `RR nav_rest` | To the restaurant  [FOOD] | rider offer/job cluster align (`docs/parity/PHASE5-riderjobs.md`, `tools/parity/out/phase5_riderjobs.png`) | now its own fixture `rider_food_nav` at `en_route_pickup` → the map-dominant `FoodNavLeg` (full map + restaurant card + CASH PayTag + Open in Maps + arrival CTA); sheet sub-copy + missing ETA are FoodNavLeg copy deviations |
-| ⬜ | R5·9 | `RR pay_merchant` | Pay the merchant  [FOOD] | | |
-| ⬜ | R5·10 | `RR pickup_confirm` | Collect · CASH job  [FOOD] | | |
-| ⬜ | R5·11 | `RR pickup_paid` | Collect · already PAID  [FOOD] | | |
-| ⬜ | R5·12 | `RR nav_cust` | To the customer  [FOOD] | | |
-| ⬜ | R5·13 | `RR doorstep` | Collect · confirm cash  [FOOD] | | |
-| ⬜ | R5·14 | `RJM handoff` | Delivery code  [BOTH] | | |
-| ⬜ | R5·15 | `RJ job_handoff` | Hand-off · parcel  [PARCEL] | | |
-| ⬜ | R5·16 | `RJ job_delivered` | Delivered  [PARCEL] | | |
-| ⬜ | R5·17 | `RR delivered` | Delivered · food  [FOOD] | | |
-| ⬜ | R5·18 | `RR return_cash` | Return the kitchen's cash  [FOOD] | | |
-| ⬜ | R5·19 | `RJM pickup_photo` | Proof of pickup · capture  [PARCEL] | | |
-| ⬜ | R5·20 | `RJM pickup_photo_preview` | Proof of pickup · preview  [PARCEL] | | |
+| ⏭ | R5·1 | `RJM active_parcel` | Active · parcel  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A1 (JobShell: map + stage sheet + one primary) | |
+| ⏭ | R5·2 | `RJ job_assigned` | Job · assigned  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A1 (accepted jobs head to pickup on their own) | "Your job" + assigned pill, Agreed fare, revealed sender/recipient contacts (fixture now seeds the phones), items, stepper, "Confirm the job" verbatim; contacts render as JobDetailsCard "Call …" links vs the mock's boxed CallRows (shared-card shape, deviation) |
+| ⏭ | R5·3 | `RJ job_pickup` | En route to pickup  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A1 | |
+| ⏭ | R5·4 | `RJ job_verify` | Verify items at pickup  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A2 (Check before you leave + pickup photo) | |
+| ⏭ | R5·5 | `RJ job_collect` | Parcel collected  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A6 | |
+| ⏭ | R5·6 | `RJ job_dropoff` | En route to drop-off  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A7 | |
+| ⏭ | R5·7 | `RJM active_food` | Active · food  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B1–B3 | fixture re-driven to the `picked_up` CARRY state: CashHeldStrip YOURS $2.50 / OWED $13.00 (goods debt open), food stepper mid-flow, plus the added "Collect $X at the door" accent card; CTA is "Navigate to the customer" (code entry lives at the door via the map-first leg, RR.nav_cust), header "Your job" (deviations) |
+| ⏭ | R5·8 | `RR nav_rest` | To the restaurant  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B1 (Heading to the kitchen) | now its own fixture `rider_food_nav` at `en_route_pickup` → the map-dominant `FoodNavLeg` (full map + restaurant card + CASH PayTag + Open in Maps + arrival CTA); sheet sub-copy + missing ETA are FoodNavLeg copy deviations |
+| ⏭ | R5·9 | `RR pay_merchant` | Pay the merchant  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B2 (Pay the kitchen now) | |
+| ⏭ | R5·10 | `RR pickup_confirm` | Collect · CASH job  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B2 | |
+| ⏭ | R5·11 | `RR pickup_paid` | Collect · already PAID  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B2 | |
+| ⏭ | R5·12 | `RR nav_cust` | To the customer  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B3 (Heading to drop-off, CashSplit) | |
+| ⏭ | R5·13 | `RR doorstep` | Collect · confirm cash  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B4 (the cash handshake, then the code) | |
+| ⏭ | R5·14 | `RJM handoff` | Delivery code  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A8 (code page, 3 + 3 boxes) | |
+| ⏭ | R5·15 | `RJ job_handoff` | Hand-off · parcel  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A8 | |
+| ⏭ | R5·16 | `RJ job_delivered` | Delivered  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A13 (Job done) | |
+| ⏭ | R5·17 | `RR delivered` | Delivered · food  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B6 | |
+| ⏭ | R5·18 | `RR return_cash` | Return the kitchen's cash  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B5 (Return the cash, blocking) | |
+| ⏭ | R5·19 | `RJM pickup_photo` | Proof of pickup · capture  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A3 (the phone's camera) | |
+| ⏭ | R5·20 | `RJM pickup_photo_preview` | Proof of pickup · preview  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A4 / A5 | |
 
 ### R6 · Money
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | R6·1 | `RJM money` | Money tab  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 M1–M12 (earnings first, balance, cash held, merged history) | accent-bordered balance card, cash-held strip, bare ledger rows; `yours` unmodelled at tab level (deviation) |
-| ⬜ | R6·2 | `RJM gate_topup` | Gate · top up to keep riding  [BOTH] | | |
+| ⏭ | R6·2 | `RJM gate_topup` | Gate · top up to keep riding  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G14 (Top up to keep riding) | |
 | ⏭ | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T1–T3 (Provider → Amount → Phone) | amount field + hint, 5/10/20 preset chips, phone field, "Pay with" rails, request CTA (via `TopUpSimulator`, test-build only); SIMULATED strip + neutral rail marks are honest test-build markers (deviation) |
 | ⏭ | R6·4 | `RJ topup_wait` | Payment prompt · wait  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T4 (Approve) | |
 | ⏭ | R6·5 | `RJ topup_success` | Top up · success  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T5 | |
@@ -372,60 +372,60 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | R7·1 | `RJM account` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C1–C5 (identity card, Customer | Rider toggle, standing, four rows) | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Since D-26 the identity card is INERT (the mock draws a plain Card); sign-out and the rest are reached through the `Settings` row |
-| 👁 | R7·2 | `RJ bike_docs` | Bike & documents | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
+| ⏭ | R7·2 | `RJ bike_docs` | Bike & documents | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S5 (Bike & documents, from Settings → RIDER) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
 | ⏭ | R7·3 | `RJ history` | Job history  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C12 (Job history, rider jobs only) | |
 | ⏭ | R7·4 | `RJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1–S3 (sectioned Settings) | |
-| ⬜ | R7·5 | `RJ help` | Help & support | | |
-| ⬜ | R7·6 | `RJM strikes` | Reliability · strikes | | |
+| ⏭ | R7·5 | `RJ help` | Help & support | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S6 (Help & support, rider side) | |
+| ⏭ | R7·6 | `RJM strikes` | Reliability · strikes | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C1–C3 (the Standing card on the rider Account) | |
 
 ### R8 · Trust & safety
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R8·1 | `RJ sos_idle` | SOS · live-job control  [BOTH] | | |
-| ⬜ | R8·2 | `RJ sos_confirm` | SOS · confirm  [BOTH] | | |
-| ⬜ | R8·3 | `RJ sos_contacts` | SOS · contacts  [BOTH] | | |
-| ⬜ | R8·4 | `RJ report` | Report + block customer  [BOTH] | | |
-| ⬜ | R8·5 | `RJ report_done` | Report sent  [BOTH] | | |
-| ⬜ | R8·6 | `RJ job_help` | Get help with this job  [BOTH] | | |
-| ⬜ | R8·7 | `RJ job_help_sent` | Issue logged  [BOTH] | | |
+| ⏭ | R8·1 | `RJ sos_idle` | SOS · live-job control  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X1 (the 999 row in the Problem sheet) | |
+| ⏭ | R8·2 | `RJ sos_confirm` | SOS · confirm  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X13 (Call 999?) | |
+| ⏭ | R8·3 | `RJ sos_contacts` | SOS · contacts  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X13 | |
+| ⏭ | R8·4 | `RJ report` | Report + block customer  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X1 → Report the customer | |
+| ⏭ | R8·5 | `RJ report_done` | Report sent  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X1 → Report the customer | |
+| ⏭ | R8·6 | `RJ job_help` | Get help with this job  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X1 (Problem sheet, also the Help pill) | |
+| ⏭ | R8·7 | `RJ job_help_sent` | Issue logged  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X14 (toast) | |
 
 ### R9 · Exceptions & edge
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R9·1 | `RJ missed_order` | Job taken first  [PARCEL] | | |
-| ⬜ | R9·2 | `RJ not_chosen` | Not chosen  [PARCEL] | | |
-| ⬜ | R9·3 | `RJ bid_expired` | Auction expired · no pick  [PARCEL] | | |
-| ⬜ | R9·4 | `RJ handoff_wrong` | Wrong code · lockout  [PARCEL] | | |
-| ⬜ | R9·5 | `RJ undelivered` | Not delivered  [PARCEL] | | |
-| ⬜ | R9·6 | `RJ job_bail` | Rider cancels (bail)  [PARCEL] | | |
-| ⬜ | R9·7 | `RJ job_offline` | Connection lost mid-job  [PARCEL] | | |
-| ⬜ | R9·8 | `RJ job_cancelled` | Customer cancelled  [PARCEL] | | |
-| ⬜ | R9·9 | `RR offer_expired` | Offer expired  [FOOD] | | |
-| ⬜ | R9·10 | `RR cancel_reason` | Drop the job · before pickup  [FOOD] | | |
-| ⬜ | R9·11 | `RR cancel_blocked` | Can't drop after collecting  [FOOD] | | |
-| ⬜ | R9·12 | `RR cash_dispute` | Customer confirmed, you didn't  [FOOD] | | |
-| ⬜ | R9·13 | `RR code_wrong` | Wrong code  [FOOD] | | |
-| ⬜ | R9·14 | `RR unreachable` | Customer unreachable  [FOOD] | | |
-| ⬜ | R9·15 | `RR return_rest` | Return to restaurant  [FOOD] | | |
-| ⬜ | R9·16 | `RR handback` | Hand back confirm  [FOOD] | | |
-| ⬜ | R9·17 | `RR offline_resume` | Resumed mid-delivery  [FOOD] | | |
-| ⬜ | R9·18 | `RJ kyc_failed` | Verification failed | | |
-| ⬜ | R9·19 | `RJ kyc_expired` | ID expired (later) | | |
+| ⏭ | R9·1 | `RJ missed_order` | Job taken first  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J13 (toast: taken) | |
+| ⏭ | R9·2 | `RJ not_chosen` | Not chosen  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J12 (toast) | |
+| ⏭ | R9·3 | `RJ bid_expired` | Auction expired · no pick  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J14 (toast) | |
+| ⏭ | R9·4 | `RJ handoff_wrong` | Wrong code · lockout  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A9–A11 | |
+| ⏭ | R9·5 | `RJ undelivered` | Not delivered  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X4 / X5 | |
+| ⏭ | R9·6 | `RJ job_bail` | Rider cancels (bail)  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X6 | |
+| ⏭ | R9·7 | `RJ job_offline` | Connection lost mid-job  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X10 / X11 | |
+| ⏭ | R9·8 | `RJ job_cancelled` | Customer cancelled  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X9 | |
+| ⏭ | R9·9 | `RR offer_expired` | Offer expired  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 F4 | |
+| ⏭ | R9·10 | `RR cancel_reason` | Drop the job · before pickup  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X8 (Drop this food job?) | |
+| ⏭ | R9·11 | `RR cancel_blocked` | Can't drop after collecting  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X1 (after pickup the sheet offers no drop) | |
+| ⏭ | R9·12 | `RR cash_dispute` | Customer confirmed, you didn't  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 B4 (handshake card) | |
+| ⏭ | R9·13 | `RR code_wrong` | Wrong code  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A9 (food) | |
+| ⏭ | R9·14 | `RR unreachable` | Customer unreachable  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X3 (food: the no-show card in a sheet) | |
+| ⏭ | R9·15 | `RR return_rest` | Return to restaurant  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X5 (food, with the return leg) | |
+| ⏭ | R9·16 | `RR handback` | Hand back confirm  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X9 (food) | |
+| ⏭ | R9·17 | `RR offline_resume` | Resumed mid-delivery  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X12 (Job restored) | |
+| ⏭ | R9·18 | `RJ kyc_failed` | Verification failed | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G4 (Tries left) | |
+| ⏭ | R9·19 | `RJ kyc_expired` | ID expired (later) | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G6 (Re-verify my ID) | |
 | ⬜ | R9·20 | `RJ photo_failed` | Rider photo · upload failed | | |
-| ⬜ | R9·21 | `RJ gate_out_of_area` | Gate · out of area | | |
-| ⬜ | R9·22 | `RJ gate_cooldown` | Gate · cooldown | | |
-| ⬜ | R9·23 | `RJ gate_banned` | Gate · account closed | | |
-| ⬜ | R9·24 | `RJ gate_kyc_locked` | Gate · verification locked | | |
+| ⏭ | R9·21 | `RJ gate_out_of_area` | Gate · out of area | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G9 | |
+| ⏭ | R9·22 | `RJ gate_cooldown` | Gate · cooldown | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G10 | |
+| ⏭ | R9·23 | `RJ gate_banned` | Gate · account closed | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G13 | |
+| ⏭ | R9·24 | `RJ gate_kyc_locked` | Gate · verification locked | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G5 | |
 | ⏭ | R9·25 | `RJ topup_declined` | Top up · declined  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T6 | |
-| ⬜ | R9·26 | `RJ offline` | Offline banner | | |
-| ⬜ | R9·27 | `RJ on_hold` | Account on hold | | |
+| ⏭ | R9·26 | `RJ offline` | Offline banner | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J6 (Reconnecting in the top card) | |
+| ⏭ | R9·27 | `RJ on_hold` | Account on hold | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G11 | |
 | ⬜ | R9·28 | `RJ force_update` | Force update | | |
-| ⬜ | R9·29 | `RJ no_gps` | Location off / no GPS | | |
-| ⬜ | R9·30 | `RJ generic_error` | Generic error | | |
-| ⬜ | R9·31 | `RJM pickup_photo_failed` | Proof photo · upload failed  [PARCEL] | | |
-| ⬜ | R9·32 | `RJM strikes_final` | One strike from a pause | | |
+| ⏭ | R9·29 | `RJ no_gps` | Location off / no GPS | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G8 (Can't find your location) | |
+| ⏭ | R9·30 | `RJ generic_error` | Generic error | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J7 (Couldn't load, retries itself) | |
+| ⏭ | R9·31 | `RJM pickup_photo_failed` | Proof photo · upload failed  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 A6 (Photo saved; the upload is queued) | |
+| ⏭ | R9·32 | `RJM strikes_final` | One strike from a pause | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X7 (Cancel and pause) | |
 
 ## MERCHANT (All Screens Gallery ← RGD.MERCHANT; trailing (RV …) = Restaurants Vertical badge)
 

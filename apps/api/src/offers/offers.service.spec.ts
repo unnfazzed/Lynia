@@ -410,3 +410,32 @@ describe("OffersService.listForOrder", () => {
     expect(capturedWhere).toMatchObject({ riderId: { notIn: ["r-blocked"] } });
   });
 });
+
+describe("OffersService.withdrawOffer (Rider v2 J10)", () => {
+  const ORDER = "0a1b2c3d-0000-4000-8000-000000000001";
+
+  it("marks the rider's own pending offer declined and signals the customer's list", async () => {
+    const update = vi.fn(async () => ({}));
+    const { service, gateway } = svc({
+      $queryRaw: async () => [{ status: "open_for_offers" }],
+      offer: { findUnique: async () => ({ id: "off-1", status: "pending" }), update },
+    });
+    await expect(service.withdrawOffer(ORDER, "rider-1")).resolves.toEqual({ orderId: ORDER, withdrawn: true });
+    expect(update).toHaveBeenCalledWith({ where: { id: "off-1" }, data: { status: "declined" } });
+    expect(gateway.emitOffersChanged).toHaveBeenCalledWith(ORDER);
+  });
+
+  it("409s once the customer has chosen (the order is no longer open)", async () => {
+    const update = vi.fn();
+    const { service } = svc({ $queryRaw: async () => [{ status: "assigned" }], offer: { findUnique: async () => ({ id: "off-1", status: "pending" }), update } });
+    await expect(service.withdrawOffer(ORDER, "rider-1")).rejects.toThrow(/already chosen/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("404s with no offer from this rider, 409s on an offer already closed", async () => {
+    const none = svc({ $queryRaw: async () => [{ status: "open_for_offers" }], offer: { findUnique: async () => null } });
+    await expect(none.service.withdrawOffer(ORDER, "rider-1")).rejects.toThrow(/no offer/i);
+    const closed = svc({ $queryRaw: async () => [{ status: "open_for_offers" }], offer: { findUnique: async () => ({ id: "off-1", status: "declined" }) } });
+    await expect(closed.service.withdrawOffer(ORDER, "rider-1")).rejects.toThrow(/already closed/i);
+  });
+});

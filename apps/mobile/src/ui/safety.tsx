@@ -220,15 +220,18 @@ export function GetHelpControl({ orderId }: { orderId: string }): React.ReactEle
 }
 
 // ── 2. Report / block after a trip ────────────────────────────────────────────
-export function ReportControl({
+/** The report form as a controlled sheet — the rider job's Problem sheet opens it (ledger D-54). */
+export function ReportSheet({
   orderId,
   counterpartyNoun,
+  visible,
+  onClose,
 }: {
   orderId: string;
-  /** How to name the person being reported, e.g. "rider" (customer view) or "sender" (rider view). */
   counterpartyNoun: string;
+  visible: boolean;
+  onClose: () => void;
 }): React.ReactElement {
-  const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [note, setNote] = useState("");
   const [block, setBlock] = useState(false);
@@ -241,7 +244,7 @@ export function ReportControl({
   useActionErrorEffect(m.error);
 
   function close(): void {
-    setOpen(false);
+    onClose();
     setTimeout(() => {
       setDone(false);
       setReason(null);
@@ -256,33 +259,7 @@ export function ReportControl({
     : "Thanks for telling us. Our team will review your report.";
 
   return (
-    <>
-      {/* Danger-tinted ghost so it reads as a safety action without shouting like the SOS control. */}
-      <Pressable
-        onPress={() => setOpen(true)}
-        accessibilityRole="button"
-        accessibilityLabel={`Report a problem with your ${counterpartyNoun}`}
-        style={({ pressed }) => ({
-          minHeight: tokens.touchTargetMin,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: tokens.space.sm,
-          borderRadius: tokens.radius.button,
-          borderWidth: 1,
-          borderColor: tokens.color.line,
-          backgroundColor: pressed ? tokens.color.dangerWash : "transparent",
-          paddingVertical: 12,
-          marginTop: tokens.space.sm,
-        })}
-      >
-        <Icon name="flag" size={16} color={tokens.color.danger} />
-        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.semibold, color: tokens.color.danger }}>
-          Report a problem with your {counterpartyNoun}
-        </Text>
-      </Pressable>
-
-      <Sheet visible={open} onClose={close} title={`Report your ${counterpartyNoun}`}>
+      <Sheet visible={visible} onClose={close} title={`Report your ${counterpartyNoun}`}>
         {done ? (
           <DoneState message={doneMsg} onClose={close} />
         ) : (
@@ -343,6 +320,46 @@ export function ReportControl({
           </>
         )}
       </Sheet>
+  );
+}
+
+export function ReportControl({
+  orderId,
+  counterpartyNoun,
+}: {
+  orderId: string;
+  /** How to name the person being reported, e.g. "rider" (customer view) or "sender" (rider view). */
+  counterpartyNoun: string;
+}): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {/* Danger-tinted ghost so it reads as a safety action without shouting like the SOS control. */}
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Report a problem with your ${counterpartyNoun}`}
+        style={({ pressed }) => ({
+          minHeight: tokens.touchTargetMin,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: tokens.space.sm,
+          borderRadius: tokens.radius.button,
+          borderWidth: 1,
+          borderColor: tokens.color.line,
+          backgroundColor: pressed ? tokens.color.dangerWash : "transparent",
+          paddingVertical: 12,
+          marginTop: tokens.space.sm,
+        })}
+      >
+        <Icon name="flag" size={16} color={tokens.color.danger} />
+        <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.semibold, color: tokens.color.danger }}>
+          Report a problem with your {counterpartyNoun}
+        </Text>
+      </Pressable>
+
+      <ReportSheet orderId={orderId} counterpartyNoun={counterpartyNoun} visible={open} onClose={() => setOpen(false)} />
     </>
   );
 }

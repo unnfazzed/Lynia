@@ -2702,6 +2702,77 @@ lands; D-30 (no manual refreshing anywhere) stands and the handoff draws it too.
   top-up notices. "Load older" is gone.
 - **Top up (T1–T6)**: Provider → Amount → Phone → Approve with the step bar, then Done / Failed.
 
+### 3b · What has landed (part 2)
+
+- **Jobs board (J1–J14)**: MintTop with the Conn dot and the detected place; a full-bleed map with the
+  busy zones (dashed accent circles, the busiest labelled), a job pin per card (fare pill, selected =
+  ink) and the rider's own marker; the board sheet (`OrderSheet`, peek 50% of the screen, 44% when
+  empty) holding the notifications-off row, the stale / load-failed / no-fix notices, the active-job
+  bar, YOUR OFFERS (offer sent, waiting, Withdraw → hidden at once with a 5 s Undo, then the API) above
+  NEARBY JOBS (km to pickup, asking fare, route, trip km · item, Make an offer); the empty state (J4) with
+  "Why is it quiet?" and the busy-zone pointer. Resolution toasts: not chosen, offer expired, taken. The
+  "picked you" sheet (J11) is locked and opens the job. Always online; nothing to refresh.
+- **Make an offer (O1–O4)**: its own pushed screen (`app/rider/offer/[jobId].tsx`) with the Send v2 price
+  step — route strip, "<name> is asking", a tap-to-type fare in cents (− / + $0.50, min $0.50) with the
+  usual-band bar and the well-above warning, ETA chips 5/10/15/20 (10 preselected), the one-offer notice,
+  "Send offer · $x" + "Skip this job"; a failed send keeps the rider there with Try again.
+- **Gates (G1–G14)**: one resolver (`logic/rider-gate.ts`) in the handoff's priority order, one Gate
+  component (72 disc, title, body, facts box, primary / ghost / the "Order food and send parcels" bridge
+  ghost). Every gate clears on its own when its input changes.
+- **API**: `DELETE /orders/:id/offers/mine` withdraws a pending offer while the order is still open for
+  offers (declined, with an offers-changed emit); open orders and the rider's order snapshot carry the
+  customer's first name (`customerFirstName`) for "Rudo is asking" / "Rudo picked you!".
+
+The gallery keys this replaces are recorded as SUPERSEDED deferrals in `tools/parity/codegen/adopted.mjs`
+(`RJM.board`, `RJM.board_empty`, `RJM.offer_parcel`; deferral baseline 76 → 78) and as ⏭ rows in the
+tracker. D-29 (the 8c board header) is superseded by the MintTop board.
+
+### 3c · What has landed (part 3)
+
+- **The active job (A1–A13, B1–B6)**: one shell for parcel and food (`src/ui/rider/job-kit.tsx`) — the
+  After Send header with Help, a full-bleed map (the rider's "You" marker, the dotted line to the pickup),
+  a sheet sized to its content and one primary. The step track (Pickup · Collected · Drop-off · Done), the
+  StopCard (Call · WhatsApp · Navigate in the app chosen in Settings), the cash line / CashSplit and
+  "Problem with this job?". The server's own steps the handoff draws no tap for are advanced by the screen
+  (accept → heading to pickup on open; collected → heading to the drop-off), and "I'm at pickup" /
+  "I'm at the drop-off" / "I'm at the kitchen" are on-device arrival marks per order that survive an app
+  kill (`logic/rider-job-stage.ts`).
+- **Pickup check (A2–A6)**: the item ticks, then the pickup photo — the phone's camera, a preview with
+  "Use this photo" / "Retake", and "Photo saved" straight away; the upload runs behind it and an upload
+  failure never blocks (kept on the phone, re-sent on the next foreground). Collect waits for a tick and a
+  photo, with the hint saying what's missing.
+- **Delivery code (A8–A12)**: its own page, six boxes 3 + 3 over the phone's number pad; wrong / last try /
+  locked (Call the sender to re-send) / saved-offline.
+- **Done (A13 / B6)**: "You earned", cash collected, commission at the configured rate, "How was <name>?".
+- **Food (B1–B6)**: the kitchen StopCard (order # as the kitchen sees it, ready-in from the prep time),
+  "Pay the kitchen $x now" at an upfront kitchen, the CashSplit to collect at the door, and the blocking
+  "Return the cash" page with "Call the kitchen" until the kitchen confirms.
+- **Exceptions (X1–X14)**: the Problem sheet (also the Help pill), can't reach the customer (the 10-minute
+  wait with calls and WhatsApps counted, then Mark undelivered), the five undelivered reasons, cancel (with
+  the strike count, or the one-strike-from-a-pause warning), drop a food job, the customer-cancelled and
+  undelivered terminals, connection lost (and after 4 minutes), job restored, Call 999, help requested.
+- **Food offer (F1–F4)**: FoodHeader, the map, the countdown pill and bar off the server's `expiresAt`,
+  the FOOD tag, the kitchen, "Your fare", the stops or (upfront) the two money tiles, Accept / Not this one,
+  and the expired state.
+- **API / shared**: `UndeliveredReason` gains `other` (X4 draws a fifth reason); the customer's terminal
+  already falls back to "Delivery not completed" for a reason it has no line for.
+
+The gallery keys this replaces are SUPERSEDED deferrals in `tools/parity/codegen/adopted.mjs`
+(`RJM.active_parcel`, `RJM.active_food`, `RJM.handoff`, `RJM.offer_food`; their generated CashStrip and
+offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the tracker.
+
+### 3d · What has landed (part 4)
+
+- **Bike & documents (S5)**, from Settings → RIDER: National ID · Rider photo · Bike (the plate), each
+  "Verified" while the rider's check holds; "Changed bikes? Re-verify with the new plate." and the ghost
+  "Re-verify my bike", which asks support on WhatsApp with the plate written out (no self-edit endpoint).
+- **Help & support (S6)**, rider side (`app/rider/help.tsx`, from the rider Account): Message us on
+  WhatsApp · Call LyniaGo support · the 24-hour safety line · COMMON QUESTIONS, each question opening
+  WhatsApp with the question written out. The customer Account keeps the gallery's adopted Help hub
+  (`LJ.help`).
+- **Customer Home live-job bar (C5)**: a verified rider who switched to the customer side mid-job sees
+  "Job in progress · <stage>" on Home, which returns to the job.
+
 ### 4 · Still different from the handoff (part 1)
 
 | Where | Handoff | App | Why |
@@ -2713,14 +2784,34 @@ lands; D-30 (no manual refreshing anywhere) stands and the handoff draws it too.
 | Food filter chips | Drawn | Shown only with food dispatch on, as the handoff says for J3/M4 | — |
 | BecomeCard "in progress" | "2 of 3 steps done. Next: your bike photo." + a 66% bar | "You started the ID check but didn't finish. It takes about 3 minutes." (the handoff's own `gUnfinishedB`), no bar | The app doesn't know which step the rider stopped at |
 | Top-up number edit sheet | Not drawn | A sheet with the provider chips, the number field and "Save" | The row needs somewhere to edit; one undrawn string (`save`) |
-| Test alarm | The looping food-offer alarm | One local notification with sound + a strong haptic | The looping alarm ships with the food offer (part 2) |
+| Test alarm | The looping food-offer alarm | One local notification with sound + a strong haptic | No alarm sound ships yet (see "Food-offer alarm" below) |
 | `/dev/rider-states` | Asked for by the build plan | Not shipped | No dev-only route in the production bundle (as D-53) |
+| Busy zones on the board map (J1/J4) | Dashed zones + "Busy" + "Busiest near Avondale · 1.2 km" | Not drawn | No demand endpoint yet (`getDemandZones` returns none, `TODO(backend)`); the zones and the pointer appear the day it does |
+| Usual-band bar (O1) | Server band for the trip | A band derived on the phone from the asking fare (`fareBand`) | No fare-band endpoint |
+| Unknown sender name | "Rudo" | "The sender" (one undrawn string, `theSender`) | An order whose customer has no first name on file |
+| Force update (G15) | A gate on the board | The app-wide force-update screen, which runs before any tab mounts | Already shipped; same copy |
+| Pickup camera (A3) | An in-app viewfinder with a 72 shutter | The phone's own camera; the preview (A4) and saving (A5) are in the app | Taking a photo is the phone's job; no camera module ships in the app |
+| Recipient name (A7–A8) | "Chipo M. · recipient", "Ask Chipo for the delivery code" | "Recipient", "Ask the recipient for the delivery code" (`recipientRole`, `theRecipient`) | Send v2 collects the recipient's phone, not their name |
+| Kitchen pickup code (B2) | Not drawn | "Ask the kitchen for the 4-digit pickup code" + four boxes, unless the kitchen is auto-accept | The server only releases the food against the kitchen's code |
+| Collect at a kitchen not paid up front (B2) | Only "I've paid and collected the food" is drawn | "I've collected the food" (`collectedFood`) | The handoff says non-upfront kitchens skip the pay step |
+| Cash handshake at the door (B4) | Not drawn | The existing confirm-cash card before the code on a cash order | The customer and rider both confirm the cash before the code is accepted |
+| Can't reach the customer, food (X3) | The parcel timer | The existing no-show card (logged calls + the server's wait) in a sheet | The food no-show is server-timed and needs logged calls |
+| Food undelivered (X5) | Terminal only | The terminal plus the existing "return the food to the restaurant" card | The food is still on the bike until the kitchen confirms it back |
+| Live notices on the job | Not drawn | "Location is off…", "The customer's app looks offline…", a shop's cash-on-delivery line | The app already knew these states; each is a calm or warn notice at the top of the sheet |
+| Cancel reason | Not drawn | No reason is captured (the old free-text field is gone) | X6 draws none |
+| Get help from LyniaGo (X14) | Toast "Our team will call you within 5 minutes" | Opens a support case for the order, then the toast | The case is what tells the team to call |
+| Food-offer alarm | A looping sound, full screen over the lock screen | A strong haptic repeated every 4 s while the offer is live | No alarm sound or full-screen intent ships yet; the offer still arrives as the `food_offer` push and on the board |
+| Post-trip "Report" / "Get help" on the done page | Not drawn | Removed (the Problem sheet holds both during the job) | Not drawn ⇒ not rendered |
+| Document dates (S5) | "Verified · expires 12 Mar 2028", "Verified · Aug 2026", "Honda CG125 · ABH 4721" | "Verified" and the plate only | KYC stores no document expiry, verification date or bike model (`TODO(backend)`) |
+| Licence disc row + renewal box (S5) | Licence disc "60 days" + "Your licence disc expires in 60 days…" + Update photo | Not rendered | No licence-disc record exists (`TODO(backend)`); the row appears the day one does |
+| Support phone (S6) | "+263 242 700 100 · 7am–9pm" | The safety line's number, the only staffed line configured | No separate support number is configured |
+| Common questions (S6) | Three rows | Each opens WhatsApp with the question | There are no help articles to open |
+| Live-job bar position (C5) | Not drawn (described in the switch rules) | A filled 44 SmBtn above the service tiles, the same bar the Jobs board draws | The handoff names the bar and its copy but draws no Home frame |
 
-### 5 · Still to land (follow-up PRs, same handoff)
+### 5 · Still to land
 
-The Jobs board (map + demand + sheet), Make an offer, the gates (G1–G15), the active job (A/B/X), the
-food offer (F1–F4), Bike & documents (S5), Help & support (S6), and the customer Home live-job bar (C5).
-Until each lands, its current screen stays as it is.
+Nothing from this handoff remains to build; the rows in §4 marked `TODO(backend)` fill in as their data
+arrives, and the open questions below stand.
 
 **Open questions (BRIEF.md, not decided here):** food cards on the board; the demand feed; a withdraw
 limit; auto-opening the "picked you" sheet.

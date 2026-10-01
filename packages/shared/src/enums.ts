@@ -49,6 +49,8 @@ export const UndeliveredReason = {
   REFUSED: "refused",
   WRONG_ADDRESS: "wrong_address",
   BREAKDOWN: "breakdown",
+  // Rider v2 X4 (ledger D-54) draws a fifth reason, "Other".
+  OTHER: "other",
 } as const;
 export type UndeliveredReason = (typeof UndeliveredReason)[keyof typeof UndeliveredReason];
 

@@ -42,6 +42,18 @@ export const RIDER_COPY = {
   withdrawn: "Offer withdrawn.",
   undo: "Undo",
   /* make an offer */
+  /** Not drawn: stands in for the sender's name when the API sends none (ledger D-54 §4). */
+  theSender: "The sender",
+  /** Undrawn fallbacks (ledger D-54 §4): the order carries no recipient name, and a job may carry no
+   *  sender name — the handoff's sample names are replaced by the role, never invented. */
+  recipientRole: "Recipient",
+  theRecipient: "the recipient",
+  theCustomer: "The customer",
+  kitchen: "The kitchen",
+  /** Undrawn (ledger D-54 §4): the collect label at a kitchen that is not paid up front (B2 draws only
+   *  the upfront "I've paid and collected the food"), and the pickup code the kitchen reads out. */
+  collectedFood: "I've collected the food",
+  pickupCodeL: "Ask the kitchen for the 4-digit pickup code",
   tOffer: "Make an offer",
   yourFare: "Your fare",
   tapType: "Tap the fare to type an amount",
@@ -430,7 +442,7 @@ export const RF = {
   collectFood: (collect: number): string => `Collect ${usd(collect)} cash at the door`,
   collectFoodB: (yours: number, owed: number): string => `${usd(yours)} is yours. ${usd(owed)} goes back to the kitchen.`,
   returnT: (owed: number, kitchen: string): string => `Return ${usd(owed)} to ${kitchen}`,
-  kitchenReady: (orderNo: string): string => `Order #${orderNo} · ready in about 5 min`,
+  kitchenReady: (orderNo: string, mins: number | null): string => (mins != null && mins > 0 ? `Order #${orderNo} · ready in about ${mins} min` : `Order #${orderNo}`),
   /* exceptions */
   reachT: (name: string): string => `${name} isn't answering`,
   reachWait: (elapsedS: number): string => `Waited ${Math.floor(elapsedS / 60)}:${String(elapsedS % 60).padStart(2, "0")} of 10:00`,

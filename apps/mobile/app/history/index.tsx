@@ -17,6 +17,13 @@ function title(o: OrderHistoryRow): string {
   return `${from || R.stPickup} → ${o.dropoff.landmark || R.stDrop}`;
 }
 
+// A placed food order opens the food tracker (`app/order/[id].tsx` has no food handling). That
+// tracker is customer-only, so a food job the rider CARRIED stays on `/order/:id`, which renders the
+// rider viewer.
+function orderHref(o: OrderHistoryRow): string {
+  return o.role === "customer" && o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`;
+}
+
 function outcome(o: OrderHistoryRow): string {
   if (o.status === "delivered" || o.status === "completed") return R.delivered;
   if (o.status === "undelivered") return R.undelivered;
@@ -52,7 +59,7 @@ export default function HistoryScreen(): React.ReactElement {
     const fare = paidFare(o);
     const price = Number(o.agreedFare ?? o.proposedFare);
     return (
-      <Tappable onPress={() => router.push(`/order/${o.id}`)} accessibilityRole="button">
+      <Tappable onPress={() => router.push(orderHref(o))} accessibilityRole="button">
         <LRow
           first={first}
           icon={o.orderType === "merchant" ? "utensils" : "package"}
