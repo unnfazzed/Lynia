@@ -62,6 +62,12 @@ jest.mock("../../../../src/api/orders", () => ({
   getActiveOrder: (...args: unknown[]) => mockGetActiveOrder(...args),
   getOpenOrders: (...args: unknown[]) => mockGetOpenOrders(...args),
 }));
+// Owner 2026-10-01: busy zones come from the server's demand feed; food offers ride the dispatch poll.
+const mockGetDemandZones = jest.fn(async (_loc: unknown) => [] as unknown[]);
+jest.mock("../../../../src/api/rider-v2", () => ({ getDemandZones: (loc: unknown) => mockGetDemandZones(loc) }));
+const mockGetFoodOffer = jest.fn(async () => null as unknown);
+jest.mock("../../../../src/api/food-rider", () => ({ getFoodDispatchOffer: () => mockGetFoodOffer() }));
+let mockFoodOn = false;
 jest.mock("../../../../src/api/offers", () => ({
   makeOffer: jest.fn(),
   withdrawOffer: (orderId: string) => mockWithdrawOffer(orderId),
@@ -91,7 +97,7 @@ jest.mock("../../../../src/realtime/use-rider-board", () => ({
   useRiderBoard: (...args: unknown[]) => mockUseRiderBoard(...args),
 }));
 jest.mock("../../../../src/net/use-feature-flags", () => ({
-  useFeatureFlags: () => ({ merchantDispatchAutoEnabled: false }),
+  useFeatureFlags: () => ({ merchantDispatchAutoEnabled: mockFoodOn }),
 }));
 
 import RiderHome from "../index";
@@ -228,6 +234,9 @@ afterEach(() => {
   jest.clearAllMocks();
   mockLocPermission = "granted";
   mockLocFixFails = false;
+  mockFoodOn = false;
+  mockGetDemandZones.mockImplementation(async () => []);
+  mockGetFoodOffer.mockImplementation(async () => null);
 });
 
 /**
@@ -1327,5 +1336,69 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
       .map((n) => n.props.accessibilityLabel as string);
     expect(labels.some((l) => /Change location/.test(l))).toBe(false);
     expect(treeText(activeTree)).not.toMatch(/Deliver to|Use my current location|Search an address/);
+  });
+});
+
+describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
+  it("a business's booking wears the SHOP tag beside PARCEL jobs, and the count says jobs", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([{ ...openOrderFixture("shop-1"), kind: "shop", customerFirstName: "Mama's Kitchen" }, openOrderFixture("parcel-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const kinds = cards(activeTree).map((n) => [n.props.job.id, n.props.job.kind]);
+    expect(kinds).toEqual(expect.arrayContaining([["shop-1", "shop"], ["parcel-1", "parcel"]]));
+    const text = treeText(activeTree);
+    expect(text).toContain("SHOP");
+    expect(text).toContain("PARCEL");
+    expect(text).toContain("2 jobs near you");
+  });
+
+  it("the live food offer is a FOOD card on the board, and its button opens the offer", async () => {
+    mockFoodOn = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("parcel-1")]);
+    mockGetFoodOffer.mockImplementation(async () => ({
+      orderId: "food-1",
+      merchantId: "m1",
+      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mama's Kitchen" },
+      dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Belgravia" },
+      itemDesc: "2 items",
+      merchantGoodsTotal: 12.5,
+      deliveryFee: 3.2,
+      distanceKm: 3.1,
+      expiresAt: new Date(Date.now() + 40_000).toISOString(),
+      merchantPaymentMethod: "cash",
+      merchantCashRule: "collect_and_return",
+    }));
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const food = cards(activeTree).find((n) => n.props.job.kind === "food");
+    expect(food?.props.job).toMatchObject({ id: "food:food-1", asking: 3.2 });
+    const accept = activeTree.root.findAll((n) => n.props.label === "Accept this job" && typeof n.props.onPress === "function");
+    expect(accept.length).toBeGreaterThan(0);
+    act(() => accept[0]!.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/rider/food-offer");
+  });
+
+  it("the busiest demand zone names itself in the sheet", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("parcel-1")]);
+    mockGetDemandZones.mockImplementation(async () => [{ lat: -17.8, lng: 31.04, radiusM: 800, level: 1, place: "Avondale Shops" }]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(mockGetDemandZones).toHaveBeenCalledWith({ lat: -17.83, lng: 31.05 });
+    expect(treeText(activeTree)).toMatch(/Busier near Avondale Shops · \d/);
   });
 });

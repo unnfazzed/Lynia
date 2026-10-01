@@ -113,6 +113,22 @@ function riderWaypoint(w: Prisma.JsonValue): { point: unknown; landmark: unknown
   };
 }
 
+/** Rider v2 board tag for a parcel order: a business's booking is a SHOP job, anything else a PARCEL. */
+function boardKind(customerPhone: string | null | undefined): "parcel" | "shop" {
+  return isBusinessBookingAccountPhone(customerPhone) ? "shop" : "parcel";
+}
+
+/** How far back the board's demand zones look. */
+const DEMAND_WINDOW_MS = 60 * 60_000;
+
+export interface DemandZone {
+  lat: number;
+  lng: number;
+  radiusM: number;
+  level: number;
+  place: string;
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -613,7 +629,7 @@ export class OrdersService {
         proposedFare: true,
         distanceKm: true,
         createdAt: true,
-        customer: { select: { firstName: true } },
+        customer: { select: { firstName: true, phone: true } },
       },
     });
     return orders.map((o) => ({
@@ -629,6 +645,9 @@ export class OrdersService {
       createdAt: o.createdAt.toISOString(),
       // Rider v2 (ledger D-54): "Rudo is asking $3.00". The first name only — never the phone.
       customerFirstName: o.customer?.firstName?.trim() || null,
+      // Owner 2026-10-01: the board tags every job. A business's booking (its customer of record is the
+      // business's booking account, whose first name is the business's name) is a SHOP job.
+      kind: boardKind(o.customer?.phone),
     }));
   }
 
@@ -657,6 +676,7 @@ export class OrdersService {
         created_at: Date;
         pickup_distance_m: number;
         customer_first_name: string | null;
+        customer_phone?: string | null;
       }>
     >`
       SELECT id,
@@ -668,7 +688,8 @@ export class OrdersService {
              distance_km,
              created_at,
              ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m,
-             (SELECT first_name FROM profiles WHERE profiles.id = orders.customer_id) AS customer_first_name
+             (SELECT first_name FROM profiles WHERE profiles.id = orders.customer_id) AS customer_first_name,
+             (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone
       FROM orders
       WHERE status = 'open_for_offers'
         AND order_type = 'parcel'
@@ -689,7 +710,45 @@ export class OrdersService {
         distanceKm: o.distance_km,
         createdAt: o.created_at.toISOString(),
         customerFirstName: o.customer_first_name?.trim() || null,
+        kind: boardKind(o.customer_phone),
       }));
+  }
+
+  /**
+   * Demand zones for the rider board (Rider v2 J1, owner 2026-10-01: "demand from orders pending and in
+   * progress"). Every order with a pickup within `radiusM` of the caller that is waiting for a rider
+   * (`requested` / `open_for_offers`) or on the road (assigned → en_route_dropoff) and moved in the last
+   * hour, grouped into ~1 km cells by pickup. The three busiest cells with at least two orders come back
+   * as zones — centre (the mean pickup), a radius that grows with the count, a 0–1 level against the
+   * busiest, and the cell's most common pickup landmark. Counts only: no order, customer or rider data.
+   */
+  async demandZones(lat: number, lng: number, radiusM = 10_000): Promise<DemandZone[]> {
+    const since = new Date(Date.now() - DEMAND_WINDOW_MS);
+    const rows = await this.prisma.$queryRaw<Array<{ lat: number; lng: number; n: number; place: string | null }>>`
+      SELECT avg(ST_Y(pickup_geog::geometry))::float8 AS lat,
+             avg(ST_X(pickup_geog::geometry))::float8 AS lng,
+             count(*)::int AS n,
+             mode() WITHIN GROUP (ORDER BY pickup->>'landmark') AS place
+      FROM orders
+      WHERE pickup_geog IS NOT NULL
+        AND status IN ('requested', 'open_for_offers', 'assigned', 'confirmed', 'en_route_pickup', 'picked_up', 'en_route_dropoff')
+        AND updated_at >= ${since}
+        AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
+      GROUP BY round(ST_Y(pickup_geog::geometry)::numeric, 2), round(ST_X(pickup_geog::geometry)::numeric, 2)
+      HAVING count(*) >= 2
+      ORDER BY n DESC
+      LIMIT 3`;
+    const top = rows.length ? Math.max(...rows.map((r) => Number(r.n))) : 0;
+    return rows.map((r) => {
+      const n = Number(r.n);
+      return {
+        lat: Number(r.lat),
+        lng: Number(r.lng),
+        radiusM: Math.min(900, 350 + n * 75),
+        level: top > 0 ? n / top : 0,
+        place: (r.place ?? "").trim(),
+      };
+    });
   }
 
   /** The rider's current active job (assigned through en_route_dropoff), or null — so they can find

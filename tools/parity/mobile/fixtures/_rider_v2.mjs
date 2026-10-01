@@ -80,7 +80,7 @@ const open = (n, from, fromPt, to, toPt, item, fare, km, name) => ({
 });
 export const OPEN_ORDERS = [
   open(1, "Eastgate Mall", { lat: -17.8306, lng: 31.0525 }, "14 Glenara Ave", { lat: -17.8125, lng: 31.0712 }, "Documents envelope", "3.00", 2.4, "Rudo"),
-  open(2, "Avondale Shops", AVONDALE, "Mt Pleasant", { lat: -17.775, lng: 31.045 }, "Small box", "3.50", 3.1, "Farai"),
+  { ...open(2, "Avondale Shops", AVONDALE, "Mt Pleasant", { lat: -17.775, lng: 31.045 }, "Small box", "3.50", 3.1, "Farai's Boutique"), kind: "shop" },
   open(3, "Fife Ave Shops", { lat: -17.818, lng: 31.047 }, "Belgravia", { lat: -17.81, lng: 31.04 }, "Phone + charger", "2.50", 1.6, "Chipo"),
 ];
 
@@ -93,6 +93,7 @@ export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, s
     { match: "/orders/mine/active", json: active },
     ...extra,
     { match: "/orders/open", json: openOrders },
+    { match: "/orders/demand", json: openOrders.length ? [{ lat: -17.8009, lng: 31.0389, radiusM: 800, level: 1, place: "Avondale Shops" }] : [] },
     { match: "/orders/history", json: HISTORY },
     { match: "/wallet/config", json: { enabled: true, ratePct: 10, floor: 2, graceCredit: 3, minTopUp: 2, maxTopUp: 100 } },
     { match: "/wallet/ledger", json: LEDGER },
