@@ -1926,6 +1926,20 @@ auto-accept restaurants (ledger D-50).
   customer's Confirming state likewise; until the API deploy from `b13df18` (Release (Azure)) is approved
   and live, the update changes nothing a tester sees. Safe in that order: no new field is required.
 
+**Fifth OTA — 2026-10-01 (Send a parcel redesign on vc 40).** Built from `main` at `60c04d9` (#1005)
+and published to `preview` for build `1babe958` (v0.51.0 / vc 40, runtime `db601ead…`). It carries the
+stepped Send flow (Where · What · Price · Review), inline address editing on the map, and the removal of
+landmarks, declared value and the pre-broadcast disclaimer (ledger D-52).
+
+| Run | Result | Why |
+|---|---|---|
+| 36855271552 | **published** | the preflight passed with no override; Android group `2366c692-62fb-4f2b-b89e-04d01809c13f` (update `01a0f738-1d28-7528…`) on runtime `db601ead…`; an iOS group `3da6acd4…` went to runtime `87631730…`, which no installed build has |
+
+- **Delivered** to vc 40 on its next launch, applied on the one after.
+- **No API dependency.** The create-order payload is unchanged in shape (`disclaimerVersion` was already
+  optional, `declaredValue` is sent as 0, each stop's `landmark` is the address name), so it works
+  against the API already live.
+
 ---
 
 ## 9. Pre-submission checklist
