@@ -136,6 +136,13 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   `packages/design/handoff/browse-v2/` (ledger D-57, owner 2026-10-01). The gallery `RC list*`,
   `RC menu*` and `RC closed_interrupt` screens are superseded and not aligned to. Strings come from
   `src/ui/browse/copy.ts` (the handoff's `B`, verbatim).
+- **Restaurant, shop and pharmacy orders follow their own handoff (`handoff/order-flow-v2/`).** From checkout to
+  done — Review & place (R1–R9, replacing `app/food/cart.tsx` + `checkout.tsx`), the order screen (`app/order/[id].tsx`
+  now renders merchant orders too: T1–T16, U2–U5, P1–P5, D1–D5; `app/food/order/[orderId].tsx` and the `src/ui/food/*`
+  order views retire), the merchant's order screens (M1–M8, U1 on top of D-48) and the rider's merchant jobs (RD1–RD4 on
+  top of D-54) align to `packages/design/handoff/order-flow-v2/` (ledger D-59, owner 2026-10-01/02). The gallery
+  `RC` cart / checkout / order-tracking screens are superseded and not aligned to. Strings come from the handoff's `O`
+  (`code/copy.ts`, verbatim). Cash only; **every code is 6 digits shown 3+3**, the pickup code included.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

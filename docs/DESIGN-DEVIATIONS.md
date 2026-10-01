@@ -3168,3 +3168,65 @@ is now only the flag-off state (B13), as the handoff's §8 retires it. Home's "P
 | Home search / X1–X2 | Cross-service | Unchanged (part 3) | Out of scope here. |
 
 These rows close when Order flow v2 lands; that PR removes them.
+
+## D-59 · Order flow v2: Restaurants, Shops and Pharmacy from checkout to done follow the order-flow-v2 handoff — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-01/02):** the owner briefed Claude Design with
+`docs/designs/order-flow-v2/PROMPT.md` (#1022), answering four questions first: cover the customer,
+merchant **and** rider phones; restaurant, shop and pharmacy orders use **the same order screen as
+parcels** (After Send v2, D-53) with merchant stages; **cash only**; and draw out-of-stock substitution,
+pharmacy prescription upload (behind a flag), proof photos at hand-over and scheduled orders. The owner
+uploaded the result (`Lynia_Design_System.zip`, `handoff/order-flow-v2-2026-10`) and said *"i have done
+this designs now you can implement. Complete everything … if its multiple PR continue until they are all
+done"*. Its `BRIEF.md` decisions are final; its five open questions are implemented as drawn (the drawn
+default) and listed in §4.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/order-flow-v2/` | The handoff, **verbatim**: `README.md` (R1–R9, T1–T16, U1–U5, P1–P5, D1–D5, M1–M8, RD1–RD4, G1–G3, component spec, per-service table, peek table, NEEDS BACKEND, keep/retire), `BRIEF.md` (16 decisions + 5 open questions), `CLAUDE-CODE-PROMPT.md` (the work order: six PRs), `PROMPT.md` (our brief), `Order flow v2.1 - all screens.html` + `of-kit.js` / `of-polish.js` / `of-screens-*.js` / `of-render.js` (the pixel reference; `?screen=T4` renders one frame; v2.1 = v2 + `of-polish.js`, the final look), `order-flow-v2-1.html` (the same canvas offline), `Order flow v2 - all screens.html` (pre-polish, history), `code/copy.ts` (`O`) and `code/tokens.ts`, `assets/` (fonts, the v2 service stickers, the Lucide subset, a sample photo). **Added by us:** `design/screens/` — every prototype frame rendered at 360×720 (1×) from `?screen=<id>`, with `INDEX.tsv` (id → label), as the reference the parity sheets pair against. |
+
+`code/tokens.ts` names one value Calm Mint v2's token files don't carry as a named token,
+`highlightWash #FFF6D6` (the "Cash back to you" row once due, and the ETA chip's wash); the faces adopt
+it only where the guardrail allows, and no design token file changes in this sync.
+
+### 2 · Authority (a scope rule)
+
+From the PR that wires each part, the LOOK and copy of:
+
+- **the customer order screen for merchant orders** — `app/order/[id].tsx` (one screen for parcel,
+  restaurant, shop and pharmacy orders; T1–T16, U2–U5, P1–P5, D1–D5; strings from the handoff's `O`,
+  verbatim) — replaces `app/food/order/[orderId].tsx` and every app-only `src/ui/food/*` order view;
+- **Review & place** — R1–R9, one screen replacing `app/food/cart.tsx` + `app/food/checkout.tsx`;
+- **the merchant's order screens** — M1–M8 and U1 on top of the merchant-mobile handoff (D-48), whose
+  B6 eight-step stepper becomes the four-step track + "Cash back to you" row;
+- **the rider's merchant jobs** — RD1–RD4 on top of Rider v2 (D-54);
+- **G1–G3** — Home's live-order bar, the Orders tab Now cards and push copy for merchant orders;
+
+align to `packages/design/handoff/order-flow-v2/`. The gallery `RC.cart`, `RC.cart_empty`,
+`RC.checkout_cash`, `RC.checkout_wallet`, `RC.await_accept`, `RC.item_removed`, `RC.pay_now`,
+`RC.pay_confirmed`, `RC.track_prep`, `RC.no_rider`, `RC.track_way`, `RC.delivered_rate`, `RC.rejected`
+and `RC.refunded` are **superseded and not aligned to** (README "Keep / redesign / merge / retire");
+each becomes a SUPERSEDED deferral as the PR that replaces it lands. `RC.checkout_wallet`,
+`RC.pay_now`, `RC.pay_confirmed`, `RC.refunded`, AwaitingPayment and RefundPending are retired outright
+(cash only, BRIEF §14). D-58's "Still different from the handoff" rows (no + / cart / item sheet
+ordering for shops) close when shop ordering lands here.
+
+**Owner change carried by the handoff:** every code is **6 digits shown 3+3**, the pickup code included
+(BRIEF §16; it was 4). The rider enters both codes in six CodeBoxes.
+
+### 3 · What has landed
+
+Each PR of the build order appends its line here.
+
+- **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
+
+### 4 · Open questions, implemented as drawn (owner to confirm)
+
+1. A swap that lowers the price still needs a yes (drawn: "any swap needs a yes").
+2. Cancel after collection: "You owe $X — pay it on your next order" (D3f) needs a customer ledger line;
+   until that lands D3f's owed line is not rendered (NEEDS BACKEND).
+3. Restaurant pickup photos stay optional.
+4. Same-day slots a venue can't meet are hidden (no "Too late for today").
+5. No limit on merchant "Change items" rounds.

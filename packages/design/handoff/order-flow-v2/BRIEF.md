@@ -1,0 +1,34 @@
+# LyniaGo Order flow v2 — product decisions (final)
+
+Restaurants, Shops and Pharmacy, from checkout to done, on the customer, merchant and rider phones. Statements are final unless the owner changes them. "Brief §n" = decision n in the brief.
+
+## Decisions
+1. **One order screen for every service.** `app/order/[id]` renders parcel, restaurant, shop and pharmacy orders on the After Send v2 shell: header, full-bleed map, content-measured sheet, optional CTA bar. The old food order screen and every app-only food view are retired.
+2. **Header = ‹ Back · venue name · red Help.** The human stage title sits at the top of the sheet (19/700, wraps). It moved out of the header because titles like "Rider on the way to Gava's Kitchen" don't fit 52 dp at 320 dp or at font scale 1.3. The header carries *who*, the sheet carries *what's happening*. Parcels keep After Send's header.
+3. **Sheet order, every stage:** stage title → one ETA line → 4-step track → the block for this stage → the rest. That answers, in order: is it happening, when will it get to me, what do I do.
+4. **Track of four:** Confirmed → Cooking/Packing → On the way → Delivered. Pharmacy step 1 reads "Prescription checked" when an Rx was approved. Rider found, at the venue and collected are sheet content and map state inside steps 2–3.
+5. **ETA honesty.** A range ("Arrives 12:40–12:55") until the rider collects. After that, one time in the highlight chip ("Arrives in ~9 min · 12:47"). No location fix = no ETA line, only the sentence "Arrival time shows once the rider's phone sends a location". The prep bar is a 4 dp line inside the sheet. The merchant still sees a PrepRing.
+6. **The map is always there.** Before a rider: the venue pin (service sticker on its tile colour, 44 dp) plus your red square, joined by a dashed muted route, both framed. Rider found: ink bike disc with a dotted line to the venue. Collected: solid accent route.
+7. **Review = cart + checkout.** One screen, pushed from the cart bar. Blocks: venue line · (pharmacy OTC notice) · Items (inline − n + steppers, per-line note, "+ Add more items"; no ✎ because everything edits in place) · Deliver to ✎ · When (segmented ASAP / Schedule) · (shops + pharmacy: If something's out of stock, Ask me / Remove it) · Your phone ✎ · Note for the rider ✎ · Pay (one fixed row, cash) · breakdown + the cancel rule. "Place order · $16.50 cash" is pinned (52 dp). There's no map unless you're editing the address.
+8. **Substitution.** The merchant proposes per line: *Remove it* or *Swap for…* (from their own catalogue, with the price difference). The customer answers per line on the order screen and sees the total update live. The window is 3 minutes. **No answer = swaps declined, those lines removed, the order carries on.** A removal or quantity drop is applied and announced. **Any swap needs a yes**, whichever way the price moves, because it's a different item. Mid-prep "Change items" uses the same card. "Cancel the whole order — free" is always there.
+9. **Proof at hand-over.** Pickup: the rider ticks "Bag is sealed", then photographs the bag at the counter. This is required for shops and pharmacy and optional for restaurants. The merchant sees the photo before "Hand over" (it stays disabled for shops and pharmacy until the photo arrives). The customer gets a "Collected · sealed bag photo · View" row. Door: the 6-digit code is the proof. A door photo is taken only when the code can't be used. Customer, merchant and support can all see it.
+10. **The door is one card with three lines:** ① Take your order (ticks when the rider taps "Hand over the order"; pharmacy/shops add "Check the seal is unbroken before you pay") ② Pay $X cash ("I've paid $X" → waiting for the rider's confirm, 2-minute ring) ③ Say your code. The code appears only after both cash confirms. It's 56/800 (48 under 340 dp), 3+3, and the biggest thing on the sheet. The rider's card is the mirror.
+11. **Done = hero + one rating card with two rows** (venue, rider; stars then quick tags) + receipt (items, food, delivery fee, total, paid in cash, venue, rider, delivered time, Share receipt) + "Order again" (refills the cart). Rating has Skip and Undo.
+12. **Scheduled.** When → Schedule opens a sheet with Today/Tomorrow and 30-minute slots the venue can meet. Full slots show "Full" and can't be picked. A closed venue's cart bar reads "Order for when they open · 10:30–11:00". The order screen has a Scheduled state (free cancel, "Change time"). The merchant gets a 4th segment "Scheduled", and the order rings at start time with a "SCHEDULED · START NOW" strip.
+13. **Prescriptions, behind a flag.** The Rx block sits above Items while it's empty, and placing is blocked with one hint line until a photo exists. Then come patient name and the consent tick. A "Pharmacist is checking your prescription" stage comes before Packing. A decline gives a reason, removes the Rx line and carries on with the rest ("Cancel the rest — free"). The merchant gets a Prescription check screen: zoomable photo, patient, items, Approve / Decline with reason chips. At the door, the rider ticks "I saw the original prescription".
+14. **Cash only, everywhere.** No wallet, card, EcoCash, InnBucks or mobile-money copy. Endings say "Nothing was charged". The one owed-money case is a cancel after collection: "You owe $16.50 — pay it on your next order".
+15. **Live bar, Orders Now card and push** follow the stage (G1–G3). Push never carries a delivery or pickup code.
+
+16. **Every code is 6 digits**, shown 3+3: delivery code 418 290, pickup code 731 604 (the brief said 4 for pickup; owner changed it 2026-10-02). Rider CodeBoxes are 6 boxes at both stops.
+
+## Data fixes in the sample
+- Avondale Fresh: items $14.60 + delivery $1.50 = **$16.10** (the brief's $16.30 doesn't add up). The bread swap (+$0.10) gives $16.20. In the three-line case (swap accepted, Mazoe removed, oil swap declined) the total is **$8.20**.
+- Gava's Kitchen: $15.00 + $1.50 = **$16.50**. Cash back to the kitchen is the food money, **$15.00**. The rider keeps the $1.50 delivery fee (CashSplit).
+- Pharmacy under the minimum: $3.30 + $1.00 small-order fee + $1.50 = $5.80. With Rx: $9.50 + $1.50 = $11.00.
+
+## Open questions
+1. A swap that **lowers** the price: we ask (it's a different item). Alternative: apply and announce it, like a removal. Owner to confirm.
+2. Cancel after collection costs the full total. How is that money collected without a wallet? Drawn as "pay it on your next order" (D3f). This needs a ledger line on the customer account.
+3. Should restaurant pickup photos become required too (high-value catering orders)? Today they're optional.
+4. Scheduled slots for the same day at venues that close in less than prep + delivery time are hidden. Should we say "Too late for today" instead?
+5. Merchant "Change items" mid-prep: should there be a limit (one change round per order)?
