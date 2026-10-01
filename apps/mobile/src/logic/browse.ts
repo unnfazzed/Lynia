@@ -1,4 +1,4 @@
-import type { LatLng, RestaurantListItem } from "@lynia/shared";
+import type { LatLng, MerchantShopKind, RestaurantListItem, ShopListItem } from "@lynia/shared";
 import { closingTimeToday, isMerchantOpenNow, minutesUntilClose, nextOpening } from "@lynia/shared";
 import { DEFAULT_PREP_MINUTES } from "./home-feed";
 import { ETA_BAND_MINUTES, restaurantMeta } from "./food-list";
@@ -86,6 +86,25 @@ export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, 
     opens: open ? null : nextOpening(r.hours, now),
     prepMinutes: r.prepBaselineMinutes ?? DEFAULT_PREP_MINUTES,
   };
+}
+
+/** A shop kind as the handoff names it (`B.kinds`; "Pharmacy" for the pharmacy section). These are the
+ *  customer's words, not the merchant web's sign-up labels ("Car parts", "Clothes & shoes"). */
+export const SHOP_KIND_LABEL: Readonly<Record<MerchantShopKind, string>> = {
+  pharmacy: "Pharmacy",
+  grocery: "Grocery",
+  butchery: "Butchery",
+  fashion: "Fashion",
+  auto_parts: "Auto parts",
+  hardware: "Hardware",
+  electronics: "Electronics",
+  other: "Other",
+};
+
+/** A shop from `GET /shops` → the browse view model (ledger D-58). The kind is its category and sub-line. */
+export function shopVenue(s: ShopListItem, customer: LatLng | null, now: Date): VenueView {
+  const kind = SHOP_KIND_LABEL[s.shopKind] ?? SHOP_KIND_LABEL.other;
+  return { ...restaurantVenue(s, customer, now), categories: [kind], sub: kind, kind };
 }
 
 export interface BrowseFilters {

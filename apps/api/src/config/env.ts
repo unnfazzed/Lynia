@@ -385,6 +385,10 @@ export const envSchema = z.object({
   RESTAURANTS_ENABLED: z.enum(["true", "false"]).default("false"),
   MERCHANT_DISPATCH_AUTO_ENABLED: z.enum(["true", "false"]).default("false"),
   MERCHANT_WALLET_ENABLED: z.enum(["true", "false"]).default("false"),
+  // Shops and Pharmacy (browse-v2 README §7; ledger D-58): the customer Shops / Pharmacy sections, served
+  // to mobile via GET /app/service-flags (ServiceFlagsResponse). Same fail-safe-OFF default.
+  SHOPS_ENABLED: z.enum(["true", "false"]).default("false"),
+  PHARMACY_ENABLED: z.enum(["true", "false"]).default("false"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),

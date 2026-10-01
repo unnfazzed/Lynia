@@ -13,12 +13,12 @@ transfer and lost-number recovery come with L4 (Team).
 
 - A business signs itself up in the merchant web: phone and WhatsApp code, then "What do you sell?",
   its name, a map pin and a landmark. It starts **dormant**.
-- **Going live makes a restaurant findable by customers.** It appears in the app's restaurant list and
-  can take food orders. The flag is `merchants.pilot_enabled`, and the go-live switch is its only
-  writer.
-- **Restaurants only, for now.** A shop has nothing a customer can find until the LyniaGo Shops section
-  ships, so the switch refuses shops with `shops_not_open`. Shops still use the merchant web from day
-  one; Book a rider (L2) needs no go-live.
+- **Going live makes a business findable by customers.** A restaurant appears in the app's restaurant
+  list and can take food orders. A shop appears in **Shops**, or in **Pharmacy** if it's a pharmacy,
+  where customers can browse its items (ledger D-58). Shop ordering comes with the Order flow v2 update,
+  so a live shop can't take app orders yet. The flag is `merchants.pilot_enabled`, and the go-live
+  switch is its only writer.
+- Shops use the merchant web from day one. Book a rider (L2) needs no go-live.
 - Book a rider never needs go-live. It runs at Send's trust level: the $150 value cap, the disclaimer
   and holds.
 
@@ -26,13 +26,13 @@ transfer and lost-number recovery come with L4 (Team).
 
 Admin console → **Merchants** → filter **Awaiting go-live**. That lists restaurants not yet switched
 on, newest first, with the landmark and a masked contact phone. The API is
-`GET /admin/merchants?filter=awaiting_go_live`. The **Shops** filter (`?filter=shops`) lists signed-up
-shops. There's no go-live call for them, but ops can call about Book a rider.
+`GET /admin/merchants?filter=awaiting_go_live`. Restaurants and shops both wait there. The **Shops**
+filter (`?filter=shops`) lists every signed-up shop, live or not.
 
-**Target:** call every new restaurant within **1 business day**. The owner's `/setup` checklist tells
+**Target:** call every new restaurant or shop within **1 business day**. The owner's `/setup` checklist tells
 them to expect that call.
 
-## 3. The call: what to check before switching a restaurant on
+## 3. The call: what to check before switching a restaurant or shop on
 
 Open the merchant's detail page. It shows the business contact phone in full, because that's the number
 riders are given at pickup, plus the pin.
@@ -40,9 +40,13 @@ riders are given at pickup, plus the pin.
 1. **They answer the contact phone.** Riders will call that number at pickup.
 2. **The pin is where they are.** Check it with street view, a photo from the owner, or a visit. A wrong
    pin sends every rider to the wrong place.
-3. **It's a restaurant** (cooked food). If they're really a shop, they signed up with the wrong type. It
-   can't be changed in the app; note it and escalate. It's a support fix.
-4. **At least one dish has a photo and a price.** The switch enforces this (`no_live_dishes`). A photoless
+3. **It sells what it signed up as.** A restaurant sells cooked food; a shop sells the kind it picked
+   (a pharmacy is a pharmacy). A wrong type or kind can't be changed in the app; note it and escalate.
+   It's a support fix.
+   - **A pharmacy:** check its pharmacy licence (a photo from the owner, or a visit) and that it lists
+     over-the-counter items only. Customers see "Over-the-counter only. No prescription medicine yet."
+     Switch it off if it lists prescription medicine.
+4. **At least one dish or item has a photo and a price.** The switch enforces this (`no_live_dishes`). A photoless
    dish is a draft that customers never see.
 5. **Opening hours are set.** Without hours the restaurant reads as closed.
 6. **The owner's name is recorded.** Sign-up asks for it, and it shows on the merchant's team.
@@ -52,7 +56,7 @@ riders are given at pickup, plus the pin.
 - **On:** merchant detail → **Go live**, with an optional note (what you checked). The API is
   `POST /admin/merchants/:id/pilot {"enabled": true, "note": "…"}`, and it writes audit row
   `merchant.go_live` in the same transaction.
-  - The switch refuses `shops_not_open` (a shop), `no_location` (no pickup pin) and `no_live_dishes`.
+  - The switch refuses `no_location` (no pickup pin) and `no_live_dishes` (no dish or item with a photo).
   - Setting a value the merchant already has writes nothing.
 - **Off:** the same button, or `{"enabled": false}`, writes audit row `merchant.go_dormant`. It's always
   allowed. Use it for a restaurant that has stopped answering or closed, or while a complaint is looked
@@ -69,6 +73,10 @@ riders are given at pickup, plus the pin.
   forward.
 - **The `RESTAURANTS_ENABLED` kill switch gates the whole merchant web.** From L2 that includes every
   shop's Book a rider. Pulling it in an incident stops those bookings too.
+- **`SHOPS_ENABLED` and `PHARMACY_ENABLED` switch the customer Shops and Pharmacy sections** (D-58). They
+  are on unless the repo Variable of the same name is `"false"`. Setting one to `"false"` and releasing
+  hides that section in the app (the tile opens the coming-soon sheet instead). The merchant web is
+  unaffected.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
   covers (the 25 km Send corridor).
 

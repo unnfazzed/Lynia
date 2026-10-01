@@ -139,6 +139,10 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
+          # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
+          # to switch a section off (the kill switch).
+          SHOPS_ENABLED: ${{ vars.STAGING_SHOPS_ENABLED || 'true' }}
+          PHARMACY_ENABLED: ${{ vars.STAGING_PHARMACY_ENABLED || 'true' }}
           MICRO_CACHE_REDIS_L2: ${{ vars.STAGING_MICRO_CACHE_REDIS_L2 }}
           CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
           PREV: ${{ steps.prev.outputs.revision }}
@@ -152,7 +156,7 @@ jobs:
 
           opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
           opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

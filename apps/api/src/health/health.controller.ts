@@ -1,5 +1,5 @@
 import { Controller, Get, Header, Inject, Query, ServiceUnavailableException } from "@nestjs/common";
-import type { MerchantFeatureFlagsResponse, VersionGateResponse } from "@lynia/shared";
+import type { MerchantFeatureFlagsResponse, ServiceFlagsResponse, VersionGateResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
@@ -58,6 +58,18 @@ export class HealthController {
       restaurantsEnabled: this.env.RESTAURANTS_ENABLED === "true",
       merchantDispatchAutoEnabled: this.env.MERCHANT_DISPATCH_AUTO_ENABLED === "true",
       merchantWalletEnabled: this.env.MERCHANT_WALLET_ENABLED === "true",
+    };
+  }
+
+  // Shops and Pharmacy kill switches (ledger D-58), public for the same reason as the flags above. A
+  // separate body because MerchantFeatureFlagsResponse is strict: two more keys there would fail every
+  // installed client's parse.
+  @Get("app/service-flags")
+  @Header("Cache-Control", "public, max-age=60")
+  serviceFlags(): ServiceFlagsResponse {
+    return {
+      shopsEnabled: this.env.SHOPS_ENABLED === "true",
+      pharmacyEnabled: this.env.PHARMACY_ENABLED === "true",
     };
   }
 }

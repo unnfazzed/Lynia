@@ -50,9 +50,9 @@ describe("C6 · Branches (ledger D-51)", () => {
     expect(screen.getByRole("link", { name: "Add a branch" }).getAttribute("href")).toBe("/branches/new");
   });
 
-  it("a shop branch is never 'Not live yet' (ops only switch restaurants on)", () => {
+  it("a shop branch ops haven't switched on is 'Not live yet', like a restaurant's (D-58)", () => {
     open(business({ businessType: "shop" }));
-    expect(screen.queryByText("Not live yet")).toBeNull();
+    expect(screen.queryAllByText("Not live yet").length).toBeGreaterThan(0);
   });
 
   it("tapping another branch switches to it and enters it with the drawn toast", async () => {

@@ -422,6 +422,10 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
+          # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
+          # to switch a section off (the kill switch).
+          SHOPS_ENABLED: ${{ vars.SHOPS_ENABLED || 'true' }}
+          PHARMACY_ENABLED: ${{ vars.PHARMACY_ENABLED || 'true' }}
           MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
           MERCHANT_DASHBOARD_ORIGIN: ${{ vars.MERCHANT_DASHBOARD_ORIGIN }}
           CORS_EXTRA_ORIGINS: ${{ vars.CORS_EXTRA_ORIGINS }}
@@ -497,7 +501,7 @@ jobs:
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

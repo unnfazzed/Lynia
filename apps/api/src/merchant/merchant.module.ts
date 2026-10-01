@@ -24,6 +24,8 @@ import { MerchantTeamService } from "./merchant-team.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
+import { ShopsController } from "./shops.controller";
+import { ShopsEnabledGuard } from "./shops-enabled.guard";
 
 /**
  * Restaurants vertical (Lane C). Registered unconditionally in AppModule — the fail-safe-OFF
@@ -64,6 +66,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
   controllers: [
     MerchantController,
     RestaurantsController,
+    ShopsController,
     FoodOrderController,
     MerchantOrderController,
     MerchantBookingController,
@@ -81,6 +84,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
     MerchantBranchesService,
     MerchantGuard,
     RestaurantsEnabledGuard,
+    ShopsEnabledGuard,
     FoodOrderService,
     FoodDispatchService,
     FoodDebtService,

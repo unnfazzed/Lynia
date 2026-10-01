@@ -122,22 +122,15 @@ export default async function MerchantProfilePage({
         </span>
         <Conn connected={connected} />
         <OwnerTransferButton merchantId={m.id} name={m.name} connected={connected} />
-        {isShop ? null : <GoLiveButton merchantId={m.id} name={m.name} live={m.pilotEnabled} connected={connected} />}
+        <GoLiveButton merchantId={m.id} name={m.name} live={m.pilotEnabled} connected={connected} shop={isShop} pharmacy={m.shopKind === "pharmacy"} />
       </header>
 
-      {isShop ? (
+      {!m.pilotEnabled ? (
         <div className="warnbar">
           <IconStore />
           <span className="t">
-            <b>Shops open with LyniaGo Shops.</b> There&apos;s no go-live for a shop yet. Call it about booking a rider.
-          </span>
-        </div>
-      ) : !m.pilotEnabled ? (
-        <div className="warnbar">
-          <IconStore />
-          <span className="t">
-            <b>Customers can&apos;t see this restaurant yet.</b> Call {m.contactPhone ?? "the owner"}, run the go-live
-            checks in <span className="mono">docs/MERCHANT-GO-LIVE-RUNBOOK.md</span>, then use Go live.
+            <b>Customers can&apos;t see this {isShop ? "shop" : "restaurant"} yet.</b> Call {m.contactPhone ?? "the owner"}, run the
+            go-live checks in <span className="mono">docs/MERCHANT-GO-LIVE-RUNBOOK.md</span>, then use Go live.
           </span>
         </div>
       ) : null}

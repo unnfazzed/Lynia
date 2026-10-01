@@ -3,8 +3,9 @@ import { BRANCH_ERRORS, branchErrorFor, catalogueCount, isLive, showBranchChevro
 import { toBranchRequest } from "./branch-form";
 
 describe("branches rules (ledger D-51)", () => {
-  it("a shop is always live; a restaurant once ops switched it on", () => {
-    expect(isLive({ businessType: "shop", pilotEnabled: false })).toBe(true);
+  it("a restaurant or a shop is live once ops switched it on (shops since D-58)", () => {
+    expect(isLive({ businessType: "shop", pilotEnabled: false })).toBe(false);
+    expect(isLive({ businessType: "shop", pilotEnabled: true })).toBe(true);
     expect(isLive({ businessType: "restaurant", pilotEnabled: false })).toBe(false);
     expect(isLive({ businessType: "restaurant", pilotEnabled: true })).toBe(true);
   });
@@ -21,7 +22,7 @@ describe("branches rules (ledger D-51)", () => {
     expect(showNotLiveHome(dormant, 1)).toBe(false);
     expect(showNotLiveHome(dormant, 2)).toBe(true);
     expect(showNotLiveHome({ ...dormant, pilotEnabled: true }, 2)).toBe(false);
-    expect(showNotLiveHome({ ...dormant, businessType: "shop" }, 2)).toBe(false);
+    expect(showNotLiveHome({ ...dormant, businessType: "shop" }, 2)).toBe(true);
   });
 
   it("maps the four API refusals to where C7 shows them, with the drawn copy", () => {

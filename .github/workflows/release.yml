@@ -463,6 +463,10 @@ jobs:
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
+          # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
+          # to switch a section off (the kill switch).
+          SHOPS_ENABLED: ${{ vars.SHOPS_ENABLED || 'true' }}
+          PHARMACY_ENABLED: ${{ vars.PHARMACY_ENABLED || 'true' }}
           MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
           # Same reasoning as the flags above: these two land inside ENV_VARS, so they must not be
           # interpolated into the script (delimiter breakout + injection). Validated below.
@@ -518,7 +522,7 @@ jobs:
           # MICRO_CACHE_REDIS_L2 rides the same true|false Variable lane: it turns on the shared
           # Redis L2 behind the read-through micro-caches (PR #809) over the REDIS_URL the service
           # already mounts — no new infra. Unset yields "false" (the env schema's own default).
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

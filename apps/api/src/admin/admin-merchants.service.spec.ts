@@ -407,11 +407,15 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     expect(writes.audit).toMatchObject({ actor: "ops@lyniago", action: "merchant.go_live", target: "m1", note: "Called; pin checked on street view" });
   });
 
-  it("refuses to switch a SHOP on — shops open with LyniaGo Shops (R-7)", async () => {
+  it("switches a SHOP on through the same checks — customer Shops and Pharmacy are open (D-58)", async () => {
     const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: PIN });
-    await expect(svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "shops_not_open" } });
-    expect(writes.update).toBeUndefined();
-    expect(writes.audit).toBeUndefined();
+    await expect(svc.setPilot("ops", "m2", { enabled: true })).resolves.toMatchObject({ pilotEnabled: true });
+    expect(writes.audit).toMatchObject({ action: "merchant.go_live" });
+    const noPin = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: null });
+    await expect(noPin.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "no_location", message: "This shop has no pickup pin yet." } });
+    const noItems = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: PIN }, 0);
+    await expect(noItems.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
+    expect(noItems.writes.update).toBeUndefined();
   });
 
   it("refuses a restaurant with no pickup pin, or with no live (photo'd) dish", async () => {
@@ -468,7 +472,7 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     const [row] = await svc.listMerchants("awaiting_go_live");
     await svc.listMerchants("shops");
     await svc.listMerchants();
-    expect(wheres).toEqual([{ businessType: "restaurant", pilotEnabled: false }, { businessType: "shop" }, {}]);
+    expect(wheres).toEqual([{ pilotEnabled: false }, { businessType: "shop" }, {}]);
     expect(row).toMatchObject({ businessType: "restaurant", shopKind: null, landmark: "Next to the rank", contactPhoneMasked: "+263•••••4567" });
   });
 });

@@ -65,7 +65,7 @@ describe("shouldPersistQuery — the persistence allowlist", () => {
 
   it("the allowlist stays an explicit, reviewed set", () => {
     // Adding a root here is a product decision (see persist.ts) — this pins the current contract.
-    expect([...PERSISTED_KEY_ROOTS].sort()).toEqual(["earnings", "history", "me", "notifications", "restaurants", "wallet"]);
+    expect([...PERSISTED_KEY_ROOTS].sort()).toEqual(["earnings", "history", "me", "notifications", "restaurants", "shops", "wallet"]);
   });
 });
 

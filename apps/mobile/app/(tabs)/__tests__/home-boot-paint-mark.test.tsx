@@ -39,6 +39,11 @@ jest.mock("../../../src/api/orders", () => ({
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
 }));
+// Shops & Pharmacy (D-58): switched off here so the screen never fetches /shops — an unmocked request
+// would flip react-query's process-wide onlineManager offline for every later test.
+jest.mock("../../../src/net/use-service-flags", () => ({
+  useServiceFlags: () => ({ shopsEnabled: false, pharmacyEnabled: false }),
+}));
 
 const mockEnqueueBoot = jest.fn();
 jest.mock("../../../src/telemetry/rum", () => ({
