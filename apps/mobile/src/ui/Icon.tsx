@@ -66,6 +66,18 @@ import Share2 from "lucide-react-native/dist/cjs/icons/share-2";
 import ShieldCheck from "lucide-react-native/dist/cjs/icons/shield-check";
 import Undo2 from "lucide-react-native/dist/cjs/icons/undo-2";
 import X from "lucide-react-native/dist/cjs/icons/x";
+import Settings from "lucide-react-native/dist/cjs/icons/settings";
+import LogOut from "lucide-react-native/dist/cjs/icons/log-out";
+import Globe from "lucide-react-native/dist/cjs/icons/globe";
+import Lock from "lucide-react-native/dist/cjs/icons/lock";
+import ArrowLeftRight from "lucide-react-native/dist/cjs/icons/arrow-left-right";
+import Siren from "lucide-react-native/dist/cjs/icons/siren";
+import Hourglass from "lucide-react-native/dist/cjs/icons/hourglass";
+import Smartphone from "lucide-react-native/dist/cjs/icons/smartphone";
+import PhoneOff from "lucide-react-native/dist/cjs/icons/phone-off";
+import House from "lucide-react-native/dist/cjs/icons/house";
+import ImageIcon from "lucide-react-native/dist/cjs/icons/image";
+import Download from "lucide-react-native/dist/cjs/icons/download";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -134,6 +146,19 @@ const ICONS = {
   "share-2": Share2,
   "shield-check": ShieldCheck,
   "undo-2": Undo2,
+  // Rider v2 (ledger D-54): Account / Settings / Help, the role switch, gates, the problem sheet.
+  "settings": Settings,
+  "log-out": LogOut,
+  "globe": Globe,
+  "lock": Lock,
+  "arrow-left-right": ArrowLeftRight,
+  "siren": Siren,
+  "hourglass": Hourglass,
+  "smartphone": Smartphone,
+  "phone-off": PhoneOff,
+  "house": House,
+  "image": ImageIcon,
+  "download": Download,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

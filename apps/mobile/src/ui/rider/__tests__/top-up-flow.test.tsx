@@ -1,7 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { Topup } from "@lynia/shared";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { TopUpFlow } from "../TopUpFlow";
+
+const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
 /**
  * The rider top-up flow is a REAL client of `POST /wallet/topups` + `GET /wallet/topups/:id`. It
@@ -75,9 +78,21 @@ function render(): ReactTestRenderer {
   let root!: ReactTestRenderer;
   act(() => {
     root = create(
-      <QueryClientProvider client={qc}>
-        <TopUpFlow minTopUp={5} maxTopUp={50} onExit={() => {}} />
-      </QueryClientProvider>,
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <QueryClientProvider client={qc}>
+          <TopUpFlow
+            minTopUp={2}
+            maxTopUp={50}
+            ratePct={10}
+            avgFare={3}
+            defaultProvider="ecocash"
+            defaultPhone="0771234567"
+            balance={12.6}
+            onExit={() => {}}
+            onCallSupport={() => {}}
+          />
+        </QueryClientProvider>
+      </SafeAreaProvider>,
     );
   });
   mounted.push(root);
@@ -94,14 +109,15 @@ function texts(tree: ReactTestRenderer): string {
     .join(" | ");
 }
 
-/** Fill the phone field and press the submit button — the only route into an intent. */
+/** Walk Provider → Amount → Phone (all prefilled) and press "Request …" — the only route into an intent. */
 async function submit(tree: ReactTestRenderer): Promise<void> {
-  const phoneField = tree.root.findAll((n) => n.props?.placeholder === "0771234567")[0];
-  act(() => phoneField?.props.onChangeText("0771234567"));
-  const button = tree.root.findAll((n) => typeof n.props?.label === "string" && n.props.label.startsWith("Request"))[0];
-  await act(async () => {
-    button?.props.onPress();
-  });
+  const press = (match: (l: string) => boolean): void => {
+    const b = tree.root.findAll((n) => typeof n.props?.label === "string" && match(n.props.label) && typeof n.props.onPress === "function")[0];
+    act(() => b?.props.onPress());
+  };
+  press((l) => l === "Next");
+  press((l) => l === "Next");
+  press((l) => l.startsWith("Request"));
   await flush();
 }
 
@@ -129,7 +145,7 @@ describe("TopUpFlow — the server decides the outcome", () => {
 
     expect(mockCreateTopup).toHaveBeenCalledTimes(1);
     const body = mockCreateTopup.mock.calls[0]?.[0] as { amount: number; rail: string; idempotencyKey?: string };
-    expect(body.amount).toBe(10);
+    expect(body.amount).toBe(5);
     expect(body.rail).toBe("ecocash");
     // BH-09: a timeout+retry within one attempt must replay the same key, so the server returns the
     // original pending intent instead of opening a second one against the same money.
@@ -145,8 +161,8 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await submit(tree);
 
     const t = texts(tree);
-    expect(t).toContain("Check your phone");
-    expect(t).not.toContain("added to your balance");
+    expect(t).toContain("Approve $5.00 on your phone");
+    expect(t).not.toContain("Top-up done");
   });
 
   it("renders the success ONLY on a server-reported succeeded, and clears the marker", async () => {
@@ -156,7 +172,7 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await submit(tree);
     await flush();
 
-    expect(texts(tree)).toContain("added to your balance");
+    expect(texts(tree)).toContain("Top-up done");
     expect(mockClearPendingTopup).toHaveBeenCalled();
   });
 
@@ -170,8 +186,8 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await flush();
 
     const t = texts(tree);
-    expect(t).toContain("The request timed out");
-    expect(t).not.toContain("added to your balance");
+    expect(t).toContain("Top-up didn't go through");
+    expect(t).not.toContain("Top-up done");
     expect(mockClearPendingTopup).toHaveBeenCalled();
   });
 
@@ -183,8 +199,8 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await flush();
 
     const t = texts(tree);
-    expect(t).toContain("The payment was declined");
-    expect(t).not.toContain("added to your balance");
+    expect(t).toContain("Top-up didn't go through");
+    expect(t).not.toContain("Top-up done");
   });
 
   it("surfaces a create failure instead of pretending an intent exists", async () => {
@@ -195,15 +211,17 @@ describe("TopUpFlow — the server decides the outcome", () => {
 
     // Curated copy, not the raw "offline" — and crucially the flow stays on the form rather than
     // advancing to a wait state for an intent that was never opened.
-    expect(mockFail).toHaveBeenCalledWith("We couldn't start that top-up. Check your connection and try again.");
-    expect(texts(tree)).not.toContain("Check your phone");
+    expect(mockFail).toHaveBeenCalledWith("Top-up didn't go through");
+    expect(texts(tree)).not.toContain("Approve $5.00 on your phone");
     expect(mockSavePendingTopup).not.toHaveBeenCalled();
   });
 
-  it("keeps the support-call route on the amount step — the only credit path that works today", () => {
+  it("offers Call support on the failed terminal — the credit path that works without a rail", async () => {
+    mockCreateTopup.mockResolvedValue(topup());
+    mockGetTopup.mockResolvedValue(topup({ status: "expired" }));
     const tree = render();
-    const t = texts(tree);
-    expect(t).toContain("TOP UP BY PHONE");
-    expect(t).toContain("LyniaGo support");
+    await submit(tree);
+    await flush();
+    expect(tree.root.findAll((n) => n.props?.label === "Call support").length).toBeGreaterThan(0);
   });
 });

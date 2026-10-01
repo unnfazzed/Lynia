@@ -1,139 +1,116 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useRouter } from "expo-router";
-import React from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useMemo, useState } from "react";
+import { SectionList, Text, View } from "react-native";
 import type { OrderHistoryRow } from "../../src/api/orders";
-import { buildRebroadcastParams } from "../../src/logic/order-draft";
-import { formatMoney } from "../../src/logic/money";
+import { groupByDay, isRiderRow, matchesService, paidFare, type ServiceFilter, summarise } from "../../src/logic/rider-earnings";
+import { useNow } from "../../src/logic/use-now";
+import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { AppBar, Button, Card, EmptyState, Icon, orderStatusTone, Screen, SkeletonRows, StatusPill, statusPillLabel, Tappable } from "../../src/ui";
+import { AppScreen, Button, SkeletonRows, Tappable } from "../../src/ui";
+import { Notice } from "../../src/ui/send/kit";
+import { hhmm, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { CentreState, Chips, LRow, PushHeader, RLabel } from "../../src/ui/rider/kit";
 
-// The rider-side subtitle used to hardcode "Delivered" for every trip regardless of outcome, so a
-// bailed-on or undelivered job read "Delivered" right next to a StatusPill saying otherwise on the
-// same row. Route it through the same status labels the pill already uses.
-function riderOutcomeLabel(status: string): string {
-  return status === "delivered" || status === "completed" ? "Delivered" : statusPillLabel(status);
+function title(o: OrderHistoryRow): string {
+  const from = o.orderType === "merchant" ? o.merchantName || o.pickup.landmark : o.pickup.landmark;
+  return `${from || R.stPickup} → ${o.dropoff.landmark || R.stDrop}`;
 }
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+function outcome(o: OrderHistoryRow): string {
+  if (o.status === "delivered" || o.status === "completed") return R.delivered;
+  if (o.status === "undelivered") return R.undelivered;
+  if (o.status === "cancelled") return R.cancelled;
+  return o.status;
 }
 
-function Row({ o, onPress, onReorder }: { o: OrderHistoryRow; onPress: () => void; onReorder?: () => void }): React.ReactElement {
-  const fare = o.agreedFare ?? o.proposedFare;
-  return (
-    <Card>
-      <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open trip ${o.pickup.landmark || "pickup"} to ${o.dropoff.landmark || "drop-off"}`}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ flex: 1, paddingRight: tokens.space.sm }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
-              {o.pickup.landmark || "Pickup"} → {o.dropoff.landmark || "Drop-off"}
-            </Text>
-            <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2, fontVariant: ["tabular-nums"] }}>
-              {fmtDate(o.createdAt)} · {o.role === "customer" ? "Sent" : riderOutcomeLabel(o.status)}
-              {o.counterpartyName ? ` · ${o.counterpartyName}` : ""}
-              {o.rating ? ` · ★ ${o.rating.score}` : ""}
-            </Text>
-          </View>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
-            <View style={{ height: 4 }} />
-            <StatusPill status={o.status} tone={orderStatusTone(o.status)} />
-          </View>
-        </View>
-      </Tappable>
-      {/* Reorder (customer trips only): one tap re-opens the compose form prefilled with this trip's
-          route, item and price — the "order again" shortcut every delivery app leans on for repeat runs. */}
-      {onReorder ? (
-        <Pressable
-          onPress={onReorder}
-          accessibilityRole="button"
-          accessibilityLabel="Send this parcel again"
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: tokens.space.sm,
-            minHeight: tokens.touchTargetMin,
-            marginTop: tokens.space.sm,
-            borderRadius: tokens.radius.button,
-            borderWidth: 1,
-            borderColor: tokens.color.line,
-            backgroundColor: pressed ? tokens.color.accentWash : "transparent",
-          })}
-        >
-          <Icon name="package" size={16} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.accentText }}>Send again</Text>
-        </Pressable>
-      ) : null}
-    </Card>
-  );
-}
-
+/**
+ * Job history (Rider v2 C12) and Trip history (C13), split by side (ledger D-54): `?side=rider` lists
+ * only jobs the rider carried, with the fare (green) and a this-week summary; `?side=customer` lists
+ * only orders the customer placed, with the price in ink. Rows group by day; a row opens its order.
+ */
 export default function HistoryScreen(): React.ReactElement {
   const router = useRouter();
-  // Shared warm-paint feed (load + persist + offline-paused rule live in one place).
-  const { rows, showingStale, isFetching, isError, hasLiveData, refetch } = useHistoryFeed();
+  const { side } = useLocalSearchParams<{ side?: string }>();
+  const rider = side === "rider";
+  const now = useNow();
+  const { merchantDispatchAutoEnabled } = useFeatureFlags();
+  const { rows, showingStale, isFetching, hasLiveData, refetch } = useHistoryFeed();
+  const [filter, setFilter] = useState<ServiceFilter>("all");
 
-  const reorder = (o: OrderHistoryRow): void => {
-    router.push({
-      pathname: "/send",
-      params: buildRebroadcastParams({ pickup: o.pickup, dropoff: o.dropoff, itemDesc: o.itemDesc, proposedFare: o.proposedFare, note: o.note, createdAt: o.createdAt }),
-    });
+  const mine = useMemo(() => (rows ?? []).filter((r) => (rider ? isRiderRow(r) : r.role === "customer")), [rows, rider]);
+  const shown = useMemo(() => (rider ? mine.filter((r) => matchesService(r, filter)) : mine), [mine, rider, filter]);
+  const sections = useMemo(
+    () => groupByDay(shown, (r) => new Date(r.createdAt), now, R.todayH, R.yesterday).map((g) => ({ title: g.label, data: g.items })),
+    [shown, now],
+  );
+  const week = rider ? summarise(mine, "week", now) : null;
+
+  const renderRow = (o: OrderHistoryRow, first: boolean): React.ReactElement => {
+    const at = new Date(o.createdAt);
+    const time = Number.isNaN(at.getTime()) ? "" : rider ? hhmm(at) : at.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const fare = paidFare(o);
+    const price = Number(o.agreedFare ?? o.proposedFare);
+    return (
+      <Tappable onPress={() => router.push(`/order/${o.id}`)} accessibilityRole="button">
+        <LRow
+          first={first}
+          icon={o.orderType === "merchant" ? "utensils" : "package"}
+          title={title(o)}
+          meta={RF.lMeta(outcome(o), time)}
+          amount={rider && fare != null ? fare : undefined}
+          text={rider ? (fare == null ? R.noFare : undefined) : usd(Number.isFinite(price) ? price : 0)}
+        />
+      </Tappable>
+    );
   };
 
-  // A customer can re-send any parcel they sent — offer the shortcut on their own trips.
-  const canReorder = (o: OrderHistoryRow): boolean => o.role === "customer";
-
   return (
-    <Screen>
-      {/* Kit AppBar (pushed-screen header) — title + sub live in the bar; no in-body Heading. */}
-      <AppBar title="Your trips" sub="Every parcel you've sent or delivered" onBack={() => router.back()} />
-      {rows && rows.length > 0 ? (
-        // B-O1: was a ScrollView + `.map()` over the full (server-capped 50-row) history — FlatList
-        // windows the concurrently-mounted rows to what's on-screen, matching the food-catalog
-        // precedent (B-T3/LC-B07), for the Go-class scroll-smoothness win rather than a memory one.
-        <FlatList
-          data={rows}
+    <AppScreen banner={<PushHeader title={rider ? R.tJobHist : R.tTripHist} onBack={() => router.back()} />}>
+      {rows ? (
+        <SectionList
+          sections={sections}
           keyExtractor={(o) => o.id}
-          renderItem={({ item }) => (
-            <Row o={item} onPress={() => router.push(`/order/${item.id}`)} onReorder={canReorder(item) ? () => reorder(item) : undefined} />
-          )}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 }}
           showsVerticalScrollIndicator={false}
-          // Painting the cached list because live data is absent — set the "may be stale" expectation,
-          // and keep a Retry when the live fetch actually errored (it won't self-heal without a
-          // reconnect event, so the manual retry must survive even while we show cached rows).
           ListHeaderComponent={
-            showingStale ? (
-              <View style={{ marginBottom: tokens.space.sm }}>
-                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                  Showing your last saved trips — we&apos;ll refresh when you&apos;re back online.
-                </Text>
-                {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
-              </View>
-            ) : null
+            <View style={{ gap: 12, marginBottom: 12 }}>
+              {showingStale ? <Notice icon="wifi-off" text="Showing your last saved trips — we'll refresh when you're back online." /> : null}
+              {week ? (
+                <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 }}>
+                  <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
+                    {RF.histWeek(week.jobs, week.total)}
+                  </Text>
+                </View>
+              ) : null}
+              {rider && merchantDispatchAutoEnabled ? (
+                <Chips
+                  list={[
+                    { id: "all", label: R.all },
+                    { id: "parcel", label: R.parcels },
+                    { id: "food", label: R.foodF },
+                  ]}
+                  value={filter}
+                  onChange={setFilter}
+                />
+              ) : null}
+              {!rider && shown.length === 0 && hasLiveData ? <Text style={{ fontSize: 14, color: tokens.color.muted }}>{R.tripsEmpty}</Text> : null}
+            </View>
           }
-          ListFooterComponent={<View style={{ height: tokens.space.xxl }} />}
+          renderSectionHeader={({ section }) => <RLabel style={{ fontSize: 11, marginTop: 8 }}>{section.title}</RLabel>}
+          renderItem={({ item, index }) => renderRow(item, index === 0)}
         />
       ) : isFetching ? (
-        // A genuine first load is in flight — skeleton (NOT shown for the offline paused state below).
-        <SkeletonRows />
-      ) : hasLiveData ? (
-        // Live data arrived and it's empty — a genuine "no trips".
-        <EmptyState icon="package" title="No trips yet" message="Your sent and delivered parcels will show up here.">
-          {/* push, not replace: keep this screen beneath so back returns here (and the tab shell
-              stays reachable), instead of swapping the pushed screen out of the stack. */}
-          <Button label="Send a parcel" onPress={() => router.push("/send")} />
-        </EmptyState>
+        <View style={{ padding: 16 }}>
+          <SkeletonRows />
+        </View>
       ) : (
-        // No data and NOT fetching — an errored fetch or the offline paused state with no cache. Offer a
-        // retry rather than an endless skeleton or a misleading "No trips yet".
-        <EmptyState icon="wifi-off" title="Couldn't load your trips" message="Check your connection and try again.">
+        <CentreState icon="wifi-off" title="Couldn't load your trips" body="Check your connection and try again.">
           <Button label="Retry" onPress={refetch} loading={isFetching} />
-        </EmptyState>
+        </CentreState>
       )}
-    </Screen>
+    </AppScreen>
   );
 }
+

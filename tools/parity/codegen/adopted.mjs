@@ -1863,108 +1863,28 @@ export const ADOPTED = [
         state: "data",
         key: "RJM.money",
         reason:
-          "LIVE-VS-STATIC multi-state + a fabricated-figure gap (the render-helper/SHELL wrapper wall is GONE — Foundation-F.a unwraps `S()`, and `treeOfNamedComponent('money')` now extracts cleanly to `SCREEN( BOX( APPBAR, BOX( CARD( TEXT, BOX(MONEY, TEXT), TEXT, BUTTON ), CASHSTRIP, … ) ) )`). What still blocks it: money.tsx is a live MULTI-STATE container, not the static single-state mock — it early-returns a `SkeletonRows` loading state and an `EmptyState`+Retry error state the mock never draws, renders a live `pendingTopupBanner` recovery Card superset (an app-kill-during-top-up reconciliation surface, money.tsx:223 — not in the mock), draws the balance as a bare `<Text>{formatMoney(balance)}</Text>` where the mock draws `<Money v=\"4.60\" size={28}>` BESIDE a fabricated '≈ 30 more jobs' estimate the app HONESTLY omits (no such projection exists — so the mock's balance hero `div(MONEY, TEXT)` cannot be adopted 1:1 without either fabricating the projection or dropping the second child and diverging), switches the hero Card accent→dangerWash with four conditional copy branches (negative/belowFloor/gettingLow/healthy) for the one static mock line, and gives the ledger an honest empty-state + a 'Load older' pagination control (server caps pages at 25) the mock's fixed 4-row LEDGER never shows. The mock ALSO draws a `CashStrip` (yours vs owed-to-a-kitchen) composite the app's Money tab does not carry as a single tag. Wallet/money is SENSITIVE — behaviour kept byte-identical. Adoptable once the mock's static data-state sub-tree earns a boundary separable from the loading/error/recovery-banner branches AND the fabricated '30 more jobs' projection is either dropped from the mock or backed by a real estimator.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the Money tab is now the Rider v2 handoff's M1–M12 — MintTop, an EARNINGS card first (Today | This week Seg, 40/700 total, job counts, the week strip), the COMMISSION BALANCE card second with Top up inline, cash held, then one HISTORY list (fares merged with commission and top-ups, day groups, chips, infinite scroll). The gallery `money` draws the balance hero first and a commission-only ledger; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 Money tab.",
       },
     ],
   },
   {
-    // ── RJM.account — the rider Account tab (app/rider/(tabs)/account.tsx). The FIRST adopted screen of
-    // the rider-one-app.jsx family, unblocked by Foundation-F.a: the normalizer now unwraps the mock's
-    // `S(<div>…</div>, { tab:'acct' })` render-helper (folding the DS AppScreen/SHELL to SCREEN) and the
-    // transpiler lowers `S()` to `<Screen>`, so the whole-screen view extracts. The mock `account` is
-    // `Screen( div( AppBar, Pad( Card(identity row), Card(settings.map) ) ) )` — an identity Card + a
-    // 5-row settings Card, plain divs + DS primitives (Card/Icon/StatusPill), no W-KIT/map. The data seam
-    // wires the live `['me']` identity (name, rating/jobs/KYC line — honest-empty '★ new' until the first
-    // rating lands) and the settings rows + their route taps; each settings row gains a transparent
-    // Pressable(→its route). The identity Card gains NOTHING — it stays the plain, inert Card the mock
-    // draws (D-26, owner 2026-08-17; it carried a Pressable into /profile until then, see the bind's
-    // NOTE below — do not re-add one). The always-
-    // drawn status pill (the mock draws it) reflects the rider's REAL online/offline state, not a frozen
-    // 'online'. The container early-returns a SkeletonList loading state (glue, not gated) — the static
-    // mock draws no loading variant, so there is no separate state-view to guard for it.
+    // ── RJM.account — the rider Account tab (app/rider/(tabs)/account.tsx). Until 2026-10-01 this was
+    // adopted as a whole-screen view (account.view.tsx) generated from `rider-one-app.jsx :: account`.
+    // docs/DESIGN-DEVIATIONS.md D-54 made the owner's Rider v2 handoff (packages/design/handoff/rider-v2/)
+    // the authority for the rider app and BOTH Account tabs: the mint top card, a tappable identity card,
+    // the Customer | Rider toggle, the standing card and four rows. The generated view was deleted with
+    // the old tree; the gallery key is recorded here as a SUPERSEDED deferral until an export redraws it.
     key: "RJM.account",
     container: "apps/mobile/app/rider/(tabs)/account.tsx",
     mockFile: "packages/design/explorations/journey/rider-one-app.jsx",
     uiImport: "../../../src/ui",
-    states: [
+    states: [],
+    deferred: [
       {
         state: "data",
         key: "RJM.account",
-        component: "account",
-        componentName: "RiderAccountView",
-        viewFile: "apps/mobile/app/rider/(tabs)/account.view.tsx",
-        propsParam: "{ name, identityLine, online, rows, onRowPress }: RiderAccountViewProps",
-        propsType: [
-          "/** A settings row: [icon, label, sub] — mirrors the mock's `[ic, l, s2]` tuple verbatim. */",
-          "export type RiderAccountRow = [IconName, string, string];",
-          "export type RiderAccountViewProps = {",
-          "  name: string;",
-          "  /** '★ 4.9 · 312 jobs · verified' — the rating/jobs/KYC line, honest-empty until data lands. */",
-          "  identityLine: string;",
-          "  /** Whether the rider is online now — drives the always-drawn status pill's tone + label. */",
-          "  online: boolean;",
-          "  rows: RiderAccountRow[];",
-          "  onRowPress: (index: number) => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr, wrap }) => {
-          return {
-            // The mock's frozen identity text → the live name / rating line (leaf text swaps; the
-            // structural normalizer drops text content, so these never move the tree).
-            JSXText(path) {
-              const v = path.node.value.trim();
-              if (v === "Tendai M.") path.replaceWith(t.jsxExpressionContainer(expr("name")));
-              else if (v === "★ 4.9 · 312 jobs · verified") path.replaceWith(t.jsxExpressionContainer(expr("identityLine")));
-            },
-            // `...TAB` is a mock-local module const (`{ fontVariantNumeric: "tabular-nums" }`) NOT in the
-            // extracted component — replace the spread with RN's `fontVariant:["tabular-nums"]` so the
-            // rating line keeps tabular figures without an undefined reference. A style leaf → invisible
-            // to the structural diff.
-            ObjectExpression(path) {
-              const tab = path.node.properties.filter(
-                (p) => p.type === "SpreadElement" && p.argument.type === "Identifier" && p.argument.name === "TAB",
-              );
-              if (!tab.length) return;
-              path.node.properties = path.node.properties.filter((p) => !tab.includes(p));
-              path.node.properties.push(t.objectProperty(t.identifier("fontVariant"), t.arrayExpression([t.stringLiteral("tabular-nums")])));
-            },
-            // The status pill is ALWAYS drawn (the mock draws it); wire its tone/label to the rider's real
-            // online state (honest, not the mock's frozen 'online'). Leaf props → structurally invisible.
-            JSXOpeningElement(path) {
-              if (path.node.name.name !== "StatusPill") return;
-              path.node.attributes = path.node.attributes.filter(
-                (a) => !(a.type === "JSXAttribute" && ["status", "tone", "dot"].includes(a.name.name)),
-              );
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("status"), t.jsxExpressionContainer(expr('online ? "Online" : "Offline"'))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("tone"), t.jsxExpressionContainer(expr('online ? "online" : "offline"'))));
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("dot"), null));
-            },
-            // Settings rows: swap the mock's frozen tuple array for the live `rows` prop, index the map,
-            // and wrap each row in a Tappable(onRowPress(i)) — a transparent interaction wrapper the
-            // guardrail sees through. The React key moves to the wrap.
-            CallExpression(path) {
-              const callee = path.node.callee;
-              if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
-              callee.object = expr("rows");
-              const arrow = path.node.arguments[0];
-              if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
-              if (arrow.params.length < 2) arrow.params.push(t.identifier("i"));
-              const row = arrow.body.type === "JSXElement" ? arrow.body : null;
-              if (!row) return;
-              const keyAttr = row.openingElement.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
-              row.openingElement.attributes = row.openingElement.attributes.filter((a) => a !== keyAttr);
-              const wrapped = wrap(row, "Tappable", `onPress={() => onRowPress(i)} accessibilityRole="button"`);
-              if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
-              arrow.body = wrapped;
-            },
-            // NOTE: the identity Card is deliberately NOT wrapped in a Pressable. It used to be — a
-            // transparent tap opening `/profile?side=rider` — until the owner's 2026-08-17 instruction
-            // ("when I click the profile under accounts it must not be clickable to display another
-            // window for both rider and customer sides"), ledgered as D-26. The mock draws a plain,
-            // inert Card, so dropping the wrap moves this view TOWARDS `rider-one-app.jsx :: account`,
-            // not away from it: there is no deviation left to sanction here.
-          };
-        },
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-54, owner instruction 2026-10-01): the rider Account is now the Rider v2 handoff's C1 — MintTop, a tappable IdentityCard (avatar 52, Verified tag, rating line), the 48px Customer | Rider Seg, the Standing card (acceptance / rating / strikes) and four rows (Job history · Notifications · Help & support · Settings). The gallery `account` draws AppBar + identity Card + five settings rows and a status pill; a structural snapshot against it would assert the structure D-54 retired. Re-adoptable when a gallery export draws the v2 Account.",
       },
     ],
   },

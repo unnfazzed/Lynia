@@ -199,14 +199,14 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C8·1 | `LJ profile` | Account | account cluster align (`docs/parity/PHASE3-account.md`) · **target superseded** by `docs/DESIGN-DEVIATIONS.md` D-15 · row set set by D-22 | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23), which has had no in-app entry point since D-26 |
+| ⏭ | C8·1 | `LJ profile` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C6–C11 (customer Account) | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23), which has had no in-app entry point since D-26 |
 | 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
-| 👁 | C8·6 | `LJ settings` | Settings | account cluster align (`docs/parity/PHASE3-account.md`) · row grammar harmonised per D-15 · role-independent per D-22 | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
-| ⬜ | C8·7 | `LJ settings_perms` | Settings · real permissions | | |
-| ⬜ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | | |
+| ⏭ | C8·6 | `LJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S4 (sectioned Settings, customer) | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
+| ⏭ | C8·7 | `LJ settings_perms` | Settings · real permissions | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1/S3 (permissions read from the phone) | |
+| ⏭ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1 | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |
 | ⬜ | C8·10 | `LJ delete_account` | Delete account | | |
 | ⬜ | C8·11 | `LJ delete_final` | Delete · final confirm | | |
@@ -360,21 +360,21 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | R6·1 | `RJM money` | Money tab  [BOTH] | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) | accent-bordered balance card, cash-held strip, bare ledger rows; `yours` unmodelled at tab level (deviation) |
+| ⏭ | R6·1 | `RJM money` | Money tab  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 M1–M12 (earnings first, balance, cash held, merged history) | accent-bordered balance card, cash-held strip, bare ledger rows; `yours` unmodelled at tab level (deviation) |
 | ⬜ | R6·2 | `RJM gate_topup` | Gate · top up to keep riding  [BOTH] | | |
-| 👁 | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | amount field + hint, 5/10/20 preset chips, phone field, "Pay with" rails, request CTA (via `TopUpSimulator`, test-build only); SIMULATED strip + neutral rail marks are honest test-build markers (deviation) |
-| ⬜ | R6·4 | `RJ topup_wait` | Payment prompt · wait  [BOTH] | | |
-| ⬜ | R6·5 | `RJ topup_success` | Top up · success  [BOTH] | | |
-| ⬜ | R6·6 | `RJ wallet_low` | Balance low  [BOTH] | | |
+| ⏭ | R6·3 | `RJ topup_amount` | Top up · amount  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T1–T3 (Provider → Amount → Phone) | amount field + hint, 5/10/20 preset chips, phone field, "Pay with" rails, request CTA (via `TopUpSimulator`, test-build only); SIMULATED strip + neutral rail marks are honest test-build markers (deviation) |
+| ⏭ | R6·4 | `RJ topup_wait` | Payment prompt · wait  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T4 (Approve) | |
+| ⏭ | R6·5 | `RJ topup_success` | Top up · success  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T5 | |
+| ⏭ | R6·6 | `RJ wallet_low` | Balance low  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 M5–M7 (balance card states) | |
 
 ### R7 · Account & support
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | R7·1 | `RJM account` | Account | rider tabs cluster align (`docs/parity/PHASE5-ridertabs.md`, `tools/parity/out/phase5_ridertabs.png`) · +Settings row per D-22 | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Since D-26 the identity card is INERT (the mock draws a plain Card); sign-out and the rest are reached through the `Settings` row |
+| ⏭ | R7·1 | `RJM account` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C1–C5 (identity card, Customer | Rider toggle, standing, four rows) | identity card (`/auth/me`) + tile rows; the mock's five keep their drawn order, then `Settings` (D-22) and `Switch to customer` (D-16). Since D-26 the identity card is INERT (the mock draws a plain Card); sign-out and the rest are reached through the `Settings` row |
 | 👁 | R7·2 | `RJ bike_docs` | Bike & documents | rider onboarding cluster align (`docs/parity/PHASE5-rideronboard.md`, `tools/parity/out/phase5_rideronboard.png`) | in-body Heading/Sub (moved out of the AppBar), 3 doc rows + status pills, surface footer; ID shown fully masked + all-rows-pilled (deviations) |
-| ⬜ | R7·3 | `RJ history` | Job history  [BOTH] | | |
-| ⬜ | R7·4 | `RJ settings` | Settings | | |
+| ⏭ | R7·3 | `RJ history` | Job history  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C12 (Job history, rider jobs only) | |
+| ⏭ | R7·4 | `RJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1–S3 (sectioned Settings) | |
 | ⬜ | R7·5 | `RJ help` | Help & support | | |
 | ⬜ | R7·6 | `RJM strikes` | Reliability · strikes | | |
 
@@ -418,7 +418,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | R9·22 | `RJ gate_cooldown` | Gate · cooldown | | |
 | ⬜ | R9·23 | `RJ gate_banned` | Gate · account closed | | |
 | ⬜ | R9·24 | `RJ gate_kyc_locked` | Gate · verification locked | | |
-| ⬜ | R9·25 | `RJ topup_declined` | Top up · declined  [BOTH] | | |
+| ⏭ | R9·25 | `RJ topup_declined` | Top up · declined  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T6 | |
 | ⬜ | R9·26 | `RJ offline` | Offline banner | | |
 | ⬜ | R9·27 | `RJ on_hold` | Account on hold | | |
 | ⬜ | R9·28 | `RJ force_update` | Force update | | |

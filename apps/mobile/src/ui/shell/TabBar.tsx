@@ -14,7 +14,7 @@ export type AppTab = { id: string; icon: IconName; label: string };
  * press needs no id→route lookup table.
  */
 export const APP_TABS: AppTab[] = [
-  { id: "home", icon: "store", label: "Home" },
+  { id: "home", icon: "house", label: "Home" },
   { id: "orders", icon: "receipt", label: "Orders" },
   { id: "account", icon: "user", label: "Account" },
 ];
@@ -27,7 +27,7 @@ export const APP_TABS: AppTab[] = [
  */
 export const RIDER_TABS: AppTab[] = [
   { id: "index", icon: "bike", label: "Jobs" },
-  { id: "money", icon: "banknote", label: "Money" },
+  { id: "money", icon: "wallet", label: "Money" },
   { id: "account", icon: "user", label: "Account" },
 ];
 
@@ -54,7 +54,10 @@ export function TabBar({
             accessibilityState={{ selected: on }}
             style={styles.tab}
           >
-            <Icon name={t.icon} size={21} color={on ? tokens.color.accentText : tokens.color.muted} />
+            {/* Rider v2 (ledger D-54): the active tab's icon sits in a 52×26 accent-wash pill. */}
+            <View style={on ? styles.pillOn : styles.pill}>
+              <Icon name={t.icon} size={20} color={on ? tokens.color.accentText : tokens.color.muted} />
+            </View>
             <Text style={on ? styles.labelOn : styles.labelOff}>{t.label}</Text>
           </Tappable>
         );
@@ -80,7 +83,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: tokens.color.line,
   },
-  tab: { flex: 1, alignItems: "center", gap: 3, paddingTop: 8, paddingBottom: 6 },
-  labelOn: { fontSize: 11.5, fontWeight: "700", color: tokens.color.accentText },
-  labelOff: { fontSize: 11.5, fontWeight: "600", color: tokens.color.muted },
+  tab: { flex: 1, minHeight: 60, alignItems: "center", justifyContent: "center", gap: 3, paddingVertical: 4 },
+  pill: { width: 52, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  pillOn: { width: 52, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accentWash },
+  labelOn: { fontSize: 12, fontWeight: "700", color: tokens.color.accentText },
+  labelOff: { fontSize: 12, fontWeight: "600", color: tokens.color.muted },
 });

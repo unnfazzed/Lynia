@@ -1,386 +1,283 @@
-import { formatPhoneLocal, TOPUP_WINDOW_MS, type TopupRail } from "@lynia/shared";
-import { Tappable } from "../Tappable";
+import { TOPUP_WINDOW_MS } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
-import { formatMoney } from "../../logic/money";
+import { ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { type TopupProviderId, TOPUP_PROVIDERS, providerName } from "../../logic/rider-prefs";
 import { validateTopupAmount } from "../../logic/topup";
 import { useTopUp } from "../../query/use-topup";
 import { uuidV4FromSeed } from "../../util";
-import { Button, Card, Field, Icon, Sub, useActionError } from "../index";
-import { SupportCallRow } from "../safety";
-import { CountdownRing, formatCountdown } from "../food/CountdownRing";
+import { Icon } from "../Icon";
+import { Tappable } from "../Tappable";
+import { useActionError } from "../index";
+import { Countdown, CtaBar, CtaButton } from "../order/kit";
+import { OrderHeader } from "../order/panels";
+import { SEND_COPY, SendField } from "../send/kit";
+import { RIDER_COPY as R, RF, usd } from "./copy";
+import { CentreState, Progress, RStepBar } from "./kit";
 
 /**
- * The kit's self-serve top-up flow (`explorations/journey/rider-screens-wallet.jsx` — `TopupAmount`,
- * `TopupWait`, `TopupSuccess`, `TopupDeclined`), wired to the real wallet API.
- *
- * ─── THE ONE THING TO UNDERSTAND ABOUT THIS SCREEN ────────────────────────────────────────────────
- * It is a view over `useTopUp` (`src/query/use-topup.ts`), which owns the whole data lifecycle — the
- * real `TopUp` intent, the poll, the wallet invalidation and the durable recovery marker. This file
- * deliberately does no fetching of its own: the `mobile-ui-no-api` boundary
- * (`.dependency-cruiser.cjs`) holds the design-system layer to props and hook state, and CI fails a
- * new `src/ui/ → src/api/` edge. Reach for the hook, never the api module.
- *
- * What that buys is the property that matters here: this screen renders whichever terminal state THE
- * SERVER reports. A success appears only when the server says `succeeded`, which happens only when
- * something has called `WalletService.creditFromTopup` and actually moved the balance.
- *
- * It replaced a mock (`TopUpSimulator`) that drew these four screens with no backend at all and let
- * the rider pick their own outcome — including a success that asserted a credit which never happened.
- * Nothing here can do that: the outcome is not the client's to choose.
- *
- * ─── WHAT IS STILL MISSING, AND WHAT THAT LOOKS LIKE TODAY ────────────────────────────────────────
- * The APP side is complete. The SERVER side is not: `creditFromTopup` — the only code path that can
- * confirm an intent — still has no caller, because no payment-rail client exists. So no prompt reaches
- * the rider's phone, nothing confirms, and every real attempt runs the 90-second window down and comes
- * back `expired`. That is the honest rendering of the actual system state, and it is why the amount
- * step keeps a support-call card: calling support is the only route to a credit that works today.
- *
- * **When a rail lands and calls `creditFromTopup`, this screen starts working with no change here.**
- * That is the point of wiring it now — `succeeded` / `declined` / `expired` are already handled, the
- * balance and ledger are already invalidated on success, and the durable `PendingTopup` marker already
- * survives an app kill mid-wait (the Money tab reconciles it on next open).
+ * Top up (Rider v2 T1–T6, ledger D-54): the Send v2 step bar — Provider → Amount → Phone → Approve —
+ * then a terminal. A view over `useTopUp` (`src/query/use-topup.ts`), which owns the real intent, the
+ * poll, the wallet invalidation and the durable recovery marker; this file does no fetching of its own
+ * (the `mobile-ui-no-api` boundary). It renders whichever outcome THE SERVER reports: a success appears
+ * only on `succeeded`, i.e. only after something credited the balance.
  */
+const STEPS = [R.tsProvider, R.tsAmount, R.tsPhone, R.tsApprove] as const;
+const QUICK = [2, 5, 10, 20];
 
-const RAILS: { id: Exclude<TopupRail, "manual">; name: string; note: string }[] = [
-  { id: "ecocash", name: "EcoCash", note: "Approve on your phone" },
-  { id: "innbucks", name: "InnBucks", note: "Approve on your phone" },
-  { id: "omari", name: "O'mari", note: "Approve on your phone" },
-];
-const QUICK_AMOUNTS = [5, 10, 20];
+function Header({ step, onBack }: { step: number | null; onBack: () => void }): React.ReactElement {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ paddingTop: insets.top, backgroundColor: tokens.color.bg, borderBottomWidth: step ? 1 : 0, borderBottomColor: tokens.color.line }}>
+      <OrderHeader title={R.tTopUp} help={false} onBack={onBack} onHelp={() => undefined} />
+      {step ? <RStepBar step={step} labels={STEPS} /> : null}
+    </View>
+  );
+}
 
 export function TopUpFlow({
   minTopUp,
   maxTopUp,
+  ratePct,
+  avgFare,
+  defaultProvider,
+  defaultPhone,
+  balance,
   onExit,
+  onCallSupport,
 }: {
   minTopUp: number;
   maxTopUp: number;
+  ratePct: number;
+  avgFare: number | null;
+  defaultProvider: TopupProviderId;
+  defaultPhone: string;
+  /** The balance after a success, when the wallet read has caught up. */
+  balance: number | null;
   onExit: () => void;
+  onCallSupport: () => void;
 }): React.ReactElement {
   const fail = useActionError();
-  // CF-02-SIB-3: `isStarting` (React Query's `create.isPending`) only reflects the FIRST of two
-  // same-tick taps on "Request … via …" — a fast double-tap fired createTopup() twice (confirmed
-  // live via the tools/parity mobile harness). The deterministic `idempotencyKey` below means the
-  // server should dedupe both calls to one intent, but the wasted duplicate request is still the
-  // same guard-shape defect CF-02 fixed elsewhere; wallet is a sensitive lane, so it gets the fix
-  // too. Reset in mutate()'s own onSettled — `start` is fire-and-forget (`create.mutate`, not
-  // `mutateAsync`), so there's no promise here to await.
+  const narrow = useWindowDimensions().width < 340;
   const startInFlightRef = React.useRef(false);
-  const [amountRaw, setAmountRaw] = React.useState("10.00");
-  const [phone, setPhone] = React.useState("");
-  const [rail, setRail] = React.useState<Exclude<TopupRail, "manual">>("ecocash");
-  const [nowMs, setNowMs] = React.useState(() => Date.now());
-  // Rotates per attempt so a retry after a decline opens a NEW intent, while a timeout+retry WITHIN an
-  // attempt replays the same key and the server returns the original pending intent (BH-09).
+  const [step, setStep] = React.useState<1 | 2 | 3>(1);
+  const [rail, setRail] = React.useState<TopupProviderId>(defaultProvider);
+  const [amountRaw, setAmountRaw] = React.useState("5.00");
+  const [phone, setPhone] = React.useState(defaultPhone);
   const [attempt, setAttempt] = React.useState(0);
+  // Settings may load after mount; follow it until the rider changes the value themselves.
+  const touched = React.useRef({ rail: false, phone: false });
+  React.useEffect(() => {
+    if (!touched.current.rail) setRail(defaultProvider);
+  }, [defaultProvider]);
+  React.useEffect(() => {
+    if (!touched.current.phone) setPhone(defaultPhone);
+  }, [defaultPhone]);
 
-  const { topup, status, hasIntent, isStarting, start, reset } = useTopUp({
-    // Action-error rule (docs/DESIGN-SYSTEM.md): speak once as a self-clearing toast, never persist a
-    // card. Curated copy rather than the raw error message — "Network request failed" tells a rider
-    // nothing about what to do next.
-    onStartError: () => fail("We couldn't start that top-up. Check your connection and try again."),
-  });
+  const { topup, status, hasIntent, isStarting, start, reset } = useTopUp({ onStartError: () => fail(R.failT) });
 
   const amountError = validateTopupAmount(amountRaw, minTopUp, maxTopUp);
   const amount = Number(amountRaw);
   const amountOk = amountError == null && Number.isFinite(amount) && amount > 0;
   const phoneOk = phone.replace(/\D/g, "").length >= 9;
-  const railName = RAILS.find((r) => r.id === rail)?.name ?? "";
-
-  const idempotencyKey = React.useMemo(
-    () => uuidV4FromSeed(`topup|${attempt}|${amountRaw}|${phone}|${rail}`),
-    [attempt, amountRaw, phone, rail],
-  );
-
-  // Tick only while a prompt is outstanding — the countdown ring is the only thing that needs it.
-  React.useEffect(() => {
-    if (status !== "pending") return;
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [status]);
+  const name = providerName(rail);
+  const idempotencyKey = React.useMemo(() => uuidV4FromSeed(`topup|${attempt}|${amountRaw}|${phone}|${rail}`), [attempt, amountRaw, phone, rail]);
 
   const restart = (): void => {
     reset();
     setAttempt((n) => n + 1);
+    setStep(1);
+  };
+  const back = (): void => {
+    if (hasIntent) return onExit();
+    if (step === 1) return onExit();
+    setStep((s) => (s - 1) as 1 | 2 | 3);
   };
 
-  const expiresMs = topup ? Date.parse(topup.expiresAt) : null;
-  const remaining = expiresMs == null ? TOPUP_WINDOW_MS : Math.max(0, expiresMs - nowMs);
-  const elapsed = TOPUP_WINDOW_MS - remaining;
-
-  // ── Waiting on the rail ──────────────────────────────────────────────────────────────────────────
+  // ── Approve (T4): the prompt is on the rider's phone ─────────────────────────────────────────────
   if (hasIntent && (status == null || status === "pending")) {
+    const end = topup ? Date.parse(topup.expiresAt) : NaN;
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={{ alignItems: "center", paddingTop: tokens.space.lg }}>
-          <CountdownRing elapsedMs={elapsed} totalMs={TOPUP_WINDOW_MS} label={formatCountdown(remaining)} sub="left" size={132} />
-          <Text style={{ fontSize: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginTop: tokens.space.lg }}>
-            Check your phone
-          </Text>
-          <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", lineHeight: 21, marginTop: 6, maxWidth: 280 }}>
-            Approve the {railName} prompt on{" "}
-            <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
-              {formatPhoneLocal(phone)}
-            </Text>
-            . Your balance is credited the moment it clears.
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-            {formatMoney(amount)} · {railName}
-          </Text>
-        </View>
-        <View style={{ marginTop: tokens.space.xl }}>
-          {/* Leaving does NOT cancel the intent — it stays open server-side until it confirms or the
-              window closes, and the durable marker means the Money tab picks up the outcome either way.
-              Say that, rather than implying the rider must sit here. */}
-          <Text style={{ fontSize: 12, color: tokens.color.muted, textAlign: "center", lineHeight: 18, marginBottom: tokens.space.sm }}>
-            You can leave this screen — we&apos;ll update your balance as soon as the payment clears.
-          </Text>
-          <Button label="Back to Money" variant="ghost" onPress={onExit} />
-        </View>
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <Header step={4} onBack={back} />
+        <CentreState spinner title={RF.waitT(topup?.amount ?? amount)} body={RF.waitB(name, phone)}>
+          <View style={{ alignSelf: "stretch", flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Countdown expiresAt={topup?.expiresAt ?? null} />
+            <View style={{ flex: 1 }}>
+              <ApproveProgress end={end} />
+            </View>
+          </View>
+        </CentreState>
+      </View>
     );
   }
 
-  // ── Confirmed by the server: money actually moved ────────────────────────────────────────────────
-  if (hasIntent && status === "succeeded") {
+  // ── Done (T5) / Failed (T6) ─────────────────────────────────────────────────────────────────────
+  if (hasIntent && (status === "succeeded" || status === "declined" || status === "expired")) {
+    const ok = status === "succeeded";
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={{ alignItems: "center", paddingTop: tokens.space.md }}>
-          <View
-            style={{
-              width: 88,
-              height: 88,
-              borderRadius: 44,
-              backgroundColor: tokens.color.accentWash,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Icon name="check" size={40} color={tokens.color.accentText} strokeWidth={tokens.icon.stroke} />
-          </View>
-          <Text style={{ fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, marginTop: tokens.space.md, fontVariant: ["tabular-nums"] }}>
-            {formatMoney(topup?.amount ?? amount)}
-          </Text>
-          {/* Safe to state plainly: this branch is reachable only on a server-reported `succeeded`,
-              which means creditFromTopup ran and the ledger has the entry. */}
-          <Text style={{ fontSize: 14, color: tokens.color.muted, marginTop: 2 }}>added to your balance</Text>
-        </View>
-
-        <Card style={{ marginTop: tokens.space.lg }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: tokens.space.md }}>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-              <Icon name="banknote" size={18} color={tokens.color.muted} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{railName} top-up</Text>
-              <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }}>Just now</Text>
-            </View>
-            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
-              +{formatMoney(topup?.amount ?? amount)}
-            </Text>
-          </View>
-        </Card>
-
-        <Button label="Back to Money" onPress={onExit} />
-        <Button label="Top up again" variant="ghost" onPress={restart} />
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <Header step={null} onBack={onExit} />
+        <CentreState icon={ok ? "circle-check" : "circle-alert"} tone={ok ? "ok" : "danger"} title={ok ? R.okT : R.failT} body={ok ? RF.okB(topup?.amount ?? amount, balance) : RF.failB(name)} />
+        <CtaBar>
+          {ok ? (
+            <>
+              <CtaButton label={R.backMoney} onPress={onExit} />
+              <CtaButton ghost label={R.again} onPress={restart} />
+            </>
+          ) : (
+            <>
+              <CtaButton label={R.tryAgain} icon="refresh-cw" onPress={restart} />
+              <CtaButton ghost label={R.callSupport} icon="phone" onPress={onCallSupport} />
+            </>
+          )}
+        </CtaBar>
+      </View>
     );
   }
 
-  // ── Declined, or the window closed with no answer ────────────────────────────────────────────────
-  if (hasIntent && (status === "declined" || status === "expired")) {
-    const isExpired = status === "expired";
-    return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Card>
-          <View style={{ alignItems: "center", paddingVertical: tokens.space.md }}>
-            <View
-              style={{
-                width: 88,
-                height: 88,
-                borderRadius: 44,
-                backgroundColor: tokens.color.dangerWash,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: tokens.space.md,
-              }}
-            >
-              <Icon name="circle-alert" size={36} color={tokens.color.dangerInk} strokeWidth={tokens.icon.stroke} />
-            </View>
-            <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
-              {isExpired ? "The request timed out" : "The payment was declined"}
-            </Text>
-            <Text style={{ fontSize: 12, color: tokens.color.muted, textAlign: "center", lineHeight: 18, marginTop: 6, maxWidth: 280 }}>
-              {isExpired
-                ? `No money left your ${railName} wallet. The request wasn't approved in time — you can try again, or call support to top up.`
-                : `No money leaves your ${railName} wallet. Usually the ${railName} balance was too low, or the request was turned down on the phone.`}
-            </Text>
-          </View>
-          <Button label="Try again" onPress={restart} />
-        </Card>
-        <Card style={{ marginTop: tokens.space.md, backgroundColor: tokens.color.surface }}>
-          <SupportCallRow label="Top up" name="LyniaGo support" />
-        </Card>
-        <Button label="Back to Money" variant="ghost" onPress={onExit} />
-        <View style={{ height: tokens.space.xxl }} />
-      </ScrollView>
-    );
-  }
+  const next = (): void => {
+    if (step === 1) return setStep(2);
+    if (step === 2) return amountOk ? setStep(3) : undefined;
+    if (!phoneOk || !amountOk || startInFlightRef.current || isStarting) return;
+    startInFlightRef.current = true;
+    start({ amount, rail, phone, idempotencyKey }, { onSettled: () => (startInFlightRef.current = false) });
+  };
 
-  // ── Amount / rail / phone ────────────────────────────────────────────────────────────────────────
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <Sub>Add to your commission balance. This money can only be spent on commission.</Sub>
-
-      <Field
-        label="Amount (USD)"
-        value={amountRaw}
-        onChangeText={setAmountRaw}
-        keyboardType="decimal-pad"
-        maxLength={8}
-        error={amountError ?? undefined}
-        hint={`Minimum top-up is ${formatMoney(minTopUp)}`}
-      />
-      <View style={{ flexDirection: "row", gap: tokens.space.sm, marginBottom: tokens.space.lg }}>
-        {QUICK_AMOUNTS.map((v) => {
-          const on = Number(amountRaw) === v;
-          return (
-            <Tappable
-              key={v}
-              onPress={() => setAmountRaw(v.toFixed(2))}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={`Top up ${formatMoney(v)}`}
-              style={{
-                flex: 1,
-                minHeight: tokens.touchTargetMin,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: tokens.radius.pill,
-                borderWidth: on ? 1.5 : 1,
-                borderColor: on ? tokens.color.accent : tokens.color.line,
-                backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 15,
-                  fontWeight: on ? tokens.font.weight.bold : tokens.font.weight.semibold,
-                  color: on ? tokens.color.accentText : tokens.color.ink,
-                  fontVariant: ["tabular-nums"],
-                }}
-              >
-                {formatMoney(v)}
-              </Text>
-            </Tappable>
-          );
-        })}
-      </View>
-
-      <Field
-        label="Phone number"
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="0771234567"
-        keyboardType="phone-pad"
-        maxLength={20}
-        autoComplete="tel"
-        textContentType="telephoneNumber"
-        hint="This is the number that gets the payment prompt — change it if you'd pay from another line."
-      />
-
-      <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, marginBottom: tokens.space.sm }}>Pay with</Text>
-      {RAILS.map((r) => {
-        const on = r.id === rail;
-        return (
-          <Tappable
-            key={r.id}
-            onPress={() => setRail(r.id)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={`${r.name} — ${r.note}`}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: tokens.space.md,
-              minHeight: tokens.touchTargetMin,
-              paddingVertical: tokens.space.md,
-              paddingHorizontal: tokens.space.md,
-              borderRadius: tokens.radius.input,
-              borderWidth: on ? 1.5 : 1,
-              borderColor: on ? tokens.color.accent : tokens.color.line,
-              backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
-              marginBottom: tokens.space.sm,
+    <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <Header step={step} onBack={back} />
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }}>
+        {step === 1 ? (
+          <>
+            <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.provider}</Text>
+            {TOPUP_PROVIDERS.map((p) => {
+              const on = p.id === rail;
+              return (
+                <Tappable
+                  key={p.id}
+                  onPress={() => {
+                    touched.current.rail = true;
+                    setRail(p.id);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on, checked: on }}
+                  accessibilityLabel={`${p.name}, ${R.approveOnPhone}`}
+                  style={{
+                    minHeight: 64,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    paddingHorizontal: on ? 13 : 14,
+                    borderRadius: 12,
+                    borderWidth: on ? 2 : 1,
+                    borderColor: on ? tokens.color.accentText : tokens.color.line,
+                    backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
+                  }}
+                >
+                  <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: on ? 7 : 2, borderColor: on ? tokens.color.accentText : tokens.color.line, backgroundColor: tokens.color.bg }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{p.name}</Text>
+                    <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.approveOnPhone}</Text>
+                  </View>
+                  <Icon name="smartphone" size={18} color={tokens.color.muted} />
+                </Tappable>
+              );
+            })}
+          </>
+        ) : step === 2 ? (
+          <>
+            <View style={{ alignItems: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, marginBottom: 6 }}>{R.amount}</Text>
+              {/* Tap-to-type: the 56/700 amount is drawn as text; a transparent input over it takes
+                  the keystrokes (the drawn figure stays exactly the design's, on every platform). */}
+              <View style={{ borderBottomWidth: 2, borderStyle: "dashed", borderBottomColor: tokens.color.line }}>
+                <Text style={{ fontSize: narrow ? 48 : 56, lineHeight: narrow ? 56 : 64, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>
+                  ${amountRaw}
+                </Text>
+                <TextInput
+                  value={amountRaw}
+                  onChangeText={setAmountRaw}
+                  keyboardType="decimal-pad"
+                  maxLength={6}
+                  accessibilityLabel={R.amount}
+                  caretHidden
+                  style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, opacity: 0.011, fontSize: 16, color: tokens.color.ink }}
+                />
+              </View>
+              {amountError ? (
+                <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
+                  <Icon name="circle-alert" size={14} color={tokens.color.danger} />
+                  <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.danger }}>{amountError}</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {QUICK.map((v) => {
+                const on = Number(amountRaw) === v;
+                return (
+                  <Tappable
+                    key={v}
+                    onPress={() => setAmountRaw(v.toFixed(2))}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={usd(v)}
+                    style={{
+                      flex: 1,
+                      minHeight: tokens.touchTargetMin,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: tokens.radius.pill,
+                      borderWidth: on ? 1.5 : 1,
+                      borderColor: on ? tokens.color.accentText : tokens.color.line,
+                      backgroundColor: on ? tokens.color.accentWash : tokens.color.bg,
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: on ? tokens.color.accentText : tokens.color.ink, fontVariant: ["tabular-nums"] }}>${v}</Text>
+                  </Tappable>
+                );
+              })}
+            </View>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.amountHint(amountOk ? amount : 5, ratePct, avgFare)}</Text>
+          </>
+        ) : (
+          <SendField
+            label={R.phoneL}
+            value={phone}
+            onChangeText={(v) => {
+              touched.current.phone = true;
+              setPhone(v);
             }}
-          >
-            {/* The kit sets each rail's own logo here; no rail brand assets ship in the app, so the
-                neutral wallet mark stands in rather than inventing a lookalike. */}
-            <View
-              style={{
-                width: 44,
-                height: 32,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: tokens.color.line,
-                backgroundColor: tokens.color.bg,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon name="wallet" size={16} color={on ? tokens.color.accentText : tokens.color.muted} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{r.name}</Text>
-              <Text style={{ fontSize: 12, color: on ? tokens.color.accentText : tokens.color.muted, marginTop: 1 }}>{r.note}</Text>
-            </View>
-            <View
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: 10,
-                borderWidth: on ? 6 : 1.5,
-                borderColor: on ? tokens.color.accent : tokens.color.line,
-                backgroundColor: tokens.color.bg,
-              }}
-            />
-          </Tappable>
-        );
-      })}
-
-      <Button
-        label={amountOk ? `Request ${formatMoney(amount)} via ${railName}` : `Request via ${railName}`}
-        disabled={!amountOk || !phoneOk || isStarting}
-        loading={isStarting}
-        onPress={() => {
-          if (startInFlightRef.current) return;
-          startInFlightRef.current = true;
-          start(
-            { amount, rail, phone, idempotencyKey },
-            { onSettled: () => { startInFlightRef.current = false; } },
-          );
-        }}
-      />
-
-      {/* The route that works today. `creditFromTopup` has no caller yet, so until a rail lands the
-          request above runs its 90s window down and expires — support crediting a balance by hand is
-          the only way a rider's money actually moves. Keep this here until that changes. */}
-      <View style={{ marginTop: tokens.space.xl }}>
-        <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, letterSpacing: 0.3, marginBottom: 6 }}>
-          TOP UP BY PHONE
-        </Text>
-        <Card style={{ backgroundColor: tokens.color.surface }}>
-          <SupportCallRow label="Top up" name="LyniaGo support" />
-        </Card>
-        <Text style={{ fontSize: 11.5, color: tokens.color.muted, lineHeight: 17, marginTop: 6 }}>
-          Tell support how much you&apos;d like to add. They confirm your payment and credit your balance
-          directly — no money moves until they do.
-        </Text>
-      </View>
-      <View style={{ height: tokens.space.xxl }} />
-    </ScrollView>
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            textContentType="telephoneNumber"
+            maxLength={20}
+            hint={R.phoneHint}
+            autoFocus
+          />
+        )}
+      </ScrollView>
+      <CtaBar>
+        <CtaButton
+          label={step === 3 ? RF.requestCta(amount) : SEND_COPY.next}
+          onPress={next}
+          loading={step === 3 && isStarting}
+          disabled={(step === 2 && !amountOk) || (step === 3 && (!phoneOk || !amountOk))}
+        />
+      </CtaBar>
+    </View>
   );
+}
+
+/** The 90-second approve window, as the 4px bar beside the countdown pill. */
+function ApproveProgress({ end }: { end: number }): React.ReactElement | null {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!Number.isFinite(end)) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [end]);
+  if (!Number.isFinite(end)) return null;
+  return <Progress pct={((end - now) / TOPUP_WINDOW_MS) * 100} />;
 }
