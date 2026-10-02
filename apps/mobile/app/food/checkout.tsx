@@ -1,328 +1,510 @@
-import { haversineKm, isMerchantOpenNow, nextOpenDescription, normalizePhone, roundToCents, type MerchantPaymentMethod } from "@lynia/shared";
+import { isMerchantOpenNow, normalizePhone } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQueryClient } from "@tanstack/react-query";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import { placeFoodOrder } from "../../src/api/food-orders";
-import { askNotificationsInContext } from "../../src/push/ask-in-context";
-import type { ResolvedPlace } from "../../src/api/places";
 import { useFoodCart } from "../../src/food/cart-context";
+import { addLine, MAX_ITEM_QTY, removeLine, type FoodCartLine } from "../../src/logic/food-cart";
 import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
-import { usePlacingGuard } from "../../src/logic/use-placing-guard";
+import { deliverToLabel, etaRange, restaurantMeta } from "../../src/logic/food-list";
+import { isWithinServiceCorridor } from "../../src/logic/gates";
+import { landmarkFromAddress } from "../../src/logic/geocode";
+import { useHomeLocation } from "../../src/logic/home-location";
+import { arrivalWindow, areaOf, displayPhone, hhmm, lineKey, placeOrderBody, reconcileCart, reviewBreakdown, type ReconcileResult } from "../../src/logic/review";
 import { loadMyPickupPhone, saveMyPickupPhone } from "../../src/logic/saved-recipients";
+import { useAddressSuggest, type SuggestRow } from "../../src/logic/use-address-suggest";
+import { usePlacingGuard } from "../../src/logic/use-placing-guard";
+import { useNow } from "../../src/logic/use-now";
 import { formatMoney } from "../../src/logic/money";
 import { useReachability } from "../../src/net/use-reachability";
+import { askNotificationsInContext } from "../../src/push/ask-in-context";
 import { seedFoodOrder } from "../../src/query/use-food-order";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
-import { uuidV4FromSeed } from "../../src/util";
-import { AppBar, Button, Card, EmptyState, Field, Icon, OfflineBanner, Screen, SkeletonList, useActionError } from "../../src/ui";
-import type { PickedPoint } from "../../src/ui/MapPicker";
-import { MapPicker } from "../../src/ui/MapPicker";
-import { AddressConfirmSheet } from "../../src/ui/AddressConfirmSheet";
-import { AddressSearch } from "../../src/ui/AddressSearch";
-import { PaymentMethodRow } from "../../src/ui/food/PaymentMethodRow";
-import { CheckoutPlacingView } from "./checkout-placing.view";
-// RC.checkout_cash region fragments (Foundation-E) — generated from the mock, guarded by the
-// structural-snapshot spec. The container composes them and owns the data seam (see adopted.mjs).
-import { CheckoutPlaceBarView } from "./checkout-place-bar.view";
-import { CheckoutSummaryView } from "./checkout-summary.view";
+import { uuidV4FromSeed, withTimeout } from "../../src/util";
+import { Icon } from "../../src/ui";
+import { B } from "../../src/ui/browse/copy";
+import { ServiceSticker } from "../../src/ui/browse/kit";
+import { AddressEdit } from "../../src/ui/orderflow/AddressEdit";
+import { O, ofFmt } from "../../src/ui/orderflow/copy";
+import {
+  Breakdown,
+  ItemLine,
+  LineStepper,
+  PrimaryButton,
+  ReviewBar,
+  ReviewBlock,
+  ReviewField,
+  ReviewHeader,
+  ReviewNote,
+  ReviewToast,
+  WhenAsap,
+} from "../../src/ui/orderflow/review";
 
-/** How often the checkout screen re-checks the kitchen's own hours while the customer is filling in
- *  the form — mirrors [id].tsx's 60s "just closed while browsing" poll, so a kitchen that closes
- *  between menu-browsing and Place Order is caught here too, not only on the menu screen. */
+/**
+ * Review & place — Order flow v2.1 R1, R3a/b, R4, R6a/b, R7a–c, R9a/b (packages/design/handoff/order-flow-v2,
+ * ledger D-59). Cart and checkout are ONE screen, pushed from the storefront cart bar: white blocks on a
+ * grey page, items edited in place, the address edited inline with a map, the cash total pinned in the
+ * 52px CTA. Place → the order screen REPLACES the food stack, so Back from the order goes Home.
+ *
+ * Not here yet (later PRs, not drawn ⇒ not rendered): Schedule (R5, slots API), shops/pharmacy (R2), Rx (R8).
+ */
+
+/** README "Errors are an ink toast for about 4 s". */
+const TOAST_MS = 4000;
+/** `ofAlpha.scrim` — the modal dim the handoff draws (the browse sheets use the same value). */
+const DIM = "rgba(20,24,27,0.45)";
+/** The R7a veil over the screen while placing (`rgba(255,255,255,.6)` in of-screens-rt.js). */
+const VEIL = "rgba(255,255,255,0.6)";
+/** Re-check the kitchen's hours while the customer reviews (R6b). */
 const HOURS_RECHECK_MS = 60_000;
+const LOCATE_TIMEOUT_MS = 9_000;
+/** R3b's bar hint — drawn in of-screens-rt.js `addrEdit(out)`, not a key in `O`. */
+const outAreaBlock = (v: string): string => `Pick an address ${v} delivers to`;
 
-export default function FoodCheckoutScreen(): React.ReactElement {
+interface Drop {
+  lat: number;
+  lng: number;
+  label: string;
+}
+
+export default function FoodReviewScreen(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const cart = useFoodCart();
   const reachable = useReachability();
-  const { menu, isLoading } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
+  const now = useNow(HOURS_RECHECK_MS);
+  const home = useHomeLocation();
+  const { menu, refetch } = useRestaurantMenu(cart.cart.restaurantId ?? undefined, !!cart.cart.restaurantId);
   const restaurant = menu?.restaurant;
+  const venue = cart.cart.restaurantName ?? restaurant?.name ?? "";
 
-  const [now, setNow] = useState(() => new Date());
+  // ── Deliver to ────────────────────────────────────────────────────────────────────────────────────
+  // Starts at the customer's deliver-to (the address the storefront was browsed from) until they set one.
+  const [drop, setDrop] = useState<Drop | null>(null);
+  const dropTouched = useRef(false);
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), HOURS_RECHECK_MS);
-    return () => clearInterval(id);
-  }, []);
+    if (dropTouched.current || !home.point) return;
+    setDrop({ lat: home.point.lat, lng: home.point.lng, label: deliverToLabel(home.label, home.area) });
+  }, [home.point, home.label, home.area]);
 
-  const [dropPoint, setDropPoint] = useState<PickedPoint | null>(null);
-  const [dropLandmark, setDropLandmark] = useState("");
-  const [dropLandmarkTouched, setDropLandmarkTouched] = useState(false);
-  const [dropPhone, setDropPhone] = useState("");
-  // D-48 (owner decision 2026-09-30): food is cash at the door only — the rider brings the merchant's
-  // cash back. The mobile-money row is gone; the API still takes WALLET from older installs.
-  const paymentMethod: MerchantPaymentMethod = "cash";
-  const [busy, setBusy] = useState(false);
-  // Action errors speak once as an auto-dismissing toast, never as a persistent card
-  // (owner instruction 2026-08-12). Same `setError(msg)` shape as the useState setter it replaces.
-  const setError = useActionError();
+  const [editingAddr, setEditingAddr] = useState(false);
+  const [draft, setDraft] = useState<Drop | null>(null);
+  const [query, setQuery] = useState("");
+  const [queryTyped, setQueryTyped] = useState(false);
+  const suggest = useAddressSuggest(query, editingAddr && queryTyped, reachable);
 
+  // ── Phone and the rider note ──────────────────────────────────────────────────────────────────────
+  const [phone, setPhone] = useState("");
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [riderNote, setRiderNote] = useState("");
+  const [editingNote, setEditingNote] = useState(false);
   useEffect(() => {
-    void loadMyPickupPhone().then((phone) => {
-      if (phone) setDropPhone(phone);
+    void loadMyPickupPhone().then((p) => {
+      if (p) setPhone((cur) => cur || p);
     });
   }, []);
 
-  // A searched address resolves to a building CENTROID — for a food drop-off that lands the rider at
-  // the block, not the gate. Mirror send.tsx: a search result opens the drag-to-adjust confirm sheet
-  // (nudge the pin + name the landmark in context) rather than committing the centroid straight to
-  // the pin. A pin tapped/dragged directly on the map above is already its own confirmation and stays
-  // direct-commit.
-  const [confirming, setConfirming] = useState<ResolvedPlace | null>(null);
-  const onDropResolved = useCallback((place: ResolvedPlace): void => {
-    setConfirming(place);
-  }, []);
-  // Committed from the confirm sheet: the (possibly dragged) point + the landmark the customer typed.
-  // Marked touched so the reverse-geocode that fires when the map recenters can't overwrite it.
-  const onConfirmAddress = useCallback((point: PickedPoint, landmark: string): void => {
-    setConfirming(null);
-    setDropPoint(point);
-    setDropLandmark(landmark);
-    setDropLandmarkTouched(true);
-  }, []);
-  const onDropChange = useCallback((p: PickedPoint): void => {
-    setDropPoint(p);
-  }, []);
-  const onDropReverseGeocode = useCallback(
-    (landmark: string): void => {
-      if (dropLandmarkTouched) return;
-      setDropLandmark(landmark);
-    },
-    [dropLandmarkTouched],
-  );
+  // A line's note, edited in place (the line key it belongs to + the draft text).
+  const [lineNote, setLineNote] = useState<{ key: string; text: string } | null>(null);
 
-  // P0-3: the placing beat's own copy promises "Don't close the app. If this fails, nothing is
-  // ordered and nothing is paid." — enforce it. While the place mutation is in flight, swallow the
-  // Android hardware-back press and disable the iOS swipe-back gesture so the screen can't be popped
-  // out from under the request (which otherwise dropped the customer onto the just-cleared cart).
+  // ── Placing, toasts, offline ──────────────────────────────────────────────────────────────────────
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<{ text: string; retry: boolean } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+  const lastOnline = useRef(new Date());
+  if (reachable) lastOnline.current = now;
+
+  // P0-3: while the order is in flight the screen is `held` — Android back is swallowed and iOS swipe-back
+  // is off, so the request can't be orphaned (R7a: "Don't close the app").
   usePlacingGuard(busy);
-
-  // Defence in depth for the same race: if the screen still unmounts before placeFoodOrder resolves
-  // (iOS gesture timing, a forced unmount), don't navigate the now-global router or setState here.
-  const mountedRef = useRef(true);
+  const mounted = useRef(true);
   useEffect(
     () => () => {
-      mountedRef.current = false;
+      mounted.current = false;
     },
     [],
   );
 
-  // Hoisted above the early returns below so the hook count is stable across the empty/loading/placing
-  // branches (React requires every render to call the same hooks in the same order).
+  // ── R6a: reconcile against the latest menu, once per fetch ──────────────────────────────────────
+  const [changes, setChanges] = useState<Pick<ReconcileResult, "gone" | "priceChanges">>({ gone: [], priceChanges: {} });
+  useEffect(() => {
+    if (!menu) return;
+    const latest = new Map<string, { priceUsd: number; outOfStock: boolean }>();
+    for (const c of menu.categories) for (const d of c.dishes) latest.set(d.id, { priceUsd: d.priceUsd, outOfStock: d.outOfStock });
+    const r = reconcileCart(cart.cart.lines, latest);
+    if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0) return;
+    cart.replaceLines(r.lines);
+    setChanges((prev) => ({ gone: [...prev.gone, ...r.gone], priceChanges: { ...prev.priceChanges, ...r.priceChanges } }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per fetched menu, not per cart edit.
+  }, [menu]);
+
   const idempotencyKey = useMemo(
     () =>
-      uuidV4FromSeed(
-        `food-order|${cart.cart.restaurantId}|${JSON.stringify(cart.cart.lines)}|${cart.cart.orderNote}|${dropPoint?.lat},${dropPoint?.lng}|${paymentMethod}`,
-      ),
-    [cart.cart.restaurantId, cart.cart.lines, cart.cart.orderNote, dropPoint?.lat, dropPoint?.lng, paymentMethod],
+      uuidV4FromSeed(`food-order|${cart.cart.restaurantId}|${JSON.stringify(cart.cart.lines)}|${cart.cart.orderNote}|${drop?.lat},${drop?.lng}|cash`),
+    [cart.cart.restaurantId, cart.cart.lines, cart.cart.orderNote, drop?.lat, drop?.lng],
   );
 
-  if (cart.ready && (!cart.cart.restaurantId || cart.cart.lines.length === 0)) {
-    return (
-      <Screen>
-        <AppBar title="Checkout" onBack={() => router.back()} />
-        <EmptyState
-          icon="shopping-bag"
-          title="Your cart is empty"
-          message="Add something from a kitchen near you — we'll show the delivery fee before you order."
-        >
-          <Button label="Browse restaurants" onPress={() => router.replace("/food")} />
-        </EmptyState>
-      </Screen>
-    );
-  }
+  const deliveryFee = drop && restaurant ? estimateDeliveryFee(restaurant.location, drop) : null;
+  const money = reviewBreakdown(cart.cart.lines, deliveryFee);
+  const eta = drop && restaurant ? arrivalWindow(etaRange([restaurantMeta(restaurant, drop)]), now) : null;
+  const closed = restaurant != null && !isMerchantOpenNow(restaurant.hours, now);
+  const phoneOk = normalizePhone(phone) !== null;
 
-  if (isLoading || !restaurant) {
-    return (
-      <Screen>
-        <AppBar title="Checkout" onBack={() => router.back()} />
-        <SkeletonList count={3} />
-      </Screen>
-    );
-  }
-
-  if (busy) {
-    // RC.placing — the presentational "Sending your order to the kitchen…" beat is GENERATED from the
-    // mock (checkout-placing.view.tsx) and locked to it by the structural-snapshot guardrail; this
-    // container owns only WHEN it shows (the in-flight placeFoodOrder mutation). Composition, not a
-    // rewrite: the placing LOGIC is unchanged, only its look moves to the generated view.
-    return <CheckoutPlacingView />;
-  }
-
-  const open = isMerchantOpenNow(restaurant.hours, now);
-  const merchantHasLocation = restaurant.location != null;
-  const estimatedDeliveryFee = dropPoint ? estimateDeliveryFee(restaurant.location, { lat: dropPoint.lat, lng: dropPoint.lng }) : null;
-  const total = cart.total + (estimatedDeliveryFee ?? 0);
-  // The honest drop distance the delivery fee is derived from (same haversineKm→roundToCents as
-  // estimateDeliveryFee) — feeds the kit PriceMath's per-km delivery sub-line. Null until a drop is set.
-  const dropDistanceKm =
-    dropPoint && restaurant.location ? roundToCents(haversineKm(restaurant.location, { lat: dropPoint.lat, lng: dropPoint.lng })) : null;
-  // RC.checkout_cash summary note: the kit PriceMath has no small-order-fee row, so — exactly as the
-  // design's own cart_min mock does — a small-order fee is disclosed in the note, not hidden.
-  const summaryNote = [
-    cart.smallOrderFee > 0 ? `Includes a ${formatMoney(cart.smallOrderFee)} small-order fee.` : null,
-    "Have the exact amount if you can — riders carry little change. The exact delivery fee is confirmed the moment you place this order.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const landmarkOk = dropLandmark.trim().length > 0;
-  const phoneOk = normalizePhone(dropPhone) !== null;
-  const phoneError = dropPhone.trim().length > 0 && !phoneOk ? "That doesn't look like a phone number" : undefined;
-  const canSubmit = !!dropPoint && landmarkOk && phoneOk && open && merchantHasLocation && reachable && !busy;
-
-  const submit = async (): Promise<void> => {
-    setError(null);
-    if (!canSubmit || !dropPoint) {
-      setError("Add a delivery address, a contact phone, and choose how you'll pay.");
-      return;
+  // ── Address editing (R3a/R3b) ─────────────────────────────────────────────────────────────────────
+  const openAddress = (): void => {
+    setDraft(drop);
+    setQuery(drop?.label ?? "");
+    setQueryTyped(false);
+    setEditingAddr(true);
+  };
+  const draftOut = draft != null && !isWithinServiceCorridor(draft);
+  const commitAddress = (): void => {
+    if (draft && !draftOut) {
+      dropTouched.current = true;
+      setDrop(draft);
     }
-    setBusy(true);
+    setEditingAddr(false);
+    Keyboard.dismiss();
+  };
+  const pickRow = (row: SuggestRow): void => {
+    void row.resolve().then((place) => {
+      if (!place || !mounted.current) return;
+      setDraft({ lat: place.lat, lng: place.lng, label: place.landmark });
+      setQuery(place.landmark);
+      setQueryTyped(false);
+      Keyboard.dismiss();
+    });
+  };
+  const nameDraft = useCallback((p: { lat: number; lng: number }, name: string): void => {
+    setDraft((d) => (d && d.lat === p.lat && d.lng === p.lng ? { ...d, label: name } : d));
+    setQuery(name);
+    setQueryTyped(false);
+  }, []);
+  const useCurrent = async (): Promise<void> => {
+    Keyboard.dismiss();
     try {
-      const order = await placeFoodOrder(cart.cart.restaurantId as string, {
-        items: cart.cart.lines.map((l) => ({ dishId: l.dishId, quantity: l.quantity, note: l.note || undefined })),
-        note: cart.cart.orderNote || undefined,
-        // Canonical E.164 (dropPhone is gated on normalizePhone above; the ?? is a defensive fallback)
-        // so the stored/dialled number doesn't depend on the customer's punctuation (local 0-form, +263).
-        dropoff: { point: { lat: dropPoint.lat, lng: dropPoint.lng }, landmark: dropLandmark.trim(), contactPhone: normalizePhone(dropPhone) ?? dropPhone.trim() },
-        paymentMethod,
-        idempotencyKey,
-      });
-      void saveMyPickupPhone(dropPhone.trim());
-      // D-55: notifications are asked for here, after the order goes out, not on a priming screen.
-      void askNotificationsInContext();
-      seedFoodOrder(queryClient, order);
-      cart.clear();
-      if (!mountedRef.current) return;
-      // P0-1: reset the food stack to its root before showing the order, so Android back from a live
-      // order returns to a browsable screen, never the just-cleared cart (see goToPlacedFoodOrder).
-      goToPlacedFoodOrder(router, order.id);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof ApiError ? err.message : "Couldn't place your order — try again.");
-    } finally {
-      if (mountedRef.current) setBusy(false);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setToast({ text: "Location is off — tap the map to drop your pin, or turn it on in Settings.", retry: false });
+        return;
+      }
+      const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
+      const p = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setDraft({ ...p, label: draft?.label ?? "" });
+      const res = await withTimeout(Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng }), LOCATE_TIMEOUT_MS).catch(() => []);
+      const name = res[0] ? landmarkFromAddress(res[0]) : "";
+      if (name && mounted.current) nameDraft(p, name);
+    } catch {
+      setToast({ text: "Couldn't get your location — tap the map to drop your pin.", retry: false });
     }
   };
 
-  return (
-    <Screen
-      footer={
-        // RC.checkout_cash footer region (r-customer-a.jsx:424, 469): the pay bar is the kit's
-        // `<Screen footer=…>` pinned Button (Foundation-D slot), now a GENERATED, guarded fragment
-        // (checkout-place-bar.view.tsx) the container composes. The CTA names how the money moves, not
-        // just the figure — "pay $X cash" for CASH, "pay after they accept" for mobile money.
-        <CheckoutPlaceBarView
-          label={`Place order · pay ${formatMoney(total)} cash`}
-          onPlace={() => void submit()}
-          disabled={!canSubmit}
-          loading={busy}
-        />
-      }
-    >
-      <OfflineBanner state={reachable ? "online" : "offline"} />
-      {/* Kit RC.checkout_cash (r-customer-a.jsx:426): the header is the shared AppBar — 16/700
-          title + 11.5 muted sub (the kitchen's name) + a rotated-chevron back. */}
-      <AppBar title="Checkout" sub={restaurant.name} onBack={() => router.back()} />
+  // ── Items ─────────────────────────────────────────────────────────────────────────────────────────
+  const setQty = (line: FoodCartLine, qty: number): void => {
+    if (qty <= 0) cart.removeItem(line.dishId, line.note);
+    else cart.setQuantity(line.dishId, line.note, Math.min(MAX_ITEM_QTY, qty));
+  };
+  const saveLineNote = (line: FoodCartLine, text: string): void => {
+    setLineNote(null);
+    const note = text.trim().slice(0, 200);
+    if (note === line.note) return;
+    cart.replaceLines(addLine(removeLine(cart.cart.lines, line.dishId, line.note), { ...line, note }));
+  };
+  const addMore = (): void => {
+    if (router.canGoBack()) router.back();
+    else router.push(`/food/${cart.cart.restaurantId}`);
+  };
 
-      {!open ? (
-        <Card style={{ backgroundColor: tokens.color.highlightWash, borderColor: "transparent" }}>
-          <View style={{ flexDirection: "row", gap: 9 }}>
-            <Icon name="circle-alert" size={17} color={tokens.color.highlightInk} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: tokens.color.ink }}>{restaurant.name} just closed</Text>
-              <Text style={{ fontSize: 12.5, color: tokens.color.highlightInk, marginTop: 3, lineHeight: 17 }}>
-                {nextOpenDescription(restaurant.hours, now) ?? "You can't place this order right now."}
-              </Text>
-            </View>
+  // ── Place ─────────────────────────────────────────────────────────────────────────────────────────
+  const submit = async (): Promise<void> => {
+    setToast(null);
+    if (!drop) return openAddress();
+    if (!phoneOk) return setEditingPhone(true);
+    if (!cart.cart.restaurantId) return;
+    setBusy(true);
+    try {
+      const order = await placeFoodOrder(
+        cart.cart.restaurantId,
+        placeOrderBody({ lines: cart.cart.lines, orderNote: cart.cart.orderNote, drop, riderNote, phone, idempotencyKey }),
+      );
+      void saveMyPickupPhone(phone.trim());
+      void askNotificationsInContext();
+      seedFoodOrder(queryClient, order);
+      cart.clear();
+      if (!mounted.current) return;
+      goToPlacedFoodOrder(router, order.id);
+    } catch (err) {
+      if (!mounted.current) return;
+      // A 4xx carries the server's reason (on hold, a dish just sold out); anything else is R7b.
+      const told = err instanceof ApiError && err.status >= 400 && err.status < 500 && err.message;
+      if (err instanceof ApiError && err.status === 409) refetch();
+      setToast(told ? { text: err.message, retry: false } : { text: O.r.failed, retry: true });
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+
+  // ── R9a · empty cart ──────────────────────────────────────────────────────────────────────────────
+  if (cart.ready && (!cart.cart.restaurantId || cart.cart.lines.length === 0)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
+        <ReviewHeader onBack={() => router.back()} />
+        <View style={{ alignItems: "center", gap: 8, paddingTop: 44, paddingHorizontal: 32 }}>
+          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
+            <Icon name="shopping-bag" size={28} color={tokens.color.muted} />
           </View>
-        </Card>
-      ) : null}
+          <Text accessibilityRole="header" style={{ fontSize: 21, lineHeight: 25.2, fontWeight: tokens.font.weight.extrabold, letterSpacing: -0.5, color: tokens.color.ink, textAlign: "center" }}>
+            {O.r.empty}
+          </Text>
+          <Text style={{ fontSize: 14, lineHeight: 19.6, color: tokens.color.muted, textAlign: "center" }}>{O.r.emptySub}</Text>
+          <View style={{ alignSelf: "stretch", marginTop: 8 }}>
+            <PrimaryButton label={O.r.emptyCta} onPress={() => router.replace("/food")} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
+  const changed = changes.gone.length > 0 || Object.keys(changes.priceChanges).length > 0;
+  const placeLabel = ofFmt(O.r.place, { p: formatMoney(money.total) });
+  const hint = editingAddr ? (draftOut ? outAreaBlock(venue) : null) : busy ? O.r.placingSub : !reachable ? O.r.offline : !drop ? O.r.noLocBlock : null;
+  const phoneOpen = editingPhone || !phone.trim();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: tokens.color.surface, paddingTop: insets.top }}>
+      <ReviewHeader onBack={() => (editingAddr ? setEditingAddr(false) : router.back())} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <MapPicker label="Deliver to" value={dropPoint} onChange={onDropChange} onReverseGeocode={onDropReverseGeocode} height={160} />
-          <AddressSearch label="Search an address" placeholder="Search a delivery address" onResolved={onDropResolved} />
-          <Field
-            label="Landmark / delivery notes"
-            value={dropLandmark}
-            onChangeText={(t) => {
-              setDropLandmark(t);
-              setDropLandmarkTouched(true);
-            }}
-            placeholder="Blue gate, 3rd house on the left"
-          />
-          <Field
-            label="Contact phone"
-            value={dropPhone}
-            onChangeText={setDropPhone}
-            placeholder="0771234567"
-            keyboardType="phone-pad"
-            maxLength={20}
-            error={phoneError}
-          />
-
-          {/* Kit R4·1 (r-customer-a.jsx:439): section label is 13px, not the 11.5px micro-label. */}
-          <Text style={{ fontSize: 13, fontWeight: "700", color: tokens.color.muted, marginTop: 6, marginBottom: 7 }}>HOW YOU&apos;LL PAY</Text>
-          <PaymentMethodRow
-            icon="banknote"
-            title="Cash at the door"
-            subtitle={`Pay the rider ${formatMoney(total)} when the food arrives`}
-            selected
-            onPress={() => {}}
-          />
-
-          {/* RC.checkout_cash summary region (r-customer-a.jsx:456): the kit PriceMath goods/fee/km/total
-              card, wrapped in the mock's `<Card style={{padding:14}}>`, now a GENERATED, guarded fragment
-              (checkout-summary.view.tsx). CHECKOUT has a real drop-off, so the delivery fee AND the drop
-              distance are HONEST here — the app adopts the kit PriceMath (goods/fee/km/total), retiring the
-              food {rows,...} variant. The small-order fee, which the kit PriceMath has no row for, folds
-              into the note exactly as the design's cart_min mock does — no money hidden or fabricated. */}
-          <Card style={{ padding: 14 }}>
-            <CheckoutSummaryView
-              goods={cart.subtotal}
-              fee={estimatedDeliveryFee ?? 0}
-              km={dropDistanceKm ?? 0}
-              total={total}
-              note={summaryNote}
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
+          {editingAddr ? (
+            <AddressEdit
+              draft={draft}
+              query={query}
+              rows={queryTyped ? suggest.rows : []}
+              outOf={draft && draftOut ? { venue, area: areaOf(draft.label || query) } : null}
+              onQuery={(q) => {
+                setQuery(q);
+                setQueryTyped(true);
+              }}
+              onSubmitQuery={() => {
+                const top = suggest.rows[0];
+                if (top) pickRow(top);
+              }}
+              onPick={pickRow}
+              onUseCurrent={() => void useCurrent()}
+              onMove={(p) => setDraft((d) => ({ ...p, label: d?.label ?? "" }))}
+              onName={nameDraft}
+              onDone={commitAddress}
             />
-          </Card>
+          ) : (
+            <>
+              {!reachable ? (
+                <ReviewNote tone="plain" icon="wifi-off">
+                  {ofFmt(O.c.offline, { t: hhmm(lastOnline.current) })}
+                </ReviewNote>
+              ) : null}
+              {changed ? (
+                <ReviewNote tone="hi" icon="circle-alert">
+                  <Text style={{ fontWeight: tokens.font.weight.bold }}>{O.r.chgT}</Text>
+                </ReviewNote>
+              ) : null}
 
-          <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
-            <View style={{ flexDirection: "row", gap: 9 }}>
-              <Icon name="circle-alert" size={15} color={tokens.color.muted} />
-              <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted, lineHeight: 17 }}>
-                {/* Kit RC.checkout_cash (r-customer-a.jsx:459): the cash consequence names the full
-                    figure, not a vague "amount". */}
-                {`Free to cancel until the rider collects your food. After that the food is cooked and paid for, and cancelling costs the full ${formatMoney(total)}.`}
-              </Text>
-            </View>
-          </Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 4 }}>
+                <ServiceSticker service="food" size={40} art={30} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{venue}</Text>
+                  <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{O.svc.food.Place}</Text>
+                </View>
+              </View>
 
-          {!reachable ? (
-            <Card style={{ backgroundColor: tokens.color.surface, borderColor: "transparent" }}>
-              <Text style={{ fontSize: 13, color: tokens.color.muted, textAlign: "center" }}>
-                No connection — your order can&apos;t be sent yet. Retrying automatically.
-              </Text>
-            </Card>
-          ) : null}
+              <ReviewBlock label={O.r.items}>
+                {changes.gone.map((l) => (
+                  <ItemLine key={`gone-${lineKey(l)}`} name={l.name} price={l.priceUsd * l.quantity} gone note="" flag={{ text: O.r.soldOut, tone: "muted" }} />
+                ))}
+                {cart.cart.lines.map((l) => {
+                  const k = lineKey(l);
+                  const ch = changes.priceChanges[k];
+                  const editing = lineNote?.key === k;
+                  return (
+                    <ItemLine
+                      key={k}
+                      name={l.name}
+                      price={l.priceUsd * l.quantity}
+                      was={ch ? ch.from * l.quantity : null}
+                      flag={ch ? { text: ofFmt(O.r.priceUp, { a: formatMoney(ch.from), b: formatMoney(ch.to) }), tone: "hi" } : null}
+                      note={l.note}
+                      onNote={() => setLineNote({ key: k, text: l.note })}
+                      noteEditor={
+                        editing ? (
+                          <View style={{ marginTop: 6 }}>
+                            <ReviewField
+                              autoFocus
+                              value={lineNote.text}
+                              onChangeText={(t) => setLineNote({ key: k, text: t })}
+                              onSubmitEditing={() => saveLineNote(l, lineNote.text)}
+                              onBlur={() => saveLineNote(l, lineNote.text)}
+                              placeholder={O.svc.food.note}
+                              accessibilityLabel={`${O.svc.food.note}: ${l.name}`}
+                              maxLength={200}
+                              returnKeyType="done"
+                            />
+                          </View>
+                        ) : undefined
+                      }
+                      stepper={
+                        <LineStepper
+                          qty={l.quantity}
+                          name={l.name}
+                          onMinus={() => setQty(l, l.quantity - 1)}
+                          onPlus={() => setQty(l, l.quantity + 1)}
+                          plusDisabled={l.quantity >= MAX_ITEM_QTY}
+                        />
+                      }
+                    />
+                  );
+                })}
+                <Text
+                  accessibilityRole="button"
+                  onPress={addMore}
+                  suppressHighlighting
+                  style={{ minHeight: tokens.touchTargetMin, paddingVertical: 12, fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}
+                >
+                  {O.r.addMore}
+                </Text>
+              </ReviewBlock>
 
-          <View style={{ height: tokens.space.xxl }} />
+              {money.belowMinimum ? (
+                <ReviewNote tone="hi" icon="circle-alert">
+                  {ofFmt(O.r.minHint, { d: formatMoney(money.shortfall), f: formatMoney(money.smallOrderFee) })}
+                </ReviewNote>
+              ) : null}
+
+              <ReviewBlock label={O.r.to} edit={{ label: O.c.edit, onPress: openAddress }}>
+                {drop ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <Icon name="map-pin" size={18} color={tokens.color.danger} />
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{drop.label}</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <Icon name="map-pin" size={18} color={tokens.color.danger} />
+                      <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.dangerInk }}>{O.r.noLoc}</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{O.r.noLocSub}</Text>
+                  </>
+                )}
+              </ReviewBlock>
+            </>
+          )}
+
+          <ReviewBlock label={O.r.when}>
+            <WhenAsap window={editingAddr ? null : eta} />
+          </ReviewBlock>
+
+          {editingAddr ? null : (
+            <>
+              <ReviewBlock label={O.r.phone} edit={{ label: phoneOpen ? O.c.done : O.c.edit, onPress: () => setEditingPhone(!phoneOpen) }}>
+                {phoneOpen ? (
+                  <ReviewField
+                    autoFocus={editingPhone}
+                    value={phone}
+                    onChangeText={setPhone}
+                    onSubmitEditing={() => setEditingPhone(false)}
+                    placeholder="0771 234 567"
+                    keyboardType="phone-pad"
+                    maxLength={20}
+                    accessibilityLabel={O.r.phone}
+                  />
+                ) : (
+                  <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{displayPhone(phone)}</Text>
+                )}
+                <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{O.r.phoneSub}</Text>
+              </ReviewBlock>
+
+              <ReviewBlock label={O.r.riderNote} edit={{ label: editingNote ? O.c.done : O.c.edit, onPress: () => setEditingNote(!editingNote) }}>
+                {editingNote ? (
+                  <ReviewField
+                    autoFocus
+                    value={riderNote}
+                    onChangeText={setRiderNote}
+                    placeholder={O.r.riderNoteEmpty}
+                    maxLength={160}
+                    multiline
+                    accessibilityLabel={O.r.riderNote}
+                  />
+                ) : riderNote.trim() ? (
+                  <Text style={{ fontSize: 15, lineHeight: 21, color: tokens.color.ink }}>{riderNote.trim()}</Text>
+                ) : (
+                  <Text style={{ fontSize: 15, lineHeight: 21, color: tokens.color.muted }}>{O.r.riderNoteEmpty}</Text>
+                )}
+              </ReviewBlock>
+
+              <ReviewBlock label={O.r.pay}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Icon name="banknote" size={20} color={tokens.color.accentText} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{O.r.cash}</Text>
+                    <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{ofFmt(O.r.cashSub, { p: formatMoney(money.total) })}</Text>
+                  </View>
+                </View>
+              </ReviewBlock>
+
+              <Breakdown food={money.food} deliveryFee={money.deliveryFee} smallOrderFee={money.smallOrderFee} total={money.total} />
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Drag-to-adjust confirm for a searched delivery address (drop slot only) — same component the
-          parcel composer uses, so food riders get a precise pin + in-context landmark, not a centroid. */}
-      <AddressConfirmSheet
-        place={confirming}
-        slot="drop"
-        initialLandmark={dropLandmark}
-        onConfirm={onConfirmAddress}
-        onCancel={() => setConfirming(null)}
-      />
-    </Screen>
+      {busy ? <View pointerEvents="auto" style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: VEIL, zIndex: 20 }} /> : null}
+
+      <ReviewBar hint={hint} bottomInset={insets.bottom}>
+        {editingAddr ? (
+          <PrimaryButton label={O.r.addrSave} onPress={commitAddress} disabled={!draft || draftOut} />
+        ) : (
+          <PrimaryButton
+            label={busy ? O.r.placing : placeLabel}
+            onPress={() => void submit()}
+            loading={busy}
+            disabled={!reachable || !drop || (!restaurant && !busy)}
+          />
+        )}
+      </ReviewBar>
+
+      {toast ? (
+        <ReviewToast
+          text={toast.text}
+          action={toast.retry ? O.c.tryAgain : undefined}
+          onAction={() => void submit()}
+          bottom={insets.bottom + 88}
+        />
+      ) : null}
+
+      {/* R6b — the kitchen closed while the customer was reviewing. The cart is kept; "Schedule for …"
+          waits for the slots API (R5), so only "See open places" is offered. */}
+      <Modal visible={closed && !busy} transparent animationType="fade" onRequestClose={() => router.back()} statusBarTranslucent>
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: DIM }}>
+          <View accessibilityViewIsModal style={{ backgroundColor: tokens.color.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingHorizontal: 16, paddingBottom: 16 + insets.bottom, gap: 10 }}>
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
+              <Icon name="clock" size={28} color={tokens.color.muted} />
+            </View>
+            <Text accessibilityRole="header" style={{ fontSize: 21, lineHeight: 25.2, fontWeight: tokens.font.weight.extrabold, letterSpacing: -0.5, color: tokens.color.ink }}>
+              {ofFmt(O.r.closedT, { v: venue })}
+            </Text>
+            <Text style={{ fontSize: 14, lineHeight: 19.6, color: tokens.color.muted }}>{O.r.closedS}</Text>
+            <PrimaryButton ghost label={B.justClosed.yes} onPress={() => router.replace("/food")} />
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }

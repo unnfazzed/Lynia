@@ -214,21 +214,20 @@ describe("parity structural snapshot · structural-slot verification (Screen.foo
 });
 
 describe("parity structural snapshot · region/fragment adoption model (Foundation-E)", () => {
-  it("RC.checkout_cash is region-adopted — congruent region fragments + a congruent composition check", () => {
-    // An INTERACTIVE container adopted piece-by-piece: each region is its own guarded fragment and the
-    // container's assembly is verified by the composition check. (RC.menu was the first such screen
-    // until D-57 superseded it.)
-    const units2 = units.filter((u) => u.screen === "RC.checkout_cash");
-    expect(units2.map((u) => u.region).sort()).toEqual(["footer", "summary"]);
-    for (const u of units2) {
-      const r = results.find((x) => x.key === u.key);
-      expect(r, `no result for region unit ${u.key}`).toBeTruthy();
-      expect(r!.region).toBe(u.region);
-      expect(r!.ok, `region ${u.key} drifted: ${r!.message}`).toBe(true);
+  it("every region-adopted screen's fragments and composition are congruent", () => {
+    // INTERACTIVE containers adopted piece-by-piece: each region is its own guarded fragment and the
+    // container's assembly is verified by the composition check. (RC.menu, then RC.checkout_cash, were the
+    // proving screens until D-57 and D-59 superseded them.)
+    for (const e of regionScreens) {
+      for (const u of units.filter((x) => x.screen === e.key)) {
+        const r = results.find((x) => x.key === u.key);
+        expect(r, `no result for region unit ${u.key}`).toBeTruthy();
+        expect(r!.region).toBe(u.region);
+        expect(r!.ok, `region ${u.key} drifted: ${r!.message}`).toBe(true);
+      }
+      const comp = results.find((r) => r.screen === e.key && r.composition);
+      expect(comp!.ok, `${e.key} composition drifted: ${comp!.message}`).toBe(true);
     }
-    const comp = results.find((r) => r.screen === "RC.checkout_cash" && r.composition);
-    expect(comp, "no composition result for RC.checkout_cash").toBeTruthy();
-    expect(comp!.ok, `RC.checkout_cash composition drifted: ${comp!.message}`).toBe(true);
   });
 
   it("every region-adopted screen has a composition result and all region views are gated", () => {
@@ -246,13 +245,19 @@ describe("parity structural snapshot · region/fragment adoption model (Foundati
     }
   });
 
-  it("a backend-gated part of a region-adopted screen is an honest NON-region deferral (not adopted)", () => {
-    const d = deferred.find((x) => x.screen === "RC.checkout_cash" && x.state === "payment");
-    expect(d, "RC.checkout_cash payment deferral missing").toBeTruthy();
-    expect(d!.reason.length).toBeGreaterThan(20);
-    // A superseded screen keeps no regions: RC.menu is one SUPERSEDED deferral (D-57).
-    expect(units.filter((u) => u.screen === "RC.menu")).toEqual([]);
+  it("a superseded screen keeps no regions — it is one honest SUPERSEDED deferral per gallery key", () => {
+    // RC.menu (D-57) and the food cart + checkout (D-59) were region-adopted; their handoffs retired the
+    // gallery trees, so each key is recorded as a SUPERSEDED deferral with a reason, never silently dropped.
+    for (const key of ["RC.menu", "RC.cart", "RC.checkout_cash"]) {
+      expect(units.filter((u) => u.screen === key)).toEqual([]);
+      expect(regionScreens.find((r) => r.key === key)).toBeUndefined();
+    }
     expect(deferred.find((x) => x.screen === "RC.menu")!.reason).toMatch(/SUPERSEDED TARGET \(docs\/DESIGN-DEVIATIONS\.md D-57/);
+    for (const key of ["RC.cart", "RC.cart_oos", "RC.cart_price", "RC.cart_min", "RC.cart_note", "RC.cart_empty", "RC.placing", "RC.checkout_cash", "RC.checkout_wallet"]) {
+      const d = deferred.find((x) => x.key === key);
+      expect(d, `${key} deferral missing`).toBeTruthy();
+      expect(d!.reason).toMatch(/SUPERSEDED TARGET \(docs\/DESIGN-DEVIATIONS\.md D-59/);
+    }
   });
 });
 

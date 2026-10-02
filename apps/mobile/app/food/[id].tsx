@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 import { useFoodCart } from "../../src/food/cart-context";
 import { categoryServedNow, restaurantVenue, windowLaterToday, type VenueView } from "../../src/logic/browse";
 import { MAX_ITEM_QTY } from "../../src/logic/food-cart";
@@ -40,6 +41,9 @@ import {
  * the history for it). + adds one with no sheet; the row opens the item sheet. Adding from another
  * kitchen asks first (I3). A closed kitchen shows prices and photos but no + anywhere.
  */
+
+const REVIEW_PREWARM: readonly PrewarmRoute[] = ["foodCheckout"];
+const NO_PREWARM: readonly PrewarmRoute[] = [];
 
 /** The ink toast's life (README §3 "Errors show once, as an ink toast (~4 s)"). */
 const TOAST_MS = 4000;
@@ -148,6 +152,9 @@ export default function RestaurantMenuScreen(): React.ReactElement {
 
   const qtyFor = (dishId: string): number => (cart.cart.restaurantId === id ? cart.cart.lines.filter((l) => l.dishId === dishId).reduce((s, l) => s + l.quantity, 0) : 0);
   const hasCart = cart.itemCount > 0 && cart.cart.restaurantId === id;
+  // The cart bar's one exit is Review & place (D-59), which pulls react-native-maps in for the inline
+  // address card — warm it while the customer is still browsing, but only once there IS a basket.
+  usePrewarmRoutes(hasCart ? REVIEW_PREWARM : NO_PREWARM);
 
   const commit = (item: StoreItem, qty: number, note: string): void => {
     cart.addItem(id, name, { dishId: item.id, name: item.name, priceUsd: item.priceUsd, quantity: qty, note });
@@ -283,7 +290,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
             venue={name}
             minSubtotal={RESTAURANTS_PRICING.minOrderSubtotal}
             smallOrderFee={RESTAURANTS_PRICING.smallOrderFee}
-            onPress={() => router.push("/food/cart")}
+            onPress={() => router.push("/food/checkout")}
           />
         ) : null}
         {toast ? <BrowseToast text={toast.text} icon={toast.icon} bottom={(showBar ? 88 : 24) + insets.bottom} /> : null}

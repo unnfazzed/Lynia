@@ -54,18 +54,17 @@ describe("isStillUnpaidReminderDue", () => {
   });
 });
 
-describe("goToPlacedFoodOrder (P0-1: never strand a placed order on the emptied cart)", () => {
-  it("resets the food stack to its root, THEN pushes the order — never a bare replace", () => {
+describe("goToPlacedFoodOrder (Order flow v2: the order replaces Review, Back goes Home)", () => {
+  it("resets the food stack to its root, THEN replaces it with the order — never a push over the cart", () => {
     const calls: string[] = [];
     const router = {
       dismissAll: jest.fn(() => calls.push("dismissAll")),
-      push: jest.fn((href: string) => calls.push(`push:${href}`)),
+      replace: jest.fn((href: string) => calls.push(`replace:${href}`)),
     };
     goToPlacedFoodOrder(router, "fo-1");
-    // dismissAll pops the food stack (list/menu/cart/checkout) to its first route, so back from the
-    // live order lands on a browsable screen — not the cart checkout just cleared one line earlier.
-    expect(calls).toEqual(["dismissAll", "push:/food/order/fo-1"]);
+    // dismissAll pops the food stack (list/menu/review) to its first route; replacing THAT leaves the
+    // order as the stack's only route, so Back from the live order goes Home — never to the emptied cart.
+    expect(calls).toEqual(["dismissAll", "replace:/food/order/fo-1"]);
     expect(router.dismissAll).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith("/food/order/fo-1");
   });
 });
