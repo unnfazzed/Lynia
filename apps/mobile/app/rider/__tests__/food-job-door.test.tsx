@@ -152,7 +152,6 @@ const BASE_FOOD_ORDER: MerchantOrderResponse = {
 };
 
 
-const ARRIVED = "I'm at the kitchen";
 
 function textOf(tree: renderer.ReactTestRenderer): string {
   return tree.root
@@ -176,14 +175,6 @@ async function press(tree: renderer.ReactTestRenderer, label: string): Promise<v
     p!.props.onPress();
   });
   await settle();
-}
-
-async function atRestaurant(autoAccepted: boolean): Promise<renderer.ReactTestRenderer> {
-  mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, status: "en_route_pickup" });
-  mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, status: "en_route_pickup", autoAccepted });
-  const tree = await render();
-  await press(tree, ARRIVED);
-  return tree;
 }
 
 beforeEach(() => {
@@ -210,12 +201,6 @@ function typeCode(tree: renderer.ReactTestRenderer, label: string, code: string)
   return act(async () => {
     input.props.onChangeText(code);
   }).then(settle);
-}
-
-function ctaDisabled(tree: renderer.ReactTestRenderer, label: string): boolean {
-  const node = tree.root.findAll((n) => n.props.label === label)[0];
-  if (!node) throw new Error(`no node labelled ${label}`);
-  return node.props.disabled === true;
 }
 
 async function pressCta(tree: renderer.ReactTestRenderer, label: string): Promise<void> {

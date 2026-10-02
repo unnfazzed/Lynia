@@ -14,9 +14,10 @@ import { Icon } from "../icons";
 
 /** README "Merchant track": the customer's four steps, then "Cash back to you" when the rider brings
  *  the money back. Replaces B6's eight-step stepper. */
-export function MerchantTrack({ order, v }: { order: MerchantOrderResponse; v: Vocabulary }) {
+export function MerchantTrack({ order, v, cashRow = true }: { order: MerchantOrderResponse; v: Vocabulary; cashRow?: boolean }) {
   const cur = trackStep(order);
-  const cash = cashBackRow(order);
+  // M3 draws the bare track; M5/M6 add the cash row (of-screens-mrg `track` vs `mtrack`).
+  const cash = cashRow ? cashBackRow(order) : null;
   return (
     <>
       <ol className="m-trk" aria-label={`Step ${Math.min(cur + 1, 4)} of 4: ${v.track[Math.min(cur, 3)]}`}>
@@ -24,8 +25,8 @@ export function MerchantTrack({ order, v }: { order: MerchantOrderResponse; v: V
           const state = k < cur ? "done" : k === cur ? "now" : undefined;
           return (
             <li key={label} data-s={state}>
-              {k > 0 && <span className="m-ln" data-on={k <= cur ? "" : undefined} style={{ left: 0, right: "50%" }} />}
-              {k < 3 && <span className="m-ln" data-on={k < cur ? "" : undefined} style={{ left: "50%", right: 0 }} />}
+              {/* One connector per gap, centre to centre; the next step's circle paints over its end. */}
+              {k < 3 && <span className="m-ln" data-on={k < cur ? "" : undefined} style={{ left: "50%", width: "100%" }} />}
               <span className="m-c">{state === "done" ? <Icon name="check" size={13} /> : k + 1}</span>
               <span className="m-l">{label}</span>
             </li>

@@ -280,6 +280,11 @@ export default function OrderPage() {
   }
 }
 
+/** A pushed screen that fills the scroll area, so its CTA bar sits at the bottom however short it is. */
+function Fill({ children }: { children: React.ReactNode }) {
+  return <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>{children}</div>;
+}
+
 /** The pinned CTA bar: one primary (52), optionally a hint line above it. */
 function Bar({ children }: { children: React.ReactNode }) {
   return (
@@ -300,8 +305,8 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }:
   const wallet = order.paymentMethod === "wallet";
   const canChange = editableLines(order).length > 0;
   return (
-    <>
-      <AppBar back="/queue" title={orderLabel(order)} right={<b className="m-num" style={{ fontSize: 15 }}>{money(order.merchantGoodsTotal)}</b>} />
+    <Fill>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--accent-wash)", borderRadius: 12, padding: "10px 12px" }}>
           <div className="m-ring" style={{ width: 56, height: 56, background: `conic-gradient(var(--accent) 0 ${pct}%, #cdeeda ${pct}% 100%)` }}>
@@ -323,7 +328,7 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }:
             {OF.changeItems}
           </button>
         )}
-        <MerchantTrack order={order} v={v} />
+        <MerchantTrack order={order} v={v} cashRow={false} />
         {error && <div className="m-alert" role="alert">{error}</div>}
         {wallet ? (
           // A paid WALLET order is refunded with the merchant's own reference (legacy lane).
@@ -339,7 +344,7 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }:
           {v.readyCta}
         </button>
       </Bar>
-    </>
+    </Fill>
   );
 }
 
@@ -348,7 +353,7 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
   const matched = isAfterPickup(order);
   const hold = isNoRiderHold(order);
   return (
-    <>
+    <Fill>
       <AppBar back="/queue" title={OF.handTitle(orderLabel(order))} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
         {order.rider ? (
@@ -401,7 +406,7 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
           {OF.handBtn}
         </button>
       </Bar>
-    </>
+    </Fill>
   );
 }
 
