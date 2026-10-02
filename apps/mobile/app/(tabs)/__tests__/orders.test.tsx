@@ -286,7 +286,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
     it("a rated row shows filled stars only; an unrated one shows none", async () => {
       const tree = await open(history([histRow("a", { rating: { score: 4, comment: null } }), histRow("b")]));
       expect(hosts(tree, (n) => n.props.accessibilityLabel === "4 stars").length).toBe(1);
-      expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && / stars$/.test(n.props.accessibilityLabel)).length).toBe(1);
+      expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.endsWith(" stars")).length).toBe(1);
     });
 
     it("drops jobs the user carried as a rider; a rider-only history is the empty card", async () => {

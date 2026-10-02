@@ -8,6 +8,7 @@ import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-rout
 import { getActiveCustomerOrders } from "../../src/api/orders";
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
 import { useReachable } from "../../src/net/use-reachable";
 import { useServiceFlags } from "../../src/net/use-service-flags";
 import { useFoodOrdersPeek } from "../../src/query/use-food-order";
@@ -174,6 +175,10 @@ export default function OrdersTabScreen(): React.ReactElement {
         <OrdersButton kind="ghost" label={C.clearSearch} onPress={() => setQuery("")} />
       </InfoCard>
     );
+
+  // The tab draws its own offline message (the banner, the search note, the O20 card), so the app-wide
+  // strip stands down while it does — one offline bar, not two (the order screen's rule, D-53 state 19).
+  useClaimOfflineBanner(focused && !online && (searching || (rows === null && !isFetching) || (history.length > 0 && savedAt != null)));
 
   let body: React.ReactElement;
   if (searching) {
