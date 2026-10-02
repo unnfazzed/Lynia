@@ -203,7 +203,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
-| 👁 | C8·5 | `LJ help` | Help & support | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
+| ⊘ | C8·5 | `LJ help` | Help & support | SUPERSEDED (D-60, owner 2026-10-02): Help & support opens WhatsApp `wa.me/263778831938` directly; `app/help` deleted | |
 | ⏭ | C8·6 | `LJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S4 (sectioned Settings, customer) | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
 | ⏭ | C8·7 | `LJ settings_perms` | Settings · real permissions | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1/S3 (permissions read from the phone) | |
 | ⏭ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1 | |

@@ -1,5 +1,5 @@
 /**
- * Rider v2 S5 (Bike & documents) and S6 (Help & support), ledger D-54.
+ * Rider v2 S5 (Bike & documents), ledger D-54. S6 (Help & support) is gone: the row opens WhatsApp (D-60).
  */
 import renderer, { act } from "react-test-renderer";
 import { Linking } from "react-native";
@@ -15,15 +15,14 @@ jest.mock("../../../src/api/auth", () => ({
 }));
 
 import DocumentsScreen from "../documents";
-import RiderHelpScreen from "../help";
 
-function render(which: "docs" | "help"): renderer.ReactTestRenderer {
+function render(_which: "docs"): renderer.ReactTestRenderer {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let tree!: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(
       <SafeAreaProvider initialMetrics={TEST_METRICS}>
-        <QueryClientProvider client={qc}>{which === "docs" ? <DocumentsScreen /> : <RiderHelpScreen />}</QueryClientProvider>
+        <QueryClientProvider client={qc}><DocumentsScreen /></QueryClientProvider>
       </SafeAreaProvider>,
     );
   });
@@ -65,26 +64,5 @@ describe("S5 Bike & documents", () => {
     act(() => btn.props.onPress());
     expect(openURL).toHaveBeenCalledWith(expect.stringContaining("https://wa.me/263770000000?text="));
     expect(decodeURIComponent(openURL.mock.calls[0]![0] as string)).toContain("ABH 4721");
-  });
-});
-
-describe("S6 Help & support (rider)", () => {
-  it("draws WhatsApp, call support, the safety line and the common questions", () => {
-    const t = text(render("help"));
-    for (const s of ["Help & support", "Message us on WhatsApp", "Call LyniaGo support", "Call the safety line", "24 hours, for riders in danger", "COMMON QUESTIONS", "How do strikes work?"]) expect(t).toContain(s);
-  });
-
-  it("a common question opens WhatsApp with that question", () => {
-    const tree = render("help");
-    const row = tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("How do strikes work?") && typeof n.props.onPress === "function")[0]!;
-    act(() => row.props.onPress());
-    expect(decodeURIComponent(openURL.mock.calls[0]![0] as string)).toContain("How do strikes work?");
-  });
-
-  it("the safety line dials", () => {
-    const tree = render("help");
-    const row = tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Call the safety line") && typeof n.props.onPress === "function")[0]!;
-    act(() => row.props.onPress());
-    expect(openURL.mock.calls[0]![0]).toMatch(/^tel:/);
   });
 });

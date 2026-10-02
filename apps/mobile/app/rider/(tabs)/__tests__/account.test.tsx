@@ -4,7 +4,7 @@
  * Pins: the four rows (Job history · Notifications · Help & support · Settings) and the rows that left
  * (Money, Bike & documents, Switch to customer); the Customer | Rider toggle and its two confirm sheets
  * — C4 takes the rider offline (that is how dispatch stops), C5 keeps them online for the job they're
- * carrying; the tappable identity card; and the standing card's real strike count.
+ * carrying; the identity card (not tappable, D-60); Help & support straight to WhatsApp and the safety line row; and the standing card's real strike count.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import renderer, { act } from "react-test-renderer";
@@ -26,7 +26,10 @@ jest.mock("../../../../src/api/orders", () => ({ getActiveOrder: (...a: unknown[
 jest.mock("../../../../src/api/notifications", () => ({ getNotificationsUnreadCount: () => Promise.resolve({ count: 3 }) }));
 jest.mock("../../../../src/api/riders", () => ({ setOnline: (online: boolean) => mockSetOnline(online) }));
 
+import { Linking } from "react-native";
 import RiderAccountTabScreen from "../account";
+
+const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
 
 function meFixture(overrides: Partial<NonNullable<Me["rider"]>> = {}): Me {
   return {
@@ -102,7 +105,7 @@ describe("rider Account (Rider v2 C1)", () => {
     for (const gone of ["Money", "Bike & documents", "Switch to customer"]) expect(has(tree, gone)).toBe(false);
   });
 
-  it("routes each row to its own side's screen", async () => {
+  it("routes each row to its own side's screen; Help & support opens WhatsApp directly (D-60)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     tree = renderScreen();
@@ -110,16 +113,29 @@ describe("rider Account (Rider v2 C1)", () => {
     press(tree, "Job history");
     press(tree, "Settings");
     press(tree, "Help & support");
-    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=rider", "/settings?side=rider", "/rider/help"]);
+    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=rider", "/settings?side=rider"]);
+    expect(openURL).toHaveBeenCalledWith("https://wa.me/263778831938");
   });
 
-  it("opens the profile from the identity card (no longer inert)", async () => {
+  it("the identity card is not tappable and draws no chevron (D-60)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     tree = renderScreen();
     await settle();
-    press(tree, "Tendai Moyo, 4.9 · 312 jobs");
-    expect(mockPush).toHaveBeenCalledWith("/profile?side=rider");
+    const card = tree.root.findAll((n) => n.props.accessibilityLabel === "Tendai Moyo, 4.9 · 312 jobs");
+    expect(card.length).toBeGreaterThan(0);
+    expect(card.some((n) => typeof n.props.onPress === "function")).toBe(false);
+    expect(card[0]!.findAll((n) => n.props.name === "chevron-right").length).toBe(0);
+  });
+
+  it("the 24-hour safety line sits on the Account and dials (moved from the old Help screen, D-60)", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, "Call the safety line")).toBe(true);
+    press(tree, "Call the safety line, 24 hours, for riders in danger");
+    expect(openURL.mock.calls.at(-1)![0]).toMatch(/^tel:/);
   });
 
   it("shows the real strike count on the standing card", async () => {

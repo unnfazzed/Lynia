@@ -71,7 +71,6 @@ export const APP_TARGETS = {
   "LJ.privacy": { kind: "mobile", component: "app/settings/privacy.tsx", fixture: "privacy" },
   "LJ.delete_account": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_account" },
   "LJ.delete_final": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_final" },
-  "LJ.help": { kind: "mobile", component: "app/help/index.tsx", fixture: "help" },
   "LJ.settings": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings" },
   "LJ.settings_perms": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms" },
   "LJ.settings_perms_ok": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms_ok" },

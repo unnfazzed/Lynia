@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 /**
  * API base URL. Set it for device/prod via EXPO_PUBLIC_API_URL (e.g. your LAN IP in dev, the HTTPS
@@ -139,18 +139,24 @@ export function placesEnabled(): boolean {
 }
 
 /**
- * Support WhatsApp number in international digits (no "+"), e.g. "263771234567". OPTIONAL — the help
- * hub's "Chat on WhatsApp" row is gated on it (help routes to WhatsApp by product decision): with no
- * number the row hides rather than opening a dead link. Set via `EXPO_PUBLIC_SUPPORT_WHATSAPP` or
- * `extra.supportWhatsApp` in app.config.ts.
+ * Support WhatsApp number in international digits (no "+"). Help & support on both Account tabs opens
+ * this chat directly (owner 2026-10-02, ledger D-60): the support line is 077 883 1938. A build can still
+ * override it via `EXPO_PUBLIC_SUPPORT_WHATSAPP` or `extra.supportWhatsApp` in app.config.ts.
  */
+export const DEFAULT_SUPPORT_WHATSAPP = "263778831938";
 const supportWaFromExtra = (Constants.expoConfig?.extra as { supportWhatsApp?: string } | undefined)?.supportWhatsApp;
 export const SUPPORT_WHATSAPP: string | null =
-  (process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? supportWaFromExtra ?? "").replace(/[^\d]/g, "") || null;
+  (process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? supportWaFromExtra ?? DEFAULT_SUPPORT_WHATSAPP).replace(/[^\d]/g, "") || null;
 
-/** A wa.me deep link to support, or null when no number is configured (the row then hides). */
+/** A wa.me deep link to support, or null when a build blanks the number out. */
 export function supportWhatsAppUrl(): string | null {
   return SUPPORT_WHATSAPP ? `https://wa.me/${SUPPORT_WHATSAPP}` : null;
+}
+
+/** Help & support: open the support chat in WhatsApp (ledger D-60). Nothing else sits in between. */
+export function openSupportWhatsApp(): void {
+  const url = supportWhatsAppUrl() ?? `https://wa.me/${DEFAULT_SUPPORT_WHATSAPP}`;
+  void Linking.openURL(url).catch(() => undefined);
 }
 
 /**

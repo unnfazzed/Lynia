@@ -523,7 +523,7 @@ export function PillButton({
   );
 }
 
-/** The mint card that replaces the rails when there is no address (H6) or nothing nearby. */
+/** The mint card that replaces the rails when there is no address (H6). */
 export function NoLocationCard({
   title,
   onUseLocation,
@@ -534,6 +534,29 @@ export function NoLocationCard({
   onTypeAddress: () => void;
 }): React.ReactElement {
   return (
+    <MintEmptyCard title={title} body={H.noLocBody}>
+      <PillButton label={H.useMyLocation} icon="navigation" onPress={onUseLocation} />
+      <View style={{ marginTop: 8 }}>
+        <PillButton label={H.typeAddress} ghost onPress={onTypeAddress} />
+      </View>
+    </MintEmptyCard>
+  );
+}
+
+/**
+ * The H6 card when both rails are empty: merchants are still being onboarded here, parcels work now —
+ * one "Send a parcel" button (owner 2026-10-02, ledger D-60).
+ */
+export function ComingSoonCard({ onSend }: { onSend: () => void }): React.ReactElement {
+  return (
+    <MintEmptyCard title={H.comingSoonTitle} body={H.comingSoonBody}>
+      <PillButton label={H.sendParcel} icon="package" onPress={onSend} />
+    </MintEmptyCard>
+  );
+}
+
+function MintEmptyCard({ title, body, children }: { title: string; body: string; children: React.ReactNode }): React.ReactElement {
+  return (
     <View style={{ marginTop: 24, marginHorizontal: 16, padding: 20, borderRadius: 20, backgroundColor: tokens.color.accentWash, alignItems: "stretch" }}>
       <View style={{ alignItems: "center" }} accessibilityElementsHidden importantForAccessibility="no">
         <TrustTrackingArt width={132} />
@@ -541,11 +564,8 @@ export function NoLocationCard({
       <Text accessibilityRole="header" style={{ marginTop: 8, textAlign: "center", fontSize: 18, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
         {title}
       </Text>
-      <Text style={{ marginTop: 6, marginBottom: 16, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{H.noLocBody}</Text>
-      <PillButton label={H.useMyLocation} icon="navigation" onPress={onUseLocation} />
-      <View style={{ marginTop: 8 }}>
-        <PillButton label={H.typeAddress} ghost onPress={onTypeAddress} />
-      </View>
+      <Text style={{ marginTop: 6, marginBottom: 16, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{body}</Text>
+      {children}
     </View>
   );
 }

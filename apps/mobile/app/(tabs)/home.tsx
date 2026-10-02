@@ -29,6 +29,7 @@ import {
   HomeTop,
   LiveOrderBar,
   NARROW_MAX,
+  ComingSoonCard,
   NoLocationCard,
   RailSkeleton,
   ServiceGrid,
@@ -375,8 +376,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
             <RailSkeleton />
           </View>
         ) : (
-          // README §2 rules: both rails empty → the H6 card, titled "Nothing delivers here yet".
-          <NoLocationCard title={H.nothingHere} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+          // Both rails empty → the H6 card, reworded: merchants coming, parcels now (owner 2026-10-02, D-60).
+          <ComingSoonCard onSend={() => router.push("/send")} />
         )}
       </ScrollView>
       {bar ? (

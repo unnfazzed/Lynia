@@ -415,7 +415,8 @@ export const RF = {
   /** Undrawn: the count when the board mixes parcels with food or shop jobs (owner 2026-10-01). */
   jobsNearYou: (n: number): string => (n === 1 ? "1 job near you" : `${n} jobs near you`),
   busyLine: (place: string, kmAway: number): string => `Busier near ${place} · ${km(kmAway)} from you`,
-  whyQuietB: (place: string): string => `It's quiet around ${place} right now. Most jobs come in 7–9am and 5–7pm.`,
+  /** Owner 2026-10-02 (ledger D-60): the handoff's "Most jobs come in 7–9am and 5–7pm." is cut. */
+  whyQuietB: (place: string): string => `It's quiet around ${place} right now.`,
   picked: (customer: string): string => `${customer} picked you!`,
   pickedB: (from: string, to: string, fare: number): string => `${from} → ${to} · ${usd(fare)} cash`,
   notChosen: (customer: string): string => `${customer} chose another rider. Your offer is closed.`,
