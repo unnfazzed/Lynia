@@ -110,19 +110,23 @@ function row(daysAgo, h, m, over) {
     createdAt: dayAt(daysAgo, h, m),
     rating: null,
     counterpartyName: "Rudo Kanengoni",
+    // GET /orders/mine/history's own fields (D-63); a row that names none is a delivered parcel.
+    service: "parcel",
+    outcome: "delivered",
+    chargedTotal: "5.00",
     ...over,
   };
 }
 
 /** The handoff's HIST, as the history feed carries it (newest first). */
 export const HISTORY = [
-  row(0, 13, 5, { orderType: "merchant", merchantName: "Gava’s Kitchen", itemDesc: "Sadza & beef stew, Mazoe ×2", agreedFare: "12.50", proposedFare: "12.50", counterpartyName: "Tendai Moyo", rating: { score: 4, comment: null } }),
+  row(0, 13, 5, { service: "food", chargedTotal: "12.50", orderType: "merchant", merchantName: "Gava’s Kitchen", itemDesc: "Sadza & beef stew, Mazoe ×2", agreedFare: "12.50", proposedFare: "12.50", counterpartyName: "Tendai Moyo", rating: { score: 4, comment: null } }),
   row(0, 8, 40, {}),
-  row(1, 17, 20, { pickup: { point: EASTGATE, landmark: "Avondale Shops" }, dropoff: { point: BELGRAVIA, landmark: "Mount Pleasant" }, itemDesc: "Laptop bag", status: "expired", agreedFare: null, counterpartyName: null }),
-  row(1, 12, 10, { orderType: "merchant", merchantName: "Nando’s Avondale", itemDesc: "Peri chicken, chips ×2", status: "cancelled", counterpartyName: null }),
-  row(4, 16, 45, { orderType: "merchant", merchantName: "Avondale Pharmacy", itemDesc: "3 items", agreedFare: "8.40", proposedFare: "8.40", counterpartyName: "Farai Ncube", rating: { score: 5, comment: null } }),
-  row(4, 9, 2, { pickup: { point: EASTGATE, landmark: "Avondale Shops" }, itemDesc: "Keys", status: "cancelled", counterpartyName: null }),
-  row(6, 15, 30, { pickup: { point: EASTGATE, landmark: "Sam Levy’s" }, dropoff: { point: BELGRAVIA, landmark: "Borrowdale" }, itemDesc: "Shoes in a box", status: "undelivered", counterpartyName: "Tendai Moyo" }),
+  row(1, 17, 20, { outcome: "no_rider", chargedTotal: null, pickup: { point: EASTGATE, landmark: "Avondale Shops" }, dropoff: { point: BELGRAVIA, landmark: "Mount Pleasant" }, itemDesc: "Laptop bag", status: "expired", agreedFare: null, counterpartyName: null }),
+  row(1, 12, 10, { service: "food", outcome: "kitchen_timeout", chargedTotal: null, orderType: "merchant", merchantName: "Nando’s Avondale", itemDesc: "Peri chicken, chips ×2", status: "cancelled", counterpartyName: null }),
+  row(4, 16, 45, { service: "pharmacy", chargedTotal: "8.40", orderType: "merchant", merchantName: "Avondale Pharmacy", itemDesc: "3 items", agreedFare: "8.40", proposedFare: "8.40", counterpartyName: "Farai Ncube", rating: { score: 5, comment: null } }),
+  row(4, 9, 2, { outcome: "cancelled_by_you", chargedTotal: null, pickup: { point: EASTGATE, landmark: "Avondale Shops" }, itemDesc: "Keys", status: "cancelled", counterpartyName: null }),
+  row(6, 15, 30, { outcome: "not_delivered", chargedTotal: null, pickup: { point: EASTGATE, landmark: "Sam Levy’s" }, dropoff: { point: BELGRAVIA, landmark: "Borrowdale" }, itemDesc: "Shoes in a box", status: "undelivered", counterpartyName: "Tendai Moyo" }),
 ];
 
 /** Install the Orders tab's feeds. `historyStatus` 500 stages O21; `food` false stages the parcels-only app. */
@@ -132,6 +136,7 @@ export function ordersFixture({ active = [], history = HISTORY, historyStatus = 
     { match: /^\/orders\/mine\/active-orders$/, json: active.map((o) => o.snap) },
     { match: /^\/restaurants\/orders\/[^/]+$/, json: (path) => reads.get(path.split("/").pop()) ?? {} },
     { match: "/orders/history", json: historyStatus === 200 ? history : { message: "down" }, status: historyStatus },
+    { match: "/orders/mine/history", json: historyStatus === 200 ? { rows: history, nextCursor: null } : { message: "down" }, status: historyStatus },
     { match: "/app/feature-flags", json: { restaurantsEnabled: food, merchantDispatchAutoEnabled: food, merchantWalletEnabled: false } },
     { match: "/app/service-flags", json: { shopsEnabled: shops, pharmacyEnabled: pharmacy } },
   ]);

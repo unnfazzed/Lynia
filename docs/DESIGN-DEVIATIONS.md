@@ -3603,7 +3603,7 @@ Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(t
   returns those rows. The cancel reason is not on the row yet: a cancel reads "Cancelled by you".
 - **Service:** the row has no venue type, so every merchant row files under Food (the Shops / Pharmacy
   chips match only once it does).
-- **Amount:** the row's agreed fare (a merchant row's delivery fare, not its food total).
+- **Amount:** the row's agreed fare (for a merchant row this is already the grand total).
 - **Area:** "Parcel to <area>" uses the first comma segment of the drop-off address.
 - **Paging:** no cursor yet. The End row shows only when the feed returned fewer than 50 rows; "Loading
   older" (O12) and the page-failed row (O14/O14t) wait for `/orders/history?cursor=`.
@@ -3611,3 +3611,28 @@ Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(t
 
 **Evidence:** `docs/parity/ORDERS-V2-2026-10-02.png` (`tools/parity/shoot-orders-v2.mjs`, the `ov2_*`
 fixtures) — O1, O2, O5, O9a, O16, O17, O18, O21, handoff left, app right.
+
+### 6 · The backend round (2026-10-02, the owner's "backend after")
+
+`GET /orders/mine/history` (`OrdersService.customerOrders`) now feeds the tab: the customer's own orders
+in **every** terminal outcome, newest first, 50 a page behind a `createdAt|id` cursor, each row carrying
+`service` (parcel / food / shops / pharmacy), `outcome` and `chargedTotal` (null = no charge; a merchant
+row's grand total, which `agreedFare` already holds). `/orders/history` is unchanged — the rider's Job
+history, Money and earnings keep reading completed trips across both roles. The mobile feed
+(`useCustomerOrders`, key `["history", "customer"]`) pages automatically near the bottom (O12), shows the
+page-failed row (O14) and the End row only when the server has no next page (O13), keeps paging under a
+chip with no matches (README §5), and warm-paints through the persisted query cache. An API without the
+endpoint (404) falls back to the legacy feed as one page. §5's fallbacks for service, outcome, amount and
+paging are retired.
+
+Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral tone, `ban` icon):
+
+| Outcome (server) | When | Label |
+|---|---|---|
+| `venue_declined` | the venue turned the order down (out of stock, prescription declined) | "Restaurant couldn’t take it" · "Shop couldn’t take it" · "Pharmacy couldn’t take it" |
+| `cancelled_by_lynia` | an ops cancel (README §9's `lynia` reason) | "Cancelled by LyniaGo" |
+
+**Still open:** search matches the pages already loaded (no server search yet); the area in "Parcel to
+<area>" is still the drop-off's first address segment (no suburb field); and the O14t toast speaks the
+handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
+right above it offers the retry.

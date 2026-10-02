@@ -111,6 +111,13 @@ export class OrdersController {
     return this.orders.activeOrdersForCustomer(customerId);
   }
 
+  /** The customer Orders tab (Orders v2, ledger D-63): the caller's own orders in every outcome, newest
+   *  first, 50 per page behind `?cursor=` (the previous page's `nextCursor`). */
+  @Get("mine/history")
+  customerOrders(@CurrentUser() customerId: string, @Query("cursor") cursor?: string) {
+    return this.orders.customerOrders(customerId, cursor ?? null);
+  }
+
   /** The caller's order history across both roles (newest first). */
   @Get("history")
   history(@CurrentUser() userId: string) {

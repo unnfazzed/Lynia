@@ -38,10 +38,8 @@ jest.mock("expo-router", () => ({
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
 }));
-jest.mock("../../../src/query/use-history-feed", () => ({
-  useHistoryFeed: () => mockUseHistoryFeed(),
-  invalidateCustomerOrderHistory: jest.fn(),
-}));
+jest.mock("../../../src/query/use-history-feed", () => ({ invalidateCustomerOrderHistory: jest.fn() }));
+jest.mock("../../../src/query/use-customer-orders", () => ({ useCustomerOrders: () => mockUseHistoryFeed() }));
 let mockFlags = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false };
 let mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
 let mockOnline = true;
@@ -96,7 +94,7 @@ function press(tree: renderer.ReactTestRenderer, label: string): void {
   act(() => node.props.onPress());
 }
 
-const emptyHistory = { rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, savedAt: null, refetch: jest.fn() };
+const emptyHistory = { rows: [], isFetching: false, savedAt: null, refetch: jest.fn(), hasMore: false, isLoadingMore: false, loadMoreFailed: false, loadMore: jest.fn(async () => true) };
 const history = (rows: unknown[], over: Record<string, unknown> = {}) => ({ ...emptyHistory, rows, ...over });
 
 const histRow = (id: string, over: Record<string, unknown> = {}) => ({
@@ -313,6 +311,70 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       at.setHours(9, 24, 0, 0);
       const tree = await open(history([histRow("a")], { savedAt: at.toISOString(), showingStale: true }));
       expect(has(tree, "You’re offline. Showing your orders as of 09:24.")).toBe(true);
+    });
+  });
+
+  describe("GET /orders/mine/history rows (service, outcome, amount from the server)", () => {
+    const full = (id: string, over: Record<string, unknown>) => histRow(id, { service: "parcel", outcome: "delivered", chargedTotal: "4.50", ...over });
+
+    it("names who ended it, and charges only what the server says", async () => {
+      const tree = await open(
+        history([
+          full("a", { status: "cancelled", outcome: "cancelled_by_rider", chargedTotal: null }),
+          full("b", { orderType: "merchant", merchantName: "Gava’s Kitchen", service: "food", status: "cancelled", outcome: "venue_declined", chargedTotal: null }),
+          full("c", { orderType: "merchant", merchantName: "Avondale Pharmacy", service: "pharmacy", status: "cancelled", outcome: "kitchen_timeout", chargedTotal: null }),
+          full("d", { status: "cancelled", outcome: "cancelled_by_lynia", chargedTotal: null }),
+          full("e", { orderType: "merchant", merchantName: "Sadza Republic", service: "food", chargedTotal: "16.50" }),
+        ]),
+      );
+      expect(has(tree, "Rider cancelled")).toBe(true);
+      expect(has(tree, "Restaurant couldn’t take it")).toBe(true);
+      expect(has(tree, "Pharmacy didn’t confirm")).toBe(true);
+      expect(has(tree, "Cancelled by LyniaGo")).toBe(true);
+      expect(has(tree, "$16.50")).toBe(true);
+      expect(hosts(tree, (n) => flat(n) === "No charge").length).toBe(4);
+    });
+
+    it("files a pharmacy order under the Pharmacy chip", async () => {
+      mockFlags = { ...mockFlags, restaurantsEnabled: true };
+      mockServiceFlags = { shopsEnabled: true, pharmacyEnabled: true };
+      const tree = await open(history([full("p", {}), full("rx", { orderType: "merchant", merchantName: "Avondale Pharmacy", service: "pharmacy" })]));
+      press(tree, "Pharmacy");
+      expect(has(tree, "Avondale Pharmacy")).toBe(true);
+      expect(has(tree, "Parcel to Borrowdale")).toBe(false);
+    });
+  });
+
+  describe("paging", () => {
+    it("O12: loading older shows its row and no End", async () => {
+      const tree = await open(history([histRow("a")], { hasMore: true, isLoadingMore: true }));
+      expect(has(tree, "Loading older orders…")).toBe(true);
+      expect(has(tree, "That’s everything")).toBe(false);
+    });
+
+    it("more pages: no End row yet", async () => {
+      const tree = await open(history([histRow("a")], { hasMore: true }));
+      expect(has(tree, "That’s everything")).toBe(false);
+    });
+
+    it("O14: a failed page keeps the list and offers Try again, which loads that page again", async () => {
+      const loadMore = jest.fn(async () => true);
+      const tree = await open(history([histRow("a")], { hasMore: true, loadMoreFailed: true, loadMore }));
+      expect(has(tree, "Parcel to Borrowdale")).toBe(true);
+      expect(has(tree, "Couldn’t load older orders")).toBe(true);
+      press(tree, "Try again");
+      await settle();
+      expect(loadMore).toHaveBeenCalled();
+    });
+
+    it("a chip with no matches in the loaded pages keeps paging before it says 'none'", async () => {
+      mockFlags = { ...mockFlags, restaurantsEnabled: true };
+      const loadMore = jest.fn(async () => true);
+      const tree = await open(history([histRow("a")], { hasMore: true, loadMore }));
+      press(tree, "Food");
+      await settle();
+      expect(loadMore).toHaveBeenCalled();
+      expect(has(tree, "No food orders yet")).toBe(false);
     });
   });
 

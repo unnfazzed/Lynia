@@ -40,27 +40,7 @@ const row = (over) => ({
   counterpartyName: "Tendai M.",
   ...over,
 });
-installRouter([
-  {
-    match: /^\/orders\/mine\/active-orders$/,
-    json: [
-      live(UUID.order, {
-        orderType: "merchant",
-        merchantName: "Sadza Republic",
-        status: "assigned",
-        merchantPhase: "preparing",
-        agreedFare: "15.50",
-        proposedFare: "15.50",
-      }),
-      live("0a1b2c3d-0000-4000-8000-0000000004ff", {
-        status: "open_for_offers",
-        agreedFare: null,
-      }),
-    ],
-  },
-  {
-    match: "/orders/history",
-    json: [
+const HISTORY = [
       row({
         orderType: "merchant",
         merchantName: "Gava's Kitchen",
@@ -115,7 +95,28 @@ installRouter([
         counterpartyName: "Chipo D.",
         createdAt: new Date(now - 12 * day).toISOString(),
       }),
+    ];
+
+installRouter([
+  {
+    match: /^\/orders\/mine\/active-orders$/,
+    json: [
+      live(UUID.order, {
+        orderType: "merchant",
+        merchantName: "Sadza Republic",
+        status: "assigned",
+        merchantPhase: "preparing",
+        agreedFare: "15.50",
+        proposedFare: "15.50",
+      }),
+      live("0a1b2c3d-0000-4000-8000-0000000004ff", {
+        status: "open_for_offers",
+        agreedFare: null,
+      }),
     ],
   },
+  { match: "/orders/history", json: HISTORY },
+  // Orders v2 (D-63): the tab reads the customer feed.
+  { match: "/orders/mine/history", json: { rows: HISTORY.filter((r) => r.role === "customer"), nextCursor: null } },
 ]);
 export default { wrap: withQuery() };

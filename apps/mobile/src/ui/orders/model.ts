@@ -1,5 +1,5 @@
 import type { MerchantOrderResponse } from "@lynia/shared";
-import type { OrderHistoryRow, OrderSnapshot } from "../../api/orders";
+import type { CustomerOrderOutcome, CustomerOrderRow, OrderHistoryRow, OrderSnapshot } from "../../api/orders";
 import { liveEta } from "../../logic/eta";
 import { GPS_PAUSED_MS } from "../../logic/order-stage";
 import type { IconName } from "../Icon";
@@ -16,7 +16,7 @@ import { ordersCopy as C, OX } from "./copy";
 export type OrdersService = "send" | "restaurants" | "shops" | "pharmacy";
 export type OrdersFilter = "all" | OrdersService;
 
-export type Outcome = "delivered" | "cancelledByYou" | "cancelledByRider" | "kitchenTimeout" | "noRider" | "notDelivered";
+export type Outcome = "delivered" | "cancelledByYou" | "cancelledByRider" | "cancelledByLynia" | "kitchenTimeout" | "venueDeclined" | "noRider" | "notDelivered";
 
 export interface HistoryRowVM {
   id: string;
@@ -118,37 +118,41 @@ export function monthYear(iso: string): string {
 
 // ── history rows ────────────────────────────────────────────────────────────────────────────────
 
-function outcomeOf(status: string): Outcome {
-  switch (status) {
-    case "expired":
-      return "noRider";
-    case "undelivered":
-      return "notDelivered";
-    case "cancelled":
-      // NEEDS BACKEND (orders-v2): the cancel reason (by_customer · by_rider · kitchen_timeout). Until the
-      // row carries it, a cancel reads as the customer's own.
-      return "cancelledByYou";
-    default:
-      return "delivered";
-  }
+const OUTCOME: Record<CustomerOrderOutcome, Outcome> = {
+  delivered: "delivered",
+  cancelled_by_you: "cancelledByYou",
+  cancelled_by_rider: "cancelledByRider",
+  cancelled_by_lynia: "cancelledByLynia",
+  kitchen_timeout: "kitchenTimeout",
+  venue_declined: "venueDeclined",
+  no_rider: "noRider",
+  not_delivered: "notDelivered",
+};
+
+const SERVICE: Record<CustomerOrderRow["service"], OrdersService> = { parcel: "send", food: "restaurants", shops: "shops", pharmacy: "pharmacy" };
+
+/** An API older than GET /orders/mine/history sends a plain history row: read its status alone. */
+function legacyOutcome(status: string): Outcome {
+  if (status === "expired") return "noRider";
+  if (status === "undelivered") return "notDelivered";
+  return status === "cancelled" ? "cancelledByYou" : "delivered";
 }
 
-export function historyRowVM(o: OrderHistoryRow): HistoryRowVM {
+export function historyRowVM(o: CustomerOrderRow | OrderHistoryRow): HistoryRowVM {
   const merchant = o.orderType === "merchant";
-  const outcome = outcomeOf(o.status);
-  const fare = Number(o.agreedFare ?? o.proposedFare);
+  const full = "outcome" in o && o.outcome in OUTCOME;
+  const outcome = full ? OUTCOME[(o as CustomerOrderRow).outcome] : legacyOutcome(o.status);
+  const charged = full ? Number((o as CustomerOrderRow).chargedTotal ?? 0) : outcome === "delivered" ? Number(o.agreedFare ?? o.proposedFare) : 0;
   return {
     id: o.id,
-    // NEEDS BACKEND (orders-v2): the venue's type (restaurant / shop / pharmacy) on the history row. Until
-    // then every merchant row files under Food.
-    service: merchant ? "restaurants" : "send",
+    service: "service" in o && o.service in SERVICE ? SERVICE[o.service] : merchant ? "restaurants" : "send",
     createdAt: o.createdAt,
     title: merchant ? o.merchantName || firstSegment(o.pickup.landmark) : C.parcelTo(firstSegment(o.dropoff.landmark)),
     items: merchant ? o.itemDesc : C.parcelItems(o.itemDesc, firstSegment(o.pickup.landmark)),
     outcome,
-    // NEEDS BACKEND (orders-v2): the amount actually charged (a merchant row's food total). Every non-
-    // delivered outcome reads "No charge" (owner 2026-10-02, "Not delivered" included).
-    chargedUsd: outcome === "delivered" && Number.isFinite(fare) ? fare : 0,
+    // The server's charged amount (a merchant row's grand total); every unpaid outcome reads "No charge"
+    // (owner 2026-10-02, "Not delivered" included).
+    chargedUsd: Number.isFinite(charged) ? charged : 0,
     riderName: shortFromFull(o.counterpartyName),
     rating: o.rating?.score ?? null,
     area: o.dropoff.landmark,

@@ -886,6 +886,78 @@ export class OrdersService {
     });
   }
 
+  /**
+   * The customer's Orders tab (Orders v2, ledger D-63): ONLY orders the caller placed, every terminal
+   * outcome (delivered, cancelled, no rider, not delivered — not just completed trips), newest first, in
+   * pages of {@link CUSTOMER_ORDERS_PAGE} behind an opaque `createdAt|id` cursor. Each row carries what the
+   * tab draws and `historyForUser` never did: the service (parcel / food / shops / pharmacy), the outcome
+   * (who cancelled, or why the venue let it go) and the amount actually charged (null = no charge).
+   * `historyForUser` stays as-is for the rider's Job history, Money and earnings, which read completed
+   * trips across both roles.
+   */
+  async customerOrders(customerId: string, cursor?: string | null) {
+    const after = parseOrdersCursor(cursor);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        customerId,
+        status: { in: [...CUSTOMER_TERMINAL_STATUSES] },
+        ...(after ? { OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] } : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: CUSTOMER_ORDERS_PAGE + 1,
+      select: {
+        id: true,
+        orderType: true,
+        riderId: true,
+        pickup: true,
+        dropoff: true,
+        itemDesc: true,
+        note: true,
+        proposedFare: true,
+        agreedFare: true,
+        status: true,
+        createdAt: true,
+        cancelledBy: true,
+        rejectionReason: true,
+        rating: { select: { score: true, comment: true, byProfileId: true } },
+        rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        merchant: { select: { name: true, businessType: true, shopKind: true } },
+      },
+    });
+    const page = orders.slice(0, CUSTOMER_ORDERS_PAGE);
+    const last = page[page.length - 1];
+    return {
+      rows: page.map((o) => {
+        const rider = o.rider?.profile;
+        const outcome = customerOrderOutcome(o, customerId);
+        const charged = outcome === "delivered" ? (o.agreedFare ?? o.proposedFare).toString() : null;
+        return {
+          id: o.id,
+          orderType: o.orderType,
+          service: o.orderType === "merchant" ? merchantServiceOf(o.merchant) : ("parcel" as const),
+          merchantName: o.merchant?.name ?? null,
+          role: "customer" as const,
+          pickup: publicWaypoint(o.pickup),
+          dropoff: publicWaypoint(o.dropoff),
+          itemDesc: o.itemDesc,
+          note: o.note,
+          proposedFare: o.proposedFare.toString(),
+          agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
+          status: o.status,
+          outcome,
+          chargedTotal: charged,
+          createdAt: o.createdAt.toISOString(),
+          rating: (() => {
+            const r = o.rating.find((x) => x.byProfileId === customerId);
+            return r ? { score: r.score, comment: r.comment } : null;
+          })(),
+          counterpartyName: rider ? `${rider.firstName} ${rider.lastName}`.trim() || null : null,
+        };
+      }),
+      nextCursor: orders.length > CUSTOMER_ORDERS_PAGE && last ? `${last.createdAt.toISOString()}|${last.id}` : null,
+    };
+  }
+
   /** WD-004: the rider's true lifetime earnings total + delivered-trip count, computed with a server-side
    *  aggregate over ALL matching orders — never derived by summing the capped 50-row `historyForUser`
    *  page, which silently understates a rider with more than 50 lifetime orders (across both roles).
@@ -1191,4 +1263,60 @@ export class OrdersService {
       ridersNearby,
     };
   }
+}
+
+// ── Orders v2 (D-63): the customer Orders tab feed ──────────────────────────────────────────────────
+
+/** Rows per page of the customer Orders tab — the same 50 `historyForUser` caps at. */
+export const CUSTOMER_ORDERS_PAGE = 50;
+
+/** Every way a customer order can end: the tab shows them all, not only completed trips. */
+export const CUSTOMER_TERMINAL_STATUSES = ["delivered", "completed", "cancelled", "expired", "undelivered"] as const;
+
+/** How a customer order ended, as the Orders tab names it (handoff README §4 outcome table). */
+export type CustomerOrderOutcome =
+  | "delivered"
+  | "cancelled_by_you"
+  | "cancelled_by_rider"
+  | "cancelled_by_lynia"
+  | "kitchen_timeout"
+  | "venue_declined"
+  | "no_rider"
+  | "not_delivered";
+
+/**
+ * Who or what ended the order. A customer or rider cancel stamps `cancelledBy` with their profile id; an
+ * ops cancel stores null `cancelledBy` with a `cancelReason` (admin-orders.service.ts); a venue or the
+ * dispatcher letting a food order go stamps `rejectionReason` (MERCHANT_REJECTION_REASONS) instead.
+ */
+export function customerOrderOutcome(
+  o: { status: string; cancelledBy: string | null; riderId: string | null; rejectionReason: string | null },
+  customerId: string,
+): CustomerOrderOutcome {
+  if (o.status === "delivered" || o.status === "completed") return "delivered";
+  if (o.status === "expired") return "no_rider";
+  if (o.status === "undelivered") return "not_delivered";
+  if (o.cancelledBy === customerId) return "cancelled_by_you";
+  if (o.cancelledBy && o.cancelledBy === o.riderId) return "cancelled_by_rider";
+  if (o.rejectionReason === "kitchen_unconfirmed") return "kitchen_timeout";
+  if (o.rejectionReason === "no_rider") return "no_rider";
+  if (o.rejectionReason && o.rejectionReason !== "other") return "venue_declined";
+  return o.cancelledBy ? "cancelled_by_rider" : "cancelled_by_lynia";
+}
+
+/** A merchant order's service from its venue (restaurant / shop / pharmacy). */
+export function merchantServiceOf(m: { businessType: string; shopKind: string | null } | null): "food" | "shops" | "pharmacy" {
+  if (m?.businessType !== "shop") return "food";
+  return m.shopKind === "pharmacy" ? "pharmacy" : "shops";
+}
+
+/** `createdAt|id` → the row to page after; anything malformed reads as the first page. */
+export function parseOrdersCursor(cursor: string | null | undefined): { at: Date; id: string } | null {
+  if (!cursor) return null;
+  const i = cursor.lastIndexOf("|");
+  if (i <= 0) return null;
+  const at = new Date(cursor.slice(0, i));
+  const id = cursor.slice(i + 1);
+  if (Number.isNaN(at.getTime()) || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  return { at, id };
 }
