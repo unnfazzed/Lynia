@@ -26,7 +26,7 @@ import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 import { ShopsController } from "./shops.controller";
 import { ShopsEnabledGuard } from "./shops-enabled.guard";
-import { OrderFlowCustomerController, OrderFlowMerchantController } from "./order-flow-v2.controller";
+import { OrderFlowCustomerController, OrderFlowMerchantController } from "./order-flow-v2-b.controller";
 import { OrderScheduleService } from "./order-schedule.service";
 import { PrescriptionService } from "./prescription.service";
 
@@ -65,7 +65,7 @@ import { PrescriptionService } from "./prescription.service";
  * switch and open branches. It needs nothing new: a branch is an ordinary business row.
  *
  * Order flow v2 (ledger D-59, backend B) adds OrderScheduleService (slots + the ring sweep),
- * PrescriptionService (Rx behind RX_ENABLED) and their two controllers (order-flow-v2.controller.ts).
+ * PrescriptionService (Rx behind RX_ENABLED) and their two controllers (order-flow-v2-b.controller.ts).
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
