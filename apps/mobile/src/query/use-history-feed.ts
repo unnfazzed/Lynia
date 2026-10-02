@@ -1,7 +1,7 @@
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { type EarningsSummary, getEarningsSummary, getHistory, type OrderHistoryRow } from "../api/orders";
-import { loadHistorySnapshot, saveHistorySnapshot } from "../net/history-store";
+import { type HistorySnapshot, loadHistorySnapshot, saveHistorySnapshot } from "../net/history-store";
 import { walletKey, walletLedgerKey } from "./use-wallet";
 
 /**
@@ -22,6 +22,8 @@ export interface HistoryFeed {
   rows: OrderHistoryRow[] | null;
   /** True while the cache is shown because live data is absent (cold start / offline / error). */
   showingStale: boolean;
+  /** When the rows on screen were fetched (ISO) — the Orders tab's "as of 09:24"; null if unknown. */
+  savedAt: string | null;
   /** A live fetch is in flight (distinguishes "loading" from React Query's offline paused state). */
   isFetching: boolean;
   isError: boolean;
@@ -66,20 +68,21 @@ export function useHistoryFeed(): HistoryFeed {
   const q = useQuery({ queryKey: HISTORY_KEY, queryFn: getHistory });
 
   // Warm paint: load the last-known snapshot on mount; persist every successful fetch for next time.
-  const [cached, setCached] = useState<OrderHistoryRow[] | null>(null);
+  const [cached, setCached] = useState<HistorySnapshot | null>(null);
   useEffect(() => {
     void loadHistorySnapshot().then(setCached);
   }, []);
   useEffect(() => {
-    if (q.data) void saveHistorySnapshot(q.data);
-  }, [q.data]);
+    if (q.data) void saveHistorySnapshot(q.data, new Date(q.dataUpdatedAt || Date.now()));
+  }, [q.data, q.dataUpdatedAt]);
 
   return {
     // Live data always wins; otherwise paint the cache. Keyed on the ABSENCE of live data (not
     // isLoading/isError) so it also covers React Query's paused state (a query mounting offline is
     // pending+paused, isLoading false). A genuinely-empty fresh fetch (`[]`) still wins over a stale cache.
-    rows: q.data ?? cached,
+    rows: q.data ?? cached?.rows ?? null,
     showingStale: q.data == null && cached != null,
+    savedAt: q.data != null ? new Date(q.dataUpdatedAt).toISOString() : (cached?.savedAt ?? null),
     isFetching: q.isFetching,
     isError: q.isError,
     hasLiveData: q.data != null,

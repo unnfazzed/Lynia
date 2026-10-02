@@ -129,7 +129,6 @@ const ROWS = [
   { id: "C7", label: "C7 · Customer Account, become a rider", app: { name: "C7", component: app("(tabs)/account.tsx"), fixture: "rv2_account_become" } },
   { id: "C9", label: "C9 · Become a rider, under review", app: { name: "C9", component: app("(tabs)/account.tsx"), fixture: "rv2_account_review" } },
   { id: "C12", label: "C12 · Job history", app: { name: "C12", component: app("history/index.tsx"), fixture: "rv2_history_rider" } },
-  { id: "C13", label: "C13 · Trip history", app: { name: "C13", component: app("history/index.tsx"), fixture: "rv2_history_customer" } },
   { id: "S1", label: "S1 · Settings, rider", app: { name: "S1", component: app("settings/index.tsx"), fixture: "rv2_settings_rider" } },
   { id: "S2", label: "S2 · Settings, rider section", app: { name: "S2", component: app("settings/index.tsx"), fixture: "rv2_settings_rider", before: scrollBy(400) } },
   { id: "S5", label: "S5 · Bike & documents", sub: "no expiry dates or licence disc on record yet (D-54 §4)", app: { name: "S5", component: app("rider/documents.tsx"), fixture: "rv2_docs" } },

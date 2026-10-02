@@ -74,7 +74,7 @@ export const APP_TARGETS = {
   "LJ.settings": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings" },
   "LJ.settings_perms": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms" },
   "LJ.settings_perms_ok": { kind: "mobile", component: "app/settings/index.tsx", fixture: "settings_perms_ok" },
-  "LJ.history": { kind: "mobile", component: "app/history/index.tsx", fixture: "history" },
+  "LJ.history": { kind: "mobile", component: "app/(tabs)/orders.tsx", fixture: "history" },
 
   // ─────────────────────────── MOBILE — rider (RJM / RJ / RR) ───────────────────────────
   // The current rider design is RJM (one app: Jobs · Money · Account). RR/RJ food + parcel job

@@ -3,7 +3,7 @@
   "src": "LJ",
   "id": "history",
   "mode": "phone",
-  "component": "app/history/index.tsx",
+  "component": "app/(tabs)/orders.tsx",
   "fixture": "history",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

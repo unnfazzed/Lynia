@@ -3545,3 +3545,69 @@ Clarified:
   `src/ui/rider/PhotoReviewCard.tsx`, and their tests.
 - **Parity:** `RJ.photo_capture` and `RJ.photo_preview` stay PENDING with this reason. The add/change
   photo flow from S5 is Claude Design prompt 1 in `docs/designs/owner-review-2026-10-02/PROMPTS.md`.
+
+## D-63 · Orders v2: the customer Orders tab follows the orders-v2 handoff — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-01/02):** the owner briefed Claude Design with
+`docs/designs/orders-v2/PROMPT.md` (#1011, #1014; eight answered questions), uploaded the result
+(`Lynia_Design_System.zip`, `design_handoff_orders_v2`) and asked to be told about any overlap with
+redesigns already in the app before implementation. The overlap was reported and the owner decided four
+points (§3); everything else is the handoff as drawn.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/orders-v2/` | The handoff, **verbatim**: `README.md` (O1–O22, component spec, NEEDS BACKEND, retires, open questions), `BRIEF.md` (16 decisions + 3 open questions), `CLAUDE_CODE_PROMPT.md` (the work order), `PROMPT-original-brief.md` (our brief), `copy.ts` (the strings, shipped as `apps/mobile/src/ui/orders/copy.ts`), `types.ts`, `design/Orders v2.html` + `o-kit.js` / `o-screens.js` (the pixel reference; `?screen=O1`, `&w=320`, `&fs=1.3`) and `design/assets/`. |
+
+`CLAUDE_CODE_PROMPT.md` names this entry **D-56**; that number had already gone to the tab bar (D-56), so
+the entry is D-63. The prompt's 60px flat tab bar is likewise the floating pill (D-56): the tab pads by
+its reserve, not 60 + 16.
+
+### 2 · Authority (a scope rule)
+
+From this PR, `app/(tabs)/orders.tsx` — the mint header + search, NOW, chips, the day-grouped history,
+search, and the O15–O21 cards — aligns to `packages/design/handoff/orders-v2/`. Strings come from
+`src/ui/orders/copy.ts` (the handoff's `copy.ts`, verbatim, plus the `OX` block below). The gallery
+`RC orders` and `RC orders_empty`, and Rider v2 **C13 Trip history**, are **superseded and not aligned
+to**: the customer Account loses its Trip history row (O22) and `/history?side=customer` redirects to the
+Orders tab; the rider's Job history (C12) is unchanged. `LJ.history` (whose mock resolves to the Orders
+list) now renders the Orders tab. All three keys are SUPERSEDED in `tools/parity` (deferral count
+unchanged: RC.orders and LJ.history were already deferrals and are re-reasoned).
+
+### 3 · Owner decisions where the handoff meets what had already shipped (2026-10-02)
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| Now card, merchant orders | 7-segment track; its own titles ("Sadza Republic is cooking") | Orders v2's card (NOW label, 15/12.5 type, ETA chip / quiet pill), with **Order flow v2's four-step track and G2 stage copy** (`merchantLive`) | Owner: "Orders v2 card, Order flow v2 copy". The card, Home's live bar and the order screen must never disagree (D-59 G1/G2). |
+| Now card, parcels | 7 segments (finding 1 … on the way 6) | Same card on **four** segments, After Send v2's track: finding 0 · matched 1 · picked up 2 · on the way 3 | Same decision: one track grammar for every running order. |
+| Chips | All · Parcels · Food · Shops | **+ Pharmacy** (`OX.pharmacyChip`), shown only when pharmacy is on; its empty filter reads `OX.pharmacyNone`; a pharmacy kitchen timeout reads `OX.pharmacyTimeout` | Owner: "Add a Pharmacy chip". Pharmacy is its own service in the app (D-58/D-59). |
+| "Refunded" outcome, "$7.50 back" | drawn | **not built** | D-59 retired refunds: every merchant order is cash, so nothing is ever refunded. |
+| Account O22 Help row sub | "WhatsApp or call the safety line" | "Message us on WhatsApp" | D-60 §3 (owner) stands. |
+| Open questions (README §11) | — | Not delivered = "No charge" · stars: filled only · "No rider found" · Now type 15/12.5 | Owner answers, as drawn. |
+
+### 4 · App additions with no drawn string (`OX` in `src/ui/orders/copy.ts`)
+
+- **Nameless parcel titles.** Before the rider's name reaches the phone (`riderCard` absent), the Now card
+  title is After Send v2's stage name: "Rider assigned" · "Heading to pickup" · "Parcel collected" ·
+  "On the way". The handoff's titles always name the rider.
+- **The ETA chip text** "12 min" is Calm Mint v2's live-bar chip format (the handoff draws it, but its
+  `copy.ts` carries no formatter).
+
+### 5 · Fallbacks until the backend lands (README §9, "frontend first, backend after" — owner 2026-10-02)
+
+Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(tabs)/orders.tsx`:
+
+- **The history feed lists only delivered/completed orders** (`historyForUser`, `COMPLETED_ORDER_STATUSES`),
+  so the cancelled / no-rider / not-delivered outcomes render correctly but don't appear until the API
+  returns those rows. The cancel reason is not on the row yet: a cancel reads "Cancelled by you".
+- **Service:** the row has no venue type, so every merchant row files under Food (the Shops / Pharmacy
+  chips match only once it does).
+- **Amount:** the row's agreed fare (a merchant row's delivery fare, not its food total).
+- **Area:** "Parcel to <area>" uses the first comma segment of the drop-off address.
+- **Paging:** no cursor yet. The End row shows only when the feed returned fewer than 50 rows; "Loading
+  older" (O12) and the page-failed row (O14/O14t) wait for `/orders/history?cursor=`.
+- **Search** matches the loaded rows on the phone (online and offline alike).
+
+**Evidence:** `docs/parity/ORDERS-V2-2026-10-02.png` (`tools/parity/shoot-orders-v2.mjs`, the `ov2_*`
+fixtures) — O1, O2, O5, O9a, O16, O17, O18, O21, handoff left, app right.

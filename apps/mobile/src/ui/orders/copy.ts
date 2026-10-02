@@ -1,0 +1,113 @@
+// The Orders v2 handoff's strings (packages/design/handoff/orders-v2/copy.ts), VERBATIM below the
+// marker — the handoff ships this file as-is (README "Files in this bundle"). App additions the
+// handoff doesn't draw live in `OX` at the end, each recorded in docs/DESIGN-DEVIATIONS.md D-63.
+// ── handoff copy.ts ──────────────────────────────────────────────────────────────────────────────
+// LyniaGo · Orders v2 strings. FINAL COPY: ship verbatim as src/ui/orders/copy.ts.
+// Mirrors `O` in design/o-kit.js. The typographic apostrophe (’) is intentional.
+export const ordersCopy = {
+  title: 'Your orders',
+  search: 'Search your orders',
+  cancel: 'Cancel',
+  clear: 'Clear',
+  now: 'NOW',
+  nowCount: (n: number) => `NOW · ${n}`,
+  nowMany: 'Tap an order to open it',
+  chips: { all: 'All', send: 'Parcels', restaurants: 'Food', shops: 'Shops' },
+  today: 'TODAY',
+  yesterday: 'YESTERDAY',
+  outcome: {
+    delivered: 'Delivered',
+    cancelledByYou: 'Cancelled by you',
+    cancelledByRider: 'Rider cancelled',
+    kitchenTimeout: 'Restaurant didn’t confirm',
+    shopTimeout: 'Shop didn’t confirm',
+    noRider: 'No rider found',
+    notDelivered: 'Not delivered',
+    refunded: 'Refunded',
+  },
+  noCharge: 'No charge',
+  refundBack: (amount: string) => `${amount} back`,
+  parcelTo: (area: string) => `Parcel to ${area}`,
+  parcelItems: (item: string, pickup: string) => `${item} · from ${pickup}`,
+  merchantItems: (n: number) => `${n} item${n === 1 ? '' : 's'}`,
+  lastKnownPrefix: 'Last known · ',
+  asOf: (hhmm: string) => `As of ${hhmm}`,
+  // paging
+  loadingOlder: 'Loading older orders…',
+  end: 'That’s everything',
+  endSub: (monthYear: string) => `Your orders since ${monthYear}`,
+  olderFail: 'Couldn’t load older orders',
+  tryAgain: 'Try again',
+  toast: 'Couldn’t load older orders.',
+  // offline
+  offline: (hhmm: string) => `You’re offline. Showing your orders as of ${hhmm}.`,
+  offlineSearch: 'You’re offline. Searching orders saved on this phone.',
+  offT: 'You’re offline',
+  offB: 'Your orders will show as soon as you’re back online. There’s nothing you need to do.',
+  // search
+  searchHint: 'Search by restaurant, shop, area or rider',
+  matches: (n: number, q: string) => `${n} order${n === 1 ? '' : 's'} match “${q}”`,
+  noMatch: (q: string) => `No orders match “${q}”`,
+  noMatchSub: 'Try a restaurant or shop name, an area like Belgravia, or your rider’s name.',
+  clearSearch: 'Clear search',
+  noMatchOff: 'Only orders saved on this phone were searched. We’ll search everything when you’re back online.',
+  // filters
+  filterNone: { send: 'No parcels yet', restaurants: 'No food orders yet', shops: 'No shop orders yet' },
+  filterNoneSub: 'Orders you place show here. Pick All to see everything.',
+  showAll: 'Show all orders',
+  // empty / error
+  emptyT: 'No orders yet',
+  emptyB: 'Parcels, food and shop orders all land here. Follow the one on its way, and look back at what you paid.',
+  emptyBParcels: 'Parcels you send land here. Follow the one on its way, and look back at what you paid.',
+  sendParcel: 'Send a parcel',
+  findFood: 'Find food or shops',
+  onlyNow: 'Past orders show here once this one’s done.',
+  errT: 'Couldn’t load your orders',
+  errB: 'Something went wrong on our side. Your orders are safe.',
+  // Now card titles + subs
+  now_: {
+    findingT: 'Finding a rider',
+    findingS: (area: string, asking: string) => `Parcel to ${area} · asking ${asking}`,
+    timeLeft: (mmss: string) => `${mmss} left`,
+    assignedT: (rider: string) => `${rider} is your rider`,
+    assignedS: (area: string) => `Parcel to ${area} · Rider assigned`,
+    toPickupT: (first: string) => `${first} is heading to pickup`,
+    toPickupS: (pickup: string, area: string) => `${pickup} → ${area}`,
+    collectedT: (first: string) => `${first} has your parcel`,
+    collectedS: (area: string) => `Parcel collected · going to ${area}`,
+    onWayT: (first: string) => `${first} is on the way`,
+    onWayParcelS: (area: string, price: string) => `Parcel to ${area} · ${price}`,
+    onWayFoodS: (venue: string, price: string) => `Food from ${venue} · ${price}`,
+    onWayShopS: (venue: string, price: string) => `From ${venue} · ${price}`,
+    gpsStaleS: (hhmm: string) => `Location not updating · last seen ${hhmm}`,
+    noEta: 'No ETA',
+    waitingT: (venue: string) => `Waiting for ${venue}`,
+    waitingFoodS: (price: string) => `Restaurants usually confirm in 5 min · ${price}`,
+    waitingShopS: (price: string) => `Shops usually confirm in 5 min · ${price}`,
+    cookingT: (venue: string) => `${venue} is cooking`,
+    packingT: (venue: string) => `${venue} is packing`,
+    preparingS: 'Preparing · a rider is sent near the end',
+    readyFoodT: 'Your food is ready',
+    readyShopT: 'Your order is ready',
+    readyS: (first: string) => `Ready for pickup · ${first} is collecting`,
+  },
+} as const;
+
+// ── App additions (ledger D-63) ──────────────────────────────────────────────────────────────────
+/**
+ * Owner decisions 2026-10-02 the handoff predates: Pharmacy is its own service in the app (chip + empty
+ * filter + its own kitchen-timeout label), and the parcel Now card has to read sensibly before the
+ * rider's name has reached the phone. The nameless titles reuse After Send v2's own stage names.
+ */
+export const OX = {
+  pharmacyChip: 'Pharmacy',
+  pharmacyNone: 'No pharmacy orders yet',
+  pharmacyTimeout: 'Pharmacy didn’t confirm',
+  /** Parcel Now titles when no rider name is known yet (After Send v2 stage names). */
+  assignedNoName: 'Rider assigned',
+  toPickupNoName: 'Heading to pickup',
+  collectedNoName: 'Parcel collected',
+  onWayNoName: 'On the way',
+  /** The ETA chip — Calm Mint v2's live-bar chip format. */
+  eta: (min: number) => `${min} min`,
+} as const;
