@@ -113,7 +113,7 @@ function parcelCustomerCopy(status: string, order: ParcelCopyOrder): { title: st
  * notice. Deliberately NOT merged into STATUS_NOTICES — that table is parcel-voiced copy and a food
  * order rides the same `en_route_dropoff` edge with different words for a different audience.
  */
-const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
+export const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
   // Order flow v2 G3a (ledger D-59, BRIEF §15 "push follows the stage"): collected, at the door,
   // delivered and not delivered, in `O.g.push.c`'s words (merchantCustomerCopy fills the names). The
   // static title/body here is the no-name fallback.
@@ -135,7 +135,7 @@ interface MerchantCopyOrder {
  * Order flow v2 G3a: a merchant order's customer stage push, named (`O.g.push.c` via merchant-order-push).
  * Never a code; the server has no arrival estimate, so the ETA sentence is dropped.
  */
-function merchantCustomerCopy(status: string, order: MerchantCopyOrder): { title: string; body: string } | null {
+export function merchantCustomerCopy(status: string, order: MerchantCopyOrder): { title: string; body: string } | null {
   const n = order.rider?.profile?.firstName?.trim() || null;
   const v = order.merchant?.name?.trim() || null;
   const fallback = { n: "Your rider" };

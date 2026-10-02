@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { MERCHANT_STATUS_NOTICES, merchantCustomerCopy } from "./notifications.service";
+import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
 
 /**
  * A single row in the derived in-app notifications feed (customer-journey A·3). Notifications are
@@ -27,6 +29,45 @@ export interface NotificationRow {
   message: string;
   at: string;
   unread: boolean;
+  // ── Notifications v1 (ledger D-66): structured fields the app builds the handoff's `N` copy from.
+  // All additive and optional: older clients keep rendering `title`/`message`, which are unchanged.
+  /** What kind of row this is (the `id` prefix, as data). */
+  type?: FeedRowType;
+  /** Status rows: the beat this row is about — an order status, or a merchant beat (`accepted`,
+   *  `preparing`), or a status override (`rebroadcast`, `no_supply`, `window_closed`). */
+  beat?: string;
+  /** Account rows: the audit action (`rider.suspend`, `wallet.credit`, …). */
+  action?: string;
+  /** Order rows: which service the order is (the v2 sticker on the row's disc). */
+  service?: FeedService;
+  /** Order rows: the first segment of the pickup / drop-off landmark, and the merchant's name. */
+  pickupArea?: string;
+  dropoffArea?: string;
+  venue?: string;
+  /** Order rows: the rider's first name (customer voice), the customer's (rider voice). */
+  riderName?: string;
+  customerName?: string;
+  /** Order rows: the money the line quotes ("3.20") — the agreed fare, or the newest offer's fare. */
+  amount?: string;
+  /** Offer rows: how many riders offered. */
+  count?: number;
+  /** Merchant orders: the kitchen's prep estimate in minutes. */
+  prepMinutes?: number;
+  /** Swap rows: the first swapped line ("Panado 24s" → "Paracetamol 24s", "same price" | "+$0.10"). */
+  swap?: { item: string; sub: string; diff: string };
+  /** Status rows: every beat of this order addressed to the viewer inside the window, latest first
+   *  (the row's own beat is steps[0]). The app draws them as the row's inline timeline. */
+  steps?: FeedStep[];
+  /** Danger rows (SOS, account paused / blocked): true while it is still in force. */
+  active?: boolean;
+}
+
+export type FeedRowType = "status" | "offer" | "fare" | "riders_available" | "account" | "sos" | "standing" | "standing_resolved" | "issue" | "swap";
+export type FeedService = "send" | "restaurants" | "shops" | "pharmacy";
+export interface FeedStep {
+  beat: string;
+  title: string;
+  at: string;
 }
 
 /**
@@ -199,6 +240,57 @@ const FEED_ORDER_SCAN_CAP = 50;
 const FEED_ROW_CAP = 50;
 
 /**
+ * Notifications v1 (ledger D-66): a merchant (restaurant / shop / pharmacy) order's beats as feed rows,
+ * customer voice. Before v1 the feed skipped every merchant order (A-7). The four delivery beats mirror
+ * the stage pushes (MERCHANT_STATUS_NOTICES / `O.g.push.c`, named by merchantCustomerCopy); `accepted`
+ * and `preparing` are not OrderEvents — they are synthesized from `kitchenConfirmedAt` / `prepStartedAt`
+ * so the row's timeline has the kitchen beats the handoff draws. Only the customer is addressed: the
+ * rider's beats on a merchant job are the parcel rider beats (FEED_NOTICES_RIDER), gated as for parcels.
+ */
+const MERCHANT_FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
+  accepted: { icon: "check", title: "Order accepted", message: "We’ll tell you when a rider has it." },
+  preparing: { icon: "clock", title: "Being prepared", message: "We’ll tell you when a rider has it." },
+  ...Object.fromEntries(
+    Object.entries(MERCHANT_STATUS_NOTICES).map(([k, n]) => [k, { icon: k === "undelivered" ? "triangle-alert" : "check", title: n!.title, message: n!.body }]),
+  ),
+  cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "Nothing was charged." },
+};
+
+/** Order statuses that are still running — an SOS on such an order is still in force. */
+const LIVE_STATUSES = new Set(["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
+
+/** The account actions that set or lift a standing, newest one wins (see `active` on account rows). */
+const RIDER_STANDING_ACTIONS = new Set(["rider.suspend", "rider.ban", "rider.lift", "rider.clear_hold"]);
+const CUSTOMER_STANDING_ACTIONS = new Set(["customer.hold", "customer.lift"]);
+
+/** "Glenara Ave" — the first comma segment of a pickup / drop-off landmark (Orders v2's `firstSegment`). */
+function areaOf(place: unknown): string | undefined {
+  const landmark = (place as { landmark?: unknown } | null | undefined)?.landmark;
+  if (typeof landmark !== "string") return undefined;
+  return landmark.split(",")[0]?.trim() || undefined;
+}
+
+/** Which v2 service sticker an order wears. */
+function serviceOf(order: { orderType: string; merchant?: { businessType?: string | null; shopKind?: string | null } | null }): FeedService {
+  if (order.orderType !== "merchant") return "send";
+  if (order.merchant?.businessType === "shop") return order.merchant.shopKind === "pharmacy" ? "pharmacy" : "shops";
+  return "restaurants";
+}
+
+/** "3.20" — money as the row data carries it (the app adds the "$"). */
+function amountOf(value: unknown): string | undefined {
+  return value == null ? undefined : pushMoney(value).slice(1);
+}
+
+/** The swap line the app quotes: "same price" or the signed difference, as the swap push writes it. */
+function swapDiff(line: { priceUsd: unknown; fromQuantity: number; swapPriceUsd?: unknown; swapQuantity?: number | null }): string {
+  const was = Number(line.priceUsd) * line.fromQuantity;
+  const now = Number(line.swapPriceUsd ?? 0) * (line.swapQuantity ?? line.fromQuantity);
+  const diff = Math.round((now - was) * 100) / 100;
+  return diff === 0 ? "same price" : `${diff > 0 ? "+" : "−"}${pushMoney(Math.abs(diff))}`;
+}
+
+/**
  * The caller's read-only, derived in-app notifications feed (customer-journey A·3). Split out of
  * NotificationsService (which owns the write-path push sends) since the feed is a pure read model over
  * the same order/audit/offer/issue/SOS data, with no dependency on the push adapter.
@@ -264,6 +356,18 @@ export class NotificationsFeedService {
           // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
           // exactly like the push does.
           agreedFare: true,
+          // Notifications v1 (D-66): the names and places the app builds the row's title and line from,
+          // and the kitchen beats of a merchant order (not OrderEvents, see MERCHANT_FEED_NOTICES).
+          customerId: true,
+          pickup: true,
+          dropoff: true,
+          undeliveredReason: true,
+          kitchenConfirmedAt: true,
+          prepStartedAt: true,
+          prepMinutes: true,
+          merchant: { select: { name: true, businessType: true, shopKind: true } },
+          rider: { select: { profile: { select: { firstName: true } } } },
+          customer: { select: { firstName: true } },
           events: {
             where: { createdAt: { gte: cutoff } },
             select: { status: true, createdAt: true },
@@ -292,7 +396,12 @@ export class NotificationsFeedService {
       }),
       // STREAMLINE-01 read watermark: the last time this profile OPENED the notifications centre.
       // `unread` is derived from it below.
-      this.prisma.profile.findUnique({ where: { id: userId }, select: { notificationsReadAt: true } }),
+      // Notifications v1 (D-66): plus the current standings, so an account row knows whether it is still
+      // in force (`active` — pinned above the day groups while it is).
+      this.prisma.profile.findUnique({
+        where: { id: userId },
+        select: { notificationsReadAt: true, onHold: true, rider: { select: { accountStatus: true } } },
+      }),
       // STREAMLINE-01 dismissals: rows this profile swiped away. Bounded by the same window as the rows
       // themselves — a dismissal for a row that has already aged out can never match anything again.
       this.prisma.notificationDismissal.findMany({
@@ -322,8 +431,9 @@ export class NotificationsFeedService {
       .map((o) => o.id);
     const orderIds = orders.map((o) => o.id);
     const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
+    const merchantCustomerOrderIds = orders.filter((o) => o.riderId !== userId && o.orderType === "merchant").map((o) => o.id);
 
-    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments, ridersAvailableNotices] = await Promise.all([
+    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments, ridersAvailableNotices, swapRounds] = await Promise.all([
       // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
       // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
       // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
@@ -355,7 +465,8 @@ export class NotificationsFeedService {
       customerViewOrderIds.length > 0
         ? this.prisma.offer.findMany({
             where: { orderId: { in: customerViewOrderIds }, createdAt: { gte: cutoff } },
-            select: { id: true, orderId: true, createdAt: true },
+            // Notifications v1 (D-66): the newest offer's fare and rider, for "Farai offered $3.20 to carry it."
+            select: { id: true, orderId: true, createdAt: true, offeredFare: true, rider: { select: { profile: { select: { firstName: true } } } } },
           })
         : [],
       // UX17-01 SOS counterparty fallback — consumed by the SOS loop below.
@@ -396,6 +507,25 @@ export class NotificationsFeedService {
             select: { id: true, target: true, createdAt: true },
           })
         : [],
+      // Notifications v1 (D-66): a merchant swap round ("Panado 24s is out …") on the customer's own
+      // merchant orders — the needs-you "Review swap" row while it is open, a timeline step after.
+      merchantCustomerOrderIds.length > 0
+        ? this.prisma.merchantOrderSubstitution.findMany({
+            where: { orderId: { in: merchantCustomerOrderIds }, createdAt: { gte: cutoff }, lines: { some: { action: "swap" } } },
+            select: {
+              id: true,
+              orderId: true,
+              status: true,
+              createdAt: true,
+              lines: {
+                where: { action: "swap" },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { nameSnapshot: true, priceUsd: true, fromQuantity: true, swapNameSnapshot: true, swapPriceUsd: true, swapQuantity: true },
+              },
+            },
+          })
+        : [],
     ]);
     const orderIdsWithOffers = new Set<string>(withOffers.map((o) => o.orderId));
     const adjudicatedOrderIds = new Set<string>(adjudicated.map((a) => a.target));
@@ -403,18 +533,43 @@ export class NotificationsFeedService {
     // back up against the already-fetched, window-bounded `orders` list to derive `to`/`status`.
     const orderById = new Map(orders.map((o) => [o.id, o]));
 
+    /**
+     * Notifications v1 (D-66): the order data every order row carries, so the app can title it
+     * ("Parcel to Glenara Ave", the venue, "Eastgate → Glenara Ave") and fill the handoff's sentence
+     * shapes ("Tendai is heading to pickup.") without a second request.
+     */
+    const orderData = (orderId: string) => {
+      const o = orderById.get(orderId);
+      if (!o) return {};
+      return {
+        service: serviceOf(o),
+        pickupArea: areaOf(o.pickup),
+        dropoffArea: areaOf(o.dropoff),
+        venue: o.merchant?.name?.trim() || undefined,
+        riderName: o.rider?.profile?.firstName?.trim() || undefined,
+        customerName: o.customer?.firstName?.trim() || undefined,
+        amount: amountOf(o.agreedFare),
+        prepMinutes: o.prepMinutes ?? undefined,
+      };
+    };
+
     const rows: NotificationRow[] = [];
     for (const order of orders) {
       // A-7 (status-keyed-query-audit): FEED_NOTICES/FEED_NOTICES_RIDER are parcel-voiced copy
       // ("Your rider had to cancel", "raise your price"). Type-aware feed notices + deep links are a
       // C5 deliverable — until then, skip a food order's events entirely rather than render wrong
       // copy (mirrors notifications.service.ts's notifyOrderStatus guard, A-6).
-      if (order.orderType !== "parcel") continue;
+      // Notifications v1 (D-66) lifts that skip for the CUSTOMER of a merchant order: their beats now
+      // have their own copy (MERCHANT_FEED_NOTICES). A rider's merchant job reads as a job, so the rider
+      // voice is shared with parcels.
+      const isMerchant = order.orderType === "merchant";
+      if (order.orderType !== "parcel" && !isMerchant) continue;
       // Pick the voice matching what this viewer actually experienced on THIS order — a dual-role user
       // can be the rider on one trip and the customer on another, so the role is per-order, not per-user.
       const isCustomerView = order.riderId !== userId;
       const audience = isCustomerView ? "customer" : "rider";
-      const notices = isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
+      const merchantCustomer = isMerchant && isCustomerView;
+      const notices = merchantCustomer ? MERCHANT_FEED_NOTICES : isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
 
       /**
        * Is this status addressed to the viewer? Normally {@link FEED_AUDIENCE} decides, mirroring the
@@ -427,14 +582,23 @@ export class NotificationsFeedService {
        */
       const isAdjudicated = adjudicatedOrderIds.has(order.id);
       const addressesViewer = (status: string): boolean =>
-        (status === "completed" && isAdjudicated) || (FEED_AUDIENCE[status]?.includes(audience) ?? false);
+        merchantCustomer || (status === "completed" && isAdjudicated) || (FEED_AUDIENCE[status]?.includes(audience) ?? false);
+
+      // A merchant order's kitchen beats, synthesized in time order among its events (in window only).
+      const beats: { status: string; createdAt: Date; synthetic?: true }[] = [...order.events];
+      if (merchantCustomer) {
+        if (order.kitchenConfirmedAt && order.kitchenConfirmedAt >= cutoff) beats.push({ status: "accepted", createdAt: order.kitchenConfirmedAt, synthetic: true });
+        if (order.prepStartedAt && order.prepStartedAt >= cutoff) beats.push({ status: "preparing", createdAt: order.prepStartedAt, synthetic: true });
+        beats.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      }
+      const addressed = beats.filter((e) => notices[e.status] !== undefined && addressesViewer(e.status));
 
       // STREAMLINE-01 collapse: ONE status row per order, not one per beat. `events` is ascending, so
       // the last event that both has copy and is addressed to THIS viewer is the order's latest news
       // for them — which is exactly what the mock draws (a single live "Rider on the way" row, a single
       // terminal "Delivered" row), and what the push tray already shows after collapseKey folding.
       // Superseded intermediate beats are pure history and belong to the tracker / Orders list.
-      const latest = order.events.filter((e) => notices[e.status] !== undefined && addressesViewer(e.status)).at(-1);
+      const latest = addressed.at(-1);
 
       // Actor suppression (both voices): a row about your OWN action is noise, mirroring the push's
       // excludeProfileId exclusion. `cancelledBy` is the canceller's profile id, so a direct id match
@@ -451,6 +615,8 @@ export class NotificationsFeedService {
       const event = latest && latest.status === "cancelled" && order.cancelledBy === userId ? undefined : latest;
       if (event) {
         let notice = notices[event.status]!;
+        // Notifications v1: the beat the app's copy keys off — the status, or the override below.
+        let beat = event.status;
 
         // The order id this row navigates to on tap (mobile routes every row to /order/<orderId>).
         // Only the rider-bail rebroadcast below redirects it to the live clone.
@@ -471,6 +637,7 @@ export class NotificationsFeedService {
                   "We've already sent your request back out to nearby riders at the same price — tap to follow it.",
               };
               orderId = cloneId;
+              beat = "rebroadcast";
             }
           } else if (event.status === "expired" && order.expiryNoSupply) {
             // No-supply expiry: nobody was online near the pickup, so "raise your price" would be a lie.
@@ -480,6 +647,7 @@ export class NotificationsFeedService {
               message:
                 "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
             };
+            beat = "no_supply";
           } else if (event.status === "expired" && orderIdsWithOffers.has(order.id)) {
             // Riders DID bid but the window closed before the customer picked — "raise your price" is
             // dishonest here (riders offered at this price), so nudge them to just re-send it (Fix 1).
@@ -488,6 +656,7 @@ export class NotificationsFeedService {
               title: "The window closed",
               message: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
             };
+            beat = "window_closed";
           }
         }
 
@@ -513,6 +682,16 @@ export class NotificationsFeedService {
               };
         }
 
+        // Order flow v2 G3a: a merchant customer's beat reads as the stage push they got, named.
+        if (merchantCustomer) {
+          const named = merchantCustomerCopy(event.status, order);
+          if (named) notice = { ...notice, title: named.title, message: named.body };
+          else if (event.status === "preparing" && order.merchant?.name) {
+            const making = pushCopy(PUSH_C.making, { v: order.merchant.name.trim(), making: order.merchant.businessType === "shop" ? "packing" : "cooking" });
+            notice = { ...notice, title: making.title, message: making.body };
+          }
+        }
+
         const at = event.createdAt.toISOString();
         rows.push({
           // Stable per (order, status, time): an order can revisit a status, so the timestamp keys it.
@@ -526,12 +705,20 @@ export class NotificationsFeedService {
           // (possibly redirected) `orderId` — a rider viewing their own `assigned`/`cancelled` row must
           // route to /rider/job exactly like the push does, matching event.status, not any copy override.
           to: audience,
-          status: event.status,
+          // A synthesized kitchen beat is not an OrderStatus: route by the order's own status instead.
+          status: "synthetic" in event ? order.status : event.status,
           icon: notice.icon,
           title: notice.title,
           message: notice.message,
           at,
           unread: isUnread(event.createdAt),
+          ...orderData(order.id),
+          type: "status",
+          beat,
+          steps: addressed
+            .filter((e) => !(e.status === "cancelled" && order.cancelledBy === userId))
+            .reverse()
+            .map((e) => ({ beat: e === event ? beat : e.status, title: notices[e.status]!.title, at: e.createdAt.toISOString() })),
         });
       }
     }
@@ -541,7 +728,7 @@ export class NotificationsFeedService {
     // `take` at all, so every bid on every in-view order was materialised before the cap). The mock
     // draws a single offer row too. Keyed by the NEWEST bid so a later bid produces a NEW row id —
     // which both re-sorts it to the top and lets it survive a dismissal of the earlier state.
-    const offersByOrder = new Map<string, { id: string; createdAt: Date }[]>();
+    const offersByOrder = new Map<string, (typeof offers)[number][]>();
     for (const offer of offers) {
       const bucket = offersByOrder.get(offer.orderId);
       if (bucket) bucket.push(offer);
@@ -564,6 +751,14 @@ export class NotificationsFeedService {
             : `${bucket.length} riders responded to your delivery — tap to compare offers.`,
         at,
         unread: isUnread(newest.createdAt),
+        ...orderData(orderId),
+        type: "offer",
+        // The line quotes the newest offer, not the agreed fare (there is none yet).
+        amount: amountOf(newest.offeredFare),
+        riderName: newest.rider?.profile?.firstName?.trim() || undefined,
+        count: bucket.length,
+        // Still waiting on the customer only while the order is still taking offers.
+        active: orderById.get(orderId)?.status === "open_for_offers",
       });
     }
 
@@ -594,6 +789,8 @@ export class NotificationsFeedService {
           " by our team.",
         at,
         unread: isUnread(a.createdAt),
+        ...orderData(a.target),
+        type: "fare",
       });
     }
 
@@ -613,6 +810,8 @@ export class NotificationsFeedService {
         message: "Riders are being pinged on your live request — tap to follow the offers.",
         at,
         unread: isUnread(a.createdAt),
+        ...orderData(a.target),
+        type: "riders_available",
       });
     }
 
@@ -621,6 +820,17 @@ export class NotificationsFeedService {
     // admin path and the automated KYC webhook write an AuditLog row keyed by target=profileId, so
     // synthesize from those (prefetched in the user-scoped level) — no Notification table.
     // Account-level, so orderId is null.
+    // Notifications v1 (D-66): a pause / block / hold row is `active` while it is still the account's
+    // newest standing change AND the standing it set still holds — that is what pins it in a danger card.
+    const newestRiderStanding = accountAudits.find((a) => RIDER_STANDING_ACTIONS.has(a.action))?.id;
+    const newestCustomerStanding = accountAudits.find((a) => CUSTOMER_STANDING_ACTIONS.has(a.action))?.id;
+    const riderStatus = profile?.rider?.accountStatus;
+    const inForce = (a: { id: string; action: string }): boolean | undefined => {
+      if (a.action === "rider.suspend") return a.id === newestRiderStanding && riderStatus === "suspended";
+      if (a.action === "rider.ban") return a.id === newestRiderStanding && riderStatus === "banned";
+      if (a.action === "customer.hold") return a.id === newestCustomerStanding && profile?.onHold === true;
+      return undefined;
+    };
     for (const a of accountAudits) {
       const copy = ACCOUNT_FEED_COPY[a.action];
       if (!copy) continue; // defensive: only the mapped actions were queried
@@ -637,6 +847,9 @@ export class NotificationsFeedService {
         message: copy.message,
         at,
         unread: isUnread(a.createdAt),
+        type: a.action === "customer.riders_available_notify" ? "riders_available" : "account",
+        action: a.action,
+        active: inForce(a),
       });
     }
 
@@ -657,6 +870,11 @@ export class NotificationsFeedService {
         message: "The other party raised an SOS on this trip. Stay safe — LyniaGo's safety team has been alerted.",
         at,
         unread: isUnread(event.createdAt),
+        ...orderData(event.orderId),
+        type: "sos",
+        to: orderById.get(event.orderId)?.riderId === userId ? "rider" : "customer",
+        // In force while the trip it was raised on is still running.
+        active: LIVE_STATUSES.has(orderById.get(event.orderId)?.status ?? ""),
       });
     }
 
@@ -678,6 +896,9 @@ export class NotificationsFeedService {
         message: "There's a change with your assigned rider — our team is reviewing this trip.",
         at,
         unread: isUnread(a.createdAt),
+        ...orderData(a.target),
+        type: "standing",
+        to: "customer",
       });
     }
 
@@ -696,6 +917,9 @@ export class NotificationsFeedService {
         message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
         at,
         unread: isUnread(a.createdAt),
+        ...orderData(a.target),
+        type: "standing_resolved",
+        to: "customer",
       });
     }
 
@@ -720,6 +944,34 @@ export class NotificationsFeedService {
         message: copy.message,
         at,
         unread: isUnread(issue.resolvedAt),
+        type: "issue",
+      });
+    }
+
+    // Notifications v1 (D-66): a merchant swap round. Customer voice, in the swap push's own words.
+    for (const round of swapRounds) {
+      const line = round.lines[0];
+      const order = orderById.get(round.orderId);
+      if (!line || !order) continue;
+      const item = line.nameSnapshot;
+      const sub = line.swapNameSnapshot ?? "";
+      const diff = swapDiff(line);
+      const drawn = pushCopy(PUSH_C.answer, { v: order.merchant?.name?.trim() || null, i: item, s: sub, d: diff }, { v: "Your order" });
+      const at = round.createdAt.toISOString();
+      rows.push({
+        id: `swap:${round.id}`,
+        orderId: round.orderId,
+        to: "customer",
+        status: order.status,
+        icon: "triangle-alert",
+        title: drawn.title,
+        message: drawn.body,
+        at,
+        unread: isUnread(round.createdAt),
+        ...orderData(round.orderId),
+        type: "swap",
+        swap: { item, sub, diff },
+        active: round.status === "open",
       });
     }
 

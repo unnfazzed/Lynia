@@ -31,7 +31,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 export default function RiderAccountTabScreen(): React.ReactElement {
   const router = useRouter();
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("account");
-  const top = useTabTop();
+  const top = useTabTop("rider");
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
   const me = meQ.data;
   const rider = me?.rider;
@@ -83,7 +83,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
           />
           <RCard>
             <RRow first icon="history" label={R.rJobHist} sub={R.rJobHistS} onPress={() => router.push("/history?side=rider")} />
-            <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
+            <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications?side=rider")} />
             <RRow icon="message-circle" label={R.rHelp} sub={R.hWa} onPress={openSupportWhatsApp} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsS} onPress={() => router.push("/settings?side=rider")} />
           </RCard>

@@ -1,0 +1,158 @@
+<!-- @dsCard group="Notifications · 2026-10" viewport="1280x900" name="Notifications v1 — both sides" subtitle="One row per order, toned discs, inline timeline, needs-you buttons, off / swipe / empty / loading / error" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyniaGo — Notifications v1</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+html,body{margin:0}html{scroll-behavior:smooth}
+body{background:#eceff1;font-family:var(--font-sans);color:var(--ink)}
+a{color:var(--accent-text)}a:hover{color:var(--ink)}
+.nav{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:4px;align-items:center;padding:6px 16px;overflow-x:auto;scrollbar-width:none}
+.nav b{font-size:14px;margin-right:10px;white-space:nowrap}
+.nav a{height:36px;display:flex;align-items:center;padding:0 12px;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;color:var(--muted);white-space:nowrap}
+.nav a:hover{background:var(--surface);color:var(--ink)}
+main{padding:28px 24px 80px}section{scroll-margin-top:64px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:48px 0 6px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:760px;line-height:1.5;text-wrap:pretty}
+.grid{display:flex;flex-wrap:wrap;gap:36px 28px;align-items:flex-start;margin-top:16px}
+.cell{display:flex;flex-direction:column;gap:8px}
+.lab{font:600 13px/1.35 var(--font-sans);max-width:360px}
+.lab em{display:block;font-style:normal;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px;text-wrap:pretty}
+.badge{display:inline-flex;min-width:26px;height:20px;padding:0 6px;border-radius:999px;background:var(--ink);color:#fff;font-size:11px;align-items:center;justify-content:center;margin-right:6px;box-sizing:border-box}
+.proto{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:16px}
+.pctl{display:flex;flex-direction:column;gap:12px;width:280px}
+.pbtns{display:flex;gap:8px;flex-wrap:wrap}
+.pbtns button{all:unset;cursor:pointer;height:40px;padding:0 16px;border-radius:999px;background:var(--bg);font-size:13px;font-weight:700;color:var(--accent-text);box-shadow:0 0 0 1px var(--line)}
+.pbtns button:hover{background:var(--accent-wash)}.pbtns button.on{background:var(--accent-text);color:#fff;box-shadow:none}
+.card{max-width:860px;font-size:14px;line-height:1.55;background:var(--bg);border-radius:12px;padding:20px 24px;margin-top:16px}
+.card h3{font-size:14px;margin:16px 0 6px}.card h3:first-child{margin-top:0}.card ul{margin:0;padding-left:18px}.card p{margin:0 0 8px}
+.card table{border-collapse:collapse;width:100%;font-size:13px}.card td{border-top:1px solid var(--line);padding:7px 8px 7px 0;vertical-align:top}.card td:first-child{font-weight:600;white-space:nowrap}
+.sw{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:6px;box-sizing:border-box}
+.copy{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:4px 16px;max-width:1400px;margin-top:16px;background:var(--bg);border-radius:12px;padding:16px 20px;font-size:13px;line-height:1.5}
+.copy code{color:var(--muted)}
+.sc2-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sc2r .8s linear infinite;box-sizing:border-box}
+.as-spin{display:inline-block;flex:none;border-radius:50%;border:2.5px solid;animation:sc2r .8s linear infinite;box-sizing:border-box}
+@keyframes sc2r{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.as-spin,.sc2-spin{animation-duration:2.4s}}
+.lynia-tabular{font-variant-numeric:tabular-nums}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../assets/lynia-icons.js"></script>
+<script src="n-stickers.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00b14f"/><text x="50" y="62" font-size="28" font-family="sans-serif" font-weight="700" fill="#fff" text-anchor="middle">N1</text></svg></template>
+<div id="n-root"></div>
+<script type="text/babel" src="../rider-v2-2026-10/sc2-kit.jsx"></script>
+<script type="text/babel" src="../rider-v2-2026-10/as-kit.jsx"></script>
+<script type="text/babel" src="../rider-v2-2026-10/rv-kit.jsx"></script>
+<script type="text/babel" src="n-kit.jsx"></script>
+<script type="text/babel" src="n-screens.jsx"></script>
+<script type="text/babel">
+const G = [["feed", "Customer feed"], ["rider", "Rider feed"], ["dual", "Dual role"], ["states", "States"]];
+/* [id, group, title, note, render(W,H), small?] */
+const ST = [
+  ["N1", "feed", "Customer, populated", "One row per order showing its latest update; earlier updates fold into a bead line. Merchant orders use the venue name.", (W, H) => <N1 W={W} H={H} />, 1],
+  ["N1b", "feed", "Customer, scrolled", "Older days: a shop order and a parcel whose SOS is now resolved (the SOS lives in its order's history).", (W, H) => <N1 W={W} H={H} offset={420} />],
+  ["N1c", "feed", "Safety alert in force", "A live SOS pins above the days in a danger-bordered card. When it's resolved it folds back into its order's timeline.", (W, H) => <N1c W={W} H={H} />],
+  ["N2", "feed", "Expanded order", "Tap the bead line: the row opens to a vertical step track, latest first. Hide or open the order from the foot.", (W, H) => <N2 W={W} H={H} />, 1],
+  ["N5", "feed", "Needs you", "Only these rows get a button. Warn tone = danger ring disc, the J8 warn colour.", (W, H) => <N5 W={W} H={H} />, 1],
+  ["N3", "rider", "Rider, populated · paused", "Rider voice. 'Account paused' pins first in a danger card while it's in force.", (W, H) => <N3 W={W} H={H} />, 1],
+  ["N3b", "rider", "Rider · account restored", "Once lifted, the paused row loses its pin and danger tone and joins its day as plain history.", (W, H) => <N3 W={W} H={H} restored />],
+  ["N4a", "dual", "Dual role · on the Customer side", "Feed follows the side. Account rows show on both. The other side is one quiet row → the C4/C5 switch sheet.", (W, H) => <N4 W={W} H={H} />, 1],
+  ["N4b", "dual", "Dual role · on the Rider side", "", (W, H) => <N4 W={W} H={H} rider />],
+  ["N6a", "states", "Notifications off · customer", "Rider v2 J8 warn row; Turn on → phone settings. Never a block.", (W, H) => <N6 W={W} H={H} />],
+  ["N6b", "states", "Notifications off · rider", "", (W, H) => <N6 W={W} H={H} rider />],
+  ["N7a", "states", "Swipe · mid-gesture", "Row follows the finger and fades; the wash says what letting go does. Past 35% of the width it goes.", (W, H) => <N7 W={W} H={H} />],
+  ["N7b", "states", "Swipe · removed", "Toast with Undo for 5 s, above everything.", (W, H) => <N7 W={W} H={H} gone />, 1],
+  ["N8a", "states", "Empty · customer", "Calm Mint v2 empty card (mint, r20, Home art). One action.", (W, H) => <N8 W={W} H={H} />, 1],
+  ["N8b", "states", "Empty · rider", "No action.", (W, H) => <N8 W={W} H={H} rider />],
+  ["N9", "states", "Loading", "Skeleton rows inside the cards, same geometry as real rows so nothing jumps.", (W, H) => <N9 W={W} H={H} />],
+  ["N9b", "states", "Loading · slow (after 6 s)", "On 2G the wait says why.", (W, H) => <N9 W={W} H={H} slow />],
+  ["N10", "states", "Couldn't load · nothing cached", "", (W, H) => <N10 W={W} H={H} />, 1],
+  ["N10b", "states", "Couldn't refresh · cached feed", "Better than a blank screen on patchy data: keep the last feed, say how old it is.", (W, H) => <N10b W={W} H={H} />],
+];
+const SMALL = ST.filter(s => s[5]);
+
+function Cell({ s, W, H, suffix }) {
+  return <div className="cell" data-screen-label={`${s[0]} ${s[2]}${suffix || ""}`}>
+    <div className="lab" style={{ maxWidth: Math.max(W, 300) }}><span className="badge">{s[0]}</span>{s[2]}{suffix ? <span style={{ color: "var(--muted)", fontWeight: 400 }}> · 320 × 640</span> : null}{s[3] && !suffix ? <em>{s[3]}</em> : null}</div>
+    {s[4](W, H)}
+  </div>;
+}
+function Proto() {
+  const [side, setSide] = React.useState(() => localStorage.getItem("nv1-side") || "customer");
+  const [off, setOff] = React.useState(false), [seed, setSeed] = React.useState(0), [sm, setSm] = React.useState(false);
+  React.useEffect(() => { localStorage.setItem("nv1-side", side); }, [side]);
+  return <div className="proto">
+    <LiveFeed key={side + sm} W={sm ? 320 : 360} H={sm ? 640 : 720} side={side} off={off} seed={seed} />
+    <div className="pctl">
+      <div className="pbtns"><button className={side === "customer" ? "on" : ""} onClick={() => setSide("customer")}>Customer</button><button className={side === "rider" ? "on" : ""} onClick={() => setSide("rider")}>Rider</button></div>
+      <div className="pbtns"><button className={off ? "on" : ""} onClick={() => setOff(!off)}>Notifications off</button><button onClick={() => setSm(!sm)}>{sm ? "360 × 720" : "320 × 640"}</button><button onClick={() => setSeed(seed + 1)}>Reset</button></div>
+      <p className="sub" style={{ margin: 0 }}>Tap a bead line to open the order's timeline. Drag any row left or right to remove it, then Undo from the toast. The feed scrolls.</p>
+    </div>
+  </div>;
+}
+function CopyList() {
+  return <div className="copy">{Object.keys(N).map(k => <div key={k}><code>{k}</code> {N[k]}</div>)}</div>;
+}
+function Page() {
+  const q = new URLSearchParams(location.search), only = q.get("only");
+  if (only) { const ids = only.split(","), w = q.get("w") === "320"; return <div style={{ display: "flex", flexWrap: "wrap", gap: 20, padding: 20 }}>{ST.filter(s => ids.includes(s[0])).map(s => <div key={s[0]}>{w ? s[4](320, 640) : s[4](360, 720)}</div>)}</div>; }
+  const ids = [["proto", "Prototype"], ...G, ["small", "320 × 640"], ["rules", "Decisions"], ["copy", "Copy"]];
+  return <>
+    <nav className="nav"><b>Notifications v1</b>{ids.map(([id, l]) => <a key={id} href={"#" + id}>{l}</a>)}</nav>
+    <main>
+      <h1>LyniaGo Notifications v1</h1>
+      <p className="sub">A quiet history that takes you back into an order. Days, then one row per order showing only its latest update; the rest fold into a line of beads you can open in place. The icon disc carries the kind, gold only marks what's new this visit. {ST.length} frames at 360 × 720, key ones again at 320 × 640.</p>
+      <section id="proto"><h2>Prototype</h2><Proto /></section>
+      {G.map(([g, gl]) => <section key={g} id={g}><h2>{gl}</h2><div className="grid">{ST.filter(s => s[1] === g).map(s => <Cell key={s[0]} s={s} W={360} H={720} />)}</div></section>)}
+      <section id="small"><h2>320 × 640</h2><div className="grid">{SMALL.map(s => <Cell key={s[0]} s={s} W={320} H={640} suffix="-320" />)}</div></section>
+      <section id="rules"><h2>Decisions</h2><div className="card">
+        <h3>Row grammar</h3>
+        <table><tbody>
+          <tr><td>Disc</td><td>40 px. Orders and jobs: the v2 service sticker (send · restaurants · shops · pharmacy) on its tile tint, with the tone as an 18 px corner mark; nothing while in progress. Account, money and safety: a Lucide icon on a tone-filled disc.</td></tr>
+          <tr><td>Title</td><td>Orders: "Parcel to &lt;drop-off area&gt;" or the venue name. Rider jobs: "&lt;pickup&gt; → &lt;drop-off&gt;". Account/safety: the event. 15 px, 700 unread / 600 read.</td></tr>
+          <tr><td>Line</td><td>The latest update, full sentence, never truncated. Ink when unread or danger, muted otherwise.</td></tr>
+          <tr><td>Beads</td><td>One 6 px dot per earlier update (max 5) + "4 earlier updates". 44 px target; opens the timeline inline. Rows with one update have no bead line.</td></tr>
+          <tr><td>Tap</td><td>Anywhere else on the row opens the order / job / account screen.</td></tr>
+        </tbody></table>
+        <h3>Tones (no new tokens): corner mark on order rows, disc fill on the rest</h3>
+        <table><tbody>
+          <tr><td><span className="sw" style={{ background: "var(--accent-wash)" }}></span>neutral</td><td>--accent-wash / --accent-text · in progress, cancelled, history</td></tr>
+          <tr><td><span className="sw" style={{ background: "var(--cta-fill)" }}></span>good</td><td>--cta-fill / white · delivered, verified, restored, resolved</td></tr>
+          <tr><td><span className="sw" style={{ background: "var(--tile-sun)" }}></span>money</td><td>--tile-sun / --sun-ink · wallet credited, top-up</td></tr>
+          <tr><td><span className="sw" style={{ border: "1.5px solid var(--danger)" }}></span>needs you</td><td>white + 1.5 px --danger ring / --danger · offer, swap, ID retry. The only rows with a button.</td></tr>
+          <tr><td><span className="sw" style={{ background: "var(--danger-wash)" }}></span>danger</td><td>--danger-wash / --danger-ink · SOS, paused, blocked. Pinned above the days in a --danger bordered card <b>while in force</b>; afterwards it drops to neutral and joins its day.</td></tr>
+          <tr><td><span className="sw" style={{ background: "var(--highlight)" }}></span>unread</td><td>8 px --highlight dot on the disc, same spot as the bell's. Gold is used for nothing else.</td></tr>
+        </tbody></table>
+        <h3>N4 · dual role: the feed follows the side</h3>
+        <ul>
+          <li>The two sides speak in different voices about the same words ("Parcel collected" means "your rider has it" or "you have it"). Mixed in one list, with tags, the user has to read the tag to understand the row.</li>
+          <li>The tab bar already says which side you're on; the feed shouldn't contradict it. Most users have one role, and tags would be noise for all of them.</li>
+          <li>Account and safety rows are about the person, so they show on both sides.</li>
+          <li>Nothing is hidden: one quiet row at the top says what's waiting on the other side and opens the existing switch sheet (C4/C5). It shows only when the other side has something new.</li>
+        </ul>
+        <h3>Grouping</h3>
+        <ul>
+          <li>Group by order id in the app (no API change). An order sits in the day of its <b>latest</b> update and moves up when it changes.</li>
+          <li>Safety events with an order id join that order's timeline once resolved (N1b, Mbare).</li>
+          <li>Times: now · 2 min · 1 hr · Yesterday · 28 Sep. Timeline steps use clock times.</li>
+          <li>Opening the screen marks everything read; dots stay for this visit only.</li>
+        </ul>
+        <h3>Outside the design</h3>
+        <ul><li>Merchant rows (Sadza Republic, Healthwise, Mama's Kitchen, TM Pick n Pay) need the feed to stop skipping non-parcel orders (<code>notifications-feed.service.ts:410</code>); row copy follows <code>O.g.push</code>.</li></ul>
+      </div></section>
+      <section id="copy"><h2>Copy — <code>N</code> in n-kit.jsx</h2><p className="sub">Ships verbatim. Names, prices, places and times are sample data. "4 earlier updates" = count + <code>earlierN</code>.</p><CopyList /></section>
+    </main>
+  </>;
+}
+ReactDOM.createRoot(document.getElementById("n-root")).render(<Page />);
+</script>
+</body>
+</html>
