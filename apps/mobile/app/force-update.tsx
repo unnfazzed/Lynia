@@ -21,11 +21,11 @@ import { ForceUpdateView } from "./force-update.view";
  * The primary hides when no store URL is configured rather than opening a dead link.
  */
 export default function ForceUpdateScreen(): React.ReactElement {
-  // This screen REPLACES the Stack, so the router never leaves "/" and BootSplashHold's route
-  // trigger cannot fire — without this the gate would sit under the held native splash until the
-  // absolute cap. Whatever renders in place of the navigator releases the boot itself, through the
-  // ONE shared release (native hide + window-background reset + boot-phase end, idempotent), so the
-  // cap timer later re-firing is a no-op. No-op when the splash is already gone (warm version trip).
+  // This screen REPLACES the Stack, so the boot route never reports a destination and the splash
+  // (ledger D-64) would play on over a navigator that is gone. Whatever renders in place of the
+  // navigator ends the boot itself, through the ONE shared release (native hide + window-background
+  // reset + boot-phase end — which unmounts the splash and brings this screen on-screen; idempotent).
+  // No-op when the boot is already over (warm version trip).
   const release = useBootSplashRelease();
   useEffect(() => {
     release();

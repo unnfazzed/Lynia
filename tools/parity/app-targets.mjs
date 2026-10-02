@@ -44,10 +44,6 @@ export const APP_TARGETS = {
   "RC.list_error": { kind: "mobile", component: "app/food/index.tsx", fixture: "food_list_error" },
 
   // ─────────────────────── MOBILE — customer · send + auth + account (LJ) ───────────────────────
-  // The RN splash (app/index.tsx's boot state) is the drawn `Splash` mock; its tree lives in
-  // app/splash.view.tsx, which is what the lane mounts — the native expo-splash-screen frame before
-  // JS starts is the same picture and has no component to render.
-  "LJ.splash": { kind: "mobile", component: "app/splash.view.tsx", fixture: "splash" },
   "LJ.force_update": { kind: "mobile", component: "app/force-update.tsx", fixture: "force_update" },
   "LJ.login": { kind: "mobile", component: "app/phone.tsx", fixture: "auth_phone" },
   "LJ.otp": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp" },

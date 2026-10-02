@@ -4,7 +4,7 @@
  * one side-by-side parity sheet (HTML + PNG). This is what a PR attaches — the reviewer approves the
  * picture, not the prose.
  *
- *   node pair.mjs --keys LJ.force_update,LJ.splash --out out/sheet-boot
+ *   node pair.mjs --keys LJ.force_update,LJ.login --out out/sheet-boot
  *   node pair.mjs --category admin --out out/sheet-admin
  *   node pair.mjs --wired --out out/sheet-wired          # only screens with an app target
  *

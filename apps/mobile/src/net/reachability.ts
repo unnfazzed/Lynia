@@ -119,6 +119,25 @@ function scheduleProbe(): void {
   }, delay);
 }
 
+/**
+ * A user asked to retry (the splash's "Try again", ledger D-64): skip whatever backoff is pending and
+ * probe now, restarting the backoff from its first step. A no-op while reachable or mid-probe.
+ */
+export function probeNow(): void {
+  if (reachable || probing) return;
+  if (probeTimer) {
+    clearTimeout(probeTimer);
+    probeTimer = null;
+  }
+  probeAttempt = 0;
+  probing = true;
+  void probeFetch(`${API_URL}/health`).then((ok) => {
+    probing = false;
+    if (ok) reportReachable();
+    else scheduleProbe();
+  });
+}
+
 /** Test seam: swap the probe transport so recovery is driven deterministically, no real network. */
 export function __setProbeFetch(fn: (url: string) => Promise<boolean>): void {
   probeFetch = fn;
