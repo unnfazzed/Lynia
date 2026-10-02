@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MerchantOrderResponse, PREP_CHIPS_MIN } from "@lynia/shared";
+import type { MerchantOrderResponse, PREP_CHIPS_MIN, SubstitutionProposalLine } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -20,13 +20,14 @@ import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
 import { alarmOrders } from "../../lib/alarm";
 import { needsKitchenConfirm } from "../../lib/order-groups";
-import { acceptOrder, cancelPreparing, confirmKitchen, editOrderItems, rejectOrder } from "../../lib/orders-api";
-import { homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub } from "../../lib/orders-view";
+import { acceptOrder, cancelPreparing, confirmKitchen, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
+import { hm, homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub, slotLabel } from "../../lib/orders-view";
+import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 
 type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantProfile } | { status: "error"; message: string };
-type Segment = "new" | "cooking" | "ready";
+type Segment = "new" | "cooking" | "ready" | "scheduled";
 
 /**
  * B1 · Orders home and B5 · Closed (packages/design/handoff/merchant-mobile, ledger D-48). The mint
@@ -50,8 +51,8 @@ export default function QueuePage() {
       .then((merchant) => {
         if (cancelled) return;
         primeBusiness(merchant);
-        // A shop takes no customer orders yet, so its Orders home is Deliveries (D-48).
-        if (merchant.businessType === "shop") {
+        // A shop that isn't live to customers takes no orders, so its Orders home is Deliveries (D-48).
+        if (homePath(merchant) !== "/queue") {
           router.replace(homePath(merchant));
           return;
         }
@@ -102,6 +103,7 @@ export default function QueuePage() {
   const backfillCount = useBackfillCount(orders, reachability.reachable);
 
   const sections = useMemo(() => homeSections(orders), [orders]);
+  const scheduled = useScheduled(ready, orders.length);
   const handleAccept = useCallback(
     async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => {
       await acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined });
@@ -131,9 +133,16 @@ export default function QueuePage() {
     },
     [refetch],
   );
+  const handlePropose = useCallback(
+    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], lines: SubstitutionProposalLine[]) => {
+      await proposeSubstitution(orderId, { lines, prepMinutes });
+      await refetch();
+    },
+    [refetch],
+  );
   const handleEditItems = useCallback(
-    async (orderId: string, lines: { itemId: string; quantity: number }[]) => {
-      await editOrderItems(orderId, { lines });
+    async (orderId: string, lines: SubstitutionProposalLine[]) => {
+      await proposeSubstitution(orderId, { lines });
       await refetch();
     },
     [refetch],
@@ -156,15 +165,23 @@ export default function QueuePage() {
     );
   }
 
-  const segmentOrders = sections[segment];
-  const nothing = orders.length === 0;
+  const segmentOrders = segment === "scheduled" ? [] : sections[segment];
+  const nothing = orders.length === 0 && (scheduled?.length ?? 0) === 0;
+  const v = vocabulary(state.merchant.businessType, state.merchant.shopKind);
   // Branches (ledger D-51): a branch not switched on yet, with nothing in its queue, is "Almost ready".
   const notLive = nothing && showNotLiveHome(state.merchant, branches.length);
   const closed = open.status.closedByHand && !notLive;
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
-      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length} />
+      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length}>
+        {/* A live shop takes customer orders here; its rider bookings (D-48 D1) stay one tap away. */}
+        {state.merchant.businessType === "shop" && (
+          <Link href="/deliveries" className="m-hdbtn">
+            <Icon name="bike" size={20} /> Book a rider
+          </Link>
+        )}
+      </OrdersHeader>
 
       {notLive ? (
         <NotLiveHome businessType={state.merchant.businessType} />
@@ -201,11 +218,13 @@ export default function QueuePage() {
                 onChange={setSegment}
                 options={[
                   { value: "new", label: "New", count: sections.new.length },
-                  { value: "cooking", label: "Cooking", count: sections.cooking.length },
+                  { value: "cooking", label: v.making, count: sections.cooking.length },
                   { value: "ready", label: "Ready", count: sections.ready.length },
+                  ...(scheduled && scheduled.length > 0 ? [{ value: "scheduled" as const, label: OF.segSched, count: scheduled.length }] : []),
                 ]}
               />
-              {segmentOrders.length === 0 && <div className="m-hint" style={{ padding: "8px 0" }}>Nothing here</div>}
+              {segment === "scheduled" && <ScheduledList orders={scheduled ?? []} v={v} />}
+              {segmentOrders.length === 0 && segment !== "scheduled" && <div className="m-hint" style={{ padding: "8px 0" }}>Nothing here</div>}
               {segmentOrders.map((o) =>
                 o.merchantPhase === "awaiting_accept" ? (
                   <NewOrderCard key={o.id} order={o} />
@@ -214,14 +233,22 @@ export default function QueuePage() {
                 ) : null,
               )}
               <Rows orders={segmentOrders.filter((o) => o.merchantPhase !== "awaiting_accept" && !needsKitchenConfirm(o))} />
-              <OrderSections sections={sections} alongside={segment} />
+              {segment !== "scheduled" && <OrderSections sections={sections} alongside={segment} />}
             </>
           )}
         </div>
       )}
 
       {ringing[0] ? (
-        <NewOrderTakeover key={ringing[0].id} active={ringing[0]} disabled={actionsDisabled} onAccept={handleAccept} onReject={handleReject} refetch={refetch} />
+        <NewOrderTakeover
+          key={ringing[0].id}
+          active={ringing[0]}
+          disabled={actionsDisabled}
+          onAccept={handleAccept}
+          onPropose={handlePropose}
+          onReject={handleReject}
+          refetch={refetch}
+        />
       ) : confirming[0] ? (
         <KitchenConfirmTakeover
           key={confirming[0].id}
@@ -234,6 +261,63 @@ export default function QueuePage() {
         />
       ) : null}
     </Kitchen>
+  );
+}
+
+/** M7a: scheduled orders that haven't rung, polled beside the queue (null until the first read lands,
+ *  or when the API has no Scheduled list). Re-read whenever the queue's size changes — a scheduled order
+ *  ringing leaves this list for the queue. */
+function useScheduled(enabled: boolean, queueSize: number): MerchantOrderResponse[] | null {
+  const [list, setList] = useState<MerchantOrderResponse[] | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    const load = () =>
+      listScheduledOrders()
+        .then((l) => {
+          if (alive) setList(Array.isArray(l) ? l : []);
+        })
+        .catch(() => {});
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [enabled, queueSize]);
+  return list;
+}
+
+/** M7a · the Scheduled segment: per order "#A1B2 · $15.00", the slot with a calendar, then "2 dishes ·
+ *  Rings at 12:05 like a new order". Each opens its ticket (M7b). */
+function ScheduledList({ orders, v }: { orders: readonly MerchantOrderResponse[]; v: ReturnType<typeof vocabulary> }) {
+  const now = useNow(60_000);
+  return (
+    <>
+      {orders.map((o) => {
+        const s = o.scheduledFor ? slotLabel(o.scheduledFor, new Date(now)) : null;
+        const day = s ? s.day.charAt(0).toUpperCase() + s.day.slice(1) : "";
+        return (
+          <Link key={o.id} href={`/queue/${o.id}`} className="m-card" style={{ gap: 6, color: "inherit", textDecoration: "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <b className="m-num" style={{ fontSize: 15, flex: 1 }}>
+                {orderLabel(o)}
+              </b>
+              <b className="m-num">{money(o.merchantGoodsTotal)}</b>
+            </div>
+            {s && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
+                <Icon name="calendar" size={15} color="var(--accent-text)" />
+                {day} {s.slot}
+              </div>
+            )}
+            <span className="m-hint" style={{ fontSize: 13 }}>
+              {[countOf(o.items.length, v), o.ringsAt ? OF.schedRing(hm(o.ringsAt)) : null].filter(Boolean).join(" · ")}
+            </span>
+          </Link>
+        );
+      })}
+    </>
   );
 }
 

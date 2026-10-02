@@ -57,11 +57,35 @@ export function homeSections(orders: readonly MerchantOrderResponse[]): HomeSect
   };
 }
 
-export type DetailView = "ringing" | "legacy" | "cooking" | "handover" | "tracking" | "delivered" | "closed";
+export type DetailView = "ringing" | "scheduled" | "legacy" | "cooking" | "handover" | "tracking" | "delivered" | "closed";
+
+/** Order flow v2 (BRIEF §12): a scheduled order that hasn't rung yet (M7a/M7b). */
+export function isScheduledWaiting(o: Pick<MerchantOrderResponse, "scheduledFor" | "scheduleStartedAt">): boolean {
+  return !!o.scheduledFor && !o.scheduleStartedAt;
+}
+
+/** "12:30–13:00" and "today" / "tomorrow" / "Fri 3 Oct" for a scheduled order's slot (30-minute slots). */
+export function slotLabel(scheduledFor: string, now: Date, slotMinutes = 30): { slot: string; day: string } {
+  const start = new Date(scheduledFor);
+  const end = new Date(start.getTime() + slotMinutes * 60_000);
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const day =
+    dayKey(start) === dayKey(now)
+      ? "today"
+      : dayKey(start) === dayKey(tomorrow)
+        ? "tomorrow"
+        : start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  return { slot: `${hm(start.toISOString())}–${hm(end.toISOString())}`, day };
+}
 
 /** Which screen an order opens on: B3 cooking, B4 handover, B6 tracking or B7 delivered. */
 export function detailView(o: MerchantOrderResponse): DetailView {
   if (o.merchantClosedAt || o.status === "cancelled" || o.status === "expired") return "closed";
+  // M7b: a scheduled order waits on its ticket until it rings (then it rings like a new one, M1c).
+  if (o.merchantPhase === "awaiting_accept" && isScheduledWaiting(o)) return "scheduled";
+  // M2: an accept that asked about a swap parks the order until the customer answers — keep packing.
+  if (o.merchantPhase === "awaiting_item_approval" && o.substitution?.status === "open") return "cooking";
   // An auto-accepted order the kitchen hasn't confirmed rings too (M1a), on the Orders home.
   if (o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o)) return "ringing";
   if (o.merchantPhase === "awaiting_item_approval" || o.merchantPhase === "awaiting_payment") return "legacy";
@@ -110,7 +134,8 @@ export interface Step {
   time: string;
 }
 
-function hm(iso: string | null | undefined): string {
+/** "12:36" (local time) for an ISO instant; "" for none. */
+export function hm(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;

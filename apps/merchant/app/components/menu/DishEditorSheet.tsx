@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
+import { useBusiness } from "../../lib/business";
 import { formatMoney, parseAmountInput } from "../../lib/money-input";
+import { useRxEnabled } from "../../lib/order-flags";
 import { useVocabulary } from "../../lib/vocabulary";
 import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
+import { Switch } from "../m/Switch";
 import { PhotoPicker } from "./PhotoPicker";
 
 // D-32's own budget for a dish photo (mirrors apps/api/src/uploads/uploads.controller.ts's
@@ -18,6 +21,8 @@ export interface DishSave {
   priceUsd: number;
   categoryId: string;
   photoUrl?: string;
+  /** Order flow v2 (BRIEF §13): "Prescription needed" — a pharmacy's, and only while Rx is switched on. */
+  rxRequired?: boolean;
 }
 
 /** D-31: create or edit a dish. Category is a picker over the merchant's own list, never free text
@@ -51,6 +56,10 @@ export function DishEditorSheet({
   const [categoryId, setCategoryId] = useState(dish?.categoryId ?? defaultCategoryId ?? categories[0]?.id ?? "");
   const [photoKey, setPhotoKey] = useState<string | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(dish?.photoUrl ?? null);
+  const business = useBusiness();
+  const pharmacy = business?.businessType === "shop" && business.shopKind === "pharmacy";
+  const rxOn = useRxEnabled(pharmacy);
+  const [rxRequired, setRxRequired] = useState(dish?.rxRequired === true);
 
   const price = parseAmountInput(priceText);
   const canSave = name.trim().length > 0 && price != null && !!categoryId && !disabled && !submitting;
@@ -109,6 +118,13 @@ export function DishEditorSheet({
               ))}
             </div>
 
+            {pharmacy && rxOn && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}>
+                <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Prescription needed</div>
+                <Switch checked={rxRequired} label="Prescription needed" disabled={disabled || submitting} onChange={setRxRequired} />
+              </div>
+            )}
+
             {isDraft && (
               <div style={{ display: "flex", gap: 10, marginTop: 14, padding: "12px 14px", background: "var(--highlight-wash)", borderRadius: 12 }}>
                 <div style={{ fontSize: 12.5, color: "var(--highlight-ink)", lineHeight: 1.4 }}>
@@ -134,6 +150,7 @@ export function DishEditorSheet({
                     priceUsd: price,
                     categoryId,
                     photoUrl: photoKey ?? undefined,
+                    ...(pharmacy && rxOn ? { rxRequired } : {}),
                   })
                 }
                 style={{ ...primaryButtonStyle, flex: 1, opacity: canSave ? 1 : 0.5 }}

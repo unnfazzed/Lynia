@@ -1,42 +1,54 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PREP_CHIPS_MIN, type MerchantOrderResponse, type MerchantRejectionReasonCode } from "@lynia/shared";
-import { computeAcceptPreview } from "../../lib/accept-preview";
+import { PREP_CHIPS_MIN, type MerchantOrderResponse, type MerchantRejectionReasonCode, type SubstitutionProposalLine } from "@lynia/shared";
+import type { MerchantShopKind } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
-import { money, orderLabel } from "../../lib/orders-view";
+import { orderLabel, slotLabel } from "../../lib/orders-view";
+import { changeableLines, proposalLines } from "../../lib/substitution";
 import { useNow } from "../../lib/use-now";
+import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
 import { ConfirmSheet } from "../m/ConfirmSheet";
 import { useToast } from "../m/Toast";
+import { ProposerLines, ProposerTotal, SwapPicker, useProposer } from "./proposer";
+import { Note } from "./proof-parts";
+
+type Prep = (typeof PREP_CHIPS_MIN)[number];
 
 /**
- * B2 · New order ringing (packages/design/handoff/merchant-mobile, ledger D-48): a full-screen green
- * takeover. The header carries the order number and the accept countdown; the white sheet holds the
- * lines (the customer's note under its line), the total, "Edit items" (tap a line to strike it — the
- * customer approves the shorter order, D-23), the ready-in chips, "Accept · ready in 15 min" and
- * "Can't take it" behind the confirm sheet. The alarm rings until one of them is answered: there is
- * no back out of it (README "Ringing").
+ * A new order ringing (merchant-mobile B2, ledger D-48), as Order flow v2 draws it (of-screens-mrg.js
+ * `U1a`, `M1c`; ledger D-59): the green takeover with a white strip — "NEW ORDER" (or "SCHEDULED · START
+ * NOW" for a scheduled order at its start time), the number and the accept countdown — over the white
+ * sheet. The sheet is the proposer: "{n} items · Tap an item you can't supply", every line tappable into
+ * "Remove it" / "Swap for…" (only "Remove it" when the customer chose "Remove it" for missing items), the
+ * total ("$14.60 → $11.60" once something changed), the ready-in chips, then "Accept · ready in 15 min"
+ * — or "Send 2 changes to customer", which accepts with the changes and gives the customer 3 minutes to
+ * answer the swaps. "Can't take it" sits behind the confirm sheet. The alarm rings until one of them is
+ * answered: there is no back out of it (README "Ringing").
  */
 export function NewOrderTakeover({
   active,
   disabled,
   onAccept,
+  onPropose,
   onReject,
   refetch,
 }: {
   active: MerchantOrderResponse;
   queued?: readonly MerchantOrderResponse[];
   disabled: boolean;
-  onAccept: (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => Promise<void>;
+  onAccept: (orderId: string, prepMinutes: Prep, unavailableDishIds: string[]) => Promise<void>;
+  onPropose?: (orderId: string, prepMinutes: Prep, lines: SubstitutionProposalLine[]) => Promise<void>;
   onReject: (orderId: string, reason: MerchantRejectionReasonCode) => Promise<void>;
   refetch: () => Promise<void>;
 }) {
   const now = useNow();
   const toast = useToast();
-  const [prepMinutes, setPrepMinutes] = useState<(typeof PREP_CHIPS_MIN)[number]>(15);
-  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState(false);
+  // The order's own venue speaks its words (Cooking / Packing); a restaurant's by default.
+  const v = vocabulary(active.venue?.businessType, active.venue?.shopKind as MerchantShopKind | null | undefined);
+  const p = useProposer(active);
+  const [prepMinutes, setPrepMinutes] = useState<Prep>(15);
   const [confirmDecline, setConfirmDecline] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,29 +56,18 @@ export function NewOrderTakeover({
   // assignment is a sensitive lane, so a fast double-tap must never double-accept or double-reject.
   const submittingRef = useRef(false);
 
-  const preview = computeAcceptPreview(active.items, unavailable);
   const remainingMs = msUntil(active.acceptDeadlineAt, now);
+  const scheduled = active.scheduledFor ? slotLabel(active.scheduledFor, new Date(now)) : null;
+  const making = v.making.toLowerCase();
 
   // Back is blocked here: the alarm must be answered (README "Ringing").
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") toast("Accept or decline to stop the alarm");
+      if (e.key === "Escape" && !p.picking) toast("Accept or decline to stop the alarm");
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [toast]);
-
-  function toggleLine(dishId: string | null) {
-    if (!editing || !dishId) return;
-    const removing = !unavailable.has(dishId);
-    setUnavailable((prev) => {
-      const next = new Set(prev);
-      if (next.has(dishId)) next.delete(dishId);
-      else next.add(dishId);
-      return next;
-    });
-    toast(removing ? "Removed · the customer approves" : "Item back on the order");
-  }
+  }, [toast, p.picking]);
 
   // A refusal here (usually a 409: the order already resolved) refetches, so a stale takeover clears
   // itself as soon as the fresh queue lands instead of waiting for the next poll.
@@ -88,31 +89,41 @@ export function NewOrderTakeover({
     }
   }
 
+  const lines = proposalLines(active, p.changes);
   const accept = () =>
-    run(() => onAccept(active.id, prepMinutes, [...unavailable]), `Accepted · customer told ${prepMinutes} min`, "Couldn't accept the order. Try again.");
+    lines.length > 0 && onPropose
+      ? run(() => onPropose(active.id, prepMinutes, lines), "Changes sent · the customer has 3 minutes", "Couldn't send the changes. Try again.")
+      : run(() => onAccept(active.id, prepMinutes, []), `Accepted · customer told ${prepMinutes} min`, "Couldn't accept the order. Try again.");
   const decline = () => run(() => onReject(active.id, "other"), "Declined · the customer was told", "Couldn't decline the order. Try again.");
 
   const busy = disabled || submitting;
-  const keep = active.items.length - [...unavailable].filter((id) => active.items.some((i) => i.dishId === id)).length;
-  const acceptLabel = preview.hasUnavailable
-    ? `Accept ${keep} of ${active.items.length} · ready in ${prepMinutes} min`
-    : `Accept · ready in ${prepMinutes} min`;
+  const changing = lines.length > 0 && !!onPropose;
+  const acceptLabel = changing ? OF.mSend(lines.length) : `Accept · ready in ${prepMinutes} min`; // O.m.accept
 
   return (
     <div className="m-overlay" style={{ zIndex: 60 }}>
       <div className="m-overlay-frame" style={{ background: "var(--cta-fill)", display: "flex", flexDirection: "column" }} role="alertdialog" aria-label={`New order ${orderLabel(active)}`}>
-        <div style={{ padding: "calc(10px + env(safe-area-inset-top)) 16px 14px", color: "var(--on-accent)", display: "flex", alignItems: "center", gap: 12 }}>
-          <Icon name="volume-2" size={24} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", opacity: 0.85 }}>NEW ORDER</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{orderLabel(active)}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div className="m-num" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>
-              {formatCountdown(remainingMs)}
+        <div
+          style={{
+            margin: "calc(6px + env(safe-area-inset-top)) 12px 14px",
+            background: "var(--bg)",
+            borderRadius: 16,
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Icon name="volume-2" size={22} color="var(--accent-text)" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="m-cap" style={{ color: "var(--accent-text)" }}>
+              {scheduled ? OF.scheduled : OF.newOrder}
             </div>
-            <div style={{ fontSize: 11.5, opacity: 0.85 }}>to accept</div>
+            <b style={{ fontSize: 17 }}>{orderLabel(active)}</b>
           </div>
+          <b className="m-num" style={{ fontSize: 28 }} aria-label="Time left to accept">
+            {formatCountdown(remainingMs)}
+          </b>
         </div>
 
         <div
@@ -122,68 +133,30 @@ export function NewOrderTakeover({
             overflowY: "auto",
             background: "var(--bg)",
             borderRadius: "20px 20px 0 0",
-            padding: "16px 16px calc(16px + env(safe-area-inset-bottom))",
+            padding: "14px 16px calc(16px + env(safe-area-inset-bottom))",
             display: "flex",
             flexDirection: "column",
             gap: 10,
           }}
         >
-          {active.items.map((item, idx) => {
-            const out = !!item.dishId && unavailable.has(item.dishId);
-            return (
-              <div key={`${item.dishId ?? "item"}-${idx}`}>
-                <button
-                  type="button"
-                  className="m-li"
-                  style={{ minHeight: 48, opacity: out ? 0.4 : 1, textDecoration: out ? "line-through" : undefined, cursor: editing ? "pointer" : "default" }}
-                  aria-pressed={editing ? out : undefined}
-                  onClick={() => toggleLine(item.dishId)}
-                >
-                  <b style={{ fontSize: 15, width: 26 }}>{item.quantity}×</b>
-                  <div className="m-t">
-                    <b>{item.name}</b>
-                  </div>
-                  <span className="m-num" style={{ fontSize: 14 }}>
-                    {money(item.priceUsd * item.quantity)}
-                  </span>
-                </button>
-                {item.note && (
-                  <div style={{ fontSize: 13, color: "var(--highlight-ink)", background: "var(--highlight-wash)", borderRadius: 10, padding: "8px 10px", margin: "8px 0 0 38px" }}>
-                    “{item.note}”
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {scheduled && (
+            <Note icon="calendar" title={OF.schedT(`${scheduled.slot} ${scheduled.day}`)}>
+              <br />
+              {OF.schedNow}
+            </Note>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <b style={{ fontSize: 15 }}>{countOf(changeableLines(active).length, v)}</b>
+            <span className="m-hint" style={{ fontSize: 13 }}>
+              {OF.mHint}
+            </span>
+          </div>
+          <ProposerLines order={active} p={p} disabled={busy} />
           {active.note && (
             <div style={{ fontSize: 13, color: "var(--highlight-ink)", background: "var(--highlight-wash)", borderRadius: 10, padding: "8px 10px" }}>“{active.note}”</div>
           )}
+          <ProposerTotal p={p} fallback={active.merchantGoodsTotal ?? p.totals.was} />
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>Order total</span>
-            <b className="m-num" style={{ fontSize: 24 }}>
-              {money(preview.total)}
-            </b>
-          </div>
-          <button
-            type="button"
-            className="m-lnk"
-            style={{ minHeight: 28, justifyContent: "flex-start", fontSize: 13 }}
-            onClick={() => {
-              setEditing((e) => !e);
-              if (!editing) toast("Tap an item to remove it");
-            }}
-          >
-            {editing ? "Done editing" : "Edit items"}
-          </button>
-
-          <div style={{ flex: 1 }} />
-
-          {error && (
-            <div className="m-alert" role="alert">
-              {error}
-            </div>
-          )}
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "var(--muted)" }}>READY IN (MIN)</div>
           <div className="m-chips" style={{ gap: 6 }} role="radiogroup" aria-label="Ready in">
             {PREP_CHIPS_MIN.map((m) => (
@@ -200,15 +173,29 @@ export function NewOrderTakeover({
               </button>
             ))}
           </div>
+
+          <div style={{ flex: 1 }} />
+
+          {error && (
+            <div className="m-alert" role="alert">
+              {error}
+            </div>
+          )}
           <button type="button" className="m-btn" disabled={busy} onClick={() => void accept()}>
             {acceptLabel}
           </button>
-          <button type="button" className="m-lnk m-red" style={{ minHeight: 36 }} disabled={busy} onClick={() => setConfirmDecline(true)}>
-            Can’t take it
+          {changing && (
+            <span className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
+              {OF.mSendHint(making)}
+            </span>
+          )}
+          <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={busy} onClick={() => setConfirmDecline(true)}>
+            {OF.decline}
           </button>
         </div>
       </div>
 
+      {p.picking && <SwapPicker item={p.picking} onPick={(c) => p.set(p.picking!.itemId, c)} onCancel={() => p.setPicking(null)} />}
       {confirmDecline && (
         <ConfirmSheet
           title="Decline this order?"
@@ -222,3 +209,4 @@ export function NewOrderTakeover({
     </div>
   );
 }
+

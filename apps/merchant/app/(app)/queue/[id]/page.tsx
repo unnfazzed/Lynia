@@ -12,7 +12,9 @@ import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
 import { StaticMap } from "../../../components/m/StaticMap";
 import { useToast } from "../../../components/m/Toast";
 import { OrderCard } from "../../../components/queue/OrderCard";
-import { ChangeItemsSheet, editableLines, MerchantTrack, OrderLines, RiderRow } from "../../../components/queue/order-parts";
+import { MerchantTrack, OrderLines, RiderRow } from "../../../components/queue/order-parts";
+import { Note, PhotoRow, RoundLines } from "../../../components/queue/proof-parts";
+import { ProposerSheet } from "../../../components/queue/proposer";
 import { RetryableError } from "../../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
@@ -26,24 +28,26 @@ import {
   confirmReturnedCash,
   dispatchCancel,
   dispatchResume,
-  editOrderItems,
   getOrder,
   logCall,
   markReady,
+  proposeSubstitution,
   refundOrder,
+  rejectOrder,
   releaseUnpaid,
   reportNonReturn,
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, groupCode, isAfterPickup, money, orderLabel, riderFirstName } from "../../../lib/orders-view";
+import { detailView, groupCode, isAfterPickup, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
+import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
-import { countOf, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
+import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
 
 const POLL_MS = 5_000;
 
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse } | { status: "error"; message: string };
-type Confirm = null | "cancel" | "force" | "no_cash" | "not_returned" | "hold_cancel" | "items";
+type Confirm = null | "cancel" | "force" | "no_cash" | "not_returned" | "hold_cancel" | "items" | "decline_scheduled";
 
 /** What every order screen below needs from the page. */
 interface Ctx {
@@ -87,8 +91,13 @@ function riderName(order: MerchantOrderResponse): string {
  * - M6a cash back / M6b goods back — the hero, then "I got $15.00" or "I got the food back".
  *
  * An auto-accepted order the kitchen hasn't confirmed rings on the Orders home (M1a), like a new one.
- * The sealed-bag photo (M4b), the door photo (M5b) and the ETA pill wait on the backend (README "NEEDS
- * BACKEND"), so they are not drawn here.
+ *
+ * Round 2: "Change items" is the proposer (U4a); while the customer answers, the ticket waits (M2) with
+ * the round's countdown and "Order is packed" held. Shops get the seal reminder (M3b) and hand over only
+ * once the rider's sealed-bag photo is in (M4b → M4); a door photo shows on tracking (M5b) and on goods
+ * back (M6b). A scheduled order that hasn't rung opens on its ticket (M7b). A pharmacy order with a
+ * prescription to check offers the pharmacist the Prescription check (M8a). The ETA pill on M5 is not on
+ * the merchant read, so it is not drawn.
  */
 export default function OrderPage() {
   const { id } = useParams<{ id: string }>();
@@ -171,6 +180,7 @@ export default function OrderPage() {
 
   return (
     <Kitchen active="queue" tabs={false}>
+      {view === "scheduled" && <Scheduled {...ctx} />}
       {view === "cooking" && <Cooking {...ctx} />}
       {view === "handover" && <Handover {...ctx} />}
       {view === "tracking" && <Tracking {...ctx} />}
@@ -204,11 +214,24 @@ export default function OrderPage() {
     switch (confirm) {
       case "items":
         return (
-          <ChangeItemsSheet
+          <ProposerSheet
             order={order}
             busy={busy}
             error={error}
-            onSave={(lines) => void act(() => editOrderItems(order.id, { lines }), "Items changed · customer told the new total")}
+            making={v.making.toLowerCase()}
+            onSend={(p) => void act(() => proposeSubstitution(order.id, { lines: proposalLines(order, p.changes) }), "Changes sent · the customer has 3 minutes")}
+            onCancel={close}
+          />
+        );
+      case "decline_scheduled":
+        return (
+          <ConfirmSheet
+            title="Decline this order?"
+            body="The customer is told straight away."
+            confirmLabel="Decline order"
+            busy={busy}
+            error={error}
+            onConfirm={() => void act(() => rejectOrder(order.id, "other"), "Declined · the customer was told", true)}
             onCancel={close}
           />
         );
@@ -294,16 +317,50 @@ function Bar({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── M3a / M3b ──────────────────────────────────────────────────────────────────────────────────
-function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }: Ctx) {
+// ── M7b ────────────────────────────────────────────────────────────────────────────────────────
+function Scheduled({ order, disabled, setConfirm }: Ctx) {
+  const now = useNow(60_000);
+  const s = order.scheduledFor ? slotLabel(order.scheduledFor, new Date(now)) : null;
+  return (
+    <Fill>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+        {s && (
+          <Note icon="calendar" title={OF.schedT(`${s.day} ${s.slot}`)}>
+            {order.ringsAt && (
+              <>
+                <br />
+                {OF.schedBody(hm(order.ringsAt))}
+              </>
+            )}
+          </Note>
+        )}
+        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+          <OrderLines order={order} />
+        </div>
+        <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("decline_scheduled")}>
+          {OF.decline}
+        </button>
+      </div>
+    </Fill>
+  );
+}
+
+// ── M3a / M3b / M2 ─────────────────────────────────────────────────────────────────────────────
+function Cooking(ctx: Ctx) {
+  const { order, act, disabled, error, setConfirm, legacyHandlers, v, business } = ctx;
   const now = useNow();
+  const round = openRound(order);
+  if (round) return <Waiting {...ctx} deadlineAt={round.deadlineAt} now={now} />;
   const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
   const leftMs = Math.max(0, startMs + totalMs - now);
   const pct = Math.min(100, Math.round(((totalMs - leftMs) / totalMs) * 100));
   const readyBy = hm(new Date(startMs + totalMs).toISOString());
   const wallet = order.paymentMethod === "wallet";
-  const canChange = editableLines(order).length > 0;
+  const canChange = changeableLines(order).length > 0;
+  const shop = (order.venue?.businessType ?? business?.businessType) === "shop";
+  const rxToCheck = order.prescription?.status === "pending" && business?.myIsPharmacist === true;
   return (
     <Fill>
       <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
@@ -322,6 +379,17 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }:
         <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
           <OrderLines order={order} />
         </div>
+        {rxToCheck && (
+          <Link href={`/queue/${order.id}/rx`} className="m-btn m-sm">
+            <Icon name="file-text" size={18} />
+            {OF.rxT}
+          </Link>
+        )}
+        {shop && (
+          <Note tone="hi" icon="shield-check" title={OF.sealT}>
+            {OF.sealS(riderName(order))}
+          </Note>
+        )}
         {canChange && (
           <button type="button" className="m-sec" disabled={disabled} onClick={() => setConfirm("items")}>
             <Icon name="pencil" size={15} />
@@ -352,6 +420,12 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }:
 function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOver }: Ctx) {
   const matched = isAfterPickup(order);
   const hold = isNoRiderHold(order);
+  // M4b: a shop hands over only once the rider's sealed-bag photo is in (BRIEF §9); a restaurant's is
+  // optional, so its row shows only when there is one.
+  const proof = order.pickupProof?.photoUrl || order.pickupProof?.takenAt ? order.pickupProof : null;
+  const required = order.pickupProofRequired === true;
+  const waitingPhoto = required && !proof;
+  const rider = riderName(order);
   return (
     <Fill>
       <AppBar back="/queue" title={OF.handTitle(orderLabel(order))} />
@@ -385,6 +459,14 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
           </div>
         )}
         <PickupCode key={order.riderId ?? "none"} order={order} matched={matched} />
+        {order.riderId && (proof || required) && (
+          <PhotoRow
+            title={OF.photo}
+            sub={proof ? OF.photoAt(rider, hm(proof.takenAt)) : OF.photoWait(rider)}
+            url={proof?.photoUrl ?? null}
+            waiting={!proof}
+          />
+        )}
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>{OF.total}</span>
           <b className="m-num" style={{ fontSize: 20 }}>
@@ -394,10 +476,15 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
         {error && <div className="m-alert" role="alert">{error}</div>}
       </div>
       <Bar>
+        {waitingPhoto && order.riderId && (
+          <span className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
+            {OF.photoReq}
+          </span>
+        )}
         <button
           type="button"
           className="m-btn"
-          disabled={!matched}
+          disabled={!matched || waitingPhoto}
           onClick={() => {
             setHandedOver(true);
             toast("Handed over · tracking the delivery");
@@ -428,6 +515,7 @@ function Tracking({ order, disabled, error, setConfirm, business, v }: Ctx) {
         </div>
         {order.rider && <RiderRow order={order} />}
         <MerchantTrack order={order} v={v} />
+        {order.doorProof && <PhotoRow title={OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />}
         {error && <div className="m-alert" role="alert">{error}</div>}
         <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13, marginTop: "auto" }} disabled={disabled} onClick={() => setConfirm("force")}>
           Mark ride completed
@@ -503,8 +591,45 @@ function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
         )}
 
         {delivered && <MerchantTrack order={order} v={v} />}
+        {!delivered && order.doorProof && (
+          <PhotoRow title={OF.attemptPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
+        )}
       </div>
     </>
+  );
+}
+
+// ── M2 ─────────────────────────────────────────────────────────────────────────────────────────
+/** M2 · waiting for the customer: the round's countdown, "Start packing the rest…", the lines with
+ *  "Swap asked" / "Removing", and "Order is packed" held until the customer answers (or time runs out). */
+function Waiting({ order, v, deadlineAt, now }: Ctx & { deadlineAt: string | null; now: number }) {
+  const left = deadlineAt ? formatCountdown(Math.max(0, new Date(deadlineAt).getTime() - now)) : null;
+  return (
+    <Fill>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+        <div className="m-note" data-tone="ok" style={{ flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+            <b style={{ flex: 1, fontSize: 15 }}>{OF.mWait}</b>
+            {left && <span className="m-pl m-gold m-num">{left}</span>}
+          </div>
+          <span>{OF.mWaitSub(v.making.toLowerCase())}</span>
+        </div>
+        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+          <RoundLines order={order} />
+        </div>
+      </div>
+      <Bar>
+        {left && (
+          <span className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
+            {OF.mWaitHint(left)}
+          </span>
+        )}
+        <button type="button" className="m-btn" disabled>
+          {v.readyCta}
+        </button>
+      </Bar>
+    </Fill>
   );
 }
 

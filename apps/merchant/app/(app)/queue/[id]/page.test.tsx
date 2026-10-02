@@ -9,7 +9,8 @@ import {
   closeOrder,
   confirmGoodsReturned,
   confirmReturnedCash,
-  editOrderItems,
+  proposeSubstitution,
+  rejectOrder,
   dispatchCancel,
   dispatchResume,
   getOrder,
@@ -29,7 +30,8 @@ vi.mock("../../../lib/orders-api", () => ({
   markReady: vi.fn(async () => ({})),
   cancelPreparing: vi.fn(async () => ({})),
   confirmKitchen: vi.fn(async () => ({})),
-  editOrderItems: vi.fn(async () => ({})),
+  proposeSubstitution: vi.fn(async () => ({})),
+  rejectOrder: vi.fn(async () => ({})),
   closeOrder: vi.fn(async () => ({})),
   confirmReturnedCash: vi.fn(async () => ({})),
   confirmGoodsReturned: vi.fn(async () => ({})),
@@ -244,19 +246,124 @@ describe("Auto-accept: the Cooking ticket once the kitchen confirmed", () => {
     expect(screen.queryByText("LyniaGo accepted this for you")).toBeNull();
   });
 
-  it("Change items shows the customer's number to agree it with, and sends every line's new quantity", async () => {
+  it("Change items is the proposer (U4a): tap a line, Remove it, then 'Send 1 change to customer'", async () => {
     show(auto());
     fireEvent.click(await screen.findByRole("button", { name: "Change items" }));
-    expect(screen.getByRole("link", { name: /Call the customer/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "One less Coke" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: /Coke/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove it" }));
+    expect(screen.getByText("Removing")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send 1 change to customer" }));
     await vi.waitFor(() =>
-      expect(editOrderItems).toHaveBeenCalledWith(ID, {
-        lines: [
-          { itemId: "b0000001-0000-4000-8000-000000000000", quantity: 2 },
-          { itemId: "b0000002-0000-4000-8000-000000000000", quantity: 0 },
-        ],
+      expect(proposeSubstitution).toHaveBeenCalledWith(ID, { lines: [{ action: "remove", itemId: "b0000002-0000-4000-8000-000000000000" }] }),
+    );
+  });
+});
+
+describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => {
+  const LINE_A = "b0000001-0000-4000-8000-000000000000";
+  const LINE_B = "b0000002-0000-4000-8000-000000000000";
+  const lines = [
+    { itemId: LINE_A, dishId: null, name: "Bread (Lobels 700g)", priceUsd: 1.1, quantity: 1, note: null, available: false },
+    { itemId: LINE_B, dishId: null, name: "Mazoe orange 2L", priceUsd: 3.2, quantity: 1, note: null, available: false },
+  ];
+  const round = (deadlineAt: string) => ({
+    id: "c0000001-0000-4000-8000-000000000000",
+    kind: "mid_prep" as const,
+    status: "open" as const,
+    createdAt: new Date().toISOString(),
+    deadlineAt,
+    resolvedAt: null,
+    wasTotal: 4.3,
+    keptSubtotal: 0,
+    lines: [
+      { id: "c1000001-0000-4000-8000-000000000000", itemId: LINE_A, action: "swap" as const, name: "Bread (Lobels 700g)", priceUsd: 1.1, quantity: 1, newQuantity: null, swapDishId: "d0000009-0000-4000-8000-000000000000", swapName: "Bakers Inn 700g", swapPriceUsd: 1.2, swapQuantity: 1, swapPhotoUrl: null, answer: null },
+      { id: "c1000002-0000-4000-8000-000000000000", itemId: LINE_B, action: "remove" as const, name: "Mazoe orange 2L", priceUsd: 3.2, quantity: 1, newQuantity: null, swapDishId: null, swapName: null, swapPriceUsd: null, swapQuantity: null, swapPhotoUrl: null, answer: null },
+    ],
+  });
+
+  it("M2: while the customer answers, the ticket waits with the countdown and holds 'Order is packed'", async () => {
+    business.current = merchantProfile({ businessType: "shop", shopKind: "grocery" });
+    show(merchantOrder({ ...cooking(), items: lines, substitution: round(new Date(Date.now() + 161_000).toISOString()) }));
+    expect(await screen.findByText("Waiting for the customer to answer")).toBeTruthy();
+    expect(screen.getByText("Bakers Inn 700g · $1.20")).toBeTruthy();
+    expect(screen.getByText("Swap asked")).toBeTruthy();
+    expect(screen.getByText("Removing")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Order is packed" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/^Waiting for the customer’s answer · 2:4/)).toBeTruthy();
+  });
+
+  it("an accept that asked about a swap (awaiting the customer) opens on the same wait", async () => {
+    show(merchantOrder({ id: ID, merchantPhase: "awaiting_item_approval", items: lines, substitution: round(new Date(Date.now() + 60_000).toISOString()) }));
+    expect(await screen.findByText("Waiting for the customer to answer")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/queue");
+  });
+
+  it("M4b: a shop's Hand over waits for the rider's sealed-bag photo", async () => {
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId, rider: RIDER, pickupProofRequired: true }));
+    expect(await screen.findByText("Waiting for Blessing M.’s photo of the sealed bag")).toBeTruthy();
+    expect(screen.getByText("Shops and pharmacies: wait for the photo before you hand over.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Hand over" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("M4: the photo row once it's in, with View opening the viewer", async () => {
+    const takenAt = new Date().toISOString();
+    show(
+      merchantOrder({
+        id: ID,
+        merchantPhase: null,
+        status: "picked_up",
+        riderId: RIDER.profileId,
+        rider: RIDER,
+        debtStatus: "open",
+        pickupProofRequired: true,
+        pickupProof: { photoUrl: "https://storage.example/bag.jpg", takenAt, bagSealed: true },
       }),
     );
+    expect(await screen.findByText("Sealed bag photo")).toBeTruthy();
+    expect(screen.getByText(/^Blessing M\. took this at /)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Hand over" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("M5b: the door photo on tracking says where it was left", async () => {
+    show(
+      merchantOrder({
+        id: ID,
+        merchantPhase: null,
+        status: "en_route_dropoff",
+        riderId: RIDER.profileId,
+        rider: RIDER,
+        doorProof: { photoUrl: "https://storage.example/door.jpg", takenAt: null, reason: "left_at_gate", handedTo: "Chipo" },
+      }),
+    );
+    expect(await screen.findByText("Delivery photo")).toBeTruthy();
+    expect(screen.getByText("Left with Chipo at the gate")).toBeTruthy();
+  });
+
+  it("M7b: a scheduled order that hasn't rung opens on its ticket; declining goes through the confirm sheet", async () => {
+    const at = new Date();
+    at.setHours(at.getHours() + 3, 0, 0, 0);
+    show(merchantOrder({ id: ID, merchantPhase: "awaiting_accept", scheduledFor: at.toISOString(), ringsAt: new Date(at.getTime() - 25 * 60_000).toISOString(), scheduleStartedAt: null }));
+    expect(await screen.findByText(/^Scheduled for /)).toBeTruthy();
+    expect(screen.getByText(/^This order rings at /)).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/queue");
+    fireEvent.click(screen.getByRole("button", { name: "Can’t take it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Decline order" }));
+    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith(ID, "other"));
+  });
+
+  it("M3b + M8a: a pharmacist sees the seal note and the way into the prescription check", async () => {
+    business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: true });
+    show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
+    expect(await screen.findByText("Seal the bag")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Prescription check" }).getAttribute("href")).toBe(`/queue/${ID}/rx`);
+  });
+
+  it("no prescription check without a pharmacist, or without a prescription", async () => {
+    business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: false });
+    show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
+    expect(await screen.findByText("Seal the bag")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Prescription check" })).toBeNull();
   });
 });

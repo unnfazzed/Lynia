@@ -614,6 +614,13 @@
   color: var(--ink);
   box-shadow: 0 1px 3px rgba(20, 24, 27, 0.12);
 }
+/* M7a: four segments (New · Cooking · Ready · Scheduled) at 12.5, so they fit 320. */
+.m-seg[data-n="4"] button {
+  font-size: 12.5px;
+  gap: 4px;
+  padding: 0 2px;
+  white-space: nowrap;
+}
 .m-seg em {
   font-style: normal;
   min-width: 18px;
@@ -1659,4 +1666,145 @@
   margin: 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* ── Order flow v2 round 2 (ledger D-59) ─────────────────────────────────────────────────── */
+
+/* U1a / M2: a proposer line (`mline`): tappable, greyed while open, the ⇄ swap line, a pill. */
+.m-ol-wrap {
+  border-top: 1px solid var(--line);
+}
+.m-ol-wrap:first-child {
+  border-top: none;
+}
+.m-ol-wrap > .m-ol {
+  border-top: none;
+}
+.m-ol-wrap[data-sel] {
+  background: var(--surface);
+  margin: 0 -12px;
+  padding: 0 12px 8px;
+}
+.m-ol-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.m-ol > div > span:first-child {
+  display: block;
+}
+.m-swapln {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.m-pl.m-hl {
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+}
+
+/* M2 / M1c / M7b: a note card (`note`): icon, bold line, then the sub-line. */
+.m-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--surface);
+}
+.m-note[data-tone="ok"] {
+  background: var(--accent-wash);
+}
+.m-note[data-tone="hi"] {
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+}
+.m-note b {
+  font-size: 14px;
+}
+
+/* M4 / M4b / M5b: the photo row (`photoRow`) and its full-screen viewer. */
+.m-photo {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.m-photo-wait {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--line);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.m-photo-wait .m-spin {
+  border-color: var(--accent-wash);
+  border-top-color: var(--accent);
+}
+.m-viewer {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+}
+.m-viewer img {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  border-radius: 16px;
+}
+.m-viewer p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--line);
+  text-align: center;
+}
+
+/* M8a: the prescription photo, zoomable, with its page pill and Zoom button. */
+.m-rx {
+  position: relative;
+  height: 250px;
+  border-radius: 14px;
+  overflow: auto;
+  background: var(--surface);
+}
+.m-rx img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.m-rx[data-zoom] img {
+  width: 200%;
+  height: 200%;
+}
+.m-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.m-kv span {
+  color: var(--muted);
+}
+.m-kv b {
+  text-align: right;
 }

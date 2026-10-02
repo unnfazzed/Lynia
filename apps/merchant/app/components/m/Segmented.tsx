@@ -11,7 +11,7 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div className="m-seg" role="tablist" aria-label={label}>
+    <div className="m-seg" role="tablist" aria-label={label} data-n={options.length}>
       {options.map((o) => (
         <button key={o.value} type="button" role="tab" aria-selected={o.value === value} onClick={() => onChange(o.value)}>
           {o.label}
