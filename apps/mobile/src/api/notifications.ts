@@ -42,6 +42,13 @@ export interface NotificationRow {
   swap?: { item: string; sub: string; diff: string };
   steps?: { beat: string; title: string; at: string }[];
   active?: boolean;
+  // Detail fields (owner 2026-10-02) — absent on rows recorded before the data was, in which case the
+  // screen keeps the push's own line. `reason`: a KYC decline's KycDeclineReason key, or a pause / block /
+  // hold's standing-reason key (on a restore, the reason of the pause it lifted). `balance`: a wallet
+  // credit's resulting balance ("12.60"; the credit is `amount`). `cancelledBy`: who ended a cancelled order.
+  reason?: string;
+  balance?: string;
+  cancelledBy?: "customer" | "rider" | "merchant" | "lynia";
 }
 
 /** The caller's notifications feed, newest first (see GET /notifications/feed). */
@@ -51,7 +58,7 @@ export function getNotificationsFeed(): Promise<NotificationRow[]> {
 
 /**
  * STREAMLINE-01: how many feed rows the caller hasn't seen — the Account row's "N new" hint. Cheap
- * enough to sit on the Account screens because the feed synthesis behind it is bounded to one day.
+ * enough to sit on the Account screens because the feed synthesis behind it is bounded to seven days.
  */
 export function getNotificationsUnreadCount(): Promise<{ count: number }> {
   return apiFetch<{ count: number }>("/notifications/unread-count");

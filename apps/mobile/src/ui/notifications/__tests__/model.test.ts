@@ -28,6 +28,8 @@ describe("the NF shapes give back the drawn N strings for the samples", () => {
     [NF.mSwap("Panado 24s", "Paracetamol 24s", "same price"), N.mSwap],
     [NF.rGot("3.20"), N.rGot],
     [NF.rDelivered("3.20"), N.rDelivered],
+    [NF.rCancelled("Nyasha"), N.rCancelled],
+    [NF.aWalletR("5.00", "12.60"), N.aWalletR],
     [NF.sSosB("Tendai"), N.sSosB],
     [NF.min(2), N.m2],
     [NF.hr(1), N.h1],
@@ -172,5 +174,113 @@ describe("side, pin and needs-you", () => {
   it("an older API (no structured fields) still renders, on the server's copy", () => {
     const old = row({ id: "x", orderId: "o1", status: "en_route_pickup", title: "Rider on the way", message: "Your rider is heading to the pickup point.", to: "customer" });
     expect(feedOf([old]).days[0]!.items[0]).toMatchObject({ title: "Rider on the way", line: "Your rider is heading to the pickup point.", service: "send" });
+  });
+});
+
+describe("seven-day retention (owner 2026-10-02): the feed groups a whole week", () => {
+  it("TODAY · YESTERDAY · then each older day by name, newest first", () => {
+    // Fri 2 Oct back to Sat 26 Sep — the oldest day a seven-day window can reach.
+    const days = [2, 1, 30, 29, 28, 27, 26];
+    const rows = days.map((d, i) =>
+      row({ id: `w${i}`, type: "account", action: "rider.kyc_approve", at: (d > 2 ? new Date(2026, 8, d, 9) : new Date(2026, 9, d, 9)).toISOString() }),
+    );
+    const f = feedOf(rows, "rider");
+    expect(f.days.map((d) => d.label)).toEqual([N.dToday, N.dYest, "WED 30 SEP", "TUE 29 SEP", N.d28, "SUN 27 SEP", "SAT 26 SEP"]);
+    // Rows older than yesterday read their date, like the handoff's "28 Sep".
+    expect(f.days.at(-1)!.items[0]!.time).toBe("26 Sep");
+  });
+});
+
+describe("every order step (owner 2026-10-02)", () => {
+  it("a parcel's timeline reads the handoff's labels for every stage, Posted included", () => {
+    const r = row({
+      id: "s",
+      orderId: "o1",
+      to: "customer",
+      type: "status",
+      beat: "delivered",
+      service: "send",
+      at: at(2, 10, 31),
+      steps: [
+        { beat: "delivered", title: "x", at: at(2, 10, 31) },
+        { beat: "en_route_dropoff", title: "x", at: at(2, 10, 12) },
+        { beat: "picked_up", title: "x", at: at(2, 10, 5) },
+        { beat: "en_route_pickup", title: "x", at: at(2, 9, 58) },
+        { beat: "assigned", title: "x", at: at(2, 9, 52) },
+        { beat: "requested", title: "x", at: at(2, 9, 40) },
+      ],
+    });
+    expect(feedOf([r]).days[0]!.items[0]!.steps.map((s) => s.label)).toEqual([N.tlDelivered, N.tlToDrop, N.tlCollected, N.tlOnWay, N.tlAssigned, N.tlPosted]);
+  });
+
+  it("a rider's job reads got the job · heading to pickup · collected · delivered", () => {
+    const r = row({
+      id: "j",
+      orderId: "o2",
+      to: "rider",
+      type: "status",
+      beat: "completed",
+      service: "send",
+      amount: "3.20",
+      at: at(2, 10, 31),
+      steps: [
+        { beat: "completed", title: "x", at: at(2, 10, 31) },
+        { beat: "picked_up", title: "x", at: at(2, 10, 5) },
+        { beat: "en_route_pickup", title: "x", at: at(2, 9, 54) },
+        { beat: "assigned", title: "x", at: at(2, 9, 52) },
+      ],
+    });
+    expect(feedOf([r], "rider").days[0]!.items[0]!.steps.map((s) => s.label)).toEqual([N.trDelivered, N.trCollected, N.trToPickup, N.trGot]);
+  });
+
+  it("a step the handoff has no label for keeps the server's (named) title", () => {
+    const r = row({
+      id: "m",
+      orderId: "o3",
+      to: "customer",
+      type: "status",
+      beat: "undelivered",
+      service: "restaurants",
+      venue: "Sadza Republic",
+      steps: [
+        { beat: "undelivered", title: "Your order wasn’t delivered", at: at(2, 12) },
+        { beat: "picked_up", title: "Tendai has your order", at: at(2, 11) },
+      ],
+    });
+    expect(feedOf([r]).days[0]!.items[0]!.steps.map((s) => s.label)).toEqual(["Your order wasn’t delivered", N.tmCollected]);
+  });
+});
+
+describe("detail fields (owner 2026-10-02): rows read as the handoff's sentences", () => {
+  const one = (r: NotificationRow, side: "customer" | "rider" = "rider") => {
+    const f = feedOf([r], side);
+    return f.pinned[0] ?? f.days[0]!.items[0]!;
+  };
+
+  it("an ID check declined for an unreadable photo says so; another reason, or none, keeps the push's line", () => {
+    expect(one(row({ id: "k", type: "account", action: "rider.kyc_decline", reason: "id_unreadable" })).line).toBe(N.aIdB);
+    expect(one(row({ id: "k", type: "account", action: "rider.kyc_decline", reason: "id_expired" })).line).toBe("server message");
+    expect(one(row({ id: "k", type: "account", action: "rider.kyc_decline" })).line).toBe("server message");
+  });
+
+  it("a pause for a customer report, and the restore that cleared it, read as drawn", () => {
+    expect(one(row({ id: "p", type: "account", action: "rider.suspend", active: true, reason: "customer_report" }))).toMatchObject({ title: N.aPausedT, line: N.aPausedB });
+    expect(one(row({ id: "p", type: "account", action: "rider.suspend", reason: "fare_fraud" })).line).toBe("server message");
+    expect(one(row({ id: "l", type: "account", action: "rider.lift", reason: "customer_report" }))).toMatchObject({ title: N.aRestoredT, line: N.aRestoredB });
+    expect(one(row({ id: "l", type: "account", action: "rider.lift" })).line).toBe("server message");
+    // A held CUSTOMER is not told "You can't take jobs".
+    expect(one(row({ id: "h", type: "account", action: "customer.hold", to: "customer", reason: "customer_report" }), "customer").line).toBe("server message");
+  });
+
+  it("a wallet credit states the amount and the balance; an old row without them keeps the push's line", () => {
+    expect(one(row({ id: "w", type: "account", action: "wallet.credit", amount: "5.00", balance: "12.60" })).line).toBe(N.aWalletR);
+    expect(one(row({ id: "w", type: "account", action: "wallet.credit" })).line).toBe("server message");
+  });
+
+  it("a rider is told it was the customer who cancelled; anyone else keeps the push's line", () => {
+    const cx = row({ id: "c", orderId: "o4", to: "rider", type: "status", beat: "cancelled", service: "restaurants", venue: "Mama's Kitchen", dropoffArea: "Avondale", customerName: "Nyasha", cancelledBy: "customer" });
+    expect(one(cx)).toMatchObject({ title: N.tJobAvondale, line: N.rCancelled });
+    expect(one({ ...cx, cancelledBy: "lynia" }).line).toBe("server message");
+    expect(one({ ...cx, cancelledBy: undefined }).line).toBe("server message");
   });
 });

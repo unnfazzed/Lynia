@@ -90,6 +90,8 @@ export const NF = {
   mSwap: (i: string, s: string, d: string) => `${i} is out. They'd like to send ${s} instead, ${d}.`,
   rGot: (p: string) => `You got the job. $${p} cash.`,
   rDelivered: (p: string) => `Delivered. The $${p} cash is yours.`,
+  rCancelled: (n: string) => `${n} cancelled the order. This doesn't count against you.`,
+  aWalletR: (p: string, bal: string) => `$${p} top-up added. Your balance is $${bal}.`,
   sSosB: (n: string) => `Our safety team is with ${n} now. Your parcel is safe.`,
   /** "2 min" · "1 hr" — the N.m2 / N.h1 shapes. */
   min: (m: number) => `${m} min`,
