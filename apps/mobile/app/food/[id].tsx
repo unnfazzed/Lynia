@@ -10,7 +10,9 @@ import { useFoodCart } from "../../src/food/cart-context";
 import { categoryServedNow, restaurantVenue, windowLaterToday, type VenueView } from "../../src/logic/browse";
 import { MAX_ITEM_QTY } from "../../src/logic/food-cart";
 import { useHomeLocation } from "../../src/logic/home-location";
+import { firstSlot } from "../../src/logic/review";
 import { useNow } from "../../src/logic/use-now";
+import { useScheduleSlots } from "../../src/query/use-order-flow";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
 import { haptic, Icon } from "../../src/ui";
 import { B, fmt } from "../../src/ui/browse/copy";
@@ -155,9 +157,13 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   // The cart bar's one exit is Review & place (D-59), which pulls react-native-maps in for the inline
   // address card — warm it while the customer is still browsing, but only once there IS a basket.
   usePrewarmRoutes(hasCart ? REVIEW_PREWARM : NO_PREWARM);
+  // R5c (Order flow v2, D-59) — a closed kitchen holding this basket: its first slot, for the cart bar's
+  // "Order for when they open · 10:30–11:00" (the slots are for the customer's deliver-to).
+  const slotsQ = useScheduleSlots(id, location.point, hasCart && !open);
+  const first = slotsQ.slots ? firstSlot(slotsQ.slots) : null;
 
   const commit = (item: StoreItem, qty: number, note: string): void => {
-    cart.addItem(id, name, { dishId: item.id, name: item.name, priceUsd: item.priceUsd, quantity: qty, note });
+    cart.addItem(id, name, { dishId: item.id, name: item.name, priceUsd: item.priceUsd, quantity: qty, note }, { businessType: "restaurant", shopKind: null });
     haptic("tap");
   };
   /** I3 — a cart from another kitchen is asked about BEFORE anything is cleared. */
@@ -290,7 +296,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
             venue={name}
             minSubtotal={RESTAURANTS_PRICING.minOrderSubtotal}
             smallOrderFee={RESTAURANTS_PRICING.smallOrderFee}
-            onPress={() => router.push("/food/checkout")}
+            openFirst={!open && first ? first.slot.label : null}
+            onPress={() => router.push(!open && first ? "/food/checkout?schedule=first" : "/food/checkout")}
           />
         ) : null}
         {toast ? <BrowseToast text={toast.text} icon={toast.icon} bottom={(showBar ? 88 : 24) + insets.bottom} /> : null}
