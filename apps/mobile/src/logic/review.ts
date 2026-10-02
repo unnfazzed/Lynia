@@ -3,7 +3,15 @@
  * Framework-free so the money, the reconcile and the exact place-order payload unit-test off-device.
  * The screen owns state and effects; everything that decides a figure or a request body lives here.
  */
-import { normalizePhone, type PlaceMerchantOrderRequest } from "@lynia/shared";
+import {
+  normalizePhone,
+  type CustomerBalanceResponse,
+  type OutOfStockPref,
+  type PlaceMerchantOrderRequest,
+  type PrescriptionInput,
+  type ScheduleSlot,
+  type ScheduleSlotsResponse,
+} from "@lynia/shared";
 import { RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared/restaurants-order";
 import { cartSubtotal, type FoodCartLine } from "./food-cart";
 import { zwNationalDigits } from "./zw-mobile";
@@ -17,7 +25,10 @@ export interface ReviewBreakdown {
   deliveryFee: number | null;
   /** "Small-order fee" — $1.00 under the $4.00 minimum, else 0 (the row is not rendered). */
   smallOrderFee: number;
-  /** "Total" — food + small-order fee + the delivery fee when known. The cash the customer pays. */
+  /** BRIEF D3f: owed from an earlier cancel after collection, carried on this order (0 = no row). */
+  owed: number;
+  /** "Total" — food + small-order fee + the delivery fee when known + anything owed. The cash the
+   *  customer pays at the door. */
   total: number;
   /** Under the minimum: R4's "Add {d} more to skip the {f} small-order fee." */
   belowMinimum: boolean;
@@ -30,13 +41,22 @@ function cents(n: number): number {
   return Math.round(n * 100);
 }
 
-export function reviewBreakdown(lines: readonly FoodCartLine[], deliveryFee: number | null): ReviewBreakdown {
+export function reviewBreakdown(lines: readonly FoodCartLine[], deliveryFee: number | null, owed = 0): ReviewBreakdown {
   const food = cents(cartSubtotal(lines as FoodCartLine[])) / 100;
   const smallOrderFee = lines.length > 0 ? smallOrderFeeForSubtotal(food) : 0;
   const belowMinimum = lines.length > 0 && food < RESTAURANTS_PRICING.minOrderSubtotal;
-  const total = (cents(food) + cents(smallOrderFee) + cents(deliveryFee ?? 0)) / 100;
+  const carried = owed > 0 ? cents(owed) / 100 : 0;
+  const total = (cents(food) + cents(smallOrderFee) + cents(deliveryFee ?? 0) + cents(carried)) / 100;
   const shortfall = belowMinimum ? (cents(RESTAURANTS_PRICING.minOrderSubtotal) - cents(food)) / 100 : 0;
-  return { food, deliveryFee, smallOrderFee, total, belowMinimum, shortfall };
+  return { food, deliveryFee, smallOrderFee, owed: carried, total, belowMinimum, shortfall };
+}
+
+/**
+ * BRIEF D3f: what the NEXT order carries as `previousBalanceUsd` — every owed line not already carried by
+ * a live order (the server's "open" rows). Mirrors `openBalance` in apps/api customer-balance.ts.
+ */
+export function carriedBalance(balance: Pick<CustomerBalanceResponse, "lines">): number {
+  return balance.lines.filter((l) => l.carriedOnOrderId == null).reduce((sum, l) => sum + cents(l.amount), 0) / 100;
 }
 
 // ── Reconcile (R6a) ────────────────────────────────────────────────────────────────────────────────
@@ -109,6 +129,12 @@ export interface PlaceInput {
   riderNote: string;
   phone: string;
   idempotencyKey: string;
+  /** R5: the chosen slot's start, exactly as the slots API returned it. Absent = ASAP. */
+  scheduledFor?: string | null;
+  /** R2a/R2b: shops and pharmacies only ("Ask me" / "Remove it"). */
+  outOfStockPref?: OutOfStockPref | null;
+  /** R8: the prescription, when a line needs one (and `rxEnabled`). */
+  prescription?: PrescriptionInput | null;
 }
 
 /**
@@ -127,7 +153,40 @@ export function placeOrderBody(input: PlaceInput): PlaceMerchantOrderRequest {
     // D-48 / BRIEF §14: food is cash at the door only.
     paymentMethod: "cash",
     idempotencyKey: input.idempotencyKey,
+    ...(input.scheduledFor ? { scheduledFor: input.scheduledFor } : {}),
+    ...(input.outOfStockPref ? { outOfStockPref: input.outOfStockPref } : {}),
+    ...(input.prescription ? { prescription: input.prescription } : {}),
   };
+}
+
+// ── Scheduled (R5a–c) ──────────────────────────────────────────────────────────────────────────────
+
+export type SlotDay = "today" | "tomorrow";
+
+export interface ChosenSlot {
+  day: SlotDay;
+  slot: ScheduleSlot;
+}
+
+/** Which list a slot came from (by its start); null when it's in neither any more. */
+export function slotDay(slots: Pick<ScheduleSlotsResponse, "today" | "tomorrow">, start: string): SlotDay | null {
+  if (slots.today.slots.some((s) => s.start === start)) return "today";
+  if (slots.tomorrow.slots.some((s) => s.start === start)) return "tomorrow";
+  return null;
+}
+
+/** The first slot that isn't full, with its day — R5c "Order for when they open" and R6b "Schedule for …". */
+export function firstSlot(slots: ScheduleSlotsResponse): ChosenSlot | null {
+  const s = slots.firstAvailable;
+  if (!s || s.full) return null;
+  const day = slotDay(slots, s.start);
+  return day ? { day, slot: s } : null;
+}
+
+/** R5b "{v} starts {making} at {t}": the slot's start minus the venue's lead time, on the 24-hour clock. */
+export function startsAt(slotStart: string, leadMinutes: number): string {
+  const t = new Date(slotStart).getTime() - leadMinutes * 60_000;
+  return Number.isFinite(t) ? hhmm(new Date(t)) : "";
 }
 
 // ── Clocks ─────────────────────────────────────────────────────────────────────────────────────────

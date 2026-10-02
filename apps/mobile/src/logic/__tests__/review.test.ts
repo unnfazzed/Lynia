@@ -1,12 +1,13 @@
 import type { FoodCartLine } from "../food-cart";
-import { arrivalWindow, areaOf, deliveryLandmark, displayPhone, hhmm, placeOrderBody, reconcileCart, reviewBreakdown } from "../review";
+import { arrivalWindow, areaOf, carriedBalance, deliveryLandmark, displayPhone, firstSlot, hhmm, placeOrderBody, reconcileCart, reviewBreakdown, slotDay, startsAt } from "../review";
+import { cartService } from "../food-cart";
 
 const line = (dishId: string, priceUsd: number, quantity: number, note = ""): FoodCartLine => ({ dishId, name: dishId, priceUsd, quantity, note });
 
 describe("reviewBreakdown — Food · Delivery fee · Small-order fee · Total (R1/R4)", () => {
   it("R1 Gava's Kitchen: $15.00 food + $1.50 delivery = $16.50, no small-order fee", () => {
     const b = reviewBreakdown([line("sadza", 4.5, 2), line("chicken", 6, 1)], 1.5);
-    expect(b).toEqual({ food: 15, deliveryFee: 1.5, smallOrderFee: 0, total: 16.5, belowMinimum: false, shortfall: 0 });
+    expect(b).toEqual({ food: 15, deliveryFee: 1.5, smallOrderFee: 0, owed: 0, total: 16.5, belowMinimum: false, shortfall: 0 });
   });
 
   it("R4: under $4.00 adds the $1.00 small-order fee — $3.30 + $1.00 + $1.50 = $5.80, $0.70 short", () => {
@@ -113,5 +114,43 @@ describe("Review formatting", () => {
   it("names the area of an address line", () => {
     expect(areaOf("Chitungwiza, Unit L")).toBe("Chitungwiza");
     expect(areaOf("Belgravia")).toBe("Belgravia");
+  });
+});
+
+describe("Order flow v2 part 5 — shops, scheduled, Rx, owed balance", () => {
+  const slot = (start: string, label: string, full = false) => ({ start, end: start, label, full });
+  const A = slot("2026-10-03T08:30:00.000Z", "10:30–11:00");
+  const FULL = slot("2026-10-02T14:00:00.000Z", "16:00–16:30", true);
+  const SLOTS = { slotMinutes: 30, openNow: false, leadMinutes: 35, today: { date: "2026-10-02", slots: [FULL] }, tomorrow: { date: "2026-10-03", slots: [A] }, firstAvailable: A };
+
+  it("cartService: no venue = a kitchen; a shop by its kind", () => {
+    expect(cartService(null)).toBe("food");
+    expect(cartService({ businessType: "restaurant", shopKind: null })).toBe("food");
+    expect(cartService({ businessType: "shop", shopKind: "grocery" })).toBe("shops");
+    expect(cartService({ businessType: "shop", shopKind: "pharmacy" })).toBe("pharmacy");
+  });
+
+  it("D3f: only lines not already carried by a live order ride on the next one, and the total includes them", () => {
+    expect(carriedBalance({ lines: [{ orderId: "a", amount: 16.5, createdAt: "", carriedOnOrderId: null }, { orderId: "b", amount: 3.1, createdAt: "", carriedOnOrderId: "o-1" }] })).toBe(16.5);
+    const b = reviewBreakdown([line("d1", 9, 1), line("d2", 6, 1)], 1.5, 16.5);
+    expect(b.owed).toBe(16.5);
+    expect(b.total).toBe(33);
+  });
+
+  it("slots: which day a slot is on, the first one that isn't full, and the ring time", () => {
+    expect(slotDay(SLOTS, A.start)).toBe("tomorrow");
+    expect(slotDay(SLOTS, FULL.start)).toBe("today");
+    expect(slotDay(SLOTS, "2026-10-04T08:30:00.000Z")).toBeNull();
+    expect(firstSlot(SLOTS)).toEqual({ day: "tomorrow", slot: A });
+    expect(firstSlot({ ...SLOTS, firstAvailable: null })).toBeNull();
+    expect(startsAt(A.start, 35)).toBe(hhmm(new Date(new Date(A.start).getTime() - 35 * 60_000)));
+  });
+
+  it("the place body carries scheduledFor / outOfStockPref / prescription only when set", () => {
+    const base = { lines: [line("d1", 4.5, 1)], orderNote: "", drop: { lat: -17.8, lng: 31.05, label: "12 Lanark Rd" }, riderNote: "", phone: "0771234567", idempotencyKey: "k" };
+    const plain = placeOrderBody(base);
+    expect("scheduledFor" in plain || "outOfStockPref" in plain || "prescription" in plain).toBe(false);
+    const rx = { photoKeys: ["rx/1.jpg"], patientName: "Rudo Moyo", consent: true as const };
+    expect(placeOrderBody({ ...base, scheduledFor: A.start, outOfStockPref: "remove", prescription: rx })).toMatchObject({ scheduledFor: A.start, outOfStockPref: "remove", prescription: rx });
   });
 });

@@ -7,6 +7,8 @@ import { formatMoney } from "../../logic/money";
 import { Icon } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { Tappable } from "../Tappable";
+import { O, O_ADDED, ofFmt } from "../orderflow/copy";
+import { RxTag } from "../orderflow/review";
 import { B, fmt } from "./copy";
 import { HAIRLINE, HeaderCircles, IconButton, RADIO_OFF, SERVICE_TILE, SKELETON, Star, TABULAR, VenueImage, initial, kindTint } from "./kit";
 
@@ -373,6 +375,8 @@ export interface StoreItem {
   unavailable: boolean;
   /** Only the out-of-stock reason shows the chip; a time window says so on its heading. */
   outOfStock: boolean;
+  /** Order flow v2 R8: a pharmacy item that needs a prescription (sent only while `rxEnabled`). */
+  rxRequired?: boolean;
 }
 
 /** README §4b "Dish row": text left, a 112 photo right with the + inside; inset hairline. */
@@ -437,24 +441,39 @@ export function DishRow({
   );
 }
 
-/** README §4 "Item tile (shops)" with the §4b values: a square photo (radius 16), price first 16/700,
- *  then the name 13.5/400 on two lines. Two to a row (`ShopGrid`). No + while shops are browse-only (D-58). */
-export function ShopTile({ item, onOpen }: { item: StoreItem; onOpen: () => void }): React.ReactElement {
+/** README §4 "Item tile (shops)" with the §4b values: a square photo (radius 16) with the + inside, price
+ *  first 16/700, then the name 13.5/400 on two lines, and a full-width stepper once it's in the cart (S5).
+ *  Two to a row (`ShopGrid`). */
+export function ShopTile({
+  item,
+  qty = 0,
+  canAdd = false,
+  onOpen,
+  onAdd,
+  onMinus,
+}: {
+  item: StoreItem;
+  qty?: number;
+  canAdd?: boolean;
+  onOpen: () => void;
+  onAdd?: () => void;
+  onMinus?: () => void;
+}): React.ReactElement {
   const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
   return (
-    <Tappable
-      onPress={onOpen}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}
-      style={{ flex: 1, minWidth: 0 }}
-    >
-      <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }} />
-      <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
-      <Text numberOfLines={2} style={{ marginTop: 2, fontSize: 13.5, lineHeight: 18.2, color: ink }}>
-        {item.name}
-      </Text>
-      {item.outOfStock ? <OosChip /> : null}
-    </Tappable>
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}>
+        <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
+          {canAdd && !item.unavailable && onAdd ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
+        </VenueImage>
+        <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
+        <Text numberOfLines={2} style={{ marginTop: 2, fontSize: 13.5, lineHeight: 18.2, color: ink }}>
+          {item.name}
+        </Text>
+        {item.outOfStock ? <OosChip /> : null}
+      </Tappable>
+      {qty > 0 && canAdd && onAdd && onMinus ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} /> : null}
+    </View>
   );
 }
 
@@ -477,14 +496,33 @@ export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile
 }
 
 /** README §4 "Item row (pharmacy)" with the §4b values: photo 72 radius 14, vertically centred; name
- *  15/600 (the pack size is part of the name), price 15/700; inset hairline. */
-export function PharmacyRow({ item, highlight, onOpen }: { item: StoreItem; highlight?: string; onOpen: () => void }): React.ReactElement {
+ *  15/600 (the pack size is part of the name), price 15/700, the stepper under it once in the cart (S6),
+ *  and the + on the right (a 36 disc in a 48 target, `.ir .plus`); inset hairline. With `rxEnabled`, an
+ *  Rx item carries the "Prescription needed" pill (R8). */
+export function PharmacyRow({
+  item,
+  highlight,
+  qty = 0,
+  canAdd = false,
+  onOpen,
+  onAdd,
+  onMinus,
+}: {
+  item: StoreItem;
+  highlight?: string;
+  qty?: number;
+  canAdd?: boolean;
+  onOpen: () => void;
+  onAdd?: () => void;
+  onMinus?: () => void;
+}): React.ReactElement {
   const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  const plus = canAdd && !item.unavailable && onAdd;
   return (
     <Tappable
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}
+      accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}${item.rxRequired ? `, ${O.r.rxNeed}` : ""}`}
       style={{ flexDirection: "row", alignItems: "center", gap: 14, marginHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: HAIRLINE }}
     >
       <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
@@ -493,8 +531,31 @@ export function PharmacyRow({ item, highlight, onOpen }: { item: StoreItem; high
           {highlight ? <Highlighted text={item.name} match={highlight} /> : item.name}
         </Text>
         <Text style={{ marginTop: 4, fontSize: 15, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
+        {item.rxRequired ? (
+          <View style={{ alignSelf: "flex-start", marginTop: 4 }}>
+            <RxTag />
+          </View>
+        ) : null}
         {item.outOfStock ? <OosChip /> : null}
+        {qty > 0 && plus && onMinus ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} /> : null}
       </View>
+      {plus ? (
+        <Tappable
+          onPress={onAdd}
+          tone="icon"
+          accessibilityRole="button"
+          accessibilityLabel={qty > 0 ? `${item.name}, ${qty} in cart. Add one more` : `Add ${item.name}`}
+          style={{ width: 48, height: 48, marginRight: -6, alignItems: "center", justifyContent: "center" }}
+        >
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
+            {qty > 0 ? (
+              <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent, ...TABULAR }}>{qty}</Text>
+            ) : (
+              <Icon name="plus" size={18} color={tokens.color.onAccent} />
+            )}
+          </View>
+        </Tappable>
+      ) : null}
     </Tappable>
   );
 }
@@ -569,6 +630,7 @@ export function CartBar({
   minSubtotal,
   smallOrderFee,
   onPress,
+  openFirst = null,
 }: {
   count: number;
   subtotal: number;
@@ -576,17 +638,21 @@ export function CartBar({
   minSubtotal: number;
   smallOrderFee: number;
   onPress: () => void;
+  /** Order flow v2 R5c: the venue is closed and this is its first slot ("10:30–11:00") — the bar reads
+   *  "Order for when they open · 10:30–11:00" behind a calendar, and its button is "Review". */
+  openFirst?: string | null;
 }): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const under = subtotal < minSubtotal;
+  const under = openFirst == null && subtotal < minSubtotal;
   const title = fmt(count === 1 ? B.cart.bar1 : B.cart.bar, { n: count, p: formatMoney(subtotal) });
-  const sub = under ? fmt(B.cart.minHint, { d: formatMoney(minSubtotal - subtotal), f: formatMoney(smallOrderFee) }) : venue;
+  const sub = openFirst != null ? ofFmt(O.r.openFirst, { s: openFirst }) : under ? fmt(B.cart.minHint, { d: formatMoney(minSubtotal - subtotal), f: formatMoney(smallOrderFee) }) : venue;
+  const cta = openFirst != null ? O_ADDED.r.review : B.cart.view;
   return (
     <Tappable
       onPress={onPress}
       tone="onDark"
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${sub}. ${B.cart.view}`}
+      accessibilityLabel={`${title}. ${sub}. ${cta}`}
       style={{
         position: "absolute",
         left: 12,
@@ -604,7 +670,7 @@ export function CartBar({
       }}
     >
       <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
-        <Icon name="shopping-bag" size={20} color={tokens.color.onAccent} />
+        <Icon name={openFirst != null ? "calendar" : "shopping-bag"} size={20} color={tokens.color.onAccent} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent, ...TABULAR }}>
@@ -620,8 +686,8 @@ export function CartBar({
         ) : null}
       </View>
       <View style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.highlight }}>
-        <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightChipInk }}>{B.cart.view}</Text>
-        <Icon name="chevron-right" size={16} color={tokens.color.highlightChipInk} />
+        <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightChipInk }}>{cta}</Text>
+        {openFirst != null ? null : <Icon name="chevron-right" size={16} color={tokens.color.highlightChipInk} />}
       </View>
     </Tappable>
   );
