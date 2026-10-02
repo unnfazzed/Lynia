@@ -124,6 +124,9 @@ describe("helpers", () => {
   it("parseOrdersCursor rejects anything malformed (first page)", () => {
     expect(parseOrdersCursor(null)).toBeNull();
     expect(parseOrdersCursor("nonsense")).toBeNull();
+    // A repeated ?cursor= param arrives as an array (type confusion through tampering).
+    expect(parseOrdersCursor([`2026-10-01T08:00:00.000Z|${id(1)}`, "x"])).toBeNull();
+    expect(parseOrdersCursor({ toString: () => "x" })).toBeNull();
     expect(parseOrdersCursor(`not-a-date|${id(1)}`)).toBeNull();
     expect(parseOrdersCursor("2026-10-01T08:00:00.000Z|x'; drop")).toBeNull();
     expect(parseOrdersCursor(`2026-10-01T08:00:00.000Z|${id(1)}`)).toEqual({ at: new Date("2026-10-01T08:00:00.000Z"), id: id(1) });

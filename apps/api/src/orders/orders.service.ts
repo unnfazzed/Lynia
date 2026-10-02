@@ -895,7 +895,7 @@ export class OrdersService {
    * `historyForUser` stays as-is for the rider's Job history, Money and earnings, which read completed
    * trips across both roles.
    */
-  async customerOrders(customerId: string, cursor?: string | null) {
+  async customerOrders(customerId: string, cursor?: unknown) {
     const after = parseOrdersCursor(cursor);
     const orders = await this.prisma.order.findMany({
       where: {
@@ -1310,9 +1310,10 @@ export function merchantServiceOf(m: { businessType: string; shopKind: string | 
   return m.shopKind === "pharmacy" ? "pharmacy" : "shops";
 }
 
-/** `createdAt|id` → the row to page after; anything malformed reads as the first page. */
-export function parseOrdersCursor(cursor: string | null | undefined): { at: Date; id: string } | null {
-  if (!cursor) return null;
+/** `createdAt|id` → the row to page after; anything malformed reads as the first page — including a
+ *  repeated `?cursor=` param, which arrives as an array (CodeQL: type confusion through tampering). */
+export function parseOrdersCursor(cursor: unknown): { at: Date; id: string } | null {
+  if (typeof cursor !== "string" || !cursor) return null;
   const i = cursor.lastIndexOf("|");
   if (i <= 0) return null;
   const at = new Date(cursor.slice(0, i));
