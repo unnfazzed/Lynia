@@ -3,9 +3,10 @@
 // the finding-a-rider line. Driven by GET /restaurants/orders/:id alone (riderId null → no live
 // tracker read yet). prepStartedAt is recent and prepMinutes 20 so the ring shows time remaining.
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -21,6 +22,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "requested", rider: null, events: [], counterpartyPhone: null }) },
 ]);
 
 export default { wrap: withOrder() };

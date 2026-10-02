@@ -112,7 +112,7 @@ export function liveOrderCardModel(order: LiveOrderLike, statusLabel: string, de
       meta: payment ? `${payment} · ${money}` : money,
       step,
       steps: FOOD_LIVE_ORDER_STEPS.length,
-      route: `/food/order/${order.id}`,
+      route: `/order/${order.id}`,
     };
   }
 
@@ -199,7 +199,7 @@ export function liveOrderPillModel(order: LiveOrderLike, statusLabel: string, ri
     step: food ? foodStep : liveOrderStepIndex(order.status),
     steps: food ? FOOD_LIVE_ORDER_STEPS.length : LIVE_ORDER_STEP_COUNT,
     etaMinutes: eta?.minutes ?? null,
-    route: food ? `/food/order/${order.id}` : `/order/${order.id}`,
+    route: `/order/${order.id}`,
   };
 }
 
@@ -341,6 +341,6 @@ export function liveBarModel(
     step: food ? foodStep : liveOrderStepIndex(lead.status),
     steps: food ? FOOD_LIVE_ORDER_STEPS.length : LIVE_ORDER_STEP_COUNT,
     etaMinutes: eta?.minutes ?? null,
-    route: orders.length > 1 ? "/orders" : food ? `/food/order/${lead.id}` : `/order/${lead.id}`,
+    route: orders.length > 1 ? "/orders" : `/order/${lead.id}`,
   };
 }

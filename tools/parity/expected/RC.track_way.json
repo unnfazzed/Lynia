@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "track_way",
   "mode": "phone",
-  "component": "app/food/order/[orderId].tsx",
+  "component": "app/order/[id].tsx",
   "fixture": "food_track_way",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

@@ -36,7 +36,7 @@ export interface StackNav {
  */
 export function goToPlacedFoodOrder(router: StackNav, orderId: string): void {
   router.dismissAll();
-  router.replace(`/food/order/${orderId}`);
+  router.replace(`/order/${orderId}`);
 }
 
 /** R-17: free, any time before the kitchen has committed to cooking — mirrors

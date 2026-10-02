@@ -4,9 +4,10 @@
 // not an error. CASH payment so nothing was pre-paid (paidOut false → this is the plain cancel, not
 // the refund-pending branch). Driven by GET /restaurants/orders/:id alone.
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -21,6 +22,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "cancelled", rider: null, events: [], counterpartyPhone: null, cancelledBy: null }) },
 ]);
 
 export default { wrap: withOrder() };

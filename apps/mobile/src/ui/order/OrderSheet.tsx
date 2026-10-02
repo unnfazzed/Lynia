@@ -30,13 +30,13 @@ const GRAB = 28;
 const DRAG_CLAIM_PX = 6;
 const GAP = 12;
 
-const PeekContext = createContext<((y: number) => void) | null>(null);
+const PeekContext = createContext<{ set: (y: number) => void; gap: number } | null>(null);
 
 /** Marks where the must-see block of a stage ends (put it right after that block). */
 export function PeekMark(): React.ReactElement {
-  const set = useContext(PeekContext);
+  const ctx = useContext(PeekContext);
   // The mark sits one column gap below the block it follows.
-  return <View pointerEvents="none" style={{ height: 0, marginTop: -GAP }} onLayout={(e) => set?.(e.nativeEvent.layout.y)} />;
+  return <View pointerEvents="none" style={{ height: 0, marginTop: -(ctx?.gap ?? GAP) }} onLayout={(e) => ctx?.set(e.nativeEvent.layout.y)} />;
 }
 
 export interface OrderSheetHandle {
@@ -60,11 +60,18 @@ export const OrderSheet = React.forwardRef<
     reduceMotion: boolean;
     /** Reports the sheet's visible height (for the map's fit padding). */
     onVisibleHeight?: (h: number) => void;
+    /** Top corner radius (After Send 16; Order flow v2.1 24). */
+    radius?: number;
+    /** The content column's gap (After Send 12; Order flow v2.1 14). */
+    gap?: number;
     children: React.ReactNode;
   }
 >(function OrderSheet(props, ref) {
   const { areaHeight, bottomInset, reduceMotion, floor, fallbackShare, contentKey } = props;
+  const radius = props.radius ?? 16;
+  const gap = props.gap ?? GAP;
   const [mark, setMark] = useState<number | null>(null);
+  const peekCtx = useMemo(() => ({ set: setMark, gap }), [gap]);
   // A new stage re-measures.
   useEffect(() => setMark(null), [contentKey]);
 
@@ -142,8 +149,8 @@ export const OrderSheet = React.forwardRef<
           top,
           bottom: 0,
           backgroundColor: tokens.color.bg,
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16,
+          borderTopLeftRadius: radius,
+          borderTopRightRadius: radius,
           zIndex: 10,
           ...tokens.shadow.sheet,
         }}
@@ -157,8 +164,8 @@ export const OrderSheet = React.forwardRef<
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <PeekContext.Provider value={setMark}>
-            <Animated.View style={{ gap: GAP, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
+          <PeekContext.Provider value={peekCtx}>
+            <Animated.View style={{ gap, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
               {props.children}
             </Animated.View>
           </PeekContext.Provider>

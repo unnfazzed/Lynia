@@ -430,7 +430,7 @@ export const ADOPTED = [
     // Phase 1 — wait-on-kitchen + pay-after-accept. app/food/order/[orderId].tsx routes these via
     // FoodOrderAwaitingAcceptView / FoodOrderItemApprovalView / FoodOrderAwaitingPaymentView.
     key: "RC.pay_now",
-    container: "apps/mobile/app/food/order/[orderId].tsx",
+    container: "apps/mobile/app/order/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
     uiImport: "../../../src/ui",
     states: [],
@@ -451,7 +451,7 @@ export const ADOPTED = [
         state: "pay_now",
         key: "RC.pay_now",
         reason:
-          "R5·3 pay-the-merchant — mock `pay_now` is `Screen(footer Button)(AppBar, Pad(Card accent, RAILS.map(RailRow), USSD-help div, manual-pay rows))`. W-KIT: the payment-rail rows are `RailRow` (a kit primitive with no app-DS equivalent — the app renders its manual-rail pay UI inside the combined FoodOrderAwaitingPaymentView, not via a RailRow list), so a generated view emits `<RailRow>` against `RAILS`. W-LIVE: pay_now is one branch of the app's SINGLE awaiting_payment view (folded with pay_wait/pay_manual/pay_confirmed behind `forcePayScreen`+`paymentPromptStatus`), not an isolable Screen. Deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became nothing — pay-the-restaurant is retired outright (cash only, BRIEF §14). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "pay_wait",
@@ -469,7 +469,7 @@ export const ADOPTED = [
         state: "pay_confirmed",
         key: "RC.pay_confirmed",
         reason:
-          "R5·6 paid-waiting-for-merchant-confirm — mock `pay_confirmed` is `Screen(OrderHead, clock-disc, Card(3 rows), SafetyRow)`. W-LOCAL (`OrderHead`) + W-KIT (`SafetyRow` — the app uses its GetHelpControl from safety.tsx, a different tag) + W-LIVE (the `paymentPromptStatus==='confirmed'` branch of the combined pay view). Deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became nothing — the paid-waiting-for-merchant state is retired outright (cash only, BRIEF §14). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "pay_open",
@@ -487,7 +487,7 @@ export const ADOPTED = [
         state: "item_removed",
         key: "RC.item_removed",
         reason:
-          "R5·b3 one-item-unavailable approval — mock `item_removed` is `Screen(footer: two Buttons)(AppBar, Pad(Card(struck line + Money), Card(PriceMath goods/fee/km/total)))`. The struck line + `Money` resolve, but the `PriceMath` here draws a Delivery(fee·km) row from fabricated fee/km, and in-app this is FoodOrderItemApprovalView — a live 60s-deadline approve/cancel view driven by `itemApprovalDeadlineAt` (W-LIVE) whose totals come from the real order, not the mock's frozen breakdown. Live-vs-static + fabricated fee/km (W-DATA); deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became U2 (the per-line SubCard for a removal, the highlight countdown pill, Was / New total, Confirm changes). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
     ],
   },
@@ -496,7 +496,7 @@ export const ADOPTED = [
     // FoodOrderPreparingView / FoodOrderLiveTrackerView / FoodOrderRiderDroppedView (+ the generic
     // trackQ order snapshot the parcel tracker shares).
     key: "RC.track_way",
-    container: "apps/mobile/app/food/order/[orderId].tsx",
+    container: "apps/mobile/app/order/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
     uiImport: "../../../src/ui",
     states: [],
@@ -511,7 +511,7 @@ export const ADOPTED = [
         state: "track_way",
         key: "RC.track_way",
         reason:
-          "R6·3 on-the-way — mock `track_way` (RCB.track_way, r-customer-b.jsx:275) is `Screen(pad=false)(div relative full-bleed( HarareMap fill, absolute bottom sheet: RiderCard + DELIVERY-CODE card + SafetyRow ))`. The W-MAP tooling wall is now GONE (Foundation-F.c): `HarareMap`→`ComposeMap` resolves via DS_RENAME, folds to the canonical MAP kind, and a `{el:'HarareMap'}` map-canvas fragment generates cleanly — the SAME remap that region-adopted the send-composer's map. What blocks track_way is now a LIVE-VS-STATIC REALIZATION gap on a SENSITIVE screen, not a primitive gap: the mock draws a BARE full-bleed map canvas as a sibling of the sheet, but the app's FoodOrderLiveTrackerView realizes the map as the COMPOSITE `LiveTrackingCard` (map + Stepper timeline + call/GetHelp + rider identity) inside a scrolling card column — there is no bare-map sub-tree to mount a `map` region into. Rendering a generated `<ComposeMap>` region there would either REGRESS LiveTrackingCard's telemetry/stepper/call (forbidden — sensitive) or mount a structurally-leaf map beside the real one (a dead/duplicate control, forbidden). Also W-KIT (`RiderCard`/`SafetyRow` sheet body) + W-LIVE (the masked delivery-code that reveals only after the CASH dual-confirm handshake — sensitive). Adoptable once the app's tracker earns a bare full-bleed map canvas separable from LiveTrackingCard's telemetry composite — a product/structure decision, not a codegen gap.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became T8/T9 on the way (full-bleed map with the venue pin and the cased accent route, the highlight ETA chip, the rider card). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "track_paused",
@@ -523,7 +523,7 @@ export const ADOPTED = [
         state: "no_rider",
         key: "RC.no_rider",
         reason:
-          "R6·b2 NO_RIDER — mock `no_rider` is `Screen(AppBar, Pad(Card(EmptyState + two Buttons), Card(RTracker step=2 failAt=2)))`. W-KIT (`RTracker` with a fail marker — no app-DS equivalent) + W-LIVE/W-DATA: in-app a no_rider cancellation is folded into FoodOrderCancelledView (or, on a paid wallet order, FoodOrderRefundPendingView), which draw the app's honest terminal, not the mock's timeline card. Deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became T11a (finding a rider is slow) and D3d (no rider found — an ending with Order again). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "rider_cancelled",
@@ -544,7 +544,7 @@ export const ADOPTED = [
     // the FoodOrderLiveTrackerView doorstep sub-states, FoodOrderDeliveredView, FoodOrderUndeliveredView,
     // FoodOrderCancelledView and FoodOrderRefundPendingView.
     key: "RC.delivered_rate",
-    container: "apps/mobile/app/food/order/[orderId].tsx",
+    container: "apps/mobile/app/order/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
     uiImport: "../../../src/ui",
     states: [],
@@ -577,7 +577,7 @@ export const ADOPTED = [
         state: "delivered_rate",
         key: "RC.delivered_rate",
         reason:
-          "R7·2 delivered → rate — mock `delivered_rate` is `Screen(footer 'Submit rating')(Pad(check hero, 'Delivered at 10:16', paid line, Card(food-stars + rider-stars + tag chips)))`. The centred hero already matches the app's FoodOrderDeliveredView, but three walls block the rating card: (W-DATA/#672) it draws DUAL ratings — 'How was the food?' AND 'How was Tendai M.?' — plus positive tag chips (Hot food/On time/Polite/Right order); the app ships a SINGLE tap-to-arm rating (RatingCard) and has no rider-rating write path or tag-chip backend (needs #671 rider identity + #672 dual-rating + chips). (W-CONTROL/BH-06) the mock's static 'Submit rating' footer clashes with the shipped tap-to-arm + 4s-undo model (a sensitive undo-window — the app has no submit button at all). The template-literal-border idiom that also blocked the chips is now BUILT (Foundation-F.e — it adopted role_select), so the residual walls are purely BACKEND + CONTROL: #672 dual food+rider rating + tag chips, #671 rider identity, and the undo-window model being drawn. Adoptable once those land. Deferred with the cluster (backend-gated #671/#672).",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became D1 (the hero, one rating card, the receipt, Order again). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "failed_noshow",
@@ -589,13 +589,13 @@ export const ADOPTED = [
         state: "rejected",
         key: "RC.rejected",
         reason:
-          "R6·b3 merchant-rejected-after-wallet-pay (refund pending) — mock `rejected` is `Screen(AppBar, Pad(Card(EmptyState), Card(raw REFUND-PENDING pill + Money + 3 rows + Button)))`. Prims resolve, but (W-DATA) the 'Refund due by Today, 12:00' row is a wall-clock the order carries no timestamp for — the app's FoodOrderRefundPendingView deliberately renders the POLICY window ('Within N hours') instead, and omits the fabricated due-time; and (W-LIVE) the app view leads with a bare EmptyState (not the mock's AppBar + EmptyState-in-Card) and uses StatusPill, structurally diverging. A mock-faithful view would fabricate the refund-due time (CLAUDE.md forbids). Deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became D3b (the venue couldn't take it — cash copy, nothing charged). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "refunded",
         key: "RC.refunded",
         reason:
-          "R6·b4 refund-landed — mock `refunded` is `Screen(AppBar, Pad(Card accent(check row, Amount/Money, 'Their reference EC-4471-RF9920' row, keep-this-reference note), Button))`. Prims resolve, but (W-DATA) the merchant's refund reference ('EC-4471-RF9920') and refund timestamp ('sent it back at 11:26') are figures the order record does not carry, and (W-LIVE) the app has NO dedicated 'refunded' route — a refunded order (`refundedAt != null`) falls through to FoodOrderCancelledView, so there is no boundary to mount a generated view at without splitting the shared cancelled-terminal view. A mock-faithful view would fabricate the refund reference/time. Deferred with the cluster.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — this gallery state became nothing — the refunded state is retired outright (no prepaid orders, BRIEF §14). A structural snapshot or rendered assertion against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2. Evidence: docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png.",
       },
       {
         state: "cancel_sheet",
@@ -605,119 +605,34 @@ export const ADOPTED = [
       },
     ],
   },
-  // ── FOOD-ORDER TRACKER REGIONS (Foundation-F.d) ───────────────────────────────────────────────────
-  // The food-order lifetime (r-customer-b.jsx) is a deeply-live composite the whole-screen model cannot
-  // host (W-LIVE): its phases are hand-built `FoodOrder*View`s that combine mock states and add live
-  // supersets (cancel footer, offline banner, warm-snapshot resume), so no per-mock Screen boundary
-  // exists for a whole-screen swap. But the region model guards a NAMED sub-tree inside the live view,
-  // which sidesteps W-LIVE — the SAME proven path as menu/cart/checkout. Two of the tracking mocks lead
-  // their live sub-branch with the kit `RTracker` step-timeline, which the app realizes as its own
-  // `Stepper` (the kit's RTracker literally returns `<DSR.Stepper/>`): Foundation-F.d folds
-  // `RTracker`→`Stepper` (transpile DS_RENAME) and to ONE canonical STEPPER (normalize KIND), so a
-  // `tracker` region rooted at the mock's RTracker stays congruent with the app's mounted Stepper. Where
-  // the app draws that Stepper as a BARE, discrete node (not buried in the LiveTrackingCard composite —
-  // that stays W-LIVE-deferred), the tracker region ADOPTS: FoodOrderAwaitingAcceptView (await_accept)
-  // and FoodOrderPreparingView (track_prep) both mount a bare `<Stepper>` exactly where their mock draws
-  // `<RTracker>`. The region owns ONLY the display timeline sub-tree; the countdown ring (hero, display
-  // but wrapped differently — see deferred), the mock-local OrderHead (W-LOCAL) and the live cancel/
-  // offline supersets stay container glue, honestly pruned from the composition. No sensitive logic is
-  // re-homed — Stepper is a pure display timeline fed the live `events`/`status`/`merchantPhase` seam.
+  // ── FOOD-ORDER TRACKER (retired by D-59) ── until 2026-10-02 RC.await_accept and RC.track_prep were
+  // region-adopted (a generated `tracker` view each, inside FoodOrderAwaitingAcceptView / FoodOrderPreparingView).
+  // Order flow v2 replaced the food order screen; each key is now one SUPERSEDED deferral.
   {
     key: "RC.await_accept",
-    container: "apps/mobile/src/ui/food/FoodOrderAwaitingAcceptView.tsx",
+    container: "apps/mobile/app/order/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
-    mockComponent: "await_accept",
-    uiImport: "../index",
-    regions: [
-      {
-        // Tracker region — the mock's `<Card><RTracker step=0 …/></Card>` step timeline. Locator
-        // {el:"RTracker"} anchors it (the Card wrapper bubbles through in the composition, like the menu
-        // footer's Screen slot). RTracker→Stepper (DS_RENAME); the bind spreads the live Stepper seam
-        // (events/currentStatus/view/jobType/merchantPhase) the container already computed — a pure
-        // display forward, no timeline logic re-homed.
-        region: "tracker",
-        locator: { el: "RTracker" },
-        componentName: "FoodAwaitAcceptTrackerView",
-        viewFile: "apps/mobile/src/ui/food/food-await-accept-tracker.view.tsx",
-        propsParam: "props: FoodOrderTrackerViewProps",
-        propsType: [
-          "/** The live Stepper seam the container already computes for the seven-step food tracker —",
-          " *  forwarded verbatim into the mock's RTracker sub-tree (RTracker≡Stepper). */",
-          "export type FoodOrderTrackerViewProps = {",
-          "  events: { status: string; createdAt: string }[];",
-          "  currentStatus: string;",
-          "  view: \"customer\" | \"rider\";",
-          "  jobType?: \"food\" | \"parcel\";",
-          "  merchantPhase?: string | null;",
-          "};",
-        ].join("\n"),
-        bind: ({ t }) => foodTrackerBind({ t }),
-      },
-    ],
+    uiImport: "../../src/ui",
+    states: [],
     deferred: [
       {
-        state: "ring",
-        key: "RC.await_accept#ring",
-        reason:
-          "the accept-countdown Ring (r-customer-b.jsx:25) is display-only, but its app realization is not a congruent leaf region: the mock draws `<Ring/>` as a direct child of a centred column, while FoodOrderAwaitingAcceptView wraps its CountdownRing in an EXTRA centring `<View>` alongside two hero-text lines (the mock centres via `textAlign`/`margin:auto`, not a wrapping box) — so a hero region would diverge by that added View, and CountdownRing lives outside the src/ui barrel (a bare-Ring region would need NON_BARREL wiring + risks the depcruise cycle). Kept as container glue (pruned from the composition); adoptable once the app's ring hero is drawn as a boxless centred sub-tree or CountdownRing earns a barrel-safe region root.",
-      },
-      {
-        state: "head",
-        key: "RC.await_accept#head",
-        reason:
-          "the mock-local `OrderHead` (r-customer-b.jsx:10, W-LOCAL) leads the screen; the transpiler neither inlines nor imports it, and the app draws this header as its own OrderHeader (name + pill) not as a discrete generated region. Kept as glue (pruned from the composition); adoptable once OrderHead is inlined in the transpiler and the app header earns a region boundary.",
-      },
-      {
-        state: "hero",
-        key: "RC.await_accept#hero",
-        reason:
-          "the 'Waiting for <Shop>' hero copy + the live cancel footer + offline banner are live supersets the static mock's centred column does not draw as a discrete sub-tree (the cancel footer is a container-owned React node, the offline banner a live-connectivity COND). Not a region; container glue, pruned from the composition.",
+        state: "data",
+        key: "RC.await_accept",
+        reason: "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — waiting on the kitchen is T2 confirming / T3 waiting for accept: the venue header, the stage title, the four-step track in a surface panel, the venue row and the order summary; the countdown ring and seven-step stepper are retired. The food tracker region views (food-await-accept-tracker.view.tsx / food-prep-tracker.view.tsx) were deleted with the retired src/ui/food order views; a structural snapshot against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
       },
     ],
   },
   {
     key: "RC.track_prep",
-    container: "apps/mobile/src/ui/food/FoodOrderPreparingView.tsx",
+    container: "apps/mobile/app/order/[id].tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-b.jsx",
-    mockComponent: "track_prep",
-    uiImport: "../index",
-    regions: [
-      {
-        // Tracker region — the mock's `<Card>(finding-a-rider row + Skeleton, <RTracker step=2 …/>)</Card>`.
-        // Locator {el:"RTracker"} anchors the timeline (the finding-row + Skeleton siblings are pruned as
-        // glue in the composition — they are a live 'finding a rider' sub-state the app draws inline).
-        // RTracker→Stepper; the bind spreads the live Stepper seam the container already computed.
-        region: "tracker",
-        locator: { el: "RTracker" },
-        componentName: "FoodPrepTrackerView",
-        viewFile: "apps/mobile/src/ui/food/food-prep-tracker.view.tsx",
-        propsParam: "props: FoodOrderTrackerViewProps",
-        propsType: [
-          "/** The live Stepper seam the container already computes for the seven-step food tracker —",
-          " *  forwarded verbatim into the mock's RTracker sub-tree (RTracker≡Stepper). */",
-          "export type FoodOrderTrackerViewProps = {",
-          "  events: { status: string; createdAt: string }[];",
-          "  currentStatus: string;",
-          "  view: \"customer\" | \"rider\";",
-          "  jobType?: \"food\" | \"parcel\";",
-          "  merchantPhase?: string | null;",
-          "};",
-        ].join("\n"),
-        bind: ({ t }) => foodTrackerBind({ t }),
-      },
-    ],
+    uiImport: "../../src/ui",
+    states: [],
     deferred: [
       {
-        state: "ring",
-        key: "RC.track_prep#ring",
-        reason:
-          "the prep-countdown Ring (r-customer-b.jsx:236) is display-only, but as with await_accept its app CountdownRing is wrapped in an extra centring `<View>` the boxless mock column lacks, and CountdownRing sits outside the src/ui barrel — so a hero/ring region would diverge or need NON_BARREL wiring with depcruise-cycle risk. Kept as container glue (pruned from the composition).",
-      },
-      {
-        state: "finding",
-        key: "RC.track_prep#finding",
-        reason:
-          "the 'Finding a rider' row + Skeleton (the mock's `Card` header above the RTracker) is a live dispatch-in-progress sub-state the app draws inline in FoodOrderPreparingView's own copy, not as a discrete generated region; the mock-local OrderHead (W-LOCAL) leads the screen. Both kept as glue, pruned from the composition; adoptable once the finding sub-state and OrderHead earn region boundaries.",
+        state: "data",
+        key: "RC.track_prep",
+        reason: "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-01/02): the restaurant order now renders on the one order screen app/order/[id].tsx per the Order flow v2 handoff (packages/design/handoff/order-flow-v2) — the prep countdown is T4 cooking: the ETA hero range, the four-step track and the striped prep bar; the prep ring is retired on the customer side. The food tracker region views (food-await-accept-tracker.view.tsx / food-prep-tracker.view.tsx) were deleted with the retired src/ui/food order views; a structural snapshot against the gallery mock would assert the screen D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
       },
     ],
   },
@@ -1436,21 +1351,6 @@ export const ADOPTED = [
  * from the mock's frozen literals) and the OS-permission actions wire onto onPrimary/onSecondary — the
  * container feeds the role-framed copy while the mock's structure is preserved by construction.
  */
-/**
- * Shared data-seam for the two food-order TRACKER region views (RC.await_accept / RC.track_prep).
- * The mock's `<RTracker>` transpiles (DS_RENAME) to the app's `<Stepper>`; drop the mock's frozen
- * step/times literals and spread the live Stepper seam (`props`) the container already computes — a
- * pure display forward. Stepper is a display timeline, so no order/timeline logic is re-homed.
- */
-function foodTrackerBind({ t }) {
-  return {
-    JSXOpeningElement(path) {
-      if (path.node.name.name !== "Stepper") return;
-      path.node.attributes = [t.jsxSpreadAttribute(t.identifier("props"))];
-    },
-  };
-}
-
 function permSystemStateBind({ t, expr }) {
   return {
     JSXOpeningElement(path) {

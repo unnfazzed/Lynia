@@ -45,7 +45,8 @@ export type PrewarmRoute = "send" | "order" | "foodOrder" | "foodCheckout" | "ri
 const LOADERS: Record<PrewarmRoute, () => unknown> = {
   send: () => require("../../app/send"),
   order: () => require("../../app/order/[id]"),
-  foodOrder: () => require("../../app/food/order/[orderId]"),
+  // D-59: a food order opens the one order screen; the old /food/order route only redirects there.
+  foodOrder: () => require("../../app/order/[id]"),
   foodCheckout: () => require("../../app/food/checkout"),
   riderJob: () => require("../../app/rider/job"),
   riderFoodJob: () => require("../../app/rider/food-job"),

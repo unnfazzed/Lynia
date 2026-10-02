@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "item_removed",
   "mode": "phone",
-  "component": "app/food/order/[orderId].tsx",
+  "component": "app/order/[id].tsx",
   "fixture": "food_item_removed",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [
