@@ -56,6 +56,12 @@ export interface Me {
    * assume it is absent after a cold start until `/auth/me` revalidates.
    */
   idNumber: string | null;
+  /**
+   * D-70 "Didit ID prefill": the national ID number the rider's ID check VERIFIED (null until a
+   * verified check carried one, and on older servers). Prefills the ID field instead of a retype.
+   * Memory-only like `idNumber` — never persisted to the query cache (`redactBeforePersist`).
+   */
+  kycIdNumber?: string | null;
   /** S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen). */
   onHold?: boolean;
   rider: {
@@ -73,6 +79,11 @@ export interface Me {
     ratingAvg: number;
     ratingCount: number;
     tripsCount: number;
+    /**
+     * D-70: the commission-free first jobs (Calm Mint v2 R3 "Commission-free jobs · N of 5 left"),
+     * derived server-side from completed jobs. Absent on older servers — then nothing is drawn.
+     */
+    freeJobs?: { left: number; total: number };
     isOnline: boolean;
     /** Deploy-wide KYC review mode (not per-rider): "auto" resubmits open a vendor browser session;
      *  "manual" has no vendor step — pending means "waiting on ops review", not "waiting on you". */

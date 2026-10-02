@@ -9,7 +9,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { isCommissionActive, isInServiceArea, resolveCommissionRatePct } from "@lynia/shared";
+import { freeJobsLeft, isCommissionActive, isInServiceArea, normalizeNationalId, resolveCommissionRatePct } from "@lynia/shared";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -499,7 +499,7 @@ export class RiderService {
   ): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
     });
     if (!rider) throw new ForbiddenException("Not a rider");
     // Prepaid commission floor (design Flow 2): only load the balance — and only gate on it — once
@@ -507,7 +507,8 @@ export class RiderService {
     // no-op read-skip and the $0 pilot balance never blocks going online.
     const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
     const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
-    const commissionGate = { commissionActive, commissionBalance };
+    // D-70: commission-free first jobs waive the floor while any remain (derived from completed jobs).
+    const commissionGate = { commissionActive, commissionBalance, freeJobsLeft: freeJobsLeft(rider.tripsCount) };
     // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown + commission floor.
     // Only enforced when going ONLINE — a rider can always go offline. The refusal carries a structured
     // `reason` so the app renders the correct blocked state instead of a generic 403.
@@ -621,12 +622,12 @@ export class RiderService {
       // the client maps to "You were taken offline. Tap Go online to retry."
       const now = await this.prisma.rider.findUnique({
         where: { profileId },
-        select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+        select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
       });
       if (!now) throw new ForbiddenException("Not a rider");
       const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
       const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
-      const reason = onlineRefusalReason({ ...now, commissionActive, commissionBalance });
+      const reason = onlineRefusalReason({ ...now, commissionActive, commissionBalance, freeJobsLeft: freeJobsLeft(now.tripsCount) });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       throw new ForbiddenException("You're offline — go online to keep receiving jobs.");
     }
@@ -785,7 +786,13 @@ export class RiderService {
           // IR26-04: persist the vendor-verified document hash EVEN when holding for review — a later
           // applicant presenting the same physical document must collide with this row too, and the
           // admin review screen surfaces the mismatch/collision from it.
-          ...(docHash ? { verifiedIdHash: docHash } : {}),
+          // D-70 "Didit ID prefill": the verified number itself, ENCRYPTED (never plaintext, never
+          // logged), written with its hash so /auth/me can hand it back to its owner to prefill the
+          // national-ID field. Normalised like a typed ID (normalizeNationalId) so it round-trips
+          // through completeProfile unchanged.
+          ...(docHash && verifiedDocNumber
+            ? { verifiedIdHash: docHash, verifiedIdNumber: this.pii.encryptId(normalizeNationalId(verifiedDocNumber)) }
+            : {}),
           // Record the auto-decline reason (Didit score below the threshold) so the rider app can show
           // why, and clear any stale reason on a verify/expiry (unchanged for `expired`; a flagged
           // `verified` held for review isn't a resolved decision yet, so its stale decline reason, if

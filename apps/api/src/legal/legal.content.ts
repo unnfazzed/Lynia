@@ -136,6 +136,7 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: [
       "id_number",
       "id_number_hash",
+      "verified_id_number",
       "photo_url",
       "kyc-object",
       "bike_reg",

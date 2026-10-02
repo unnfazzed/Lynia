@@ -1352,13 +1352,26 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     await settle();
     expect(treeText(activeTree)).toContain("You’re verified");
     expect(treeText(activeTree)).toContain("Add your photo, licence and bike papers later in Account");
-    // No free-jobs rule on the server yet (NEEDS BACKEND), so the meter card is not drawn.
+    // An older server that doesn't serve `rider.freeJobs` (D-70) gets no meter card.
     expect(treeText(activeTree)).not.toContain("Commission-free jobs");
     const tree = activeTree;
     await renderer.act(async () => {
       tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
     });
     expect(treeText(activeTree)).not.toContain("You’re verified");
+  });
+
+  it("D-70: R3 draws the 'Commission-free jobs · 5 of 5 left' meter the server reports", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0, freeJobs: { left: 5, total: 5 } }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(treeText(activeTree)).toContain("Commission-free jobs");
+    expect(treeText(activeTree)).toContain("5 of 5 left");
+    expect(treeText(activeTree)).toContain("After these, commission comes off a prepaid balance.");
   });
 
   it("a rider with trips behind them never sees R3", async () => {

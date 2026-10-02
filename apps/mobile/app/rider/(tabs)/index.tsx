@@ -643,6 +643,8 @@ export default function RiderHome(): React.ReactElement {
     return (
       <RiderVerified
         firstName={meQ.data?.firstName?.trim() || null}
+        // D-70: "Commission-free jobs · N of 5 left", served by /auth/me (absent on an older server).
+        freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
         onGoOnline={() => {
           setWelcomeSeen(true);
           if (profileId) void markRiderWelcomeSeen(profileId);
