@@ -566,6 +566,12 @@ model Order {
   pickupPhotoKey        String?                                @map("pickup_photo_key")
   deliveredAt           DateTime?                              @map("delivered_at")
   completedAt           DateTime?                              @map("completed_at")
+  // The reliability points the unrated auto-close (completeOrder) actually credited the rider — the
+  // post-clamp delta, so 0 when the score was already at MAX. A late rating within RATE_LATE_WINDOW_MS
+  // REPLACES that credit (owner 2026-10-02): it reverses exactly this many points, then applies the
+  // rating's normal effect, and nulls the column in the same transaction so it is reversed once.
+  // Null = no auto-close credit outstanding (rated on time, adjudicated, already reversed, or pre-0069).
+  autoCloseCredit       Int?                                   @map("auto_close_reliability_credit")
   cancelledAt           DateTime?                              @map("cancelled_at")
   cancelledBy           String?                                @map("cancelled_by") @db.Uuid
   // FK → profiles(id). Nullable pointer to whoever cancelled; ON DELETE SET NULL so deleting a
